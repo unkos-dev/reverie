@@ -1,11 +1,10 @@
-import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { Link } from "react-router";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { FIELDS, fieldCountText, restartLabels } from "./fields";
-import { controlId } from "./ids";
+import { restartLabels } from "./fields";
 import type { Notice } from "./use-settings-editor";
 
 type NoteProps = Readonly<{
@@ -14,22 +13,12 @@ type NoteProps = Readonly<{
   strong?: boolean;
   children: ReactNode;
   actions?: ReactNode;
-  focusRef?: React.RefObject<HTMLDivElement | null>;
 }>;
 
-export function Note({
-  title,
-  role,
-  strong = false,
-  children,
-  actions,
-  focusRef,
-}: NoteProps): ReactElement {
+export function Note({ title, role, strong = false, children, actions }: NoteProps): ReactElement {
   return (
     <div
-      ref={focusRef}
       role={role}
-      tabIndex={focusRef === undefined ? undefined : -1}
       className={cn(
         "bg-surface mt-4 grid gap-1.5 rounded-lg border px-4 py-3.5",
         strong ? "border-fg-muted border-2" : "border-border-strong",
@@ -46,48 +35,6 @@ export function NoteText({ children }: Readonly<{ children: ReactNode }>): React
   return <p className="text-fg-muted max-w-[70ch] text-sm leading-normal">{children}</p>;
 }
 
-function ValidationNote({
-  notice,
-}: Readonly<{
-  notice: Extract<Notice, { kind: "validation" }>;
-}>): ReactElement {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-    return () => {};
-  }, []);
-  const failing = FIELDS.filter((field) => notice.errors[field.key] !== undefined);
-  const links = failing.map((field) => {
-    return (
-      <Button
-        key={field.key}
-        type="button"
-        variant="outline"
-        size="sm"
-        onPress={() => {
-          document.getElementById(controlId(field.key))?.focus();
-        }}
-      >
-        Go to {field.label}
-      </Button>
-    );
-  });
-  const body =
-    notice.unmapped ??
-    `${fieldCountText(failing.length)}. Fix ${failing.length === 1 ? "it" : "them"} and save again. Nothing you typed has been lost.`;
-  return (
-    <Note
-      title="Settings were not saved"
-      role="alert"
-      strong
-      focusRef={ref}
-      actions={notice.unmapped === null ? links : undefined}
-    >
-      <NoteText>{body}</NoteText>
-    </Note>
-  );
-}
-
 export function Notices({ notice }: Readonly<{ notice: Notice }>): ReactElement | null {
   switch (notice.kind) {
     case "none":
@@ -102,7 +49,11 @@ export function Notices({ notice }: Readonly<{ notice: Notice }>): ReactElement 
         </Note>
       );
     case "validation":
-      return <ValidationNote notice={notice} />;
+      return notice.unmapped === null ? null : (
+        <Note title="Settings were not saved" role="alert" strong>
+          <NoteText>{notice.unmapped}</NoteText>
+        </Note>
+      );
     case "conflict":
       return (
         <Note title="Settings changed while you were editing" role="alert" strong>

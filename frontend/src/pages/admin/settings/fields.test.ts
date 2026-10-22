@@ -7,7 +7,6 @@ import {
   areaSummary,
   describeValue,
   fieldByKey,
-  fieldCountText,
   fieldsForArea,
   AreaIdSchema,
   numberToText,
@@ -206,9 +205,7 @@ describe("copy helpers", () => {
     expect(describeValue("accepted_formats", { ...VALUES, accepted_formats: [] })).toBe("None");
   });
 
-  test("fieldCountText and restartLabels pluralise and join", () => {
-    expect(fieldCountText(1)).toBe("1 field needs attention");
-    expect(fieldCountText(2)).toBe("2 fields need attention");
+  test("restartLabels joins the field labels", () => {
     expect(restartLabels(["cover_max_bytes", "opds_page_size"])).toBe(
       "Largest cover file and Entries per page",
     );

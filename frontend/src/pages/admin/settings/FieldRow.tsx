@@ -1,11 +1,17 @@
-import { TriangleAlert } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
+import {
+  FieldError as AriaFieldError,
+  Input as AriaInput,
+  Label as AriaLabel,
+  Text,
+  TextField,
+} from "react-aria-components";
 
 import type { SettingsKey, SettingsSnapshot } from "@/api/settings";
 import { Checkbox, CheckboxGroup } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, Radio } from "@/components/ui/radio-group";
-import { Switch } from "@/components/ui/switch";
+import { SwitchButton, SwitchField as AriaSwitchField } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { enabledFormatCount, shownBoolean, shownFormat, shownText } from "./editor";
@@ -14,14 +20,18 @@ import {
   describeValue,
   formatBytes,
   parseMib,
+  parseNumberField,
   SUPPORTED_FORMATS,
   type Field,
+  type FormatsField,
   type IntField,
   type MibField,
   type SwitchField,
 } from "./fields";
-import { controlId, labelId } from "./ids";
+import { labelId } from "./ids";
 import type { ConflictRow, SettingsEditor } from "./use-settings-editor";
+
+const FIELD_ERROR = "text-destructive mt-1.5 text-sm font-normal";
 
 const TAG =
   "ml-2 inline-block rounded-full border px-1.5 py-px align-middle font-mono text-[11px] uppercase leading-[1.4] tracking-[0.04em]";
@@ -53,118 +63,118 @@ type Props = Readonly<{
   editor: SettingsEditor;
 }>;
 
-function errorFor(editor: SettingsEditor, key: SettingsKey): string | null {
-  const { notice } = editor;
-  return notice.kind === "validation" ? (notice.errors[key] ?? null) : null;
-}
-
 function conflictRow(editor: SettingsEditor, key: SettingsKey): ConflictRow | null {
   const { notice } = editor;
   return notice.kind === "conflict" ? (notice.rows.find((row) => row.key === key) ?? null) : null;
 }
 
-function IntControl({ field, base, editor }: Readonly<Props & { field: IntField }>): ReactElement {
-  const error = errorFor(editor, field.key);
-  const busy = editor.phase !== "idle";
-  const describedBy = [`help-${field.key}`, error === null ? null : `error-${field.key}`]
-    .filter((id) => id !== null)
-    .join(" ");
-  return (
-    <>
-      <Input
-        id={controlId(field.key)}
-        inputMode="numeric"
-        autoComplete="off"
-        className="w-[7.5rem] tabular-nums"
-        value={shownText(editor.draft, base.values, field.key)}
-        aria-labelledby={labelId(field.key)}
-        aria-describedby={describedBy}
-        aria-invalid={error === null ? undefined : true}
-        readOnly={busy}
-        onChange={(event) => {
-          editor.editText(field.key, event.target.value);
-        }}
-      />
-      <span className="text-fg-muted ml-2 text-sm">{field.unit}</span>
-    </>
-  );
+function fieldErrorMessage(field: IntField | MibField, text: string): string | null {
+  const parsed = parseNumberField(field, text);
+  return parsed.ok ? null : parsed.message;
 }
 
-function MibControl({ field, base, editor }: Readonly<Props & { field: MibField }>): ReactElement {
-  const error = errorFor(editor, field.key);
-  const busy = editor.phase !== "idle";
+function NumberRow({
+  field,
+  base,
+  editor,
+}: Readonly<Props & { field: IntField | MibField }>): ReactElement {
   const text = shownText(editor.draft, base.values, field.key);
-  const parsed = parseMib(text);
-  const bytes = parsed.ok ? parsed.value : base.values.cover_max_bytes;
-  const describedBy = [
-    `help-${field.key}`,
-    `bytes-${field.key}`,
-    error === null ? null : `error-${field.key}`,
-  ]
-    .filter((id) => id !== null)
-    .join(" ");
+  const takesTheirs = conflictRow(editor, field.key)?.choice === "theirs";
+  const isMib = field.control === "mib";
+  const parsed = isMib ? parseMib(text) : null;
+  const bytes = parsed?.ok === true ? parsed.value : base.values.cover_max_bytes;
   return (
-    <>
-      <Input
-        id={controlId(field.key)}
-        inputMode="decimal"
-        autoComplete="off"
-        className="w-[7.5rem] tabular-nums"
-        value={text}
-        aria-labelledby={labelId(field.key)}
-        aria-describedby={describedBy}
-        aria-invalid={error === null ? undefined : true}
-        readOnly={busy}
-        onChange={(event) => {
-          editor.editText(field.key, event.target.value);
-        }}
-      />
-      <span className="text-fg-muted ml-2 text-sm">MiB</span>
-      <div id={`bytes-${field.key}`} className="text-fg-muted mt-1.5 font-mono text-xs">
-        {formatBytes(bytes)}
-      </div>
-    </>
+    <TextField
+      name={field.key}
+      value={text}
+      autoComplete="off"
+      isReadOnly={editor.phase !== "idle"}
+      aria-describedby={isMib ? `bytes-${field.key}` : undefined}
+      validate={(value) => (takesTheirs ? null : fieldErrorMessage(field, value))}
+      onChange={(next) => {
+        editor.editText(field.key, next);
+      }}
+      className="contents"
+    >
+      <RowFrame
+        field={field}
+        base={base}
+        editor={editor}
+        label={<AriaLabel>{field.label}</AriaLabel>}
+      >
+        <AriaInput
+          inputMode={isMib ? "decimal" : "numeric"}
+          className="w-[7.5rem] tabular-nums"
+          render={(props) => <Input {...props} />}
+        />
+        <span className="text-fg-muted ml-2 text-sm">{isMib ? "MiB" : field.unit}</span>
+        {isMib ? (
+          <div id={`bytes-${field.key}`} className="text-fg-muted mt-1.5 font-mono text-xs">
+            {formatBytes(bytes)}
+          </div>
+        ) : null}
+        <AriaFieldError className={FIELD_ERROR} />
+      </RowFrame>
+    </TextField>
   );
 }
 
-function SwitchControl({
+function SwitchRow({
   field,
   base,
   editor,
 }: Readonly<Props & { field: SwitchField }>): ReactElement {
   const on = shownBoolean(editor.draft, base.values, field.key);
   return (
-    <div className="inline-flex items-center gap-2.5">
-      <Switch
-        id={controlId(field.key)}
-        className="motion-reduce:[&>[data-slot=switch-thumb]]:transition-none"
-        isSelected={on}
-        aria-labelledby={labelId(field.key)}
-        aria-describedby={`help-${field.key}`}
-        isDisabled={editor.phase !== "idle"}
-        onChange={(value) => {
-          editor.editBoolean(field.key, value);
-        }}
-      />
-      <span
-        aria-hidden="true"
-        className="min-w-[2.2em] font-mono text-xs uppercase tracking-[0.04em]"
+    <AriaSwitchField
+      name={field.key}
+      isSelected={on}
+      aria-labelledby={labelId(field.key)}
+      isDisabled={editor.phase !== "idle"}
+      onChange={(value) => {
+        editor.editBoolean(field.key, value);
+      }}
+    >
+      <RowFrame
+        field={field}
+        base={base}
+        editor={editor}
+        label={<span id={labelId(field.key)}>{field.label}</span>}
       >
-        {on ? "On" : "Off"}
-      </span>
-    </div>
+        <div className="inline-flex items-center gap-2.5">
+          <SwitchButton className="motion-reduce:[&>[data-slot=switch-thumb]]:transition-none" />
+          <span
+            aria-hidden="true"
+            className="min-w-[2.2em] font-mono text-xs uppercase tracking-[0.04em]"
+          >
+            {on ? "On" : "Off"}
+          </span>
+        </div>
+        <AriaFieldError className={FIELD_ERROR} />
+      </RowFrame>
+    </AriaSwitchField>
   );
 }
 
-function FormatsControl({ field, base, editor }: Props): ReactElement {
+function FormatsRow({
+  field,
+  base,
+  editor,
+}: Readonly<Props & { field: FormatsField }>): ReactElement {
+  const label = <span id={labelId(field.key)}>{field.label}</span>;
   if (SUPPORTED_FORMATS.length <= 1) {
     const only = SUPPORTED_FORMATS.map((format) => format.toUpperCase()).join(", ");
-    return <p className="text-sm leading-normal">Reverie imports {only} files.</p>;
+    return (
+      <RowFrame field={field} base={base} editor={editor} label={label}>
+        <p className="text-sm leading-normal">Reverie imports {only} files.</p>
+      </RowFrame>
+    );
   }
   const lockId = `lock-${field.key}`;
   const lastEnabled = enabledFormatCount(editor.draft, base.values) === 1;
   return (
     <CheckboxGroup
+      name={field.key}
       aria-labelledby={labelId(field.key)}
       value={SUPPORTED_FORMATS.filter((format) => shownFormat(editor.draft, base.values, format))}
       isDisabled={editor.phase !== "idle"}
@@ -176,42 +186,32 @@ function FormatsControl({ field, base, editor }: Props): ReactElement {
           }
         }
       }}
+      className="contents"
     >
-      {SUPPORTED_FORMATS.map((format, index) => (
-        <Checkbox
-          key={format}
-          value={format}
-          id={index === 0 ? controlId(field.key) : `${controlId(field.key)}-${format}`}
-          isReadOnly={shownFormat(editor.draft, base.values, format) && lastEnabled}
-          aria-describedby={
-            shownFormat(editor.draft, base.values, format) && lastEnabled ? lockId : undefined
-          }
-          className="cursor-pointer py-0.5 font-normal"
-        >
-          {format.toUpperCase()}
-        </Checkbox>
-      ))}
-      {lastEnabled ? (
-        <p id={lockId} className="text-fg-muted mt-1.5 max-w-[52ch] text-[13px] leading-normal">
-          This is the only format selected. At least one format must stay selected, or Reverie would
-          have nothing to import.
-        </p>
-      ) : null}
+      <RowFrame field={field} base={base} editor={editor} label={label}>
+        {SUPPORTED_FORMATS.map((format) => (
+          <Checkbox
+            key={format}
+            value={format}
+            isReadOnly={shownFormat(editor.draft, base.values, format) && lastEnabled}
+            aria-describedby={
+              shownFormat(editor.draft, base.values, format) && lastEnabled ? lockId : undefined
+            }
+            className="cursor-pointer py-0.5 font-normal"
+          >
+            {format.toUpperCase()}
+          </Checkbox>
+        ))}
+        {lastEnabled ? (
+          <p id={lockId} className="text-fg-muted mt-1.5 max-w-[52ch] text-[13px] leading-normal">
+            This is the only format selected. At least one format must stay selected, or Reverie
+            would have nothing to import.
+          </p>
+        ) : null}
+        <AriaFieldError className={FIELD_ERROR} />
+      </RowFrame>
     </CheckboxGroup>
   );
-}
-
-function Control({ field, base, editor }: Props): ReactElement {
-  switch (field.control) {
-    case "switch":
-      return <SwitchControl field={field} base={base} editor={editor} />;
-    case "formats":
-      return <FormatsControl field={field} base={base} editor={editor} />;
-    case "mib":
-      return <MibControl field={field} base={base} editor={editor} />;
-    case "int":
-      return <IntControl field={field} base={base} editor={editor} />;
-  }
 }
 
 function ConflictChoices({
@@ -248,7 +248,6 @@ function ConflictChoices({
 }
 
 function Extras({ field, base, editor }: Props): ReactElement {
-  const error = errorFor(editor, field.key);
   const row = conflictRow(editor, field.key);
   const dirty = editor.dirty.includes(field.key);
   const was = editor.elsewhere[field.key];
@@ -262,15 +261,6 @@ function Extras({ field, base, editor }: Props): ReactElement {
   const restart = base.restartRequiredFields.includes(field.key);
   return (
     <>
-      {error === null ? null : (
-        <div
-          id={`error-${field.key}`}
-          className="mt-1.5 flex items-baseline gap-1.5 text-[13px] font-medium leading-normal"
-        >
-          <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 translate-y-0.5" />
-          {error}
-        </div>
-      )}
       {deletionOn ? (
         <div
           role="status"
@@ -302,7 +292,9 @@ function Extras({ field, base, editor }: Props): ReactElement {
   );
 }
 
-export function FieldRow({ field, base, editor }: Props): ReactElement {
+type FrameProps = Props & Readonly<{ label: ReactNode; children: ReactNode }>;
+
+function RowFrame({ field, base, editor, label, children }: FrameProps): ReactElement {
   const dirty = editor.dirty.includes(field.key);
   const row = conflictRow(editor, field.key);
   const was = editor.elsewhere[field.key];
@@ -318,25 +310,38 @@ export function FieldRow({ field, base, editor }: Props): ReactElement {
     >
       <div>
         <div className="text-[15px] font-medium leading-normal">
-          <span id={labelId(field.key)}>{field.label}</span>
+          {label}
           {dirty ? <Tag tone="edited">Edited</Tag> : null}
           {row !== null ? <Tag tone="edited">Conflict</Tag> : null}
           {was !== undefined ? <Tag tone="plain">Changed elsewhere</Tag> : null}
           {restart ? <Tag tone="dashed">Restart required</Tag> : null}
         </div>
         {field.help === undefined ? null : (
-          <p
-            id={`help-${field.key}`}
+          <Text
+            slot="description"
+            elementType="p"
             className="text-fg-muted mt-0.5 max-w-[52ch] text-sm leading-normal"
           >
             {field.help}
-          </p>
+          </Text>
         )}
       </div>
       <div className="pt-0.5">
-        <Control field={field} base={base} editor={editor} />
+        {children}
         <Extras field={field} base={base} editor={editor} />
       </div>
     </div>
   );
+}
+
+export function FieldRow({ field, base, editor }: Props): ReactElement {
+  switch (field.control) {
+    case "switch":
+      return <SwitchRow field={field} base={base} editor={editor} />;
+    case "formats":
+      return <FormatsRow field={field} base={base} editor={editor} />;
+    case "mib":
+    case "int":
+      return <NumberRow field={field} base={base} editor={editor} />;
+  }
 }
