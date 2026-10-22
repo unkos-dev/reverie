@@ -17,9 +17,9 @@ written to local or session storage or added to a sign-in return URL.
 ## Layout
 
 Both routes use the shared AuthShell: a centred column no wider than 24 rem, 24 px horizontal and 64 px vertical outer
-padding, and the Reverie lockup above the card. Keep title, description, content and primary action in that order, at 16
-px intervals. `/account/email` has the footer link "Back to library"; `/verify-email` has none. Short windows scroll
-vertically.
+padding, and the Reverie lockup above the card. Keep title, description, content and primary action in that order. The
+title and description are 4 px apart; content and actions use 16 px intervals. `/account/email` has the footer link
+"Back to library"; `/verify-email` has none. Short windows scroll vertically.
 
 On `/account/email`, the address sits in a read-only row beneath the description: the address in normal foreground text,
 followed by a status badge, "Verified" or "Not verified". The badge uses the existing badge component and states its

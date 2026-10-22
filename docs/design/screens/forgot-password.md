@@ -12,9 +12,9 @@ setup-status query. When local authentication is disabled, the page redirects to
 ## Layout
 
 Use the shared AuthShell: a centred column no wider than 24 rem, 24 px horizontal and 64 px vertical outer padding, and
-the Reverie lockup above the card. Keep title, description, field and primary action in that order, with 16 px between
-the field, its error and the button. The footer holds the "Back to sign in" link in every state. Short windows scroll
-vertically.
+the Reverie lockup above the card. Keep title, description, field and primary action in that order, with 4 px between
+the title and description and 16 px between the field, its error and the button. The footer holds the "Back to sign in"
+link in every state. Short windows scroll vertically.
 
 ## Loading and settings failure
 
