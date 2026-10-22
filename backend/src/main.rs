@@ -12,6 +12,9 @@ async fn main() -> anyhow::Result<()> {
         reverie_api::Command::ResetPassword { email } => {
             reverie_api::run_reset_password(&email).await
         }
+        reverie_api::Command::SendTestEmail { address } => {
+            reverie_api::run_send_test_email(&address).await
+        }
         reverie_api::Command::UnlockAccount { email } => {
             reverie_api::run_unlock_account(&email).await
         }

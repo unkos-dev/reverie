@@ -74,7 +74,7 @@ pub async fn find_by_user_id(
 ///
 /// Takes an executor so the caller can bind it to a transaction (the
 /// password-reset flow writes the credential in the same transaction that
-/// consumes the PIN and bumps `session_version`) or run it against a pool.
+/// consumes the link and bumps `session_version`) or run it against a pool.
 /// The bootstrap path writes its own transactional insert
 /// at the call site alongside the `users` row and the `instance_bootstrap`
 /// marker.

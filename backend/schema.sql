@@ -1123,25 +1123,6 @@ CREATE TABLE public.omnibus_contents (
 ALTER TABLE public.omnibus_contents OWNER TO reverie_migrator;
 
 --
--- Name: password_reset_pins; Type: TABLE; Schema: public; Owner: reverie_migrator
---
-
-CREATE TABLE public.password_reset_pins (
-    id uuid DEFAULT uuidv7() NOT NULL,
-    user_id uuid NOT NULL,
-    pin_hash text NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    consumed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT password_reset_pins_consumed_at_ts_decode_range CHECK (((consumed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (consumed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
-    CONSTRAINT password_reset_pins_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
-    CONSTRAINT password_reset_pins_expires_at_ts_decode_range CHECK (((expires_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (expires_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
-);
-
-
-ALTER TABLE public.password_reset_pins OWNER TO reverie_migrator;
-
---
 -- Name: rating_sources; Type: TABLE; Schema: public; Owner: reverie_migrator
 --
 
@@ -1914,14 +1895,6 @@ ALTER TABLE ONLY public.omnibus_contents
 
 
 --
--- Name: password_reset_pins password_reset_pins_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.password_reset_pins
-    ADD CONSTRAINT password_reset_pins_pkey PRIMARY KEY (id);
-
-
---
 -- Name: rating_sources rating_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -2495,27 +2468,6 @@ CREATE INDEX idx_oidc_sign_in_attempts_expires_at ON public.oidc_sign_in_attempt
 --
 
 CREATE INDEX idx_omnibus_contents_contained_work_id ON public.omnibus_contents USING btree (contained_work_id);
-
-
---
--- Name: idx_password_reset_pins_active_unique; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE UNIQUE INDEX idx_password_reset_pins_active_unique ON public.password_reset_pins USING btree (user_id) WHERE (consumed_at IS NULL);
-
-
---
--- Name: INDEX idx_password_reset_pins_active_unique; Type: COMMENT; Schema: public; Owner: reverie_migrator
---
-
-COMMENT ON INDEX public.idx_password_reset_pins_active_unique IS 'Enforces at most one active (unconsumed) recovery PIN per user. Load-bearing for the single-active invariant under concurrency; see models::password_reset_pin::rotate for the retry path on SQLSTATE 23505.';
-
-
---
--- Name: idx_password_reset_pins_user_id; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE INDEX idx_password_reset_pins_user_id ON public.password_reset_pins USING btree (user_id);
 
 
 --
@@ -3235,14 +3187,6 @@ ALTER TABLE ONLY public.omnibus_contents
 
 ALTER TABLE ONLY public.omnibus_contents
     ADD CONSTRAINT omnibus_contents_omnibus_manifestation_id_fkey FOREIGN KEY (omnibus_manifestation_id) REFERENCES public.manifestations(id) ON DELETE CASCADE;
-
-
---
--- Name: password_reset_pins password_reset_pins_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.password_reset_pins
-    ADD CONSTRAINT password_reset_pins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -4148,13 +4092,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.oidc_sign_in_attempts TO rever
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.omnibus_contents TO reverie_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.omnibus_contents TO reverie_ingestion;
 GRANT SELECT ON TABLE public.omnibus_contents TO reverie_readonly;
-
-
---
--- Name: TABLE password_reset_pins; Type: ACL; Schema: public; Owner: reverie_migrator
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.password_reset_pins TO reverie_app;
 
 
 --

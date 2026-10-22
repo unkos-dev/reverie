@@ -605,7 +605,13 @@ mod tests {
         async fn link(&self) -> (String, Vec<u8>) {
             let mut tx = self.app.begin().await.unwrap();
             lock_account(&mut tx, self.user).await.unwrap();
-            let (token, _) = credential_link::issue(&mut tx, self.user).await.unwrap();
+            let (token, _) = credential_link::issue(
+                &mut tx,
+                self.user,
+                crate::models::credential_link::CREDENTIAL_LINK_TTL,
+            )
+            .await
+            .unwrap();
             tx.commit().await.unwrap();
             let digest = account_email_proof::digest(&token);
             (token, digest)

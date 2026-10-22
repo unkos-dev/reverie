@@ -109,3 +109,5 @@ CREATE INDEX idx_account_email_proofs_expires_at ON account_email_proofs (expire
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON account_email_proofs TO reverie_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON mail_jobs TO reverie_app;
+
+DROP TABLE public.password_reset_pins;

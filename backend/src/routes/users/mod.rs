@@ -479,9 +479,13 @@ async fn create_user(
                 crate::models::user::CreateUserError::EmailExists => AppError::EmailConflict,
                 crate::models::user::CreateUserError::Db(db) => AppError::Internal(db.into()),
             })?;
-    let (token, expires_at) = crate::models::credential_link::issue(&mut tx, user.id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    let (token, expires_at) = crate::models::credential_link::issue(
+        &mut tx,
+        user.id,
+        crate::models::credential_link::CREDENTIAL_LINK_TTL,
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -689,9 +693,13 @@ async fn issue_credential_link(
             "the account has no email address".into(),
         ));
     }
-    let (token, expires_at) = crate::models::credential_link::issue(&mut tx, id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    let (token, expires_at) = crate::models::credential_link::issue(
+        &mut tx,
+        id,
+        crate::models::credential_link::CREDENTIAL_LINK_TTL,
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;

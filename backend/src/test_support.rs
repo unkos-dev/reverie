@@ -64,8 +64,6 @@ pub fn test_config() -> Config {
         // wiremock loopback in auth::password_policy.
         password_breach_check_enabled: false,
         self_registration_enabled: false,
-        recovery_pin_ttl_secs: 900,
-        recovery_pin_dir: "./reverie-recovery".into(),
         trusted_client_ip_header: None,
         migration_database_url: None,
         auto_migrate: false,

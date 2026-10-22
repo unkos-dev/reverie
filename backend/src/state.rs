@@ -53,7 +53,7 @@ pub struct AppState {
     pub recovery_limiter: Arc<LoginLimiter>,
     /// Independent source allowance for OIDC start navigations.
     pub oidc_limiter: Arc<LoginLimiter>,
-    /// Shared request-path password and recovery-PIN hashing capacity.
+    /// Shared request-path password hashing capacity.
     pub hash_limiter: crate::auth::password::HashLimiter,
     /// Operator-tunable settings loaded from the `settings` table.
     /// Refreshed via LISTEN/NOTIFY + 60s fallback poll. Handlers read

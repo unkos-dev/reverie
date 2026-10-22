@@ -6532,8 +6532,6 @@ mod tests {
             password_min_zxcvbn_score: 2,
             password_breach_check_enabled: true,
             self_registration_enabled: false,
-            recovery_pin_ttl_secs: 900,
-            recovery_pin_dir: "./reverie-recovery".into(),
             trusted_client_ip_header: None,
             migration_database_url: None,
             auto_migrate: false,

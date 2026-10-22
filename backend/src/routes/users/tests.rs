@@ -1485,12 +1485,6 @@ async fn auth_hash_busy_users_endpoints(pool: PgPool) {
             .password_hash,
         expected
     );
-    assert!(
-        crate::models::password_reset_pin::find_active_by_user(&state.pool, id)
-            .await
-            .unwrap()
-            .is_none()
-    );
 }
 
 async fn credential_link_admin(
@@ -1728,10 +1722,13 @@ async fn credential_link_invalid_cases_are_indistinguishable(pool: PgPool) {
         .await
         .unwrap()
         .id;
-        let (token, _) =
-            crate::models::credential_link::issue(&mut app.acquire().await.unwrap(), id)
-                .await
-                .unwrap();
+        let (token, _) = crate::models::credential_link::issue(
+            &mut app.acquire().await.unwrap(),
+            id,
+            crate::models::credential_link::CREDENTIAL_LINK_TTL,
+        )
+        .await
+        .unwrap();
         match case {
             "expired" => {
                 sqlx::query!(
@@ -1791,7 +1788,9 @@ async fn credential_link_invalid_cases_are_indistinguishable(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn credential_link_redemption_password_sessions_throttle_and_pin(pool: PgPool) {
+async fn credential_link_redemption_password_sessions_throttle_and_replacement_proofs(
+    pool: PgPool,
+) {
     let app = test_support::db::app_pool_for(&pool).await;
     let ingestion = test_support::db::ingestion_pool_for(&pool).await;
     let id = test_support::db::create_adult_with_password(
@@ -1824,17 +1823,27 @@ async fn credential_link_redemption_password_sessions_throttle_and_pin(pool: PgP
     .fetch_one(&app)
     .await
     .unwrap();
-    let pin = crate::models::password_reset_pin::insert(
-        &app,
+    let mut tx = app.begin().await.unwrap();
+    crate::models::account_email_proof::lock_account(&mut tx, id)
+        .await
+        .unwrap()
+        .unwrap();
+    let recovery = crate::models::account_email_proof::issue(
+        &mut tx,
         id,
-        "unchanged-pin-hash",
-        chrono::Utc::now() + chrono::TimeDelta::minutes(15),
+        crate::models::account_email_proof::ProofPurpose::Recovery,
+        "holder@example.test",
     )
     .await
     .unwrap();
-    let (token, _) = crate::models::credential_link::issue(&mut app.acquire().await.unwrap(), id)
-        .await
-        .unwrap();
+    tx.commit().await.unwrap();
+    let (token, _) = crate::models::credential_link::issue(
+        &mut app.acquire().await.unwrap(),
+        id,
+        crate::models::credential_link::CREDENTIAL_LINK_TTL,
+    )
+    .await
+    .unwrap();
     let server = test_support::db::server_with_real_pools(&app, &ingestion);
     let lookup = server
         .post("/auth/credential-links/lookups")
@@ -1880,14 +1889,23 @@ async fn credential_link_redemption_password_sessions_throttle_and_pin(pool: PgP
             .unwrap()
             .is_none()
     );
-    assert_eq!(
-        crate::models::password_reset_pin::find_active_by_user(&app, id)
+    assert!(
+        crate::models::account_email_proof::live(
+            &mut app.acquire().await.unwrap(),
+            id,
+            crate::models::account_email_proof::ProofPurpose::Recovery,
+        )
+        .await
+        .unwrap()
+        .is_none()
+    );
+    assert!(
+        crate::models::credential_link::lookup(&app, &recovery.token)
             .await
             .unwrap()
-            .unwrap()
-            .id,
-        pin
+            .is_none()
     );
+
     let after = sqlx::query_scalar!(
         "SELECT to_jsonb(t) FROM local_login_throttle t WHERE email_lower = 'holder@example.test'"
     )
@@ -1911,9 +1929,13 @@ async fn credential_link_policy_rejection_and_concurrent_redemption(pool: PgPool
     .await
     .unwrap()
     .id;
-    let (token, _) = crate::models::credential_link::issue(&mut app.acquire().await.unwrap(), id)
-        .await
-        .unwrap();
+    let (token, _) = crate::models::credential_link::issue(
+        &mut app.acquire().await.unwrap(),
+        id,
+        crate::models::credential_link::CREDENTIAL_LINK_TTL,
+    )
+    .await
+    .unwrap();
     let server = test_support::db::server_with_real_pools(&app, &ingestion);
     assert_eq!(
         server
@@ -1986,10 +2008,13 @@ async fn credential_link_recovery_allowance_not_password_allowance(pool: PgPool)
     .await
     .unwrap()
     .id;
-    let (token, _) =
-        crate::models::credential_link::issue(&mut state.pool.acquire().await.unwrap(), id)
-            .await
-            .unwrap();
+    let (token, _) = crate::models::credential_link::issue(
+        &mut state.pool.acquire().await.unwrap(),
+        id,
+        crate::models::credential_link::CREDENTIAL_LINK_TTL,
+    )
+    .await
+    .unwrap();
     let server = axum_test::TestServer::new(crate::build_router(state.clone()));
     let result = server
         .post("/auth/credential-links/redemptions")

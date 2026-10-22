@@ -147,7 +147,7 @@ pub struct Config {
     /// Must be at least 1.
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub login_rate_per_min: u32,
-    /// Request-path password and recovery-PIN hashing limit per process
+    /// Request-path password hashing limit per process
     /// (`REVERIE_AUTH_HASH_CONCURRENCY`, default `1`). Each permit allows one more
     /// parallel Argon2 operation of about 19 MiB; login holds one database
     /// connection per permit.
@@ -189,18 +189,6 @@ pub struct Config {
     /// always a non-admin, non-child Adult; admin and child accounts are created
     /// only by an existing administrator.
     pub self_registration_enabled: bool,
-    /// Lifetime of a forgot-password recovery PIN, seconds
-    /// (`REVERIE_RECOVERY_PIN_TTL_SECS`, default `900` = 15 minutes). Short by
-    /// design: the PIN is single-use and rate-limited.
-    #[validate(range(min = 60, message = "must be at least 60"))]
-    pub recovery_pin_ttl_secs: i64,
-    /// Directory the clear recovery PIN is written into, one file per user at
-    /// `<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an
-    /// operator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default
-    /// `/data/recovery-pins`). Per-user files keep concurrent recoveries from
-    /// colliding. MUST be outside any web-served directory; the database stores
-    /// only an Argon2id hash of the PIN.
-    pub recovery_pin_dir: String,
     /// Optional forwarded-for header to trust for the client IP behind a reverse
     /// proxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset
     /// by default: the TCP peer is used. An unauthenticated forwarded header is
@@ -343,6 +331,35 @@ pub enum ConfigError {
 }
 
 impl Config {
+    /// Load only the database credential and public origin for host recovery.
+    ///
+    /// # Errors
+    /// Returns a setting-named error for missing, conflicting or invalid inputs.
+    pub fn host_recovery_from_env() -> Result<(SecretString, url::Url), ConfigError> {
+        #[derive(Default, serde::Deserialize)]
+        #[serde(default)]
+        struct Settings {
+            database_url: SecretString,
+            public_url: Option<url::Url>,
+        }
+        let settings: Settings =
+            Figment::from(EnvProvider::from_process_env().host_recovery_only())
+                .extract()
+                .map_err(|error| map_figment_error(&error))?;
+        let origin = settings
+            .public_url
+            .ok_or_else(|| ConfigError::MissingVar("REVERIE_PUBLIC_URL".into()))?;
+        validate_public_origin(&origin).map_err(|_| ConfigError::Invalid {
+            var: "REVERIE_PUBLIC_URL".into(),
+            reason: "must be an http or https origin without credentials, path, query or fragment"
+                .into(),
+        })?;
+        if settings.database_url.expose_secret().trim().is_empty() {
+            return Err(ConfigError::MissingVar("DATABASE_URL".into()));
+        }
+        Ok((settings.database_url, origin))
+    }
+
     /// Public entry point for production: reads from the process environment
     /// through the figment pipeline. The binary discovers no env file itself;
     /// populating the process environment is the caller's responsibility (a
@@ -737,8 +754,6 @@ impl Default for Config {
             password_min_zxcvbn_score: 2,
             password_breach_check_enabled: true,
             self_registration_enabled: false,
-            recovery_pin_ttl_secs: 900,
-            recovery_pin_dir: "/data/recovery-pins".into(),
             trusted_client_ip_header: None,
             // REQUIRED — empty sentinels.
             oidc_issuer_url: String::new(),
@@ -951,7 +966,6 @@ mod tests {
         );
         assert_eq!(config.library_path.as_str(), "/data/library");
         assert_eq!(config.ingestion_path.as_str(), "/data/ingestion");
-        assert_eq!(config.recovery_pin_dir, "/data/recovery-pins");
         // BASE_VARS exports DATABASE_URL_MIGRATION but leaves REVERIE_AUTO_MIGRATE
         // unset (off), so the DSN is intentionally NOT carried into Config.
         assert!(config.migration_database_url.is_none());

@@ -1136,6 +1136,34 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_pin_retirement_migration_restores_only_the_schema(pool: PgPool) {
+        let down = include_str!("../migrations/20261021000000_mail_recovery.down.sql");
+        let up = include_str!("../migrations/20261021000000_mail_recovery.up.sql");
+        let present = || async {
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM pg_class WHERE relname = 'password_reset_pins'"
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+        assert_eq!(present().await, Some(0));
+        sqlx::raw_sql(down).execute(&pool).await.unwrap();
+        assert_eq!(present().await, Some(1));
+        assert!(
+            sqlx::query_scalar!(
+                r#"SELECT has_table_privilege('reverie_app', oid, 'INSERT') AS "allowed!"
+                 FROM pg_class WHERE relname = 'password_reset_pins'"#
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        );
+        sqlx::raw_sql(up).execute(&pool).await.unwrap();
+        assert_eq!(present().await, Some(0));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn smtp_queue_migration_down_removes_new_state_and_up_restores_it(pool: PgPool) {
         let down = include_str!("../migrations/20261021000000_mail_recovery.down.sql");
         let up = include_str!("../migrations/20261021000000_mail_recovery.up.sql");

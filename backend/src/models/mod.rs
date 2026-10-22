@@ -38,8 +38,6 @@ pub mod login_throttle;
 pub mod mail_job;
 /// Closed value set for the `manifestation_format` Postgres `ENUM`.
 pub mod manifestation_format;
-/// Hashed, single-use, short-lived password-reset PIN records.
-pub mod password_reset_pin;
 /// Per-`(user, manifestation)` reading state: status, rating, notes,
 /// progress, and reading dates.
 pub mod reading_state;

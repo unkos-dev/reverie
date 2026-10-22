@@ -54,8 +54,6 @@ pub const ENV_MAP: &[(&str, &str)] = &[
         "REVERIE_SELF_REGISTRATION_ENABLED",
         "self_registration_enabled",
     ),
-    ("REVERIE_RECOVERY_PIN_TTL_SECS", "recovery_pin_ttl_secs"),
-    ("REVERIE_RECOVERY_PIN_DIR", "recovery_pin_dir"),
     (
         "REVERIE_TRUSTED_CLIENT_IP_HEADER",
         "trusted_client_ip_header",
@@ -211,6 +209,16 @@ impl EnvProvider<fn(&str) -> std::io::Result<String>> {
 }
 
 impl<R> EnvProvider<R> {
+    pub(crate) fn host_recovery_only(mut self) -> Self {
+        self.pairs.retain(|(key, _)| {
+            matches!(
+                key.as_str(),
+                "DATABASE_URL" | "DATABASE_URL_FILE" | "REVERIE_PUBLIC_URL"
+            )
+        });
+        self
+    }
+
     /// Inject credential reads without changing process state.
     #[must_use]
     pub fn with_reader<T>(self, reader: T) -> EnvProvider<T> {
