@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs j SET state = CASE WHEN j.state IN ('pending', 'in_progress') THEN 'cancelled' ELSE j.state END, terminal_at = CASE WHEN j.state IN ('pending', 'in_progress') THEN clock_timestamp() ELSE j.terminal_at END, nonce = NULL, payload = NULL WHERE j.user_id = ANY($1) AND j.payload IS NOT NULL AND ((j.state <> 'in_progress' AND j.expires_at <= clock_timestamp()) OR (j.authority_kind IS NOT NULL AND NOT ((j.authority_kind = 'credential_link' AND EXISTS ( SELECT 1 FROM credential_links l WHERE l.user_id = j.user_id AND l.token_hash = j.proof_digest AND l.expires_at > clock_timestamp())) OR (j.authority_kind IN ('verification', 'recovery') AND EXISTS ( SELECT 1 FROM account_email_proofs p WHERE p.user_id = j.user_id AND p.token_hash = j.proof_digest AND p.expires_at > clock_timestamp())))))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "59fe89a618c64df06f0fe0c68c9ad43382c5b1112dda6668bf59586396c5abd7"
+}

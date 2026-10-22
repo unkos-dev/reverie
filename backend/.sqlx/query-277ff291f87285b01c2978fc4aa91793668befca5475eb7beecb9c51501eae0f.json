@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mail_jobs (id, user_id, purpose, state, attempt_count, terminal_at, enqueued_at, next_attempt_at, expires_at) VALUES ($1, $2, 'notice_password_set', 'failed', 6, now(), now(), now(), now() + interval '1 hour')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "277ff291f87285b01c2978fc4aa91793668befca5475eb7beecb9c51501eae0f"
+}

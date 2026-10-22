@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs SET state = 'pending', next_attempt_at = clock_timestamp() WHERE state = 'in_progress'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "5471a359dc735dc197436ada80ee1bc89e15f4cb82487c56c18f53ade9e87308"
+}

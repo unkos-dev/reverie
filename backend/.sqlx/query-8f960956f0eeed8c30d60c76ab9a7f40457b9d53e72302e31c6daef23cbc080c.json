@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_email_proofs (user_id, purpose, email, token_hash, created_at, expires_at) SELECT $1::uuid, $2::text, $3::text, $4::bytea, c.t, c.t + make_interval(secs => $5::int) FROM (SELECT clock_timestamp() AS t) c ON CONFLICT (user_id, purpose) DO UPDATE SET email = EXCLUDED.email, token_hash = EXCLUDED.token_hash, created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at RETURNING expires_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "account_email_proofs",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8f960956f0eeed8c30d60c76ab9a7f40457b9d53e72302e31c6daef23cbc080c"
+}

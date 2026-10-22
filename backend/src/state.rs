@@ -65,4 +65,7 @@ pub struct AppState {
     /// `GET /api/v1/settings` so operators can verify the live-reload
     /// mechanism is healthy.
     pub last_settings_reload: Arc<RwLock<Option<DateTime<Utc>>>>,
+    /// Authentication mail runtime. `None` when SMTP is disabled: nothing is
+    /// queued and no submission worker runs.
+    pub mail: Option<Arc<crate::services::mail::queue::MailRuntime>>,
 }

@@ -4,6 +4,8 @@
 //! shape: row structs, query helpers, and — for closed-set columns — a
 //! typed [`sqlx::Type`] wrapper that fails closed on unknown DB variants.
 
+/// Account-bound mailbox verification and email recovery proofs.
+pub mod account_email_proof;
 /// Closed value set for the `content_rating` Postgres `ENUM`.
 pub mod content_rating;
 /// Closed value set for the `author_role` Postgres `ENUM`.
@@ -32,6 +34,8 @@ pub mod library_path_claim;
 pub mod local_credentials;
 /// DB-backed per-account login throttle (escalating backoff, CLI-clearable).
 pub mod login_throttle;
+/// Encrypted authentication-mail jobs and their allowances.
+pub mod mail_job;
 /// Closed value set for the `manifestation_format` Postgres `ENUM`.
 pub mod manifestation_format;
 /// Hashed, single-use, short-lived password-reset PIN records.

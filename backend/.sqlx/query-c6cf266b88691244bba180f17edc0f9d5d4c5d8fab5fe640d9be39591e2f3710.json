@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs SET state = 'failed', terminal_at = now(), failure_category = 'timeout', nonce = NULL, payload = NULL WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c6cf266b88691244bba180f17edc0f9d5d4c5d8fab5fe640d9be39591e2f3710"
+}

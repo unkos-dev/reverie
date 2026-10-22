@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs SET state = CASE WHEN state IN ('pending', 'in_progress') THEN 'cancelled' ELSE state END, terminal_at = CASE WHEN state IN ('pending', 'in_progress') THEN clock_timestamp() ELSE terminal_at END, nonce = NULL, payload = NULL WHERE user_id = $1 AND authority_kind = $2 AND (state IN ('pending', 'in_progress') OR payload IS NOT NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e75027d401ad9d735d0e7ce06889c67477f701ca480eb1962fedbc9c7e8cb195"
+}

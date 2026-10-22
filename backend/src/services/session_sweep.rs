@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::auth::rate_limit::LoginLimiter;
 use crate::models::login_throttle;
+use crate::models::mail_job;
 use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tower_sessions::session_store::{self, ExpiredDeletion};
@@ -80,6 +81,28 @@ async fn sweep_pass(
         }
     }
     sweep_throttles(pool, cancel).await;
+    sweep_mail(pool, cancel).await;
+}
+
+const MAIL_SWEEP_ACCOUNTS: i64 = 100;
+
+async fn sweep_mail(pool: &PgPool, cancel: &CancellationToken) {
+    let mut after = None;
+    while !cancel.is_cancelled() {
+        match mail_job::sweep_batch(pool, after, MAIL_SWEEP_ACCOUNTS).await {
+            Ok(batch) => {
+                let full = usize::try_from(MAIL_SWEEP_ACCOUNTS).is_ok_and(|n| batch.accounts == n);
+                if !full {
+                    break;
+                }
+                after = batch.last_user;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "mail cleanup sweep failed; retrying next tick");
+                break;
+            }
+        }
+    }
 }
 
 async fn sweep_throttles(pool: &PgPool, cancel: &CancellationToken) {
@@ -285,6 +308,46 @@ mod tests {
                 .is_some()
         );
         assert_eq!(session_count(&pool).await, 2);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_queue_hourly_sweep_cleans_mail_state_without_a_mail_runtime(pool: PgPool) {
+        let app = crate::test_support::db::app_pool_for(&pool).await;
+        let user = crate::test_support::mail::account(&pool, "swept@example.org").await;
+        let mut tx = app.begin().await.unwrap();
+        crate::models::account_email_proof::lock_account(&mut tx, user)
+            .await
+            .unwrap();
+        crate::models::account_email_proof::issue(
+            &mut tx,
+            user,
+            crate::models::account_email_proof::ProofPurpose::Recovery,
+            "swept@example.org",
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        sqlx::query!(
+            "UPDATE account_email_proofs SET created_at = now() - interval '2 hours', \
+                    expires_at = now() - interval '1 minute'"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sweep_pass(
+            &PostgresStore::new(app.clone()),
+            &app,
+            &test_limiters(),
+            &CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM account_email_proofs")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(0)
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

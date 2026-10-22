@@ -375,6 +375,9 @@ pub async fn run() -> anyhow::Result<()> {
         oidc_limiter,
         settings,
         last_settings_reload,
+        mail: services::mail::queue::MailRuntime::from_config(&config)
+            .context("preparing the authentication mail runtime")?
+            .map(std::sync::Arc::new),
     };
     let app = build_router(state.clone());
 
@@ -422,6 +425,9 @@ pub async fn run() -> anyhow::Result<()> {
         serve,
         supervise_until_shutdown(supervisor, cancel_token.clone()),
     );
+    if let Some(mail) = &state.mail {
+        mail.shutdown().await;
+    }
     worker_result?;
     serve_result
 }
@@ -532,6 +538,7 @@ fn spawn_workers(
                 )
             }),
         );
+    let builder = with_mail_worker(builder, state);
     let supervisor = with_oidc_discovery(builder, state.oidc.as_ref()).spawn();
     state.ingestion.set_supervisor(supervisor.clone());
     supervisor
@@ -548,6 +555,27 @@ fn configure_oidc(
     Ok(Some(std::sync::Arc::new(
         auth::oidc::OidcRuntime::configured(config, transport)?,
     )))
+}
+
+fn with_mail_worker(
+    builder: task_supervisor::SupervisorBuilder,
+    state: &AppState,
+) -> task_supervisor::SupervisorBuilder {
+    let Some(runtime) = state.mail.clone() else {
+        return builder;
+    };
+    let pool = state.pool.clone();
+    builder.with_task(
+        "mail-worker",
+        Worker(move |cancel| {
+            services::mail::queue::run_worker(
+                pool.clone(),
+                runtime.clone(),
+                cancel,
+                services::mail::queue::POLL_INTERVAL,
+            )
+        }),
+    )
 }
 
 fn with_oidc_discovery(
