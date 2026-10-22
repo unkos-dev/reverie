@@ -9,7 +9,7 @@ import { type ReactElement, useId, useState } from "react";
 import { z } from "zod";
 
 import type { SuggestKind } from "@/api";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Checkbox, CheckboxGroup } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -30,7 +30,7 @@ import {
 
 import { TypeaheadMultiSelect, type TypeaheadOption } from "./TypeaheadMultiSelect";
 
-export type { TextOp };
+export type { TextOp } from "@/routes/library-params";
 
 const TEXT_OP_LABELS: Record<TextOp, string> = {
   contains: "contains",
@@ -310,12 +310,6 @@ function DraftBoundInput<T extends BoundValue>({
         onBlur={commitDraft}
         onKeyDown={(event) => {
           if (event.key === "Enter") commitDraft();
-          if (event.key === "Escape") {
-            setCorrection("");
-            setBadInput(false);
-            setLastNotifiedDraft(canonical);
-            setDraft(canonical);
-          }
         }}
       />
       <p id={`${id}-correction`} role="status" className="text-fg-muted text-sm empty:sr-only">
@@ -381,16 +375,15 @@ export function RangeFilterEditor({
         />
       </div>
       {allowEmpty ? (
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id={`${id}-empty`}
-            checked={isEmpty}
-            onCheckedChange={(checked) => {
-              onChange(checked === true ? { empty: true } : {});
-            }}
-          />
-          <Label htmlFor={`${id}-empty`}>Has no value</Label>
-        </div>
+        <Checkbox
+          id={`${id}-empty`}
+          isSelected={isEmpty}
+          onChange={(selected) => {
+            onChange(selected ? { empty: true } : {});
+          }}
+        >
+          Has no value
+        </Checkbox>
       ) : null}
     </div>
   );
@@ -457,28 +450,19 @@ type StatusEditorProps = {
 };
 
 export function StatusEditor({ value, onChange }: Readonly<StatusEditorProps>): ReactElement {
-  const id = useId();
-  function toggle(token: string, checked: boolean): void {
-    const without = value.filter((current) => current !== token);
-    onChange(checked ? [...without, token] : without);
-  }
-
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="sr-only">Reading status</legend>
+    <CheckboxGroup
+      aria-label="Reading status"
+      value={[...value]}
+      onChange={onChange}
+      className="flex flex-col gap-2"
+    >
       {STATUS_OPTIONS.map((option) => (
-        <div key={option.token} className="flex items-center gap-2">
-          <Checkbox
-            id={`${id}-${option.token}`}
-            checked={value.includes(option.token)}
-            onCheckedChange={(checked) => {
-              toggle(option.token, checked === true);
-            }}
-          />
-          <Label htmlFor={`${id}-${option.token}`}>{option.label}</Label>
-        </div>
+        <Checkbox key={option.token} value={option.token}>
+          {option.label}
+        </Checkbox>
       ))}
-    </fieldset>
+    </CheckboxGroup>
   );
 }
 

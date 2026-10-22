@@ -34,7 +34,7 @@ export default defineConfig({
     ],
   },
   lint: {
-    plugins: ["typescript", "react"],
+    plugins: ["typescript", "react", "unicorn", "jsx-a11y"],
     categories: {
       correctness: "off",
     },
@@ -50,6 +50,8 @@ export default defineConfig({
       {
         files: ["frontend/**/*.{ts,tsx}"],
         rules: {
+          "unicorn/prefer-export-from": "error",
+          "jsx-a11y/label-has-associated-control": "error",
           "constructor-super": "error",
           "for-direction": "error",
           "getter-return": "error",

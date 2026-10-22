@@ -17,7 +17,7 @@ import { getBook, type BookDetail } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabPanel, TabList, Tab } from "@/components/ui/tabs";
 import { queryKeys } from "@/lib/query/keys";
 
 import { VersionsTab } from "./VersionsTab";
@@ -94,29 +94,29 @@ function BookContent({ id }: Readonly<BookContentProps>): ReactElement {
             ) : null}
           </header>
 
-          <Tabs defaultValue="overview" className="w-full">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="versions">
+          <Tabs defaultSelectedKey="overview" className="w-full">
+            <TabList aria-label="Book details">
+              <Tab id="overview">Overview</Tab>
+              <Tab id="versions">
                 Versions
                 {book.metadata_version_summary.pending > 0 ? (
                   <Badge variant="secondary" className="ml-2">
                     {book.metadata_version_summary.pending}
                   </Badge>
                 ) : null}
-              </TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
-            </TabsList>
+              </Tab>
+              <Tab id="activity">Activity</Tab>
+            </TabList>
 
-            <TabsContent value="overview">
+            <TabPanel id="overview">
               <OverviewTab book={book} />
-            </TabsContent>
-            <TabsContent value="versions">
+            </TabPanel>
+            <TabPanel id="versions">
               <VersionsTab book={book} />
-            </TabsContent>
-            <TabsContent value="activity">
+            </TabPanel>
+            <TabPanel id="activity">
               <p className="text-fg-muted text-sm">Activity timeline lands in a later sub-phase.</p>
-            </TabsContent>
+            </TabPanel>
           </Tabs>
         </section>
       </div>

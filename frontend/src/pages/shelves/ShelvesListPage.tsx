@@ -85,7 +85,7 @@ function ShelvesContent(): ReactElement {
         </div>
         <Button
           type="button"
-          onClick={() => {
+          onPress={() => {
             setCreateOpen(true);
           }}
         >
@@ -120,7 +120,7 @@ function ShelvesContent(): ReactElement {
                   variant="ghost"
                   size="icon"
                   aria-label="Rename shelf"
-                  onClick={() => {
+                  onPress={() => {
                     setRenameTarget(shelf);
                   }}
                 >
@@ -131,10 +131,10 @@ function ShelvesContent(): ReactElement {
                   variant="ghost"
                   size="icon"
                   aria-label="Delete shelf"
-                  onClick={() => {
+                  onPress={() => {
                     deleteMutation.mutate(shelf.id);
                   }}
-                  disabled={deleteMutation.isPending}
+                  isDisabled={deleteMutation.isPending}
                 >
                   <Trash2 className="size-4" aria-hidden="true" />
                 </Button>
@@ -225,10 +225,10 @@ function NameDialog({
           />
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="outline" onPress={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" isDisabled={pending}>
             Save
           </Button>
         </DialogFooter>

@@ -8,7 +8,7 @@ satisfies:
   - "REV-REQ-0002"
   - "REV-REQ-0003"
 governed-by:
-  - "REV-ADR-0041"
+  - "REV-ADR-0062"
   - "REV-ADR-0047"
 ---
 
@@ -54,8 +54,8 @@ Call sites that dispatch to those owners:
 
 - Filter params: every section of `frontend/src/components/shell/FilterRail.tsx` through `commitSlice` and
   `commitTyped`; `frontend/src/pages/library/LibraryPage.tsx` through `commitAll` (the chips row's per-chip remove),
-  `clearAll` (the clear-all affordance and the filtered empty state), `revertTypedEdits` (the filter drawer's Escape and
-  cancel path), and `setView`; the page toolbar's search input through `useQuickSearchFilter()`.
+  `clearAll` (the clear-all affordance and the filtered empty state), and `setView`; the page toolbar's search input
+  through `useQuickSearchFilter()`.
 - `cursor`: cleared inside every filter-slice commit and quick-search write, because a changed condition invalidates the
   keyset boundary the cursor names.
 - `view`: `setView` in `LibraryPage.tsx`, from the view switcher and the table-chunk-load-failure fallback.
@@ -157,8 +157,9 @@ the census resolves to; every editing surface is a caller of one or the other, n
 Before the hold settles, `useLibraryFilters().filters` reflects the _pending_ `nuqs` values (`toSearch(values)`), not
 the applied URL. Range editors additionally hold incomplete input text locally so typing a multi-digit bound never
 publishes an inverted pair. Date inputs use the same endpoint constraints and retain the date slice's immediate commit.
-External value changes reset local input text; clearing a section cancels its queued URL write, and closing the drawer
-with Escape abandons its drafts through the existing owner.
+External value changes reset local input text; clearing a section cancels its queued URL write. Escape, the close button
+and outside dismissal close the drawer while valid edits settle through the existing owner. Incomplete text stays local
+to the mounted editor and follows its blur and Enter validation.
 
 **A sort change**, for example a ctrl-click on the "Pages" column header in the table view:
 

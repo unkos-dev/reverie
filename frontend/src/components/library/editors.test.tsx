@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactElement } from "react";
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -211,7 +211,7 @@ describe("RangeFilterEditor", () => {
     expect(screen.getByLabelText("Min")).toHaveValue(null);
   });
 
-  test("Escape resets the local draft and still bubbles to the parent", () => {
+  test("Escape leaves an incomplete draft for blur validation and bubbles to the parent", () => {
     const parentKeyDown = vi.fn();
     render(
       <div onKeyDown={parentKeyDown}>
@@ -223,8 +223,10 @@ describe("RangeFilterEditor", () => {
     fireEvent.change(min, { target: { value: "12.5" } });
     fireEvent.keyDown(min, { key: "Escape" });
 
-    expect(min).toHaveValue(300);
+    expect(min).toHaveValue(12.5);
     expect(parentKeyDown).toHaveBeenCalled();
+    fireEvent.blur(min);
+    expect(min).toHaveValue(300);
   });
 
   test("checking `has no value` reports empty and disables the inputs", async () => {
@@ -321,19 +323,26 @@ describe("editor id scoping", () => {
     expect(secondMinLabel.getAttribute("for")).toBe(secondMin.id);
   });
 
-  test("two StatusEditor instances render disjoint checkbox ids", () => {
+  test("two named status groups keep their native labels and changes independent", async () => {
+    const firstChange = vi.fn();
+    const secondChange = vi.fn();
     render(
       <>
-        <StatusEditor value={[]} onChange={vi.fn()} />
-        <StatusEditor value={[]} onChange={vi.fn()} />
+        <StatusEditor value={[]} onChange={firstChange} />
+        <StatusEditor value={["reading"]} onChange={secondChange} />
       </>,
     );
-
-    const [firstUnread, secondUnread] = screen.getAllByLabelText("Unread");
-    const [firstUnreadLabel, secondUnreadLabel] = screen.getAllByText("Unread");
-    expect(firstUnread.id).not.toBe(secondUnread.id);
-    expect(firstUnreadLabel.getAttribute("for")).toBe(firstUnread.id);
-    expect(secondUnreadLabel.getAttribute("for")).toBe(secondUnread.id);
+    const user = userEvent.setup();
+    const [first, second] = screen.getAllByRole("group", { name: "Reading status" });
+    await user.click(within(first).getByText("Unread"));
+    expect(firstChange).toHaveBeenCalledExactlyOnceWith(["unread"]);
+    expect(secondChange).not.toHaveBeenCalled();
+    const reading = within(second).getByRole("checkbox", { name: "Reading" });
+    reading.focus();
+    await user.keyboard(" ");
+    expect(secondChange).toHaveBeenCalledExactlyOnceWith([]);
+    expect(firstChange).toHaveBeenCalledTimes(1);
+    expect(reading).toHaveFocus();
   });
 });
 

@@ -6,7 +6,6 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import type { ThemePreference } from "@/lib/theme/cookie";
@@ -38,11 +37,9 @@ export function ThemeSwitcher(): ReactElement {
   const { preference, setPreference } = useTheme();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger>
-        <Button variant="outline" size="sm" aria-label="Theme preference">
-          Theme: {preference}
-        </Button>
-      </DropdownMenuTrigger>
+      <Button variant="outline" size="sm" aria-label="Theme preference">
+        Theme: {preference}
+      </Button>
       <DropdownMenuContent>
         <DropdownMenuRadioGroup
           selectionMode="single"

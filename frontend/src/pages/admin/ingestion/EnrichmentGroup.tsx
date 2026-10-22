@@ -84,10 +84,8 @@ function RetryControl({ item }: Readonly<{ item: FailureItem }>): ReactElement {
         type="button"
         variant="outline"
         size="sm"
-        aria-disabled={mutation.isPending}
-        className={mutation.isPending ? "pointer-events-none opacity-50" : undefined}
-        onClick={() => {
-          if (mutation.isPending) return;
+        isPending={mutation.isPending}
+        onPress={() => {
           mutation.mutate(attemptKey(item));
         }}
       >

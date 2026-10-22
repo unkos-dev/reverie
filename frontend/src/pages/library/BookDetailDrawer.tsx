@@ -16,13 +16,8 @@ import { Link } from "react-router";
 import { toast } from "sonner";
 
 import { addShelfItem, getBook, listShelves, type BookDetail, type Shelf } from "@/api";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { queryKeys } from "@/lib/query/keys";
@@ -97,7 +92,7 @@ function DrawerBody({ bookId }: Readonly<{ bookId: string }>): ReactElement {
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => {
+          onPress={() => {
             void refetch();
           }}
         >
@@ -166,12 +161,10 @@ function DrawerBody({ bookId }: Readonly<{ bookId: string }>): ReactElement {
           </p>
         ) : null}
         <div className="mt-6 grid gap-2">
-          <Button asChild variant="outline">
-            <Link to={`/b/${book.id}`}>
-              <ExternalLink className="size-4" aria-hidden="true" />
-              View full record
-            </Link>
-          </Button>
+          <Link to={`/b/${book.id}`} className={buttonVariants({ variant: "outline" })}>
+            <ExternalLink className="size-4" aria-hidden="true" />
+            View full record
+          </Link>
           <AddToShelf bookId={book.id} bookTitle={book.title} />
         </div>
       </div>
@@ -235,16 +228,14 @@ function AddToShelf({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger>
-        <Button type="button" variant="outline" disabled={addMutation.isPending}>
-          {addMutation.isPending ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <FolderPlus className="size-4" aria-hidden="true" />
-          )}
-          Add to shelf
-        </Button>
-      </DropdownMenuTrigger>
+      <Button type="button" variant="outline" isDisabled={addMutation.isPending}>
+        {addMutation.isPending ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <FolderPlus className="size-4" aria-hidden="true" />
+        )}
+        Add to shelf
+      </Button>
       <DropdownMenuContent placement="bottom start">
         {shelves === undefined || shelves.length === 0 ? (
           <DropdownMenuItem isDisabled>

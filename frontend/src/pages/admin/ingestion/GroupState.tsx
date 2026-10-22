@@ -1,3 +1,4 @@
+import { useFocusManager } from "react-aria/FocusScope";
 import { type ReactElement } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -15,18 +16,11 @@ function GroupLoading({ label }: Readonly<{ label: string }>): ReactElement {
   );
 }
 
-/** The failed state unmounts as soon as a retry starts, so focus moves to the group header first. */
-function focusGroupHeader(from: HTMLElement): void {
-  from
-    .closest("[data-slot=collapsible]")
-    ?.querySelector<HTMLElement>("[data-slot=collapsible-trigger]")
-    ?.focus();
-}
-
 function GroupFailed({
   message,
   onRetry,
 }: Readonly<{ message: string; onRetry: () => void }>): ReactElement {
+  const focusManager = useFocusManager();
   return (
     <div className="text-fg-muted flex items-center justify-between gap-4 px-4 py-2 pl-12 text-[13px]">
       <span role="alert">{message}</span>
@@ -34,8 +28,8 @@ function GroupFailed({
         type="button"
         variant="outline"
         size="sm"
-        onClick={(event) => {
-          focusGroupHeader(event.currentTarget);
+        onPress={() => {
+          focusManager?.focusFirst({ tabbable: true });
           onRetry();
         }}
       >

@@ -46,8 +46,8 @@ Counts on this page use the viewer's locale digit grouping. Times are shown in t
 
 - A primary button, "Scan ingestion folder", with the hint "Checks every file in the folder." beneath it. It is the only
   primary button on the page.
-- While a request is pending the button reads "Scanning", shows a spinner and is marked `aria-disabled` so it can still
-  take keyboard focus. A second press sends nothing.
+- While a request is pending the button reads "Scanning", shows a spinner and uses native `isPending` to retain keyboard
+  focus and suppress repeat activation.
 - The button stays enabled after a successful scan. It is disabled for the rest of the page session after a 403.
 
 ## Imports paused notice
@@ -192,7 +192,8 @@ fixed-width type capitals, and the file count ("2 files", "1 file"). The ignored
 bold. Rejected tags are bold.
 
 **Initial expansion.** On the first load of the counts, the first attention group is expanded and the others are
-collapsed. The page opens on real files. Later refreshes do not change what the user has opened or closed.
+collapsed. Native Disclosure owns expansion. Query-owning panel children mount only while expanded; header actions and
+feedback remain mounted. The page opens on real files. Later refreshes do not change what the user has opened or closed.
 
 **Rows.** An expanded group is a table named "Files: {group heading}". Each row has:
 
@@ -208,10 +209,11 @@ collapsed. The page opens on real files. Later refreshes do not change what the 
 **Footer.** Each expanded group ends with "Showing {n} of {total}" on the left and, when more rows exist, an outline
 "Show more" on the right. Pages hold 25 rows. The next page is requested by its own cursor and the loaded rows stay.
 
-- While a page loads the button reads "Loading more", shows a spinner and is marked `aria-disabled`, so it stays in the
-  tab order.
+- While a page loads the button reads "Loading more", shows a spinner and uses native `isPending`, so it stays in the
+  tab order and rejects repeat activation.
 - After a page loads, a polite status announces "Loaded {n} more files" ("1 more file"). Focus stays on "Show more"
-  while more rows remain. When the last page loads, focus moves to the count line instead of being dropped.
+  while more rows remain. When the last page loads, focus moves to the count line if removal would otherwise lose it.
+  Settlement never takes focus back from another control the user has reached.
 - If a later page fails, the footer shows the alert "Could not load these files." and an outline "Try again". Loaded
   rows stay. Focus moves to "Try again", and after a successful retry to the count line.
 
@@ -221,7 +223,7 @@ collapsed. The page opens on real files. Later refreshes do not change what the 
   "Loading files that need attention" for screen readers. Skeleton motion stops under reduced motion.
 - **First page loading** (an expanded group): a busy skeleton with the status text "Loading files".
 - **First page failed:** the alert "Could not load these files." and "Try again". Pressing it moves focus to the group
-  header.
+  header through the group's native focus manager. Tab can leave the group.
 - **Counts failed.** "Could not load this list." / "Your files are untouched. Try again." with an outline "Try again".
   There is no partial fallback, because groups cannot be drawn without counts.
 - **Empty.** No attention group has files. The head has no total and the intro reads "Files Reverie could not import,
@@ -298,7 +300,7 @@ The row also carries two times, described under "Smaller differences from the pa
 
 ### Retrying one book
 
-- Pressing "Try again" changes the button to "Queuing" with a spinner, marked `aria-disabled`. A second press sends
+- Pressing "Try again" changes the button to "Queuing" with a spinner and native `isPending`. A second press sends
   nothing.
 - On success the button is replaced by the status "Queued. It leaves this list once it runs." Focus moves to it when
   focus would otherwise be lost.
@@ -375,16 +377,18 @@ once, and refreshes them on window focus only, because this page's poll owner is
 - **Provider wait.** Bulk enrichment retry preserves the earliest retry time requested by the source. Queuing a group
   does not skip that wait.
 - **Label.** "Retry all {n}", where {n} is the group's count. A group of one reads "Retry 1 file" or "Retry 1 book".
-- **Pending.** The button reads "Queuing {n}" and is marked `aria-disabled`.
+- **Pending.** The button reads "Queuing {n}" and uses native `isPending`, retaining focus and suppressing repeat
+  activation even if refreshed counts reach zero before the request settles.
 - **Feedback.** A line beneath the header, visible when the group is collapsed and kept when the group's count drops:
-  - "Queued {n}" when the whole group was queued. The button then reads "Queued" and is inactive.
+  - "Queued {n}" when the whole group was queued. The button then reads "Queued" and uses native `isDisabled`.
   - "Queued {n}, {m} remaining" when a limit on one press left some behind. The button then reads "Retry the rest {m}".
   - While ingestion is paused, file feedback adds "Ingestion is paused, so they will run once it resumes. They return
     here if they fail again."
 - **Loaded pages.** A successful group retry discards that group's loaded continuation pages and cursors. Page one stays
   mounted and follows its normal refresh policy. A later Show more fetches its page again, even if the cursor is reused.
   Failed retries preserve loaded pages. The header, retry control and receipt stay mounted.
-- **Nothing to retry.** "Nothing to retry. This group changed after the page loaded."
+- **Nothing to retry.** "Nothing to retry. This group changed after the page loaded." With no remaining items, the
+  button uses native `isDisabled`; feedback remains visible.
 - **Failure.** The header button reads "Try again". The alert for files is:
 
   "Could not confirm whether these files were queued. Refresh the group before trying again."
@@ -392,8 +396,8 @@ once, and refreshes them on window focus only, because this page's poll owner is
   For books:
 
   "Could not confirm whether these books were queued. Refresh the group before trying again."
-- **Forbidden (403).** "This account cannot retry files. Sign in as an administrator." The button is disabled for the
-  rest of the page session.
+- **Forbidden (403).** "This account cannot retry files. Sign in as an administrator." The button uses native
+  `isDisabled` for the rest of the page session; the feedback remains visible.
 - **Session ended (401).** "Your session has ended. Sign in again to retry files."
 - The group and its count are not refreshed at the moment of the press, so the feedback stays visible. They update on
   the next refresh.
@@ -421,7 +425,8 @@ When a part is built, it moves into the sections above.
 - Tags carry words ("Rejected", "Needs a change", "Ignored"). Nothing is carried by colour alone, and no danger colour
   appears on this page.
 - After "Show more", focus stays on the button while more rows remain. After "Try again" on an enrichment row, focus
-  stays in the row.
+  stays in the row unless the user has moved elsewhere. Disabled terminal and forbidden actions leave the tab order;
+  their feedback remains readable.
 - One global focus ring applies to every control, in both themes.
 - Under reduced motion the skeleton pulse, the spinner, the chevron turn and the progress fill transition stop.
 - One primary button is on the page: "Scan ingestion folder". On the library page's empty state, "Review these files" is

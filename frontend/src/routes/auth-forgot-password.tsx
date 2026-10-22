@@ -116,7 +116,7 @@ export function Component(): ReactElement {
             />
           </Field>
           {error !== null ? <FieldError>{error}</FieldError> : null}
-          <Button type="submit" disabled={requestMutation.isPending}>
+          <Button type="submit" isDisabled={requestMutation.isPending}>
             Send recovery PIN
           </Button>
         </form>
@@ -152,7 +152,7 @@ export function Component(): ReactElement {
           <PasswordPolicyHint policy={policy} failed={policyError} />
         </Field>
         {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" disabled={resetMutation.isPending || !ready}>
+        <Button type="submit" isDisabled={resetMutation.isPending || !ready}>
           Reset password
         </Button>
       </form>

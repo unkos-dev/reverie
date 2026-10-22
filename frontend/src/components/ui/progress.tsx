@@ -1,28 +1,31 @@
-import * as React from "react"
-import { Progress as ProgressPrimitive } from "radix-ui"
+import type * as React from "react"
+import { ProgressBar, composeRenderProps } from "react-aria-components"
 
 import { cn } from "@/lib/utils"
 
 function Progress({
   className,
-  value,
   ...props
-}: React.ComponentProps<typeof ProgressPrimitive.Root>) {
+}: Omit<React.ComponentProps<typeof ProgressBar>, "children">): React.ReactElement {
   return (
-    <ProgressPrimitive.Root
+    <ProgressBar
       data-slot="progress"
-      className={cn(
-        "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-muted",
-        className
+      className={composeRenderProps(className, (className) =>
+        cn(
+          "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-muted",
+          className
+        )
       )}
       {...props}
     >
-      <ProgressPrimitive.Indicator
-        data-slot="progress-indicator"
-        className="size-full flex-1 bg-primary transition-all"
-        style={{ transform: `translateX(-${String(100 - (value ?? 0))}%)` }}
-      />
-    </ProgressPrimitive.Root>
+      {({ percentage }) => (
+        <div
+          data-slot="progress-indicator"
+          className="size-full flex-1 bg-primary transition-all"
+          style={{ transform: `translateX(-${String(100 - (percentage ?? 0))}%)` }}
+        />
+      )}
+    </ProgressBar>
   )
 }
 

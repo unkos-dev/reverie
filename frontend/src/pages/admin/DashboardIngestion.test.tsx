@@ -597,6 +597,32 @@ describe("Needs attention", () => {
     });
   });
 
+  test("finishing a page does not steal focus after the user leaves its action", async () => {
+    let release: (value: {
+      items: ReturnType<typeof inputItem>[];
+      next_cursor: null;
+    }) => void = () => {};
+    vi.mocked(getInputCounts).mockResolvedValue(
+      countsFixture({ by_reason: [{ reason: "damaged", count: 3 }], attention_total: 3 }),
+    );
+    vi.mocked(listInputs).mockImplementation(({ cursor }) =>
+      cursor === undefined
+        ? Promise.resolve({ items: [inputItem(1), inputItem(2)], next_cursor: "cur-1" })
+        : new Promise((resolve) => {
+            release = resolve;
+          }),
+    );
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
+    const header = screen.getByRole("button", { name: /The file is damaged/ });
+    header.focus();
+    act(() => {
+      release({ items: [inputItem(3)], next_cursor: null });
+    });
+    await screen.findByText("Showing 3 of 3");
+    expect(header).toHaveFocus();
+  });
+
   test("Show more keeps focus on its button while more pages remain", async () => {
     vi.mocked(getInputCounts).mockResolvedValue(
       countsFixture({ by_reason: [{ reason: "damaged", count: 5 }], attention_total: 5 }),
@@ -658,7 +684,11 @@ describe("Needs attention", () => {
     const more = await screen.findByRole("button", { name: "Show more" });
     await userEvent.click(more);
     const loading = await screen.findByRole("button", { name: "Loading more" });
-    expect(loading).toHaveAttribute("aria-disabled", "true");
+    expect(loading).toHaveAttribute("data-pending");
+    expect(loading).toHaveFocus();
+    await userEvent.keyboard("{Enter} ");
+    await userEvent.click(loading);
+    expect(listInputs).toHaveBeenCalledTimes(2);
     act(() => {
       resolveMore({ items: [inputItem(3)], next_cursor: null });
     });
@@ -685,7 +715,9 @@ describe("Needs attention", () => {
     const button = await screen.findByRole("button", { name: "Scan ingestion folder" });
     await userEvent.click(button);
     const pending = await screen.findByRole("button", { name: "Scanning" });
-    pending.focus();
+    expect(pending).toHaveAttribute("data-pending");
+    expect(pending).toHaveFocus();
+    await userEvent.click(pending);
     await userEvent.keyboard("{Enter}");
     await userEvent.keyboard(" ");
     expect(scanIngestion).toHaveBeenCalledTimes(1);
@@ -727,6 +759,57 @@ describe("Needs attention", () => {
     await userEvent.click(within(card).getByRole("button", { name: "Try again" }));
     await screen.findByText("Marlow - The Salt Archive.epub");
     expect(within(card).getByRole("button", { name: /The file is damaged/ })).toHaveFocus();
+  });
+
+  test("failed retry focuses only its own group and Tab can leave a group", async () => {
+    vi.mocked(listInputs).mockImplementation(({ reason }) =>
+      reason === "invalid_structure"
+        ? Promise.reject(new ApiError(500, null, "Internal", ""))
+        : Promise.resolve(DAMAGED_PAGE),
+    );
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByText("Marlow - The Salt Archive.epub");
+    const first = screen.getByRole("button", { name: /The file is damaged/ });
+    const second = screen.getByRole("button", { name: /Not a valid EPUB.*Try another copy/ });
+    await user.click(second);
+    const panel = screen.getByRole("group", { name: /Not a valid EPUB.*Try another copy/ });
+    const retry = await within(panel).findByRole("button", { name: "Try again" });
+    vi.mocked(listInputs).mockResolvedValue({ items: [inputItem(50)], next_cursor: null });
+    retry.focus();
+    await user.keyboard("{Enter}");
+    await within(panel).findByText("Book 50.epub");
+    expect(second).toHaveFocus();
+    expect(first).not.toHaveFocus();
+    const last = screen.getByRole("button", { name: /Ignored: format not accepted/ });
+    const lastGroup = document.getElementById(
+      last.getAttribute("aria-controls") ?? "",
+    )?.parentElement;
+    if (lastGroup === undefined || lastGroup === null) throw new Error("group missing");
+    last.focus();
+    await user.tab();
+    expect(lastGroup.contains(document.activeElement)).toBe(false);
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+  });
+
+  test("count refresh retains the user's group expansion", async () => {
+    const client = renderPage();
+    const user = userEvent.setup();
+    const first = await screen.findByRole("button", { name: /The file is damaged/ });
+    const second = screen.getByRole("button", { name: /Not a valid EPUB.*Try another copy/ });
+    await user.click(first);
+    await user.click(second);
+    await screen.findByText("Book 50.epub");
+    act(() => {
+      client.setQueryData(queryKeys.ingestion.counts(), countsFixture());
+    });
+    expect(first).toHaveAttribute("aria-expanded", "false");
+    expect(second).toHaveAttribute("aria-expanded", "true");
+    expect(vi.mocked(listInputs).mock.calls.map(([p]) => p.reason)).toEqual([
+      "damaged",
+      "invalid_structure",
+    ]);
   });
 
   test("the ignored group is muted, counted on its own and requests format_not_accepted", async () => {
@@ -929,10 +1012,12 @@ describe("Enrichment problems", () => {
     const row = (await screen.findByText("Book title 1")).closest("tr");
     if (row === null) throw new Error("row missing");
     await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
-    expect(within(row).getByRole("button", { name: "Queuing" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    const pending = within(row).getByRole("button", { name: "Queuing" });
+    expect(pending).toHaveAttribute("data-pending");
+    expect(pending).toHaveFocus();
+    await userEvent.keyboard("{Enter} ");
+    await userEvent.click(pending);
+    expect(triggerEnrichment).toHaveBeenCalledOnce();
     act(() => {
       finish();
     });
@@ -993,6 +1078,26 @@ describe("Enrichment problems", () => {
     await waitFor(() => {
       expect(queued).toHaveFocus();
     });
+  });
+
+  test("a queued receipt does not steal focus after the user leaves retry", async () => {
+    let release: () => void = () => {};
+    vi.mocked(triggerEnrichment).mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderPage();
+    const row = (await screen.findByText("Book title 1")).closest("tr");
+    if (row === null) throw new Error("row missing");
+    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
+    const other = screen.getByRole("button", { name: /The file is damaged/ });
+    other.focus();
+    act(() => {
+      release();
+    });
+    await within(row).findByText("Queued. It leaves this list once it runs.");
+    expect(other).toHaveFocus();
   });
 
   test("a second press on a queuing retry sends no second request", async () => {
@@ -1372,16 +1477,30 @@ describe("polling", () => {
 describe("bulk retry group controls", () => {
   test("bulk retry only exposes eligible input actions as siblings and sends one pending command", async () => {
     vi.mocked(retryInputs).mockReturnValue(new Promise(() => {}));
-    renderPage();
+    const client = renderPage();
     const card = await screen.findByRole("region", { name: /Needs attention/ });
     const buttons = await within(card).findAllByRole("button", { name: /Retry/ });
     expect(buttons.map((button) => button.textContent)).toEqual(["Retry all 2", "Retry 1 file"]);
     const action = buttons[0];
     expect(action).toBeDefined();
     expect(action.parentElement?.querySelector("button[aria-expanded]")).toBeInTheDocument();
-    action.focus();
-    fireEvent.click(action);
-    fireEvent.click(action);
+    await userEvent.click(action);
+    expect(action).toHaveFocus();
+    expect(action).toHaveAttribute("data-pending");
+    act(() => {
+      client.setQueryData(
+        queryKeys.ingestion.counts(),
+        countsFixture({ by_reason: [], attention_total: 0 }),
+      );
+    });
+    await waitFor(() => {
+      expect(within(card).getByRole("button", { name: /Needs a change/ })).toHaveTextContent(
+        "0 files",
+      );
+    });
+    expect(action).not.toBeDisabled();
+    await userEvent.keyboard("{Enter} ");
+    await userEvent.click(action);
     await waitFor(() => {
       expect(retryInputs).toHaveBeenCalledExactlyOnceWith("needs_change");
     });
@@ -1419,8 +1538,7 @@ describe("bulk retry group controls", () => {
     });
     expect(screen.getByText(/Queued 2\. Ingestion is paused/)).toBeInTheDocument();
     expect(screen.getByText(/Queued 1\. Ingestion is paused/)).toBeInTheDocument();
-    expect(action).toHaveFocus();
-    expect(action).toHaveAttribute("aria-disabled", "true");
+    expect(action).toBeDisabled();
     vi.mocked(scanIngestion).mockResolvedValue({
       queued: 0,
       deferred: 0,
@@ -1467,7 +1585,7 @@ describe("bulk retry group controls", () => {
       expect(toggles[0]).toHaveTextContent("Needs a change");
       expect(toggles[1]).toHaveTextContent("Ignored");
     });
-    expect(action).toHaveFocus();
+    expect(action).toBeDisabled();
   });
 
   test.each(["files", "books"])(
@@ -1514,7 +1632,7 @@ describe("bulk retry group controls", () => {
     expect(await screen.findByText("Queued 500, 1 remaining")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry the rest 1" }));
     expect(await screen.findByText("Queued 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Queued" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Queued" })).toBeDisabled();
     expect(retryInputs).toHaveBeenCalledTimes(2);
   });
 
@@ -1541,7 +1659,7 @@ describe("bulk retry group controls", () => {
       );
       if (status === 403) {
         fireEvent.click(retry);
-        expect(retry).toHaveAttribute("aria-disabled", "true");
+        expect(retry).toBeDisabled();
       }
       expect(retryInputs).toHaveBeenCalledOnce();
       expect(screen.queryByText(/Nothing was changed/)).not.toBeInTheDocument();
@@ -1560,7 +1678,7 @@ describe("bulk retry group controls", () => {
       client.setQueryData(queryKeys.enrichmentFailures.counts(), { total: 0, by_failure: [] });
     });
     expect(within(card).getByText("Queued 3")).toBeInTheDocument();
-    expect(action).toHaveAttribute("aria-disabled", "true");
+    expect(action).toBeDisabled();
     act(() => {
       client.setQueryData(queryKeys.enrichmentFailures.counts(), failureCountsFixture());
     });
@@ -1768,7 +1886,7 @@ describe("bulk retry retained states", () => {
     expect(retryEnrichmentFailures).toHaveBeenCalledOnce();
     if (status === 403) {
       const button = within(card).getAllByRole("button", { name: "Try again" })[0];
-      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(button).toBeDisabled();
       fireEvent.click(button);
       expect(retryEnrichmentFailures).toHaveBeenCalledOnce();
     }
@@ -1782,10 +1900,7 @@ describe("bulk retry retained states", () => {
     expect(
       await within(card).findByText("Nothing to retry. This group changed after the page loaded."),
     ).toBeInTheDocument();
-    expect(within(card).getByRole("button", { name: "Queued" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(within(card).getByRole("button", { name: "Queued" })).toBeDisabled();
     expect(listInputs).not.toHaveBeenCalledWith(
       expect.objectContaining({ reason: "needs_change" }),
       expect.anything(),

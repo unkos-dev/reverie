@@ -50,13 +50,13 @@ export class TableChunkBoundary extends Component<Props, State> {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => {
+            onPress={() => {
               this.setState({ failed: false });
             }}
           >
             Try again
           </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={this.props.onFallbackToGrid}>
+          <Button type="button" variant="ghost" size="sm" onPress={this.props.onFallbackToGrid}>
             Switch to grid view
           </Button>
         </div>

@@ -48,7 +48,6 @@ function DropdownMenuSeparator(props: ComponentProps<typeof Separator>): ReactEl
 
 export {
   MenuTrigger as DropdownMenu,
-  Pressable as DropdownMenuTrigger,
   MenuSection as DropdownMenuGroup,
   MenuSection as DropdownMenuRadioGroup,
   Header as DropdownMenuLabel,

@@ -50,7 +50,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -178,8 +177,8 @@ function UsersPage(): ReactElement {
             type="button"
             variant="outline"
             size="sm"
-            disabled={setupFetching}
-            onClick={() => {
+            isDisabled={setupFetching}
+            onPress={() => {
               void refetchSetup();
             }}
           >
@@ -323,8 +322,8 @@ function UserRow({
             <Button
               variant="outline"
               size="sm"
-              disabled={cancel.isPending}
-              onClick={() => {
+              isDisabled={cancel.isPending}
+              onPress={() => {
                 cancel.mutate();
               }}
             >
@@ -335,7 +334,7 @@ function UserRow({
             <Button
               variant={user.disabled ? "outline" : "destructive"}
               size="sm"
-              onClick={() => {
+              onPress={() => {
                 onStatusToggle(user.id, !user.disabled);
               }}
             >
@@ -383,13 +382,13 @@ function LinkResultDialog({
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => {
+            onPress={() => {
               void copyLink();
             }}
           >
             Copy link
           </Button>
-          <Button onClick={onDone}>Done</Button>
+          <Button onPress={onDone}>Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -438,9 +437,7 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
   return (
     <>
       <Dialog isOpen={open} onOpenChange={handleOpenChange}>
-        <DialogTrigger>
-          <Button>Create user</Button>
-        </DialogTrigger>
+        <Button>Create user</Button>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create user</DialogTitle>
@@ -485,7 +482,7 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
             {error !== null ? <FieldError>{error}</FieldError> : null}
             <DialogFooter>
               <DialogClose type="button">Cancel</DialogClose>
-              <Button type="submit" disabled={mutation.isPending}>
+              <Button type="submit" isDisabled={mutation.isPending}>
                 Create user
               </Button>
             </DialogFooter>
@@ -537,11 +534,9 @@ function ResetPasswordDialog({
           if (!next) setError(null);
         }}
       >
-        <DialogTrigger>
-          <Button variant="outline" size="sm">
-            Reset password
-          </Button>
-        </DialogTrigger>
+        <Button variant="outline" size="sm">
+          Reset password
+        </Button>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reset password for {user.display_name}?</DialogTitle>
@@ -555,8 +550,8 @@ function ResetPasswordDialog({
           <DialogFooter>
             <DialogClose type="button">Cancel</DialogClose>
             <Button
-              disabled={mutation.isPending}
-              onClick={() => {
+              isDisabled={mutation.isPending}
+              onPress={() => {
                 setError(null);
                 mutation.mutate();
               }}

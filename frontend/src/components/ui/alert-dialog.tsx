@@ -62,7 +62,6 @@ function AlertDialogCancel({
 
 export {
   Dialog as AlertDialog,
-  DialogTrigger as AlertDialogTrigger,
   DialogHeader as AlertDialogHeader,
   DialogFooter as AlertDialogFooter,
   DialogTitle as AlertDialogTitle,

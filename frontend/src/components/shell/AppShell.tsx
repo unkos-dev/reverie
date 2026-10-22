@@ -17,6 +17,7 @@
  * The right filter rail is page-owned (`BrowseLayout`), NOT shell
  * chrome (spec S2) — the shell knows nothing about it.
  */
+import { Button } from "react-aria-components";
 import { Menu } from "lucide-react";
 import { useState, type ReactElement, type ReactNode } from "react";
 import { useMatches } from "react-router";
@@ -28,7 +29,6 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from "@/components/ui/sheet";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 
@@ -88,15 +88,13 @@ function DrawerSlot(): ReactElement {
   return (
     <div className="flex items-center gap-3 lg:hidden">
       <Sheet isOpen={open} onOpenChange={setOpen}>
-        <SheetTrigger>
-          <button
-            type="button"
-            className="hover:bg-surface focus-visible:ring-accent flex size-9 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2"
-          >
-            <Menu className="size-5" aria-hidden="true" />
-            <span className="sr-only">Open navigation</span>
-          </button>
-        </SheetTrigger>
+        <Button
+          type="button"
+          className="data-hovered:bg-surface data-focus-visible:ring-accent flex size-9 items-center justify-center rounded-md transition-colors data-focus-visible:outline-none data-focus-visible:ring-2"
+        >
+          <Menu className="size-5" aria-hidden="true" />
+          <span className="sr-only">Open navigation</span>
+        </Button>
         <SheetContent
           side="left"
           className="w-[260px] max-w-[80vw] gap-0 p-0"

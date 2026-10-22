@@ -155,7 +155,7 @@ export function GridShortcutsTrigger({
       variant="ghost"
       size="icon-sm"
       aria-label="Keyboard shortcuts"
-      onClick={() => {
+      onPress={() => {
         onOpenChange(true);
       }}
     >

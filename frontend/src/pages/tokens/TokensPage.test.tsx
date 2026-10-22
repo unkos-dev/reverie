@@ -240,13 +240,22 @@ describe("TokensPage", () => {
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(await screen.findByText("Token created")).toBeInTheDocument();
-    expect(
-      screen.getByDisplayValue("rvpat_11111111-1111-4111-8111-111111111111.secretvalue"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByDisplayValue("rvpat_11111111-1111-4111-8111-111111111111"),
-    ).toBeInTheDocument();
-    expect(screen.getByDisplayValue("secretvalue")).toBeInTheDocument();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    for (const [label, value] of [
+      ["Bearer token", "rvpat_11111111-1111-4111-8111-111111111111.secretvalue"],
+      ["Username", "rvpat_11111111-1111-4111-8111-111111111111"],
+      ["Password", "secretvalue"],
+    ]) {
+      const input = screen.getByRole("textbox", { name: label });
+      expect(input).toHaveValue(value);
+      expect(input).toHaveAttribute("readonly");
+      await user.click(screen.getByText(label, { selector: "label" }));
+      expect(input).toHaveFocus();
+      await user.keyboard("changed");
+      expect(input).toHaveValue(value);
+      await user.click(screen.getByRole("button", { name: `Copy ${label}` }));
+      expect(writeText).toHaveBeenLastCalledWith(value);
+    }
   });
 
   test("omits the OPDS split when the credential has no separator", async () => {
@@ -266,7 +275,9 @@ describe("TokensPage", () => {
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(await screen.findByText("Token created")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("malformedcredentialnodot")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Bearer token" })).toHaveValue(
+      "malformedcredentialnodot",
+    );
     expect(screen.queryByText("Username")).not.toBeInTheDocument();
     expect(screen.queryByText("Password")).not.toBeInTheDocument();
   });

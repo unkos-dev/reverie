@@ -258,7 +258,7 @@ function drawerSection(drawer: HTMLElement, title: string): HTMLElement {
     .map((node) => node.closest("section"))
     .find((candidate): candidate is HTMLElement => candidate !== null);
   if (section === undefined) throw new Error(`no drawer section titled ${title}`);
-  const disclosure = section.querySelector("button[aria-expanded='false']");
+  const disclosure = section.querySelector("button[slot='trigger'][aria-expanded='false']");
   if (disclosure !== null) fireEvent.click(disclosure);
   return section;
 }
@@ -947,7 +947,6 @@ describe("LibraryPage", () => {
       await waitFor(() => {
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       });
-      // Radix restores focus asynchronously on close.
       await waitFor(() => {
         expect(trigger).toHaveFocus();
       });
@@ -1186,6 +1185,7 @@ describe("LibraryPage", () => {
         nextCursor: null,
         initialEntries: ["/library?pages_gte=300&pages_lte=900"],
         cacheParams: { pages_gte: 300, pages_lte: 900 },
+        extraCacheParams: [{ pages_gte: 300, pages_lte: 600 }],
       });
       const user = userEvent.setup();
       const opener = await screen.findByRole("button", { name: /^Filters/ });
@@ -1193,104 +1193,113 @@ describe("LibraryPage", () => {
       const drawer = await screen.findByRole("dialog");
       const pages = drawerSection(drawer, "Pages");
       const upper = within(pages).getByRole("spinbutton", { name: "Max" });
-      fireEvent.change(upper, { target: { value: "9" } });
+      fireEvent.change(upper, { target: { value: "600" } });
       const authors = drawerSection(drawer, "Authors");
       await user.click(within(authors).getByRole("button", { name: /Show authors .*suggestions/ }));
       expect(await screen.findByRole("listbox")).toBeInTheDocument();
       await user.keyboard("{Escape}");
       await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
       expect(drawer).toBeInTheDocument();
-      expect(upper).toHaveValue(9);
+      expect(upper).toHaveValue(600);
       await waitFor(() =>
         expect(within(drawer).getByRole("combobox", { name: /Add authors/ })).toHaveFocus(),
       );
       await user.keyboard("{Escape}");
       await waitFor(() => expect(drawer).not.toBeInTheDocument());
       await waitFor(() => expect(opener).toHaveFocus());
-      expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("900");
+      await waitFor(() => {
+        expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("600");
+      });
     });
 
-    test("Escape abandons a local range draft without changing the applied bounds", async () => {
-      const { client } = renderLibrary({
+    test("closing Refine blurs and clamps an out-of-bounds range draft", async () => {
+      renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
         initialEntries: ["/library?pages_gte=300&pages_lte=900"],
         cacheParams: { pages_gte: 300, pages_lte: 900 },
+        extraCacheParams: [{ pages_gte: 300, pages_lte: 300 }],
       });
-      await screen.findByRole("heading", { name: "Library" });
       const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: /^Filters/ }));
-      const pages = drawerSection(await screen.findByRole("dialog"), "Pages");
-      const upper = within(pages).getByRole("spinbutton", { name: "Max" });
+      const opener = await screen.findByRole("button", { name: /^Filters/ });
+      await user.click(opener);
+      const drawer = await screen.findByRole("dialog");
+      const upper = within(drawerSection(drawer, "Pages")).getByRole("spinbutton", { name: "Max" });
       await user.click(upper);
       fireEvent.change(upper, { target: { value: "9" } });
-      await user.keyboard("{Escape}");
-      await waitFor(() => {
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-      });
-      expect(new URLSearchParams(window.location.search).get("pages_gte")).toBe("300");
       expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("900");
-      expect(
-        client
-          .getQueryCache()
-          .findAll({ queryKey: ["books", "list"] })
-          .map((query) => query.queryKey),
-      ).toEqual([queryKeys.books.list({ pages_gte: 300, pages_lte: 900 })]);
-      await user.click(screen.getByRole("button", { name: /^Filters/ }));
-      const reopenedPages = drawerSection(await screen.findByRole("dialog"), "Pages");
-      expect(within(reopenedPages).getByRole("spinbutton", { name: "Max" })).toHaveValue(900);
-    });
-
-    test("Escape abandons a pending rail draft", async () => {
-      const { client } = renderLibrary({
-        items: [bookFixture()],
-        nextCursor: null,
-      });
-      await screen.findByRole("heading", { name: "Library" });
-      const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: /^Filters/ }));
-      const drawer = await screen.findByRole("dialog");
-      const titleSection = drawerSection(drawer, "Title");
-      const input = within(titleSection).getByRole("textbox", { name: "Filter value" });
-      await user.click(input);
-      act(() => {
-        fireEvent.change(input, { target: { value: "dune" } });
-        fireEvent.keyDown(input, { key: "Escape", code: "Escape" });
-      });
-      await waitFor(() => {
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-      });
-      // Past the debounce window: the abandoned draft must never commit.
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      expect(screen.getByTestId("location-search").textContent).not.toContain("title_contains");
-      expect(
-        client
-          .getQueryCache()
-          .findAll({ queryKey: ["books", "list"] })
-          .map((query) => query.queryKey),
-      ).toEqual([queryKeys.books.list({})]);
-    });
-
-    test("a non-Escape close applies a pending rail draft", async () => {
-      renderLibrary({
-        items: [bookFixture()],
-        nextCursor: null,
-        extraCacheParams: [{ title_contains: "sea" }],
-      });
-      await screen.findByRole("heading", { name: "Library" });
-      const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: /^Filters/ }));
-      const drawer = await screen.findByRole("dialog");
-      const titleSection = drawerSection(drawer, "Title");
-      await user.type(within(titleSection).getByRole("textbox", { name: "Filter value" }), "sea");
       await user.click(within(drawer).getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(drawer).not.toBeInTheDocument());
       await waitFor(() => {
-        expect(screen.getByTestId("location-search").textContent).toContain("title_contains=sea");
+        const search = new URLSearchParams(window.location.search);
+        expect(search.get("pages_gte")).toBe("300");
+        expect(search.get("pages_lte")).toBe("300");
       });
+      await user.click(opener);
+      const reopenedPages = drawerSection(await screen.findByRole("dialog"), "Pages");
+      expect(await within(reopenedPages).findByRole("spinbutton", { name: "Max" })).toHaveValue(
+        300,
+      );
     });
+
+    test.each(["Escape", "close button", "outside"])(
+      "%s closes Refine and settles pending text and range edits",
+      async (dismissal) => {
+        renderLibrary({
+          items: [bookFixture()],
+          nextCursor: null,
+          initialEntries: ["/library?pages_gte=300&pages_lte=900"],
+          cacheParams: { pages_gte: 300, pages_lte: 900 },
+          extraCacheParams: [
+            { title_contains: "dune", pages_gte: 300, pages_lte: 900 },
+            { pages_gte: 300, pages_lte: 600 },
+            { title_contains: "dune", pages_gte: 300, pages_lte: 600 },
+          ],
+        });
+        const user = userEvent.setup();
+        const opener = await screen.findByRole("button", { name: /^Filters/ });
+        await user.click(opener);
+        const drawer = await screen.findByRole("dialog");
+        const title = within(drawerSection(drawer, "Title")).getByRole("textbox", {
+          name: "Filter value",
+        });
+        const upper = within(drawerSection(drawer, "Pages")).getByRole("spinbutton", {
+          name: "Max",
+        });
+        await user.click(upper);
+        act(() => {
+          fireEvent.change(title, { target: { value: "dune" } });
+          fireEvent.change(upper, { target: { value: "600" } });
+        });
+        expect(new URLSearchParams(window.location.search).get("title_contains")).toBeNull();
+        expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("900");
+        if (dismissal === "Escape") {
+          await user.keyboard("{Escape}");
+        } else if (dismissal === "close button") {
+          await user.click(within(drawer).getByRole("button", { name: "Close" }));
+        } else {
+          await user.click(document.body);
+        }
+        await waitFor(() => expect(drawer).not.toBeInTheDocument());
+        await waitFor(() => expect(opener).toHaveFocus());
+        await waitFor(() => {
+          const search = new URLSearchParams(window.location.search);
+          expect(search.get("title_contains")).toBe("dune");
+          expect(search.get("pages_gte")).toBe("300");
+          expect(search.get("pages_lte")).toBe("600");
+        });
+        await user.click(opener);
+        const reopened = await screen.findByRole("dialog");
+        expect(
+          await within(drawerSection(reopened, "Title")).findByRole("textbox", {
+            name: "Filter value",
+          }),
+        ).toHaveValue("dune");
+        expect(
+          await within(drawerSection(reopened, "Pages")).findByRole("spinbutton", { name: "Max" }),
+        ).toHaveValue(600);
+      },
+    );
   });
 
   describe("selection and batch bar", () => {
@@ -1456,16 +1465,30 @@ describe("LibraryPage", () => {
 
   describe("preference reset", () => {
     test.each(["mouse", "keyboard"])(
-      "resetting the columns with %s preserves focus and density",
+      "resetting the columns with %s closes, restores focus and preserves sibling preferences",
       async (activation) => {
-        const fetchSpy = vi
-          .spyOn(globalThis, "fetch")
-          .mockResolvedValue(preferencesResponse(preferencesFixture({ density: "compact" })));
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
+          Promise.resolve(
+            input === PREFERENCES_PATH
+              ? preferencesResponse(
+                  preferencesFixture({ density: "compact", view: "table", sort_stack: "title" }),
+                )
+              : new Response(JSON.stringify({ items: [], next_cursor: null }), {
+                  headers: { "Content-Type": "application/json" },
+                }),
+          ),
+        );
         renderLibrary({
           items: [bookFixture()],
           nextCursor: null,
           initialEntries: ["/library?view=table"],
-          preferences: preferencesFixture({ hidden_columns: ["subtitle"], density: "compact" }),
+          preferences: preferencesFixture({
+            hidden_columns: ["subtitle"],
+            density: "compact",
+            view: "table",
+            sort_stack: "title",
+          }),
+          extraCacheParams: [{ sort: "title" }],
         });
         await screen.findByTestId("library-table");
         expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
@@ -1479,9 +1502,6 @@ describe("LibraryPage", () => {
           reset.focus();
           await user.keyboard("{Enter}");
         }
-        await waitFor(() => expect(reset).toBeDisabled());
-        expect(screen.getByRole("dialog", { name: "Columns" })).toHaveFocus();
-        await user.keyboard("{Escape}");
         await waitFor(() =>
           expect(screen.queryByRole("dialog", { name: "Columns" })).not.toBeInTheDocument(),
         );
@@ -1497,6 +1517,18 @@ describe("LibraryPage", () => {
         expect(
           within(group).getByRole("button", { name: "Compact", pressed: true }),
         ).toBeInTheDocument();
+        expect(screen.getByTestId("library-table")).toBeInTheDocument();
+        expect(screen.getByRole("columnheader", { name: /^Title/ })).toHaveAttribute(
+          "aria-sort",
+          "ascending",
+        );
+        await user.click(trigger);
+        expect(await screen.findByRole("button", { name: "Reset to default" })).toBeDisabled();
+        await user.keyboard("{Escape}");
+        await waitFor(() =>
+          expect(screen.queryByRole("dialog", { name: "Columns" })).not.toBeInTheDocument(),
+        );
+        await waitFor(() => expect(trigger).toHaveFocus());
         fetchSpy.mockRestore();
       },
     );
@@ -1536,8 +1568,9 @@ describe("LibraryPage", () => {
       await waitFor(() => {
         expect(preferenceWrites(fetchSpy)).toEqual([{ hidden_columns: null }]);
       });
-      // The override is gone, so the control greys out at once.
-      expect(screen.getByRole("button", { name: "Reset to default" })).toBeDisabled();
+      expect(screen.queryByRole("dialog", { name: "Columns" })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /Columns/ }));
+      expect(await screen.findByRole("button", { name: "Reset to default" })).toBeDisabled();
       fetchSpy.mockRestore();
     });
 

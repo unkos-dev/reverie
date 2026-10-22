@@ -100,7 +100,7 @@ function NeedsAttentionCard({
           <div>
             <strong className="font-bold">Could not load this list.</strong>
             <p className="text-fg-muted text-[13px]">Your files are untouched. Try again.</p>
-            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={onRetry}>
+            <Button type="button" variant="outline" size="sm" className="mt-2" onPress={onRetry}>
               Try again
             </Button>
           </div>
