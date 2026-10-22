@@ -124,13 +124,20 @@ guards:
 machete:
     cargo machete
 
-# Reads the RustSec advisory database over the network, so it is offline-excluded
-# from `check`. Mirrors the CI "cargo-deny" job (config: backend/deny.toml).
+# Mirrors the CI "cargo-deny" job (config: backend/deny.toml).
 #
-# Check advisories, license, bans, and source policy.
+# Check license, bans, and source policy.
 [group('rust')]
 deny:
-    cargo deny check
+    cargo deny check bans licenses sources
+
+# Reads the RustSec advisory database over the network, so it is offline-excluded
+# from `check`. Mirrors the CI "cargo-deny-advisories" job.
+#
+# Check dependencies against published security advisories.
+[group('rust')]
+deny-advisories:
+    cargo deny check advisories
 
 # Backend lint surface: clippy + doc-lint.
 [group('rust')]

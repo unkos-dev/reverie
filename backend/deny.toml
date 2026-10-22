@@ -1,7 +1,9 @@
 # cargo-deny configuration — supply-chain policy for the Rust workspace.
 #
-# Single source of truth for dependency policy. `cargo deny check` (run in CI
-# by the `cargo-deny` job in .github/workflows/deps.yml) runs all four checks below.
+# Single source of truth for dependency policy. In .github/workflows/deps.yml,
+# `cargo-deny` checks bans, licences and sources; `cargo-deny-advisories` gates
+# Cargo dependency, policy and job-definition changes on advisories.
+# scheduled-audit.yml checks advisories daily, including the unchanged tree.
 # This replaced a standalone `cargo audit` step: cargo-deny's `advisories`
 # check reads the same RustSec advisory database cargo-audit used, so retiring
 # cargo-audit loses no advisory coverage while adding license, ban, and source

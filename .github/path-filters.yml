@@ -26,6 +26,16 @@ audit:
   - ".github/workflows/deps.yml"
   - ".github/actions/setup/**"
   - ".github/path-filters.yml"
+advisories:
+  # Narrower than audit by design: a newly published advisory must not fail a
+  # change that leaves the dependency tree alone. audit's job exercises the
+  # shared setup action, caller and tool pins, and the daily scheduled scan
+  # covers the unchanged tree.
+  - "backend/Cargo.toml"
+  - "backend/Cargo.lock"
+  - "backend/deny.toml"
+  - ".github/workflows/deps.yml"
+  - ".github/path-filters.yml"
 frontend:
   # Root vite.config.ts, the lockfile, and pnpm-workspace.yaml (which declares
   # the workspace members, the catalog and the install-script policy) govern
