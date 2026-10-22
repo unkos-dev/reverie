@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
@@ -279,6 +279,82 @@ describe("UsersPage", () => {
     await user.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.queryByLabelText("Credential link")).not.toBeInTheDocument();
   });
+
+  test("native role values retain a failed choice and restore the default on reopening", async () => {
+    const create = vi
+      .spyOn(usersApi, "createUser")
+      .mockRejectedValue(new Error("Creation refused"));
+    renderUsersPage(ADMIN_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Create user" }));
+    const form = screen.getByLabelText("Display name").closest("form");
+    if (!form) throw new Error("Create-user form missing");
+    expect(new FormData(form).get("role")).toBe("adult");
+    await user.type(screen.getByLabelText("Display name"), "Carol");
+    await user.type(screen.getByLabelText("Email"), "carol@example.com");
+    await user.click(screen.getByRole("button", { name: /Role/ }));
+    await user.click(await screen.findByRole("option", { name: "child" }));
+    expect(new FormData(form).get("role")).toBe("child");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Creation refused");
+    expect(create).toHaveBeenCalledWith({
+      display_name: "Carol",
+      email: "carol@example.com",
+      role: "child",
+    });
+    expect(new FormData(form).get("role")).toBe("child");
+    expect(screen.getByRole("button", { name: /Role/ })).toHaveTextContent("child");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(await screen.findByRole("button", { name: "Create user" }));
+    const reopened = screen.getByLabelText("Display name").closest("form");
+    if (!reopened) throw new Error("Reopened form missing");
+    expect(new FormData(reopened).get("role")).toBe("adult");
+    expect(screen.getByRole("button", { name: /Role/ })).toHaveTextContent("adult");
+  });
+
+  test.each(["admin", "child"])("submits the native %s role", async (role) => {
+    const create = vi
+      .spyOn(usersApi, "createUser")
+      .mockRejectedValue(new Error("Creation refused"));
+    renderUsersPage(ADMIN_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Create user" }));
+    await user.type(screen.getByLabelText("Display name"), "Carol");
+    await user.type(screen.getByLabelText("Email"), "carol@example.com");
+    await user.click(screen.getByRole("button", { name: /Role/ }));
+    await user.click(await screen.findByRole("option", { name: role }));
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+    expect(create).toHaveBeenCalledWith({
+      display_name: "Carol",
+      email: "carol@example.com",
+      role,
+    });
+    await screen.findByRole("alert");
+  });
+
+  test.each([null, "", "owner"])(
+    "rejects an invalid submitted role (%s) before mutation",
+    async (role) => {
+      const create = vi.spyOn(usersApi, "createUser");
+      renderUsersPage(ADMIN_ME, []);
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Create user" }));
+      const form = screen.getByLabelText("Display name").closest("form");
+      if (!form) throw new Error("Create-user form missing");
+      const select = form.querySelector('select[name="role"]');
+      if (!(select instanceof HTMLSelectElement)) throw new Error("Named Select missing");
+      if (role === null) select.removeAttribute("name");
+      else {
+        select.add(new Option(role, role));
+        select.value = role;
+      }
+      await user.type(screen.getByLabelText("Display name"), "Carol");
+      await user.type(screen.getByLabelText("Email"), "carol@example.com");
+      fireEvent.submit(form);
+      expect(await screen.findByRole("alert")).toHaveTextContent("Choose a valid role.");
+      expect(create).not.toHaveBeenCalled();
+    },
+  );
 
   test("create-user dialog blocks a blank display name", async () => {
     const create = vi.spyOn(usersApi, "createUser");

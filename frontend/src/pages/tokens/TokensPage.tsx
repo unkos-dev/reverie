@@ -15,6 +15,7 @@ import { type ReactElement, type SyntheticEvent, useCallback, useState } from "r
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
 
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
@@ -59,7 +60,7 @@ const EXPIRY_OPTIONS = [
   { value: "365", label: "365 days" },
   { value: "never", label: "Never" },
 ] as const;
-type ExpiryValue = (typeof EXPIRY_OPTIONS)[number]["value"];
+const expiryField = z.enum(EXPIRY_OPTIONS.map((option) => option.value));
 
 // Access levels are the scope hierarchy presented as a single choice: each
 // level grants itself and every level below it. Ordered low to high; `admin`
@@ -223,7 +224,6 @@ type CreateTokenDialogProps = {
 function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogProps>): ReactElement {
   const [open, setOpen] = useState(false);
   const [level, setLevel] = useState<Scope>("write");
-  const [expiry, setExpiry] = useState<ExpiryValue>("90");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreateTokenResponse | null>(null);
 
@@ -247,7 +247,6 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
       setError(null);
       setCreated(null);
       setLevel("write");
-      setExpiry("90");
     }
   }
 
@@ -260,10 +259,15 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
       setError("Enter a name (1-255 characters).");
       return;
     }
+    const expiry = expiryField.safeParse(data.get("expiry"));
+    if (!expiry.success) {
+      setError("Choose a valid expiry.");
+      return;
+    }
     mutation.mutate({
       name,
       scopes: [level],
-      expiresInDays: expiry === "never" ? null : Number(expiry),
+      expiresInDays: expiry.data === "never" ? null : Number(expiry.data),
     });
   }
 
@@ -322,15 +326,7 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
                 </p>
               </Field>
               <Field>
-                <Select
-                  className="flex flex-col gap-2"
-                  value={expiry}
-                  onChange={(v) => {
-                    if (typeof v !== "string") return;
-                    const match = EXPIRY_OPTIONS.find((o) => o.value === v);
-                    if (match) setExpiry(match.value);
-                  }}
-                >
+                <Select className="flex flex-col gap-2" name="expiry" defaultValue="90">
                   <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
                     Expires
                   </AriaLabel>

@@ -405,12 +405,45 @@ describe("LibraryPage", () => {
 
   test("view toggle group renders grid and table only; no list mode survives", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
-    const group = await screen.findByRole("group", { name: "View mode" });
-    expect(within(group).getByRole("button", { name: "Grid", pressed: true })).toBeInTheDocument();
-    expect(
-      within(group).getByRole("button", { name: "Table", pressed: false }),
-    ).toBeInTheDocument();
-    expect(within(group).queryByRole("button", { name: "List" })).not.toBeInTheDocument();
+    const group = await screen.findByRole("radiogroup", { name: "View mode" });
+    expect(within(group).getByRole("radio", { name: "Grid", checked: true })).toBeInTheDocument();
+    expect(within(group).getByRole("radio", { name: "Table", checked: false })).toBeInTheDocument();
+    expect(within(group).queryByRole("radio", { name: "List" })).not.toBeInTheDocument();
+  });
+
+  test("keyboard choices keep view and density nonempty and exclusive", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        preferencesResponse(preferencesFixture({ view: "table", density: "compact" })),
+      );
+    renderLibrary({ items: [bookFixture()], nextCursor: null });
+    const user = userEvent.setup();
+    const view = await screen.findByRole("radiogroup", { name: "View mode" });
+    await user.click(within(view).getByRole("radio", { name: "Grid" }));
+    await user.keyboard("{ArrowRight}");
+    expect(within(view).getByRole("radio", { name: "Table" })).toHaveFocus();
+    await user.keyboard(" ");
+    expect(within(view).getByRole("radio", { name: "Table" })).toBeChecked();
+    expect(within(view).getByRole("radio", { name: "Grid" })).not.toBeChecked();
+    await waitFor(() => {
+      expect(screen.getByTestId("location-search")).toHaveTextContent("view=table");
+    });
+    await user.keyboard(" ");
+    expect(within(view).getByRole("radio", { name: "Table" })).toBeChecked();
+    const density = screen.getByRole("radiogroup", { name: "Table density" });
+    await user.click(within(density).getByRole("radio", { name: "Comfortable" }));
+    await user.keyboard("{ArrowRight}");
+    expect(within(density).getByRole("radio", { name: "Compact" })).toHaveFocus();
+    await user.keyboard(" ");
+    expect(within(density).getByRole("radio", { name: "Compact" })).toBeChecked();
+    expect(within(density).getByRole("radio", { name: "Comfortable" })).not.toBeChecked();
+    await user.keyboard(" ");
+    expect(within(density).getByRole("radio", { name: "Compact" })).toBeChecked();
+    await waitFor(() => {
+      expect(preferenceWrites(fetchSpy)).toEqual([{ view: "table", density: "compact" }]);
+    });
+    fetchSpy.mockRestore();
   });
 
   test("renders the table view when ?view=table (lazy-loaded)", async () => {
@@ -445,9 +478,9 @@ describe("LibraryPage", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(preferencesResponse(preferencesFixture({ view: "table" })));
     renderLibrary({ items: [bookFixture()], nextCursor: null });
-    const group = await screen.findByRole("group", { name: "View mode" });
+    const group = await screen.findByRole("radiogroup", { name: "View mode" });
     const user = userEvent.setup();
-    await user.click(within(group).getByRole("button", { name: "Table" }));
+    await user.click(within(group).getByRole("radio", { name: "Table" }));
     await waitFor(() => {
       expect(preferenceWrites(fetchSpy)).toEqual([{ view: "table" }]);
     });
@@ -849,14 +882,71 @@ describe("LibraryPage", () => {
     });
     // The stored sort is not a filter: it survives clear-all untouched.
     expect(screen.getByText("Sorted by Title ascending")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Table", pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Table", checked: true })).toBeInTheDocument();
   });
 
   describe("filter chips", () => {
-    test("renders no chip row when no filter params are set", async () => {
+    test("pointer removal retains adjacent focus and final removal focuses the empty collection", async () => {
+      renderLibrary({
+        items: [bookFixture({ series: { id: "s-1", name: "Discworld", position: 1 } })],
+        nextCursor: null,
+        initialEntries: ["/library?series=s-1&status_any=unread"],
+        cacheParams: { series: "s-1", status_any: ["unread"] },
+        extraCacheParams: [{ status_any: ["unread"] }, {}],
+      });
+      const user = userEvent.setup();
+      const chips = await screen.findByTestId("filter-chips");
+      await user.click(within(chips).getByRole("button", { name: /Remove.*Series: Discworld/ }));
+      await waitFor(() => {
+        expect(within(chips).getByRole("row")).toHaveFocus();
+      });
+      await user.click(within(chips).getByRole("button", { name: /Remove/ }));
+      await waitFor(() => {
+        expect(within(chips).getByRole("group", { name: "Active filters" })).toHaveFocus();
+      });
+      expect(within(chips).getByText("No active filters.")).toBeInTheDocument();
+      expect(within(chips).getByRole("button", { name: "Clear all" })).toBeDisabled();
+    });
+
+    test.each(["{Delete}", "{Backspace}"])(
+      "%s removes the focused tag and preserves its neighbour",
+      async (key) => {
+        renderLibrary({
+          items: [bookFixture()],
+          nextCursor: null,
+          initialEntries: ["/library?status_any=unread&pages_gte=500"],
+          cacheParams: { status_any: ["unread"], pages_gte: 500 },
+          extraCacheParams: [{ pages_gte: 500 }, {}],
+        });
+        const user = userEvent.setup();
+        const chips = await screen.findByTestId("filter-chips");
+        const tags = within(chips).getAllByRole("row");
+        await user.click(tags[0]);
+        await user.keyboard(key);
+        await waitFor(() => {
+          expect(within(chips).getAllByRole("row")).toHaveLength(1);
+          expect(within(chips).getByRole("row")).toHaveFocus();
+        });
+        await user.keyboard(key);
+        await waitFor(() => {
+          expect(within(chips).getByRole("group", { name: "Active filters" })).toHaveFocus();
+        });
+        await user.tab({ shift: true });
+        await user.tab();
+        expect(within(chips).getByRole("group", { name: "Active filters" })).toHaveFocus();
+      },
+    );
+
+    test("keeps the empty collection reachable when no filter params are set", async () => {
       renderLibrary({ items: [bookFixture()], nextCursor: null });
       await screen.findByRole("heading", { name: "Library" });
-      expect(screen.queryByTestId("filter-chips")).not.toBeInTheDocument();
+      const chips = screen.getByTestId("filter-chips");
+      expect(within(chips).getByText("No active filters.")).toBeInTheDocument();
+      expect(within(chips).getByRole("group", { name: "Active filters" })).toHaveAttribute(
+        "tabindex",
+        "0",
+      );
+      expect(within(chips).getByRole("button", { name: "Clear all" })).toBeDisabled();
     });
 
     test("an active series filter renders a chip with the resolved name, not a raw id", async () => {
@@ -881,9 +971,7 @@ describe("LibraryPage", () => {
       });
       const chips = await screen.findByTestId("filter-chips");
       const user = userEvent.setup();
-      await user.click(
-        within(chips).getByRole("button", { name: /Remove filter: Series: Discworld/ }),
-      );
+      await user.click(within(chips).getByRole("button", { name: /Remove.*Series: Discworld/ }));
       await waitFor(() => {
         const search = screen.getByTestId("location-search").textContent;
         expect(search).not.toContain("series=");
@@ -1361,10 +1449,10 @@ describe("LibraryPage", () => {
       const user = userEvent.setup();
       await user.click(screen.getAllByRole("checkbox", { name: "Select" })[0]);
       await screen.findByRole("toolbar", { name: "Batch actions" });
-      const group = screen.getByRole("group", { name: "View mode" });
-      await user.click(within(group).getByRole("button", { name: "Grid" }));
+      const group = screen.getByRole("radiogroup", { name: "View mode" });
+      await user.click(within(group).getByRole("radio", { name: "Grid" }));
       await screen.findByTestId("library-grid");
-      await user.click(within(group).getByRole("button", { name: "Table" }));
+      await user.click(within(group).getByRole("radio", { name: "Table" }));
       await screen.findByTestId("library-table");
       expect(screen.queryByRole("toolbar", { name: "Batch actions" })).not.toBeInTheDocument();
     });
@@ -1374,7 +1462,7 @@ describe("LibraryPage", () => {
     test("table-mode display controls are absent in grid mode", async () => {
       renderLibrary({ items: [bookFixture()], nextCursor: null });
       await screen.findByTestId("library-grid");
-      expect(screen.queryByRole("group", { name: "Table density" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("radiogroup", { name: "Table density" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Columns/ })).not.toBeInTheDocument();
     });
 
@@ -1388,14 +1476,14 @@ describe("LibraryPage", () => {
         initialEntries: ["/library?view=table"],
       });
       await screen.findByTestId("library-table");
-      const group = screen.getByRole("group", { name: "Table density" });
+      const group = screen.getByRole("radiogroup", { name: "Table density" });
       expect(
-        within(group).getByRole("button", { name: "Comfortable", pressed: true }),
+        within(group).getByRole("radio", { name: "Comfortable", checked: true }),
       ).toBeInTheDocument();
       const user = userEvent.setup();
-      await user.click(within(group).getByRole("button", { name: "Compact" }));
+      await user.click(within(group).getByRole("radio", { name: "Compact" }));
       expect(
-        within(group).getByRole("button", { name: "Compact", pressed: true }),
+        within(group).getByRole("radio", { name: "Compact", checked: true }),
       ).toBeInTheDocument();
       await waitFor(() => {
         expect(preferenceWrites(fetchSpy)).toEqual([{ density: "compact" }]);
@@ -1513,9 +1601,9 @@ describe("LibraryPage", () => {
         await waitFor(() => {
           expect(preferenceWrites(fetchSpy)).toEqual([{ hidden_columns: null }]);
         });
-        const group = screen.getByRole("group", { name: "Table density" });
+        const group = screen.getByRole("radiogroup", { name: "Table density" });
         expect(
-          within(group).getByRole("button", { name: "Compact", pressed: true }),
+          within(group).getByRole("radio", { name: "Compact", checked: true }),
         ).toBeInTheDocument();
         expect(screen.getByTestId("library-table")).toBeInTheDocument();
         expect(screen.getByRole("columnheader", { name: /^Title/ })).toHaveAttribute(
@@ -1618,9 +1706,9 @@ describe("LibraryPage", () => {
       });
       await screen.findByTestId("library-table");
       expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
-      const group = screen.getByRole("group", { name: "Table density" });
+      const group = screen.getByRole("radiogroup", { name: "Table density" });
       expect(
-        within(group).getByRole("button", { name: "Compact", pressed: true }),
+        within(group).getByRole("radio", { name: "Compact", checked: true }),
       ).toBeInTheDocument();
       fetchSpy.mockRestore();
     });
@@ -1635,9 +1723,9 @@ describe("LibraryPage", () => {
       });
       await screen.findByTestId("library-table");
       expect(screen.getByRole("columnheader", { name: /^Subtitle/ })).toBeInTheDocument();
-      const group = screen.getByRole("group", { name: "Table density" });
+      const group = screen.getByRole("radiogroup", { name: "Table density" });
       expect(
-        within(group).getByRole("button", { name: "Comfortable", pressed: true }),
+        within(group).getByRole("radio", { name: "Comfortable", checked: true }),
       ).toBeInTheDocument();
     });
 
@@ -1662,8 +1750,8 @@ describe("LibraryPage", () => {
       });
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
-      const group = screen.getByRole("group", { name: "Table density" });
-      await user.click(within(group).getByRole("button", { name: "Compact" }));
+      const group = screen.getByRole("radiogroup", { name: "Table density" });
+      await user.click(within(group).getByRole("radio", { name: "Compact" }));
 
       // The read was already in flight when the reader chose; it answers with
       // the pre-change state, which must not win.
@@ -1676,7 +1764,7 @@ describe("LibraryPage", () => {
         expect(preferenceWrites(fetchSpy)).toEqual([{ density: "compact" }]);
       });
       expect(
-        within(group).getByRole("button", { name: "Compact", pressed: true }),
+        within(group).getByRole("radio", { name: "Compact", checked: true }),
       ).toBeInTheDocument();
       fetchSpy.mockRestore();
     });

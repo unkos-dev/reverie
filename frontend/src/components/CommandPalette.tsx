@@ -4,7 +4,6 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type ReactElement } from "react";
-import { useNavigate } from "react-router";
 import {
   Autocomplete,
   Button,
@@ -32,7 +31,6 @@ export function CommandPalette(): ReactElement {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const trimmed = query.trim();
-  const navigate = useNavigate();
   const { data, isFetching, isError, error } = useQuery({
     queryKey: queryKeys.search(trimmed),
     queryFn: ({ signal }) => searchLibrary(trimmed, signal),
@@ -118,14 +116,14 @@ export function CommandPalette(): ReactElement {
               aria-label="Books"
               items={items}
               className="max-h-72 overflow-y-auto p-1 outline-none"
-              onAction={(key) => {
+              onClose={() => {
                 changeOpen(false);
-                void navigate(`/b/${encodeURIComponent(String(key))}`);
               }}
             >
               {(hit: SearchHit) => (
                 <MenuItem
                   id={hit.id}
+                  href={`/b/${encodeURIComponent(hit.id)}`}
                   textValue={hit.title}
                   className="cursor-default rounded-md px-2 py-1.5 outline-none data-focused:bg-muted"
                 >
