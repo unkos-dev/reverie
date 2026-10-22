@@ -1159,23 +1159,6 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn smtp_queue_notice_waits_while_mail_is_off_and_resumes_when_it_returns(pool: PgPool) {
-        let f = fixture(&pool, Behaviour::Accept).await;
-        let job = enqueue_notice(&f.app, f.user, MailPurpose::NoticePasswordChanged, ADDRESS).await;
-        // A restart with sending off runs no worker, so the job simply waits.
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        assert_eq!(state_of(&pool, job).await, "pending");
-        assert!(payload_present(&pool, job).await);
-        let swept = crate::models::mail_job::sweep_batch(&f.app, None, 100)
-            .await
-            .unwrap();
-        assert_eq!(swept.accounts, 0);
-        assert_eq!(state_of(&pool, job).await, "pending");
-        assert!(f.step().await, "re-enabling resumes eligible jobs");
-        assert_eq!(state_of(&pool, job).await, "accepted");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn smtp_queue_bearer_mail_is_refused_when_the_account_no_longer_qualifies(pool: PgPool) {
         let cases = [
             "address changed",

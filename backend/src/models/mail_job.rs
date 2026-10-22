@@ -1524,6 +1524,38 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_queue_sweep_cancels_administrator_mail_once_its_link_is_gone(pool: PgPool) {
+        let app = app_pool_for(&pool).await;
+        let user = account(&pool, ADDRESS).await;
+        let (token, _) = crate::models::credential_link::issue(&app, user)
+            .await
+            .unwrap();
+        let link = account_email_proof::digest(&token);
+        let sent = enqueue_bearer(
+            &app,
+            user,
+            MailPurpose::AdminLink,
+            &link,
+            TimeDelta::hours(72),
+            ADDRESS,
+        )
+        .await;
+        sweep_all(&app).await;
+        assert_eq!(
+            state_of(&pool, sent).await,
+            "pending",
+            "a live link keeps its mail"
+        );
+        assert!(payload_present(&pool, sent).await);
+        crate::models::credential_link::cancel(&app, user)
+            .await
+            .unwrap();
+        sweep_all(&app).await;
+        assert_eq!(state_of(&pool, sent).await, "cancelled");
+        assert!(!payload_present(&pool, sent).await);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn smtp_queue_sweep_skips_locked_accounts_and_retries_later(pool: PgPool) {
         let app = app_pool_for(&pool).await;
         let busy = account(&pool, "busy@example.org").await;
