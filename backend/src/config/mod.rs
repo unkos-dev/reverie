@@ -23,6 +23,7 @@
 
 mod cover;
 mod enrichment;
+mod mail;
 mod opds;
 mod path;
 mod provider;
@@ -34,6 +35,7 @@ pub use path::AbsoluteRootPath;
 
 pub use cover::CoverConfig;
 pub use enrichment::EnrichmentConfig;
+pub use mail::{MailConfig, MailTransportConfig, RelayCredentials, SmtpSecurity};
 pub use opds::OpdsConfig;
 pub use provider::EnvProvider;
 pub(crate) use provider::{CredentialValue, resolve_credential};
@@ -45,7 +47,7 @@ use crate::models::manifestation_format::ManifestationFormat;
 use figment::Figment;
 use provider::ENV_MAP;
 use secrecy::{ExposeSecret, SecretString};
-use validator::{Validate, ValidationErrors, ValidationErrorsKind};
+use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
 
 /// Accessor returning a required field's resolved value, paired with its
 /// env-var name in [`REQUIRED_FIELDS`].
@@ -102,6 +104,8 @@ const OIDC_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
 /// that only need one slice.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
+#[validate(schema(function = "validate_opds_public_url"))]
+#[validate(schema(function = "validate_mail_public_url"))]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "this is the flat env-sourced configuration root; its boolean fields are independent operator toggles (local auth, auto-migrate, self-registration, breach check, ...) that map one-to-one to env vars, not a state machine that should be modelled as an enum"
@@ -273,10 +277,12 @@ pub struct Config {
     /// Writeback worker knobs (concurrency, retry cap).
     #[validate(nested)]
     pub writeback: WritebackConfig,
-    /// OPDS catalogue settings (mount enable, page size, realm,
-    /// `public_url`).
+    /// OPDS catalogue settings (mount enable, page size, realm).
     #[validate(nested)]
     pub opds: OpdsConfig,
+    /// Optional SMTP delivery for authentication mail (relay, sender,
+    /// support address and queue key).
+    pub mail: MailConfig,
     /// Response-header policy (CSP, HSTS, reporting endpoint, dist
     /// path). `csp_*_header` fields are finalised by [`crate::run`]
     /// after construction.
@@ -296,6 +302,13 @@ pub struct Config {
     /// the outbound `User-Agent` to claim `OpenLibrary`'s identified
     /// 3 req/s rate-limit tier (vs. 1 req/s anonymous).
     pub operator_contact: Option<String>,
+    /// Externally-visible origin of this instance (`REVERIE_PUBLIC_URL`): an
+    /// HTTP(S) origin without credentials, path, query or fragment; a trailing
+    /// root slash is accepted. Required when OPDS or SMTP delivery is enabled.
+    /// OPDS feeds and emailed links are rooted here; it is never derived from
+    /// request headers.
+    #[validate(custom(function = "validate_public_origin"))]
+    pub public_url: Option<url::Url>,
 }
 
 /// Configuration-load failure mode. Surfaces missing required vars and
@@ -409,6 +422,15 @@ impl Config {
             }
         } else {
             cfg.migration_database_url = None;
+        }
+
+        // Gate 1b — mail secrets. A disabled mail block carries no key or relay
+        // password, and an enabled one must be complete before startup.
+        if cfg.mail.enabled {
+            cfg.mail.validate_enabled()?;
+        } else {
+            cfg.mail.password = None;
+            cfg.mail.queue_key = None;
         }
 
         // Gate 2 — required fields blank => MissingVar (NOT Invalid). Name and
@@ -567,6 +589,8 @@ const SECRET_FIELDS: &[&str] = &[
     "oidc_client_secret",
     "googlebooks_api_key",
     "hardcover_api_token",
+    "mail.password",
+    "mail.queue_key",
 ];
 
 /// Reverse the [`ENV_MAP`]: dotted field path → operator-facing env-var name.
@@ -737,8 +761,53 @@ impl Default for Config {
             googlebooks_api_key: None,
             hardcover_api_token: None,
             operator_contact: None,
+            public_url: None,
+            mail: MailConfig::default(),
         }
     }
+}
+
+/// `REVERIE_PUBLIC_URL` must be a bare HTTP(S) origin. The value is never
+/// echoed because an operator may have pasted credentials into it.
+fn validate_public_origin(url: &url::Url) -> Result<(), ValidationError> {
+    let origin_only = matches!(url.scheme(), "http" | "https")
+        && url.has_host()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.path() == "/"
+        && url.query().is_none()
+        && url.fragment().is_none();
+    if origin_only {
+        return Ok(());
+    }
+    let mut e = ValidationError::new("public_url_origin");
+    e.message =
+        Some("must be an http or https origin without credentials, path, query or fragment".into());
+    Err(e)
+}
+
+/// OPDS emits absolute URLs rooted at the public origin, so it is required
+/// whenever the catalogue is enabled.
+fn validate_opds_public_url(config: &Config) -> Result<(), ValidationError> {
+    if config.opds.enabled && config.public_url.is_none() {
+        let mut e = ValidationError::new("public_url_required");
+        e.add_param("var".into(), &"REVERIE_PUBLIC_URL");
+        e.message = Some("required when REVERIE_OPDS_ENABLED=true".into());
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Emailed links are rooted at the public origin, so it is required whenever
+/// SMTP delivery is enabled.
+fn validate_mail_public_url(config: &Config) -> Result<(), ValidationError> {
+    if config.mail.enabled && config.public_url.is_none() {
+        let mut e = ValidationError::new("public_url_required");
+        e.add_param("var".into(), &"REVERIE_PUBLIC_URL");
+        e.message = Some("required when REVERIE_SMTP_ENABLED=true".into());
+        return Err(e);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1151,7 +1220,7 @@ mod tests {
         let config = cfg_from_owned(&vars).unwrap();
         assert!(config.opds.enabled);
         assert_eq!(
-            config.opds.public_url.as_ref().map(url::Url::as_str),
+            config.public_url.as_ref().map(url::Url::as_str),
             Some("https://reverie.example.com/")
         );
     }
@@ -1516,7 +1585,16 @@ mod tests {
         let schema = serde_json::to_value(schemars::schema_for!(Config)).unwrap();
         let props = schema["properties"].as_object().expect("properties object");
         for field in SECRET_FIELDS {
-            let property = props.get(*field).expect("credential property exists");
+            let property = field.split_once('.').map_or_else(
+                || props.get(*field).expect("credential property exists"),
+                |(parent, leaf)| {
+                    let reference = props[parent]["$ref"]
+                        .as_str()
+                        .expect("sub-struct reference");
+                    let definition = &schema["$defs"][reference.trim_start_matches("#/$defs/")];
+                    &definition["properties"][leaf]
+                },
+            );
             let default = property.get("default").expect("credential default exists");
             let expected = if matches!(
                 *field,

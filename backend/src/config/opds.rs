@@ -3,15 +3,14 @@
 use validator::{Validate, ValidationError};
 
 /// OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a
-/// Basic-only extractor and `public_url` must be set: feeds emit absolute URLs
-/// rooted at `public_url`.
+/// Basic-only extractor and the root `public_url` must be set: feeds emit
+/// absolute URLs rooted at it.
 ///
 /// Note: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are
 /// mounted independently of `enabled` because the web UI needs them
 /// regardless of OPDS availability.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
-#[validate(schema(function = "validate_opds_config"))]
 pub struct OpdsConfig {
     /// Whether the `/opds/*` routes are mounted
     /// (`REVERIE_OPDS_ENABLED`, default `true`).
@@ -26,10 +25,6 @@ pub struct OpdsConfig {
     /// well-formed.
     #[validate(custom(function = "validate_realm"))]
     pub realm: String,
-    /// Externally-visible base URL the catalogue emits absolute links
-    /// rooted at (`REVERIE_PUBLIC_URL`). Required when `enabled=true`;
-    /// optional otherwise.
-    pub public_url: Option<url::Url>,
 }
 
 impl Default for OpdsConfig {
@@ -38,7 +33,6 @@ impl Default for OpdsConfig {
             enabled: true,
             page_size: 50,
             realm: "Reverie OPDS".into(),
-            public_url: None,
         }
     }
 }
@@ -63,18 +57,6 @@ fn validate_realm(realm: &str) -> Result<(), ValidationError> {
     if realm.contains('"') {
         let mut e = ValidationError::new("realm_quote");
         e.message = Some("must not contain '\"'".into());
-        return Err(e);
-    }
-    Ok(())
-}
-
-/// OPDS cross-field rule: when the catalogue is enabled it emits absolute URLs
-/// rooted at `public_url`, so `public_url` is required.
-fn validate_opds_config(opds: &OpdsConfig) -> Result<(), ValidationError> {
-    if opds.enabled && opds.public_url.is_none() {
-        let mut e = ValidationError::new("public_url_required");
-        e.add_param("var".into(), &"REVERIE_PUBLIC_URL");
-        e.message = Some("required when REVERIE_OPDS_ENABLED=true".into());
         return Err(e);
     }
     Ok(())

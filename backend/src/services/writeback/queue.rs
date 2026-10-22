@@ -708,7 +708,6 @@ mod tests {
                 enabled: false,
                 page_size: 50,
                 realm: "Reverie OPDS".into(),
-                public_url: None,
             },
             security: crate::config::SecurityConfig {
                 behind_https: false,
@@ -722,6 +721,8 @@ mod tests {
             googlebooks_api_key: None,
             hardcover_api_token: None,
             operator_contact: None,
+            public_url: None,
+            mail: crate::config::MailConfig::default(),
         };
         (config, files)
     }

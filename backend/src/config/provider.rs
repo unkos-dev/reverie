@@ -67,6 +67,17 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("REVERIE_GOOGLEBOOKS_API_KEY", "googlebooks_api_key"),
     ("REVERIE_HARDCOVER_API_TOKEN", "hardcover_api_token"),
     ("REVERIE_OPERATOR_CONTACT", "operator_contact"),
+    ("REVERIE_PUBLIC_URL", "public_url"),
+    // --- mail sub-struct ---
+    ("REVERIE_SMTP_ENABLED", "mail.enabled"),
+    ("REVERIE_SMTP_HOST", "mail.host"),
+    ("REVERIE_SMTP_PORT", "mail.port"),
+    ("REVERIE_SMTP_SECURITY", "mail.security"),
+    ("REVERIE_SMTP_USERNAME", "mail.username"),
+    ("REVERIE_SMTP_PASSWORD", "mail.password"),
+    ("REVERIE_SMTP_FROM", "mail.from"),
+    ("REVERIE_SMTP_REPLY_TO", "mail.reply_to"),
+    ("REVERIE_MAIL_QUEUE_KEY", "mail.queue_key"),
     // --- enrichment sub-struct ---
     ("REVERIE_ENRICHMENT_ENABLED", "enrichment.enabled"),
     ("REVERIE_ENRICHMENT_CONCURRENCY", "enrichment.concurrency"),
@@ -115,7 +126,6 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("REVERIE_OPDS_ENABLED", "opds.enabled"),
     ("REVERIE_OPDS_PAGE_SIZE", "opds.page_size"),
     ("REVERIE_OPDS_REALM", "opds.realm"),
-    ("REVERIE_PUBLIC_URL", "opds.public_url"),
     // --- security sub-struct ---
     ("REVERIE_BEHIND_HTTPS", "security.behind_https"),
     (
@@ -155,7 +165,7 @@ pub const ENV_MAP: &[(&str, &str)] = &[
 /// 2. **A frozen, irregular var→field contract.** The operator surface mixes
 ///    bare ecosystem names (`DATABASE_URL`, `OIDC_*`, `RUST_LOG`) with
 ///    `REVERIE_`-namespaced knobs, and several map to a nested path the var
-///    name doesn't spell (`REVERIE_PUBLIC_URL` → `opds.public_url`). No
+///    name doesn't spell (`REVERIE_SMTP_HOST` → `mail.host`). No
 ///    uniform separator rule derives that, so `ENV_MAP` is the explicit
 ///    registry — which also doubles as the introspectable var↔field source the
 ///    config-reference generator consumes.
@@ -170,6 +180,7 @@ pub const ENV_MAP: &[(&str, &str)] = &[
 pub struct EnvProvider<R = fn(&str) -> std::io::Result<String>> {
     pairs: Vec<(String, String)>,
     reader: R,
+    mail_transport_only: bool,
 }
 
 impl EnvProvider<fn(&str) -> std::io::Result<String>> {
@@ -179,6 +190,7 @@ impl EnvProvider<fn(&str) -> std::io::Result<String>> {
         Self {
             pairs: std::env::vars().collect(),
             reader: |path| std::fs::read_to_string(path),
+            mail_transport_only: false,
         }
     }
 
@@ -193,6 +205,7 @@ impl EnvProvider<fn(&str) -> std::io::Result<String>> {
                 .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
                 .collect(),
             reader: |path| std::fs::read_to_string(path),
+            mail_transport_only: false,
         }
     }
 }
@@ -204,7 +217,28 @@ impl<R> EnvProvider<R> {
         EnvProvider {
             pairs: self.pairs,
             reader,
+            mail_transport_only: self.mail_transport_only,
         }
+    }
+
+    /// Restrict the provider to the relay, sender and support settings. Every
+    /// other variable, including the queue key and its file alias, is ignored,
+    /// and the relay password file is read whether or not sending is enabled.
+    #[must_use]
+    pub(crate) fn mail_transport_only(mut self) -> Self {
+        let transport_names: Vec<&str> = ENV_MAP
+            .iter()
+            .filter(|(_, field)| field.starts_with("mail.") && *field != "mail.queue_key")
+            .map(|(name, _)| *name)
+            .collect();
+        self.pairs.retain(|(key, _)| {
+            transport_names.contains(&key.as_str())
+                || key
+                    .strip_suffix("_FILE")
+                    .is_some_and(|name| transport_names.contains(&name))
+        });
+        self.mail_transport_only = true;
+        self
     }
 }
 
@@ -223,6 +257,11 @@ impl<R: Fn(&str) -> std::io::Result<String>> Provider for EnvProvider<R> {
             .pairs
             .iter()
             .any(|(key, value)| key == "REVERIE_AUTO_MIGRATE" && value == "true");
+        let mail_credentials = self.mail_transport_only
+            || self
+                .pairs
+                .iter()
+                .any(|(key, value)| key == "REVERIE_SMTP_ENABLED" && value == "true");
         let map_error = |field: &str, error| match error {
             super::ConfigError::Invalid { reason, .. } => {
                 figment::Error::from(reason).with_path(field)
@@ -237,7 +276,11 @@ impl<R: Fn(&str) -> std::io::Result<String>> Provider for EnvProvider<R> {
             let resolved = resolve_credential(
                 &self.pairs,
                 name,
-                field != "migration_database_url" || auto_migrate,
+                match field {
+                    "migration_database_url" => auto_migrate,
+                    "mail.password" | "mail.queue_key" => mail_credentials,
+                    _ => true,
+                },
                 &self.reader,
             )
             .map_err(|error| map_error(field, error))?;
@@ -392,6 +435,10 @@ fn merge_dict(dst: &mut Dict, src: Dict) {
 mod tests {
     use super::*;
 
+    fn field_value(data: &figment::value::Dict, field: &str) -> Option<Value> {
+        Value::from(data.clone()).find(field)
+    }
+
     #[test]
     fn credential_file_resolver_presence_and_contents() {
         use std::cell::RefCell;
@@ -468,10 +515,14 @@ mod tests {
                 let provider = EnvProvider::from_pairs(&[
                     (alias.as_str(), "path"),
                     ("REVERIE_AUTO_MIGRATE", "true"),
+                    ("REVERIE_SMTP_ENABLED", "true"),
                 ])
                 .with_reader(|_: &str| Ok(contents.into()));
                 let data = provider.data().unwrap();
-                assert!(!data[&Profile::Default].contains_key(field), "{name}");
+                assert!(
+                    field_value(&data[&Profile::Default], field).is_none(),
+                    "{name}"
+                );
             }
         }
     }
@@ -483,6 +534,7 @@ mod tests {
             let provider = EnvProvider::from_pairs(&[
                 (alias.as_str(), "path-marker"),
                 ("REVERIE_AUTO_MIGRATE", "true"),
+                ("REVERIE_SMTP_ENABLED", "true"),
             ])
             .with_reader(|path: &str| {
                 assert_eq!(path, "path-marker");
@@ -490,7 +542,8 @@ mod tests {
             });
             let data = provider.data().unwrap();
             assert!(
-                matches!(data[&Profile::Default].get(field), Some(Value::String(_, value)) if value == "file-marker")
+                matches!(field_value(&data[&Profile::Default], field), Some(Value::String(_, value)) if value == "file-marker"),
+                "{name}"
             );
         }
     }

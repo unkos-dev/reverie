@@ -23,7 +23,6 @@ pub fn router() -> OpenApiRouter<AppState> {
 pub(super) fn base_url(state: &AppState) -> Result<&url::Url, AppError> {
     state
         .config
-        .opds
         .public_url
         .as_ref()
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("REVERIE_PUBLIC_URL not configured")))

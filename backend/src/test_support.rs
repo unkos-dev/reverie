@@ -100,7 +100,6 @@ pub fn test_config() -> Config {
             enabled: false,
             page_size: 50,
             realm: "Reverie OPDS".into(),
-            public_url: Some(url::Url::parse("http://localhost:3000").unwrap()),
         },
         security: SecurityConfig {
             behind_https: false,
@@ -116,6 +115,8 @@ pub fn test_config() -> Config {
         googlebooks_api_key: None,
         hardcover_api_token: None,
         operator_contact: None,
+        public_url: Some(url::Url::parse("http://localhost:3000").unwrap()),
+        mail: crate::config::MailConfig::default(),
     }
 }
 
@@ -754,8 +755,8 @@ pub mod db {
             enabled: true,
             page_size: 50,
             realm: "Reverie OPDS".into(),
-            public_url: Some(url::Url::parse("http://host.example/").unwrap()),
         };
+        config.public_url = Some(url::Url::parse("http://host.example/").unwrap());
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
@@ -832,8 +833,8 @@ pub mod db {
             enabled: true,
             page_size,
             realm: "Reverie OPDS".into(),
-            public_url: Some(url::Url::parse("http://host.example/").unwrap()),
         };
+        config.public_url = Some(url::Url::parse("http://host.example/").unwrap());
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),

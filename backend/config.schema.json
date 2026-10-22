@@ -111,6 +111,10 @@
       "default": 10,
       "minimum": 1
     },
+    "mail": {
+      "description": "Optional SMTP delivery for authentication mail (relay, sender,\nsupport address and queue key).",
+      "$ref": "#/$defs/MailConfig"
+    },
     "migration_database_url": {
       "description": "Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`\ncredentials for the ephemeral migration pool. `None` on the default\nserver path: the application process holds no migration credential\nunless [`Self::auto_migrate`] is set. Required (else\n[`ConfigError::MissingVar`]) only when `auto_migrate` is true.",
       "type": [
@@ -140,7 +144,7 @@
       "default": ""
     },
     "opds": {
-      "description": "OPDS catalogue settings (mount enable, page size, realm,\n`public_url`).",
+      "description": "OPDS catalogue settings (mount enable, page size, realm).",
       "$ref": "#/$defs/OpdsConfig"
     },
     "operator_contact": {
@@ -186,6 +190,15 @@
       "default": 3000,
       "maximum": 65535,
       "minimum": 0
+    },
+    "public_url": {
+      "description": "Externally-visible origin of this instance (`REVERIE_PUBLIC_URL`): an\nHTTP(S) origin without credentials, path, query or fragment; a trailing\nroot slash is accepted. Required when OPDS or SMTP delivery is enabled.\nOPDS feeds and emailed links are rooted here; it is never derived from\nrequest headers.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri",
+      "default": null
     },
     "recovery_pin_dir": {
       "description": "Directory the clear recovery PIN is written into, one file per user at\n`<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an\noperator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default\n`/data/recovery-pins`). Per-user files keep concurrent recoveries from\ncolliding. MUST be outside any web-served directory; the database stores\nonly an Argon2id hash of the PIN.",
@@ -324,8 +337,83 @@
         }
       }
     },
+    "MailConfig": {
+      "description": "Optional SMTP delivery settings. Nothing here is read or validated beyond\nits syntax unless `enabled` is `true`.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether authentication mail is sent (`REVERIE_SMTP_ENABLED`, default\n`false`). When `false`, no queue key or mail credential file is read.",
+          "type": "boolean",
+          "default": false
+        },
+        "from": {
+          "description": "Sender address (`REVERIE_SMTP_FROM`). Required when enabled.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "host": {
+          "description": "Relay host name or IP address (`REVERIE_SMTP_HOST`). Required when\nenabled; credentials and URL syntax are rejected.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "password": {
+          "description": "Relay password (`REVERIE_SMTP_PASSWORD`, or a file through\n`REVERIE_SMTP_PASSWORD_FILE`). Requires the username; never logged.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "port": {
+          "description": "Relay port (`REVERIE_SMTP_PORT`). Defaults to 465 for `implicit_tls`,\n587 for `starttls` and 25 for `plaintext`.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "default": null,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "queue_key": {
+          "description": "Queue encryption key (`REVERIE_MAIL_QUEUE_KEY`, or a file through\n`REVERIE_MAIL_QUEUE_KEY_FILE`): 32 random bytes as base64url without\npadding. Required when enabled; never logged.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "reply_to": {
+          "description": "Support address used as Reply-To and in notices (`REVERIE_SMTP_REPLY_TO`).\nRequired when enabled.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "security": {
+          "description": "Transport protection (`REVERIE_SMTP_SECURITY`, default `implicit_tls`).\nCertificates are validated against the platform trust store; install a\nprivate CA there. `plaintext` is an explicit operator choice for a\ntrusted connection and allows relay authentication.",
+          "$ref": "#/$defs/SmtpSecurity",
+          "default": "implicit_tls"
+        },
+        "username": {
+          "description": "Relay login (`REVERIE_SMTP_USERNAME`). Requires the password.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    },
     "OpdsConfig": {
-      "description": "OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a\nBasic-only extractor and `public_url` must be set: feeds emit absolute URLs\nrooted at `public_url`.\n\nNote: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are\nmounted independently of `enabled` because the web UI needs them\nregardless of OPDS availability.",
+      "description": "OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a\nBasic-only extractor and the root `public_url` must be set: feeds emit\nabsolute URLs rooted at it.\n\nNote: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are\nmounted independently of `enabled` because the web UI needs them\nregardless of OPDS availability.",
       "type": "object",
       "properties": {
         "enabled": {
@@ -340,15 +428,6 @@
           "default": 50,
           "maximum": 500,
           "minimum": 1
-        },
-        "public_url": {
-          "description": "Externally-visible base URL the catalogue emits absolute links\nrooted at (`REVERIE_PUBLIC_URL`). Required when `enabled=true`;\noptional otherwise.",
-          "type": [
-            "string",
-            "null"
-          ],
-          "format": "uri",
-          "default": null
         },
         "realm": {
           "description": "`WWW-Authenticate: Basic realm=...` value emitted on 401\nresponses from `/opds/*` (`REVERIE_OPDS_REALM`, default\n`\"Reverie OPDS\"`). Validated to exclude `\"` to keep the header\nwell-formed.",
@@ -394,6 +473,26 @@
           "default": false
         }
       }
+    },
+    "SmtpSecurity": {
+      "description": "How the connection to the relay is protected.",
+      "oneOf": [
+        {
+          "description": "TLS from the first byte (SMTPS, default port 465).",
+          "type": "string",
+          "const": "implicit_tls"
+        },
+        {
+          "description": "Plaintext greeting upgraded with a required STARTTLS (default port 587);\na relay that does not offer it fails the submission.",
+          "type": "string",
+          "const": "starttls"
+        },
+        {
+          "description": "No transport encryption (default port 25). Credentials and messages\nare exposed to anyone on the network path.",
+          "type": "string",
+          "const": "plaintext"
+        }
+      ]
     },
     "WritebackConfig": {
       "description": "Writeback-worker knobs (the background task that flushes pending\ncanonical-metadata mutations into the source manifestation files).",

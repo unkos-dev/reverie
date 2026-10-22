@@ -29,7 +29,6 @@ fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: 
         enabled: false,
         page_size,
         realm: "Reverie OPDS".into(),
-        public_url: Some(url::Url::parse("http://localhost:3000").unwrap()),
     };
     let state = AppState {
         pool: app_pool.clone(),
