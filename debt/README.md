@@ -69,8 +69,8 @@ frontmatter.
   - `feature-flag`: gated on a project-internal feature flag flip
   - `release-tag`: gated on a release version
   - `infra-gap-closes`: waiting on adjacent infrastructure (homelab, deployment surface) being in place
-- **`lift-when`**: specific, measurable condition. Free text. Examples: "the recovery-pin index ships on main",
-  "upstream ships an oauth2-reqwest release supporting reqwest 0.13", "v0.2 release tag cut".
+- **`lift-when`**: specific, measurable condition. Free text. Examples: "upstream ships an oauth2-reqwest release
+  supporting reqwest 0.13", "v0.2 release tag cut".
 
 ## Lifecycle
 

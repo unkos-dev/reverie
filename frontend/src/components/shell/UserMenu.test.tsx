@@ -191,3 +191,20 @@ describe("UserChip", () => {
     expect(consoleSpy).toHaveBeenCalled();
   });
 });
+
+test("OIDC-only accounts can open email settings", async () => {
+  const me = useAuthMeMock().data;
+  if (me === undefined) throw new Error("fixture missing");
+  useAuthMeMock.mockReturnValue({
+    data: { ...me, has_local_password: false },
+    isLoading: false,
+    isError: false,
+  });
+  renderChip();
+  await userEvent.setup().click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+  expect(await screen.findByRole("menuitem", { name: "Email address" })).toHaveAttribute(
+    "href",
+    "/account/email",
+  );
+  expect(screen.queryByRole("menuitem", { name: "Change password" })).not.toBeInTheDocument();
+});

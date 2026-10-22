@@ -20,11 +20,13 @@ import {
   setAccountStatus,
   issueCredentialLink,
   cancelCredentialLink,
+  sendCredentialLinkEmail,
+  fetchCredentialLinkEmail,
 } from "@/api/users";
 import type { User, Role, CreateUserInput, CredentialLink } from "@/api/users";
 import { ApiError } from "@/api";
 import { displayNameField, emailField } from "@/api/auth.schemas";
-import { fetchSetupStatus } from "@/api/auth";
+import { fetchSetupStatus, fetchEmailVerification } from "@/api/auth";
 import { formatDateTime } from "@/lib/format/datetime";
 import { formString } from "@/lib/form";
 import {
@@ -347,13 +349,68 @@ function UserRow({
   );
 }
 
-type LinkResult = CredentialLink & { name: string; newAccount: boolean };
+type LinkResult = CredentialLink & {
+  name: string;
+  newAccount: boolean;
+  userId: string;
+  email: string | null;
+  hasPassword: boolean;
+};
 
-function LinkResultDialog({
+const mailFailureReasons = {
+  connection: "couldn't connect to the mail server",
+  tls: "the secure connection to the mail server failed",
+  authentication: "the mail server rejected Reverie's sign-in",
+  temporary_refusal: "the mail server refused it for now",
+  permanent_refusal: "the mail server refused it",
+  timeout: "the mail server didn't respond in time",
+  payload_unreadable: "the queued message couldn't be read",
+};
+
+function LinkResultContent({
   result,
   onDone,
 }: Readonly<{ result: LinkResult; onDone: () => void }>): ReactElement {
-  const url = `${window.location.origin}/set-password#${result.token}`;
+  const route = result.hasPassword ? "reset-password" : "set-password";
+  const url = `${window.location.origin}/${route}#${result.token}`;
+  const availability = useQuery({
+    queryKey: queryKeys.auth.emailVerification(),
+    queryFn: ({ signal }) => fetchEmailVerification(signal),
+    retry: false,
+  });
+  const sending = useMutation({
+    mutationFn: () => sendCredentialLinkEmail(result.userId, result.token),
+    gcTime: 0,
+  });
+  const jobId = sending.data?.job_id;
+  const delivery = useQuery({
+    queryKey: queryKeys.users.linkEmail(result.userId, jobId ?? ""),
+    queryFn: ({ signal }) => fetchCredentialLinkEmail(result.userId, jobId ?? "", signal),
+    enabled: jobId !== undefined,
+    initialData: sending.data,
+    gcTime: 0,
+    staleTime: Infinity,
+    refetchInterval: (query) => (query.state.data?.status === "queued" ? 3000 : false),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  });
+  const status = delivery.data ?? sending.data;
+  const inactive =
+    status?.status === "inactive" ||
+    (sending.error instanceof ApiError && sending.error.status === 422);
+  const accepted = status?.status === "accepted";
+  const queued = sending.isPending || status?.status === "queued";
+  let mailMessage: string | null = null;
+  if (inactive) mailMessage = "This link is no longer active. Create a new link to send it.";
+  else if (sending.error instanceof ApiError && sending.error.status === 503)
+    mailMessage = "Email isn't available right now. Copy the link instead.";
+  else if (sending.isError) mailMessage = "Couldn't confirm the request. Try again.";
+  else if (status?.status === "failed")
+    mailMessage = `Sending failed: ${mailFailureReasons[status.failure_category]}. Copy the link instead, or try again.`;
+  else if (accepted)
+    mailMessage = `The mail server accepted the email for ${result.email ?? ""}. This doesn't confirm it reached the inbox.`;
+  else if (queued) mailMessage = `Sending to ${result.email ?? ""}…`;
   const expiry = formatDateTime(result.expires_at);
   const description = result.newAccount
     ? `${result.name} uses this link to choose a password. It expires ${expiry}. You won't see it again. If it's lost, create a new link from the user list.`
@@ -367,31 +424,43 @@ function LinkResultDialog({
     }
   }
   return (
-    <Dialog
-      isOpen
-      onOpenChange={(open) => {
-        if (!open) onDone();
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Send this link to {result.name}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <Input readOnly value={url} aria-label="Credential link" />
-        <DialogFooter>
+    <>
+      <DialogHeader>
+        <DialogTitle>Send this link to {result.name}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
+      </DialogHeader>
+      <Input readOnly value={url} aria-label="Credential link" />
+      {mailMessage !== null ? (
+        <p role="status" className="mt-4 text-sm">
+          {mailMessage}
+        </p>
+      ) : null}
+      <DialogFooter>
+        {availability.data?.mail_enabled === true &&
+        result.email !== null &&
+        !inactive &&
+        !accepted ? (
           <Button
-            variant="outline"
+            isPending={queued}
             onPress={() => {
-              void copyLink();
+              sending.mutate();
             }}
           >
-            Copy link
+            {status?.status === "failed" || sending.isError ? "Try again" : "Send email"}
           </Button>
-          <Button onPress={onDone}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        ) : null}
+        <Button
+          autoFocus
+          variant="outline"
+          onPress={() => {
+            void copyLink();
+          }}
+        >
+          Copy link
+        </Button>
+        <Button onPress={onDone}>Done</Button>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -402,10 +471,18 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
   const [result, setResult] = useState<LinkResult | null>(null);
   const mutation = useMutation({
     mutationFn: (input: CreateUserInput) => createUser(input),
+    gcTime: 0,
     onSuccess: ({ user, link }) => {
       onCreated();
-      handleOpenChange(false);
-      setResult({ ...link, name: user.display_name, newAccount: true });
+      setOpen(true);
+      setResult({
+        ...link,
+        name: user.display_name,
+        newAccount: true,
+        userId: user.id,
+        email: user.email,
+        hasPassword: user.has_password,
+      });
     },
     onError: (err: Error) => {
       setError(errorDetail(err));
@@ -416,6 +493,8 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
     if (!next) {
       setError(null);
       setRole("adult");
+      setResult(null);
+      if (result !== null) mutation.reset();
     }
   }
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
@@ -435,70 +514,70 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
     mutation.mutate({ email: email.data, display_name: displayName.data, role });
   }
   return (
-    <>
-      <Dialog isOpen={open} onOpenChange={handleOpenChange}>
-        <Button>Create user</Button>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create user</DialogTitle>
-            <DialogDescription>
-              Create the account, then send the person the link it gives you. They choose their own
-              password.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-            <Field>
-              <FieldLabel htmlFor="create-display-name">Display name</FieldLabel>
-              <Input id="create-display-name" name="display_name" type="text" required />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="create-email">Email</FieldLabel>
-              <Input id="create-email" name="email" type="email" autoComplete="off" required />
-            </Field>
-            <Field>
-              <Select
-                className="flex flex-col gap-2"
-                value={role}
-                onChange={(value) => {
-                  if (typeof value !== "string") return;
-                  if (isRole(value)) setRole(value);
-                }}
-              >
-                <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
-                  Role
-                </AriaLabel>
-                <SelectTrigger id="create-role" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLE_OPTIONS.map((value) => (
-                    <SelectItem key={value} id={value}>
-                      {value}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            {error !== null ? <FieldError>{error}</FieldError> : null}
-            <DialogFooter>
-              <DialogClose type="button">Cancel</DialogClose>
-              <Button type="submit" isDisabled={mutation.isPending}>
-                Create user
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-      {result !== null ? (
-        <LinkResultDialog
-          result={result}
-          onDone={() => {
-            setResult(null);
-            mutation.reset();
-          }}
-        />
-      ) : null}
-    </>
+    <Dialog isOpen={open} onOpenChange={handleOpenChange}>
+      <Button>Create user</Button>
+      <DialogContent>
+        {result !== null ? (
+          <LinkResultContent
+            result={result}
+            onDone={() => {
+              handleOpenChange(false);
+            }}
+          />
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Create user</DialogTitle>
+              <DialogDescription>
+                Create the account, then send the person the link it gives you. They choose their
+                own password.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+              <Field>
+                <FieldLabel htmlFor="create-display-name">Display name</FieldLabel>
+                <Input id="create-display-name" name="display_name" type="text" required />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="create-email">Email</FieldLabel>
+                <Input id="create-email" name="email" type="email" autoComplete="off" required />
+              </Field>
+              <Field>
+                <Select
+                  className="flex flex-col gap-2"
+                  value={role}
+                  onChange={(value) => {
+                    if (typeof value !== "string") return;
+                    if (isRole(value)) setRole(value);
+                  }}
+                >
+                  <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
+                    Role
+                  </AriaLabel>
+                  <SelectTrigger id="create-role" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLE_OPTIONS.map((value) => (
+                      <SelectItem key={value} id={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              {error !== null ? <FieldError>{error}</FieldError> : null}
+              <DialogFooter>
+                <DialogClose type="button">Cancel</DialogClose>
+                <Button type="submit" isPending={mutation.isPending}>
+                  Create user
+                </Button>
+              </DialogFooter>
+            </form>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -512,10 +591,18 @@ function ResetPasswordDialog({
   const [result, setResult] = useState<LinkResult | null>(null);
   const mutation = useMutation({
     mutationFn: () => issueCredentialLink(user.id),
+    gcTime: 0,
     onSuccess: (link) => {
-      setOpen(false);
       onIssued();
-      setResult({ ...link, name: user.display_name, newAccount: false });
+      setOpen(true);
+      setResult({
+        ...link,
+        name: user.display_name,
+        newAccount: false,
+        userId: user.id,
+        email: user.email,
+        hasPassword: user.has_password,
+      });
     },
     onError: (err: Error) => {
       setError(
@@ -525,52 +612,54 @@ function ResetPasswordDialog({
       );
     },
   });
+  function handleOpenChange(next: boolean): void {
+    setOpen(next);
+    if (!next) {
+      setError(null);
+      setResult(null);
+      if (result !== null) mutation.reset();
+    }
+  }
   return (
-    <>
-      <Dialog
-        isOpen={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (!next) setError(null);
-        }}
-      >
-        <Button variant="outline" size="sm">
-          Reset password
-        </Button>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reset password for {user.display_name}?</DialogTitle>
-            <DialogDescription>
-              This creates a link {user.display_name} can use to choose a new password. Their
-              current password keeps working until the link is used. Using it signs them out
-              everywhere.{linkActive ? " This replaces the link created earlier." : ""}
-            </DialogDescription>
-          </DialogHeader>
-          {error !== null ? <FieldError>{error}</FieldError> : null}
-          <DialogFooter>
-            <DialogClose type="button">Cancel</DialogClose>
-            <Button
-              isDisabled={mutation.isPending}
-              onPress={() => {
-                setError(null);
-                mutation.mutate();
-              }}
-            >
-              Create link
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      {result !== null ? (
-        <LinkResultDialog
-          result={result}
-          onDone={() => {
-            setResult(null);
-            mutation.reset();
-          }}
-        />
-      ) : null}
-    </>
+    <Dialog isOpen={open} onOpenChange={handleOpenChange}>
+      <Button variant="outline" size="sm">
+        Reset password
+      </Button>
+      <DialogContent>
+        {result !== null ? (
+          <LinkResultContent
+            result={result}
+            onDone={() => {
+              handleOpenChange(false);
+            }}
+          />
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Reset password for {user.display_name}?</DialogTitle>
+              <DialogDescription>
+                This creates a link {user.display_name} can use to choose a new password. Their
+                current password keeps working until the link is used. Using it signs them out
+                everywhere.{linkActive ? " This replaces the link created earlier." : ""}
+              </DialogDescription>
+            </DialogHeader>
+            {error !== null ? <FieldError>{error}</FieldError> : null}
+            <DialogFooter>
+              <DialogClose type="button">Cancel</DialogClose>
+              <Button
+                isPending={mutation.isPending}
+                onPress={() => {
+                  setError(null);
+                  mutation.mutate();
+                }}
+              >
+                Create link
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

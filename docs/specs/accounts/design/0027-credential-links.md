@@ -44,7 +44,8 @@ The [OpenAPI contract](../../../../backend/openapi.json) defines request and res
 - `DELETE /api/v1/users/{id}/credential-links` cancels the link with an idempotent 204.
 - `POST /api/v1/users/{id}/credential-links/emails` accepts the live token in the body, queues it for the account's
   stored address and returns the job ID and status with 202, or a fixed 503 when mail is not configured.
-- `GET /api/v1/users/{id}/credential-links/emails/{job_id}` returns that job's queued, accepted or failed status.
+- `GET /api/v1/users/{id}/credential-links/emails/{job_id}` returns that job's queued, accepted, failed or inactive
+  status.
 - `POST /auth/credential-links/lookups` accepts a token and returns the account email and password-presence flag.
 - `POST /auth/credential-links/redemptions` accepts a token and password and returns 204 without creating a session.
 
@@ -73,10 +74,16 @@ Issuance upserts the account's row. Cancellation deletes it. Redemption conditio
 transaction. User deletion cascades. Expired rows remain inert until replaced, redeemed or cascaded; their count cannot
 exceed the user count. There is no sweep.
 
-The Set password route loader captures the fragment token and removes it from browser history with `replaceState` before
+The `/set-password` and `/reset-password` routes share one page and loader. Copied and emailed links use `/set-password`
+for accounts without a password and `/reset-password` for accounts with one, selected at issuance or enqueue. Email
+recovery always uses `/reset-password`. Both routes render their form from the lookup response’s `has_password`.
+
+The shared route loader captures the fragment token and removes it from browser history with `replaceState` before
 mounting the page or starting lookup. The router retains the token in memory for that route. React Query owns lookup,
 password-policy loading and mutation state. The Users dialogs own the once-displayed result and clear it when closed.
-The administrator's browser builds the link from `window.location.origin`. The host command and emailed links use
+Token-bearing queries and mutations use zero cache retention after the page or dialog closes. Delivery polling belongs
+to the open result dialog, runs every three seconds while queued and stops at a final outcome or close. The
+administrator's browser builds the link from `window.location.origin`. The host command and emailed links use
 `REVERIE_PUBLIC_URL`. The backend never uses Host or forwarded headers to construct a link.
 
 ## Runtime behaviour
@@ -97,6 +104,9 @@ password-replacement proof and cancels its pending mail, writes the password, in
 password notice when mail is enabled and the address is verified, and commits. The wall-clock comparison catches expiry
 while waiting for the user lock. Concurrent redemption has one winner. No database handle or user lock is held while
 hashing.
+
+The create and reset flows retain one dialog through the link result; React Aria owns focus containment and restoration.
+Pending actions retain focus while React Aria blocks repeated presses and implicit form submission.
 
 The form shows new-account or reset copy from `has_password`, checks confirmation and the existing client policy, and
 renders server errors. A temporary lookup failure offers an explicit retry that retains the token in memory and disables
@@ -129,10 +139,11 @@ existing error toast directs the administrator to select and copy the displayed 
 
 ## Security and operations
 
-A link is a bearer credential. Administrators deliver it out of band; forwarding it delegates the ability to set the
-bound account's password. Expiry, cancellation and replacement limit exposure. Neither digests nor raw tokens belong in
-logs. Fragment removal limits accidental retention in navigation history; fragments are not sent in HTTP requests.
-Session-version invalidation forces existing sessions to sign in again after successful redemption.
+A link is a bearer credential. Administrators copy it for manual delivery or explicitly request email; forwarding it
+delegates the ability to set the bound account's password. Expiry, cancellation and replacement limit exposure. Neither
+digests nor raw tokens belong in logs. Fragment removal limits accidental retention in navigation history; fragments are
+not sent in HTTP requests. Session-version invalidation forces existing sessions to sign in again after successful
+redemption.
 
 Recovery notifications reach only a verified address on an instance with mail configured. Device-token revocation is
 outside this flow. The host `reset-password` command prints its link to the operator's terminal after commit and never

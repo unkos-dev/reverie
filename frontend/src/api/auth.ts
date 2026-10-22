@@ -15,10 +15,10 @@ import { z } from "zod";
 
 import {
   ChangePasswordSchema,
+  emailProofTokenField,
   ForgotPasswordSchema,
   LoginLocalSchema,
   RegisterSchema,
-  ResetPasswordSchema,
   SetupAdminSchema,
 } from "./auth.schemas";
 import { refreshCsrfToken } from "./csrf";
@@ -40,6 +40,7 @@ const SetupStatusSchema = z.object({
   setup_required: z.boolean(),
   local_auth_enabled: z.boolean(),
   oidc_enabled: z.boolean(),
+  email_recovery_enabled: z.boolean(),
   password_min_length: z.number().int().positive(),
   password_max_length: z.number().int().positive(),
 });
@@ -99,7 +100,7 @@ export async function setupAdmin(
 
 /**
  * Start password recovery (`POST /auth/forgot-password`). Always succeeds
- * generically; the operator reads the issued PIN from the host file.
+ * generically without revealing whether an eligible account exists.
  *
  * # Errors
  * Throws {@link ApiError} on rate limiting (429) or disabled local auth (404).
@@ -107,26 +108,6 @@ export async function setupAdmin(
 export async function requestPasswordReset(email: string): Promise<void> {
   const body = ForgotPasswordSchema.parse({ email });
   await apiFetch("/auth/forgot-password", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-/**
- * Complete password recovery with a PIN (`POST /auth/reset-password`). Does not
- * establish a session: the caller signs in with the new password.
- *
- * # Errors
- * Throws {@link ApiError} on an invalid or expired request (422) or rate
- * limiting (429).
- */
-export async function resetPassword(
-  email: string,
-  pin: string,
-  newPassword: string,
-): Promise<void> {
-  const body = ResetPasswordSchema.parse({ email, pin, new_password: newPassword });
-  await apiFetch("/auth/reset-password", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -200,5 +181,29 @@ export async function redeemCredentialLink(token: string, password: string): Pro
   await apiFetch("/auth/credential-links/redemptions", {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+const EmailVerificationSchema = z.object({
+  email: z.email().nullable(),
+  email_verified: z.boolean(),
+  mail_enabled: z.boolean(),
+});
+export type EmailVerification = z.infer<typeof EmailVerificationSchema>;
+
+export async function fetchEmailVerification(signal?: AbortSignal): Promise<EmailVerification> {
+  return EmailVerificationSchema.parse(
+    await apiFetch("/api/v1/account/email-verifications", { signal }),
+  );
+}
+
+export async function requestEmailVerification(): Promise<void> {
+  await apiFetch("/api/v1/account/email-verifications", { method: "POST" });
+}
+
+export async function confirmEmailVerification(token: string): Promise<void> {
+  await apiFetch("/api/v1/account/email-verifications/confirmations", {
+    method: "POST",
+    body: JSON.stringify({ token: emailProofTokenField.parse(token) }),
   });
 }

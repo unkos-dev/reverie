@@ -33,8 +33,10 @@ files. [Application runtime](0024-application-runtime-startup-workers-and-shutdo
 - `backend/src/services/mail/transport.rs` builds the `lettre` transport and performs one bounded submission, shared by
   the worker and `send-test-email`.
 - `backend/src/services/mail/crypto.rs` seals and opens payloads with RustCrypto `aes-gcm`.
-- `backend/src/services/mail/queue.rs` enqueues jobs, claims due jobs, records outcomes and runs the worker loop.
-- `backend/src/models/mail_job.rs` holds the row model, which never serialises its payload, nonce or digest.
+- `backend/src/models/mail_job.rs` owns creating mail jobs, cancellation, allowances and the non-serialising row model.
+- `backend/src/services/mail/queue.rs` claims due jobs, records outcomes and owns the bounded runtime and worker loop.
+- `backend/src/services/mail/dispatch.rs` admits recovery work and enqueues proof mail and event-bound notices.
+- `backend/src/services/mail/render.rs` renders the approved subjects, bodies, routes and UTC dates.
 
 ## Interfaces and dependencies
 
@@ -98,8 +100,9 @@ exchange bounded to 30 seconds. No database transaction or lock is held during s
 Message-ID derived from the job UUID.
 
 A temporary failure is retried 30 seconds, two minutes, five minutes and fifteen minutes after the preceding failure:
-five attempts in total. A permanent refusal stops at once. Proof mail expires with its proof; notices expire 24 hours
-after enqueue. Retries never change the original enqueue time.
+five attempts in total. Permanent refusal and unreadable payloads stop at once. An interrupted fifth attempt records
+`timeout`. Proof mail expires with its proof; notices expire 24 hours after enqueue. Retries never change the original
+enqueue time.
 
 On startup, including a supervised restart, `in_progress` jobs return to `pending` and the interrupted attempt counts.
 Shutdown stops new claims and cancels unfinished work within the worker stop budget. When mail is disabled, no job is
@@ -126,6 +129,9 @@ rules, and generated configuration artefacts leave them empty.
 The queue key is backed up apart from the database. A key supports about 2^32 encryption operations; Reverie keeps no
 counter, and a database restore does not reset usage. Planned replacement disables mail, stops the process, lets proofs
 expire, cancels remaining jobs and clears payloads with documented SQL, then restarts with the new key.
+
+The [operator guide](../../../deployment/mail-and-recovery.md) covers configuration, submission checks, recovery and
+key-maintenance SQL.
 
 Plaintext mode exposes credentials and messages to anyone on the network path. It suits only a connection the operator
 trusts. Private certificate authorities are installed in the host or container trust store.

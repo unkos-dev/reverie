@@ -24,6 +24,7 @@ beforeEach(() => {
     setup_required: false,
     local_auth_enabled: true,
     oidc_enabled: false,
+    email_recovery_enabled: false,
     password_min_length: 15,
     password_max_length: 256,
   });
@@ -35,10 +36,11 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function renderPage(): QueryClient {
+function renderPage(path = "/set-password"): QueryClient {
+  window.history.replaceState(null, "", path + window.location.hash);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const router = createMemoryRouter([{ path: "/set-password", Component, loader }], {
-    initialEntries: ["/set-password"],
+  const router = createMemoryRouter([{ path, Component, loader }], {
+    initialEntries: [path],
   });
   render(
     <QueryClientProvider client={client}>
@@ -95,6 +97,7 @@ test.each([new TypeError("Failed to fetch"), new ApiError(503, null, "Busy", "Tr
       setup_required: false,
       local_auth_enabled: true,
       oidc_enabled: false,
+      email_recovery_enabled: false,
       password_min_length: 15,
       password_max_length: 256,
     };
@@ -346,4 +349,51 @@ test("disables submission while redemption is pending", async () => {
   renderPage();
   await submitPassword();
   expect(screen.getByRole("button", { name: "Set password" })).toBeDisabled();
+});
+
+test.each(["/set-password", "/reset-password"])(
+  "%s renders from password state rather than its route",
+  async (path) => {
+    vi.mocked(lookupCredentialLink).mockResolvedValue({
+      email: "bob@example.com",
+      has_password: true,
+    });
+    renderPage(path);
+    expect(await screen.findByText("Reset your password")).toBeInTheDocument();
+    expect(window.location.hash).toBe("");
+    expect(redeemCredentialLink).not.toHaveBeenCalled();
+  },
+);
+test.each(["/set-password", "/reset-password"])(
+  "%s supports an account with no password",
+  async (path) => {
+    renderPage(path);
+    expect(await screen.findByText("Set your password")).toBeInTheDocument();
+  },
+);
+test.each([
+  ["/set-password", true, false],
+  ["/reset-password", false, false],
+  ["/reset-password", true, true],
+])("%s uses its approved invalid-link copy", async (path, enabled, recoveryAction) => {
+  vi.mocked(fetchSetupStatus).mockResolvedValue({
+    setup_required: false,
+    local_auth_enabled: true,
+    oidc_enabled: false,
+    email_recovery_enabled: enabled,
+    password_min_length: 15,
+    password_max_length: 256,
+  });
+  vi.mocked(lookupCredentialLink).mockRejectedValue(
+    new ApiError(422, null, "Invalid", "invalid or expired link"),
+  );
+  renderPage(path);
+  expect(await screen.findByText("This link can't be used")).toBeInTheDocument();
+  if (recoveryAction)
+    expect(await screen.findByRole("link", { name: "Request a new link" })).toHaveAttribute(
+      "href",
+      "/forgot-password",
+    );
+  else expect(screen.queryByRole("link", { name: "Request a new link" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Go to sign in" })).toHaveAttribute("href", "/login");
 });

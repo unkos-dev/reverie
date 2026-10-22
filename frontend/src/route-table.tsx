@@ -53,6 +53,14 @@ export const routes: RouteObject[] = [
         ],
       },
       {
+        path: "/account/email",
+        errorElement: <RootErrorBoundary />,
+        lazy: async () => {
+          const mod = await import("./routes/account-email");
+          return { Component: mod.Component };
+        },
+      },
+      {
         path: "/account/password",
         errorElement: <RootErrorBoundary />,
         lazy: async () => {
@@ -89,6 +97,24 @@ export const routes: RouteObject[] = [
     errorElement: <RootErrorBoundary />,
     lazy: async () => {
       const mod = await import("./routes/auth-forgot-password");
+      return { Component: mod.Component };
+    },
+  },
+  {
+    path: "/verify-email",
+    errorElement: <RootErrorBoundary />,
+    loader: credentialLinkLoader,
+    lazy: async () => {
+      const mod = await import("./routes/verify-email");
+      return { Component: mod.Component };
+    },
+  },
+  {
+    path: "/reset-password",
+    errorElement: <RootErrorBoundary />,
+    loader: credentialLinkLoader,
+    lazy: async () => {
+      const mod = await import("./routes/set-password");
       return { Component: mod.Component };
     },
   },

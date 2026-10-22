@@ -38,13 +38,12 @@ recovery without knowing the resulting password or adding a temporary-password s
 A browser-authenticated administrator issues or cancels a link. Account creation and its initial link are atomic.
 Issuance returns a random 256-bit token once; storage holds its SHA-256 digest, bound to one account for 72 hours.
 Reissuing replaces the account's link. The host `reset-password` command issues into the same slot with a ten-minute
-lifetime and prints the link to its terminal; it replaces host PIN recovery. The administrator's browser constructs the
-URL from its own origin. The host command and emailed links use the configured public URL and never a request's Host.
-Every link carries the token in the fragment. Only an enabled account with an email can redeem a link. Redemption
-applies password policy and bounded hashing, then atomically consumes the unexpired link, invalidates every other
-password-replacement proof, writes the password and increments the session version. It does not sign the person in or
-reset login accounting. When mail is configured, an administrator can also email the live link to the account's stored
-address.
+lifetime and prints the link to its terminal. The administrator's browser constructs the URL from its own origin. The
+host command and emailed links use the configured public URL and never a request's Host. Every link carries the token in
+the fragment. Only an enabled account with an email can redeem a link. Redemption applies password policy and bounded
+hashing, then atomically consumes the unexpired link, invalidates every other password-replacement proof, writes the
+password and increments the session version. It does not sign the person in or reset login accounting. When mail is
+configured, an administrator can also email the live link to the account's stored address.
 
 Administrator-chosen passwords keep delivery simple, but disclose the credential to someone other than its holder.
 Temporary passwords shorten that exposure only if changed and require a restricted sign-in state until then.

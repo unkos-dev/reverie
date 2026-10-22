@@ -34,6 +34,7 @@ function stubApi(mutationPath: string): void {
           setup_required: false,
           local_auth_enabled: true,
           oidc_enabled: false,
+          email_recovery_enabled: false,
           password_min_length: 15,
           password_max_length: 256,
         }),
@@ -120,4 +121,26 @@ describe("route table", () => {
       "/library",
     );
   });
+});
+
+test("verification clears its fragment before checking the session and never confirms on mount", async () => {
+  const token = "A".repeat(43);
+  window.history.replaceState(null, "", `/verify-email#${token}`);
+  const request = vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
+    expect(window.location.hash).toBe("");
+    if (init?.method === "POST") return Promise.resolve(new Response(null, { status: 204 }));
+    return Promise.resolve(
+      json(200, { email: "holder@example.test", email_verified: false, mail_enabled: true }),
+    );
+  });
+  renderAt("/verify-email");
+  const button = await screen.findByRole("button", { name: "Verify email" });
+  expect(request.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
+  await userEvent.setup().click(button);
+  expect(
+    await screen.findByRole("heading", { name: "Email address verified" }),
+  ).toBeInTheDocument();
+  const posted = request.mock.calls.find(([, init]) => init?.method === "POST");
+  expect(posted?.[0]).toBe("/api/v1/account/email-verifications/confirmations");
+  expect(posted?.[1]?.body).toBe(JSON.stringify({ token }));
 });

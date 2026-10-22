@@ -17,11 +17,29 @@ const TARGETS = parseTargets(process.env.A11Y_TARGETS);
 
 for (const target of TARGETS) {
   test(`WCAG 2.2 AA: ${target}`, async ({ page }, testInfo) => {
+    await page.route("**/auth/setup/status", async (route) => {
+      await route.fulfill({
+        json: {
+          setup_required: false,
+          local_auth_enabled: true,
+          oidc_enabled: false,
+          email_recovery_enabled: true,
+          password_min_length: 15,
+          password_max_length: 256,
+        },
+      });
+    });
     await page.goto(target);
     // Web-first readiness marker: every scannable target renders its content
     // inside a single top-level <main>, which is the bar a route clears before
     // it joins the list. Preferred over networkidle, which Playwright discourages.
     await expect(page.getByRole("main")).toBeVisible();
+    if (target === "/forgot-password") {
+      await expect(page.getByRole("textbox", { name: "Email", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Send reset link" })).toBeVisible();
+    } else if (target === "/verify-email" || target === "/reset-password") {
+      await expect(page.getByRole("heading", { name: "This link can't be used" })).toBeVisible();
+    }
 
     const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
 

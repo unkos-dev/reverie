@@ -43,6 +43,7 @@ beforeEach(() => {
     setup_required: false,
     local_auth_enabled: true,
     oidc_enabled: false,
+    email_recovery_enabled: false,
     password_min_length: 15,
     password_max_length: 256,
   });
@@ -59,6 +60,7 @@ describe("account-password", () => {
         setup_required: false,
         local_auth_enabled: true,
         oidc_enabled: false,
+        email_recovery_enabled: false,
         password_min_length: 24,
         password_max_length: 64,
       })
@@ -82,6 +84,7 @@ describe("account-password", () => {
       setup_required: false,
       local_auth_enabled: true,
       oidc_enabled: true,
+      email_recovery_enabled: false,
       password_min_length: 24,
       password_max_length: 64,
     });
