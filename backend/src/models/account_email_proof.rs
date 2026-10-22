@@ -1,7 +1,8 @@
 //! Mailbox proofs: one slot per account and purpose, holding only a token digest.
 //!
-//! Every function except [`lock_account`] expects the caller to hold the owning
-//! user-row lock and to run in one transaction with its mail-job writes.
+//! Every function except [`lock_account`](crate::models::account_email_proof::lock_account)
+//! expects the caller to hold the owning user-row lock and to run in one
+//! transaction with its mail-job writes.
 //! Expiry decisions use `clock_timestamp()` so a lock wait cannot admit a proof
 //! that expired while the caller waited.
 
