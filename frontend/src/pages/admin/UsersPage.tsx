@@ -1,4 +1,10 @@
-import { Label as AriaLabel } from "react-aria-components";
+import {
+  FieldError as AriaFieldError,
+  Form,
+  Input as AriaInput,
+  Label as AriaLabel,
+  TextField,
+} from "react-aria-components";
 /**
  * `/admin/users` — admin-only user management page.
  *
@@ -397,6 +403,14 @@ function LinkResultDialog({
   );
 }
 
+function validateDisplayName(value: string): string | null {
+  return displayNameField.safeParse(value).success ? null : "Enter a display name.";
+}
+
+function validateEmail(value: string): string | null {
+  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
+}
+
 function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): ReactElement {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -423,15 +437,8 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
     setError(null);
     const data = new FormData(event.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
-    if (!displayName.success) {
-      setError("Enter a display name.");
-      return;
-    }
     const email = emailField.safeParse(formString(data, "email"));
-    if (!email.success) {
-      setError("Enter a valid email address.");
-      return;
-    }
+    if (!displayName.success || !email.success) return;
     const role = roleField.safeParse(data.get("role"));
     if (!role.success) {
       setError("Choose a valid role.");
@@ -451,15 +458,30 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
               password.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-            <Field>
-              <FieldLabel htmlFor="create-display-name">Display name</FieldLabel>
-              <Input id="create-display-name" name="display_name" type="text" required />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="create-email">Email</FieldLabel>
-              <Input id="create-email" name="email" type="email" autoComplete="off" required />
-            </Field>
+          <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <TextField
+              name="display_name"
+              type="text"
+              isRequired
+              validate={validateDisplayName}
+              render={(props) => <Field {...props} />}
+            >
+              <AriaLabel render={(props) => <FieldLabel {...props} />}>Display name</AriaLabel>
+              <AriaInput render={(props) => <Input {...props} />} />
+              <AriaFieldError className="text-destructive text-sm font-normal" />
+            </TextField>
+            <TextField
+              name="email"
+              type="email"
+              autoComplete="off"
+              isRequired
+              validate={validateEmail}
+              render={(props) => <Field {...props} />}
+            >
+              <AriaLabel render={(props) => <FieldLabel {...props} />}>Email</AriaLabel>
+              <AriaInput render={(props) => <Input {...props} />} />
+              <AriaFieldError className="text-destructive text-sm font-normal" />
+            </TextField>
             <Field>
               <Select className="flex flex-col gap-2" name="role" defaultValue="adult">
                 <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
@@ -480,11 +502,11 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
             {error !== null ? <FieldError>{error}</FieldError> : null}
             <DialogFooter>
               <DialogClose type="button">Cancel</DialogClose>
-              <Button type="submit" isDisabled={mutation.isPending}>
+              <Button type="submit" isPending={mutation.isPending}>
                 Create user
               </Button>
             </DialogFooter>
-          </form>
+          </Form>
         </DialogContent>
       </Dialog>
       {result !== null ? (

@@ -145,8 +145,90 @@ describe("TokensPage", () => {
     await user.click(await screen.findByRole("button", { name: "New token" }));
     await user.click(screen.getByRole("button", { name: "Create" }));
 
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toHaveAccessibleDescription(
+      "Enter a name (1-255 characters).",
+    );
+    expect(screen.getByLabelText("Name")).toHaveFocus();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(create).not.toHaveBeenCalled();
+  });
+
+  test("a whitespace-only name is blocked and an overlong one is blocked at 256 characters", async () => {
+    const create = vi.spyOn(tokensApi, "createToken").mockRejectedValue(new Error("refused"));
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    const name = screen.getByLabelText("Name");
+
+    await user.type(name, "   ");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    expect(name).toHaveAccessibleDescription("Enter a name (1-255 characters).");
+
+    await user.clear(name);
+    await user.click(name);
+    await user.paste("a".repeat(256));
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    expect(name).toHaveAccessibleDescription("Enter a name (1-255 characters).");
+    expect(create).not.toHaveBeenCalled();
+
+    await user.clear(name);
+    await user.click(name);
+    await user.paste(` ${"a".repeat(255)} `);
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    expect(create).toHaveBeenCalledExactlyOnceWith({
+      name: "a".repeat(255),
+      scopes: ["write"],
+      expiresInDays: 90,
+    });
+  });
+
+  test("the access level hint follows the native level choice", async () => {
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    const form = screen.getByLabelText("Name").closest("form");
+    if (!form) throw new Error("Create-token form missing");
+
+    expect(new FormData(form).get("level")).toBe("write");
+    expect(screen.getByText("View and modify library data.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Access level/ }));
+    await user.click(await screen.findByRole("option", { name: "Read-only" }));
+    expect(new FormData(form).get("level")).toBe("read");
+    expect(screen.getByText("View library data. Cannot make changes.")).toBeInTheDocument();
+  });
+
+  test("repeated click and Enter while creation is pending send one request", async () => {
+    const create = vi.spyOn(tokensApi, "createToken").mockReturnValue(new Promise(() => {}));
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.type(screen.getByLabelText("Name"), "reader");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByLabelText("Name"));
+    await user.keyboard("{Enter}");
+
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  test("reopening during a deferred creation restores defaults and cannot send a second request", async () => {
+    const create = vi.spyOn(tokensApi, "createToken").mockReturnValue(new Promise(() => {}));
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.type(screen.getByLabelText("Name"), "reader");
+    await user.click(screen.getByRole("button", { name: /Expires/ }));
+    await user.click(await screen.findByRole("option", { name: "30 days" }));
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+
+    expect(screen.getByLabelText("Name")).toHaveValue("");
+    expect(screen.getByRole("button", { name: /Expires/ })).toHaveTextContent("90 days");
+    await user.type(screen.getByLabelText("Name"), "second");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   test("submits the default write level, name, and expiry", async () => {
