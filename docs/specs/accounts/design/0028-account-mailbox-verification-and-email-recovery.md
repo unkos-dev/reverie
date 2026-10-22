@@ -22,7 +22,7 @@ reset by email, the security-notice events and which recipient each event uses. 
 email and Forgot password screens.
 
 It depends on [credential links](0027-credential-links.md) for the lookup, redemption and Set password experience that
-emailed reset links reuse, on
+emailed reset links reuse at `/reset-password`, on
 [authentication mail delivery](../../operations/design/0029-authentication-mail-delivery.md) for the mail queue and
 submission, and on request authentication for session and CSRF checks. Administrator links, the host `reset-password`
 command, own-password change and session versioning keep their own subjects. OIDC sign-in never sets or reads
@@ -77,7 +77,8 @@ verify the same way.
 account lookup. It tries to take one of four background permits without waiting. With a permit, a tracked task bounded
 to five seconds checks eligibility and issues or reuses a recovery proof and its mail job. Without one, the request is
 dropped. The response is the same either way and never waits for the task. Eligibility means local authentication
-enabled, account enabled, a verified current address and an existing local password.
+enabled, account enabled, a verified current address and an existing local password. Recovery emails always link to
+`/reset-password` and state the proof's expiry written out in full in UTC.
 
 Under the account lock, a pending delivery for the live proof absorbs the request. Otherwise the request is allowed only
 if the account's last recovery mail was queued at least 60 seconds earlier, fewer than five were queued in the rolling

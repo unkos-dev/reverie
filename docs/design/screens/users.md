@@ -39,9 +39,10 @@ For a reset:
 "{name} uses this link to choose a new password. It expires {expiry}. You won't see it again."
 
 Show the read-only link, then "Copy link" and "Done". Copying succeeds with the toast "Link copied.". Build the URL from
-the browser's origin as `/set-password#{token}`. Closing the result clears the displayed link. Format {expiry} with the
-existing date-time formatter. If clipboard access is unavailable or denied, keep the link visible and show the error
-toast "Couldn't copy the link. Select the link and copy it manually.".
+the browser's origin as `/set-password#{token}` when the account has no password and `/reset-password#{token}` when it
+has one. Closing the result clears the displayed link. Format {expiry} with the existing date-time formatter. If
+clipboard access is unavailable or denied, keep the link visible and show the error toast "Couldn't copy the link.
+Select the link and copy it manually.".
 
 ## Reset and cancel
 
@@ -82,7 +83,7 @@ delivery's status every 3 seconds and stops at Accepted, Failed or when the dial
 | ------ | ---- | ------- |
 | Queued | "Sending to {email}…" | "Send email" disabled |
 | Accepted | "The mail server accepted the email for {email}. This doesn't confirm it reached the inbox." | "Send email" hidden |
-| Failed | "The mail server didn't confirm the email: {reason}. Copy the link instead, or try again." | "Try again" replaces "Send email" |
+| Failed | "Sending failed: {reason}. Copy the link instead, or try again." | "Try again" replaces "Send email" |
 
 | Failure category     | {reason}                                          |
 | -------------------- | ------------------------------------------------- |
@@ -99,8 +100,8 @@ instead." A refusal because the link was replaced, cancelled or expired shows "T
 new link to send it." A network failure shows "Couldn't confirm the request. Try again." In every case the link and
 "Copy link" stay available. Closing the dialog stops status refresh and discards the link.
 
-Link email, with {origin} the configured public URL and {support} the configured support address, also the Reply-To. For
-a new account:
+Link email, with {origin} the configured public URL, {expiry} the link's expiry in the email date format below and
+{support} the configured support address, also the Reply-To. For an account without a password:
 
 Subject: "Set your Reverie password"
 
@@ -110,12 +111,12 @@ An administrator invited you to set a password for the Reverie account {email} a
 To choose your password, open this link:
 {origin}/set-password#{token}
 
-The link works once and expires on {expiry} UTC.
+The link works once and expires on {expiry}.
 
 If you weren't expecting this, ignore this email or write to {support}.
 ```
 
-For a reset:
+For an account with a password:
 
 Subject: "Reset your Reverie password"
 
@@ -123,13 +124,17 @@ Subject: "Reset your Reverie password"
 An administrator started a password reset for the Reverie account {email} at {origin}.
 
 To choose a new password, open this link:
-{origin}/set-password#{token}
+{origin}/reset-password#{token}
 
-The link works once and expires on {expiry} UTC. Your current password keeps working until the link is used. Using it
+The link works once and expires on {expiry}. Your current password keeps working until the link is used. Using it
 signs the account out everywhere.
 
 If you weren't expecting this, write to {support}.
 ```
+
+Email date format: {expiry} is written out in full in UTC as `{weekday} {day} {month} at {hour}:{minute} {am|pm} UTC`,
+with full weekday and month names, no leading zero on the day or hour, two-digit minutes, a 12-hour clock with lowercase
+"am" or "pm", and the time zone named once. Proposed example, awaiting approval: "Saturday 25 October at 2:00 pm UTC".
 
 ## Keyboard and accessibility
 

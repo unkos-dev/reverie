@@ -36,8 +36,7 @@ password."
 
 Title: "Forgot password".
 
-Body: "Enter the email address you sign in with. If password reset by email is available for that account, a reset link
-will be sent to it."
+Body: "Enter your account's email address."
 
 One "Email" field with `type="email"` and `autocomplete="email"`, then a full-width "Send reset link" button. A value
 that fails the shared email pattern shows "Enter a valid email address." inline and sends nothing. Disable the button
@@ -62,8 +61,8 @@ Below the text, a full-width outline button "Use a different email" returns to t
 
 ## Recovery email
 
-Only an eligible account receives this message. {origin} is the configured public URL, {expiry} the proof's expiry time
-and {support} the configured support address, which is also the Reply-To.
+Only an eligible account receives this message. {origin} is the configured public URL, {expiry} the proof's expiry and
+{support} the configured support address, which is also the Reply-To.
 
 Subject: "Reset your Reverie password"
 
@@ -73,15 +72,18 @@ Body:
 Someone asked to reset the password for the Reverie account {email} at {origin}.
 
 To choose a new password, open this link:
-{origin}/set-password#{token}
+{origin}/reset-password#{token}
 
-The link works once and expires on {expiry} UTC. Using it signs the account out everywhere.
+The link works once and expires on {expiry}. Using it signs the account out everywhere.
 
 If you didn't ask for this, ignore this email. This request did not change your password. To report a problem, reply to this email
 or write to {support}.
 ```
 
-The link opens the Set password screen.
+The link opens the Set password screen at `/reset-password`.
+
+{expiry} is written out in full in UTC as `{weekday} {day} {month} at {hour}:{minute} {am|pm} UTC`, with the same rules
+as the Users screen's link emails. Proposed example, awaiting approval: "Saturday 25 October at 2:00 pm UTC".
 
 ## Keyboard and accessibility
 
