@@ -205,6 +205,27 @@ afterEach(() => {
 });
 
 describe("shell navigation — click reachability (admin)", () => {
+  test("book navigation preserves the shell through browser back and forward", async () => {
+    stubFetch("admin");
+    const { router } = renderApp();
+    const user = userEvent.setup();
+    await screen.findByRole("link", { name: /Guards! Guards!/ });
+    const main = screen.getByRole("main");
+
+    await user.click(screen.getByRole("link", { name: /Guards! Guards!/ }));
+    await screen.findByRole("link", { name: /Discworld · #8/ }, { timeout: 5000 });
+    expect(screen.getByRole("main")).toBe(main);
+
+    await router.navigate(-1);
+    await screen.findByRole("heading", { name: "Library" });
+    expect(screen.getByRole("main")).toBe(main);
+
+    await router.navigate(1);
+    await screen.findByRole("link", { name: /Discworld · #8/ }, { timeout: 5000 });
+    expect(screen.getByRole("main")).toBe(main);
+    expect(router.state.location.pathname).toBe("/b/b1");
+  });
+
   test("every routed screen is reachable by click from /library", async () => {
     stubFetch("admin");
     const { router } = renderApp();

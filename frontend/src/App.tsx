@@ -1,6 +1,6 @@
 import { RouterProvider as AriaRouterProvider } from "react-aria-components";
 import { NuqsAdapter } from "nuqs/adapters/react-router/v8";
-import type { ReactElement } from "react";
+import { ViewTransition, type ReactElement } from "react";
 import { Outlet, useHref, useNavigate } from "react-router";
 
 import { CommandPalette } from "@/components/CommandPalette";
@@ -33,9 +33,11 @@ function App(): ReactElement {
       useHref={useHref}
     >
       <NuqsAdapter>
-        <AppShell>
-          <Outlet />
-        </AppShell>
+        <ViewTransition>
+          <AppShell>
+            <Outlet />
+          </AppShell>
+        </ViewTransition>
         <CommandPalette />
       </NuqsAdapter>
     </AriaRouterProvider>

@@ -80,7 +80,6 @@ function BookContent({ id }: Readonly<BookContentProps>): ReactElement {
                     it has no other inbound surface (spec §4). */}
                 <Link
                   to={`/series/${book.series.id}`}
-                  viewTransition
                   className="text-fg-muted hover:text-fg focus-visible:ring-accent rounded-sm text-xs uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2"
                 >
                   {seriesLabel}
