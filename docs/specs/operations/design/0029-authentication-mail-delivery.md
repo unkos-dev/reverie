@@ -108,8 +108,9 @@ enqueue time.
 
 On startup, including a supervised restart, `in_progress` jobs return to `pending` and the interrupted attempt counts.
 Startup and shutdown reclaim each have a 30-second bound; exceeding it ends the run with an error. Shutdown stops new
-claims and cancels unfinished work within the worker stop budget. When mail is disabled, no job is queued and no worker
-runs; stored jobs wait, and on re-enable expired or revoked ones are discarded before submission.
+claims and cancels submission in progress. Once submission returns an outcome, its recording finishes before reclaim,
+within the worker stop budget. When mail is disabled, no job is queued and no worker runs; stored jobs wait, and on
+re-enable expired or revoked ones are discarded before submission.
 
 ## Failure and recovery
 

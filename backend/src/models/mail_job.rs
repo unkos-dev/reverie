@@ -424,8 +424,14 @@ pub async fn admin_link_status(
     job_id: Uuid,
 ) -> Result<Option<JobStatus>, sqlx::Error> {
     let Some(row) = sqlx::query!(
-        "SELECT state, failure_category FROM mail_jobs \
-          WHERE id = $1 AND user_id = $2 AND purpose = 'admin_link'",
+        r#"SELECT CASE WHEN EXISTS (
+                    SELECT 1 FROM credential_links l JOIN users u ON u.id = l.user_id
+                     WHERE l.user_id = j.user_id AND l.token_hash = j.proof_digest
+                       AND l.expires_at > clock_timestamp()
+                       AND u.disabled_at IS NULL AND u.email IS NOT NULL
+                 ) THEN j.state ELSE 'cancelled' END AS "state!", j.failure_category
+             FROM mail_jobs j
+            WHERE j.id = $1 AND j.user_id = $2 AND j.purpose = 'admin_link'"#,
         job_id,
         user_id,
     )

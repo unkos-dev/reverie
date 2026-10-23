@@ -2700,6 +2700,12 @@ mod mail_flow {
             .add_header(mail::csrf(&csrf).0, mail::csrf(&csrf).1)
             .await;
         assert_eq!(removed.status_code(), StatusCode::NO_CONTENT);
+        for previous in [&job, &second] {
+            assert_eq!(
+                status(&e, invitee.id, previous).await,
+                json!({"job_id": previous, "status": "inactive", "failure_category": null})
+            );
+        }
         assert_eq!(
             status(&e, invitee.id, &third).await,
             json!({"job_id": third, "status": "inactive", "failure_category": null})
@@ -2723,6 +2729,98 @@ mod mail_flow {
             ))
             .await;
         assert_eq!(unknown.status_code(), StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_admin_delivery_accepted_status_tracks_the_live_link(pool: PgPool) {
+        let relay = FakeRelay::start(Behaviour::Accept).await;
+        let e = env_on(&pool, relay.port).await;
+        let (_, csrf) = admin(&e, &pool).await;
+        for action in ["replace", "redeem", "expire"] {
+            let invitee = invite(&e, &csrf, &format!("{action}@example.test")).await;
+            let job = send(&e, &csrf, invitee.id, &invitee.token)
+                .await
+                .json::<serde_json::Value>()["job_id"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            assert!(deliver_next(&e).await);
+            assert_eq!(status(&e, invitee.id, &job).await["status"], "accepted");
+            match action {
+                "replace" => {
+                    reissue(&e, &csrf, invitee.id).await;
+                }
+                "redeem" => {
+                    let response = another(&e)
+                        .post("/auth/credential-links/redemptions")
+                        .json(&json!({"token": invitee.token, "password": PASSWORD}))
+                        .await;
+                    assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+                }
+                "expire" => {
+                    sqlx::query!("UPDATE credential_links SET expires_at = now() - interval '1 second' WHERE user_id = $1", invitee.id)
+                        .execute(&pool).await.unwrap();
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                status(&e, invitee.id, &job).await,
+                json!({"job_id": job, "status": "inactive", "failure_category": null}),
+                "{action}"
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_admin_delivery_address_changes_revoke_delivered_links(pool: PgPool) {
+        let relay = FakeRelay::start(Behaviour::Accept).await;
+        let e = env_on(&pool, relay.port).await;
+        let (_, csrf) = admin(&e, &pool).await;
+        for (index, email) in [Some("new@example.test"), None].into_iter().enumerate() {
+            let invitee = invite(&e, &csrf, &format!("old-{index}@example.test")).await;
+            send(&e, &csrf, invitee.id, &invitee.token)
+                .await
+                .assert_status(StatusCode::ACCEPTED);
+            assert!(deliver_next(&e).await);
+            patch(
+                &e.server,
+                &csrf,
+                invitee.id,
+                json!({"email": format!("OLD-{index}@example.test")}),
+            )
+            .await
+            .assert_status(StatusCode::OK);
+            assert!(
+                crate::models::credential_link::lookup(&e.app, &invitee.token)
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+            patch(&e.server, &csrf, invitee.id, json!({"email": email}))
+                .await
+                .assert_status(StatusCode::OK);
+            if email.is_none() {
+                patch(
+                    &e.server,
+                    &csrf,
+                    invitee.id,
+                    json!({"email": "restored@example.test"}),
+                )
+                .await
+                .assert_status(StatusCode::OK);
+            }
+            let response = another(&e)
+                .post("/auth/credential-links/redemptions")
+                .json(&json!({"token": invitee.token, "password": PASSWORD}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            assert!(
+                crate::models::local_credentials::find_by_user_id(&e.app, invitee.id)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]

@@ -1388,7 +1388,8 @@ async fn retire_old_address(
     account_email_proof::cancel_all(tx, id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    mail_job::revoke_for_authority(tx, id, mail_job::AuthorityKind::CredentialLink)
+    // THREAT: A former mailbox holder must lose any delivered password-setting authority.
+    crate::models::credential_link::cancel(tx, id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     if let (Some(old), Some(_), Some(outbox)) = (

@@ -45,7 +45,8 @@ The [OpenAPI contract](../../../../backend/openapi.json) defines request and res
 - `POST /api/v1/users/{id}/credential-links/emails` accepts the live token in the body, queues it for the account's
   stored address and returns the job ID and status with 202, or a fixed 503 when mail is not configured.
 - `GET /api/v1/users/{id}/credential-links/emails/{job_id}` returns that job's queued, accepted, failed or inactive
-  status.
+  status. A delivery is inactive once its token no longer matches the account's usable, unexpired link, including
+  deliveries the relay previously accepted or refused.
 - `POST /auth/credential-links/lookups` accepts a token and returns the account email and password-presence flag.
 - `POST /auth/credential-links/redemptions` accepts a token and password and returns 204 without creating a session.
 

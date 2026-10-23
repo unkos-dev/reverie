@@ -538,13 +538,11 @@ pub async fn run_worker(
                 }
             }
         }
-        let result = tokio::select! {
-            () = cancel.cancelled() => break,
-            result = tokio::time::timeout(
-                transport::SUBMISSION_TIMEOUT * 2,
-                process_next(&pool, &runtime, &cancel),
-            ) => result,
-        };
+        let result = tokio::time::timeout(
+            transport::SUBMISSION_TIMEOUT * 2,
+            process_next(&pool, &runtime, &cancel),
+        )
+        .await;
         match result.context("mail worker step timed out")? {
             Ok(true) => continue,
             Ok(false) => {}
@@ -1189,6 +1187,76 @@ mod tests {
                 .to_owned()
         };
         assert_eq!(id_line(&messages[0]), id_line(&messages[1]));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_queue_shutdown_finishes_recording_an_accepted_attempt(pool: PgPool) {
+        use std::sync::{
+            Mutex,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        let f = fixture(&pool, Behaviour::Accept).await;
+        for (index, attempt) in [1, MAX_ATTEMPTS].into_iter().enumerate() {
+            let cancel = CancellationToken::new();
+            let job = enqueue_notice(&f.app, f.user, MailPurpose::NoticePasswordSet, ADDRESS).await;
+            sqlx::query!(
+                "UPDATE mail_jobs SET attempt_count = $2 WHERE id = $1",
+                job,
+                attempt - 1
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            let worker_pool = sqlx::postgres::PgPoolOptions::new()
+                .max_connections(1)
+                .connect_with(f.app.connect_options().as_ref().clone())
+                .await
+                .unwrap();
+            let held = Arc::new(Mutex::new(None));
+            let accepted = Arc::new(tokio::sync::Notify::new());
+            let subscriber = tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::INFO)
+                .with_writer({
+                    let worker_pool = worker_pool.clone();
+                    let held = Arc::clone(&held);
+                    let accepted = Arc::clone(&accepted);
+                    let cancel = cancel.clone();
+                    let captured = AtomicBool::new(false);
+                    move || {
+                        if !captured.swap(true, Ordering::SeqCst) {
+                            *held.lock().unwrap() = Some(worker_pool.try_acquire().unwrap());
+                            cancel.cancel();
+                            accepted.notify_one();
+                        }
+                        std::io::sink()
+                    }
+                })
+                .finish();
+            let worker = tokio::spawn(
+                run_worker(
+                    worker_pool.clone(),
+                    Arc::clone(&f.runtime),
+                    cancel.clone(),
+                    POLL_INTERVAL,
+                )
+                .with_subscriber(subscriber),
+            );
+            tokio::time::timeout(Duration::from_secs(5), accepted.notified())
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            drop(held.lock().unwrap().take());
+            tokio::time::timeout(Duration::from_secs(5), worker)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert_eq!(state_of(&pool, job).await, "accepted");
+            assert_eq!(attempts(&pool, job).await.0, attempt);
+            assert_eq!(f.relay.message_count(), index + 1);
+            worker_pool.close().await;
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]

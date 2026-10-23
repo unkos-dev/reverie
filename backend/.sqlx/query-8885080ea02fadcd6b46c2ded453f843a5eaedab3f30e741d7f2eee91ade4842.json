@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE credential_links SET expires_at = now() - interval '1 second' WHERE user_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8885080ea02fadcd6b46c2ded453f843a5eaedab3f30e741d7f2eee91ade4842"
+}
