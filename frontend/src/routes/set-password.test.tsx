@@ -436,4 +436,9 @@ test("marks the action pending while redemption is in flight", async () => {
   renderPage();
   await submitPassword();
   expect(screen.getByRole("button", { name: "Set password" })).toHaveAttribute("data-pending");
+  await waitFor(() => {
+    expect(
+      document.querySelector('[aria-live="assertive"] [role="img"]:last-child'),
+    ).toHaveAccessibleName("Set password");
+  });
 });
