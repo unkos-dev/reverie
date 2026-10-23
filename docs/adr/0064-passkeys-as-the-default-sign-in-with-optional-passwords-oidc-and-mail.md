@@ -63,8 +63,9 @@ Reverie offers passkeys first wherever the browser supports them on a secure ori
 performs registration and authentication; Reverie owns the product policy around it. Local passwords stay available, and
 they can be disabled for one account or for the whole instance. The instance setting overrides account preferences. An
 account disables passwords only after an alternative sign-in method is verified, and the instance setting has its own
-readiness check. The server enforces a disabled password, and neither HTTP access nor recovery re-enables it. OIDC
-remains an optional, operator-configured method, and accounts are still matched on issuer and subject.
+readiness check. The server enforces a disabled password, and neither HTTP access nor recovery re-enables it. That
+includes redeeming a credential link: where passwords are disabled, redemption never writes one. OIDC remains an
+optional, operator-configured method, and accounts are still matched on issuer and subject.
 
 Installation begins with onboarding the first administrator. Other people join through an invitation bound to their
 account, and they enrol a credential they control. On an origin without passkey support, the invitation enrols a
@@ -96,8 +97,9 @@ installation.
   password attack surface there.
 - Negative: the instance now owns three interactive credential types plus enrolment and recovery flows, all
   security-critical.
-- Negative: plain-HTTP installations cannot use passkeys and stay password-only. HTTP also leaves credentials and
-  session traffic without encryption, so it is unsuitable for public exposure.
+- Negative: devices that reach an installation over plain HTTP cannot use passkeys and stay on passwords; only a browser
+  on the host itself, through `localhost`, can. HTTP also leaves credentials and session traffic without encryption, so
+  it is unsuitable for public exposure.
 - Negative: passkeys are bound to the relying-party domain. A hostname change can strand them, and those users then need
   recovery or re-enrolment.
 - Negative: a sustained targeted attack can repeatedly obstruct sign-in for password-only users, and an enabled password
@@ -162,12 +164,13 @@ which deferred passkeys and treated passwords and OIDC as co-equal modes.
 [Password admission with committed failure accounting](0059-password-admission-with-committed-failure-accounting.md)
 records password admission and separate source allowances.
 [Administrators issue account-bound credential links](0061-administrators-issue-account-bound-credential-links.md)
-records invitations and administrator-assisted recovery, and
+records invitations and administrator-assisted recovery; this decision narrows its password-only redemption.
 [Optional SMTP delivery through an encrypted durable mail queue](0063-optional-smtp-delivery-through-an-encrypted-durable-mail-queue.md)
 records optional mail.
 
-The choice of WebAuthn library, the relying-party identifier and hostname-change policy, the sign-in interaction, and
-the readiness checks for disabling passwords are left to later decisions.
+The choice of WebAuthn library, the relying-party identifier and hostname-change policy, the sign-in interaction, the
+readiness checks for disabling passwords, and the credential a link enrols where passwords are disabled are left to
+later decisions.
 
 [WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/) exposes its API only in secure contexts and scopes a credential to
 a relying-party identifier that is the origin's domain or a parent domain of it.
