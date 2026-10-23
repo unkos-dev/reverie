@@ -54,6 +54,15 @@ afterEach(() => {
 });
 
 describe("auth-setup", () => {
+  test("describes the password with the policy hint without a render element warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    renderSetup({ setup_required: true, local_auth_enabled: true, oidc_enabled: false });
+    expect(screen.getByLabelText("Password")).toHaveAccessibleDescription(
+      /Use 15 to 256 characters\./,
+    );
+    expect(warn).not.toHaveBeenCalledWith(expect.stringMatching(/Unexpected DOM element/));
+  });
+
   test("submitting creates the admin then routes to /login", async () => {
     vi.mocked(setupAdmin).mockResolvedValue(undefined);
     renderSetup({ setup_required: true, local_auth_enabled: true, oidc_enabled: false });

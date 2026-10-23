@@ -30,6 +30,7 @@ export function PasswordPolicyHint({
     <>
       <Text
         slot="description"
+        elementType="p"
         role={policy === undefined && failed ? "alert" : undefined}
         render={(props) => <FieldDescription {...props} />}
       >
