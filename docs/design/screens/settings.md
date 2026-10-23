@@ -313,8 +313,9 @@ Each state gives its trigger and its exact copy.
   try again." Focus stays where it was.
 - A 422 that names no field shows the same alert with the body "The server did not accept this change: {detail}." and
   marks no field.
-- Save stays active. Changing a field and leaving it checks it again and clears a server error on it. The alert stays
-  until the next save, "Discard changes" or leaving the area.
+- Save stays active. A server error stays on its field until that field changes. A save attempted before then sends
+  nothing, keeps the alert and moves focus to that field. Changing the field and leaving it checks it again and clears
+  the server error. The alert stays until the next save that is sent, "Discard changes" or leaving the area.
 
 ### Removal confirmation
 
@@ -388,8 +389,8 @@ Each state gives its trigger and its exact copy.
 - Each area form is named "{Area} settings". The area title is an `h2` under the page's `h1`.
 - Status notices ("Settings saved", the reapplying notice, the removal note and the bar message) are `role="status"`.
   The conflict, validation, nothing-was-saved, save-failed, load-error and forbidden notices are `role="alert"`.
-- A save blocked by a client check moves focus to the first failing field. A server refusal leaves focus where it was,
-  and its alert announces it.
+- A save blocked by a client check, or by a server error on a field that has not changed since, moves focus to the first
+  failing field. A server refusal leaves focus where it was, and its alert announces it.
 - The save button stays in the tab order while pending and rejects repeat activation. Pristine actions and Discard
   during a save are disabled and leave the tab order; no application focus transfer runs when they become disabled.
 - Dialogs trap focus, close on Escape as the safe choice (Stay or Keep), and return focus as described above. The
@@ -430,7 +431,8 @@ A rendered page is accepted when every item holds, in the dark theme and the lig
     with Keep mine and Use theirs, and a second stale answer opens the panel too.
 11. Validation shows the message on the field. A save blocked by a client check sends nothing, shows no alert and
     focuses the first failing field. A 422 naming a field shows "Review the field errors and try again." without moving
-    focus. A 422 and a network failure keep the user's edits.
+    focus; saving again before that field changes sends nothing and focuses it. A 422 and a network failure keep the
+    user's edits.
 12. Leaving with unsaved edits raises the discard prompt with "Stay on this page" focused. It is not raised when
     pristine, after a save, or after "Nothing was saved".
 13. Turning on either removal switch raises the confirmation with "Keep source files" focused. Keep returns focus to the

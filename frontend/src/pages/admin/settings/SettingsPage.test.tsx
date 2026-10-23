@@ -157,8 +157,8 @@ function handlePut(init: RequestInit | undefined): Response {
   if (server.putMode === "422-switch" || server.putMode === "422-formats") {
     const detail =
       server.putMode === "422-switch"
-        ? "enrichment_enabled cannot change while a lookup runs"
-        : "accepted_formats must name a supported format";
+        ? "enrichment_enabled is not accepted"
+        : "accepted_formats supports only epub";
     return reply({ title: "Unprocessable", status: 422, detail }, 422);
   }
   if (server.putMode === "422-unmapped") {
@@ -809,14 +809,14 @@ describe("accepted formats", () => {
       await loaded("acquisition");
       await user.click(screen.getByRole("checkbox", { name: "PDF" }));
       await user.click(save());
-      const message = await screen.findByText("accepted_formats must name a supported format");
+      const message = await screen.findByText("accepted_formats supports only epub");
       expect(message).toBeInTheDocument();
       expect(screen.getByRole("alert")).toHaveTextContent(
         "Settings were not savedReview the field errors and try again.",
       );
       expect(screen.getByRole("checkbox", { name: "PDF" })).toBeChecked();
       expect(screen.getByRole("checkbox", { name: "PDF" })).toHaveAccessibleDescription(
-        /accepted_formats must name a supported format/,
+        /accepted_formats supports only epub/,
       );
     });
   });
@@ -1175,9 +1175,7 @@ describe("validation", () => {
     await waitFor(() => {
       expect(control).toHaveAttribute("aria-invalid", "true");
     });
-    expect(control).toHaveAccessibleDescription(
-      /enrichment_enabled cannot change while a lookup runs/,
-    );
+    expect(control).toHaveAccessibleDescription(/enrichment_enabled is not accepted/);
     expect(screen.getByRole("alert")).toHaveTextContent("Review the field errors and try again.");
     await waitFor(() => {
       expect(save()).toBeEnabled();
@@ -1185,6 +1183,12 @@ describe("validation", () => {
     expect(save()).toHaveFocus();
     expect(control).not.toBeChecked();
     expect(server.puts).toHaveLength(1);
+
+    await user.click(save());
+    expect(server.puts).toHaveLength(1);
+    expect(control).toHaveAttribute("aria-invalid", "true");
+    expect(control).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent("Review the field errors and try again.");
   });
 
   test("editing a field that carries a server error clears it and the next save goes through", async () => {
@@ -1233,7 +1237,7 @@ describe("validation", () => {
     await user.click(save());
     expect(
       await screen.findByText(
-        "The server did not accept this change: accepted_formats must name a supported format.",
+        "The server did not accept this change: accepted_formats supports only epub.",
       ),
     ).toBeInTheDocument();
     expect(invalidControls()).toHaveLength(0);
