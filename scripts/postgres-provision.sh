@@ -99,14 +99,14 @@ pg_owned_signal() {
   local signal="$1" attempt
   if [[ -n "$pg_child" ]]; then
     if ! kill -s "$signal" -- "-$pg_child" 2>/dev/null; then
-      pg_fail "child signal forwarding failed for $pg_container"
+      pg_fail "child signal forwarding failed for $pg_container" || :
     fi
     for ((attempt=0; attempt<100; attempt++)); do
       kill -0 -- "-$pg_child" 2>/dev/null || break
       sleep 0.1
     done
     if kill -0 -- "-$pg_child" 2>/dev/null; then
-      kill -KILL -- "-$pg_child" 2>/dev/null || pg_fail "child kill failed for $pg_container"
+      kill -KILL -- "-$pg_child" 2>/dev/null || pg_fail "child kill failed for $pg_container" || :
     fi
   else
     case "$signal" in
@@ -198,15 +198,15 @@ pg_disposable() {
   done
   if kill -0 -- "-$pg_child" 2>/dev/null; then
     if ! kill -TERM -- "-$pg_child" 2>/dev/null; then
-      pg_fail "descendant termination failed for $pg_container"
+      pg_fail "descendant termination failed for $pg_container" || :
     fi
     for ((attempt=0; attempt<100; attempt++)); do
       kill -0 -- "-$pg_child" 2>/dev/null || break
       sleep 0.1
     done
     if kill -0 -- "-$pg_child" 2>/dev/null; then
-      kill -KILL -- "-$pg_child" 2>/dev/null || pg_fail "descendant kill failed for $pg_container"
-      pg_fail "descendant termination timed out for $pg_container"
+      kill -KILL -- "-$pg_child" 2>/dev/null || pg_fail "descendant kill failed for $pg_container" || :
+      pg_fail "descendant termination timed out for $pg_container" || :
     fi
   fi
   exit "$status"
