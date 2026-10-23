@@ -16,34 +16,31 @@
  */
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
+import { Form } from "react-aria-components";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { register } from "@/api/auth";
-import { displayNameField, emailField } from "@/api/auth.schemas";
+import {
+  displayNameField,
+  emailField,
+  validateDisplayName,
+  validateEmail,
+} from "@/api/auth.schemas";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FieldError, TextInputField } from "@/components/ui/field";
 import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
 
-/**
- * A validation error tagged with the field it belongs to, so `aria-invalid` is
- * scoped to the failing input. A server rejection is not field-specific (for
- * example a duplicate email or a disabled instance), so it stays `form` level
- * and is announced through the alert without mislabelling a specific input.
- */
-type FormError = { field: "display" | "email" | "password" | "form"; message: string };
-
 /** Route component for `/register`. */
 export function Component(): ReactElement {
   const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
   const navigate = useNavigate();
-  const [error, setError] = useState<FormError | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const registerMutation = useMutation({
     mutationFn: ({
@@ -62,7 +59,7 @@ export function Component(): ReactElement {
     onError: (err) => {
       const message =
         err instanceof ApiError && err.detail !== "" ? err.detail : "Could not create the account.";
-      setError({ field: "form", message });
+      setError(message);
       toast.error(message);
     },
   });
@@ -73,24 +70,9 @@ export function Component(): ReactElement {
     setError(null);
     const data = new FormData(e.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
-    if (!displayName.success) {
-      setError({ field: "display", message: "Enter a display name." });
-      return;
-    }
     const email = emailField.safeParse(formString(data, "email"));
-    if (!email.success) {
-      setError({ field: "email", message: "Enter a valid email address." });
-      return;
-    }
     const password = formString(data, "password");
-    const passwordError = validate(password);
-    if (passwordError !== undefined) {
-      setError({
-        field: "password",
-        message: passwordError,
-      });
-      return;
-    }
+    if (!displayName.success || !email.success || validate(password) !== undefined) return;
     registerMutation.mutate({
       email: email.data,
       displayName: displayName.data,
@@ -108,46 +90,38 @@ export function Component(): ReactElement {
         </Link>
       }
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-        <Field>
-          <FieldLabel htmlFor="display_name">Display name</FieldLabel>
-          <Input
-            id="display_name"
-            name="display_name"
-            type="text"
-            autoComplete="name"
-            required
-            aria-invalid={error?.field === "display" || undefined}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            aria-invalid={error?.field === "email" || undefined}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="password">Password</FieldLabel>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={error?.field === "password" || undefined}
-          />
+      <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <TextInputField
+          name="display_name"
+          type="text"
+          autoComplete="name"
+          isRequired
+          validate={validateDisplayName}
+          label="Display name"
+        />
+        <TextInputField
+          name="email"
+          type="email"
+          autoComplete="email"
+          isRequired
+          validate={validateEmail}
+          label="Email"
+        />
+        <TextInputField
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          isRequired
+          validate={(value) => (ready ? (validate(value) ?? null) : null)}
+          label="Password"
+        >
           <PasswordPolicyHint policy={policy} failed={policyError} />
-        </Field>
-        {error ? <FieldError>{error.message}</FieldError> : null}
-        <Button type="submit" isDisabled={registerMutation.isPending || !ready}>
+        </TextInputField>
+        {error !== null ? <FieldError>{error}</FieldError> : null}
+        <Button type="submit" isPending={registerMutation.isPending} isDisabled={!ready}>
           Create account
         </Button>
-      </form>
+      </Form>
     </AuthShell>
   );
 }

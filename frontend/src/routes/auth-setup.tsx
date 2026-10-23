@@ -12,16 +12,22 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
+import { Form } from "react-aria-components";
 import { Navigate, useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, setupAdmin, type SetupStatus } from "@/api/auth";
-import { displayNameField, emailField, newPasswordField } from "@/api/auth.schemas";
+import {
+  displayNameField,
+  emailField,
+  newPasswordField,
+  validateDisplayName,
+  validateEmail,
+} from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FieldError, TextInputField } from "@/components/ui/field";
 import { formString } from "@/lib/form";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -91,26 +97,23 @@ export function Component(): ReactElement {
     return <Navigate to="/login" replace />;
   }
 
+  const passwordField = newPasswordField(status);
+
+  function validatePassword(value: string): string | null {
+    const parsed = passwordField.safeParse(value);
+    return parsed.success
+      ? null
+      : (parsed.error.issues[0]?.message ?? "Check the password length.");
+  }
+
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
-    if (status === undefined) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
-    if (!displayName.success) {
-      setError("Enter a display name.");
-      return;
-    }
     const email = emailField.safeParse(formString(data, "email"));
-    if (!email.success) {
-      setError("Enter a valid email address.");
-      return;
-    }
-    const password = newPasswordField(status).safeParse(formString(data, "password"));
-    if (!password.success) {
-      setError(password.error.issues[0]?.message ?? "Check the password length.");
-      return;
-    }
+    const password = passwordField.safeParse(formString(data, "password"));
+    if (!displayName.success || !email.success || !password.success) return;
     setupMutation.mutate({
       email: email.data,
       displayName: displayName.data,
@@ -123,46 +126,38 @@ export function Component(): ReactElement {
       title="Set up Reverie"
       description="Create the first administrator account for this instance."
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-        <Field>
-          <FieldLabel htmlFor="display_name">Display name</FieldLabel>
-          <Input
-            id="display_name"
-            name="display_name"
-            type="text"
-            autoComplete="name"
-            required
-            aria-invalid={error !== null || undefined}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            aria-invalid={error !== null || undefined}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="password">Password</FieldLabel>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={error !== null || undefined}
-          />
+      <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <TextInputField
+          name="display_name"
+          type="text"
+          autoComplete="name"
+          isRequired
+          validate={validateDisplayName}
+          label="Display name"
+        />
+        <TextInputField
+          name="email"
+          type="email"
+          autoComplete="email"
+          isRequired
+          validate={validateEmail}
+          label="Email"
+        />
+        <TextInputField
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          isRequired
+          validate={validatePassword}
+          label="Password"
+        >
           <PasswordPolicyHint policy={status} failed={false} />
-        </Field>
+        </TextInputField>
         {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" isDisabled={setupMutation.isPending}>
+        <Button type="submit" isPending={setupMutation.isPending}>
           Create administrator
         </Button>
-      </form>
+      </Form>
     </AuthShell>
   );
 }

@@ -15,15 +15,16 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from "react";
+import { Form } from "react-aria-components";
 import { Link, Navigate, useLocation } from "react-router";
 import { z } from "zod";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, loginLocal } from "@/api/auth";
+import { currentPasswordField, validateEmail } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FieldError, TextInputField } from "@/components/ui/field";
 import { formString } from "@/lib/form";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -51,6 +52,10 @@ const outcomeCopy = {
   },
   throttled: { title: "Too many sign-in attempts", body: "Wait a moment, then try again." },
 };
+
+function validatePassword(value: string): string | null {
+  return currentPasswordField.safeParse(value).success ? null : "Enter your password.";
+}
 
 function OutcomeNotice(): ReactElement | null {
   const location = useLocation();
@@ -146,34 +151,28 @@ export function Component(): ReactElement {
   }
 
   const localForm = status.local_auth_enabled ? (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-      <Field>
-        <FieldLabel htmlFor="email">Email</FieldLabel>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          aria-invalid={error !== null || undefined}
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="password">Password</FieldLabel>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          aria-invalid={error !== null || undefined}
-        />
-      </Field>
+    <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <TextInputField
+        name="email"
+        type="email"
+        autoComplete="email"
+        isRequired
+        validate={validateEmail}
+        label="Email"
+      />
+      <TextInputField
+        name="password"
+        type="password"
+        autoComplete="current-password"
+        isRequired
+        validate={validatePassword}
+        label="Password"
+      />
       {error !== null ? <FieldError>{error}</FieldError> : null}
-      <Button type="submit" isDisabled={loginMutation.isPending}>
+      <Button type="submit" isPending={loginMutation.isPending}>
         Sign in
       </Button>
-    </form>
+    </Form>
   ) : null;
 
   const oidcAction = status.oidc_enabled ? (

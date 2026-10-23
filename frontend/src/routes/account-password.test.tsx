@@ -76,7 +76,9 @@ describe("account-password", () => {
     await user.type(screen.getByLabelText("Current password"), "old");
     await user.type(screen.getByLabelText("New password"), "sixteen-letters!!");
     await user.click(screen.getByRole("button", { name: "Change password" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Use at least 24 characters.");
+    expect(screen.getByLabelText("New password")).toHaveAccessibleDescription(
+      /Use at least 24 characters\./,
+    );
     expect(changeOwnPassword).not.toHaveBeenCalled();
   });
   test("uses stricter configured bounds and leaves a short current password usable", async () => {
@@ -94,7 +96,10 @@ describe("account-password", () => {
     await user.type(screen.getByLabelText("Current password"), "old");
     await user.type(screen.getByLabelText("New password"), "sixteen-letters!!");
     await user.click(screen.getByRole("button", { name: "Change password" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Use at least 24 characters.");
+    expect(screen.getByLabelText("New password")).toHaveAccessibleDescription(
+      /Use at least 24 characters\./,
+    );
+    expect(screen.getByLabelText("Current password")).not.toHaveAttribute("aria-invalid");
     expect(changeOwnPassword).not.toHaveBeenCalled();
   });
 
@@ -142,20 +147,81 @@ describe("account-password", () => {
     await user.type(screen.getByLabelText("New password"), "new-password-two-2");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByLabelText("Current password")).toHaveAccessibleDescription(
+      "Enter your current password.",
+    );
+    expect(screen.getByLabelText("Current password")).toHaveFocus();
     expect(changeOwnPassword).not.toHaveBeenCalled();
   });
 
   test("blocks a short new password and never calls the API", async () => {
     renderChange();
     const user = userEvent.setup();
+    await screen.findByText(/Use 15 to 256 characters/);
 
     await user.type(screen.getByLabelText("Current password"), "old-password-1");
     await user.type(screen.getByLabelText("New password"), "short");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByLabelText("New password")).toHaveAccessibleDescription(
+      /Use at least 15 characters\./,
+    );
+    expect(screen.getByLabelText("New password")).toHaveFocus();
     expect(changeOwnPassword).not.toHaveBeenCalled();
+  });
+
+  test("counts the new password in Unicode scalar values", async () => {
+    vi.mocked(changeOwnPassword).mockResolvedValue(undefined);
+    renderChange();
+    const user = userEvent.setup();
+    await screen.findByText(/Use 15 to 256 characters/);
+    const next = screen.getByLabelText("New password");
+
+    await user.type(screen.getByLabelText("Current password"), "old");
+    await user.click(next);
+    await user.paste("🙂".repeat(14));
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    expect(next).toHaveAccessibleDescription(/Use at least 15 characters\./);
+    expect(changeOwnPassword).not.toHaveBeenCalled();
+
+    await user.click(next);
+    await user.paste("🙂");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    expect(changeOwnPassword).toHaveBeenCalledExactlyOnceWith("old", "🙂".repeat(15));
+  });
+
+  test("keeps entered values without marking fields invalid when the server refuses", async () => {
+    vi.mocked(changeOwnPassword).mockRejectedValue(
+      new ApiError(422, null, "Validation Error", "Current password is incorrect."),
+    );
+    renderChange();
+    const user = userEvent.setup();
+    await screen.findByText(/Use 15 to 256 characters/);
+
+    await user.type(screen.getByLabelText("Current password"), "wrong-password");
+    await user.type(screen.getByLabelText("New password"), "new-password-two-2");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Current password is incorrect.");
+    expect(screen.getByLabelText("Current password")).toHaveValue("wrong-password");
+    expect(screen.getByLabelText("New password")).toHaveValue("new-password-two-2");
+    expect(screen.getByLabelText("Current password")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByLabelText("New password")).not.toHaveAttribute("aria-invalid");
+  });
+
+  test("repeated click and Enter while the change is pending send one request", async () => {
+    vi.mocked(changeOwnPassword).mockReturnValue(new Promise(() => {}));
+    renderChange();
+    const user = userEvent.setup();
+    await screen.findByText(/Use 15 to 256 characters/);
+
+    await user.type(screen.getByLabelText("Current password"), "old-password-1");
+    await user.type(screen.getByLabelText("New password"), "new-password-two-2");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    await user.keyboard("{Enter}");
+
+    expect(changeOwnPassword).toHaveBeenCalledTimes(1);
   });
 
   test("scopes aria-invalid to the field that failed", async () => {
@@ -168,7 +234,6 @@ describe("account-password", () => {
     await user.type(current, "old-password-1");
     await user.type(next, "short");
     await user.click(screen.getByRole("button", { name: "Change password" }));
-    await screen.findByRole("alert");
     expect(next).toHaveAttribute("aria-invalid", "true");
     expect(current).not.toHaveAttribute("aria-invalid");
 
@@ -177,7 +242,6 @@ describe("account-password", () => {
     await user.type(next, "new-password-two-2");
     await user.clear(current);
     await user.click(screen.getByRole("button", { name: "Change password" }));
-    await screen.findByRole("alert");
     expect(current).toHaveAttribute("aria-invalid", "true");
     expect(next).not.toHaveAttribute("aria-invalid");
   });

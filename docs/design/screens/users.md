@@ -23,7 +23,9 @@ The dialog title and submit button say "Create user". Its description is:
 "Create the account, then send the person the link it gives you. They choose their own password."
 
 Fields, in order: "Display name", "Email", "Role". There is no password input. Successful creation opens the link
-result. Submission errors retain the fields and render the returned detail.
+result. A blank display name shows "Enter a display name." and an invalid email "Enter a valid email address." beneath
+the field; a submission they block sends nothing and focuses the first failing field. Server errors retain the fields
+and render the returned detail as a general alert.
 
 ## Link result
 

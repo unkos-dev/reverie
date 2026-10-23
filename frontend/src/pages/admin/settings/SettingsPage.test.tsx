@@ -61,7 +61,17 @@ const BASE_VALUES: Values = {
 
 type PutRecord = { patch: Values; ifMatch: string | null };
 
-type PutMode = "ok" | "403" | "422" | "422-unmapped" | "network" | "500" | "401" | "428-first";
+type PutMode =
+  | "ok"
+  | "403"
+  | "422"
+  | "422-switch"
+  | "422-formats"
+  | "422-unmapped"
+  | "network"
+  | "500"
+  | "401"
+  | "428-first";
 
 type Server = {
   role: "admin" | "adult";
@@ -143,6 +153,13 @@ function handlePut(init: RequestInit | undefined): Response {
       },
       422,
     );
+  }
+  if (server.putMode === "422-switch" || server.putMode === "422-formats") {
+    const detail =
+      server.putMode === "422-switch"
+        ? "enrichment_enabled is not accepted"
+        : "accepted_formats supports only epub";
+    return reply({ title: "Unprocessable", status: 422, detail }, 422);
   }
   if (server.putMode === "422-unmapped") {
     return reply(
@@ -269,6 +286,12 @@ async function type(
 }
 
 const save = (): HTMLElement => screen.getByRole("button", { name: /^Save/ });
+
+function invalidControls(): HTMLElement[] {
+  return [...screen.queryAllByRole("textbox"), ...screen.queryAllByRole("switch")].filter(
+    (control) => control.getAttribute("aria-invalid") === "true",
+  );
+}
 
 function holdPut(): () => void {
   let release: () => void = () => undefined;
@@ -702,6 +725,9 @@ describe("accepted formats", () => {
     expect(row.queryByRole("checkbox", { name: "EPUB" })).not.toBeInTheDocument();
     expect(row.queryByText(/is the only format Reverie supports/)).not.toBeInTheDocument();
     expect(document.getElementById("help-accepted_formats")).toBeNull();
+    expect(document.getElementById("help-ingestion_enabled")).toHaveTextContent(
+      /Reverie stops starting new imports/,
+    );
     const field = document.querySelector('[data-field="accepted_formats"]');
     expect(field?.querySelector("input, button, a[href], [tabindex], [role=checkbox]")).toBeNull();
     expect(screen.queryByText(/can't be turned off/)).not.toBeInTheDocument();
@@ -774,6 +800,23 @@ describe("accepted formats", () => {
       expect(screen.getByRole("checkbox", { name: "PDF" })).toHaveAttribute(
         "aria-readonly",
         "true",
+      );
+    });
+
+    test("a mapped server 422 names the formats group and keeps the selection", async () => {
+      server.putMode = "422-formats";
+      const user = userEvent.setup();
+      await loaded("acquisition");
+      await user.click(screen.getByRole("checkbox", { name: "PDF" }));
+      await user.click(save());
+      const message = await screen.findByText("accepted_formats supports only epub");
+      expect(message).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Settings were not savedReview the field errors and try again.",
+      );
+      expect(screen.getByRole("checkbox", { name: "PDF" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "PDF" })).toHaveAccessibleDescription(
+        /accepted_formats supports only epub/,
       );
     });
   });
@@ -927,47 +970,170 @@ describe("saving", () => {
   });
 });
 
+describe("a single-text-field area", () => {
+  test("repeated Enter and clicks while saving send one request", async () => {
+    const release = holdPut();
+    const user = userEvent.setup();
+    await loaded("catalogue");
+    await type(user, "Entries per page", "60");
+    await user.keyboard("{Enter}");
+    await screen.findByText("Saving 1 change");
+    await user.keyboard("{Enter}");
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: "Saving" }));
+    release();
+    await screen.findByText("Settings saved");
+    expect(server.puts).toHaveLength(1);
+    expect(server.puts[0]?.patch).toEqual({ opds_page_size: 60 });
+  });
+});
+
 describe("validation", () => {
-  test("client bounds block the save, mark each field and link to it", async () => {
+  test("native validation owns settings errors", async () => {
     const user = userEvent.setup();
     await loaded();
     await type(user, "Concurrent lookups", "12");
     await type(user, "Idle check interval", "0");
     await user.click(save());
-    const alert = await screen.findByRole("alert");
-    expect(within(alert).getByText("Settings were not saved")).toBeInTheDocument();
-    expect(
-      within(alert).getByText(
-        /2 fields need attention\. Fix them and save again\. Nothing you typed has been lost\./,
-      ),
-    ).toBeInTheDocument();
-    expect(alert).toHaveFocus();
-    expect(server.puts).toHaveLength(0);
     const concurrency = screen.getByRole("textbox", { name: "Concurrent lookups" });
+    const idle = screen.getByRole("textbox", { name: "Idle check interval" });
+    await waitFor(() => {
+      expect(concurrency).toHaveAccessibleDescription(/Enter a whole number from 1 to 10\./);
+    });
+    expect(idle).toHaveAccessibleDescription(/Enter a whole number of 1 or more\./);
     expect(concurrency).toHaveAttribute("aria-invalid", "true");
-    expect(concurrency).toHaveAccessibleDescription(/Enter a whole number from 1 to 10\./);
-    expect(
-      screen.getByRole("textbox", { name: "Idle check interval" }),
-    ).toHaveAccessibleDescription(/Enter a whole number of 1 or more\./);
-    expect(screen.getByText("Not saved.").parentElement).toHaveTextContent(
-      "Not saved. 2 fields need attention.",
-    );
-    expect(save()).toBeEnabled();
-    await user.click(within(alert).getByRole("button", { name: "Go to Idle check interval" }));
-    expect(screen.getByRole("textbox", { name: "Idle check interval" })).toHaveFocus();
+    expect(idle).toHaveAttribute("aria-invalid", "true");
+    expect(concurrency).toHaveFocus();
+    expect(server.puts).toHaveLength(0);
+    expect(screen.queryByText("Settings were not saved")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Go to / })).not.toBeInTheDocument();
+    expect(screen.queryByText(/need attention/)).not.toBeInTheDocument();
   });
 
-  test("fixing a field clears its error and the last fix clears the notice", async () => {
+  test("an invalid submission keeps the drafts and the bar's unsaved count", async () => {
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "12");
+    await type(user, "Idle check interval", "0");
+    await user.click(save());
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveFocus();
+    });
+    expect(screen.getByText("2 unsaved changes")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("12");
+    expect(screen.getByRole("textbox", { name: "Idle check interval" })).toHaveValue("0");
+    expect(save()).toBeEnabled();
+  });
+
+  test("correcting an invalid field clears its error and then saves", async () => {
     const user = userEvent.setup();
     await loaded();
     await type(user, "Concurrent lookups", "12");
     await user.click(save());
-    await screen.findByRole("alert");
+    const field = screen.getByRole("textbox", { name: "Concurrent lookups" });
+    await waitFor(() => {
+      expect(field).toHaveAccessibleDescription(/Enter a whole number from 1 to 10\.$/);
+    });
+    const message = screen.getByText("Enter a whole number from 1 to 10.");
+    expect(message.textContent).toBe("Enter a whole number from 1 to 10.");
+    expect(message.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     await type(user, "Concurrent lookups", "8");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).not.toHaveAttribute(
-      "aria-invalid",
-    );
+    await user.tab();
+    expect(field).not.toHaveAttribute("aria-invalid");
+    expect(field).not.toHaveAccessibleDescription(/Enter a whole number/);
+    await user.click(save());
+    await screen.findByText("Settings saved");
+    expect(server.puts.map((put) => put.patch)).toEqual([{ enrichment_concurrency: 8 }]);
+  });
+
+  test("Discard after an invalid submission clears the error and the next save sends only the new edit", async () => {
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "12");
+    await user.click(save());
+    const field = screen.getByRole("textbox", { name: "Concurrent lookups" });
+    await waitFor(() => {
+      expect(field).toHaveAttribute("aria-invalid", "true");
+    });
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(field).toHaveValue("4");
+    expect(field).not.toHaveAttribute("aria-invalid");
+    expect(field).not.toHaveAccessibleDescription(/Enter a whole number/);
+    await type(user, "Idle check interval", "40");
+    await user.click(save());
+    await screen.findByText("Settings saved");
+    expect(server.puts.map((put) => put.patch)).toEqual([{ enrichment_poll_idle_secs: 40 }]);
+    expect(field).toHaveValue("4");
+    expect(field).not.toHaveAttribute("aria-invalid");
+  });
+
+  test("an invalid edit after a successful save is blocked without a request and keeps the saved base", async () => {
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    await user.click(save());
+    await screen.findByText("Settings saved");
+    await type(user, "Concurrent lookups", "12");
+    expect(screen.getByText("Saved value: 6 lookups")).toBeInTheDocument();
+    await user.click(save());
+    const field = screen.getByRole("textbox", { name: "Concurrent lookups" });
+    await waitFor(() => {
+      expect(field).toHaveFocus();
+    });
+    expect(field).toHaveAccessibleDescription(/Enter a whole number from 1 to 10\./);
+    expect(server.puts).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(field).toHaveValue("6");
+    expect(field).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
+  });
+
+  test("moving to another area and back starts without a displayed error", async () => {
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "12");
+    await user.click(save());
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+    });
+    await user.click(screen.getByRole("link", { name: /Covers/ }));
+    await user.click(await screen.findByRole("button", { name: "Leave and discard changes" }));
+    await screen.findByRole("form", { name: "Covers settings" });
+    expect(invalidControls()).toHaveLength(0);
+    await user.click(screen.getByRole("link", { name: /Enrichment/ }));
+    await screen.findByRole("form", { name: "Enrichment settings" });
+    const field = screen.getByRole("textbox", { name: "Concurrent lookups" });
+    expect(field).toHaveValue("4");
+    expect(field).not.toHaveAttribute("aria-invalid");
+  });
+
+  test("discarding a deleted-source switch that was turned off opens no confirmation", async () => {
+    const user = userEvent.setup();
+    await loaded("acquisition");
+    const control = screen.getByRole("switch", { name: /successful import/ });
+    expect(control).toBeChecked();
+    await user.click(control);
+    expect(control).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(control).toBeChecked();
+    expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
+  });
+
+  test("a general server failure invents no invalid field", async () => {
+    server.putMode = "500";
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    await user.click(save());
+    await screen.findByText("The server returned an error. Your edits are still here.");
+    expect(invalidControls()).toHaveLength(0);
+    expect(
+      screen.getByRole("textbox", { name: "Concurrent lookups" }),
+    ).not.toHaveAccessibleDescription(/server/);
   });
 
   test("non-numeric text reports Enter a number", async () => {
@@ -978,7 +1144,7 @@ describe("validation", () => {
     expect(await screen.findByText("Enter a number.")).toBeInTheDocument();
   });
 
-  test("a server 422 that names a field lands on that field as written", async () => {
+  test("a server 422 that names a field marks that field and announces the refusal without moving focus", async () => {
     server.putMode = "422";
     const user = userEvent.setup();
     await loaded();
@@ -990,6 +1156,60 @@ describe("validation", () => {
     });
     expect(field).toHaveAccessibleDescription(/enrichment_concurrency must be between 1 and 10/);
     expect(field).toHaveValue("6");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Settings were not savedReview the field errors and try again.",
+    );
+    await waitFor(() => {
+      expect(save()).toBeEnabled();
+    });
+    expect(save()).toHaveFocus();
+  });
+
+  test("a mapped server 422 on a switch marks that switch without moving focus", async () => {
+    server.putMode = "422-switch";
+    const user = userEvent.setup();
+    await loaded();
+    await user.click(screen.getByRole("switch", { name: "Fetch metadata from external sources" }));
+    await user.click(save());
+    const control = screen.getByRole("switch", { name: "Fetch metadata from external sources" });
+    await waitFor(() => {
+      expect(control).toHaveAttribute("aria-invalid", "true");
+    });
+    expect(control).toHaveAccessibleDescription(/enrichment_enabled is not accepted/);
+    expect(screen.getByRole("alert")).toHaveTextContent("Review the field errors and try again.");
+    await waitFor(() => {
+      expect(save()).toBeEnabled();
+    });
+    expect(save()).toHaveFocus();
+    expect(control).not.toBeChecked();
+    expect(server.puts).toHaveLength(1);
+
+    await user.click(save());
+    expect(server.puts).toHaveLength(1);
+    expect(control).toHaveAttribute("aria-invalid", "true");
+    expect(control).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent("Review the field errors and try again.");
+  });
+
+  test("editing a field that carries a server error clears it and the next save goes through", async () => {
+    server.putMode = "422";
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    await user.click(save());
+    const field = screen.getByRole("textbox", { name: "Concurrent lookups" });
+    await waitFor(() => {
+      expect(field).toHaveAttribute("aria-invalid", "true");
+    });
+    server.putMode = "ok";
+    await type(user, "Concurrent lookups", "7");
+    await user.click(save());
+    await screen.findByText("Settings saved");
+    expect(server.puts.map((put) => put.patch)).toEqual([
+      { enrichment_concurrency: 6 },
+      { enrichment_concurrency: 7 },
+    ]);
+    expect(field).not.toHaveAttribute("aria-invalid");
   });
 
   test("a server 422 that names no field shows the unattributed message", async () => {
@@ -1003,6 +1223,24 @@ describe("validation", () => {
         "The server did not accept this change: request body is not acceptable.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).not.toHaveAttribute(
+      "aria-invalid",
+    );
+    expect(invalidControls()).toHaveLength(0);
+  });
+
+  test("a server 422 for the static one-format row stays a general alert", async () => {
+    server.putMode = "422-formats";
+    const user = userEvent.setup();
+    await loaded("acquisition");
+    await user.click(screen.getByRole("switch", { name: "Import files" }));
+    await user.click(save());
+    expect(
+      await screen.findByText(
+        "The server did not accept this change: accepted_formats supports only epub.",
+      ),
+    ).toBeInTheDocument();
+    expect(invalidControls()).toHaveLength(0);
   });
 });
 
@@ -1504,6 +1742,121 @@ describe("a stale write", () => {
       enrichment_fetch_budget_secs: 30,
     });
     expect(server.values.enrichment_concurrency).toBe(9);
+  });
+
+  describe("with invalid local text in a conflicted field", () => {
+    async function conflictWithInvalidText(
+      user: ReturnType<typeof userEvent.setup>,
+      editOthers: boolean,
+    ): Promise<HTMLElement> {
+      server.stale.set(1, () => {
+        server.values.enrichment_concurrency = 8;
+        server.revision += 1;
+      });
+      await loaded();
+      await type(user, "Concurrent lookups", "6");
+      if (editOthers) await type(user, "Time allowed per source", "30");
+      await user.click(save());
+      await screen.findByText("Settings changed while you were editing");
+      await type(user, "Concurrent lookups", "abc");
+      await user.tab();
+      const field = screen.getByRole("textbox", { name: "Concurrent lookups" });
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(field).toHaveAccessibleDescription(/Enter a number\./);
+      return field;
+    }
+
+    test("Use theirs lets Save my choices through, clears the discarded error and keeps other edits", async () => {
+      const user = userEvent.setup();
+      const field = await conflictWithInvalidText(user, true);
+      await user.click(screen.getByRole("radio", { name: "Use theirs (8 lookups)" }));
+      await user.click(screen.getByRole("button", { name: "Save my choices" }));
+      await screen.findByText("Settings saved");
+      expect(server.puts).toHaveLength(2);
+      expect(server.puts[1]).toEqual({
+        patch: { enrichment_fetch_budget_secs: 30 },
+        ifMatch: '"rev-2"',
+      });
+      expect(field).toHaveValue("8");
+      expect(field).not.toHaveAttribute("aria-invalid");
+      expect(field).not.toHaveAccessibleDescription(/Enter a number/);
+      expect(screen.getByRole("textbox", { name: "Time allowed per source" })).toHaveValue("30");
+    });
+
+    test("Use theirs with nothing else edited clears the error and the marker without a request", async () => {
+      const user = userEvent.setup();
+      const field = await conflictWithInvalidText(user, false);
+      await user.click(screen.getByRole("radio", { name: "Use theirs (8 lookups)" }));
+      await user.click(screen.getByRole("button", { name: "Save my choices" }));
+      await waitFor(() => {
+        expect(
+          screen.queryByText("Settings changed while you were editing"),
+        ).not.toBeInTheDocument();
+      });
+      expect(server.puts).toHaveLength(1);
+      expect(field).toHaveValue("8");
+      expect(field).not.toHaveAttribute("aria-invalid");
+      expect(field).not.toHaveAccessibleDescription(/Enter a number/);
+      expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
+    });
+
+    test("a retained invalid field still blocks Save my choices", async () => {
+      const user = userEvent.setup();
+      await conflictWithInvalidText(user, true);
+      await user.click(screen.getByRole("radio", { name: "Use theirs (8 lookups)" }));
+      await type(user, "Time allowed per source", "0");
+      await user.click(screen.getByRole("button", { name: "Save my choices" }));
+      const other = screen.getByRole("textbox", { name: "Time allowed per source" });
+      await waitFor(() => {
+        expect(other).toHaveFocus();
+      });
+      expect(other).toHaveAttribute("aria-invalid", "true");
+      expect(server.puts).toHaveLength(1);
+      expect(screen.getByText("Settings changed while you were editing")).toBeInTheDocument();
+      await type(user, "Time allowed per source", "31");
+      await user.click(screen.getByRole("button", { name: "Save my choices" }));
+      await screen.findByText("Settings saved");
+      expect(server.puts[1]?.patch).toEqual({ enrichment_fetch_budget_secs: 31 });
+      expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("8");
+      expect(invalidControls()).toHaveLength(0);
+    });
+
+    test("a failed Save my choices keeps the other edit, clears the discarded error and still blocks invalid retained text", async () => {
+      const user = userEvent.setup();
+      const field = await conflictWithInvalidText(user, true);
+      await user.click(screen.getByRole("radio", { name: "Use theirs (8 lookups)" }));
+      server.putMode = "500";
+      await user.click(screen.getByRole("button", { name: "Save my choices" }));
+      expect(
+        await screen.findByText("The server returned an error. Your edits are still here."),
+      ).toBeInTheDocument();
+      expect(server.puts).toHaveLength(2);
+      expect(field).toHaveValue("8");
+      expect(field).not.toHaveAttribute("aria-invalid");
+      expect(field).not.toHaveAccessibleDescription(/Enter a number/);
+      const other = screen.getByRole("textbox", { name: "Time allowed per source" });
+      expect(other).toHaveValue("30");
+      await type(user, "Time allowed per source", "0");
+      await user.click(save());
+      await waitFor(() => {
+        expect(other).toHaveFocus();
+      });
+      expect(other).toHaveAttribute("aria-invalid", "true");
+      expect(server.puts).toHaveLength(2);
+    });
+
+    test("choosing Keep mine again restores the field's validation", async () => {
+      const user = userEvent.setup();
+      const field = await conflictWithInvalidText(user, true);
+      await user.click(screen.getByRole("radio", { name: "Use theirs (8 lookups)" }));
+      await user.click(screen.getByRole("radio", { name: "Keep mine (abc)" }));
+      await user.click(screen.getByRole("button", { name: "Save my choices" }));
+      await waitFor(() => {
+        expect(field).toHaveFocus();
+      });
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(server.puts).toHaveLength(1);
+    });
   });
 
   test.each(["invalid JSON", "invalid schema"])(

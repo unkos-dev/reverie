@@ -109,12 +109,14 @@ hashing.
 The create and reset flows retain one dialog through the link result; React Aria owns focus containment and restoration.
 Pending actions retain focus while React Aria blocks repeated presses and implicit form submission.
 
-The form shows new-account or reset copy from `has_password`, checks confirmation and the existing client policy, and
-renders server errors. A temporary lookup failure offers an explicit retry that retains the token in memory and disables
-its action while fetching. The component owns retry intent; React Query owns request state. Reconnect does not repeat
-lookup or discard form values. Success offers an explicit Sign in link and is terminal: lookup stops and late lookup
-errors cannot replace it. Redemption creates no session and does not reset the login throttle. Device tokens remain
-unchanged.
+The form shows new-account or reset copy from `has_password`. Native React Aria field validation applies the existing
+client policy to the new password and equality with it to the confirmation, which is checked again when either changes.
+Each error shows beneath its field, and a blocked submission focuses the first invalid field and sends nothing. Server
+errors render as a general alert. A temporary lookup failure offers an explicit retry that retains the token in memory
+and disables its action while fetching. The component owns retry intent; React Query owns request state. Reconnect does
+not repeat lookup or discard form values. Success offers an explicit Sign in link and is terminal: lookup stops and late
+lookup errors cannot replace it. Redemption creates no session and does not reset the login throttle. Device tokens
+remain unchanged.
 
 Redemption emits a structured authentication event after success or failure. Events include an outcome, a generated
 request ID, the account ID when known, the resolved source IP and a bounded, control-free user agent. Events contain

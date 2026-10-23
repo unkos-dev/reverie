@@ -14,6 +14,7 @@ import {
   elsewhereSummary,
   enabledFormatCount,
   fieldForServerDetail,
+  invalidTextKeys,
   patchKeys,
   setBoolean,
   setFormat,
@@ -119,6 +120,17 @@ describe("draft edits", () => {
     const next = dropKeys(draft, ["enrichment_concurrency"]);
     expect(dirtyKeys("enrichment", next, BASE)).toEqual(["enrichment_poll_idle_secs"]);
     expect(dirtyKeys("enrichment", draft, BASE)).toHaveLength(2);
+  });
+
+  test("invalidTextKeys names only drafted text that does not parse", () => {
+    let draft = setText(EMPTY_DRAFT, BASE, "enrichment_concurrency", "12");
+    draft = setText(draft, BASE, "enrichment_poll_idle_secs", "45");
+    draft = setText(draft, BASE, "cover_max_bytes", "abc");
+    expect(invalidTextKeys(draft)).toEqual(["enrichment_concurrency", "cover_max_bytes"]);
+    expect(invalidTextKeys(EMPTY_DRAFT)).toEqual([]);
+    expect(invalidTextKeys(dropKeys(draft, ["enrichment_concurrency", "cover_max_bytes"]))).toEqual(
+      [],
+    );
   });
 });
 

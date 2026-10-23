@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { currentPasswordField, emailField, newPasswordField } from "./auth.schemas";
+import {
+  currentPasswordField,
+  emailField,
+  newPasswordField,
+  validateDisplayName,
+  validateEmail,
+} from "./auth.schemas";
 
 describe("account email format", () => {
   test.each([
@@ -47,5 +53,20 @@ describe("configured new-password length", () => {
       newPasswordField({ ...policy, password_min_length: 24 }).safeParse("a".repeat(24)).success,
     ).toBe(true);
     expect(currentPasswordField.safeParse("old").success).toBe(true);
+  });
+});
+
+describe("form field validators", () => {
+  test("accepts a valid email and a display name", () => {
+    expect(validateEmail("ada@example.com")).toBeNull();
+    expect(validateDisplayName("Ada")).toBeNull();
+  });
+
+  test.each(["", "ada", "ada@homelab"])("rejects the email %j with its message", (value) => {
+    expect(validateEmail(value)).toBe("Enter a valid email address.");
+  });
+
+  test.each(["", "   "])("rejects the display name %j with its message", (value) => {
+    expect(validateDisplayName(value)).toBe("Enter a display name.");
   });
 });

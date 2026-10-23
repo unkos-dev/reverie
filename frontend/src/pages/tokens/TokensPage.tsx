@@ -1,4 +1,4 @@
-import { Input as AriaInput, Label as AriaLabel, TextField } from "react-aria-components";
+import { Form, Input as AriaInput, Label as AriaLabel, TextField } from "react-aria-components";
 /**
  * `/tokens` — self-service device-token management.
  *
@@ -47,7 +47,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel, TextInputField } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,11 @@ function errorDetail(err: unknown): string {
   if (err instanceof ApiError) return err.detail;
   if (err instanceof Error) return err.message;
   return "Unknown error";
+}
+
+function validateName(value: string): string | null {
+  const length = value.trim().length;
+  return length === 0 || length > 255 ? "Enter a name (1-255 characters)." : null;
 }
 
 function formatDate(iso: string | null): string {
@@ -252,13 +257,11 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (mutation.isPending) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const name = formString(data, "name").trim();
-    if (name.length === 0 || name.length > 255) {
-      setError("Enter a name (1-255 characters).");
-      return;
-    }
+    if (validateName(name) !== null) return;
     const expiry = expiryField.safeParse(data.get("expiry"));
     if (!expiry.success) {
       setError("Choose a valid expiry.");
@@ -292,14 +295,18 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
                 The credential is shown once after creation. Store it somewhere safe.
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-              <Field>
-                <FieldLabel htmlFor="create-token-name">Name</FieldLabel>
-                <Input id="create-token-name" name="name" type="text" required />
-              </Field>
+            <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <TextInputField
+                name="name"
+                type="text"
+                isRequired
+                validate={validateName}
+                label="Name"
+              />
               <Field>
                 <Select
                   className="flex flex-col gap-2"
+                  name="level"
                   value={level}
                   onChange={(v) => {
                     if (typeof v !== "string") return;
@@ -345,11 +352,11 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
               {error ? <FieldError>{error}</FieldError> : null}
               <DialogFooter>
                 <DialogClose type="button">Cancel</DialogClose>
-                <Button type="submit" isDisabled={mutation.isPending}>
+                <Button type="submit" isPending={mutation.isPending}>
                   Create
                 </Button>
               </DialogFooter>
-            </form>
+            </Form>
           </>
         )}
       </DialogContent>

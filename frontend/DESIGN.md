@@ -421,10 +421,12 @@ be moved by accident. Each affordance is a carved gesture, not a frictionless ta
 
 Reverie uses React Aria Components with local Tailwind wrappers for buttons, selection controls, disclosures, tabs,
 progress and overlays, alongside the command palette and vocabulary pickers. Checkbox, switch and radio wrappers use
-native Field/Button composition with their labels. Semantic HTML supplies presentation-only badges, labels and
-separators; Router Links retain navigation behaviour with button styling. Cards and plain inputs retain their
-presentation. The Radix UI runtime is not installed. The shadcn generator is not used to create or regenerate
-primitives.
+native Field/Button composition with their labels. Forms use the React Aria `Form` with native validation: each
+`TextField` composes its `Label`, the styled input through `render`, a description and its `FieldError`, and the first
+invalid field takes focus on a blocked submission. General API failures use the standalone alert `FieldError`. Semantic
+HTML supplies presentation-only badges, labels and separators; Router Links retain navigation behaviour with button
+styling. Cards and plain inputs retain their presentation. The Radix UI runtime is not installed. The shadcn generator
+is not used to create or regenerate primitives.
 
 Native `data-selected`, `data-expanded`, `data-focus-visible`, `data-disabled` and `data-pending` attributes drive
 control styles. The last selected settings format uses native read-only behaviour. Filter disclosures retain mounted

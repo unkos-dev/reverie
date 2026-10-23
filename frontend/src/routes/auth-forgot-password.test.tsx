@@ -110,7 +110,9 @@ describe("auth-forgot-password", () => {
     renderForgot();
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Send reset link" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter a valid email address.");
+    const email = screen.getByLabelText("Email");
+    expect(email).toHaveAccessibleDescription("Enter a valid email address.");
+    expect(email).toHaveFocus();
     expect(requestPasswordReset).not.toHaveBeenCalled();
   });
   test.each([
@@ -129,6 +131,7 @@ describe("auth-forgot-password", () => {
         : "Could not send the request. Try again.",
     );
     expect(screen.getByLabelText("Email")).toHaveValue("ada@example.com");
+    expect(screen.getByLabelText("Email")).not.toHaveAttribute("aria-invalid");
     expect(screen.getByRole("button", { name: "Send reset link" })).toBeEnabled();
     expect(requestPasswordReset).toHaveBeenCalledTimes(1);
   });

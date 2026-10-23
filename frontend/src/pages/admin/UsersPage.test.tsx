@@ -372,6 +372,26 @@ describe("UsersPage", () => {
     },
   );
 
+  test("native validation owns creation errors", async () => {
+    const create = vi.spyOn(usersApi, "createUser");
+    renderUsersPage(ADMIN_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Create user" }));
+    const displayName = screen.getByLabelText("Display name");
+    const email = screen.getByLabelText("Email");
+    await user.type(displayName, "   ");
+    await user.type(email, "not-an-email");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+
+    expect(create).not.toHaveBeenCalled();
+    expect(displayName).toHaveAccessibleDescription("Enter a display name.");
+    expect(email).toHaveAccessibleDescription("Enter a valid email address.");
+    expect(displayName).toBeInvalid();
+    expect(email).toBeInvalid();
+    expect(displayName).toHaveFocus();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   test("create-user dialog blocks a blank display name", async () => {
     const create = vi.spyOn(usersApi, "createUser");
     renderUsersPage(ADMIN_ME, []);
@@ -379,8 +399,62 @@ describe("UsersPage", () => {
     await user.click(await screen.findByRole("button", { name: "Create user" }));
     await user.type(screen.getByLabelText("Email"), "carol@example.com");
     await user.click(screen.getByRole("button", { name: "Create user" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a display name.");
+    expect(screen.getByLabelText("Display name")).toHaveAccessibleDescription(
+      "Enter a display name.",
+    );
+    expect(screen.getByLabelText("Email")).not.toHaveAttribute("aria-invalid");
     expect(create).not.toHaveBeenCalled();
+  });
+
+  test("a refused creation is a general alert that keeps the values without invalid fields", async () => {
+    vi.spyOn(usersApi, "createUser").mockRejectedValue(new Error("Creation refused"));
+    renderUsersPage(ADMIN_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Create user" }));
+    await user.type(screen.getByLabelText("Display name"), "Carol");
+    await user.type(screen.getByLabelText("Email"), "carol@example.com");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Creation refused");
+    expect(screen.getByLabelText("Display name")).toHaveValue("Carol");
+    expect(screen.getByLabelText("Email")).toHaveValue("carol@example.com");
+    expect(screen.getByLabelText("Display name")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByLabelText("Email")).not.toHaveAttribute("aria-invalid");
+  });
+
+  test("repeated click and Enter while creation is pending send one request", async () => {
+    const create = vi.spyOn(usersApi, "createUser").mockReturnValue(new Promise(() => {}));
+    renderUsersPage(ADMIN_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Create user" }));
+    await user.type(screen.getByLabelText("Display name"), "Carol");
+    await user.type(screen.getByLabelText("Email"), "carol@example.com");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByLabelText("Email"));
+    await user.keyboard("{Enter}");
+
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  test("reopening during a deferred creation shows default values and cannot send a second request", async () => {
+    const create = vi.spyOn(usersApi, "createUser").mockReturnValue(new Promise(() => {}));
+    renderUsersPage(ADMIN_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Create user" }));
+    await user.type(screen.getByLabelText("Display name"), "Carol");
+    await user.type(screen.getByLabelText("Email"), "carol@example.com");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(await screen.findByRole("button", { name: "Create user" }));
+
+    expect(screen.getByLabelText("Display name")).toHaveValue("");
+    expect(screen.getByRole("button", { name: /Role/ })).toHaveTextContent("adult");
+    await user.type(screen.getByLabelText("Display name"), "Dave");
+    await user.type(screen.getByLabelText("Email"), "dave@example.com");
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   test.each(["unavailable", "denied"])(

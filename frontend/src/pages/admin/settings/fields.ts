@@ -468,7 +468,3 @@ export function areaSummary(area: AreaId, values: SettingsValues): string {
 export function restartLabels(keys: readonly SettingsKey[]): string {
   return keys.map((key) => fieldByKey(key).label).join(" and ");
 }
-
-export function fieldCountText(n: number): string {
-  return `${String(n)} ${pluralise(n, "field needs", "fields need")} attention`;
-}

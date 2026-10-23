@@ -1,13 +1,13 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from "react";
+import { Form } from "react-aria-components";
 import { Link, Navigate } from "react-router";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, requestPasswordReset } from "@/api/auth";
-import { emailField } from "@/api/auth.schemas";
+import { emailField, validateEmail } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FieldError, TextInputField } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formString } from "@/lib/form";
 import { queryKeys } from "@/lib/query/keys";
@@ -44,10 +44,7 @@ export function Component(): ReactElement {
     event.preventDefault();
     setError(null);
     const parsed = emailField.safeParse(formString(new FormData(event.currentTarget), "email"));
-    if (!parsed.success) {
-      setError("Enter a valid email address.");
-      return;
-    }
+    if (!parsed.success) return;
     request.mutate(parsed.data);
   }
   const footer = (
@@ -128,23 +125,20 @@ export function Component(): ReactElement {
       description="Enter your account's email address."
       footer={footer}
     >
-      <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
-        <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            aria-invalid={error !== null || undefined}
-          />
-        </Field>
+      <Form onSubmit={submit} className="flex flex-col gap-4">
+        <TextInputField
+          name="email"
+          type="email"
+          autoComplete="email"
+          isRequired
+          validate={validateEmail}
+          label="Email"
+        />
         {error !== null ? <FieldError>{error}</FieldError> : null}
         <Button type="submit" className="w-full" isDisabled={request.isPending}>
           Send reset link
         </Button>
-      </form>
+      </Form>
     </AuthShell>
   );
 }

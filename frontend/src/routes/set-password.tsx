@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
+import { Form } from "react-aria-components";
 import { Link, useLoaderData, useLocation } from "react-router";
 import { z } from "zod";
 
@@ -7,10 +8,9 @@ import { ApiError } from "@/api";
 import { lookupCredentialLink, redeemCredentialLink } from "@/api/auth";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FieldError, TextInputField } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
-import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
+import { usePasswordPolicy, type PasswordPolicyState } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
@@ -98,25 +98,6 @@ export function Component(): ReactElement {
     refetchOnReconnect: false,
   });
 
-  function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    if (!ready) return;
-    setError(null);
-    const form = new FormData(event.currentTarget);
-    const password = z.string().parse(formString(form, "password"));
-    const confirm = z.string().parse(formString(form, "confirm_password"));
-    if (password !== confirm) {
-      setError("The passwords don't match.");
-      return;
-    }
-    const policyMessage = validate(password);
-    if (policyMessage !== undefined) {
-      setError(policyMessage);
-      return;
-    }
-    redemption.mutate(password);
-  }
-
   if (redemption.isSuccess) {
     return (
       <AuthShell title="Password set" description="You can now sign in with your new password.">
@@ -185,41 +166,93 @@ export function Component(): ReactElement {
           : `Choose a password for ${email}.`
       }
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-        <input type="hidden" name="username" autoComplete="username" value={email} />
-        <Field>
-          <FieldLabel htmlFor="new-password">New password</FieldLabel>
-          <Input
-            id="new-password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={error !== null || undefined}
-          />
-          <PasswordPolicyHint
-            policy={policy}
-            failed={policyError}
-            onRetry={retryPolicy}
-            retrying={policyRetrying}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="confirm-password">Confirm password</FieldLabel>
-          <Input
-            id="confirm-password"
-            name="confirm_password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={error !== null || undefined}
-          />
-        </Field>
-        {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" isDisabled={redemption.isPending || !ready}>
-          Set password
-        </Button>
-      </form>
+      <CredentialForm
+        email={email}
+        policy={policy}
+        policyError={policyError}
+        policyRetrying={policyRetrying}
+        ready={ready}
+        pending={redemption.isPending}
+        error={error}
+        validate={validate}
+        onRetryPolicy={retryPolicy}
+        onSubmit={(password) => {
+          setError(null);
+          redemption.mutate(password);
+        }}
+      />
     </AuthShell>
+  );
+}
+
+type CredentialFormProps = {
+  email: string;
+  policy: PasswordPolicyState["policy"];
+  policyError: boolean;
+  policyRetrying: boolean;
+  ready: boolean;
+  pending: boolean;
+  error: string | ReactElement | null;
+  validate: PasswordPolicyState["validate"];
+  onRetryPolicy: () => void;
+  onSubmit: (password: string) => void;
+};
+
+function CredentialForm({
+  email,
+  policy,
+  policyError,
+  policyRetrying,
+  ready,
+  pending,
+  error,
+  validate,
+  onRetryPolicy,
+  onSubmit,
+}: Readonly<CredentialFormProps>): ReactElement {
+  const [password, setPassword] = useState("");
+
+  function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    if (!ready) return;
+    const form = new FormData(event.currentTarget);
+    const submitted = z.string().parse(formString(form, "password"));
+    const confirm = z.string().parse(formString(form, "confirm_password"));
+    if (submitted !== confirm || validate(submitted) !== undefined) return;
+    onSubmit(submitted);
+  }
+
+  return (
+    <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <input type="hidden" name="username" autoComplete="username" value={email} />
+      <TextInputField
+        name="password"
+        type="password"
+        autoComplete="new-password"
+        isRequired
+        onChange={setPassword}
+        validate={(value) => (ready ? (validate(value) ?? null) : null)}
+        label="New password"
+      >
+        <PasswordPolicyHint
+          policy={policy}
+          failed={policyError}
+          onRetry={onRetryPolicy}
+          retrying={policyRetrying}
+        />
+      </TextInputField>
+      <TextInputField
+        name="confirm_password"
+        type="password"
+        autoComplete="new-password"
+        isRequired
+        validate={(value) => (value === password ? null : "The passwords don't match.")}
+        label="Confirm password"
+      />
+      {error !== null ? <FieldError>{error}</FieldError> : null}
+      <Button type="submit" isPending={pending} isDisabled={!ready}>
+        Set password
+      </Button>
+    </Form>
   );
 }

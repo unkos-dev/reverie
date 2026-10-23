@@ -39,8 +39,8 @@ Title: "Forgot password".
 Body: "Enter your account's email address."
 
 One "Email" field with `type="email"` and `autocomplete="email"`, then a full-width "Send reset link" button. A value
-that fails the shared email pattern shows "Enter a valid email address." inline and sends nothing. Disable the button
-while the request is pending and keep the entered value.
+that fails the shared email pattern shows "Enter a valid email address." beneath the field, sends nothing and focuses
+the field. Disable the button while the request is pending and keep the entered value.
 
 A 429 response renders its existing `detail` inline beneath the field. A network failure or 5xx response shows "Could
 not send the request. Try again." inline. Both keep the entered value and re-enable the button.

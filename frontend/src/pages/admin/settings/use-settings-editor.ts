@@ -41,11 +41,11 @@ import {
   type Draft,
 } from "./editor";
 import {
-  ALL_KEYS,
+  FORMATS_KEY,
+  SUPPORTED_FORMATS,
   areaOfKey,
   deletionCopy,
   describeValue,
-  omitKey,
   type AreaId,
   type BooleanKey,
   type NumberKey,
@@ -270,7 +270,8 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
         return;
       }
       if (err.status === 422) {
-        const key = fieldForServerDetail(area, err.detail);
+        const named = fieldForServerDetail(area, err.detail);
+        const key = named === FORMATS_KEY && SUPPORTED_FORMATS.length <= 1 ? null : named;
         setNotice(
           key === null
             ? {
@@ -309,11 +310,6 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
           row.key === key ? { ...row, choice: "mine" as const, mine } : row,
         );
         return { kind: "conflict", rows };
-      }
-      if (current.kind === "validation") {
-        const errors = omitKey(current.errors, ALL_KEYS, key);
-        const remaining = Object.keys(errors).length > 0;
-        return remaining || current.unmapped !== null ? { ...current, errors } : { kind: "none" };
       }
       if (current.kind === "saved" || current.kind === "failed") return { kind: "none" };
       return current;

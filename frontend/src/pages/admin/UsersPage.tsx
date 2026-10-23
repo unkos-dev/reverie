@@ -1,4 +1,4 @@
-import { Label as AriaLabel } from "react-aria-components";
+import { Form, Label as AriaLabel } from "react-aria-components";
 /**
  * `/admin/users` — admin-only user management page.
  *
@@ -26,7 +26,12 @@ import {
 } from "@/api/users";
 import type { User, Role, CreateUserInput, CredentialLink } from "@/api/users";
 import { ApiError } from "@/api";
-import { displayNameField, emailField } from "@/api/auth.schemas";
+import {
+  displayNameField,
+  emailField,
+  validateDisplayName,
+  validateEmail,
+} from "@/api/auth.schemas";
 import { fetchSetupStatus, fetchEmailVerification } from "@/api/auth";
 import { formatDateTime } from "@/lib/format/datetime";
 import { formString } from "@/lib/form";
@@ -54,7 +59,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, TextInputField } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -518,15 +523,8 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
     setError(null);
     const data = new FormData(event.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
-    if (!displayName.success) {
-      setError("Enter a display name.");
-      return;
-    }
     const email = emailField.safeParse(formString(data, "email"));
-    if (!email.success) {
-      setError("Enter a valid email address.");
-      return;
-    }
+    if (!displayName.success || !email.success) return;
     const role = roleField.safeParse(data.get("role"));
     if (!role.success) {
       setError("Choose a valid role.");
@@ -554,15 +552,22 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
                 own password.
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-              <Field>
-                <FieldLabel htmlFor="create-display-name">Display name</FieldLabel>
-                <Input id="create-display-name" name="display_name" type="text" required />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="create-email">Email</FieldLabel>
-                <Input id="create-email" name="email" type="email" autoComplete="off" required />
-              </Field>
+            <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <TextInputField
+                name="display_name"
+                type="text"
+                isRequired
+                validate={validateDisplayName}
+                label="Display name"
+              />
+              <TextInputField
+                name="email"
+                type="email"
+                autoComplete="off"
+                isRequired
+                validate={validateEmail}
+                label="Email"
+              />
               <Field>
                 <Select className="flex flex-col gap-2" name="role" defaultValue="adult">
                   <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
@@ -587,7 +592,7 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
                   Create user
                 </Button>
               </DialogFooter>
-            </form>
+            </Form>
           </>
         )}
       </DialogContent>

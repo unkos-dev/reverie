@@ -27,10 +27,12 @@ From top to bottom, the card content holds:
 Use 16 px between the notice and controls. The notice uses the existing surface and border tokens, normal foreground
 text and a title at font weight 600. It has no danger colour, modal or toast. The notice heading is an `h2`.
 
-The local form keeps its "Email" and "Password" labels, password-manager attributes, "Sign in" submission button and
-existing inline credential errors. "Forgot password?" appears below the card when local authentication is enabled.
-OIDC-only instances show the provider button; local-only instances keep their form even if someone enters an outcome URL
-directly. No duplicate retry button appears.
+The local form keeps its "Email" and "Password" labels, password-manager attributes and "Sign in" submission button.
+Field checks show beneath their field: "Enter a valid email address." and "Enter your password." A submission they block
+sends nothing and focuses the first failing field. A credential refusal stays a general alert and marks no field.
+"Forgot password?" appears below the card when local authentication is enabled. OIDC-only instances show the provider
+button; local-only instances keep their form even if someone enters an outcome URL directly. No duplicate retry button
+appears.
 
 ## Outcome copy
 

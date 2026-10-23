@@ -127,6 +127,16 @@ function isKeyDirty(draft: Draft, base: SettingsValues, key: SettingsKey): boole
   });
 }
 
+/** Numeric fields whose drafted text does not parse. */
+export function invalidTextKeys(draft: Draft): NumberKey[] {
+  return NUMBER_KEYS.filter((key) => {
+    const text = draft.numbers[key];
+    const field = fieldByKey(key);
+    if (text === undefined || (field.control !== "int" && field.control !== "mib")) return false;
+    return !parseNumberField(field, text).ok;
+  });
+}
+
 /** Dirty fields of one area, in display order. */
 export function dirtyKeys(area: AreaId, draft: Draft, base: SettingsValues): SettingsKey[] {
   return fieldsForArea(area)

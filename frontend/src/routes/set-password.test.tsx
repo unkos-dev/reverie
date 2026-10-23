@@ -292,15 +292,105 @@ test("rejects mismatched passwords without redemption", async () => {
   await user.type(await screen.findByLabelText("New password"), "a long chosen passphrase");
   await user.type(screen.getByLabelText("Confirm password"), "different passphrase");
   await user.click(screen.getByRole("button", { name: "Set password" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("The passwords don't match.");
+  expect(screen.getByLabelText("Confirm password")).toHaveAccessibleDescription(
+    "The passwords don't match.",
+  );
+  expect(screen.getByLabelText("Confirm password")).toHaveFocus();
+  expect(screen.getByLabelText("New password")).not.toHaveAttribute("aria-invalid");
   expect(redeemCredentialLink).not.toHaveBeenCalled();
+});
+
+test("confirmation is checked again after the original password changes", async () => {
+  renderPage();
+  const user = userEvent.setup();
+  const password = await screen.findByLabelText("New password");
+  const confirm = screen.getByLabelText("Confirm password");
+  await user.type(password, "a long chosen passphrase");
+  await user.type(confirm, "a long chosen passphrase");
+  await user.type(password, "!");
+  await user.click(screen.getByRole("button", { name: "Set password" }));
+  expect(confirm).toHaveAccessibleDescription("The passwords don't match.");
+  expect(redeemCredentialLink).not.toHaveBeenCalled();
+
+  await user.type(confirm, "!");
+  await user.click(screen.getByRole("button", { name: "Set password" }));
+  expect(redeemCredentialLink).toHaveBeenCalledExactlyOnceWith(
+    "test-link",
+    "a long chosen passphrase!",
+  );
+});
+
+test("a shown mismatch does not block once the original password is corrected to match", async () => {
+  renderPage();
+  const user = userEvent.setup();
+  const password = await screen.findByLabelText("New password");
+  const confirm = screen.getByLabelText("Confirm password");
+  await user.type(password, "a long chosen passphrase!");
+  await user.type(confirm, "a long chosen passphrase");
+  await user.click(screen.getByRole("button", { name: "Set password" }));
+  expect(confirm).toHaveAccessibleDescription("The passwords don't match.");
+
+  await user.type(password, "{Backspace}");
+  await user.click(screen.getByRole("button", { name: "Set password" }));
+  expect(redeemCredentialLink).toHaveBeenCalledExactlyOnceWith(
+    "test-link",
+    "a long chosen passphrase",
+  );
 });
 
 test("enforces the existing password policy", async () => {
   renderPage();
   await submitPassword("short");
-  expect(await screen.findByRole("alert")).toHaveTextContent("Use at least 15 characters.");
+  expect(screen.getByLabelText("New password")).toHaveAccessibleDescription(
+    /Use at least 15 characters\./,
+  );
+  expect(screen.getByLabelText("New password")).toHaveFocus();
+  expect(screen.getByLabelText("Confirm password")).not.toHaveAttribute("aria-invalid");
   expect(redeemCredentialLink).not.toHaveBeenCalled();
+});
+
+test("counts the new password in Unicode scalar values", async () => {
+  renderPage();
+  const user = userEvent.setup();
+  const password = await screen.findByLabelText("New password");
+  const confirm = screen.getByLabelText("Confirm password");
+  await user.click(password);
+  await user.paste("🙂".repeat(14));
+  await user.click(confirm);
+  await user.paste("🙂".repeat(14));
+  await user.click(screen.getByRole("button", { name: "Set password" }));
+  expect(password).toHaveAccessibleDescription(/Use at least 15 characters\./);
+  expect(redeemCredentialLink).not.toHaveBeenCalled();
+
+  await user.click(password);
+  await user.paste("🙂");
+  await user.click(confirm);
+  await user.paste("🙂");
+  await user.click(screen.getByRole("button", { name: "Set password" }));
+  expect(redeemCredentialLink).toHaveBeenCalledExactlyOnceWith("test-link", "🙂".repeat(15));
+});
+
+test("a refused redemption is a general alert that keeps the values and marks no field invalid", async () => {
+  vi.mocked(redeemCredentialLink).mockRejectedValue(
+    new ApiError(429, null, "Request failed", "Please try again later."),
+  );
+  renderPage();
+  await submitPassword();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Please try again later.");
+  expect(screen.getByLabelText("New password")).toHaveValue("a long chosen passphrase");
+  expect(screen.getByLabelText("Confirm password")).toHaveValue("a long chosen passphrase");
+  expect(screen.getByLabelText("New password")).not.toHaveAttribute("aria-invalid");
+  expect(screen.getByLabelText("Confirm password")).not.toHaveAttribute("aria-invalid");
+});
+
+test("repeated click and Enter while redemption is pending send one request", async () => {
+  vi.mocked(redeemCredentialLink).mockReturnValue(new Promise(() => {}));
+  renderPage();
+  await submitPassword();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Set password" }));
+  await user.keyboard("{Enter}");
+  expect(redeemCredentialLink).toHaveBeenCalledTimes(1);
 });
 
 test.each([422, 429, 503])("renders the redemption detail for %s", async (status) => {
@@ -344,11 +434,16 @@ test("an invalid redemption replaces the form with the invalid state", async () 
   expect(await screen.findByText("This link can't be used")).toBeInTheDocument();
 });
 
-test("disables submission while redemption is pending", async () => {
+test("marks the action pending while redemption is in flight", async () => {
   vi.mocked(redeemCredentialLink).mockReturnValue(new Promise(() => {}));
   renderPage();
   await submitPassword();
-  expect(screen.getByRole("button", { name: "Set password" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Set password" })).toHaveAttribute("data-pending");
+  await waitFor(() => {
+    expect(
+      document.querySelector('[aria-live="assertive"] [role="img"]:last-child'),
+    ).toHaveAccessibleName("Set password");
+  });
 });
 
 test.each(["/set-password", "/reset-password"])(

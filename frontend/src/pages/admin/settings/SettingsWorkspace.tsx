@@ -1,8 +1,9 @@
 import { TriangleAlert } from "lucide-react";
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, type ReactElement, type SyntheticEvent } from "react";
+import { Form } from "react-aria-components";
 import { NavLink, useBlocker } from "react-router";
 
-import type { SettingsSnapshot } from "@/api/settings";
+import type { SettingsKey, SettingsSnapshot } from "@/api/settings";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { formatTime } from "@/lib/format/datetime";
 import { cn } from "@/lib/utils";
 
+import { invalidTextKeys } from "./editor";
 import { FieldRow } from "./FieldRow";
 import { Notices } from "./Notices";
 import {
@@ -23,7 +25,6 @@ import {
   areaById,
   areaSummary,
   deletionCopy,
-  fieldCountText,
   fieldsForArea,
   pluralise,
   type AreaId,
@@ -34,6 +35,19 @@ type Props = Readonly<{ area: AreaId; base: SettingsSnapshot }>;
 
 const DIALOG_CONTENT = "gap-2 p-6 data-[size=default]:sm:max-w-[30rem]";
 const DIALOG_FOOTER = "mx-0 mb-0 mt-4 border-t-0 bg-transparent p-0";
+
+type ValidationErrors = Readonly<Record<string, string>>;
+
+const NO_ERRORS: ValidationErrors = Object.freeze({});
+
+function namedErrors(failed: Partial<Record<string, string>> | null): ValidationErrors {
+  if (failed === null) return NO_ERRORS;
+  const named: Record<string, string> = {};
+  for (const [key, message] of Object.entries(failed)) {
+    if (message !== undefined) named[key] = message;
+  }
+  return Object.keys(named).length === 0 ? NO_ERRORS : named;
+}
 
 function changeText(n: number): string {
   return `${String(n)} ${pluralise(n, "change", "changes")}`;
@@ -84,14 +98,6 @@ function barSummary(editor: SettingsEditor): ReactElement {
   if (phase !== "idle") return <span role="status">Saving {changeText(n)}</span>;
   if (notice.kind === "saved" && n === 0)
     return <span role="status">Saved at {formatTime(notice.at)}.</span>;
-  if (notice.kind === "validation") {
-    const count = Math.max(1, Object.keys(notice.errors).length);
-    return (
-      <span>
-        <strong className="text-fg font-semibold">Not saved.</strong> {fieldCountText(count)}.
-      </span>
-    );
-  }
   if (notice.kind === "conflict") {
     const c = notice.rows.length;
     return (
@@ -113,19 +119,23 @@ function barSummary(editor: SettingsEditor): ReactElement {
   );
 }
 
-function SaveBar({ editor }: Readonly<{ editor: SettingsEditor }>): ReactElement {
+function SaveBar({
+  editor,
+  resetForm,
+}: Readonly<{ editor: SettingsEditor; resetForm: () => void }>): ReactElement {
   const conflict = editor.notice.kind === "conflict";
   const busy = editor.phase !== "idle";
   const pristine = !conflict && editor.dirty.length === 0;
   const saveLabel = conflict ? "Save my choices" : "Save changes";
   return (
-    <div className="bg-surface border-border-strong sticky bottom-0 z-20 -mx-10 mt-8 flex items-center gap-3 border-t px-10 py-3">
+    <div className="bg-surface border-border-strong sticky bottom-0 z-20 -mx-10 mt-auto flex items-center gap-3 border-t px-10 py-3">
       <div className="text-fg-muted mr-auto text-sm">{barSummary(editor)}</div>
       <Button
         type="button"
         variant="outline"
         isDisabled={pristine || busy}
         onPress={() => {
+          resetForm();
           if (conflict) editor.discardAndReload();
           else editor.discard();
         }}
@@ -235,20 +245,45 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
     };
   }, [guard]);
 
+  const formRef = useRef<HTMLFormElement>(null);
+  const failed = editor.notice.kind === "validation" ? editor.notice.errors : null;
+  const validationErrors = useMemo(() => namedErrors(failed), [failed]);
+
+  function cancelValueReset(event: SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+  }
+
+  function resetForm(): void {
+    formRef.current?.reset();
+  }
+
+  function submit(event: SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const { notice, draft } = editor;
+    if (notice.kind !== "conflict") {
+      editor.save();
+      return;
+    }
+    const invalid: readonly SettingsKey[] = invalidTextKeys(draft);
+    if (notice.rows.some((row) => row.choice === "theirs" && invalid.includes(row.key))) {
+      resetForm();
+    }
+    editor.saveChoices();
+  }
+
   const info = areaById(area);
   return (
     <>
       <Notices notice={editor.notice} />
-      <div className="mt-4 grid grid-cols-[15rem_minmax(0,1fr)] gap-12">
+      <div className="mt-4 grid flex-1 grid-cols-[15rem_minmax(0,1fr)] gap-12">
         <SubNav area={area} base={base} dirty={editor.dirty.length > 0} />
-        <form
+        <Form
+          ref={formRef}
+          className="flex flex-col"
           aria-label={`${info.title} settings`}
-          noValidate
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (editor.notice.kind === "conflict") editor.saveChoices();
-            else editor.save();
-          }}
+          validationErrors={validationErrors}
+          onSubmit={submit}
+          render={(props) => <form {...props} onResetCapture={cancelValueReset} />}
         >
           <section aria-labelledby={`heading-${area}`} className="pb-2">
             <header>
@@ -266,8 +301,8 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
               <FieldRow key={field.key} field={field} base={editor.base} editor={editor} />
             ))}
           </section>
-          <SaveBar editor={editor} />
-        </form>
+          <SaveBar editor={editor} resetForm={resetForm} />
+        </Form>
       </div>
       <LeaveDialog area={area} count={editor.dirty.length} blocker={blocker} />
       <DeletionDialog editor={editor} />

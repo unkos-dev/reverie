@@ -123,10 +123,12 @@ This ceiling is a product choice, not a value mandated by NIST or OWASP.
   the `check_key` call is never made.
 - `frontend/src/routes/auth-login.tsx` is an uncontrolled `FormData` form that reads `GET /auth/setup/status` to decide
   whether to render the local form, an OIDC action, or both, and calls `loginLocal` on submit.
-  `frontend/src/routes/auth-register.tsx` is the equivalent form for `register`, client-validated through
-  `frontend/src/api/auth.schemas.ts`'s `displayNameField`, `emailField` and `newPasswordField(policy)` (configured
-  Unicode scalar-value bounds from setup status) before the request is sent; a rejection from the server surfaces
-  through `ApiError.detail`.
+  `frontend/src/routes/auth-register.tsx` is the equivalent form for `register`. Both are React Aria `Form`s with native
+  validation: each field's `validate` applies `frontend/src/api/auth.schemas.ts`'s rules (`emailField` and
+  `currentPasswordField` at sign-in; `displayNameField`, `emailField` and `newPasswordField(policy)`, with configured
+  Unicode scalar-value bounds from setup status, at registration). A failing field shows its error beneath it, the first
+  one takes focus and no request is sent. Registration's submit handler parses the same schemas again before the
+  request. A rejection from the server surfaces through `ApiError.detail` as a general alert that marks no field.
 
 ## Interfaces and dependencies
 

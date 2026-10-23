@@ -1,7 +1,14 @@
 import { useMemo } from "react"
 import { cva, type VariantProps } from "class-variance-authority"
+import {
+  FieldError as AriaFieldError,
+  Input as AriaInput,
+  Label as AriaLabel,
+  TextField,
+} from "react-aria-components"
 
 import { cn } from "@/lib/utils"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 
@@ -50,7 +57,7 @@ function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 const fieldVariants = cva(
-  "group/field flex w-full gap-2 data-[invalid=true]:text-destructive",
+  "group/field flex w-full gap-2",
   {
     variants: {
       orientation: {
@@ -222,6 +229,26 @@ function FieldError({
   )
 }
 
+function TextInputField({
+  label,
+  children,
+  ...props
+}: Omit<React.ComponentProps<typeof TextField>, "children" | "render"> & {
+  label: React.ReactNode
+  children?: React.ReactNode
+}): React.ReactElement {
+  return (
+    <TextField {...props} render={(fieldProps) => <Field {...fieldProps} />}>
+      <AriaLabel render={(labelProps) => <FieldLabel {...labelProps} />}>
+        {label}
+      </AriaLabel>
+      <AriaInput render={(inputProps) => <Input {...inputProps} />} />
+      {children}
+      <AriaFieldError className="text-fg text-sm font-normal" />
+    </TextField>
+  )
+}
+
 export {
   Field,
   FieldLabel,
@@ -233,4 +260,5 @@ export {
   FieldSet,
   FieldContent,
   FieldTitle,
+  TextInputField,
 }
