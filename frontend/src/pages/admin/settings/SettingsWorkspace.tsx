@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, type ReactElement, type SyntheticEvent } fr
 import { Form } from "react-aria-components";
 import { NavLink, useBlocker } from "react-router";
 
-import type { SettingsSnapshot } from "@/api/settings";
+import type { SettingsKey, SettingsSnapshot } from "@/api/settings";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -264,10 +264,8 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
       editor.save();
       return;
     }
-    const invalid = invalidTextKeys(draft);
-    if (
-      notice.rows.some((row) => row.choice === "theirs" && invalid.some((key) => key === row.key))
-    ) {
+    const invalid: readonly SettingsKey[] = invalidTextKeys(draft);
+    if (notice.rows.some((row) => row.choice === "theirs" && invalid.includes(row.key))) {
       resetForm();
     }
     editor.saveChoices();

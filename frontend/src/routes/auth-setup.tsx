@@ -27,6 +27,14 @@ import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
 
+function validateDisplayName(value: string): string | null {
+  return displayNameField.safeParse(value).success ? null : "Enter a display name.";
+}
+
+function validateEmail(value: string): string | null {
+  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
+}
+
 /** Route component for `/setup`. */
 export function Component(): ReactElement {
   const navigate = useNavigate();
@@ -92,14 +100,6 @@ export function Component(): ReactElement {
   }
 
   const passwordField = newPasswordField(status);
-
-  function validateDisplayName(value: string): string | null {
-    return displayNameField.safeParse(value).success ? null : "Enter a display name.";
-  }
-
-  function validateEmail(value: string): string | null {
-    return emailField.safeParse(value).success ? null : "Enter a valid email address.";
-  }
 
   function validatePassword(value: string): string | null {
     const parsed = passwordField.safeParse(value);
