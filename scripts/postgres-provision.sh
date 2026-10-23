@@ -91,20 +91,12 @@ pg_owned_cleanup() {
 pg_owned_exit() {
   local status=$?
   trap - EXIT INT TERM
-  if ! pg_owned_cleanup; then
-    case "$status" in
-      0 | 2 | 3) status=1 ;;
-    esac
-  fi
+  pg_owned_cleanup || :
   exit "$status"
 }
 
 pg_owned_signal() {
   local signal="$1" attempt
-  case "$signal" in
-    INT) pg_cancel_status=130 ;;
-    TERM) pg_cancel_status=143 ;;
-  esac
   if [[ -n "$pg_child" ]]; then
     if ! kill -s "$signal" -- "-$pg_child" 2>/dev/null; then
       pg_fail "child signal forwarding failed for $pg_container"
@@ -130,7 +122,7 @@ pg_disposable() {
   shift
   [[ "${1:-}" == -- && "$#" -gt 1 ]] || { pg_fail 'usage: test|schema -- COMMAND ARG...'; exit 1; }
   shift
-  pg_dir='' pg_container='' pg_created=0 pg_started=0 pg_child='' pg_cancel_status=0
+  pg_dir='' pg_container='' pg_created=0 pg_started=0 pg_child=''
   trap pg_owned_exit EXIT
   trap 'pg_owned_signal INT' INT
   trap 'pg_owned_signal TERM' TERM
@@ -204,11 +196,9 @@ pg_disposable() {
       break
     fi
   done
-  [[ "$status" != 0 ]] || status="$pg_cancel_status"
   if kill -0 -- "-$pg_child" 2>/dev/null; then
     if ! kill -TERM -- "-$pg_child" 2>/dev/null; then
       pg_fail "descendant termination failed for $pg_container"
-      [[ "$status" != 0 ]] || status=1
     fi
     for ((attempt=0; attempt<100; attempt++)); do
       kill -0 -- "-$pg_child" 2>/dev/null || break
@@ -217,7 +207,6 @@ pg_disposable() {
     if kill -0 -- "-$pg_child" 2>/dev/null; then
       kill -KILL -- "-$pg_child" 2>/dev/null || pg_fail "descendant kill failed for $pg_container"
       pg_fail "descendant termination timed out for $pg_container"
-      [[ "$status" != 0 ]] || status=1
     fi
   fi
   exit "$status"
