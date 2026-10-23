@@ -704,8 +704,8 @@ mod tests {
             .unwrap();
         tokio::time::resume();
         assert!(result.is_err());
-        lock.rollback().await.unwrap();
         assert_eq!(state_of(&pool, job).await, "in_progress");
+        lock.rollback().await.unwrap();
         let cancel = CancellationToken::new();
         let restarted = tokio::spawn(run_worker(
             f.app.clone(),
@@ -756,8 +756,8 @@ mod tests {
             .unwrap();
         tokio::time::resume();
         assert!(result.unwrap_err().to_string().contains("step timed out"));
-        lock.rollback().await.unwrap();
         assert_eq!(state_of(&pool, job).await, "in_progress");
+        lock.rollback().await.unwrap();
         f.make_due(&pool, job).await;
         f.relay.set(Behaviour::Accept);
         let cancel = CancellationToken::new();
@@ -808,8 +808,8 @@ mod tests {
                 .to_string()
                 .contains("shutdown reclaim timed out")
         );
-        lock.rollback().await.unwrap();
         assert_eq!(state_of(&pool, job).await, "in_progress");
+        lock.rollback().await.unwrap();
         let cancel = CancellationToken::new();
         let restarted = tokio::spawn(run_worker(
             f.app.clone(),
