@@ -5,6 +5,8 @@ description: What is Reverie and how to get started.
 
 Reverie is a self-hosted ebook library manager built with Rust and React.
 
+Use the latest stable release of your browser. Older browser versions are not supported.
+
 ## Quick Start
 
 > **Pre-alpha note:** No semver release has been cut yet, so the conventional `latest` tag on
