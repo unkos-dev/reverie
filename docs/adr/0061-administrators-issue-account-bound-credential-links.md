@@ -3,7 +3,7 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0061"
 title: "Administrators issue account-bound credential links"
-status: proposed
+status: accepted
 recorded-on: "2026-10-20"
 decision-makers:
   - "John Unkovich"
@@ -35,15 +35,14 @@ accounts, including accounts without a local password. This decision refines tha
 Chosen option: **Account-bound credential links**, because they let administrators initiate account creation and
 recovery without knowing the resulting password or adding a temporary-password sign-in state.
 
-A browser-authenticated administrator issues or cancels a link. Account creation and its initial link are atomic.
-Issuance returns a random 256-bit token once; storage holds its SHA-256 digest, bound to one account for 72 hours.
-Reissuing replaces the account's link. The host `reset-password` command issues into the same slot with a ten-minute
-lifetime and prints the link to its terminal. The administrator's browser constructs the URL from its own origin. The
-host command and emailed links use the configured public URL and never a request's Host. Every link carries the token in
-the fragment. Only an enabled account with an email can redeem a link. Redemption applies password policy and bounded
-hashing, then atomically consumes the unexpired link, invalidates every other password-replacement proof, writes the
-password and increments the session version. It does not sign the person in or reset login accounting. When mail is
-configured, an administrator can also email the live link to the account's stored address.
+A browser-authenticated administrator issues or cancels a link. Issuance returns a random 256-bit token once; storage
+holds its SHA-256 digest, bound to one account for 72 hours. Reissuing replaces the account's link. The host
+`reset-password` command issues into the same slot with a ten-minute lifetime. The administrator's browser constructs
+the URL from its own origin. The host command and emailed links use the configured public URL and never a request's
+Host. Every link carries the token in the fragment. Only an enabled account with an email can redeem a link. Redemption
+consumes the link once, invalidates every other password-replacement proof and ends every session. It does not sign the
+person in or reset login accounting. When mail is configured, an administrator can also email the live link to the
+account's stored address.
 
 Administrator-chosen passwords keep delivery simple, but disclose the credential to someone other than its holder.
 Temporary passwords shorten that exposure only if changed and require a restricted sign-in state until then.
@@ -56,7 +55,7 @@ Temporary passwords shorten that exposure only if changed and require a restrict
 - Negative: without mail, administrators must copy and deliver each link; closing the result requires another link if it
   was not kept.
 - Negative: an instance without mail, or an account without a verified address, receives no recovery notification.
-- Negative: the host command and emailed links need `REVERIE_PUBLIC_URL`; the host command refuses to run without it.
+- Negative: the host command and emailed links need a configured public URL.
 - Neutral: device tokens remain valid after redemption; first-run setup retains its own flow.
 
 ## More information

@@ -3,7 +3,7 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0058"
 title: "One-shot sign-in attempts with a single winner"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-10-18"
 decision-makers:
   - "John Unkovich"
@@ -45,29 +45,21 @@ modes intact.
 Chosen option: **PostgreSQL attempts with a single-winner cohort**, because conditional database mutations give every
 replica the same consumption and arbitration authority.
 
-Persist one cohort per anonymous session and at most one OIDC attempt under it in logged tables. Both cascade from the
-session row. Store state as a SHA-256 digest, with the PKCE verifier and nonce as server-side text and a fixed 15-minute
-attempt expiry. A new start replaces the pending attempt. Claim matching live state in one atomic delete before
-exchanging the code; a failed exchange requires a new start.
+Persist one cohort per anonymous session and at most one OIDC attempt under it. Both cascade from the session row. Store
+state as a SHA-256 digest with a fixed 15-minute attempt expiry. A new start replaces the pending attempt. Claim
+matching live state in one atomic delete before exchanging the code; a failed exchange requires a new start.
 
 A conditional transition from pending to won is the sole authority to provision or link identity and establish an
 authenticated session. Rotation deletes the old session row and cascades its cohort and attempt. A won cohort is never
-reopened: an anonymous newcomer receives local `409 sign-in-inactive` or OIDC start `303 /login?outcome=expired`,
-without changing that session. There is no time-based recovery.
+reopened, and an anonymous newcomer is refused without changing that session. There is no time-based recovery. Account
+switching requires sign-out first.
 
 Local sign-in joins the cohort only when a live session exists, avoiding session and cohort creation for failed attempts
-without a cookie. OIDC start first saves a non-empty anonymous session using the `sign_in_started` marker, so the
-session row exists for the foreign key and the middleware keeps its cookie.
-
-OIDC start shares the existing per-source sign-in limiter. It redirects an over-limit navigation to
-`/login?outcome=throttled` with 303. OIDC start and callback redirect an already signed-in browser to `/` with 303
-before limiting, lookup or provider requests. The shared signed-in rule checks existence, disabled state and session
-version; invalid identities are flushed and sign-in continues anonymously. Account switching requires sign-out first.
+without a cookie.
 
 Every error after winning and before session login succeeds first flushes the session, removing the row and browser
-cookie so an explicit next attempt starts fresh. A flush failure is logged at warning level and the original error is
-returned; the residual cohort remains losing until session expiry. Successful sign-in regenerates the session id before
-attaching identity.
+cookie so an explicit next attempt starts fresh. Successful sign-in regenerates the session id before attaching
+identity.
 
 One attempt per session and single-winner arbitration are Reverie application policy, rather than behaviour OIDC
 prescribes. One-time browser-bound state follows RFC 9700, while session regeneration and invalidation follow the OWASP
@@ -76,7 +68,7 @@ Session Management Cheat Sheet. Generic refusals follow the OWASP Authentication
 ### Consequences
 
 - Positive: replay cannot repeat a provider exchange, and only one verified request per cohort can establish an account.
-- Positive: session deletion owns cohort cleanup; the session worker removes expired attempts in bounded batches.
+- Positive: session deletion owns cohort cleanup.
 - Negative: OIDC initiation and callbacks need database round trips, and a new start invalidates another tab's pending
   attempt.
 - Negative: a crash after claiming state consumes the attempt. A database claim and provider exchange cannot commit

@@ -430,7 +430,7 @@
       "id": "REV-ADR-0058",
       "kind": "adr",
       "path": "docs/adr/0058-one-shot-sign-in-attempts-with-a-single-winner.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "One-shot sign-in attempts with a single winner"
     },
     {
@@ -451,7 +451,7 @@
       "id": "REV-ADR-0061",
       "kind": "adr",
       "path": "docs/adr/0061-administrators-issue-account-bound-credential-links.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Administrators issue account-bound credential links"
     },
     {
