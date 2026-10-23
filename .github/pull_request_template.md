@@ -18,11 +18,15 @@ apply.
 
 <!-- Optional: keep only when motivation or context is not obvious from the diff. Delete the heading and this comment when irrelevant. -->
 
-## Test plan
+## Validation
 
-<!-- Bulleted checklist of how this was tested or how a reviewer can verify it. -->
+<!--
+Record checks actually run and their results. State material verification gaps
+and their effect on readiness. Keep pending CI status and downstream follow-up
+out of this section.
+-->
 
-- [ ]
+-
 
 ## Accessibility
 
