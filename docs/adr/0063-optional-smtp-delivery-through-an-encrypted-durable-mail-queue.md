@@ -39,18 +39,13 @@ mail a prerequisite for recovery, and without storing redeemable links in clear 
 Chosen option: **Encrypted durable Postgres mail queue with generic SMTP**, because it keeps mail optional and
 restart-safe while a database disclosure reveals no queued message contents or links, and it works with any SMTP relay.
 
-Mail is configured through deployment settings and is off by default. When enabled, account transactions write mail jobs
-to Postgres under the account lock, so a notification commits or rolls back with the change that caused it. One
-supervised worker claims jobs with `FOR UPDATE SKIP LOCKED` and submits them one at a time through `lettre` over
-`rustls`, using implicit TLS by default, required STARTTLS, or explicitly selected plaintext. The recipient and rendered
-message are sealed together with AES-256-GCM through RustCrypto `aes-gcm`, keyed by one externally supplied key, with a
-fresh random nonce per encryption and the job identity and purpose bound as authenticated data. Job rows are also the
-only record of public recovery sending allowances.
+Postgres keeps mail durable without adding a broker and lets notifications commit atomically with the account changes
+that cause them. Encrypting queued recipients and messages limits what a database disclosure reveals, at the cost of an
+externally supplied key that operators must manage separately.
 
-Mailbox control is proved by a challenge Reverie sends to the stored address while the holder is signed in. Provider
-claims and copied invitation links never mark an address verified. Email recovery needs a verified address and an
-existing local password, and its proofs are separate from the administrator and host link slot, so a public request
-cannot cancel an administrator's link. The host `reset-password` command prints a short-lived link and never needs mail.
+Generic SMTP avoids a provider-specific integration. `lettre` with `rustls` supplies the transport, and RustCrypto
+`aes-gcm` supplies authenticated AES-256-GCM encryption without adding a C toolchain. These libraries keep protocol and
+cryptographic implementations outside Reverie while fitting its Rust runtime.
 
 Direct submission is simpler but loses mail on restart and ties request latency to the relay. A clear-text queue is
 restart-safe but turns a database backup into a set of usable reset links. A provider API narrows support to one
