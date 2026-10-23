@@ -5,7 +5,7 @@ import { Link, Navigate } from "react-router";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, requestPasswordReset } from "@/api/auth";
-import { emailField } from "@/api/auth.schemas";
+import { emailField, validateEmail } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { FieldError, TextInputField } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,10 +13,6 @@ import { formString } from "@/lib/form";
 import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
-
-function validateEmail(value: string): string | null {
-  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
-}
 
 export function Component(): ReactElement {
   const settings = useQuery({

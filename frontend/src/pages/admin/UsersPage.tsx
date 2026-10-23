@@ -26,7 +26,12 @@ import {
 } from "@/api/users";
 import type { User, Role, CreateUserInput, CredentialLink } from "@/api/users";
 import { ApiError } from "@/api";
-import { displayNameField, emailField } from "@/api/auth.schemas";
+import {
+  displayNameField,
+  emailField,
+  validateDisplayName,
+  validateEmail,
+} from "@/api/auth.schemas";
 import { fetchSetupStatus, fetchEmailVerification } from "@/api/auth";
 import { formatDateTime } from "@/lib/format/datetime";
 import { formString } from "@/lib/form";
@@ -472,14 +477,6 @@ function LinkResultContent({
       </DialogFooter>
     </>
   );
-}
-
-function validateDisplayName(value: string): string | null {
-  return displayNameField.safeParse(value).success ? null : "Enter a display name.";
-}
-
-function validateEmail(value: string): string | null {
-  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
 }
 
 function useLinkDialogState() {

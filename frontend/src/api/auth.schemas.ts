@@ -13,6 +13,15 @@ import { z } from "zod";
 export const emailField = z.email();
 /** A non-empty display name (rejects whitespace-only input). */
 export const displayNameField = z.string().trim().min(1);
+
+export function validateEmail(value: string): string | null {
+  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
+}
+
+export function validateDisplayName(value: string): string | null {
+  return displayNameField.safeParse(value).success ? null : "Enter a display name.";
+}
+
 export type PasswordLengthPolicy = {
   password_min_length: number;
   password_max_length: number;

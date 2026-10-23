@@ -22,7 +22,7 @@ import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, loginLocal } from "@/api/auth";
-import { currentPasswordField, emailField } from "@/api/auth.schemas";
+import { currentPasswordField, validateEmail } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { FieldError, TextInputField } from "@/components/ui/field";
 import { formString } from "@/lib/form";
@@ -52,10 +52,6 @@ const outcomeCopy = {
   },
   throttled: { title: "Too many sign-in attempts", body: "Wait a moment, then try again." },
 };
-
-function validateEmail(value: string): string | null {
-  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
-}
 
 function validatePassword(value: string): string | null {
   return currentPasswordField.safeParse(value).success ? null : "Enter your password.";

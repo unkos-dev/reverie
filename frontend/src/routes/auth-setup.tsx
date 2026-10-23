@@ -18,7 +18,13 @@ import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, setupAdmin, type SetupStatus } from "@/api/auth";
-import { displayNameField, emailField, newPasswordField } from "@/api/auth.schemas";
+import {
+  displayNameField,
+  emailField,
+  newPasswordField,
+  validateDisplayName,
+  validateEmail,
+} from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { FieldError, TextInputField } from "@/components/ui/field";
@@ -26,14 +32,6 @@ import { formString } from "@/lib/form";
 import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
-
-function validateDisplayName(value: string): string | null {
-  return displayNameField.safeParse(value).success ? null : "Enter a display name.";
-}
-
-function validateEmail(value: string): string | null {
-  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
-}
 
 /** Route component for `/setup`. */
 export function Component(): ReactElement {

@@ -22,7 +22,12 @@ import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { register } from "@/api/auth";
-import { displayNameField, emailField } from "@/api/auth.schemas";
+import {
+  displayNameField,
+  emailField,
+  validateDisplayName,
+  validateEmail,
+} from "@/api/auth.schemas";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
 import { FieldError, TextInputField } from "@/components/ui/field";
@@ -30,14 +35,6 @@ import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
-
-function validateDisplayName(value: string): string | null {
-  return displayNameField.safeParse(value).success ? null : "Enter a display name.";
-}
-
-function validateEmail(value: string): string | null {
-  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
-}
 
 /** Route component for `/register`. */
 export function Component(): ReactElement {
