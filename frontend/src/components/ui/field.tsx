@@ -236,7 +236,7 @@ function TextInputField({
 }: Omit<React.ComponentProps<typeof TextField>, "children" | "render"> & {
   label: React.ReactNode
   children?: React.ReactNode
-}) {
+}): React.ReactElement {
   return (
     <TextField {...props} render={(fieldProps) => <Field {...fieldProps} />}>
       <AriaLabel render={(labelProps) => <FieldLabel {...labelProps} />}>
