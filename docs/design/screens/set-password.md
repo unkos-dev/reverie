@@ -49,9 +49,10 @@ Both forms have "New password" and "Confirm password" fields, the existing polic
 button. Include a hidden field with `autocomplete="username"` holding {email}; both visible fields use
 `autocomplete="new-password"`.
 
-A mismatch shows "The passwords don't match." inline. Policy, 503 and 429 errors render their existing `detail`.
-Submission does not sign the person in. Reconnect does not repeat lookup or replace the form; entered passwords stay in
-their fields.
+A mismatch shows "The passwords don't match." beneath "Confirm password", and a password outside the policy shows its
+length message beneath "New password". A submission these checks block sends nothing and focuses the first failing
+field. Policy, 503 and 429 refusals from the server render their existing `detail` as a general alert. Submission does
+not sign the person in. Reconnect does not repeat lookup or replace the form; entered passwords stay in their fields.
 
 If password-policy loading fails, show "Could not load the password policy." beneath the new-password field, followed by
 an existing small outline button labelled "Retry password policy". Retry in place without clearing either password field
@@ -79,8 +80,9 @@ saved screen.
 ## Keyboard and accessibility
 
 Use labelled inputs, normal reading and Tab order, visible focus rings and keyboard submission. Permit paste and
-password managers. Inline errors are announced by the existing FieldError primitive. Disable repeated submission while
-pending and retain entered values after a refusal. The loading skeleton has an accessible status label.
+password managers. Field errors describe their field; general refusals are announced by the existing FieldError alert
+primitive. Disable repeated submission while pending and retain entered values after a refusal. The loading skeleton has
+an accessible status label.
 
 ## Rendered acceptance
 

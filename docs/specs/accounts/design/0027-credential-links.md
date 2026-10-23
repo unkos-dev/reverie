@@ -87,12 +87,14 @@ its digest still matches and `expires_at > clock_timestamp()`, rechecks account 
 increments `session_version` and commits. The wall-clock comparison catches expiry while waiting for the user lock.
 Concurrent redemption has one winner. No database handle or user lock is held while hashing.
 
-The form shows new-account or reset copy from `has_password`, checks confirmation and the existing client policy, and
-renders server errors. A temporary lookup failure offers an explicit retry that retains the token in memory and disables
-its action while fetching. The component owns retry intent; React Query owns request state. Reconnect does not repeat
-lookup or discard form values. Success offers an explicit Sign in link and is terminal: lookup stops and late lookup
-errors cannot replace it. Redemption creates no session and does not reset the login throttle. PIN recovery and device
-tokens remain unchanged.
+The form shows new-account or reset copy from `has_password`. Native React Aria field validation applies the existing
+client policy to the new password and equality with it to the confirmation, which is checked again when either changes.
+Each error shows beneath its field, and a blocked submission focuses the first invalid field and sends nothing. Server
+errors render as a general alert. A temporary lookup failure offers an explicit retry that retains the token in memory
+and disables its action while fetching. The component owns retry intent; React Query owns request state. Reconnect does
+not repeat lookup or discard form values. Success offers an explicit Sign in link and is terminal: lookup stops and late
+lookup errors cannot replace it. Redemption creates no session and does not reset the login throttle. PIN recovery and
+device tokens remain unchanged.
 
 Redemption emits a structured authentication event after success or failure. Events include an outcome, a generated
 request ID, the account ID when known, the resolved source IP and a bounded, control-free user agent. Events contain

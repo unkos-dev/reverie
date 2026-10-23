@@ -39,6 +39,12 @@ Radix Colors and `src/styles/themes/primitives.generated.css` supply the colour 
 interaction library. The Radix UI runtime is not installed. The grid engine and its editing, sorting and loading state
 remain separate from the shared controls.
 
+## Native form validation
+
+React Aria fields own validation messages, their associations and first-invalid-field focus. Domain validators and API
+mutations remain in their owning modules. Settings retains its drafts, dirty patches and concurrency handling;
+validation appears beside each field. General API failures remain alerts.
+
 ## Environment Variables
 
 Configure the development environment using these variables.

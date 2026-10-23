@@ -81,8 +81,10 @@ one-line summary of its saved values. The current area has `aria-current="page"`
 description, one row per field, and the save bar. Each field row is two columns: the label and help text (up to 24 rem)
 on the left, the control and its notes on the right.
 
-**Save bar.** Sticks to the bottom of the viewport at the foot of the form. The bar's message sits on the left. "Discard
-changes" and the single primary button "Save changes" sit on the right.
+**Save bar.** Sits at the foot of the form and at the bottom of the viewport. On an area shorter than the viewport, the
+space between the last row and the bar stays empty; on a taller area, the bar sticks to the bottom of the viewport as
+the form scrolls. The bar's message sits on the left. "Discard changes" and the single primary button "Save changes" sit
+on the right.
 
 ## Areas and fields
 
@@ -171,7 +173,8 @@ Each area has a description under its heading.
 
 ### Validation messages
 
-These appear beneath the field, with a warning glyph, when a save is attempted with a bad value:
+These appear beneath the field, with a warning glyph, when the user changes the field and leaves it, or attempts a save,
+with a bad value:
 
 | Case                                   | Message                                              |
 | -------------------------------------- | ---------------------------------------------------- |
@@ -301,18 +304,17 @@ Each state gives its trigger and its exact copy.
 
 ### Validation
 
-- Trigger: a client check fails on save, or the server answers 422 with a detail that starts with a field's key.
-- Each failing field has `aria-invalid`, a warning glyph and its message beneath the control. A server message shows as
-  the server wrote it.
-- An alert titled "Settings were not saved": "{n} field needs attention. Fix it and save again. Nothing you typed has
-  been lost." For several fields: "{n} fields need attention. Fix them and save again. Nothing you typed has been lost."
-  Focus moves to the alert.
-- The alert holds one outline button per failing field, "Go to {field label}", which moves focus to that field.
-- A 422 that names no field shows the alert with the body "The server did not accept this change: {detail}." and no
-  buttons.
-- The bar message is "Not saved." in bold, then "{n} field needs attention." or "{n} fields need attention." Save stays
-  active.
-- Fixing a field clears its error. Fixing the last one clears the alert.
+- Trigger: a client check fails, or the server answers 422 with a detail that starts with a field's key.
+- Each failing field has `aria-invalid`, a warning glyph and its message beneath the control, which describes the
+  control. A server message shows as the server wrote it.
+- A save that a client check blocks sends nothing and moves focus to the first failing field. No alert appears and the
+  bar keeps its unsaved count.
+- A 422 that names a field shows an alert titled "Settings were not saved" with the body "Review the field errors and
+  try again." Focus stays where it was.
+- A 422 that names no field shows the same alert with the body "The server did not accept this change: {detail}." and
+  marks no field.
+- Save stays active. Changing a field and leaving it checks it again and clears a server error on it. The alert stays
+  until the next save, "Discard changes" or leaving the area.
 
 ### Removal confirmation
 
@@ -386,7 +388,8 @@ Each state gives its trigger and its exact copy.
 - Each area form is named "{Area} settings". The area title is an `h2` under the page's `h1`.
 - Status notices ("Settings saved", the reapplying notice, the removal note and the bar message) are `role="status"`.
   The conflict, validation, nothing-was-saved, save-failed, load-error and forbidden notices are `role="alert"`.
-- A failed save moves focus to the validation alert. Each "Go to" button moves focus to its field.
+- A save blocked by a client check moves focus to the first failing field. A server refusal leaves focus where it was,
+  and its alert announces it.
 - The save button stays in the tab order while pending and rejects repeat activation. Pristine actions and Discard
   during a save are disabled and leave the tab order; no application focus transfer runs when they become disabled.
 - Dialogs trap focus, close on Escape as the safe choice (Stay or Keep), and return focus as described above. The
@@ -425,8 +428,9 @@ A rendered page is accepted when every item holds, in the dark theme and the lig
 10. A forced stale save with no overlapping field reloads, sends once more and shows "Settings saved" with the reapply
     paragraph. A server value equal to the user's own is not a conflict. An overlapping field opens the conflict panel
     with Keep mine and Use theirs, and a second stale answer opens the panel too.
-11. Validation shows the message on the field, the alert with "Go to" buttons and focus on the alert. A 422 and a
-    network failure keep the user's edits.
+11. Validation shows the message on the field. A save blocked by a client check sends nothing, shows no alert and
+    focuses the first failing field. A 422 naming a field shows "Review the field errors and try again." without moving
+    focus. A 422 and a network failure keep the user's edits.
 12. Leaving with unsaved edits raises the discard prompt with "Stay on this page" focused. It is not raised when
     pristine, after a save, or after "Nothing was saved".
 13. Turning on either removal switch raises the confirmation with "Keep source files" focused. Keep returns focus to the
