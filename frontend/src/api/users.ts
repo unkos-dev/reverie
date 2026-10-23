@@ -7,6 +7,7 @@
 import { z } from "zod";
 
 import { apiFetch } from "./fetch";
+import { emailProofTokenField } from "./auth.schemas";
 
 const ROLE_VALUES = ["admin", "adult", "child"] as const;
 type Role = (typeof ROLE_VALUES)[number];
@@ -68,6 +69,47 @@ type CreateUserInput = {
 const CredentialLinkSchema = z.object({ token: z.string(), expires_at: z.iso.datetime() });
 type CredentialLink = z.infer<typeof CredentialLinkSchema>;
 const CreatedUserSchema = z.object({ user: UserSchema, link: CredentialLinkSchema });
+const MailFailureSchema = z.enum([
+  "connection",
+  "tls",
+  "authentication",
+  "temporary_refusal",
+  "permanent_refusal",
+  "timeout",
+  "payload_unreadable",
+]);
+const CredentialLinkEmailSchema = z.discriminatedUnion("status", [
+  z.object({
+    job_id: z.uuid(),
+    status: z.enum(["queued", "accepted", "inactive"]),
+    failure_category: z.null(),
+  }),
+  z.object({ job_id: z.uuid(), status: z.literal("failed"), failure_category: MailFailureSchema }),
+]);
+export type CredentialLinkEmail = z.infer<typeof CredentialLinkEmailSchema>;
+export async function sendCredentialLinkEmail(
+  id: string,
+  token: string,
+): Promise<CredentialLinkEmail> {
+  return CredentialLinkEmailSchema.parse(
+    await apiFetch(`/api/v1/users/${z.uuid().parse(id)}/credential-links/emails`, {
+      method: "POST",
+      body: JSON.stringify({ token: emailProofTokenField.parse(token) }),
+    }),
+  );
+}
+export async function fetchCredentialLinkEmail(
+  id: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<CredentialLinkEmail> {
+  return CredentialLinkEmailSchema.parse(
+    await apiFetch(
+      `/api/v1/users/${z.uuid().parse(id)}/credential-links/emails/${z.uuid().parse(jobId)}`,
+      { signal },
+    ),
+  );
+}
 type CreatedUser = z.infer<typeof CreatedUserSchema>;
 
 async function createUser(input: CreateUserInput, signal?: AbortSignal): Promise<CreatedUser> {

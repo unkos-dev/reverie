@@ -182,6 +182,10 @@ pub enum AppError {
     /// Request-path hashing capacity was unavailable within the wait limit. HTTP 503.
     #[error("authentication processing is busy")]
     HashBusy,
+    /// Authentication mail is not available on this instance. RFC 9457 `type`
+    /// [`problems::MAIL_UNAVAILABLE`]. HTTP 503 with a fixed `detail`.
+    #[error("authentication mail is unavailable")]
+    MailUnavailable,
     /// First-run setup (bootstrap) attempted when an administrator already
     /// exists. RFC 9457 `type` [`problems::SETUP_ALREADY_COMPLETE`]. HTTP 409
     /// Conflict. The authoritative guard is the `instance_bootstrap` singleton
@@ -336,6 +340,12 @@ impl IntoResponse for AppError {
                 problems::AUTH_BUSY,
                 "Service Unavailable",
                 "The server is busy. Try again in a moment.".to_owned(),
+            ),
+            Self::MailUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                problems::MAIL_UNAVAILABLE,
+                "Service Unavailable",
+                "Email is not available on this server.".to_owned(),
             ),
             Self::RateLimited { .. } => (
                 StatusCode::TOO_MANY_REQUESTS,
@@ -524,6 +534,22 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_problem_shape(&json, problems::AUTH_BUSY, 503, "Service Unavailable");
         assert_eq!(json["detail"], "The server is busy. Try again in a moment.");
+    }
+
+    #[tokio::test]
+    async fn smtp_verification_mail_unavailable_problem_shape() {
+        let response = AppError::MailUnavailable.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(!response.headers().contains_key(header::RETRY_AFTER));
+        let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_problem_shape(
+            &json,
+            problems::MAIL_UNAVAILABLE,
+            503,
+            "Service Unavailable",
+        );
+        assert_eq!(json["detail"], "Email is not available on this server.");
     }
 
     #[tokio::test]

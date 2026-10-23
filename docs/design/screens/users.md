@@ -41,9 +41,10 @@ For a reset:
 "{name} uses this link to choose a new password. It expires {expiry}. You won't see it again."
 
 Show the read-only link, then "Copy link" and "Done". Copying succeeds with the toast "Link copied.". Build the URL from
-the browser's origin as `/set-password#{token}`. Closing the result clears the displayed link. Format {expiry} with the
-existing date-time formatter. If clipboard access is unavailable or denied, keep the link visible and show the error
-toast "Couldn't copy the link. Select the link and copy it manually.".
+the browser's origin as `/set-password#{token}` when the account has no password and `/reset-password#{token}` when it
+has one. Closing the result clears the displayed link. Format {expiry} with the existing date-time formatter. If
+clipboard access is unavailable or denied, keep the link visible and show the error toast "Couldn't copy the link.
+Select the link and copy it manually.".
 
 ## Reset and cancel
 
@@ -69,6 +70,74 @@ keeping the button disabled during the request. Keep the user list and existing 
 Credential actions appear once settings confirm local authentication is enabled; a failed background refresh retains the
 previously loaded settings.
 
+## Send link by email
+
+This section is target design.
+
+When mail is configured, the link result adds "Send email" before "Copy link". The button is absent when mail is not
+configured; copying works the same either way. Sending uses the link currently shown and the account's stored address.
+The administrator enters no address. Nothing is sent when the account is created; sending happens only on activation.
+
+After activation, a status line appears 16 px beneath the link field. While the dialog is open, the page refreshes that
+delivery's status every 3 seconds and stops at Accepted, Failed, Inactive or when the dialog closes.
+
+| Status | Text | Actions |
+| ------ | ---- | ------- |
+| Queued | "Sending to {email}…" | "Send email" disabled |
+| Accepted | "The mail server accepted the email for {email}. This doesn't confirm it reached the inbox." | "Send email" hidden |
+| Failed | "Sending failed: {reason}. Copy the link instead, or try again." | "Try again" replaces "Send email" |
+| Inactive | "This link is no longer active. Create a new link to send it." | "Send email" hidden |
+
+| Failure category     | {reason}                                          |
+| -------------------- | ------------------------------------------------- |
+| `connection`         | "couldn't connect to the mail server"             |
+| `tls`                | "the secure connection to the mail server failed" |
+| `authentication`     | "the mail server rejected Reverie's sign-in"      |
+| `temporary_refusal`  | "the mail server refused it for now"              |
+| `permanent_refusal`  | "the mail server refused it"                      |
+| `timeout`            | "the mail server didn't respond in time"          |
+| `payload_unreadable` | "the queued message couldn't be read"             |
+
+After a failed submission or a failed delivery, "Try again" sends the same link as a new delivery. After a failed
+delivery-status check, automatic refresh stops and "Try again" rechecks that delivery without sending another email. The
+retry button is disabled while the check runs. A queued result resumes automatic refresh; a terminal result stops it. A
+503 response shows "Email isn't available right now. Copy the link instead." A refusal because the link was replaced,
+cancelled or expired shows "This link is no longer active. Create a new link to send it." A network failure shows
+"Couldn't confirm the request. Try again." In every case the link and "Copy link" stay available. Closing the dialog
+stops status refresh and discards the link.
+
+Link email, with {origin} the configured public URL, {expiry} the link's expiry in the email date format of
+[authentication mail delivery](../../specs/operations/design/0029-authentication-mail-delivery.md) and {support} the
+configured support address, also the Reply-To. For an account without a password:
+
+Subject: "Set your Reverie password"
+
+```text
+An administrator invited you to set a password for the Reverie account {email} at {origin}.
+
+To choose your password, open this link:
+{origin}/set-password#{token}
+
+The link works once and expires on {expiry}.
+
+If you weren't expecting this, ignore this email or write to {support}.
+```
+
+For an account with a password:
+
+Subject: "Reset your Reverie password"
+
+```text
+An administrator started a password reset for the Reverie account {email} at {origin}.
+
+To choose a new password, open this link:
+{origin}/reset-password#{token}
+
+The link works once and expires on {expiry}. Your current password keeps working until the link is used. Using it signs the account out everywhere.
+
+If you weren't expecting this, write to {support}.
+```
+
 ## Keyboard and accessibility
 
 Retain table headers, labelled fields, visible focus rings and keyboard activation. Dialogs trap focus, close with
@@ -82,3 +151,5 @@ order and supports text selection. Badges express state in text and expose their
 - Confirm own-row and local-auth-disabled action hiding, and the no-email refusal.
 - Check dialog focus, Tab order, Escape, clipboard feedback and pending submission.
 - Confirm administrators never enter a password and links are displayed only in the result.
+- With mail configured, check each send status and failure message, refresh stopping at a final status or on close, and
+  "Send email" absent when mail is not configured.

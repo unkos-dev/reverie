@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mail_jobs WHERE user_id = ANY($1) AND terminal_at <= clock_timestamp() - interval '7 days'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c39addde1ea16e80e91ba58d413b7ae9e671ea2e608ef034e5b41ca470ca7903"
+}

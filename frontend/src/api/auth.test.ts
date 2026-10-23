@@ -6,7 +6,6 @@ import {
   lookupCredentialLink,
   logout,
   requestPasswordReset,
-  resetPassword,
   setupAdmin,
 } from "./auth";
 import { __seedCsrfTokenForTesting } from "./csrf";
@@ -103,6 +102,7 @@ describe("fetchSetupStatus", () => {
           setup_required: false,
           local_auth_enabled: true,
           oidc_enabled: false,
+          email_recovery_enabled: false,
           password_min_length: 8,
           password_max_length: 32,
         }),
@@ -127,6 +127,7 @@ describe("fetchSetupStatus", () => {
           setup_required: true,
           local_auth_enabled: true,
           oidc_enabled: false,
+          email_recovery_enabled: false,
           ...policy,
         }),
         { status: 200 },
@@ -144,6 +145,7 @@ describe("fetchSetupStatus", () => {
           password_min_length: 15,
           password_max_length: 256,
           oidc_enabled: false,
+          email_recovery_enabled: false,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -157,6 +159,7 @@ describe("fetchSetupStatus", () => {
       password_min_length: 15,
       password_max_length: 256,
       oidc_enabled: false,
+      email_recovery_enabled: false,
     });
     const [input, init] = fetchSpy.mock.calls[0] ?? [];
     expect(input).toBe("/auth/setup/status");
@@ -243,25 +246,6 @@ describe("requestPasswordReset", () => {
   });
 });
 
-describe("resetPassword", () => {
-  test("POSTs /auth/reset-password mapping newPassword to new_password", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(null, { status: 200 }));
-
-    await resetPassword("user@example.com", "0123456789", "a brand new password");
-
-    const [input, init] = fetchSpy.mock.calls[0] ?? [];
-    expect(input).toBe("/auth/reset-password");
-    expect(init?.method).toBe("POST");
-    expect(bodyOf(init)).toEqual({
-      email: "user@example.com",
-      pin: "0123456789",
-      new_password: "a brand new password",
-    });
-  });
-});
-
 describe("request payload validation", () => {
   test("loginLocal rejects an invalid email without calling fetch", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -280,10 +264,41 @@ describe("request payload validation", () => {
     await expect(requestPasswordReset("")).rejects.toThrow();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+});
 
-  test("resetPassword rejects a blank new password without calling fetch", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    await expect(resetPassword("user@example.com", "0123456789", "")).rejects.toThrow();
-    expect(fetchSpy).not.toHaveBeenCalled();
+describe("mailbox verification", () => {
+  test("parses only the current address and instance mail capability", async () => {
+    const { fetchEmailVerification } = await import("./auth");
+    const status = { email: "holder@example.test", email_verified: false, mail_enabled: true };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify(status), { status: 200 }),
+    );
+    expect(await fetchEmailVerification()).toEqual(status);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe("/api/v1/account/email-verifications");
+  });
+  test("requests and confirms verification using session-protected POST bodies", async () => {
+    const { requestEmailVerification, confirmEmailVerification } = await import("./auth");
+    const request = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    await requestEmailVerification();
+    await confirmEmailVerification("A".repeat(43));
+    expect(request.mock.calls[0][0]).toBe("/api/v1/account/email-verifications");
+    expect(request.mock.calls[0][1]?.method).toBe("POST");
+    expect(request.mock.calls[1][0]).toBe("/api/v1/account/email-verifications/confirmations");
+    expect(bodyOf(request.mock.calls[1][1])).toEqual({ token: "A".repeat(43) });
+  });
+  test("refuses malformed tokens and malformed response addresses", async () => {
+    const { fetchEmailVerification, confirmEmailVerification } = await import("./auth");
+    const request = vi.spyOn(globalThis, "fetch");
+    await expect(confirmEmailVerification("not-a-token")).rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+    request.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ email: "invalid", email_verified: false, mail_enabled: true }),
+        { status: 200 },
+      ),
+    );
+    await expect(fetchEmailVerification()).rejects.toThrow();
   });
 });

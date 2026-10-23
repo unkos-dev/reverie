@@ -64,6 +64,7 @@ rust::sqlx-check
 rust::schema-check
 rust::machete
 rust::deny
+rust::deny-advisories
 js::check
 js::test
 js::build
@@ -165,7 +166,7 @@ expect_lanes 'a blank entry is discarded rather than matched' \
 
 # --- multi-filter union ------------------------------------------------------
 
-expect_lanes 'a cargo manifest edit unions backend and audit' \
+expect_lanes 'a cargo manifest edit unions backend, audit and advisories' \
   'backend/Cargo.toml' 'rust::guards
 infra::check
 rust::check
@@ -175,7 +176,22 @@ rust::doctests
 rust::sqlx-check
 rust::schema-check
 rust::machete
-rust::deny'
+rust::deny
+rust::deny-advisories'
+
+expect_lanes 'a tool pin edit runs the policy audit but not advisories' \
+  'mise.lock' 'rust::guards
+infra::check
+infra::openapi
+rust::check
+rust::doc-lint
+rust::test
+rust::doctests
+rust::sqlx-check
+rust::schema-check
+rust::machete
+rust::deny
+infra::zizmor'
 
 expect_lanes 'unrelated planes union rather than override' \
   'backend/src/lib.rs

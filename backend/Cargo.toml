@@ -22,8 +22,9 @@ name = "reverie-api"
 path = "src/main.rs"
 
 [dependencies]
-redactable = { version = "=0.14.0", default-features = false, features = ["redaction"] }
+redactable = { version = "=0.14.1", default-features = false, features = ["redaction"] }
 anyhow = "1.0.103"
+aes-gcm = { version = "0.11.1", features = ["aes", "alloc", "getrandom"] }
 argon2 = "0.6.0"
 async-trait = "0.1.89"
 axum = { version = "0.8.9", features = ["macros"] }
@@ -46,6 +47,14 @@ futures = "0.3.32"
 governor = { version = "0.10.4", features = ["dashmap"] }
 hickory-resolver = "0.26.1"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+lettre = { version = "0.11.23", default-features = false, features = [
+  "smtp-transport",
+  "builder",
+  "tokio1",
+  "tokio1-rustls",
+  "aws-lc-rs",
+  "rustls-platform-verifier",
+] }
 notify = "8.2.0"
 oauth2-reqwest = "=0.1.0-alpha.3"
 openidconnect = { version = "4.0.1", default-features = false }

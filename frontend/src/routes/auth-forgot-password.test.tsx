@@ -1,20 +1,18 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
-import { toast } from "sonner";
 import type { ReactElement } from "react";
 
 import { ApiError } from "@/api";
-import { fetchSetupStatus, requestPasswordReset, resetPassword } from "@/api/auth";
+import { fetchSetupStatus, requestPasswordReset } from "@/api/auth";
 
 import { Component as AuthForgot } from "./auth-forgot-password";
 
 vi.mock("@/lib/theme/ThemeProvider", () => ({
   useTheme: () => ({ effective: "dark", preference: "system", setPreference: vi.fn() }),
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/api/auth");
 
 function renderForgot(): void {
@@ -42,6 +40,7 @@ beforeEach(() => {
     setup_required: false,
     local_auth_enabled: true,
     oidc_enabled: false,
+    email_recovery_enabled: true,
     password_min_length: 15,
     password_max_length: 256,
   });
@@ -52,164 +51,106 @@ afterEach(() => {
 });
 
 describe("auth-forgot-password", () => {
-  test("requests a PIN, advances to the reset phase, then resets and routes to /login", async () => {
-    vi.mocked(requestPasswordReset).mockResolvedValue(undefined);
-    vi.mocked(resetPassword).mockResolvedValue(undefined);
+  test.each(["ada@example.com", "unknown@example.com"])(
+    "requests recovery generically for %s",
+    async (email) => {
+      vi.mocked(requestPasswordReset).mockResolvedValue(undefined);
+      renderForgot();
+      const user = userEvent.setup();
+      await user.type(await screen.findByLabelText("Email"), email);
+      await user.click(screen.getByRole("button", { name: "Send reset link" }));
+      const title = await screen.findByRole("heading", { name: "Check your email" });
+      expect(title).toHaveFocus();
+      expect(requestPasswordReset).toHaveBeenCalledExactlyOnceWith(email);
+      expect(
+        screen.getByText(
+          `Check ${email} for a password reset link. The email says when the link expires.`,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Back to sign in" })).toHaveAttribute(
+        "href",
+        "/login",
+      );
+      await user.click(screen.getByRole("button", { name: "Use a different email" }));
+      expect(screen.getByLabelText("Email")).toHaveValue("");
+      expect(requestPasswordReset).toHaveBeenCalledTimes(1);
+    },
+  );
+  test("shows unavailable recovery without a form", async () => {
+    vi.mocked(fetchSetupStatus).mockResolvedValue({
+      setup_required: false,
+      local_auth_enabled: true,
+      oidc_enabled: false,
+      email_recovery_enabled: false,
+      password_min_length: 15,
+      password_max_length: 256,
+    });
     renderForgot();
-    const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-
-    expect(requestPasswordReset).toHaveBeenCalledWith("ada@example.com");
-    expect(vi.mocked(toast.info)).toHaveBeenCalled();
-
-    await user.type(await screen.findByLabelText("Recovery PIN"), "12345678");
-    await user.type(screen.getByLabelText("New password"), "new-password-passphrase!");
-    await user.click(screen.getByRole("button", { name: "Reset password" }));
-
+    expect(
+      await screen.findByText(
+        "Password reset by email isn't available on this server. Ask your administrator for a link to reset your password.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(requestPasswordReset).not.toHaveBeenCalled();
+  });
+  test("redirects when local authentication is disabled", async () => {
+    vi.mocked(fetchSetupStatus).mockResolvedValue({
+      setup_required: false,
+      local_auth_enabled: false,
+      oidc_enabled: true,
+      email_recovery_enabled: false,
+      password_min_length: 15,
+      password_max_length: 256,
+    });
+    renderForgot();
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
-    expect(resetPassword).toHaveBeenCalledWith(
-      "ada@example.com",
-      "12345678",
-      "new-password-passphrase!",
-    );
   });
-
-  test("surfaces an inline error and toast when the request fails", async () => {
-    vi.mocked(requestPasswordReset).mockRejectedValue(
-      new ApiError(429, null, "Too Many Requests", "Try again later."),
-    );
+  test("blocks an invalid address without a request", async () => {
     renderForgot();
     const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Try again later.");
-    expect(vi.mocked(toast.error)).toHaveBeenCalled();
-  });
-
-  test("blocks a blank email submit with an associated field error and never requests recovery", async () => {
-    renderForgot();
-    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Send reset link" }));
     const email = screen.getByLabelText("Email");
-
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-
     expect(email).toHaveAccessibleDescription("Enter a valid email address.");
     expect(email).toHaveFocus();
     expect(requestPasswordReset).not.toHaveBeenCalled();
-    // Still on the request phase: the PIN field has not appeared.
-    expect(screen.queryByLabelText("Recovery PIN")).not.toBeInTheDocument();
   });
-
-  test("a request failure shows a general alert and keeps the email without marking it invalid", async () => {
-    vi.mocked(requestPasswordReset).mockRejectedValue(
-      new ApiError(429, null, "Too Many Requests", "Try again later."),
-    );
+  test.each([
+    new ApiError(429, null, "Too Many Requests", "Try again later."),
+    new TypeError("network failure"),
+    new ApiError(503, null, "Unavailable", "private detail"),
+  ])("keeps the address after a request failure", async (error) => {
+    vi.mocked(requestPasswordReset).mockRejectedValue(error);
     renderForgot();
     const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Try again later.");
+    await user.type(await screen.findByLabelText("Email"), "ada@example.com");
+    await user.click(screen.getByRole("button", { name: "Send reset link" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      error instanceof ApiError && error.status === 429
+        ? "Try again later."
+        : "Could not send the request. Try again.",
+    );
     expect(screen.getByLabelText("Email")).toHaveValue("ada@example.com");
     expect(screen.getByLabelText("Email")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByRole("button", { name: "Send reset link" })).toBeEnabled();
+    expect(requestPasswordReset).toHaveBeenCalledTimes(1);
   });
-
-  test("the reset phase associates PIN and password errors and sends nothing", async () => {
-    vi.mocked(requestPasswordReset).mockResolvedValue(undefined);
-    renderForgot();
-    const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-    const pin = await screen.findByLabelText("Recovery PIN");
-    await user.type(pin, "  ");
-    await user.type(screen.getByLabelText("New password"), "short");
-    await user.click(screen.getByRole("button", { name: "Reset password" }));
-
-    expect(pin).toHaveAccessibleDescription("Enter the recovery PIN.");
-    expect(pin).toHaveFocus();
-    expect(screen.getByLabelText("New password")).toHaveAccessibleDescription(
-      /Use at least 15 characters\./,
-    );
-    expect(resetPassword).not.toHaveBeenCalled();
-  });
-
-  test("a reset failure keeps the entries and shows a general alert without invalid fields", async () => {
-    vi.mocked(requestPasswordReset).mockResolvedValue(undefined);
-    vi.mocked(resetPassword).mockRejectedValue(
-      new ApiError(422, null, "Unprocessable", "Invalid or expired PIN."),
-    );
-    renderForgot();
-    const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-    await user.type(await screen.findByLabelText("Recovery PIN"), "12345678");
-    await user.type(screen.getByLabelText("New password"), "new-password-passphrase!");
-    await user.click(screen.getByRole("button", { name: "Reset password" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Invalid or expired PIN.");
-    expect(screen.getByLabelText("Recovery PIN")).toHaveValue("12345678");
-    expect(screen.getByLabelText("New password")).toHaveValue("new-password-passphrase!");
-    expect(screen.getByLabelText("Recovery PIN")).not.toHaveAttribute("aria-invalid");
-    expect(screen.getByLabelText("New password")).not.toHaveAttribute("aria-invalid");
-  });
-
-  test("a request failure does not carry its alert into the reset phase", async () => {
-    vi.mocked(requestPasswordReset)
-      .mockRejectedValueOnce(new ApiError(429, null, "Too Many Requests", "Try again later."))
-      .mockResolvedValueOnce(undefined);
-    renderForgot();
-    const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Try again later.");
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-
-    expect(await screen.findByLabelText("Recovery PIN")).toBeInTheDocument();
-    expect(screen.queryByText("Try again later.")).not.toBeInTheDocument();
-  });
-
-  test("repeated click and Enter while recovery is pending send one request", async () => {
+  test("disables duplicate submission while pending", async () => {
     vi.mocked(requestPasswordReset).mockReturnValue(new Promise(() => {}));
     renderForgot();
     const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-    await user.keyboard("{Enter}");
-    await user.click(screen.getByLabelText("Email"));
-    await user.keyboard("{Enter}");
-
-    expect(requestPasswordReset).toHaveBeenCalledTimes(1);
+    await user.type(await screen.findByLabelText("Email"), "ada@example.com");
+    await user.click(screen.getByRole("button", { name: "Send reset link" }));
+    expect(screen.getByRole("button", { name: "Send reset link" })).toBeDisabled();
+    expect(screen.getByLabelText("Email")).toHaveValue("ada@example.com");
   });
-
-  test("repeated click and Enter while a reset is pending send one request", async () => {
-    vi.mocked(requestPasswordReset).mockResolvedValue(undefined);
-    vi.mocked(resetPassword).mockReturnValue(new Promise(() => {}));
+  test("retries only a failed settings query", async () => {
+    vi.mocked(fetchSetupStatus).mockRejectedValueOnce(new Error("offline"));
     renderForgot();
     const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
-    await user.type(await screen.findByLabelText("Recovery PIN"), "12345678");
-    await user.type(screen.getByLabelText("New password"), "new-password-passphrase!");
-    await user.click(screen.getByRole("button", { name: "Reset password" }));
-    await user.click(screen.getByRole("button", { name: "Reset password" }));
-    await user.keyboard("{Enter}");
-
-    expect(resetPassword).toHaveBeenCalledTimes(1);
-    await waitFor(() => {
-      expect(
-        document.querySelector('[aria-live="assertive"] [role="img"]:last-child'),
-      ).toHaveAccessibleName("Reset password");
-    });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load sign-in settings.");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
+    expect(requestPasswordReset).not.toHaveBeenCalled();
   });
 });

@@ -10,15 +10,19 @@ import type { Role, User } from "@/api/users";
 import * as usersApi from "@/api/users";
 import { toast } from "sonner";
 import { ApiError } from "@/api";
-import { fetchSetupStatus } from "@/api/auth";
+import { fetchSetupStatus, fetchEmailVerification } from "@/api/auth";
 
 import { UsersPage } from "./UsersPage";
 
 vi.mock("@/api/auth", () => ({
+  fetchEmailVerification: vi
+    .fn()
+    .mockResolvedValue({ email: "alice@example.com", email_verified: false, mail_enabled: false }),
   fetchSetupStatus: vi.fn().mockResolvedValue({
     setup_required: false,
     local_auth_enabled: true,
     oidc_enabled: false,
+    email_recovery_enabled: false,
     password_min_length: 15,
     password_max_length: 256,
   }),
@@ -29,6 +33,12 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.f
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.mocked(fetchEmailVerification).mockResolvedValue({
+    email: "alice@example.com",
+    email_verified: false,
+    mail_enabled: false,
+  });
+  vi.useRealTimers();
 });
 
 const ADMIN_ME = {
@@ -256,6 +266,7 @@ describe("UsersPage", () => {
     renderUsersPage(ADMIN_ME, []);
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Create user" }));
+    const dialog = screen.getByRole("dialog", { name: "Create user" });
     expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Display name"), "Carol");
     await user.type(screen.getByLabelText("Email"), "carol@example.com");
@@ -268,6 +279,8 @@ describe("UsersPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Send this link to Carol" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Send this link to Carol" })).toBe(dialog);
+    expect(screen.getByRole("button", { name: "Copy link" })).toHaveFocus();
     expect(screen.getByLabelText("Credential link")).toHaveValue(
       `${window.location.origin}/set-password#test-link`,
     );
@@ -278,6 +291,9 @@ describe("UsersPage", () => {
     expect(toast.success).toHaveBeenCalledWith("Link copied.");
     await user.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.queryByLabelText("Credential link")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create user" })).toHaveFocus();
+    });
   });
 
   test("native role values retain a failed choice and restore the default on reopening", async () => {
@@ -468,7 +484,7 @@ describe("UsersPage", () => {
           "Couldn't copy the link. Select the link and copy it manually.",
         );
         expect(screen.getByLabelText("Credential link")).toHaveValue(
-          `${window.location.origin}/set-password#test-link`,
+          `${window.location.origin}/reset-password#test-link`,
         );
         expect(toast.success).not.toHaveBeenCalled();
       } finally {
@@ -547,6 +563,7 @@ describe("UsersPage", () => {
       setup_required: false,
       local_auth_enabled: false,
       oidc_enabled: true,
+      email_recovery_enabled: false,
       password_min_length: 15,
       password_max_length: 256,
     });
@@ -584,6 +601,7 @@ describe("UsersPage", () => {
         setup_required: false,
         local_auth_enabled: true,
         oidc_enabled: false,
+        email_recovery_enabled: false,
         password_min_length: 15,
         password_max_length: 256,
       };
@@ -606,5 +624,270 @@ describe("UsersPage", () => {
       ).not.toBeInTheDocument();
       expect(fetchSetupStatus).toHaveBeenCalledTimes(2);
     },
+  );
+});
+
+const mailJob = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const mailToken = "A".repeat(43);
+async function openMailableLink(): Promise<HTMLElement> {
+  vi.mocked(fetchEmailVerification).mockResolvedValue({
+    email: "alice@example.com",
+    email_verified: false,
+    mail_enabled: true,
+  });
+  vi.spyOn(usersApi, "issueCredentialLink").mockResolvedValue({
+    token: mailToken,
+    expires_at: "2026-10-23T12:00:00Z",
+  });
+  renderUsersPage(ADMIN_ME, [makeUser({ email: "bob@example.com" })]);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Reset password" }));
+  const dialog = screen.getByRole("dialog", { name: "Reset password for Bob?" });
+  await user.click(screen.getByRole("button", { name: "Create link" }));
+  await screen.findByRole("button", { name: "Send email" });
+  return dialog;
+}
+
+test("keeps focus in the link result and returns it to reset after Escape", async () => {
+  const original = await openMailableLink();
+  const dialog = screen.getByRole("dialog", { name: "Send this link to Bob" });
+  expect(dialog).toBe(original);
+  await waitFor(() => {
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+  const user = userEvent.setup();
+  for (let i = 0; i < 7; i++) {
+    await user.tab();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  }
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "Reset password" })).toHaveFocus();
+  });
+});
+
+test.each(["create", "reset"])(
+  "preserves pending %s admission and shows a late successful result",
+  async (operation) => {
+    const target = makeUser({ email: "bob@example.com" });
+    vi.spyOn(usersApi, "listUsers").mockResolvedValue([target]);
+    let complete: ((link: usersApi.CredentialLink) => void) | undefined;
+    const pending = new Promise<usersApi.CredentialLink>((resolve) => {
+      complete = resolve;
+    });
+    const create = vi
+      .spyOn(usersApi, "createUser")
+      .mockReturnValue(
+        pending.then((link) => ({ user: { ...target, has_password: false }, link })),
+      );
+    const issue = vi.spyOn(usersApi, "issueCredentialLink").mockReturnValue(pending);
+    renderUsersPage(ADMIN_ME, [target]);
+    const user = userEvent.setup();
+    const trigger = operation === "create" ? "Create user" : "Reset password";
+    const submit = operation === "create" ? "Create user" : "Create link";
+    await user.click(await screen.findByRole("button", { name: trigger }));
+    if (operation === "create") {
+      await user.type(screen.getByLabelText("Display name"), "Bob");
+      await user.type(screen.getByLabelText("Email"), "bob@example.com");
+    }
+    await user.click(screen.getByRole("button", { name: submit }));
+    expect(screen.getByRole("button", { name: submit })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: submit })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: submit }));
+    expect(operation === "create" ? create : issue).toHaveBeenCalledTimes(1);
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: trigger })).toHaveFocus();
+    });
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("button", { name: submit })).toHaveAttribute("aria-disabled", "true");
+    await user.keyboard("{Escape}");
+    act(() => {
+      complete?.({ token: mailToken, expires_at: "2026-10-23T12:00:00Z" });
+    });
+    expect(await screen.findByRole("dialog", { name: "Send this link to Bob" })).toBeVisible();
+    expect(operation === "create" ? create : issue).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByLabelText("Credential link")).not.toBeInTheDocument();
+  },
+);
+
+test.each([
+  [
+    { job_id: mailJob, status: "accepted", failure_category: null },
+    "The mail server accepted the email for bob@example.com. This doesn't confirm it reached the inbox.",
+  ],
+  [
+    { job_id: mailJob, status: "inactive", failure_category: null },
+    "This link is no longer active. Create a new link to send it.",
+  ],
+  [
+    { job_id: mailJob, status: "failed", failure_category: "connection" },
+    "Sending failed: couldn't connect to the mail server. Copy the link instead, or try again.",
+  ],
+] satisfies [usersApi.CredentialLinkEmail, string][])(
+  "polls only the displayed delivery until its terminal state %j",
+  async (terminal, copy) => {
+    const send = vi
+      .spyOn(usersApi, "sendCredentialLinkEmail")
+      .mockResolvedValue({ job_id: mailJob, status: "queued", failure_category: null });
+    const poll = vi.spyOn(usersApi, "fetchCredentialLinkEmail").mockResolvedValue(terminal);
+    await openMailableLink();
+    expect(send).not.toHaveBeenCalled();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
+    expect(send).toHaveBeenCalledExactlyOnceWith("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", mailToken);
+    expect(screen.getByRole("button", { name: "Send email" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Sending to bob@example.com…")).toBeInTheDocument();
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 3000);
+      });
+    });
+    expect(await screen.findByText(copy)).toBeInTheDocument();
+    expect(poll).toHaveBeenCalledExactlyOnceWith(
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      mailJob,
+      expect.any(AbortSignal),
+    );
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 3000);
+      });
+    });
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeEnabled();
+    if (terminal.status === "failed") {
+      send.mockResolvedValue({
+        job_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        status: "queued",
+        failure_category: null,
+      });
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      await act(async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0);
+        });
+      });
+      expect(send).toHaveBeenLastCalledWith("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", mailToken);
+      expect(send).toHaveBeenCalledTimes(2);
+    } else expect(screen.queryByRole("button", { name: "Send email" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 3000);
+      });
+    });
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText("Credential link")).not.toBeInTheDocument();
+  },
+);
+
+test.each([
+  { job_id: mailJob, status: "accepted", failure_category: null },
+  { job_id: mailJob, status: "queued", failure_category: null },
+] satisfies usersApi.CredentialLinkEmail[])(
+  "rechecks the same delivery after a status failure and resumes with %j",
+  async (recovered) => {
+    const send = vi.spyOn(usersApi, "sendCredentialLinkEmail").mockResolvedValue({
+      job_id: mailJob,
+      status: "queued",
+      failure_category: null,
+    });
+    const poll = vi
+      .spyOn(usersApi, "fetchCredentialLinkEmail")
+      .mockRejectedValueOnce(new TypeError("network failure"));
+    await openMailableLink();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 3000);
+      });
+    });
+    expect(await screen.findByText("Couldn't confirm the request. Try again.")).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: "Try again" });
+    expect(retry).toBeEnabled();
+    expect(retry).not.toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeEnabled();
+    expect(screen.getByLabelText("Credential link")).toHaveValue(
+      `${window.location.origin}/reset-password#${mailToken}`,
+    );
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 3000);
+      });
+    });
+    expect(poll).toHaveBeenCalledTimes(1);
+    let finishRetry: ((value: usersApi.CredentialLinkEmail) => void) | undefined;
+    poll.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRetry = resolve;
+        }),
+    );
+    poll.mockResolvedValue({ job_id: mailJob, status: "accepted", failure_category: null });
+    await user.click(retry);
+    await waitFor(() => {
+      expect(poll).toHaveBeenCalledTimes(2);
+    });
+    expect(retry).toHaveAttribute("aria-disabled", "true");
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(poll).toHaveBeenLastCalledWith(
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      mailJob,
+      expect.any(AbortSignal),
+    );
+    act(() => {
+      finishRetry?.(recovered);
+    });
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 3000);
+      });
+    });
+    expect(
+      await screen.findByText(
+        "The mail server accepted the email for bob@example.com. This doesn't confirm it reached the inbox.",
+      ),
+    ).toBeInTheDocument();
+    expect(poll).toHaveBeenCalledTimes(recovered.status === "queued" ? 3 : 2);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  },
+);
+
+test.each([
+  [
+    new ApiError(503, null, "Unavailable", ""),
+    "Email isn't available right now. Copy the link instead.",
+  ],
+  [
+    new ApiError(422, null, "Invalid", ""),
+    "This link is no longer active. Create a new link to send it.",
+  ],
+  [new TypeError("network failure"), "Couldn't confirm the request. Try again."],
+])("retains manual copying after a send refusal", async (error, copy) => {
+  vi.spyOn(usersApi, "sendCredentialLinkEmail").mockRejectedValue(error);
+  await openMailableLink();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Send email" }));
+  expect(await screen.findByText(copy)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Copy link" })).toBeEnabled();
+  expect(screen.getByLabelText("Credential link")).toHaveValue(
+    `${window.location.origin}/reset-password#${mailToken}`,
   );
 });

@@ -375,6 +375,9 @@ pub async fn run() -> anyhow::Result<()> {
         oidc_limiter,
         settings,
         last_settings_reload,
+        mail: services::mail::queue::MailRuntime::from_config(&config)
+            .context("preparing the authentication mail runtime")?
+            .map(std::sync::Arc::new),
     };
     let app = build_router(state.clone());
 
@@ -422,6 +425,9 @@ pub async fn run() -> anyhow::Result<()> {
         serve,
         supervise_until_shutdown(supervisor, cancel_token.clone()),
     );
+    if let Some(mail) = &state.mail {
+        mail.shutdown().await;
+    }
     worker_result?;
     serve_result
 }
@@ -532,6 +538,7 @@ fn spawn_workers(
                 )
             }),
         );
+    let builder = with_mail_worker(builder, state);
     let supervisor = with_oidc_discovery(builder, state.oidc.as_ref()).spawn();
     state.ingestion.set_supervisor(supervisor.clone());
     supervisor
@@ -548,6 +555,27 @@ fn configure_oidc(
     Ok(Some(std::sync::Arc::new(
         auth::oidc::OidcRuntime::configured(config, transport)?,
     )))
+}
+
+fn with_mail_worker(
+    builder: task_supervisor::SupervisorBuilder,
+    state: &AppState,
+) -> task_supervisor::SupervisorBuilder {
+    let Some(runtime) = state.mail.clone() else {
+        return builder;
+    };
+    let pool = state.pool.clone();
+    builder.with_task(
+        "mail-worker",
+        Worker(move |cancel| {
+            services::mail::queue::run_worker(
+                pool.clone(),
+                runtime.clone(),
+                cancel,
+                services::mail::queue::POLL_INTERVAL,
+            )
+        }),
+    )
 }
 
 fn with_oidc_discovery(
@@ -647,11 +675,15 @@ pub enum Command {
     /// administrator already exists (honours the same single-admin gate as HTTP
     /// setup). No positional arguments.
     Bootstrap,
-    /// `reverie reset-password <email>`: issue a recovery PIN for an account to
-    /// the operator host file, then exit.
+    /// `reverie reset-password <email>`: print a ten-minute recovery link.
     ResetPassword {
-        /// Email of the account to issue a recovery PIN for.
+        /// Email of the account to issue a recovery link for.
         email: String,
+    },
+    /// `reverie send-test-email <address>`: submit one diagnostic message.
+    SendTestEmail {
+        /// Recipient of the diagnostic message.
+        address: String,
     },
     /// `reverie unlock-account <email>`: clear the per-account login throttle
     /// for an account, then exit.
@@ -686,16 +718,19 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [cmd, email] if cmd == "reset-password" => Ok(Command::ResetPassword {
             email: email.clone(),
         }),
+        [cmd, address] if cmd == "send-test-email" => Ok(Command::SendTestEmail {
+            address: address.clone(),
+        }),
         [cmd, email] if cmd == "unlock-account" => Ok(Command::UnlockAccount {
             email: email.clone(),
         }),
         [cmd] => Err(anyhow::anyhow!(
             "unknown or incomplete subcommand: {cmd:?}; valid subcommands: migrate, \
-             print-config-schema, bootstrap, reset-password <email>, unlock-account <email>"
+             print-config-schema, bootstrap, reset-password <email>, send-test-email <address>, unlock-account <email>"
         )),
         [cmd, ..] => Err(anyhow::anyhow!(
             "unexpected arguments after {cmd:?}; usage: reverie [migrate | print-config-schema | \
-             bootstrap | reset-password <email> | unlock-account <email>]"
+             bootstrap | reset-password <email> | send-test-email <address> | unlock-account <email>]"
         )),
     }
 }
@@ -909,61 +944,96 @@ pub async fn run_bootstrap() -> anyhow::Result<()> {
     )
 }
 
-/// `reverie reset-password <email>`: issue a recovery PIN for an account to a
-/// per-user operator file (mode 0600), then exit.
-///
-/// The operator relays the PIN to
-/// the user, who completes the reset at `/auth/reset-password`.
+/// Print a ten-minute credential link after committing its issuance.
 ///
 /// # Errors
-///
-/// Returns an error when the account is unknown, or on configuration, database,
-/// hashing, or file-write failure.
+/// Returns an error for missing configuration, an unknown or disabled account,
+/// database failure, or a failed terminal write.
 pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
-    tracing_subscriber::fmt().try_init().ok();
-    let config = config::Config::from_env().context("load configuration")?;
-    let pool = db::init_pool(config.database_url.expose_secret(), 1)
+    use std::io::Write as _;
+
+    let (database_url, origin) =
+        Config::host_recovery_from_env().context("load host recovery configuration")?;
+    let pool = db::init_pool(database_url.expose_secret(), 1)
         .await
         .context("connect to the database")?;
     let user = models::user::find_by_email(&pool, email)
         .await
         .context("look up the account")?
-        .ok_or_else(|| anyhow::anyhow!("no account with email {email:?}"))?;
-    let pin = auth::recovery::generate_pin();
-    let pin_hash = auth::password::hash_password(pin.as_bytes())
-        .map_err(|e| anyhow::anyhow!("failed to hash the recovery PIN: {e}"))?;
-    let expires_at = chrono::Utc::now() + chrono::TimeDelta::seconds(config.recovery_pin_ttl_secs);
-    // Supersede prior PINs, persist the new one, and publish it as one
-    // serialized step, so a concurrent forgot-password request in the server
-    // process cannot leave the operator file and the stored hash describing
-    // different PINs. Hashing stays outside that section.
-    let issuance = auth::recovery::PinIssuance {
-        user_id: user.id,
-        email: email.to_owned(),
-        pin,
-        pin_hash,
-        expires_at,
+        .ok_or_else(|| anyhow::anyhow!("no enabled account with that email address"))?;
+    let mut tx = pool.begin().await.context("begin recovery issuance")?;
+    let account = models::account_email_proof::lock_account(&mut tx, user.id)
+        .await
+        .context("lock the account")?
+        .filter(|account| {
+            !account.disabled
+                && account
+                    .email
+                    .as_deref()
+                    .is_some_and(|current| current.eq_ignore_ascii_case(email))
+        })
+        .ok_or_else(|| anyhow::anyhow!("no enabled account with that email address"))?;
+    let has_password = models::local_credentials::find_by_user_id(&mut *tx, user.id)
+        .await
+        .context("read password state")?
+        .is_some();
+    let (token, _) =
+        models::credential_link::issue(&mut tx, user.id, chrono::TimeDelta::minutes(10))
+            .await
+            .context("issue recovery link")?;
+    tx.commit().await.context("commit recovery link")?;
+    let route = if has_password {
+        "reset-password"
+    } else {
+        "set-password"
     };
-    let outcome = auth::recovery::issue_pin(
-        &pool,
-        std::path::Path::new(&config.recovery_pin_dir),
-        issuance,
-    )
-    .await
-    .context("issue the recovery PIN")?;
-    // A withheld PIN was neither stored nor published: a concurrent issuance
-    // owns the account's recovery slot and its PIN is the live one. Report that
-    // instead of implying an operator can relay a code that does not exist.
-    if outcome == auth::recovery::PinIssueOutcome::Withheld {
-        anyhow::bail!(
-            "a concurrent recovery-PIN issuance owns the active slot; re-run to issue a fresh PIN"
-        );
+    let action = if has_password { "reset" } else { "setup" };
+    let address = account
+        .email
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("the account has no email address"))?;
+    // THREAT: The bearer link is disclosed only to command stdout after commit.
+    let mut stdout = std::io::stdout().lock();
+    writeln!(
+        stdout,
+        "Password {action} link for {address} (expires in 10 minutes):"
+    )?;
+    writeln!(
+        stdout,
+        "{}/{route}#{token}",
+        origin.as_str().trim_end_matches('/')
+    )?;
+    Ok(())
+}
+
+/// Submit one test message without a database or queue.
+///
+/// # Errors
+/// Returns a setting-named configuration error, safe submission category,
+/// invalid-recipient error, or a failed terminal write.
+pub async fn run_send_test_email(address: &str) -> anyhow::Result<()> {
+    use std::io::Write as _;
+
+    if !models::user::is_addr_spec(address) {
+        anyhow::bail!("the recipient must be a plain email address");
     }
-    tracing::info!(
-        email = %email,
-        path = %config.recovery_pin_dir,
-        "wrote a recovery PIN; share it with the user to reset their password"
-    );
+    let recipient = address
+        .parse::<lettre::Address>()
+        .map_err(|_| anyhow::anyhow!("the recipient must be a plain email address"))?;
+    let transport =
+        config::MailTransportConfig::from_env().context("load mail transport configuration")?;
+    let message = services::mail::transport::OutgoingMail {
+        recipient: lettre::message::Mailbox::new(None, recipient),
+        subject: "Reverie test email".into(),
+        body: "This is a test email from Reverie.".into(),
+        job_id: None,
+    };
+    services::mail::transport::submit(&transport, &message)
+        .await
+        .map_err(|reason| {
+            anyhow::anyhow!("The mail server did not confirm the test email: {reason}.")
+        })?;
+    writeln!(std::io::stdout().lock(), "Accepted by mail server.")?;
     Ok(())
 }
 
@@ -1743,6 +1813,25 @@ mod tests {
         // The arg-bearing subcommands require their email.
         assert!(parse_command(&["reset-password".to_string()]).is_err());
         assert!(parse_command(&["unlock-account".to_string()]).is_err());
+    }
+
+    #[test]
+    fn smtp_cli_test_email_requires_exactly_one_recipient() {
+        assert_eq!(
+            parse_command(&["send-test-email".into(), "holder@example.test".into()]).unwrap(),
+            Command::SendTestEmail {
+                address: "holder@example.test".into()
+            }
+        );
+        assert!(parse_command(&["send-test-email".into()]).is_err());
+        assert!(
+            parse_command(&[
+                "send-test-email".into(),
+                "holder@example.test".into(),
+                "extra".into()
+            ])
+            .is_err()
+        );
     }
 
     #[test]

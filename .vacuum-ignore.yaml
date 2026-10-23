@@ -27,7 +27,6 @@ owasp-protection-global-unsafe-strict:
   - $.paths['/auth/local/login'].post.security[0]
   - $.paths['/auth/logout'].post.security[0]
   - $.paths['/auth/register'].post.security[0]
-  - $.paths['/auth/reset-password'].post.security[0]
   - $.paths['/auth/setup'].post.security[0]
 
 # operation-4xx-response requires every operation to document at least one
@@ -105,8 +104,6 @@ owasp-string-limit:
   - $.components.schemas['RegisterRequest'].properties['display_name']
   - $.components.schemas['RegisterRequest'].properties['email']
   - $.components.schemas['RenameShelfRequest'].properties['name']
-  - $.components.schemas['ResetPasswordRequest'].properties['email']
-  - $.components.schemas['ResetPasswordRequest'].properties['pin']
   - $.components.schemas['SetupRequest'].properties['display_name']
   - $.components.schemas['SetupRequest'].properties['email']
   - $.components.schemas['UpdateMetadataFields'].properties['description']

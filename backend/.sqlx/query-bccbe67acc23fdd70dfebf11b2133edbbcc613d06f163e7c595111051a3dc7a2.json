@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT attempt_count, terminal_at AS \"terminal_at!\", enqueued_at, user_id, purpose\n                 FROM mail_jobs WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attempt_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "attempt_count"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "terminal_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "terminal_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "enqueued_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "enqueued_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "purpose",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "purpose"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bccbe67acc23fdd70dfebf11b2133edbbcc613d06f163e7c595111051a3dc7a2"
+}

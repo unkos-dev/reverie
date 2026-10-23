@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (u.disabled_at IS NULL AND u.email_verified_at IS NOT NULL\n                   AND EXISTS (SELECT 1 FROM local_credentials c WHERE c.user_id = u.id))\n                      AS \"eligible!\"\n             FROM users u WHERE u.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "eligible!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "81f3f98ecc3772e3478a812a873e07eebb52e8f8c6a736cc78538eb959a84a29"
+}

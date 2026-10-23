@@ -110,7 +110,7 @@ preflight-full:
     set -ueo pipefail
     scripts/gate-run.sh preflight-full \
         rust::guards infra::openapi check rust::doc-lint test rust::doctests \
-        rust::sqlx-check rust::schema-check rust::machete rust::deny js::build \
+        rust::sqlx-check rust::schema-check rust::machete rust::deny rust::deny-advisories js::build \
         js::font-integrity infra::zizmor
 
 # The same gate as `preflight-full`, minus the lanes CI itself would skip. A

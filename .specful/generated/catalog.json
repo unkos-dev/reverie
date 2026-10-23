@@ -465,6 +465,13 @@
       "title": "Uniform dismissal for library filter edits"
     },
     {
+      "id": "REV-ADR-0063",
+      "kind": "adr",
+      "path": "docs/adr/0063-optional-smtp-delivery-through-an-encrypted-durable-mail-queue.md",
+      "status": "accepted",
+      "title": "Optional SMTP delivery through an encrypted durable mail queue"
+    },
+    {
       "governed-by": [
         "REV-ADR-0062",
         "REV-ADR-0047"
@@ -864,6 +871,32 @@
         "REV-REQ-0030"
       ],
       "title": "Credential links"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0063"
+      ],
+      "id": "REV-DESIGN-0028",
+      "kind": "design",
+      "path": "docs/specs/accounts/design/0028-account-mailbox-verification-and-email-recovery.md",
+      "satisfies": [
+        "REV-REQ-0029",
+        "REV-REQ-0030"
+      ],
+      "title": "Account mailbox verification and email recovery"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0063"
+      ],
+      "id": "REV-DESIGN-0029",
+      "kind": "design",
+      "path": "docs/specs/operations/design/0029-authentication-mail-delivery.md",
+      "satisfies": [
+        "REV-REQ-0060",
+        "REV-REQ-0061"
+      ],
+      "title": "Authentication mail delivery"
     },
     {
       "governed-by": [

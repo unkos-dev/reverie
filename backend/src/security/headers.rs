@@ -364,6 +364,7 @@ mod tests {
             oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            mail: None,
         };
         TestServer::new(build_router_with_session_store(
             state,

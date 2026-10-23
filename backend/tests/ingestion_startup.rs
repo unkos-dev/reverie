@@ -6,6 +6,7 @@ fn invoke(args: &[&str], ingestion_url: Option<&str>) -> std::io::Result<Output>
         .args(args)
         .env_clear()
         .env("DATABASE_URL", "invalid-app-dsn-private-marker")
+        .env("REVERIE_PUBLIC_URL", "https://library.example.test")
         .env("REVERIE_OPDS_ENABLED", "false");
     if let Some(url) = ingestion_url {
         command.env("DATABASE_URL_INGESTION", url);

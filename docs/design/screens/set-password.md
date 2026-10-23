@@ -5,9 +5,15 @@ is approved.
 
 ## Entry point and route
 
-Route: `/set-password`, inside AuthShell and outside the authenticated application shell. Read the token from the URL
-fragment in the route loader and clear it with `history.replaceState` before the page mounts or lookup starts. Keep the
-token only in router memory.
+Routes: `/set-password` and `/reset-password`, inside AuthShell and outside the authenticated application shell. Both
+routes render this page. Read the token from the URL fragment in the route loader and clear it with
+`history.replaceState` before the page mounts or lookup starts. Keep the token only in router memory.
+
+`/reset-password` serves administrator reset links, links printed by the host `reset-password` command and recovery
+emails. `/set-password` serves administrator invitations for accounts with no password. Whoever issues a link chooses
+the route by whether the account has a password at that moment; recovery emails always use `/reset-password`. Once
+lookup succeeds, the form follows the account's `has_password`, not the route. The `/reset-password` route and its
+invalid-state copy are target design.
 
 ## Layout
 
@@ -26,6 +32,14 @@ Title: "This link can't be used".
 Body: "It may have expired or already been used. Ask your administrator for a new link."
 
 Link: "Go to sign in".
+
+On `/reset-password`, when `email_recovery_enabled` is true in setup status, the invalid state uses this copy:
+
+Body: "It may have expired or already been used. Request a new link."
+
+Primary action: "Request a new link", to `/forgot-password`. Keep "Go to sign in" alongside it.
+
+With email recovery disabled, `/reset-password` keeps the body above. `/set-password` always uses the body above.
 
 For a network failure, 429 or 5xx lookup response, show the error and a full-width "Try again" button 16 px below it.
 Activation repeats only lookup using the token retained in memory. Disable the button while lookup is pending. Keep the
@@ -89,6 +103,9 @@ an accessible status label.
 - Compare new-account and reset forms at 1920 x 1080 in both themes.
 - Confirm exact copy, form spacing, policy hint and password-manager attributes.
 - Check checking, invalid, mismatch, policy, 429, 503 and saved states.
+- Check the `/reset-password` invalid state with email recovery enabled and disabled, and the `/set-password` invalid
+  state.
+- Confirm both routes show the form that matches `has_password`, whichever route opened it.
 - Check lookup retry, its pending disabled state and saved-state stability after reconnect.
 - Confirm the fragment clears and the page neither logs nor persists the token.
 - Check keyboard completion and explicit navigation to sign in after saving.

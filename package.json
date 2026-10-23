@@ -3,12 +3,12 @@
   "name": "reverie-dev",
   "description": "Development tooling for Reverie",
   "engines": {
-    "node": ">=24.16.0"
+    "node": ">=26.0.0"
   },
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "24.22.0",
+      "version": "26.12.0",
       "onFail": "download"
     }
   },

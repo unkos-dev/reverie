@@ -34,9 +34,6 @@ pub mod password_policy;
 /// Per-source (per-IP) login rate limiting (keyed governor + client-IP helper).
 pub mod rate_limit;
 
-/// Forgot-password recovery: PIN generation + operator-readable host file.
-pub mod recovery;
-
 pub mod scope;
 
 /// Session login / logout helpers on `tower_sessions::Session`.

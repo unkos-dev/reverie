@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT attempt_count, failure_category FROM mail_jobs WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attempt_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "attempt_count"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "failure_category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "failure_category"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "488ae2b43e0172ac3b2bb5fdfbf4030d470807d8e804a4b862785987b5c8e149"
+}

@@ -58,14 +58,16 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 ## Structure
 
 - `backend/src/main.rs` is the binary's entry point: it collects `argv[1..]`, calls `parse_command`, and matches the
-  resulting `Command` to one of six library-crate functions: five are async and called with `.await` (`run_migrate`,
-  `run_bootstrap`, `run_reset_password`, `run_unlock_account`, `run`), and one, `print_config_schema`, is synchronous
-  and called directly. It installs no signal handling and no tracing of its own; both belong to the functions it calls.
+  resulting `Command` to one of seven library-crate functions: six are async and called with `.await` (`run_migrate`,
+  `run_bootstrap`, `run_reset_password`, `run_send_test_email`, `run_unlock_account`, `run`), and one,
+  `print_config_schema`, is synchronous and called directly. It installs no signal handling and no tracing of its own;
+  both belong to the functions it calls.
 - `backend/src/lib.rs::Command` and `::parse_command` define the CLI surface: `Serve` (no arguments), `Migrate`
   (`migrate`), `PrintConfigSchema` (`print-config-schema`), `Bootstrap` (`bootstrap`), `ResetPassword { email }`
-  (`reset-password <email>`) and `UnlockAccount { email }` (`unlock-account <email>`). `Command` is not
-  `#[non_exhaustive]`, so `main.rs`'s match is exhaustive at compile time; `parse_command` itself rejects an unknown
-  token or unexpected trailing arguments rather than falling through to `Serve`.
+  (`reset-password <email>`), `SendTestEmail { address }` (`send-test-email <address>`) and `UnlockAccount { email }`
+  (`unlock-account <email>`). `Command` is not `#[non_exhaustive]`, so `main.rs`'s match is exhaustive at compile time;
+  `parse_command` itself rejects an unknown token or unexpected trailing arguments rather than falling through to
+  `Serve`.
 - `backend/src/lib.rs::run` is the server's entry point. It performs the ordered setup sequence described in Runtime
   behaviour, starts the worker supervisor and serves HTTP alongside it, awaiting both before returning.
 - `backend/src/lib.rs::build_router` and `::build_router_with_session_store` assemble the Axum router `run` serves: the
@@ -161,11 +163,13 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
 ## Interfaces and dependencies
 
 - The CLI surface `parse_command` accepts is the only interface `main.rs` exposes: no argument (`Serve`), or exactly one
-  of `migrate`, `print-config-schema`, `bootstrap`, `reset-password <email>`, `unlock-account <email>`. `migrate` and
-  `print-config-schema` load no `Config`: `run_migrate` reads only `DATABASE_URL_MIGRATION`, deliberately bypassing
-  `Config::from_env` so a migration-only invocation never holds the OIDC secret or the application DSN, and
-  `print_config_schema` only renders the schema. `bootstrap`, `reset-password` and `unlock-account` each load the full
-  configuration through `Config::from_env`, so each must pass the same configuration validation the server does.
+  of `migrate`, `print-config-schema`, `bootstrap`, `reset-password <email>`, `send-test-email <address>`,
+  `unlock-account <email>`. `migrate` and `print-config-schema` load no `Config`: `run_migrate` reads only
+  `DATABASE_URL_MIGRATION`, deliberately bypassing `Config::from_env` so a migration-only invocation never holds the
+  OIDC secret or the application DSN, and `print_config_schema` only renders the schema. `bootstrap` and
+  `unlock-account` load full configuration through `Config::from_env`. `reset-password` loads only the database
+  credential and public origin. `send-test-email` loads only mail transport, sender and support settings; it needs no
+  database or queue key.
 - `GET /health` and `GET /health/ready` are the two HTTP interfaces this subject owns directly, documented in the
   generated OpenAPI spec via `#[utoipa::path]` annotations that the `routes!` macro compile-checks. Every other route
   reachable through `build_router` belongs to the subject that owns that route.
@@ -183,11 +187,11 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
   `config` is owned, cloned data; `library_files` is a cheap shared `LibraryFiles` handle; `oidc` is an
   `Option<Arc<_>>`, `None` on an instance that has not configured OIDC; a configured runtime initially has no snapshot;
   `login_limiter`, `recovery_limiter` and `oidc_limiter` are distinct `Arc<LoginLimiter>` instances; `hash_limiter` is
-  one shared `HashLimiter` for request-path password and recovery-PIN computation; `last_settings_reload` is an
-  `Arc<RwLock<..>>` handle written only by the settings worker, not by this subject; `settings` is likewise an
-  `Arc<RwLock<..>>` handle, but it has a second writer outside this subject — the `PUT /api/v1/settings` route handler
-  also writes it directly, as an immediate local-cache update guarded by `apply_if_newer`'s revision check — so neither
-  writer belongs to this subject, but there is more than one.
+  one shared `HashLimiter` for request-path password computation; `last_settings_reload` is an `Arc<RwLock<..>>` handle
+  written only by the settings worker, not by this subject; `settings` is likewise an `Arc<RwLock<..>>` handle, but it
+  has a second writer outside this subject — the `PUT /api/v1/settings` route handler also writes it directly, as an
+  immediate local-cache update guarded by `apply_if_newer`'s revision check — so neither writer belongs to this subject,
+  but there is more than one.
 - **The writeback pool** (`backend/src/db.rs::init_writeback_pool`) is built after `AppState` and is deliberately not
   one of its fields: it is retained by the writeback task factory and cloned for each run. No request handler receives
   it, because no request handler receives anything not reachable through `AppState`.
@@ -292,7 +296,7 @@ metadata supplies Content-Length.
    completion of a blocking operating-system call.
 4. `run` awaits both HTTP and supervisor outcomes. A supervisor error takes precedence; otherwise it returns the HTTP
    result. `main` propagates errors to a non-zero process exit. Tokio runtime shutdown waits for started blocking
-   password and PIN hashes to return; cancelling an async caller does not interrupt its Argon2 computation.
+   password hashes to return; cancelling an async caller does not interrupt its Argon2 computation.
 
 **An HTTP serving error** cancels the process token and follows the same supervisor shutdown and drain path before
 returning the error. A supervisor terminal error also cancels the process token, causing HTTP graceful shutdown.

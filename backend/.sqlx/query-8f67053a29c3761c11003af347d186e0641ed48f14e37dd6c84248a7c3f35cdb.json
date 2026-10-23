@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs SET state = 'expired', terminal_at = clock_timestamp(), nonce = NULL, payload = NULL WHERE user_id = ANY($1) AND state = 'pending' AND expires_at <= clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f67053a29c3761c11003af347d186e0641ed48f14e37dd6c84248a7c3f35cdb"
+}

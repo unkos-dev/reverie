@@ -94,6 +94,7 @@ lanes_for() {
   case "$1" in
     backend) printf '%s\n' rust::guards rust::check rust::doc-lint rust::test rust::doctests rust::sqlx-check rust::schema-check rust::machete ;;
     audit) printf '%s\n' rust::deny ;;
+    advisories) printf '%s\n' rust::deny-advisories ;;
     frontend) printf '%s\n' js::check js::test js::build js::font-integrity ;;
     website) printf '%s\n' website::check ;;
     workflows) printf '%s\n' infra::zizmor ;;
@@ -135,6 +136,7 @@ LANE_ORDER=(
   rust::schema-check
   rust::machete
   rust::deny
+  rust::deny-advisories
   js::check
   js::test
   js::build

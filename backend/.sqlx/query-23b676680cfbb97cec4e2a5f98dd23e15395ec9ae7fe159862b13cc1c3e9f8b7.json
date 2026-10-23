@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs SET attempt_count = 5 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "23b676680cfbb97cec4e2a5f98dd23e15395ec9ae7fe159862b13cc1c3e9f8b7"
+}

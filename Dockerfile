@@ -69,7 +69,7 @@ RUN cargo auditable build --release --locked
 # because `pnpm runtime set node -g` with no version installs the latest
 # release and silently ignores the declaration. `pnpm pkg get` needs no Node of
 # its own, so it works before any runtime exists.
-FROM ghcr.io/pnpm/pnpm:11@sha256:97028266fd4af647121fa5e7be72a146c450303736577a644c3c14356bf67158 AS js-toolchain
+FROM ghcr.io/pnpm/pnpm:11@sha256:b8f37cb60815b3b9cfc24b74f1933a1557836e1fe96b0ff6041f6054f4f528ad AS js-toolchain
 WORKDIR /build
 # pnpm resolves the workspace graph from the root manifests plus every project
 # manifest, and reads its own version from packageManager, so no line below can
@@ -109,7 +109,7 @@ RUN PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm --filter frontend run build
 # that a directory scan cannot follow. Syft's default dir scan excludes its
 # JavaScript cataloger, so it must be selected explicitly.
 FROM js-toolchain AS frontend-sbom
-COPY --from=anchore/syft:v1.54.1@sha256:3eb5379ba7b409c3f4069b686110527af0c47df993fa5c10d13e7cf34f49b1aa /syft /usr/local/bin/syft
+COPY --from=anchore/syft:v1.55.0@sha256:4cc92b64ca74ffca4c94d4c8fcc01f217731375300be14d0b6eeb2e82eaa110a /syft /usr/local/bin/syft
 RUN pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree \
     && syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
       -o cyclonedx-json > /build/frontend.cdx.json

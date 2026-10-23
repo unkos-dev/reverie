@@ -149,7 +149,6 @@ self-service:
 | `session_version` | `update_child_status` (`routes/users/mod.rs`) |
 | `session_version`, `disabled_at` | `update_account_status`/`disable_account` (same file, + `models/user.rs`) |
 | `session_version` | `redeem_credential_link` (`routes/auth.rs`) |
-| `session_version` | `reset_password`, recovery PIN (`routes/auth.rs`) |
 | `session_version` | `change_own_password` (`routes/users/mod.rs`) |
 | `disabled_at` cleared only | `update_account_status` → `enable_account` (`routes/users/mod.rs`, `models/user.rs`) |
 

@@ -26,14 +26,15 @@ nor verification commands rotate development credentials.
 
 ### Credential files
 
-The six file aliases are `DATABASE_URL_FILE`, `DATABASE_URL_MIGRATION_FILE`, `DATABASE_URL_INGESTION_FILE`,
-`OIDC_CLIENT_SECRET_FILE`, `REVERIE_GOOGLEBOOKS_API_KEY_FILE` and `REVERIE_HARDCOVER_API_TOKEN_FILE`. Each selects a
-UTF-8 file readable inside the process or container. Empty direct and file variables are absent; two non-empty sources
-conflict before reading, including when automatic migration is disabled. Whitespace-only variables remain present.
+The credential file aliases are `DATABASE_URL_FILE`, `DATABASE_URL_MIGRATION_FILE`, `DATABASE_URL_INGESTION_FILE`,
+`OIDC_CLIENT_SECRET_FILE`, `REVERIE_GOOGLEBOOKS_API_KEY_FILE`, `REVERIE_HARDCOVER_API_TOKEN_FILE`,
+`REVERIE_SMTP_PASSWORD_FILE` and `REVERIE_MAIL_QUEUE_KEY_FILE`. Each selects a UTF-8 file readable inside the process or
+container. Empty direct and file variables are absent; two non-empty sources conflict before reading, including when
+automatic migration is disabled. Whitespace-only variables remain present.
 
 The reader strips all trailing LF and CRLF terminators and preserves all other text, including spaces, interior newlines
-and a lone CR. Empty contents after stripping are absent for all six settings; optional metadata credentials remain
-unset. Existing required and blank checks apply. Errors identify the setting without paths, contents or raw I/O details.
+and a lone CR. Empty contents after stripping are absent for these settings; optional metadata credentials remain unset.
+Existing required and blank checks apply. Errors identify the setting without paths, contents or raw I/O details.
 Unknown file aliases, including the bootstrap password alias, are ignored.
 
 With automatic migration disabled, the migration file is never opened and the field remains unset. `reverie migrate`
@@ -41,6 +42,13 @@ reads only its migration source, and schema output opens no credential files. Th
 defaults to non-empty matching file aliases without reading the files. External sources can satisfy a command without
 retained dev state. `db-migrate-raw` accepts direct DSNs only. To roll back, restore direct variables and remove their
 file aliases before reverting the application.
+
+### Authentication mail and recovery
+
+The [mail and recovery guide](../docs/deployment/mail-and-recovery.md) covers optional SMTP, secret files, relay
+submission checks, mailbox verification, administrator and host links, and queue-key maintenance. The host
+`reset-password` command reads only its database credential and `REVERIE_PUBLIC_URL`; `send-test-email` needs only
+transport, sender and support settings. Neither command needs ingestion configuration.
 
 ### Bulk retries
 
