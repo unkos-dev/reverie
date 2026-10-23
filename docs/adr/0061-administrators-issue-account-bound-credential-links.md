@@ -37,10 +37,13 @@ recovery without knowing the resulting password or adding a temporary-password s
 
 A browser-authenticated administrator issues or cancels a link. Account creation and its initial link are atomic.
 Issuance returns a random 256-bit token once; storage holds its SHA-256 digest, bound to one account for 72 hours.
-Reissuing replaces the account's link. The browser constructs the URL from its own origin and carries the token in the
-fragment. Only an enabled account with an email can redeem a link. Redemption applies password policy and bounded
-hashing, then atomically consumes the unexpired link, writes the password and increments the session version. It does
-not sign the person in or reset login accounting. PIN recovery remains independent.
+Reissuing replaces the account's link. The host `reset-password` command issues into the same slot with a ten-minute
+lifetime and prints the link to its terminal. The administrator's browser constructs the URL from its own origin. The
+host command and emailed links use the configured public URL and never a request's Host. Every link carries the token in
+the fragment. Only an enabled account with an email can redeem a link. Redemption applies password policy and bounded
+hashing, then atomically consumes the unexpired link, invalidates every other password-replacement proof, writes the
+password and increments the session version. It does not sign the person in or reset login accounting. When mail is
+configured, an administrator can also email the live link to the account's stored address.
 
 Administrator-chosen passwords keep delivery simple, but disclose the credential to someone other than its holder.
 Temporary passwords shorten that exposure only if changed and require a restricted sign-in state until then.
@@ -50,12 +53,15 @@ Temporary passwords shorten that exposure only if changed and require a restrict
 - Positive: account holders choose initial and replacement passwords without sharing them with administrators.
 - Positive: expiry, replacement, cancellation and atomic consumption bound a link's lifetime and use.
 - Negative: anyone holding a forwarded or leaked link can set that account's password before expiry or cancellation.
-- Negative: administrators must copy and deliver each link; closing the result requires another link if it was not kept.
-- Negative: recovery notifications are absent until a mail channel is provided. NIST SP 800-63B-4's account-recovery
-  notification requirement is unmet.
-- Neutral: device tokens remain valid after redemption; PIN recovery and first-run setup retain their own flows.
+- Negative: without mail, administrators must copy and deliver each link; closing the result requires another link if it
+  was not kept.
+- Negative: an instance without mail, or an account without a verified address, receives no recovery notification.
+- Negative: the host command and emailed links need `REVERIE_PUBLIC_URL`; the host command refuses to run without it.
+- Neutral: device tokens remain valid after redemption; first-run setup retains its own flow.
 
 ## More information
 
 This decision refines
 [Unified identity with pluggable authentication providers](0029-unified-identity-with-pluggable-authentication-providers.md).
+[Optional SMTP delivery through an encrypted durable mail queue](0063-optional-smtp-delivery-through-an-encrypted-durable-mail-queue.md)
+records how links and recovery notifications are emailed.

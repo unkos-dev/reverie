@@ -261,3 +261,32 @@ describe("credential links", () => {
     expect(vi.mocked(fetch).mock.calls[0][1]?.method).toBe("DELETE");
   });
 });
+
+describe("credential link email", () => {
+  const jobId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  test("posts only the held token and reads only the account's job", async () => {
+    const { sendCredentialLinkEmail, fetchCredentialLinkEmail } = await import("./users");
+    const queued = { job_id: jobId, status: "queued", failure_category: null };
+    const request = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(queued, { status: 202 }))
+      .mockResolvedValueOnce(jsonResponse({ ...queued, status: "accepted" }));
+    expect(await sendCredentialLinkEmail(STUB_USER.id, "A".repeat(43))).toEqual(queued);
+    expect(bodyJson(request.mock.calls[0][1])).toEqual({ token: "A".repeat(43) });
+    expect(request.mock.calls[0][0]).toBe(`/api/v1/users/${STUB_USER.id}/credential-links/emails`);
+    expect((await fetchCredentialLinkEmail(STUB_USER.id, jobId)).status).toBe("accepted");
+    expect(request.mock.calls[1][0]).toBe(
+      `/api/v1/users/${STUB_USER.id}/credential-links/emails/${jobId}`,
+    );
+  });
+  test("refuses arbitrary identifiers and unexpected failure details", async () => {
+    const { sendCredentialLinkEmail, fetchCredentialLinkEmail } = await import("./users");
+    const request = vi.spyOn(globalThis, "fetch");
+    await expect(sendCredentialLinkEmail("../another", "A".repeat(43))).rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+    request.mockResolvedValueOnce(
+      jsonResponse({ job_id: jobId, status: "failed", failure_category: "raw relay error" }),
+    );
+    await expect(fetchCredentialLinkEmail(STUB_USER.id, jobId)).rejects.toThrow();
+  });
+});

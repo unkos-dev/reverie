@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM information_schema.columns\n                WHERE table_name = 'users' AND column_name = 'email_verified_at'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1b922e9245ccb5ad603ffef3e5f6f431fcda951e2a80a0d0de5768881ef5991b"
+}

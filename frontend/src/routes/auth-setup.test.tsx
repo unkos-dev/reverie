@@ -23,6 +23,7 @@ type Status = { setup_required: boolean; local_auth_enabled: boolean; oidc_enabl
 function renderSetup(status: Status): { client: QueryClient } {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(queryKeys.auth.setupStatus(), {
+    email_recovery_enabled: false,
     password_min_length: 15,
     password_max_length: 256,
     ...status,

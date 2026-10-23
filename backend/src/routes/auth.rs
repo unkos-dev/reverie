@@ -42,7 +42,6 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(setup))
         .routes(routes!(register))
         .routes(routes!(forgot_password))
-        .routes(routes!(reset_password))
         .routes(routes!(lookup_credential_link))
         .routes(routes!(redeem_credential_link))
         .routes(routes!(logout))
@@ -590,6 +589,10 @@ async fn verify_local_account(
 /// Public first-run status for the SPA: whether setup is required and which
 /// providers are usable.
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each flag is a separate public capability the SPA reads independently"
+)]
 struct SetupStatusResponse {
     /// `true` when no administrator exists yet, so the SPA shows the setup form.
     setup_required: bool,
@@ -598,6 +601,9 @@ struct SetupStatusResponse {
     /// Whether OIDC is configured (computed from the issuer). Drives
     /// the SPA's provider-aware redirect and the "Sign in with OIDC" action.
     oidc_enabled: bool,
+    /// Whether password recovery by email is available: local sign-in and
+    /// authentication mail are both enabled.
+    email_recovery_enabled: bool,
     /// Minimum new-password length in Unicode scalar values.
     #[schema(format = Int64)]
     password_min_length: usize,
@@ -614,7 +620,7 @@ struct SetupStatusResponse {
     get,
     path = "/auth/setup/status",
     summary = "Get setup status",
-    description = "Returns whether initial setup is required, which sign-in providers are enabled, and the configured minimum and maximum new-password lengths. Sign-in and password-setting forms use this state. No authentication is required to call it.",
+    description = "Returns whether initial setup is required, which sign-in providers are enabled, whether password recovery by email is available, and the configured minimum and maximum new-password lengths. Sign-in, recovery and password-setting forms use this state. No authentication is required to call it.",
     tag = "auth",
     security(()),
     responses(
@@ -631,6 +637,7 @@ async fn setup_status(
         setup_required: !admin,
         local_auth_enabled: state.config.local_auth_enabled,
         oidc_enabled: state.config.oidc_configured(),
+        email_recovery_enabled: state.config.local_auth_enabled && state.mail.is_some(),
         password_min_length: state.config.password_min_length,
         password_max_length: state.config.password_max_length,
     }))
@@ -747,7 +754,7 @@ struct RegisterRequest {
 /// Gated on `self_registration_enabled` (404 when off) AND `local_auth_enabled`.
 /// Unauthenticated and repeatable, and each call fires an Argon2 hash plus an
 /// outbound HIBP request, so the per-source rate limit is enforced BEFORE any
-/// policy/hash/breach work, as in `forgot_password`/`reset_password`. `setup`
+/// policy/hash/breach work, as in credential-link redemption. `setup`
 /// takes the same limit for the pre-bootstrap window, where its 409 fast-reject
 /// does not yet apply.
 ///
@@ -883,7 +890,7 @@ fn invalid_credential_link() -> AppError {
 /// Resolve account context using a live credential link.
 #[utoipa::path(
     post, path = "/auth/credential-links/lookups", summary = "Look up a credential link",
-    description = "Returns the email and password state for a valid link. Invalid, expired, used, disabled-account and no-email links share one generic refusal.",
+    description = "Returns the email and password state for a valid administrator or host link, or an emailed password recovery link for an eligible account. Verification links never resolve. Invalid, expired, used, ineligible, disabled-account and no-email links share one generic refusal.",
     tag = "auth", security(()), request_body = CredentialLinkLookupRequest,
     responses(
         (status = 200, description = "Valid link", body = CredentialLinkLookupResponse, headers(("Cache-Control" = String, description = "no-store"))),
@@ -918,7 +925,7 @@ async fn lookup_credential_link(
 /// Consume a credential link and invalidate earlier sessions without signing in.
 #[utoipa::path(
     post, path = "/auth/credential-links/redemptions", summary = "Redeem a credential link",
-    description = "Sets the account's password once before the link expires, invalidates earlier sessions and creates no session. Leaves login throttling and device tokens unchanged.",
+    description = "Sets the account's password once before the link expires, using an administrator or host link or an emailed password recovery link for an eligible account. Deletes every other password-replacement link, invalidates earlier sessions and creates no session. Leaves login throttling and device tokens unchanged.",
     tag = "auth", security(()), request_body = CredentialLinkRedemptionRequest,
     responses(
         (status = 204, description = "Password set; sign-in required"),
@@ -977,21 +984,25 @@ async fn redeem_credential_link(
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
         // THREAT: Every password writer locks the user before credential or proof rows.
-        let target = sqlx::query!(
-            "SELECT disabled_at, email FROM users WHERE id = $1 FOR NO KEY UPDATE",
-            account.user_id
+        let target = crate::models::account_email_proof::lock_account(&mut tx, account.user_id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?
+            .ok_or_else(invalid_credential_link)?;
+        let consumed = crate::models::credential_link::consume_replacement(
+            &mut tx,
+            account.user_id,
+            &body.token,
         )
-        .fetch_optional(&mut *tx)
         .await
-        .map_err(|e| AppError::Internal(e.into()))?
-        .ok_or_else(invalid_credential_link)?;
-        let consumed =
-            crate::models::credential_link::consume(&mut *tx, account.user_id, &body.token)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-        if !consumed || target.disabled_at.is_some() || target.email.is_none() {
+        .map_err(|e| AppError::Internal(e.into()))?;
+        if !consumed || target.disabled || target.email.is_none() {
             return Err(invalid_credential_link());
         }
+        let had_password =
+            crate::models::local_credentials::find_by_user_id(&mut *tx, account.user_id)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?
+                .is_some();
         crate::models::local_credentials::set_password(&mut *tx, account.user_id, &phc)
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
@@ -999,6 +1010,22 @@ async fn redeem_credential_link(
         user::increment_session_version(&mut *tx, account.user_id)
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
+        if let Some(outbox) = crate::services::mail::dispatch::Outbox::new(
+            state.mail.as_ref(),
+            state.config.public_url.as_ref(),
+        )
+        .map_err(|e| AppError::Internal(e.into()))?
+        {
+            let event = if had_password {
+                crate::services::mail::render::Notice::PasswordChanged
+            } else {
+                crate::services::mail::render::Notice::PasswordSet
+            };
+            outbox
+                .notice_to_verified_address(&mut tx, account.user_id, &target, event)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+        }
         tx.commit()
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
@@ -1024,35 +1051,29 @@ struct ForgotPasswordRequest {
     email: String,
 }
 
-/// `POST /auth/forgot-password`: start email-less PIN recovery.
+/// `POST /auth/forgot-password`: start password recovery by email.
 ///
-/// THREAT (codeguard #2): always returns a generic 200; the response never
-/// reveals whether the email exists. When it does, a fresh CSPRNG PIN is
-/// generated, prior active PINs for the user are superseded (at most one active
-/// PIN), the Argon2id hash row is persisted FIRST, then the clear PIN is written
-/// to a per-user operator-readable file (mode 0600). Both writes happen under one
-/// per-user issuance lock, so the published file always describes the single
-/// active row even when another process issues concurrently. A failed file write
-/// leaves an unconsumed-but-unusable row that simply expires; it is never a
-/// cleartext PIN with no consuming row. On an unknown email, equivalent Argon2 work is spent so
-/// timing does not leak existence (a small DB/file residual is
-/// accepted).
+/// THREAT (codeguard #2): always returns a generic 200 for a valid request,
+/// whether or not the address belongs to an eligible account and whether or
+/// not mail is configured. The handler does no account lookup and no hashing:
+/// it admits at most four background tasks without waiting and returns. Only a
+/// task that finds an enabled account with a verified current address and an
+/// existing local password writes anything.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when local authentication is disabled.
 /// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
-/// - [`AppError::Internal`] on hashing or database failure.
+/// - [`AppError::Internal`] when the mail origin is misconfigured.
 #[utoipa::path(
     post,
     path = "/auth/forgot-password",
     summary = "Start password recovery",
-    description = "Starts PIN-based password recovery for the given email and always returns the same generic response so it cannot be used to determine whether an account exists. No authentication is required to call it. Returns 404 if local authentication is disabled and 429 when too many requests have been made. Returns 503 when authentication processing is busy.",
+    description = "Starts password recovery by email for the given address and always returns the same generic response so it cannot be used to determine whether an account exists or whether email is available. No authentication is required to call it. Returns 404 if local authentication is disabled and 429 when too many requests have been made.",
     tag = "auth",
     security(()),
     request_body = ForgotPasswordRequest,
     responses(
-        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 200, description = "Recovery started if the account exists (generic; no enumeration)"),
+        (status = 200, description = "Recovery email requested if the address belongs to an eligible account (generic; no enumeration)"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
     )
@@ -1068,223 +1089,17 @@ async fn forgot_password(
     }
     enforce_source_rate_limit(&state, &state.recovery_limiter, &headers, &peer)?;
 
-    let user = user::find_by_email(&state.pool, &body.email)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    if let Some(user) = user {
-        // Hash before opening the transaction (Argon2 is CPU-bound; do not hold a
-        // connection across it).
-        let pin = crate::auth::recovery::generate_pin();
-        let pin_hash = state
-            .hash_limiter
-            .hash(pin.clone())
-            .await?
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("pin hash failed: {e}")))?;
-        let expires_at =
-            chrono::Utc::now() + chrono::TimeDelta::seconds(state.config.recovery_pin_ttl_secs);
-
-        // THREAT (publishing an unpersisted PIN): supersede, persist, and write
-        // the operator file as one serialized step, so this request publishes a
-        // PIN only if it also owns the active row when the file is written. A
-        // request that stands down for a concurrent issuance publishes nothing:
-        // the winner's PIN is the live one, and overwriting the file with an
-        // unowned PIN would deny recovery. Either way the response is the same
-        // generic 200 (no enumeration, no 500).
-        let email = user.email.as_deref().unwrap_or(&body.email);
-        let issuance = crate::auth::recovery::PinIssuance {
-            user_id: user.id,
-            email: email.to_owned(),
-            pin,
-            pin_hash,
-            expires_at,
-        };
-        match crate::auth::recovery::issue_pin(
-            &state.pool,
-            std::path::Path::new(&state.config.recovery_pin_dir),
-            issuance,
-        )
-        .await
-        {
-            Ok(_) => {}
-            // Never surface to the client; the row expires harmlessly.
-            Err(e @ crate::auth::recovery::IssuePinError::Publish(_)) => {
-                tracing::error!(error = %e, "failed to write recovery PIN file");
-            }
-            Err(e) => return Err(AppError::Internal(e.into())),
-        }
-    } else {
-        // Unknown email: spend comparable Argon2 work so response timing does not
-        // reveal account existence.
-        let permit = state.hash_limiter.acquire().await?;
-        permit
-            .verify_dummy(body.email)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        drop(permit);
+    if let Some(outbox) = crate::services::mail::dispatch::Outbox::new(
+        state.mail.as_ref(),
+        state.config.public_url.as_ref(),
+    )
+    .map_err(|e| AppError::Internal(e.into()))?
+        && user::is_addr_spec(&body.email)
+    {
+        outbox.spawn_recovery(state.pool, body.email);
     }
 
     Ok(StatusCode::OK)
-}
-
-/// Request body for `POST /auth/reset-password`.
-#[derive(serde::Deserialize, utoipa::ToSchema)]
-struct ResetPasswordRequest {
-    /// Account email.
-    email: String,
-    /// The recovery PIN from the host file.
-    pin: String,
-    /// New plaintext password; enforced against the full password policy.
-    #[schema(max_length = 256)]
-    new_password: String,
-}
-
-/// `POST /auth/reset-password`: complete recovery with a PIN.
-///
-/// THREAT (codeguard #2): the PIN is single-use (race-safe consume), short-lived,
-/// and verified constant-time via Argon2. Any failure (unknown email, no active
-/// PIN, wrong PIN, expired, too-short password) returns one generic 422, so the
-/// response never distinguishes which part failed; the no-PIN path spends
-/// equivalent work. Reset does NOT establish a session (no auto-login). Consuming
-/// the PIN, writing the new credential, and bumping `session_version` (which
-/// invalidates every session predating the reset) run in one transaction, so a
-/// partial apply cannot leave the account locked out or a stale session live.
-/// The PIN file is removed after the transaction commits.
-///
-/// # Errors
-/// - [`AppError::NotFound`] when local authentication is disabled.
-/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
-/// - [`AppError::Validation`] (422) generic failure.
-/// - [`AppError::Internal`] on hashing or database failure.
-#[utoipa::path(
-    post,
-    path = "/auth/reset-password",
-    summary = "Reset password with a PIN",
-    description = "Completes password recovery using the PIN issued by `/auth/forgot-password` and does not sign the caller in. No authentication is required to call it. Returns 404 if local authentication is disabled, 422 for an invalid or expired PIN, unknown email, or a new password that fails the password policy, and 429 when too many requests have been made. Returns 503 when authentication processing is busy.",
-    tag = "auth",
-    security(()),
-    request_body = ResetPasswordRequest,
-    responses(
-        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 200, description = "Password reset; no session established (re-authentication required)"),
-        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid or expired reset request (generic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
-    )
-)]
-async fn reset_password(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    peer: crate::auth::rate_limit::PeerAddr,
-    ApiJson(body): ApiJson<ResetPasswordRequest>,
-) -> Result<StatusCode, AppError> {
-    if !state.config.local_auth_enabled {
-        return Err(AppError::NotFound);
-    }
-    enforce_source_rate_limit(&state, &state.recovery_limiter, &headers, &peer)?;
-
-    let generic = || AppError::Validation("invalid or expired reset request".to_owned());
-
-    // The recovery path sets a credential, so it runs the same strength policy as
-    // every other credential-setting path: an attacker holding a PIN must not be
-    // able to install a weak or breached password here. Enforced before the email
-    // lookup, and a rejection is mapped to the generic error, so neither the
-    // outcome nor the timing reveals whether the account or PIN exists.
-    crate::auth::password_policy::enforce_from_config(
-        &state.config,
-        &body.new_password,
-        &[&body.email],
-    )
-    .await
-    .map_err(|_| generic())?;
-
-    let user = user::find_by_email(&state.pool, &body.email)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    let active = match &user {
-        Some(u) => crate::models::password_reset_pin::find_active_by_user(&state.pool, u.id)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?,
-        None => None,
-    };
-    let verified = {
-        let permit = state.hash_limiter.acquire().await?;
-        let verified = if let Some(pin) = &active {
-            permit
-                .verify(body.pin, pin.pin_hash.clone())
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?
-        } else {
-            permit
-                .verify_dummy(body.pin)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-            false
-        };
-        drop(permit);
-        verified
-    };
-
-    if verified && let (Some(user), Some(pin)) = (&user, &active) {
-        // Hash before opening the transaction: Argon2 is CPU-bound (~100 ms) and
-        // must not be held across an open DB connection/locks.
-        let phc = state
-            .hash_limiter
-            .hash(body.new_password)
-            .await?
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
-
-        // One transaction: consume the PIN, write the new credential, and
-        // invalidate existing sessions atomically. A partial apply (PIN spent
-        // but password unchanged) would lock the user out with no usable PIN.
-        let mut tx = state
-            .pool
-            .begin()
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-
-        // THREAT: lock the user before PIN and credential rows to match the other password writers.
-        let exists = sqlx::query_scalar!(
-            "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
-            user.id
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-        if exists.is_none() {
-            return Err(generic());
-        }
-
-        // Single-use: consume first (race-safe). A losing concurrent reset gets
-        // `false`; rolling back keeps that branch a no-op.
-        let consumed = crate::models::password_reset_pin::consume(&mut *tx, pin.id)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        if consumed {
-            crate::models::local_credentials::set_password(&mut *tx, user.id, &phc)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-            // THREAT (CWE-613): a password reset must terminate sessions that
-            // predate it, or a session stolen before recovery survives the reset.
-            crate::models::user::increment_session_version(&mut *tx, user.id)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-            tx.commit()
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-
-            if let Err(e) = crate::auth::recovery::remove_pin_file(
-                std::path::Path::new(&state.config.recovery_pin_dir),
-                user.id,
-            ) {
-                tracing::warn!(error = %e, "failed to remove recovery PIN file after reset");
-            }
-            // No session established: the user must sign in with the new password.
-            return Ok(StatusCode::OK);
-        }
-    }
-
-    Err(generic())
 }
 
 /// `POST /auth/logout` — destroy the current session (idempotent).
@@ -1743,9 +1558,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn auth_hash_census_forgot(pool: sqlx::PgPool) {
         let mut state = password_state(&pool).await;
-        let directory = tempfile::tempdir().unwrap();
-        state.config.recovery_pin_dir = directory.path().to_str().unwrap().to_owned();
-        let id = test_support::db::create_adult_with_password(
+        test_support::db::create_adult_with_password(
             &state.pool,
             "Known",
             "known@example.com",
@@ -1763,57 +1576,10 @@ mod tests {
             assert_eq!(response.status_code(), StatusCode::OK);
             assert_eq!(
                 count.load(std::sync::atomic::Ordering::SeqCst),
-                1,
+                0,
                 "{email}"
             );
         }
-        assert!(
-            crate::models::password_reset_pin::find_active_by_user(&state.pool, id)
-                .await
-                .unwrap()
-                .is_some()
-        );
-        assert!(directory.path().join(format!("{id}.pin")).exists());
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn auth_hash_census_reset(pool: sqlx::PgPool) {
-        let mut state = password_state(&pool).await;
-        let directory = tempfile::tempdir().unwrap();
-        state.config.recovery_pin_dir = directory.path().to_str().unwrap().to_owned();
-        let id = test_support::db::create_adult_with_password(
-            &state.pool,
-            "Known",
-            "known@example.com",
-            "correct password",
-        )
-        .await;
-        let phc = crate::auth::password::hash_password(b"1234567890").unwrap();
-        crate::models::password_reset_pin::insert(
-            &state.pool,
-            id,
-            &phc,
-            chrono::Utc::now() + chrono::TimeDelta::minutes(15),
-        )
-        .await
-        .unwrap();
-        let count = hash_counter(&mut state);
-        let server = hash_server(&state);
-        for (expected, status) in [(2, StatusCode::OK), (1, StatusCode::UNPROCESSABLE_ENTITY)] {
-            count.store(0, std::sync::atomic::Ordering::SeqCst);
-            let response = server.post("/auth/reset-password").json(&serde_json::json!({"email":"known@example.com","pin":"1234567890","new_password":"lithe cobalt meadow drift"})).await;
-            assert_eq!(response.status_code(), status);
-            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), expected);
-        }
-        let credential = crate::models::local_credentials::find_by_user_id(&state.pool, id)
-            .await
-            .unwrap()
-            .unwrap();
-        crate::auth::password::verify_password(
-            b"lithe cobalt meadow drift",
-            &credential.password_hash,
-        )
-        .unwrap();
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1829,9 +1595,13 @@ mod tests {
         .await
         .unwrap()
         .id;
-        let (token, _) = crate::models::credential_link::issue(&state.pool, id)
-            .await
-            .unwrap();
+        let (token, _) = crate::models::credential_link::issue(
+            &mut state.pool.acquire().await.unwrap(),
+            id,
+            crate::models::credential_link::CREDENTIAL_LINK_TTL,
+        )
+        .await
+        .unwrap();
         let count = hash_counter(&mut state);
         let server = hash_server(&state);
         let response = server
@@ -1846,8 +1616,6 @@ mod tests {
     async fn auth_hash_busy_auth_endpoints(pool: sqlx::PgPool) {
         let mut state = password_state(&pool).await;
         state.config.self_registration_enabled = true;
-        let directory = tempfile::tempdir().unwrap();
-        state.config.recovery_pin_dir = directory.path().to_str().unwrap().to_owned();
         let id = test_support::db::create_adult_with_password(
             &state.pool,
             "Known",
@@ -1859,18 +1627,13 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let pin_hash = crate::auth::password::hash_password(b"1234567890").unwrap();
-        let pin_id = crate::models::password_reset_pin::insert(
-            &state.pool,
+        let (link_token, _) = crate::models::credential_link::issue(
+            &mut state.pool.acquire().await.unwrap(),
             id,
-            &pin_hash,
-            chrono::Utc::now() + chrono::TimeDelta::minutes(15),
+            crate::models::credential_link::CREDENTIAL_LINK_TTL,
         )
         .await
         .unwrap();
-        let (link_token, _) = crate::models::credential_link::issue(&state.pool, id)
-            .await
-            .unwrap();
         let count = hash_counter(&mut state);
         state.hash_limiter = state
             .hash_limiter
@@ -1896,14 +1659,6 @@ mod tests {
                 serde_json::json!({"email":"register@example.com","display_name":"Registrant","password":"lithe cobalt meadow drift"}),
             ),
             (
-                "/auth/forgot-password",
-                serde_json::json!({"email":"known@example.com"}),
-            ),
-            (
-                "/auth/reset-password",
-                serde_json::json!({"email":"known@example.com","pin":"1234567890","new_password":"lithe cobalt meadow drift"}),
-            ),
-            (
                 "/auth/credential-links/redemptions",
                 serde_json::json!({"token":link_token,"password":"lithe cobalt meadow drift"}),
             ),
@@ -1921,18 +1676,6 @@ mod tests {
                 .unwrap()
                 .password_hash,
             credential.password_hash
-        );
-        let active = crate::models::password_reset_pin::find_active_by_user(&state.pool, id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(active.id, pin_id);
-        assert_eq!(active.pin_hash, pin_hash);
-        assert!(
-            std::fs::read_dir(directory.path())
-                .unwrap()
-                .next()
-                .is_none()
         );
         for email in ["setup@example.com", "register@example.com"] {
             assert!(
@@ -2640,7 +2383,11 @@ mod tests {
             .json(&serde_json::json!({"email":"unknown@example.com"}))
             .await;
         assert_eq!(recovery.status_code(), StatusCode::OK);
-        let rejected = server.post("/auth/reset-password").add_header("x-test-source", "192.0.2.5").json(&serde_json::json!({"email":"unknown@example.com","pin":"wrong","new_password":"a perfectly good new password"})).await;
+        let rejected = server
+            .post("/auth/credential-links/lookups")
+            .add_header("x-test-source", "192.0.2.5")
+            .json(&serde_json::json!({"token":"A".repeat(43)}))
+            .await;
         assert_retry(&rejected, 60);
         let oidc = server
             .get("/auth/oidc/login")
@@ -3030,6 +2777,7 @@ mod tests {
             oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            mail: None,
         };
         let app = crate::build_router_with_session_store(state, store.clone());
         let mut server = axum_test::TestServer::new(app);
@@ -4715,6 +4463,7 @@ mod tests {
                 oidc_limiter: test_support::test_login_limiter(),
                 settings: test_support::test_settings(),
                 last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+                mail: None,
             };
             let app = crate::build_router_with_session_store(state.clone(), store.clone());
             let mut server = axum_test::TestServer::new(app);
@@ -4989,6 +4738,7 @@ mod tests {
             oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            mail: None,
         };
         let app = crate::build_router_with_session_store(state, store.clone());
         let mut server = axum_test::TestServer::new(app);
@@ -5123,6 +4873,7 @@ mod tests {
             oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            mail: None,
         };
         let app = crate::build_router_with_session_store(state, store.clone());
         let mut server = axum_test::TestServer::new(app);
@@ -5238,6 +4989,7 @@ mod tests {
             oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            mail: None,
         };
         let app = crate::build_router_with_session_store(state, store.clone());
         let mut server = axum_test::TestServer::new(app);
@@ -5350,6 +5102,7 @@ mod tests {
             oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            mail: None,
         };
         let app = crate::build_router_with_session_store(state, store.clone());
         let mut server = axum_test::TestServer::new(app);
@@ -5883,13 +5636,24 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-        // No such account: still a generic 200 (no enumeration). This path writes
-        // no PIN file, so it cannot race the happy-path test below.
         let resp = server
             .post("/auth/forgot-password")
             .json(&serde_json::json!({"email": "ghost@example.com"}))
             .await;
         assert_eq!(resp.status_code(), StatusCode::OK);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_pin_retirement_old_reset_endpoint_is_not_mounted(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        for enabled in [true, false] {
+            state.config.local_auth_enabled = enabled;
+            let response = hash_server(&state)
+                .post("/auth/reset-password")
+                .json(&serde_json::json!({}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -5908,330 +5672,6 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY,
         );
     }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn reset_password_with_invalid_pin_is_generic_422(pool: sqlx::PgPool) {
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-        test_support::db::create_adult_with_password(
-            &app_pool,
-            "reset-bad",
-            "reset-bad@example.com",
-            "original password",
-        )
-        .await;
-        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-
-        // No PIN was ever issued: any reset attempt is the generic 422.
-        let resp = server
-            .post("/auth/reset-password")
-            .json(&serde_json::json!({
-                "email": "reset-bad@example.com",
-                "pin": "0000000000",
-                "new_password": "lithe cobalt meadow drift",
-            }))
-            .await;
-        assert_eq!(resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn forgot_then_reset_changes_the_password(pool: sqlx::PgPool) {
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-        let user_id = test_support::db::create_adult_with_password(
-            &app_pool,
-            "recover",
-            "recover@example.com",
-            "the old password",
-        )
-        .await;
-        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-
-        let forgot = server
-            .post("/auth/forgot-password")
-            .json(&serde_json::json!({"email": "recover@example.com"}))
-            .await;
-        assert_eq!(forgot.status_code(), StatusCode::OK);
-
-        // Read the clear PIN from the user's operator file (the model stores only
-        // its hash).
-        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
-            .join(format!("{user_id}.pin"));
-        let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
-        let pin = contents
-            .lines()
-            .find_map(|l| l.strip_prefix("pin: "))
-            .expect("PIN line in file")
-            .to_owned();
-
-        let reset = server
-            .post("/auth/reset-password")
-            .json(&serde_json::json!({
-                "email": "recover@example.com",
-                "pin": pin,
-                "new_password": "lithe cobalt meadow drift",
-            }))
-            .await;
-        assert_eq!(
-            reset.status_code(),
-            StatusCode::OK,
-            "a valid PIN resets the password"
-        );
-
-        // No auto-login: the new password works, the old one does not.
-        let with_new = server
-            .post("/auth/local/login")
-            .json(&serde_json::json!({
-                "email": "recover@example.com",
-                "password": "lithe cobalt meadow drift",
-            }))
-            .await;
-        assert_eq!(
-            with_new.status_code(),
-            StatusCode::NO_CONTENT,
-            "the new password authenticates"
-        );
-
-        // A consumed PIN cannot be reused.
-        let reuse = server
-            .post("/auth/reset-password")
-            .json(&serde_json::json!({
-                "email": "recover@example.com",
-                "pin": pin,
-                "new_password": "amber thistle vault ridge",
-            }))
-            .await;
-        assert_eq!(
-            reuse.status_code(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "a consumed PIN is single-use"
-        );
-        // The successful reset already removed the PIN file; nothing to clean up.
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn reset_password_serializes_with_administrator_reset(pool: sqlx::PgPool) {
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-        let user_id = test_support::db::create_adult_with_password(
-            &app_pool,
-            "recover-race",
-            "recover-race@example.com",
-            "old",
-        )
-        .await;
-        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-        server
-            .post("/auth/forgot-password")
-            .json(&serde_json::json!({"email": "recover-race@example.com"}))
-            .await
-            .assert_status_ok();
-        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
-            .join(format!("{user_id}.pin"));
-        let contents = std::fs::read_to_string(&pin_path).unwrap();
-        let pin = contents
-            .lines()
-            .find_map(|line| line.strip_prefix("pin: "))
-            .unwrap()
-            .to_owned();
-        let administrator_hash =
-            crate::auth::password::hash_password(b"amber thistle vault ridge").unwrap();
-        let mut administrator = app_pool.begin().await.unwrap();
-        sqlx::query_scalar!(
-            "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
-            user_id,
-        )
-        .fetch_one(&mut *administrator)
-        .await
-        .unwrap();
-        let recovery = tokio::spawn(async move {
-            server
-                .post("/auth/reset-password")
-                .json(&serde_json::json!({
-                    "email": "recover-race@example.com",
-                    "pin": pin,
-                    "new_password": "lithe cobalt meadow drift",
-                }))
-                .await
-        });
-        test_support::wait_for_blocked_query(&pool, "%users%", 1).await;
-        crate::models::local_credentials::set_password(
-            &mut *administrator,
-            user_id,
-            &administrator_hash,
-        )
-        .await
-        .unwrap();
-        crate::models::user::increment_session_version(&mut *administrator, user_id)
-            .await
-            .unwrap();
-        administrator.commit().await.unwrap();
-        recovery.await.unwrap().assert_status_ok();
-        let credential = crate::models::local_credentials::find_by_user_id(&app_pool, user_id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(
-            crate::auth::password::verify_password(
-                b"lithe cobalt meadow drift",
-                &credential.password_hash,
-            )
-            .is_ok()
-        );
-        assert_eq!(
-            crate::models::user::find_by_id(&app_pool, user_id)
-                .await
-                .unwrap()
-                .unwrap()
-                .session_version,
-            2
-        );
-        assert!(
-            crate::models::password_reset_pin::find_active_by_user(&app_pool, user_id)
-                .await
-                .unwrap()
-                .is_none()
-        );
-        assert!(!pin_path.exists());
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn reset_password_rejects_a_weak_password(pool: sqlx::PgPool) {
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-        let user_id = test_support::db::create_adult_with_password(
-            &app_pool,
-            "weakset",
-            "weakset@example.com",
-            "the old password",
-        )
-        .await;
-        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-
-        let forgot = server
-            .post("/auth/forgot-password")
-            .json(&serde_json::json!({"email": "weakset@example.com"}))
-            .await;
-        assert_eq!(forgot.status_code(), StatusCode::OK);
-        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
-            .join(format!("{user_id}.pin"));
-        let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
-        let pin = contents
-            .lines()
-            .find_map(|l| l.strip_prefix("pin: "))
-            .expect("PIN line in file")
-            .to_owned();
-
-        // A valid PIN with a policy-failing password is rejected: the recovery
-        // path is not a bypass for the strength gate.
-        let weak = server
-            .post("/auth/reset-password")
-            .json(&serde_json::json!({
-                "email": "weakset@example.com",
-                "pin": &pin,
-                "new_password": "password",
-            }))
-            .await;
-        assert_eq!(weak.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
-
-        // The rejection happened before the PIN was consumed, so the same PIN
-        // still completes a reset with a strong password.
-        let strong = server
-            .post("/auth/reset-password")
-            .json(&serde_json::json!({
-                "email": "weakset@example.com",
-                "pin": &pin,
-                "new_password": "lithe cobalt meadow drift",
-            }))
-            .await;
-        assert_eq!(
-            strong.status_code(),
-            StatusCode::OK,
-            "the PIN survived the rejected weak attempt"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn reset_password_invalidates_existing_sessions(pool: sqlx::PgPool) {
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-        let user_id = test_support::db::create_adult_with_password(
-            &app_pool,
-            "stale",
-            "stale@example.com",
-            "the old password",
-        )
-        .await;
-        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-        server.save_cookies();
-
-        // Establish a session and confirm it is live before the reset.
-        let login = server
-            .post("/auth/local/login")
-            .json(
-                &serde_json::json!({"email": "stale@example.com", "password": "the old password"}),
-            )
-            .await;
-        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
-        let me = server.get("/auth/me").await;
-        assert_eq!(
-            me.status_code(),
-            StatusCode::OK,
-            "the session authenticates before the reset"
-        );
-        // csrf_required gates mutating verbs by auth method, and this caller now
-        // holds a session, so the recovery POSTs below must carry the token.
-        // Anonymous recovery (the common case) is exempt; this stolen-cookie
-        // scenario is not.
-        let csrf_token = me
-            .json::<serde_json::Value>()
-            .get("csrf_token")
-            .and_then(|v| v.as_str())
-            .expect("login mints a csrf token")
-            .to_owned();
-
-        // Recover and reset the password. A session that predates the reset (e.g.
-        // an attacker's stolen cookie) must not survive it.
-        let forgot = server
-            .post("/auth/forgot-password")
-            .add_header(
-                axum::http::HeaderName::from_static("x-csrf-token"),
-                axum::http::HeaderValue::from_str(&csrf_token).expect("valid header"),
-            )
-            .json(&serde_json::json!({"email": "stale@example.com"}))
-            .await;
-        assert_eq!(forgot.status_code(), StatusCode::OK);
-        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
-            .join(format!("{user_id}.pin"));
-        let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
-        let pin = contents
-            .lines()
-            .find_map(|l| l.strip_prefix("pin: "))
-            .expect("PIN line in file")
-            .to_owned();
-        let reset = server
-            .post("/auth/reset-password")
-            .add_header(
-                axum::http::HeaderName::from_static("x-csrf-token"),
-                axum::http::HeaderValue::from_str(&csrf_token).expect("valid header"),
-            )
-            .json(&serde_json::json!({
-                "email": "stale@example.com",
-                "pin": pin,
-                "new_password": "lithe cobalt meadow drift",
-            }))
-            .await;
-        assert_eq!(reset.status_code(), StatusCode::OK);
-
-        // The pre-reset session is now rejected: the reset bumped session_version.
-        assert_eq!(
-            server.get("/auth/me").await.status_code(),
-            StatusCode::UNAUTHORIZED,
-            "a session established before the reset is invalidated by it"
-        );
-    }
-
-    // ---------- POST /auth/register ----------
 
     #[sqlx::test(migrations = "./migrations")]
     async fn register_creates_adult_when_enabled(pool: sqlx::PgPool) {
@@ -6360,9 +5800,13 @@ mod tests {
         .await
         .unwrap()
         .id;
-        let (token, _) = crate::models::credential_link::issue(&app, id)
-            .await
-            .unwrap();
+        let (token, _) = crate::models::credential_link::issue(
+            &mut app.acquire().await.unwrap(),
+            id,
+            crate::models::credential_link::CREDENTIAL_LINK_TTL,
+        )
+        .await
+        .unwrap();
         let server = test_support::db::server_with_real_pools(&app, &ingestion);
         let logs = test_support::CapturedLogs::default();
         let password = uuid::Uuid::new_v4().to_string();
@@ -6429,6 +5873,847 @@ mod tests {
             assert!(
                 !captured.contains(secret),
                 "redemption audit leaked a submitted value"
+            );
+        }
+    }
+
+    // ---------- email recovery ----------
+
+    mod mail_recovery {
+        use super::*;
+        use crate::models::account_email_proof::{self, ProofPurpose, lock_account};
+        use crate::models::mail_job::MailPurpose;
+        use crate::services::mail::dispatch::Outbox;
+        use crate::services::mail::render::{self, Context, Notice};
+        use crate::test_support::mail::{self, ORIGIN, PASSWORD, SUPPORT};
+        use sqlx::PgPool;
+        use uuid::Uuid;
+
+        const OLD_PASSWORD: &str = "the old password";
+
+        struct Fixture {
+            app: PgPool,
+            ingestion: PgPool,
+            runtime: std::sync::Arc<crate::services::mail::queue::MailRuntime>,
+            server: axum_test::TestServer,
+        }
+
+        async fn fixture(pool: &PgPool) -> Fixture {
+            let app = test_support::db::app_pool_for(pool).await;
+            let ingestion = test_support::db::ingestion_pool_for(pool).await;
+            let runtime = mail::shared_runtime(1);
+            let server = mail::server(&app, &ingestion, &runtime);
+            Fixture {
+                app,
+                ingestion,
+                runtime,
+                server,
+            }
+        }
+
+        async fn holder(f: &Fixture, pool: &PgPool, email: &str) -> Uuid {
+            let id =
+                test_support::db::create_adult_with_password(&f.app, "Holder", email, OLD_PASSWORD)
+                    .await;
+            mail::verify_address(pool, id).await;
+            id
+        }
+
+        fn outbox(f: &Fixture) -> Outbox {
+            Outbox::new(Some(&f.runtime), Some(&url::Url::parse(ORIGIN).unwrap()))
+                .unwrap()
+                .unwrap()
+        }
+
+        fn context() -> Context {
+            Context {
+                origin: ORIGIN.to_owned(),
+                support: SUPPORT.to_owned(),
+            }
+        }
+
+        async fn status(server: &axum_test::TestServer) -> serde_json::Value {
+            server.get("/auth/setup/status").await.json()
+        }
+
+        async fn forgot(server: &axum_test::TestServer, email: &str) -> axum_test::TestResponse {
+            server
+                .post("/auth/forgot-password")
+                .json(&serde_json::json!({"email": email}))
+                .await
+        }
+
+        async fn recovery_token(f: &Fixture, pool: &PgPool, id: Uuid, email: &str) -> String {
+            forgot(&f.server, email).await.assert_status_ok();
+            mail::wait_for_job(pool, id, "email_recovery").await;
+            let stored = mail::messages(pool, id).await;
+            let message = stored
+                .iter()
+                .find(|m| m.purpose == "email_recovery")
+                .expect("recovery message");
+            mail::token_in(&message.body)
+        }
+
+        async fn redeem(
+            server: &axum_test::TestServer,
+            token: &str,
+            password: &str,
+        ) -> axum_test::TestResponse {
+            server
+                .post("/auth/credential-links/redemptions")
+                .json(&serde_json::json!({"token": token, "password": password}))
+                .await
+        }
+
+        fn assert_notice(message: &mail::Stored, event: Notice, email: &str) {
+            let candidates: Vec<_> = [0, -1, 1]
+                .into_iter()
+                .map(|offset| {
+                    render::notice(
+                        &context(),
+                        event,
+                        email,
+                        chrono::Utc::now() + chrono::TimeDelta::minutes(offset),
+                    )
+                })
+                .collect();
+            assert!(
+                candidates
+                    .iter()
+                    .any(|c| c.subject == message.subject && c.body == message.body),
+                "unexpected notice: {message:?}"
+            );
+            assert_eq!(message.recipient, email);
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_setup_status_reports_email_recovery(pool: PgPool) {
+            let f = fixture(&pool).await;
+            let plain = test_support::db::server_with_real_pools(&f.app, &f.ingestion);
+            assert_eq!(status(&plain).await["email_recovery_enabled"], false);
+            let with_mail = status(&f.server).await;
+            assert_eq!(with_mail["email_recovery_enabled"], true);
+            let mut keys: Vec<_> = with_mail.as_object().unwrap().keys().cloned().collect();
+            keys.sort();
+            assert_eq!(
+                keys,
+                [
+                    "email_recovery_enabled",
+                    "local_auth_enabled",
+                    "oidc_enabled",
+                    "password_max_length",
+                    "password_min_length",
+                    "setup_required",
+                ]
+            );
+            let mut config = test_support::test_config();
+            config.local_auth_enabled = false;
+            let no_local = test_support::db::server_with_mail(
+                &f.app,
+                &f.ingestion,
+                config,
+                std::sync::Arc::clone(&f.runtime),
+            );
+            assert_eq!(status(&no_local).await["email_recovery_enabled"], false);
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_forgot_password_queues_only_for_eligible_accounts(pool: PgPool) {
+            let f = fixture(&pool).await;
+            let eligible = holder(&f, &pool, "eligible@example.test").await;
+            let unverified = test_support::db::create_adult_with_password(
+                &f.app,
+                "Unverified",
+                "unverified@example.test",
+                OLD_PASSWORD,
+            )
+            .await;
+            let disabled = holder(&f, &pool, "disabled@example.test").await;
+            user::disable_account(&f.app, disabled).await.unwrap();
+            let oidc_only = user::upsert_from_oidc(
+                &f.app,
+                "https://issuer.example.test",
+                "subject-oidc-only",
+                "Oidc",
+                Some("oidc-only@example.test"),
+            )
+            .await
+            .unwrap()
+            .id;
+            mail::verify_address(&pool, oidc_only).await;
+
+            let mut bodies = Vec::new();
+            for email in [
+                "unverified@example.test",
+                "disabled@example.test",
+                "oidc-only@example.test",
+                "ghost@example.test",
+                "not an address",
+                "ELIGIBLE@example.test",
+            ] {
+                let response = forgot(&f.server, email).await;
+                assert_eq!(response.status_code(), StatusCode::OK, "{email}");
+                bodies.push(response.text());
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            assert!(bodies.iter().all(String::is_empty));
+
+            mail::wait_for_job(&pool, eligible, "email_recovery").await;
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            for other in [unverified, disabled, oidc_only] {
+                assert_eq!(mail::job_count(&pool, other, None).await, 0);
+            }
+            assert_eq!(
+                sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM mail_jobs"#)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap(),
+                1
+            );
+            assert_eq!(
+                sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM account_email_proofs"#)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap(),
+                1
+            );
+
+            let stored = mail::messages(&pool, eligible).await;
+            let [message] = stored.as_slice() else {
+                panic!("expected one message, got {stored:?}");
+            };
+            assert_eq!(message.purpose, "email_recovery");
+            assert_eq!(message.recipient, "eligible@example.test");
+            let token = mail::token_in(&message.body);
+            assert_eq!(token.len(), 43);
+            let proof = sqlx::query!(
+                "SELECT token_hash, expires_at, email FROM account_email_proofs WHERE user_id = $1 AND purpose = 'recovery'",
+                eligible
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(proof.token_hash, account_email_proof::digest(&token));
+            assert_eq!(proof.email, "eligible@example.test");
+            let expected = render::recovery(
+                &context(),
+                "eligible@example.test",
+                &token,
+                proof.expires_at,
+            );
+            assert_eq!(message.subject, expected.subject);
+            assert_eq!(message.body, expected.body);
+            assert!(
+                message
+                    .body
+                    .contains(&format!("{ORIGIN}/reset-password#{token}"))
+            );
+            let lifetime = proof.expires_at - chrono::Utc::now();
+            assert!(
+                lifetime > chrono::TimeDelta::minutes(14)
+                    && lifetime <= chrono::TimeDelta::minutes(15)
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_response_does_not_wait_for_background_work(pool: PgPool) {
+            let f = fixture(&pool).await;
+            let id = holder(&f, &pool, "blocked@example.test").await;
+            let mut held = f.app.begin().await.unwrap();
+            lock_account(&mut held, id).await.unwrap().unwrap();
+            let response = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                forgot(&f.server, "blocked@example.test"),
+            )
+            .await
+            .expect("the response must not wait for the account lock");
+            assert_eq!(response.status_code(), StatusCode::OK);
+            test_support::wait_for_blocked_query(&pool, "%users%", 1).await;
+            assert_eq!(mail::job_count(&pool, id, None).await, 0);
+            held.commit().await.unwrap();
+            mail::wait_for_job(&pool, id, "email_recovery").await;
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_full_capacity_drops_the_request_with_the_same_response(
+            pool: PgPool,
+        ) {
+            let f = fixture(&pool).await;
+            let id = holder(&f, &pool, "busy@example.test").await;
+            for _ in 0..4 {
+                assert!(f.runtime.try_spawn(std::future::pending::<()>()));
+            }
+            assert!(!f.runtime.try_spawn(async {}));
+            let response = forgot(&f.server, "busy@example.test").await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+            assert_eq!(response.text(), "");
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            assert_eq!(mail::job_count(&pool, id, None).await, 0);
+            f.runtime.shutdown().await;
+            assert!(!f.runtime.try_spawn(async {}));
+            assert_eq!(
+                forgot(&f.server, "busy@example.test").await.status_code(),
+                StatusCode::OK
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_without_mail_returns_the_generic_response(pool: PgPool) {
+            let f = fixture(&pool).await;
+            let id = holder(&f, &pool, "nomail@example.test").await;
+            let plain = test_support::db::server_with_real_pools(&f.app, &f.ingestion);
+            let response = forgot(&plain, "nomail@example.test").await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+            assert_eq!(response.text(), "");
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            assert_eq!(mail::job_count(&pool, id, None).await, 0);
+            assert_eq!(
+                sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM account_email_proofs"#)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap(),
+                0
+            );
+            let mut config = test_support::test_config();
+            config.local_auth_enabled = false;
+            let off = test_support::db::server_with_mail(
+                &f.app,
+                &f.ingestion,
+                config,
+                std::sync::Arc::clone(&f.runtime),
+            );
+            assert_eq!(
+                forgot(&off, "nomail@example.test").await.status_code(),
+                StatusCode::NOT_FOUND
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_repeat_requests_coalesce_then_resend_the_same_link(pool: PgPool) {
+            let f = fixture(&pool).await;
+            let id = holder(&f, &pool, "repeat@example.test").await;
+            let first = recovery_token(&f, &pool, id, "repeat@example.test").await;
+            forgot(&f.server, "repeat@example.test")
+                .await
+                .assert_status_ok();
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            assert_eq!(mail::job_count(&pool, id, None).await, 1);
+
+            for delivered in 1..3 {
+                let latest = sqlx::query_scalar!(
+                    "SELECT id FROM mail_jobs WHERE user_id = $1 ORDER BY enqueued_at DESC LIMIT 1",
+                    id
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+                mail::settle_delivery(&pool, latest).await;
+                forgot(&f.server, "repeat@example.test")
+                    .await
+                    .assert_status_ok();
+                mail::wait_for_count(&pool, id, "email_recovery", delivered + 1).await;
+            }
+            let tokens: Vec<_> = mail::messages(&pool, id)
+                .await
+                .iter()
+                .map(|m| mail::token_in(&m.body))
+                .collect();
+            assert_eq!(tokens, [first.clone(), first.clone(), first]);
+
+            let latest = sqlx::query_scalar!(
+                "SELECT id FROM mail_jobs WHERE user_id = $1 ORDER BY enqueued_at DESC LIMIT 1",
+                id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            mail::settle_delivery(&pool, latest).await;
+            forgot(&f.server, "repeat@example.test")
+                .await
+                .assert_status_ok();
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            assert_eq!(
+                mail::job_count(&pool, id, None).await,
+                3,
+                "the proof allows an initial delivery and two repeats"
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_emailed_link_resets_the_password_without_signing_in(pool: PgPool) {
+            let f = fixture(&pool).await;
+            let id = holder(&f, &pool, "recover@example.test").await;
+            let token = recovery_token(&f, &pool, id, "recover@example.test").await;
+            let lookup = f
+                .server
+                .post("/auth/credential-links/lookups")
+                .json(&serde_json::json!({"token": token}))
+                .await;
+            assert_eq!(lookup.status_code(), StatusCode::OK);
+            assert_eq!(lookup.headers()["cache-control"], "no-store");
+            assert_eq!(
+                lookup.json::<serde_json::Value>(),
+                serde_json::json!({"email": "recover@example.test", "has_password": true})
+            );
+
+            let mut tx = f.app.begin().await.unwrap();
+            lock_account(&mut tx, id).await.unwrap();
+            let verification = account_email_proof::issue(
+                &mut tx,
+                id,
+                ProofPurpose::Verification,
+                "recover@example.test",
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+            let lookup = f
+                .server
+                .post("/auth/credential-links/lookups")
+                .json(&serde_json::json!({"token": verification.token}))
+                .await;
+            assert_eq!(lookup.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            let attempt = redeem(&f.server, &verification.token, PASSWORD).await;
+            assert_eq!(attempt.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            assert!(
+                mail::proof_live(&pool, id, ProofPurpose::Verification.as_str()).await,
+                "a verification token never consumes anything on the reset path"
+            );
+
+            let failed = f
+                .server
+                .post("/auth/local/login")
+                .json(&serde_json::json!({"email": "recover@example.test", "password": "wrong password"}))
+                .await;
+            assert_eq!(failed.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            let before_throttle =
+                sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM local_login_throttle"#)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert!(
+                before_throttle > 0,
+                "the failed sign-in must leave throttle state to preserve"
+            );
+            let response = redeem(&f.server, &token, PASSWORD).await;
+            assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+            assert_eq!(
+                sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM local_login_throttle"#)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap(),
+                before_throttle,
+                "redemption leaves login throttling alone"
+            );
+            assert_eq!(
+                f.server.get("/auth/me").await.status_code(),
+                StatusCode::UNAUTHORIZED,
+                "redemption signs nobody in"
+            );
+            assert_eq!(
+                redeem(&f.server, &token, PASSWORD).await.status_code(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "a recovery link works once"
+            );
+            let old = f
+                .server
+                .post("/auth/local/login")
+                .json(
+                    &serde_json::json!({"email": "recover@example.test", "password": OLD_PASSWORD}),
+                )
+                .await;
+            assert_eq!(old.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            let new = f
+                .server
+                .post("/auth/local/login")
+                .json(&serde_json::json!({"email": "recover@example.test", "password": PASSWORD}))
+                .await;
+            assert_eq!(new.status_code(), StatusCode::NO_CONTENT);
+            let stored = mail::messages(&pool, id).await;
+            let kinds: Vec<_> = stored.iter().map(|m| m.purpose.as_str()).collect();
+            assert!(!kinds.contains(&"email_recovery"), "{kinds:?}");
+            let notice = stored
+                .iter()
+                .find(|m| m.purpose == "notice_password_changed")
+                .expect("password changed notice");
+            assert_notice(notice, Notice::PasswordChanged, "recover@example.test");
+            assert_eq!(
+                sqlx::query_scalar!(
+                    "SELECT state FROM mail_jobs WHERE user_id = $1 AND purpose = 'email_recovery'",
+                    id
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+                "cancelled"
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_redemption_invalidates_sessions(pool: PgPool) {
+            let f = fixture(&pool).await;
+            let id = holder(&f, &pool, "stale-mail@example.test").await;
+            let token = recovery_token(&f, &pool, id, "stale-mail@example.test").await;
+            let csrf = mail::login(&f.server, "stale-mail@example.test", OLD_PASSWORD).await;
+            assert_eq!(f.server.get("/auth/me").await.status_code(), StatusCode::OK);
+            let version = user::find_by_id(&f.app, id)
+                .await
+                .unwrap()
+                .unwrap()
+                .session_version;
+
+            let (name, value) = mail::csrf(&csrf);
+            let response = f
+                .server
+                .post("/auth/credential-links/redemptions")
+                .add_header(name, value)
+                .json(&serde_json::json!({"token": token, "password": PASSWORD}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+            assert_eq!(
+                f.server.get("/auth/me").await.status_code(),
+                StatusCode::UNAUTHORIZED,
+                "a session established before the emailed reset is invalidated by it"
+            );
+            assert_eq!(
+                user::find_by_id(&f.app, id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .session_version,
+                version + 1
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_redemption_withdraws_every_other_replacement_proof(pool: PgPool) {
+            let f = fixture(&pool).await;
+            let outbox = outbox(&f);
+            let email = "withdraw@example.test";
+            let id = holder(&f, &pool, email).await;
+
+            for winner_is_email in [true, false] {
+                let mut tx = f.app.begin().await.unwrap();
+                lock_account(&mut tx, id).await.unwrap();
+                let (link, expiry) = crate::models::credential_link::issue(
+                    &mut tx,
+                    id,
+                    crate::models::credential_link::CREDENTIAL_LINK_TTL,
+                )
+                .await
+                .unwrap();
+                let admin_job = outbox
+                    .admin_link(&mut tx, id, email, true, &link, expiry)
+                    .await
+                    .unwrap();
+                tx.commit().await.unwrap();
+                let recovery = recovery_token(&f, &pool, id, email).await;
+                let mut tx = f.app.begin().await.unwrap();
+                lock_account(&mut tx, id).await.unwrap();
+                outbox
+                    .request_proof(&mut tx, id, ProofPurpose::Verification, email)
+                    .await
+                    .unwrap();
+                tx.commit().await.unwrap();
+                let recovery_job =
+                    mail::wait_for_job(&pool, id, MailPurpose::EmailRecovery.as_str()).await;
+
+                let token = if winner_is_email { &recovery } else { &link };
+                let password = if winner_is_email {
+                    "amber thistle vault ridge"
+                } else {
+                    PASSWORD
+                };
+                assert_eq!(
+                    redeem(&f.server, token, password).await.status_code(),
+                    StatusCode::NO_CONTENT
+                );
+
+                assert_eq!(
+                    sqlx::query_scalar!(
+                        r#"SELECT count(*) AS "n!" FROM credential_links WHERE user_id = $1"#,
+                        id
+                    )
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap(),
+                    0
+                );
+                assert!(!mail::proof_live(&pool, id, ProofPurpose::Recovery.as_str()).await);
+                assert!(mail::proof_live(&pool, id, ProofPurpose::Verification.as_str()).await);
+                assert_eq!(mail::state_of(&pool, admin_job).await, "cancelled");
+                assert!(!mail::payload_present(&pool, admin_job).await);
+                assert_eq!(mail::state_of(&pool, recovery_job).await, "cancelled");
+                assert!(!mail::payload_present(&pool, recovery_job).await);
+                let verification_job = mail::messages(&pool, id)
+                    .await
+                    .into_iter()
+                    .find(|m| m.purpose == "verification")
+                    .expect("the verification challenge and its mail survive");
+                assert_eq!(verification_job.state, "pending");
+                sqlx::query!("DELETE FROM mail_jobs WHERE user_id = $1", id)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                sqlx::query!("DELETE FROM account_email_proofs WHERE user_id = $1", id)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_redemption_rechecks_eligibility_after_the_account_lock(
+            pool: PgPool,
+        ) {
+            let f = std::sync::Arc::new(fixture(&pool).await);
+            let changes = ["disabled", "unverified", "address changed", "expired"];
+            for (index, label) in changes.into_iter().enumerate() {
+                let email = format!("late-{index}@example.test");
+                let id = holder(&f, &pool, &email).await;
+                let token = recovery_token(&f, &pool, id, &email).await;
+                let mut held = f.app.begin().await.unwrap();
+                lock_account(&mut held, id).await.unwrap().unwrap();
+                let runner = std::sync::Arc::clone(&f);
+                let submitted = token.clone();
+                let redemption =
+                    tokio::spawn(async move { redeem(&runner.server, &submitted, PASSWORD).await });
+                test_support::wait_for_blocked_query(&pool, "%users%", 1).await;
+                match label {
+                    "disabled" => {
+                        sqlx::query!("UPDATE users SET disabled_at = now() WHERE id = $1", id)
+                            .execute(&mut *held)
+                            .await
+                            .unwrap();
+                    }
+                    "unverified" => {
+                        sqlx::query!(
+                            "UPDATE users SET email_verified_at = NULL WHERE id = $1",
+                            id
+                        )
+                        .execute(&mut *held)
+                        .await
+                        .unwrap();
+                    }
+                    "address changed" => {
+                        sqlx::query!(
+                            "UPDATE users SET email = 'moved@example.test' WHERE id = $1",
+                            id
+                        )
+                        .execute(&mut *held)
+                        .await
+                        .unwrap();
+                    }
+                    _ => {
+                        sqlx::query!(
+                            "UPDATE account_email_proofs SET expires_at = clock_timestamp() \
+                              WHERE user_id = $1",
+                            id
+                        )
+                        .execute(&mut *held)
+                        .await
+                        .unwrap();
+                    }
+                }
+                held.commit().await.unwrap();
+                let response = redemption.await.unwrap();
+                assert_eq!(
+                    response.status_code(),
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "{label}"
+                );
+                let credential = crate::models::local_credentials::find_by_user_id(&f.app, id)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(
+                    crate::auth::password::verify_password(
+                        OLD_PASSWORD.as_bytes(),
+                        &credential.password_hash
+                    )
+                    .is_ok(),
+                    "{label}: the password is unchanged"
+                );
+            }
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_concurrent_redemption_has_one_winner(pool: PgPool) {
+            let f = fixture(&pool).await;
+            let id = holder(&f, &pool, "race@example.test").await;
+            let token = recovery_token(&f, &pool, id, "race@example.test").await;
+            let version = user::find_by_id(&f.app, id)
+                .await
+                .unwrap()
+                .unwrap()
+                .session_version;
+            let (a, b) = tokio::join!(
+                redeem(&f.server, &token, PASSWORD),
+                redeem(&f.server, &token, "amber thistle vault ridge"),
+            );
+            let mut statuses = [a.status_code(), b.status_code()];
+            statuses.sort();
+            assert_eq!(
+                statuses,
+                [StatusCode::NO_CONTENT, StatusCode::UNPROCESSABLE_ENTITY]
+            );
+            assert_eq!(
+                mail::job_count(&pool, id, Some("notice_password_changed")).await,
+                1
+            );
+            assert_eq!(
+                user::find_by_id(&f.app, id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .session_version,
+                version + 1
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_redemption_rolls_back_when_the_notice_cannot_be_queued(
+            pool: PgPool,
+        ) {
+            let f = fixture(&pool).await;
+            let id = holder(&f, &pool, "rollback@example.test").await;
+            let token = recovery_token(&f, &pool, id, "rollback@example.test").await;
+            let version = user::find_by_id(&f.app, id)
+                .await
+                .unwrap()
+                .unwrap()
+                .session_version;
+            mail::break_enqueue(&pool).await;
+            let response = redeem(&f.server, &token, PASSWORD).await;
+            assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+            let credential = crate::models::local_credentials::find_by_user_id(&f.app, id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                crate::auth::password::verify_password(
+                    OLD_PASSWORD.as_bytes(),
+                    &credential.password_hash
+                )
+                .is_ok()
+            );
+            assert_eq!(
+                user::find_by_id(&f.app, id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .session_version,
+                version
+            );
+            assert!(mail::proof_live(&pool, id, ProofPurpose::Recovery.as_str()).await);
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn smtp_recovery_raw_logs_carry_no_secrets(pool: PgPool) {
+            let logs = test_support::CapturedLogs::default();
+            let _guard = tracing::subscriber::set_default(logs.trace_subscriber());
+            let f = fixture(&pool).await;
+            let email = "private-logs@example.test";
+            let id = holder(&f, &pool, email).await;
+            let token = recovery_token(&f, &pool, id, email).await;
+            assert_eq!(
+                redeem(&f.server, &token, PASSWORD).await.status_code(),
+                StatusCode::NO_CONTENT
+            );
+            forgot(&f.server, "unknown-private@example.test")
+                .await
+                .assert_status_ok();
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            let captured = logs.text();
+            assert!(
+                captured.contains("credential_link_redemption"),
+                "the capture must see the request path: {captured}"
+            );
+            for secret in [
+                token.as_str(),
+                PASSWORD,
+                OLD_PASSWORD,
+                email,
+                "unknown-private@example.test",
+                "Reset your Reverie password",
+            ] {
+                assert!(
+                    !captured.contains(secret),
+                    "a log line leaked a secret value"
+                );
+            }
+        }
+
+        async fn recovery_proof(app: &PgPool, id: Uuid, email: &str) -> String {
+            let mut tx = app.begin().await.unwrap();
+            lock_account(&mut tx, id).await.unwrap();
+            let issued = account_email_proof::issue(&mut tx, id, ProofPurpose::Recovery, email)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+            issued.token
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn auth_hash_census_email_recovery_redemption(pool: PgPool) {
+            let mut state = password_state(&pool).await;
+            let id = test_support::db::create_adult_with_password(
+                &state.pool,
+                "Holder",
+                "census-mail@example.test",
+                OLD_PASSWORD,
+            )
+            .await;
+            mail::verify_address(&pool, id).await;
+            let token = recovery_proof(&state.pool, id, "census-mail@example.test").await;
+            let count = hash_counter(&mut state);
+            let server = hash_server(&state);
+            let response = redeem(&server, &token, PASSWORD).await;
+            assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+            let replay = redeem(&server, &token, PASSWORD).await;
+            assert_eq!(replay.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn auth_hash_busy_email_recovery_redemption(pool: PgPool) {
+            let mut state = password_state(&pool).await;
+            let id = test_support::db::create_adult_with_password(
+                &state.pool,
+                "Holder",
+                "busy-mail@example.test",
+                OLD_PASSWORD,
+            )
+            .await;
+            mail::verify_address(&pool, id).await;
+            let token = recovery_proof(&state.pool, id, "busy-mail@example.test").await;
+            let count = hash_counter(&mut state);
+            state.hash_limiter = state
+                .hash_limiter
+                .with_wait_limit(std::time::Duration::from_millis(10));
+            let _held = state.hash_limiter.acquire().await.unwrap();
+            let server = hash_server(&state);
+            let response = redeem(&server, &token, PASSWORD).await;
+            assert_hash_busy(&response, "/auth/credential-links/redemptions");
+            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
+            assert!(mail::proof_live(&pool, id, ProofPurpose::Recovery.as_str()).await);
+            let credential = crate::models::local_credentials::find_by_user_id(&state.pool, id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                crate::auth::password::verify_password(
+                    OLD_PASSWORD.as_bytes(),
+                    &credential.password_hash
+                )
+                .is_ok()
+            );
+            let recovery = forgot(&server, "busy-mail@example.test").await;
+            assert_eq!(
+                recovery.status_code(),
+                StatusCode::OK,
+                "public recovery requests never wait for hashing capacity"
             );
         }
     }

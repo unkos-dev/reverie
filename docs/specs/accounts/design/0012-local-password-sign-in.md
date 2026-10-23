@@ -39,17 +39,18 @@ not own minting the CSRF synchronizer token or seeding the theme cookie, the two
 `session::login` succeeds; those belong to the Design "CSRF protection" (REV-DESIGN-0008) and the theme-preference
 subject, and this Design names only the call sites (`session.insert("csrf_token", …)` inline in `local_login`, and
 `crate::auth::theme_cookie::set_theme_cookie`). It does not own how a following request becomes a resolved caller
-identity, the Design "Request authentication" (REV-DESIGN-0010). It does not own account recovery: PIN issuance and
-consumption (`backend/src/auth/recovery.rs`, `backend/src/models/password_reset_pin.rs`) and the `forgot_password` and
-`reset_password` handlers in `backend/src/routes/auth.rs` are the account recovery subject, though `reset_password`
-calls this subject's password policy as an interface. It does not own first-run bootstrap: the `setup_status` and
-`setup` handlers in `backend/src/routes/auth.rs`, the `run_bootstrap`, `seed_admin_if_configured` and
-`read_bootstrap_seed` functions in `backend/src/lib.rs`, and `user::create_first_admin` / `user::admin_exists` in
-`backend/src/models/user.rs` are the first-run bootstrap subject; all three entry points call this subject's shared
-policy with the administrator's email and display name as context. It does not own the account administration surface:
-`change_own_password` in `backend/src/routes/users/mod.rs` and `redeem_credential_link` in `backend/src/routes/auth.rs`
-mutate `local_credentials` and call this subject's password policy, but the surface itself (role and child-status
-mutation, session-version invalidation policy, the last-admin lock order) is the account administration subject.
+identity, the Design "Request authentication" (REV-DESIGN-0010). It does not own account recovery:
+[credential links](0027-credential-links.md) and
+[mailbox verification and email recovery](0028-account-mailbox-verification-and-email-recovery.md) own replacement
+authority and public recovery requests. Credential-link redemption calls this subject's password policy. It does not own
+first-run bootstrap: the `setup_status` and `setup` handlers in `backend/src/routes/auth.rs`, the `run_bootstrap`,
+`seed_admin_if_configured` and `read_bootstrap_seed` functions in `backend/src/lib.rs`, and `user::create_first_admin` /
+`user::admin_exists` in `backend/src/models/user.rs` are the first-run bootstrap subject; all three entry points call
+this subject's shared policy with the administrator's email and display name as context. It does not own the account
+administration surface: `change_own_password` in `backend/src/routes/users/mod.rs` and `redeem_credential_link` in
+`backend/src/routes/auth.rs` mutate `local_credentials` and call this subject's password policy, but the surface itself
+(role and child-status mutation, session-version invalidation policy, the last-admin lock order) is the account
+administration subject.
 
 Depends on: `crate::auth::session::login` to establish the session on success; `crate::models::user::find_by_email` and
 `crate::models::user::User` to resolve the account; `crate::services::enrichment::http::api_client`, which supplies the
@@ -58,10 +59,10 @@ SSRF-resistant HTTP client the breach check sends its outbound request through; 
 `password_breach_check_enabled`, `trusted_client_ip_header`, `local_auth_enabled` and `self_registration_enabled`
 fields.
 
-Depended on by: `routes/users/mod.rs`'s `change_own_password`, and `routes/auth.rs`'s `reset_password`,
-`redeem_credential_link` and `setup`, and `lib.rs`'s `seed_admin_if_configured`, each of which calls
-`password_policy::enforce_from_config` before writing a credential; the `reverie unlock-account <email>` CLI subcommand
-(`run_unlock_account` in `backend/src/lib.rs`), which clears account accounting out of band; and the sign-in page.
+Depended on by: `routes/users/mod.rs`'s `change_own_password`, and `routes/auth.rs`'s `redeem_credential_link` and
+`setup`, and `lib.rs`'s `seed_admin_if_configured`, each of which calls `password_policy::enforce_from_config` before
+writing a credential; the `reverie unlock-account <email>` CLI subcommand (`run_unlock_account` in
+`backend/src/lib.rs`), which clears account accounting out of band; and the sign-in page.
 
 ADR-0029 fixes local password sign-in as a co-equal authentication mode alongside OIDC, resolving to the same identity
 and session model with no path to administrator other than bootstrap; this Design is the mechanism that realises that
@@ -78,21 +79,19 @@ This ceiling is a product choice, not a value mandated by NIST or OWASP.
   computed once, at first use, from 32 random bytes generated at runtime (never a hard-coded value);
   `verify_against_dummy` verifies a candidate password against it and returns a `bool` that every caller discards,
   always `false`, so a caller can spend an Argon2id-verification-equivalent amount of work with nothing to verify
-  against. `HashLimiter` shares one Tokio semaphore across every request-path password and recovery-PIN hash or
-  verification. `HashPermit` moves owned inputs and an `Arc<OwnedSemaphorePermit>` clone into `spawn_blocking`; the
-  closure holds no database handle or lock. The synchronous kernels remain available for CLI commands, environment
-  seeding and test fixtures. First use of the lazy dummy hash runs inside a request's permit.
+  against. `HashLimiter` shares one Tokio semaphore across every request-path password hash or verification.
+  `HashPermit` moves owned inputs and an `Arc<OwnedSemaphorePermit>` clone into `spawn_blocking`; the closure holds no
+  database handle or lock. The synchronous kernels remain available for CLI commands, environment seeding and test
+  fixtures. First use of the lazy dummy hash runs inside a request's permit.
 - `backend/src/auth/password_policy.rs` holds `PasswordPolicy` (a config-derived view: `min_length`, `max_length`,
   `min_zxcvbn_score`, `breach_check_enabled`, `breach_check_url`), `PolicyError` (`TooShort`, `TooLong`, `TooWeak`,
   `Breached`), `check_strength` (zxcvbn, penalising any password containing one of the caller-supplied context words
   such as the account's email or display name), `check_breached` (the HIBP Pwned Passwords k-anonymity query), and
-  `enforce`. Registration, credential-link redemption, self-service change, PIN recovery, API setup, CLI bootstrap and
-  the startup environment seed all call `enforce_from_config` before hashing and database mutation. Setup and both
-  headless variants supply the administrator's email and display name as context. Registration and credential-link
-  redemption also supply both; self-service change uses the target's current name and optional email. Recovery supplies
-  the submitted email before resolving an account to preserve enumeration resistance. HTTP callers return policy
-  feedback in the RFC 9457 `detail` field, except PIN recovery, which returns its fixed generic reset error. Headless
-  bootstrap reports a policy rejection without logging the password.
+  `enforce`. Registration, credential-link redemption, self-service change, API setup, CLI bootstrap and the startup
+  environment seed all call `enforce_from_config` before hashing and database mutation. Setup and both headless variants
+  supply the administrator's email and display name as context. Registration and credential-link redemption also supply
+  both; self-service change uses the target's current name and optional email. HTTP callers return policy feedback in
+  the RFC 9457 `detail` field. Headless bootstrap reports a policy rejection without logging the password.
 - `backend/src/auth/rate_limit.rs` holds `PeerAddr` (a never-rejecting `FromRequestParts` wrapper around
   `ConnectInfo<SocketAddr>`, `None` when the test harness supplies no peer), the `LoginLimiter` type alias over
   `governor::DefaultKeyedRateLimiter<IpAddr>`, `build_login_limiter` (quota `per_min` per minute per key, burst equal to
@@ -105,21 +104,23 @@ This ceiling is a product choice, not a value mandated by NIST or OWASP.
   transaction). `password_hash` also gets a first value written directly by `user::create_first_admin` and
   `user::create_local`, both of which insert into `local_credentials` inline inside their own transaction rather than
   calling `set_password`. `create_local` accepts an optional hash; administrator creation supplies none. `set_password`
-  can write a first credential through credential-link redemption or PIN recovery, including for an OIDC-only account.
-  Only `change_own_password` requires an existing `local_credentials` row up front: it calls `find_by_user_id` and
-  answers a `422` ("this account has no password to change; it signs in through an identity provider") when there is
-  none. Its write uses `replace_verified_password`, an UPDATE conditional on the hash verified before the transaction,
-  so it cannot overwrite a concurrent change or insert a missing credential.
+  can write a first credential through administrator or host credential-link redemption, including for an OIDC-only
+  account. Public email recovery requires an existing password. Only `change_own_password` requires an existing
+  `local_credentials` row up front: it calls `find_by_user_id` and answers a `422` ("this account has no password to
+  change; it signs in through an identity provider") when there is none. Its write uses `replace_verified_password`, an
+  UPDATE conditional on the hash verified before the transaction, so it cannot overwrite a concurrent change or insert a
+  missing credential.
 - `backend/src/models/login_throttle.rs` owns `admit`, the locked `Attempt`, its `fail` and `succeed` commits, CLI
   `reset`, and bounded `delete_inactive`. All use the same lower-case email key, independent of account existence.
   Admission owns a PostgreSQL transaction until the credential outcome commits or cancellation rolls it back.
 - `backend/src/routes/auth.rs` holds `local_login` and `register`, and the shared `enforce_source_rate_limit` helper
-  that `local_login`, OIDC start, `register`, `setup`, `forgot_password` and `reset_password` call before provider,
-  policy or hashing work. `local_login` calls it immediately after the `local_auth_enabled` gate. In every handler that
-  carries a disabled-feature `404` gate (`local_login`, `register`, `forgot_password`, `reset_password`) that gate runs
-  before the per-source limiter check; `setup` carries no such gate at all, so its limiter check is the first thing that
-  runs. In every case the limiter check is skipped, not merely passed, when `client_ip` resolves to `None` (no TCP peer
-  supplied and no configured or matching trusted forwarded-for header): the `check_key` call is never made.
+  that `local_login`, OIDC start, `register`, `setup`, `forgot_password` and credential-link lookup/redemption call
+  before provider, policy or hashing work. `local_login` calls it immediately after the `local_auth_enabled` gate. In
+  every handler that carries a disabled-feature `404` gate (`local_login`, `register`, `forgot_password`,
+  credential-link lookup/redemption) that gate runs before the per-source limiter check; `setup` carries no such gate at
+  all, so its limiter check is the first thing that runs. In every case the limiter check is skipped, not merely passed,
+  when `client_ip` resolves to `None` (no TCP peer supplied and no configured or matching trusted forwarded-for header):
+  the `check_key` call is never made.
 - `frontend/src/routes/auth-login.tsx` is an uncontrolled `FormData` form that reads `GET /auth/setup/status` to decide
   whether to render the local form, an OIDC action, or both, and calls `loginLocal` on submit.
   `frontend/src/routes/auth-register.tsx` is the equivalent form for `register`, client-validated through
@@ -143,9 +144,9 @@ This ceiling is a product choice, not a value mandated by NIST or OWASP.
   as a literal argument.
 - `password_policy::enforce_from_config(config, password, user_inputs)` is the interface every other credential-setting
   handler calls: `routes/users/mod.rs`'s `change_own_password` (through a local `enforce_password_policy` wrapper that
-  maps `PolicyError` to `AppError::Validation`), and `routes/auth.rs`'s `reset_password`, `redeem_credential_link` and
-  `setup`, plus the environment/CLI bootstrap helper. Each caller supplies its own `user_inputs` (typically the target's
-  email and display name) so zxcvbn penalises a password that echoes them.
+  maps `PolicyError` to `AppError::Validation`), and `routes/auth.rs`'s `redeem_credential_link` and `setup`, plus the
+  environment/CLI bootstrap helper. Each caller supplies its own `user_inputs` (typically the target's email and display
+  name) so zxcvbn penalises a password that echoes them.
 - The HIBP Pwned Passwords range API (`https://api.pwnedpasswords.com/range`, the only supported endpoint) is queried
   with only a 5-character SHA-1 prefix of the candidate password, and with an `Add-Padding` header so the response size
   does not itself reveal whether the prefix had real hits. The request runs against the shared client's own 10-second
@@ -161,13 +162,13 @@ This ceiling is a product choice, not a value mandated by NIST or OWASP.
 - **`local_credentials.password_hash`.** One Argon2id PHC per user, never serialised or logged; only the application
   role can access it. `user::create_first_admin` inserts for API setup, CLI bootstrap and environment seed.
   `user::create_local` inserts credentials for registration; administrator creation supplies no password.
-  `local_credentials::set_password` upserts for credential-link redemption and PIN recovery, including a first
-  credential for an OIDC-only account. `replace_verified_password` updates for self-service change only when the stored
-  hash still matches the verified hash. Existing-account writers lock the user with `FOR NO KEY UPDATE` before touching
-  credentials; recovery then consumes its PIN before setting the password. The non-key lock permits PIN issuance's
-  foreign-key key-share lock. A successful change increments `session_version` in the same transaction. A stale
-  self-service write returns 422 without changing the credential or session version. Policy checks and hashing run
-  before any locked transaction.
+  `local_credentials::set_password` upserts for credential-link redemption, including a first credential for an
+  OIDC-only account through administrator or host authority. Public email recovery requires an existing password.
+  `replace_verified_password` updates for self-service change only when the stored hash still matches the verified hash.
+  Existing-account writers lock the user with `FOR NO KEY UPDATE` before touching credentials; redemption consumes its
+  replacement proof before setting the password. A successful change increments `session_version` in the same
+  transaction. A stale self-service write returns 422 without changing the credential or session version. Policy checks
+  and hashing run before any locked transaction.
 - **`local_login_throttle`.** Each `email_lower` row stores at most ten `completed_failures`, `locked_until` and
   `updated_at`. A no-op conflict update creates or locks the row through commit. The handler reads database wall time
   after acquiring the lock, so lock waiting does not make admission use a stale transaction-start timestamp. At
@@ -179,10 +180,10 @@ This ceiling is a product choice, not a value mandated by NIST or OWASP.
   eligible only when its block and every retained failure are absent or expired. Active blocks survive aged-out history.
   Password changes and recovery do not reset accounting. Request processing enforces expiry independently of cleanup.
 - **Source-state writers.** Startup builds distinct `login_limiter`, `recovery_limiter` and `oidc_limiter` governor
-  maps. Password login, setup and registration spend the first; forgot/reset-password and credential-link
-  lookup/redemption spend the second; OIDC start spends the third. Every map uses `login_rate_per_min` (default 10/min
-  per source), with the existing peer/trusted-header rule. The hourly sweep calls native `retain_recent` on each map,
-  preserving active allowance. Restart clears these process-local maps; account state persists in PostgreSQL.
+  maps. Password login, setup and registration spend the first; forgot-password and credential-link lookup/redemption
+  spend the second; OIDC start spends the third. Every map uses `login_rate_per_min` (default 10/min per source), with
+  the existing peer/trusted-header rule. The hourly sweep calls native `retain_recent` on each map, preserving active
+  allowance. Restart clears these process-local maps; account state persists in PostgreSQL.
 - **Hashing capacity.** Startup constructs one `HashLimiter` from `auth_hash_concurrency`
   (`REVERIE_AUTH_HASH_CONCURRENCY`, default 1, minimum 1, no configured maximum). Each permit allows one more parallel
   Argon2 operation of about 19 MiB. Request handlers acquire and release this shared capacity; each blocking closure
@@ -223,12 +224,12 @@ carrying `user_id`.
 begins its transaction and locks the normalised-email row, including the initially absent-row race. The lock order is
 permit, pool connection, then account row. A request waiting for capacity holds no pool connection. The cohort join in
 `join_pending` precedes capacity acquisition, as it precedes account `429` and credential `422`. Capacity rejection
-writes no throttle, credential or PIN state and claims no cohort win.
+writes no throttle or credential state and claims no cohort win.
 
 Login retains its permit until `Attempt::succeed` or `Attempt::fail` returns, releasing it before session login. Every
 other request-path caller acquires immediately before computation and releases immediately afterwards; password policy
-checks and database work stay outside those permits. Password change and PIN reset each use two separate permits for
-verification and new-password hashing.
+checks and database work stay outside those permits. Own-password change uses separate permits for verification and
+new-password hashing. Credential-link redemption hashes only the new password; forgot-password does no hashing.
 
 **Account admission and credential outcome.** An unexpired block rolls back acquisition and returns generic `429` plus
 `Retry-After`, without account lookup or verification. Rejection changes no protection state, even for a correct
@@ -285,7 +286,7 @@ order rather than by the test itself, which observes only the returned variant.
 - **Rate limiting.** Source and account rejection each produce generic `429` with positive integer `Retry-After`. Source
   rejection precedes account-state creation. Account rejection precedes both real and dummy hashing. OIDC start retains
   its `303 /login?outcome=throttled` navigation and writes no attempt on rejection.
-- **Hashing capacity exhausted.** After a FIFO wait of at most 30 seconds, all seven hashing credential endpoints return
+- **Hashing capacity exhausted.** After a FIFO wait of at most 30 seconds, all five hashing credential endpoints return
   `503 auth-busy`, title "Service Unavailable" and detail "The server is busy. Try again in a moment." The response has
   no `Retry-After`. Credential forms render that detail. For login, local-auth `404`, source `429` and signed-in or
   cohort `409` precede capacity `503`; account `429` follows it. Blocking-task failures map to the generic internal
@@ -294,11 +295,9 @@ order rather than by the test itself, which observes only the returned variant.
   error's `Display` text as the response's `detail` field for HTTP setup, registration, credential-link redemption and
   self-service change: `TooShort`/`TooLong` name the configured bound, `TooWeak` carries zxcvbn's feedback (or a generic
   message when zxcvbn returns none), and `Breached` returns the fixed sentence "this password has appeared in a known
-  data breach; choose a password you have not used elsewhere". PIN reset (the account recovery subject), discards the
-  `PolicyError` entirely and answers its own fixed generic message instead, so there a weak password reads identically
-  to a bad PIN. CLI bootstrap and startup seeding propagate policy rejection as a process error before creating the
-  administrator. `register_weak_password_returns_422` and `register_invalid_email_returns_422` cover the client-visible
-  shape of a registration rejection.
+  data breach; choose a password you have not used elsewhere". CLI bootstrap and startup seeding propagate policy
+  rejection as a process error before creating the administrator. `register_weak_password_returns_422` and
+  `register_invalid_email_returns_422` cover the client-visible shape of a registration rejection.
 - **HIBP unreachable, slow, or erroring.** `check_breached` treats a transport error, any non-2xx status (including a
   `429` or `503` from HIBP itself), an unreadable response body, and a count that cannot be parsed on the one matching
   suffix line, all identically: log a `warn` and return `false` (not breached). `enforce` then proceeds on strength

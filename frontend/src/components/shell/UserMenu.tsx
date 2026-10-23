@@ -92,6 +92,7 @@ export function UserChip(): ReactElement | null {
           {me.role === "admin" ? (
             <DropdownMenuItem href="/admin/settings">Settings</DropdownMenuItem>
           ) : null}
+          <DropdownMenuItem href="/account/email">Email address</DropdownMenuItem>
           {me.has_local_password ? (
             <DropdownMenuItem href="/account/password">Change password</DropdownMenuItem>
           ) : null}

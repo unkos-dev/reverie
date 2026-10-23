@@ -15,6 +15,8 @@ pub mod enrichment;
 pub mod epub;
 pub mod files;
 pub mod ingestion;
+/// Authentication mail: payload encryption and bounded SMTP submission.
+pub mod mail;
 /// Metadata extraction, drafting, sanitisation, ISBN normalisation,
 /// and the value-vs-canonical inversion helpers.
 pub mod metadata;

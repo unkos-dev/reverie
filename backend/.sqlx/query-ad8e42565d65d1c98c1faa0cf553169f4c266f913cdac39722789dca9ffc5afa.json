@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs SET enqueued_at = now() - interval '20 minutes', next_attempt_at = now() - interval '20 minutes', expires_at = now() - interval '5 minutes' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad8e42565d65d1c98c1faa0cf553169f4c266f913cdac39722789dca9ffc5afa"
+}

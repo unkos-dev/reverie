@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs SET state = 'expired', terminal_at = clock_timestamp(), nonce = NULL, payload = NULL WHERE id IN (SELECT id FROM mail_jobs WHERE state = 'pending' AND expires_at <= clock_timestamp() ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bce4cfef4b8e92f6d9a7ac72b09b15014b883f88cdd6a72e9ad973eca5d7cc6c"
+}

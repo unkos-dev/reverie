@@ -41,6 +41,7 @@ beforeEach(() => {
     setup_required: false,
     local_auth_enabled: true,
     oidc_enabled: false,
+    email_recovery_enabled: false,
   });
   mockAuthMe(200);
 });
@@ -145,6 +146,7 @@ describe("AuthenticatedBoundary", () => {
       setup_required: false,
       local_auth_enabled: true,
       oidc_enabled: true,
+      email_recovery_enabled: false,
     });
     mockAuthMe(401);
     const loc = mockLocation();

@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mail_jobs (id, user_id, purpose, proof_digest, authority_kind, enqueued_at, next_attempt_at, expires_at, nonce, payload) SELECT $1::uuid, $2::uuid, $3::text, $4::bytea, $5::text, c.t, c.t, COALESCE($6::timestamptz, c.t + interval '24 hours'), $7::bytea, $8::bytea FROM (SELECT clock_timestamp() AS t) c",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Text",
+        "Timestamptz",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "37bacd39bd52ae580dfb3d234fe57ad0d26e25e6e747e8a06dea49d9b2628450"
+}

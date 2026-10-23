@@ -134,12 +134,14 @@ export const queryKeys = {
     detail: (id: string) => ["shelves", "detail", id] as const,
   },
   users: {
+    linkEmail: (id: string, jobId: string) => ["users", id, "link-email", jobId] as const,
     /** Root namespace; invalidate to refetch every users-* slot. */
     all: ["users"] as const,
     /** `GET /api/v1/users` list (admin only). */
     list: () => ["users", "list"] as const,
   },
   auth: {
+    emailVerification: () => ["auth", "email-verification"] as const,
     /** `/auth/me` — current authenticated user identity. */
     me: () => ["auth", "me"] as const,
     /** `/auth/me/preferences` — the caller's library display preferences. */

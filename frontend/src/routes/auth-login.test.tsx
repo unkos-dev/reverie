@@ -22,6 +22,7 @@ type Status = {
   setup_required: boolean;
   local_auth_enabled: boolean;
   oidc_enabled: boolean;
+  email_recovery_enabled: boolean;
   password_min_length: number;
   password_max_length: number;
 };
@@ -80,6 +81,7 @@ describe("auth-login", () => {
         password_min_length: 15,
         password_max_length: 256,
         oidc_enabled: false,
+        email_recovery_enabled: false,
       });
       const user = userEvent.setup();
 
@@ -105,6 +107,7 @@ describe("auth-login", () => {
       password_min_length: 15,
       password_max_length: 256,
       oidc_enabled: false,
+      email_recovery_enabled: false,
     });
     const user = userEvent.setup();
 
@@ -123,6 +126,7 @@ describe("auth-login", () => {
       password_min_length: 15,
       password_max_length: 256,
       oidc_enabled: false,
+      email_recovery_enabled: false,
     });
     expect(screen.queryByRole("button", { name: /OIDC/ })).not.toBeInTheDocument();
   });
@@ -135,6 +139,7 @@ describe("auth-login", () => {
       password_min_length: 15,
       password_max_length: 256,
       oidc_enabled: true,
+      email_recovery_enabled: false,
     });
     const user = userEvent.setup();
 
@@ -150,6 +155,7 @@ describe("auth-login", () => {
       password_min_length: 15,
       password_max_length: 256,
       oidc_enabled: false,
+      email_recovery_enabled: false,
     });
     expect(await screen.findByTestId("setup-page")).toBeInTheDocument();
   });
@@ -161,6 +167,7 @@ const outcomeStatus = {
   password_min_length: 15,
   password_max_length: 256,
   oidc_enabled: true,
+  email_recovery_enabled: false,
 };
 
 const outcomeCases = [

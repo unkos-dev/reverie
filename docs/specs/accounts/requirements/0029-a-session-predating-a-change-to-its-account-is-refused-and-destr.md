@@ -21,8 +21,8 @@ A session that survives a privilege, credential, or status change on its own acc
 [OWASP Session Management cheat sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
 calls for a session to be renewed or invalidated whenever the privilege level it carries changes. Every writer of this
 change is an administrative or self-service recovery action (a role or child-status change, an account disable,
-credential-link redemption, a self-service password change, or a PIN-based recovery reset), so a session that outlives
-one of them would let a caller keep acting under a role, scope, or credential the account no longer has.
+redemption of an administrator, host or emailed reset link, or a self-service password change), so a session that
+outlives one of them would let a caller keep acting under a role, scope, or credential the account no longer has.
 [REV-ADR-0056](../../../adr/0056-api-authorisation-scope-role-and-ownership-axes-over-reverie-issued-credentials.md)
 records the authorisation model this obligation keeps honest across a change to the underlying account.
 
@@ -31,8 +31,8 @@ records the authorisation model this obligation keeps honest across a change to 
 - A session opened before its account's session version changes is refused on its next request and its server-side row
   is destroyed. Pinned by `session_version_bump_forces_logout` in `backend/src/routes/auth.rs`, which bumps the version
   directly.
-- A session opened before a PIN-based password reset is refused afterwards. Pinned by
-  `reset_password_invalidates_existing_sessions` in `backend/src/routes/auth.rs`.
+- A session opened before a password reset through an emailed recovery link is refused afterwards. Pinned by
+  `smtp_recovery_redemption_invalidates_sessions` in `backend/src/routes/auth.rs`.
 - A role change, a child-status change, credential-link redemption and a self-service password change each bump the
   session version in the same transaction as the change. Verified by inspection of `update_role`, `update_child_status`
   and `change_own_password` in `backend/src/routes/users/mod.rs`, and `redeem_credential_link` in

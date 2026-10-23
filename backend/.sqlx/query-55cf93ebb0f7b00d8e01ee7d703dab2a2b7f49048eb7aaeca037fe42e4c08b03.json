@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(bool_or(state IN ('pending', 'in_progress'))\n                           FILTER (WHERE proof_digest = $3::bytea), FALSE) AS \"live_delivery!\",\n                  max(enqueued_at) AS last_enqueued,\n                  count(*) FILTER (WHERE enqueued_at > $4::timestamptz)\n                      AS \"recent!\",\n                  count(*) FILTER (WHERE proof_digest = $3::bytea) AS \"for_proof!\"\n             FROM mail_jobs WHERE user_id = $1 AND purpose = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "live_delivery!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_enqueued",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "recent!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "for_proof!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "55cf93ebb0f7b00d8e01ee7d703dab2a2b7f49048eb7aaeca037fe42e4c08b03"
+}

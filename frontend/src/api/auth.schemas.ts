@@ -34,8 +34,6 @@ export function newPasswordField(policy: PasswordLengthPolicy): z.ZodString {
     }
   });
 }
-/** A recovery PIN is opaque here; the server validates its value. */
-export const pinField = z.string().trim().min(1);
 /** Login takes an existing credential, so no new-password policy applies. */
 export const currentPasswordField = z.string().min(1);
 
@@ -49,12 +47,7 @@ export const SetupAdminSchema = z.object({
 });
 /** Body for `POST /auth/forgot-password`. */
 export const ForgotPasswordSchema = z.object({ email: emailField });
-/** Body for `POST /auth/reset-password`. */
-export const ResetPasswordSchema = z.object({
-  email: emailField,
-  pin: pinField,
-  new_password: z.string().min(1),
-});
+export const emailProofTokenField = z.string().regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/);
 /** Body for `POST /auth/register` (self-service registration). */
 export const RegisterSchema = z.object({
   email: emailField,

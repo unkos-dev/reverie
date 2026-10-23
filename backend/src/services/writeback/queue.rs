@@ -672,8 +672,6 @@ mod tests {
             password_min_zxcvbn_score: 2,
             password_breach_check_enabled: true,
             self_registration_enabled: false,
-            recovery_pin_ttl_secs: 900,
-            recovery_pin_dir: "./reverie-recovery".into(),
             trusted_client_ip_header: None,
             migration_database_url: None,
             auto_migrate: false,
@@ -708,7 +706,6 @@ mod tests {
                 enabled: false,
                 page_size: 50,
                 realm: "Reverie OPDS".into(),
-                public_url: None,
             },
             security: crate::config::SecurityConfig {
                 behind_https: false,
@@ -722,6 +719,8 @@ mod tests {
             googlebooks_api_key: None,
             hardcover_api_token: None,
             operator_contact: None,
+            public_url: None,
+            mail: crate::config::MailConfig::default(),
         };
         (config, files)
     }

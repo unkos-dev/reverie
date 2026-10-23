@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ($4::timestamptz > clock_timestamp()) AS \"unexpired!\",\n                  u.email AS current_email,\n                  (u.email_verified_at IS NOT NULL\n                   AND EXISTS (SELECT 1 FROM local_credentials c WHERE c.user_id = u.id))\n                      AS \"recoverable!\",\n                  (u.disabled_at IS NULL AND CASE $2::text\n                      WHEN 'credential_link' THEN EXISTS (\n                          SELECT 1 FROM credential_links l\n                           WHERE l.user_id = u.id AND l.token_hash = $3::bytea\n                             AND l.expires_at > clock_timestamp())\n                      WHEN 'verification' THEN EXISTS (\n                          SELECT 1 FROM account_email_proofs p\n                           WHERE p.user_id = u.id AND p.purpose = 'verification'\n                             AND p.token_hash = $3::bytea AND p.expires_at > clock_timestamp())\n                      WHEN 'recovery' THEN EXISTS (\n                          SELECT 1 FROM account_email_proofs p\n                           WHERE p.user_id = u.id AND p.purpose = 'recovery'\n                             AND p.token_hash = $3::bytea AND p.expires_at > clock_timestamp())\n                      ELSE FALSE\n                  END) AS \"usable!\"\n             FROM users u WHERE u.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unexpired!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "current_email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "recoverable!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "usable!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "974b502a6e1f10ef3910f8f145ccad959012492d0c5633582788e49f09bd77ed"
+}

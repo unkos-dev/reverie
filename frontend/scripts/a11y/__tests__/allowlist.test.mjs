@@ -147,7 +147,11 @@ describe("a11y verdict — liveness gate", () => {
 
 describe("a11y parseTargets — env contract + fail-closed target parsing", () => {
   it("defaults to a route that ships, so the gate cannot certify unreachable markup", () => {
-    expect(parseTargets(undefined)).toEqual(["/forgot-password"]);
+    expect(parseTargets(undefined)).toEqual([
+      "/forgot-password",
+      "/verify-email",
+      "/reset-password",
+    ]);
   });
 
   it("splits comma-separated paths, trims whitespace, drops empties", () => {

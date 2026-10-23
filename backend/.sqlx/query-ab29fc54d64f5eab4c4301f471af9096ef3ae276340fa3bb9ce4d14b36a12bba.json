@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_email_proofs (user_id, purpose, email, token_hash, expires_at) VALUES ($1, 'verification', $2, $3, now() + interval '1 hour')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ab29fc54d64f5eab4c4301f471af9096ef3ae276340fa3bb9ce4d14b36a12bba"
+}

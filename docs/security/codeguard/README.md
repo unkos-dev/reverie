@@ -92,14 +92,34 @@ the deviation over editing the imported file.
 **Override:** `codeguard-0-input-validation-injection.md` → "Caching and Transport" and
 `codeguard-0-authentication-mfa.md` → "Authentication Flow Hardening" and "Recovery and Reset".
 
-**Reverie's position:** Credential links use the browser-facing origin, including HTTP for private deployments.
+**Reverie's position:** Administrator, host and emailed links support HTTP origins for private deployments.
 
 **Rationale:** A private Docker Compose installation can operate without a reverse proxy or certificates. Publicly
 reachable deployments should use HTTPS; HTTP provides no confidentiality for tokens or passwords in transit.
 
-**Compensating controls:** Issuance requires an administrator browser session. Links are account-bound, expire after
-72 hours and are consumed once; only their hashes are stored. Token-bearing responses use `Cache-Control: no-store`.
-These controls limit credential-link exposure but do not protect HTTP traffic from network interception.
+**Compensating controls:** Administrator issuance requires an administrator browser session; host issuance requires
+host and database access. Administrator links last 72 hours, host links ten minutes and email recovery proofs fifteen
+minutes. Each binds one enabled account and is consumed once. Verification challenges last 24 hours and also require the
+matching account session. Proof tables store only hashes. Copied links use the browser's origin; host and emailed links
+use the validated public URL, never request headers. Token-bearing responses use `Cache-Control: no-store`, and browser
+loaders remove fragments before requests. Queued recipients and message bodies use AES-256-GCM with an external key;
+this protects stored payloads, not HTTP traffic or email after submission. These controls do not prevent interception on
+an HTTP network path.
+
+### Explicit plaintext SMTP
+
+**Override:** `codeguard-0-input-validation-injection.md` → "Caching and Transport" and
+`codeguard-0-authentication-mfa.md` → "Authentication Flow Hardening".
+
+**Reverie's position:** Operators may explicitly select plaintext SMTP, including optional relay authentication.
+
+**Rationale:** A trusted local relay may provide submission without TLS. Implicit TLS is the default; STARTTLS requires
+a successful upgrade, and neither encrypted mode falls back to plaintext.
+
+**Compensating controls:** The setting is explicit, submissions are bounded to 30 seconds and typed mailboxes reject
+header injection. TLS modes use platform certificate verification. Operators are warned that plaintext exposes relay
+credentials, recipients, bearer links and message bodies to the network path. Queue encryption does not protect this
+transport; selecting plaintext accepts that residual risk.
 
 ### 1. Session cookie `Secure` flag omitted on plain-HTTP deployments
 
@@ -213,45 +233,6 @@ per-source rate limiting plus a DB-backed per-account backoff on login;
 constant-work verification so login latency does not reveal account existence;
 the bootstrap path is the only way to mint the first administrator. First-party
 MFA is a planned later step.
-
-### 6. Email-less PIN password recovery
-
-**Override:** Standard recovery guidance assumes an email-based reset link.
-Reverie has no outbound email and must be recoverable on an isolated host.
-
-**Reverie's position:** Forgot-password writes a CSPRNG PIN to a per-user
-operator-readable file (`<recovery_pin_dir>/<user_id>.pin`, mode 0600, in a
-directory created mode 0700, outside any web-served directory) as
-proof-of-host-access; the user completes the reset with that PIN. The per-user
-path keeps concurrent recoveries for different accounts from colliding. See
-`backend/src/auth/recovery.rs` and the `/auth/forgot-password` +
-`/auth/reset-password` handlers.
-
-**Rationale:** Recovery must work with no email provider and no external
-dependency, while still requiring possession of a host-access secret rather than
-just knowledge of an email address.
-
-**Compensating controls:**
-
-- PIN generated from the OS CSPRNG; stored at rest only as an Argon2id hash, never
-  in clear in the database
-- Single-use: consumption is a row-atomic guarded update, so a PIN cannot be
-  redeemed twice
-- Short expiry (`recovery_pin_ttl_secs`, default 15 minutes); at most one active
-  PIN per user (a new request supersedes the prior one)
-- DB-row-before-file on issue and consume-before-file-removal on reset, so a
-  crash never leaves a usable cleartext PIN without a live row
-- Issuance is serialized per account by a Postgres advisory lock held across
-  both the rotation and the file write, so the published file always describes
-  the single active row even when the API and the `reset-password` CLI issue
-  concurrently; the file itself is staged and renamed into place, so a reader
-  never sees a partial PIN
-- Per-source rate limiting on both recovery endpoints
-- Generic responses on both endpoints, and equivalent Argon2 work on the
-  unknown-account path so password hashing does not reveal whether an account
-  exists; the known-account path's small database and file-write timing
-  difference is accepted
-- No auto-login after reset: the user must re-authenticate with the new password
 
 ### 7. Scope authorization verified by a generated-spec CI matrix, not by this list
 

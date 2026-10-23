@@ -55,8 +55,10 @@ from the loaded `Config`, and every subsystem reachable from `AppState::config` 
 sub-struct threaded into a service constructor; `backend/src/lib.rs`'s `build_router_with_session_store`, which reads
 `config.security.behind_https` to decide the session cookie's `Secure` attribute (`backend/src/routes/auth.rs` only
 tests this behaviour); `backend/src/security/headers.rs`, which reads the same field for HSTS emission; `run_bootstrap`,
-`run_reset_password` and `run_unlock_account` (`backend/src/lib.rs`), CLI subcommands that call `Config::from_env`
-directly rather than through `crate::run`; the `reverie print-config-schema` CLI subcommand and the two drift tests
+`run_unlock_account` (`backend/src/lib.rs`), CLI subcommands that call `Config::from_env` directly rather than through
+`crate::run`; `run_reset_password`, which uses `Config::host_recovery_from_env` for only the database credential and
+required public origin; `run_send_test_email`, which uses `MailTransportConfig::from_env` for only transport, sender and
+support settings; the `reverie print-config-schema` CLI subcommand and the two drift tests
 (`backend/tests/gen_config_ref.rs`, `backend/tests/gen_config_schema.rs`) that gate the generated artifacts this subject
 renders.
 
@@ -165,8 +167,8 @@ emits no `Content-Security-Policy` header. Nothing else in the process mutates a
 (`backend/src/state.rs`) holds a clone no later request handler writes back.
 
 `REVERIE_AUTH_HASH_CONCURRENCY` maps to the flat `auth_hash_concurrency: u32` field, default 1, minimum 1, with no
-configured maximum. It limits request-path password and recovery-PIN hashing per process. Each permit allows one more
-parallel Argon2 operation of about 19 MiB; login holds one database connection per permit. The value is independent of
+configured maximum. It limits request-path password hashing per process. Each permit allows one more parallel Argon2
+operation of about 19 MiB; login holds one database connection per permit. The value is independent of
 `REVERIE_DB_MAX_CONNECTIONS` and is fixed for the process lifetime. The 30-second capacity wait is an internal constant.
 
 The ingestion configuration exposes an EPUB-only accepted-format set and independent imported/duplicate cleanup options,
@@ -216,9 +218,9 @@ fields.
 
 Normal server startup then calls `Config::validate_server`, which rejects a missing, empty or whitespace-only
 `DATABASE_URL_INGESTION` with `ConfigError::MissingVar` before CSP finalisation, tracing, database pools, workers or
-serving. Operators must supply the dedicated `reverie_ingestion` DSN. Bootstrap, reset-password and unlock-account use
-the shared loader without this server check. Migration reads only its migration credential; schema printing reads no
-environment.
+serving. Operators must supply the dedicated `reverie_ingestion` DSN. Bootstrap and unlock-account use the shared loader
+without this server check. Host recovery and test mail use their narrow loaders and read no ingestion credential.
+Migration reads only its migration credential; schema printing reads no environment.
 
 Omitting `REVERIE_OPDS_ENABLED=false` from that load changes the outcome at step 8 alone: `OpdsConfig::default()` sets
 `enabled` to `true`, so `validate_opds_config` finds `enabled` true and `public_url` still `None`, and

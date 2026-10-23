@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, purpose, state, attempt_count, nonce AS \"nonce!\", payload AS \"payload!\",\n                      EXTRACT(EPOCH FROM expires_at - enqueued_at)::float8 AS \"lifetime!\",\n                      enqueued_at = next_attempt_at AS \"due_at_enqueue!\"\n                 FROM mail_jobs ORDER BY enqueued_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "purpose",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "purpose"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "attempt_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "attempt_count"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "nonce!",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "nonce"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "payload!",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "mail_jobs",
+            "name": "payload"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "lifetime!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "due_at_enqueue!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "88f8fcb6b4b3c77fc92088a14ad4036d71c9ba13f2647a300b00b4a1083134d9"
+}

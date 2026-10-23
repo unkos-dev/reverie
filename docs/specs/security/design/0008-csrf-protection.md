@@ -94,10 +94,10 @@ per-request handle onto the session store. Depended on by: every mutating reques
   already populated by the time it runs.
 
 The pre-authentication mutations (`POST /auth/local/login`, `/auth/setup`, `/auth/register`, forgot-password and
-reset-password) sit outside the gate because no session names a user yet at the point they run. A cross-site HTML form
-cannot reach them: their bodies go through `ApiJson`, which answers `415` to a form content type (the Design "API error
-contract and OpenAPI" owns that extractor), and no CORS layer exists in the backend, so a cross-site script request
-carrying a JSON body fails its preflight before it can reach the handler.
+credential-link lookup/redemption) sit outside the gate because no session names a user yet at the point they run. A
+cross-site HTML form cannot reach them: their bodies go through `ApiJson`, which answers `415` to a form content type
+(the Design "API error contract and OpenAPI" owns that extractor), and no CORS layer exists in the backend, so a
+cross-site script request carrying a JSON body fails its preflight before it can reach the handler.
 
 ### Client: cache, inject, retry
 

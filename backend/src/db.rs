@@ -1136,6 +1136,85 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_pin_retirement_migration_restores_only_the_schema(pool: PgPool) {
+        let down = include_str!("../migrations/20261021000000_mail_recovery.down.sql");
+        let up = include_str!("../migrations/20261021000000_mail_recovery.up.sql");
+        let present = || async {
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM pg_class WHERE relname = 'password_reset_pins'"
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+        assert_eq!(present().await, Some(0));
+        sqlx::raw_sql(down).execute(&pool).await.unwrap();
+        assert_eq!(present().await, Some(1));
+        assert!(
+            sqlx::query_scalar!(
+                r#"SELECT has_table_privilege('reverie_app', oid, 'INSERT') AS "allowed!"
+                 FROM pg_class WHERE relname = 'password_reset_pins'"#
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        );
+        sqlx::raw_sql(up).execute(&pool).await.unwrap();
+        assert_eq!(present().await, Some(0));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_queue_migration_down_removes_new_state_and_up_restores_it(pool: PgPool) {
+        let down = include_str!("../migrations/20261021000000_mail_recovery.down.sql");
+        let up = include_str!("../migrations/20261021000000_mail_recovery.up.sql");
+        let user = sqlx::query_scalar!(
+            "INSERT INTO users (display_name, email) VALUES ('Round Trip', 'trip@example.org') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::raw_sql(down).execute(&pool).await.unwrap();
+        let present = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM pg_class
+                WHERE relname IN ('mail_jobs', 'account_email_proofs')"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let column = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM information_schema.columns
+                WHERE table_name = 'users' AND column_name = 'email_verified_at'"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((present, column), (0, 0));
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM users WHERE id = $1", user)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+        sqlx::raw_sql(up).execute(&pool).await.unwrap();
+        let restored = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM pg_class
+                WHERE relname IN ('mail_jobs', 'account_email_proofs')"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(restored, 2);
+        assert_eq!(
+            sqlx::query_scalar!("SELECT email_verified_at FROM users WHERE id = $1", user)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn path_claim_backfill_deduplicates_retained_pair_and_conflict_rolls_back(pool: PgPool) {
         let library = crate::models::storage_library::default_library_id(&pool)
             .await

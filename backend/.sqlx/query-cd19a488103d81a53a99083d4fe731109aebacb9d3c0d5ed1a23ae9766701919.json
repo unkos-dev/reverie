@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs SET state = 'accepted', nonce = NULL, payload = NULL, enqueued_at = now() - make_interval(days => $2), next_attempt_at = now() - make_interval(days => $2), terminal_at = now() - make_interval(days => $2) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cd19a488103d81a53a99083d4fe731109aebacb9d3c0d5ed1a23ae9766701919"
+}

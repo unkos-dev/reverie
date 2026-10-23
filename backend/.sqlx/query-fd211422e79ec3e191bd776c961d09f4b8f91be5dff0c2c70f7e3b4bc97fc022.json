@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT has_table_privilege('reverie_app', oid, 'INSERT') AS \"allowed!\"\n                 FROM pg_class WHERE relname = 'password_reset_pins'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "allowed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fd211422e79ec3e191bd776c961d09f4b8f91be5dff0c2c70f7e3b4bc97fc022"
+}

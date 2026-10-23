@@ -1,169 +1,150 @@
-/**
- * `/forgot-password` — email-less PIN recovery.
- *
- * Two phases. The request phase posts the email and always returns a
- * generic success (no account enumeration); the operator reads the
- * issued PIN from the server host file and hands it to the user. The
- * reset phase takes that PIN plus a new password. The carried email
- * drives the second phase, so it lives in component state while the rest
- * of each form stays uncontrolled (`FormData`). Reset does not establish
- * a session, so on success it routes to the login screen.
- */
-import { useMutation } from "@tanstack/react-query";
-import { useState, type ReactElement, type SyntheticEvent } from "react";
-import { Link, useNavigate } from "react-router";
-import { toast } from "sonner";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from "react";
+import { Link, Navigate } from "react-router";
 
 import { ApiError } from "@/api";
-import { requestPasswordReset, resetPassword } from "@/api/auth";
-import { emailField, pinField } from "@/api/auth.schemas";
-import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
+import { fetchSetupStatus, requestPasswordReset } from "@/api/auth";
+import { emailField } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formString } from "@/lib/form";
+import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
 
-const RECOVERY_NOTICE =
-  "If that account exists, a recovery PIN was written to the server. Enter it below with a new password.";
-
-/** Route component for `/forgot-password`. */
 export function Component(): ReactElement {
-  const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
-  const navigate = useNavigate();
+  const settings = useQuery({
+    queryKey: queryKeys.auth.setupStatus(),
+    queryFn: ({ signal }) => fetchSetupStatus(signal),
+    retry: false,
+    staleTime: Infinity,
+  });
   const [email, setEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const requestMutation = useMutation({
+  const sentTitle = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (email !== null) sentTitle.current?.focus();
+  }, [email]);
+  const request = useMutation({
     mutationFn: (submitted: string) => requestPasswordReset(submitted),
     onSuccess: (_data, submitted) => {
       setEmail(submitted);
-      toast.info(RECOVERY_NOTICE);
     },
-    onError: (err) => {
-      const message =
-        err instanceof ApiError && err.detail !== "" ? err.detail : "Could not start recovery.";
-      setError(message);
-      toast.error(message);
-    },
-  });
-
-  const resetMutation = useMutation({
-    mutationFn: ({ pin, newPassword }: { pin: string; newPassword: string }) =>
-      resetPassword(email ?? "", pin, newPassword),
-    onSuccess: () => {
-      toast.success("Password reset. Sign in with your new password.");
-      void navigate("/login");
-    },
-    onError: (err) => {
-      const message =
-        err instanceof ApiError && err.detail !== "" ? err.detail : "Could not reset the password.";
-      setError(message);
-      toast.error(message);
+    onError: (cause) => {
+      setError(
+        cause instanceof ApiError && cause.status === 429
+          ? cause.detail
+          : "Could not send the request. Try again.",
+      );
     },
   });
-
-  function handleRequest(e: SyntheticEvent<HTMLFormElement>): void {
-    e.preventDefault();
+  function submit(event: SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
     setError(null);
-    const data = new FormData(e.currentTarget);
-    const parsed = emailField.safeParse(formString(data, "email"));
+    const parsed = emailField.safeParse(formString(new FormData(event.currentTarget), "email"));
     if (!parsed.success) {
       setError("Enter a valid email address.");
       return;
     }
-    requestMutation.mutate(parsed.data);
+    request.mutate(parsed.data);
   }
-
-  function handleReset(e: SyntheticEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    if (!ready) return;
-    setError(null);
-    const data = new FormData(e.currentTarget);
-    const pin = pinField.safeParse(formString(data, "pin"));
-    if (!pin.success) {
-      setError("Enter the recovery PIN.");
-      return;
-    }
-    const newPassword = formString(data, "new_password");
-    const passwordError = validate(newPassword);
-    if (passwordError !== undefined) {
-      setError(passwordError);
-      return;
-    }
-    resetMutation.mutate({ pin: pin.data, newPassword: newPassword });
-  }
-
-  if (email === null) {
-    return (
-      <AuthShell
-        title="Forgot password"
-        description="Enter your email to start recovery."
-        footer={<BackToSignIn />}
-      >
-        <form key="request" onSubmit={handleRequest} className="flex flex-col gap-4" noValidate>
-          <Field>
-            <FieldLabel htmlFor="email">Email</FieldLabel>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              aria-invalid={error !== null || undefined}
-            />
-          </Field>
-          {error !== null ? <FieldError>{error}</FieldError> : null}
-          <Button type="submit" isDisabled={requestMutation.isPending}>
-            Send recovery PIN
-          </Button>
-        </form>
-      </AuthShell>
-    );
-  }
-
-  return (
-    <AuthShell title="Enter recovery PIN" description={RECOVERY_NOTICE} footer={<BackToSignIn />}>
-      <form key="reset" onSubmit={handleReset} className="flex flex-col gap-4" noValidate>
-        <Field>
-          <FieldLabel htmlFor="pin">Recovery PIN</FieldLabel>
-          <Input
-            id="pin"
-            name="pin"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            required
-            aria-invalid={error !== null || undefined}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="new_password">New password</FieldLabel>
-          <Input
-            id="new_password"
-            name="new_password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={error !== null || undefined}
-          />
-          <PasswordPolicyHint policy={policy} failed={policyError} />
-        </Field>
-        {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" isDisabled={resetMutation.isPending || !ready}>
-          Reset password
-        </Button>
-      </form>
-    </AuthShell>
-  );
-}
-
-function BackToSignIn(): ReactElement {
-  return (
+  const footer = (
     <Link to="/login" className="hover:text-fg underline underline-offset-4">
       Back to sign in
     </Link>
+  );
+  if (settings.data === undefined) {
+    return (
+      <AuthShell title="" footer={footer}>
+        {settings.isError ? (
+          <>
+            <FieldError>Could not load sign-in settings.</FieldError>
+            <Button
+              className="mt-4 w-full"
+              isDisabled={settings.isFetching}
+              onPress={() => {
+                void settings.refetch();
+              }}
+            >
+              Try again
+            </Button>
+          </>
+        ) : (
+          <div role="status" aria-label="Loading sign-in settings">
+            <Skeleton className="h-6 w-40" />
+          </div>
+        )}
+      </AuthShell>
+    );
+  }
+  if (!settings.data.local_auth_enabled) return <Navigate to="/login" replace />;
+  if (email !== null) {
+    return (
+      <AuthShell
+        title={
+          <h1 ref={sentTitle} tabIndex={-1}>
+            Check your email
+          </h1>
+        }
+        description={`Check ${email} for a password reset link. The email says when the link expires.`}
+        footer={footer}
+      >
+        <div className="flex flex-col gap-4">
+          <p>
+            No email after a few minutes? Check your spam folder, or ask your administrator for a
+            link.
+          </p>
+          <Button
+            variant="outline"
+            className="w-full"
+            onPress={() => {
+              setEmail(null);
+              setError(null);
+              request.reset();
+            }}
+          >
+            Use a different email
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+  if (!settings.data.email_recovery_enabled) {
+    return (
+      <AuthShell
+        title="Forgot password"
+        description="Password reset by email isn't available on this server. Ask your administrator for a link to reset your password."
+        footer={footer}
+      >
+        {null}
+      </AuthShell>
+    );
+  }
+  return (
+    <AuthShell
+      title="Forgot password"
+      description="Enter your account's email address."
+      footer={footer}
+    >
+      <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
+        <Field>
+          <FieldLabel htmlFor="email">Email</FieldLabel>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            aria-invalid={error !== null || undefined}
+          />
+        </Field>
+        {error !== null ? <FieldError>{error}</FieldError> : null}
+        <Button type="submit" className="w-full" isDisabled={request.isPending}>
+          Send reset link
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

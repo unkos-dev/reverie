@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET email = $1, updated_at = now(), email_verified_at = CASE WHEN $3 THEN NULL ELSE email_verified_at END WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb4f562107a16545396047dc786e1e2827e42352b331192268f52b47d8a4ea38"
+}

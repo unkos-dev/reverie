@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM account_email_proofs WHERE user_id = ANY($1) AND expires_at <= clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a84eb5ec81f0deeb98129bf74f612f7c5dbabc8c92ebe4d6e2ab1ca60cdc1c5a"
+}

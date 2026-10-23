@@ -139,8 +139,7 @@ services:
       - path: .env.runtime
         required: true
     # Host paths for the fixed container defaults the app now ships
-    # (/data/library, /data/ingestion,
-    # /data/recovery-pins; see backend/src/config/mod.rs). Fixed container
+    # (/data/library and /data/ingestion; see backend/src/config/mod.rs). Fixed container
     # paths mean the runtime env never needs to carry them; only the host
     # side is operator-configured, via `docker/.env` like REVERIE_VERSION.
     # The one-shot migrate service needs none of these mounts.
@@ -161,11 +160,6 @@ services:
       - type: bind
         source: ${REVERIE_INGESTION_HOST_PATH:?required}
         target: /data/ingestion
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${REVERIE_RECOVERY_PINS_HOST_PATH:?required}
-        target: /data/recovery-pins
         bind:
           create_host_path: false
     depends_on:

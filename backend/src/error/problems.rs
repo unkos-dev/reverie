@@ -103,6 +103,9 @@ pub const RATE_LIMITED: &str = "rate-limited";
 /// Request-path hashing capacity unavailable. HTTP 503.
 pub const AUTH_BUSY: &str = "auth-busy";
 
+/// Authentication mail is not configured or not running. HTTP 503.
+pub const MAIL_UNAVAILABLE: &str = "mail-unavailable";
+
 /// First-run setup attempted after an administrator already exists
 /// ([`crate::error::AppError::SetupAlreadyComplete`]). HTTP 409.
 pub const SETUP_ALREADY_COMPLETE: &str = "setup-already-complete";

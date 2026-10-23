@@ -501,6 +501,28 @@ CREATE TABLE public._sqlx_migrations (
 ALTER TABLE public._sqlx_migrations OWNER TO reverie_migrator;
 
 --
+-- Name: account_email_proofs; Type: TABLE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TABLE public.account_email_proofs (
+    user_id uuid NOT NULL,
+    purpose text NOT NULL,
+    email text NOT NULL,
+    token_hash bytea NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT account_email_proofs_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT account_email_proofs_email_length CHECK (((char_length(email) >= 1) AND (char_length(email) <= 320))),
+    CONSTRAINT account_email_proofs_expires_at_ts_decode_range CHECK (((expires_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (expires_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT account_email_proofs_expiry_order CHECK ((expires_at > created_at)),
+    CONSTRAINT account_email_proofs_purpose CHECK ((purpose = ANY (ARRAY['verification'::text, 'recovery'::text]))),
+    CONSTRAINT account_email_proofs_token_hash_length CHECK ((octet_length(token_hash) = 32))
+);
+
+
+ALTER TABLE public.account_email_proofs OWNER TO reverie_migrator;
+
+--
 -- Name: api_cache; Type: TABLE; Schema: public; Owner: reverie_migrator
 --
 
@@ -807,6 +829,52 @@ CREATE TABLE public.local_login_throttle (
 ALTER TABLE public.local_login_throttle OWNER TO reverie_migrator;
 
 --
+-- Name: mail_jobs; Type: TABLE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TABLE public.mail_jobs (
+    id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    purpose text NOT NULL,
+    proof_digest bytea,
+    authority_kind text,
+    enqueued_at timestamp with time zone NOT NULL,
+    next_attempt_at timestamp with time zone NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    state text DEFAULT 'pending'::text NOT NULL,
+    terminal_at timestamp with time zone,
+    failure_category text,
+    nonce bytea,
+    payload bytea,
+    CONSTRAINT mail_jobs_attempt_count_range CHECK (((attempt_count >= 0) AND (attempt_count <= 5))),
+    CONSTRAINT mail_jobs_authority_shape CHECK (
+CASE purpose
+    WHEN 'admin_link'::text THEN ((authority_kind = 'credential_link'::text) AND (proof_digest IS NOT NULL))
+    WHEN 'verification'::text THEN ((authority_kind = 'verification'::text) AND (proof_digest IS NOT NULL))
+    WHEN 'email_recovery'::text THEN ((authority_kind = 'recovery'::text) AND (proof_digest IS NOT NULL))
+    ELSE ((authority_kind IS NULL) AND (proof_digest IS NULL))
+END),
+    CONSTRAINT mail_jobs_enqueued_at_ts_decode_range CHECK (((enqueued_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (enqueued_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT mail_jobs_expires_at_ts_decode_range CHECK (((expires_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (expires_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT mail_jobs_expiry_order CHECK ((expires_at > enqueued_at)),
+    CONSTRAINT mail_jobs_failure_category CHECK (((failure_category IS NULL) OR (failure_category = ANY (ARRAY['connection'::text, 'tls'::text, 'authentication'::text, 'temporary_refusal'::text, 'permanent_refusal'::text, 'timeout'::text, 'payload_unreadable'::text])))),
+    CONSTRAINT mail_jobs_live_payload CHECK (((state <> ALL (ARRAY['pending'::text, 'in_progress'::text])) OR (payload IS NOT NULL))),
+    CONSTRAINT mail_jobs_next_attempt_at_ts_decode_range CHECK (((next_attempt_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (next_attempt_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT mail_jobs_nonce_length CHECK (((nonce IS NULL) OR (octet_length(nonce) = 12))),
+    CONSTRAINT mail_jobs_payload_length CHECK (((payload IS NULL) OR ((octet_length(payload) >= 16) AND (octet_length(payload) <= 65536)))),
+    CONSTRAINT mail_jobs_proof_digest_length CHECK (((proof_digest IS NULL) OR (octet_length(proof_digest) = 32))),
+    CONSTRAINT mail_jobs_purpose CHECK ((purpose = ANY (ARRAY['admin_link'::text, 'verification'::text, 'email_recovery'::text, 'notice_password_changed'::text, 'notice_password_set'::text, 'notice_address_verified'::text, 'notice_address_changed'::text, 'notice_address_removed'::text]))),
+    CONSTRAINT mail_jobs_sealed_together CHECK (((nonce IS NULL) = (payload IS NULL))),
+    CONSTRAINT mail_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'in_progress'::text, 'accepted'::text, 'failed'::text, 'cancelled'::text, 'expired'::text]))),
+    CONSTRAINT mail_jobs_terminal_at_ts_decode_range CHECK (((terminal_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (terminal_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT mail_jobs_terminal_shape CHECK (((state = ANY (ARRAY['accepted'::text, 'failed'::text, 'cancelled'::text, 'expired'::text])) = (terminal_at IS NOT NULL)))
+);
+
+
+ALTER TABLE public.mail_jobs OWNER TO reverie_migrator;
+
+--
 -- Name: manifestation_external_identifiers; Type: TABLE; Schema: public; Owner: reverie_migrator
 --
 
@@ -1053,25 +1121,6 @@ CREATE TABLE public.omnibus_contents (
 
 
 ALTER TABLE public.omnibus_contents OWNER TO reverie_migrator;
-
---
--- Name: password_reset_pins; Type: TABLE; Schema: public; Owner: reverie_migrator
---
-
-CREATE TABLE public.password_reset_pins (
-    id uuid DEFAULT uuidv7() NOT NULL,
-    user_id uuid NOT NULL,
-    pin_hash text NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    consumed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT password_reset_pins_consumed_at_ts_decode_range CHECK (((consumed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (consumed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
-    CONSTRAINT password_reset_pins_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
-    CONSTRAINT password_reset_pins_expires_at_ts_decode_range CHECK (((expires_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (expires_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
-);
-
-
-ALTER TABLE public.password_reset_pins OWNER TO reverie_migrator;
 
 --
 -- Name: rating_sources; Type: TABLE; Schema: public; Owner: reverie_migrator
@@ -1346,9 +1395,11 @@ CREATE TABLE public.users (
     session_version integer DEFAULT 0 NOT NULL,
     theme_preference public.theme_preference DEFAULT 'system'::public.theme_preference NOT NULL,
     disabled_at timestamp with time zone,
+    email_verified_at timestamp with time zone,
     CONSTRAINT chk_child_role_sync CHECK ((((is_child = true) AND (role = 'child'::public.user_role)) OR ((is_child = false) AND (role <> 'child'::public.user_role)))),
     CONSTRAINT users_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT users_disabled_at_ts_decode_range CHECK (((disabled_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (disabled_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT users_email_verified_at_ts_decode_range CHECK (((email_verified_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (email_verified_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT users_session_version_nonneg CHECK ((session_version >= 0)),
     CONSTRAINT users_updated_at_ts_decode_range CHECK (((updated_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (updated_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
 );
@@ -1548,6 +1599,22 @@ ALTER TABLE ONLY public._sqlx_migrations
 
 
 --
+-- Name: account_email_proofs account_email_proofs_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.account_email_proofs
+    ADD CONSTRAINT account_email_proofs_pkey PRIMARY KEY (user_id, purpose);
+
+
+--
+-- Name: account_email_proofs account_email_proofs_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.account_email_proofs
+    ADD CONSTRAINT account_email_proofs_token_hash_key UNIQUE (token_hash);
+
+
+--
 -- Name: api_cache api_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -1700,6 +1767,14 @@ ALTER TABLE ONLY public.local_login_throttle
 
 
 --
+-- Name: mail_jobs mail_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.mail_jobs
+    ADD CONSTRAINT mail_jobs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: manifestation_external_identifiers manifestation_external_identifiers_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -1817,14 +1892,6 @@ ALTER TABLE ONLY public.oidc_sign_in_attempts
 
 ALTER TABLE ONLY public.omnibus_contents
     ADD CONSTRAINT omnibus_contents_pkey PRIMARY KEY (omnibus_manifestation_id, contained_work_id);
-
-
---
--- Name: password_reset_pins password_reset_pins_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.password_reset_pins
-    ADD CONSTRAINT password_reset_pins_pkey PRIMARY KEY (id);
 
 
 --
@@ -2012,6 +2079,13 @@ ALTER TABLE ONLY tower_sessions.session
 
 
 --
+-- Name: idx_account_email_proofs_expires_at; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_account_email_proofs_expires_at ON public.account_email_proofs USING btree (expires_at);
+
+
+--
 -- Name: idx_api_cache_expires_at; Type: INDEX; Schema: public; Owner: reverie_migrator
 --
 
@@ -2121,6 +2195,48 @@ CREATE INDEX idx_ingestion_jobs_unresolved_publication ON public.ingestion_jobs 
 --
 
 CREATE INDEX idx_library_path_claims_owner ON public.library_path_claims USING btree (manifestation_id);
+
+
+--
+-- Name: idx_mail_jobs_account_purpose; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_mail_jobs_account_purpose ON public.mail_jobs USING btree (user_id, purpose, enqueued_at);
+
+
+--
+-- Name: idx_mail_jobs_due; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_mail_jobs_due ON public.mail_jobs USING btree (next_attempt_at) WHERE (state = 'pending'::text);
+
+
+--
+-- Name: idx_mail_jobs_one_live_delivery_per_proof; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE UNIQUE INDEX idx_mail_jobs_one_live_delivery_per_proof ON public.mail_jobs USING btree (proof_digest) WHERE ((proof_digest IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'in_progress'::text])));
+
+
+--
+-- Name: idx_mail_jobs_payload_expiry; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_mail_jobs_payload_expiry ON public.mail_jobs USING btree (expires_at) WHERE (payload IS NOT NULL);
+
+
+--
+-- Name: idx_mail_jobs_proof_digest; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_mail_jobs_proof_digest ON public.mail_jobs USING btree (proof_digest) WHERE (proof_digest IS NOT NULL);
+
+
+--
+-- Name: idx_mail_jobs_terminal_at; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_mail_jobs_terminal_at ON public.mail_jobs USING btree (terminal_at) WHERE (terminal_at IS NOT NULL);
 
 
 --
@@ -2352,27 +2468,6 @@ CREATE INDEX idx_oidc_sign_in_attempts_expires_at ON public.oidc_sign_in_attempt
 --
 
 CREATE INDEX idx_omnibus_contents_contained_work_id ON public.omnibus_contents USING btree (contained_work_id);
-
-
---
--- Name: idx_password_reset_pins_active_unique; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE UNIQUE INDEX idx_password_reset_pins_active_unique ON public.password_reset_pins USING btree (user_id) WHERE (consumed_at IS NULL);
-
-
---
--- Name: INDEX idx_password_reset_pins_active_unique; Type: COMMENT; Schema: public; Owner: reverie_migrator
---
-
-COMMENT ON INDEX public.idx_password_reset_pins_active_unique IS 'Enforces at most one active (unconsumed) recovery PIN per user. Load-bearing for the single-active invariant under concurrency; see models::password_reset_pin::rotate for the retry path on SQLSTATE 23505.';
-
-
---
--- Name: idx_password_reset_pins_user_id; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE INDEX idx_password_reset_pins_user_id ON public.password_reset_pins USING btree (user_id);
 
 
 --
@@ -2719,6 +2814,14 @@ CREATE TRIGGER trg_works_updated_at BEFORE UPDATE ON public.works FOR EACH ROW E
 
 
 --
+-- Name: account_email_proofs account_email_proofs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.account_email_proofs
+    ADD CONSTRAINT account_email_proofs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: credential_links credential_links_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -2796,6 +2899,14 @@ ALTER TABLE ONLY public.library_path_claims
 
 ALTER TABLE ONLY public.local_credentials
     ADD CONSTRAINT local_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mail_jobs mail_jobs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.mail_jobs
+    ADD CONSTRAINT mail_jobs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -3076,14 +3187,6 @@ ALTER TABLE ONLY public.omnibus_contents
 
 ALTER TABLE ONLY public.omnibus_contents
     ADD CONSTRAINT omnibus_contents_omnibus_manifestation_id_fkey FOREIGN KEY (omnibus_manifestation_id) REFERENCES public.manifestations(id) ON DELETE CASCADE;
-
-
---
--- Name: password_reset_pins password_reset_pins_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.password_reset_pins
-    ADD CONSTRAINT password_reset_pins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -3757,6 +3860,13 @@ GRANT SELECT ON TABLE public._sqlx_migrations TO reverie_app;
 
 
 --
+-- Name: TABLE account_email_proofs; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.account_email_proofs TO reverie_app;
+
+
+--
 -- Name: TABLE api_cache; Type: ACL; Schema: public; Owner: reverie_migrator
 --
 
@@ -3881,6 +3991,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.local_login_throttle TO reveri
 
 
 --
+-- Name: TABLE mail_jobs; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mail_jobs TO reverie_app;
+
+
+--
 -- Name: TABLE manifestation_external_identifiers; Type: ACL; Schema: public; Owner: reverie_migrator
 --
 
@@ -3975,13 +4092,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.oidc_sign_in_attempts TO rever
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.omnibus_contents TO reverie_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.omnibus_contents TO reverie_ingestion;
 GRANT SELECT ON TABLE public.omnibus_contents TO reverie_readonly;
-
-
---
--- Name: TABLE password_reset_pins; Type: ACL; Schema: public; Owner: reverie_migrator
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.password_reset_pins TO reverie_app;
 
 
 --

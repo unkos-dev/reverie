@@ -23,6 +23,7 @@
 
 mod cover;
 mod enrichment;
+mod mail;
 mod opds;
 mod path;
 mod provider;
@@ -34,6 +35,7 @@ pub use path::AbsoluteRootPath;
 
 pub use cover::CoverConfig;
 pub use enrichment::EnrichmentConfig;
+pub use mail::{MailConfig, MailTransportConfig, RelayCredentials, SmtpSecurity};
 pub use opds::OpdsConfig;
 pub use provider::EnvProvider;
 pub(crate) use provider::{CredentialValue, resolve_credential};
@@ -45,7 +47,7 @@ use crate::models::manifestation_format::ManifestationFormat;
 use figment::Figment;
 use provider::ENV_MAP;
 use secrecy::{ExposeSecret, SecretString};
-use validator::{Validate, ValidationErrors, ValidationErrorsKind};
+use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
 
 /// Accessor returning a required field's resolved value, paired with its
 /// env-var name in [`REQUIRED_FIELDS`].
@@ -102,6 +104,8 @@ const OIDC_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
 /// that only need one slice.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
+#[validate(schema(function = "validate_opds_public_url"))]
+#[validate(schema(function = "validate_mail_public_url"))]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "this is the flat env-sourced configuration root; its boolean fields are independent operator toggles (local auth, auto-migrate, self-registration, breach check, ...) that map one-to-one to env vars, not a state machine that should be modelled as an enum"
@@ -143,7 +147,7 @@ pub struct Config {
     /// Must be at least 1.
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub login_rate_per_min: u32,
-    /// Request-path password and recovery-PIN hashing limit per process
+    /// Request-path password hashing limit per process
     /// (`REVERIE_AUTH_HASH_CONCURRENCY`, default `1`). Each permit allows one more
     /// parallel Argon2 operation of about 19 MiB; login holds one database
     /// connection per permit.
@@ -185,18 +189,6 @@ pub struct Config {
     /// always a non-admin, non-child Adult; admin and child accounts are created
     /// only by an existing administrator.
     pub self_registration_enabled: bool,
-    /// Lifetime of a forgot-password recovery PIN, seconds
-    /// (`REVERIE_RECOVERY_PIN_TTL_SECS`, default `900` = 15 minutes). Short by
-    /// design: the PIN is single-use and rate-limited.
-    #[validate(range(min = 60, message = "must be at least 60"))]
-    pub recovery_pin_ttl_secs: i64,
-    /// Directory the clear recovery PIN is written into, one file per user at
-    /// `<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an
-    /// operator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default
-    /// `/data/recovery-pins`). Per-user files keep concurrent recoveries from
-    /// colliding. MUST be outside any web-served directory; the database stores
-    /// only an Argon2id hash of the PIN.
-    pub recovery_pin_dir: String,
     /// Optional forwarded-for header to trust for the client IP behind a reverse
     /// proxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset
     /// by default: the TCP peer is used. An unauthenticated forwarded header is
@@ -273,10 +265,12 @@ pub struct Config {
     /// Writeback worker knobs (concurrency, retry cap).
     #[validate(nested)]
     pub writeback: WritebackConfig,
-    /// OPDS catalogue settings (mount enable, page size, realm,
-    /// `public_url`).
+    /// OPDS catalogue settings (mount enable, page size, realm).
     #[validate(nested)]
     pub opds: OpdsConfig,
+    /// Optional SMTP delivery for authentication mail (relay, sender,
+    /// support address and queue key).
+    pub mail: MailConfig,
     /// Response-header policy (CSP, HSTS, reporting endpoint, dist
     /// path). `csp_*_header` fields are finalised by [`crate::run`]
     /// after construction.
@@ -296,6 +290,13 @@ pub struct Config {
     /// the outbound `User-Agent` to claim `OpenLibrary`'s identified
     /// 3 req/s rate-limit tier (vs. 1 req/s anonymous).
     pub operator_contact: Option<String>,
+    /// Externally-visible origin of this instance (`REVERIE_PUBLIC_URL`): an
+    /// HTTP(S) origin without credentials, path, query or fragment; a trailing
+    /// root slash is accepted. Required when OPDS or SMTP delivery is enabled.
+    /// OPDS feeds and emailed links are rooted here; it is never derived from
+    /// request headers.
+    #[validate(custom(function = "validate_public_origin"))]
+    pub public_url: Option<url::Url>,
 }
 
 /// Configuration-load failure mode. Surfaces missing required vars and
@@ -330,6 +331,35 @@ pub enum ConfigError {
 }
 
 impl Config {
+    /// Load only the database credential and public origin for host recovery.
+    ///
+    /// # Errors
+    /// Returns a setting-named error for missing, conflicting or invalid inputs.
+    pub fn host_recovery_from_env() -> Result<(SecretString, url::Url), ConfigError> {
+        #[derive(Default, serde::Deserialize)]
+        #[serde(default)]
+        struct Settings {
+            database_url: SecretString,
+            public_url: Option<url::Url>,
+        }
+        let settings: Settings =
+            Figment::from(EnvProvider::from_process_env().host_recovery_only())
+                .extract()
+                .map_err(|error| map_figment_error(&error))?;
+        let origin = settings
+            .public_url
+            .ok_or_else(|| ConfigError::MissingVar("REVERIE_PUBLIC_URL".into()))?;
+        validate_public_origin(&origin).map_err(|_| ConfigError::Invalid {
+            var: "REVERIE_PUBLIC_URL".into(),
+            reason: "must be an http or https origin without credentials, path, query or fragment"
+                .into(),
+        })?;
+        if settings.database_url.expose_secret().trim().is_empty() {
+            return Err(ConfigError::MissingVar("DATABASE_URL".into()));
+        }
+        Ok((settings.database_url, origin))
+    }
+
     /// Public entry point for production: reads from the process environment
     /// through the figment pipeline. The binary discovers no env file itself;
     /// populating the process environment is the caller's responsibility (a
@@ -409,6 +439,15 @@ impl Config {
             }
         } else {
             cfg.migration_database_url = None;
+        }
+
+        // Gate 1b — mail secrets. A disabled mail block carries no key or relay
+        // password, and an enabled one must be complete before startup.
+        if cfg.mail.enabled {
+            cfg.mail.validate_enabled()?;
+        } else {
+            cfg.mail.password = None;
+            cfg.mail.queue_key = None;
         }
 
         // Gate 2 — required fields blank => MissingVar (NOT Invalid). Name and
@@ -567,6 +606,8 @@ const SECRET_FIELDS: &[&str] = &[
     "oidc_client_secret",
     "googlebooks_api_key",
     "hardcover_api_token",
+    "mail.password",
+    "mail.queue_key",
 ];
 
 /// Reverse the [`ENV_MAP`]: dotted field path → operator-facing env-var name.
@@ -713,8 +754,6 @@ impl Default for Config {
             password_min_zxcvbn_score: 2,
             password_breach_check_enabled: true,
             self_registration_enabled: false,
-            recovery_pin_ttl_secs: 900,
-            recovery_pin_dir: "/data/recovery-pins".into(),
             trusted_client_ip_header: None,
             // REQUIRED — empty sentinels.
             oidc_issuer_url: String::new(),
@@ -737,8 +776,53 @@ impl Default for Config {
             googlebooks_api_key: None,
             hardcover_api_token: None,
             operator_contact: None,
+            public_url: None,
+            mail: MailConfig::default(),
         }
     }
+}
+
+/// `REVERIE_PUBLIC_URL` must be a bare HTTP(S) origin. The value is never
+/// echoed because an operator may have pasted credentials into it.
+fn validate_public_origin(url: &url::Url) -> Result<(), ValidationError> {
+    let origin_only = matches!(url.scheme(), "http" | "https")
+        && url.has_host()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.path() == "/"
+        && url.query().is_none()
+        && url.fragment().is_none();
+    if origin_only {
+        return Ok(());
+    }
+    let mut e = ValidationError::new("public_url_origin");
+    e.message =
+        Some("must be an http or https origin without credentials, path, query or fragment".into());
+    Err(e)
+}
+
+/// OPDS emits absolute URLs rooted at the public origin, so it is required
+/// whenever the catalogue is enabled.
+fn validate_opds_public_url(config: &Config) -> Result<(), ValidationError> {
+    if config.opds.enabled && config.public_url.is_none() {
+        let mut e = ValidationError::new("public_url_required");
+        e.add_param("var".into(), &"REVERIE_PUBLIC_URL");
+        e.message = Some("required when REVERIE_OPDS_ENABLED=true".into());
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Emailed links are rooted at the public origin, so it is required whenever
+/// SMTP delivery is enabled.
+fn validate_mail_public_url(config: &Config) -> Result<(), ValidationError> {
+    if config.mail.enabled && config.public_url.is_none() {
+        let mut e = ValidationError::new("public_url_required");
+        e.add_param("var".into(), &"REVERIE_PUBLIC_URL");
+        e.message = Some("required when REVERIE_SMTP_ENABLED=true".into());
+        return Err(e);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -882,7 +966,6 @@ mod tests {
         );
         assert_eq!(config.library_path.as_str(), "/data/library");
         assert_eq!(config.ingestion_path.as_str(), "/data/ingestion");
-        assert_eq!(config.recovery_pin_dir, "/data/recovery-pins");
         // BASE_VARS exports DATABASE_URL_MIGRATION but leaves REVERIE_AUTO_MIGRATE
         // unset (off), so the DSN is intentionally NOT carried into Config.
         assert!(config.migration_database_url.is_none());
@@ -1151,7 +1234,7 @@ mod tests {
         let config = cfg_from_owned(&vars).unwrap();
         assert!(config.opds.enabled);
         assert_eq!(
-            config.opds.public_url.as_ref().map(url::Url::as_str),
+            config.public_url.as_ref().map(url::Url::as_str),
             Some("https://reverie.example.com/")
         );
     }
@@ -1516,7 +1599,16 @@ mod tests {
         let schema = serde_json::to_value(schemars::schema_for!(Config)).unwrap();
         let props = schema["properties"].as_object().expect("properties object");
         for field in SECRET_FIELDS {
-            let property = props.get(*field).expect("credential property exists");
+            let property = field.split_once('.').map_or_else(
+                || props.get(*field).expect("credential property exists"),
+                |(parent, leaf)| {
+                    let reference = props[parent]["$ref"]
+                        .as_str()
+                        .expect("sub-struct reference");
+                    let definition = &schema["$defs"][reference.trim_start_matches("#/$defs/")];
+                    &definition["properties"][leaf]
+                },
+            );
             let default = property.get("default").expect("credential default exists");
             let expected = if matches!(
                 *field,

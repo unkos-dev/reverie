@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
-import { Link, useLoaderData } from "react-router";
+import { Link, useLoaderData, useLocation } from "react-router";
 import { z } from "zod";
 
 import { ApiError } from "@/api";
@@ -63,6 +63,7 @@ function LookupFailure({
 }
 
 export function Component(): ReactElement {
+  const location = useLocation();
   const token = z.string().parse(useLoaderData());
   const [error, setError] = useState<string | ReactElement | null>(null);
   const [invalid, setInvalid] = useState(false);
@@ -77,6 +78,7 @@ export function Component(): ReactElement {
   } = usePasswordPolicy();
 
   const redemption = useMutation({
+    gcTime: 0,
     mutationFn: (password: string) => redeemCredentialLink(token, password),
     onError: (err) => {
       if (err instanceof ApiError && err.detail === "invalid or expired link") {
@@ -87,6 +89,7 @@ export function Component(): ReactElement {
     },
   });
   const lookup = useQuery({
+    gcTime: 0,
     queryKey: ["credential-link", token],
     queryFn: ({ signal }) => lookupCredentialLink(token, signal),
     enabled: token !== "" && !redemption.isSuccess,
@@ -128,11 +131,22 @@ export function Component(): ReactElement {
     invalid ||
     (lookup.error instanceof ApiError && [404, 422].includes(lookup.error.status))
   ) {
+    const requestNewLink =
+      location.pathname === "/reset-password" && policy?.email_recovery_enabled === true;
     return (
       <AuthShell
-        title="This link can't be used"
-        description="It may have expired or already been used. Ask your administrator for a new link."
+        title={<h1>This link can't be used</h1>}
+        description={
+          requestNewLink
+            ? "It may have expired or already been used. Request a new link."
+            : "It may have expired or already been used. Ask your administrator for a new link."
+        }
       >
+        {requestNewLink ? (
+          <Link to="/forgot-password" className={buttonVariants({ className: "mb-4 w-full" })}>
+            Request a new link
+          </Link>
+        ) : null}
         <Link to="/login" className="hover:text-fg underline underline-offset-4">
           Go to sign in
         </Link>

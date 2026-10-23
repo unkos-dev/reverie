@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail_jobs SET enqueued_at = $2::timestamptz, next_attempt_at = $2::timestamptz, expires_at = $2::timestamptz + interval '30 days' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "02b5d438e52b95e1cdf5ecddb5f7cb160339599959778390678dc924e835afdb"
+}

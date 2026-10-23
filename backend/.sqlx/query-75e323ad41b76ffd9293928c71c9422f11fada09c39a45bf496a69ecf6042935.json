@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id AS user_id, u.email AS \"email!\", u.display_name,\n                  TRUE AS \"has_password!\"\n             FROM account_email_proofs p JOIN users u ON u.id = p.user_id\n            WHERE p.token_hash = $1 AND p.purpose = 'recovery' AND p.expires_at > now()\n              AND u.disabled_at IS NULL AND u.email_verified_at IS NOT NULL\n              AND lower(u.email) = lower(p.email)\n              AND EXISTS (SELECT 1 FROM local_credentials c WHERE c.user_id = u.id)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "email!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "has_password!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "75e323ad41b76ffd9293928c71c9422f11fada09c39a45bf496a69ecf6042935"
+}
