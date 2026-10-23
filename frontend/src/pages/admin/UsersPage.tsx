@@ -392,7 +392,8 @@ function LinkResultContent({
     initialData: sending.data,
     gcTime: 0,
     staleTime: Infinity,
-    refetchInterval: (query) => (query.state.data?.status === "queued" ? 3000 : false),
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : query.state.data?.status === "queued" ? 3000 : false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: false,
@@ -402,12 +403,14 @@ function LinkResultContent({
     status?.status === "inactive" ||
     (sending.error instanceof ApiError && sending.error.status === 422);
   const accepted = status?.status === "accepted";
-  const queued = sending.isPending || status?.status === "queued";
+  const queued =
+    sending.isPending || delivery.isFetching || (!delivery.isError && status?.status === "queued");
   let mailMessage: string | null = null;
   if (inactive) mailMessage = "This link is no longer active. Create a new link to send it.";
   else if (sending.error instanceof ApiError && sending.error.status === 503)
     mailMessage = "Email isn't available right now. Copy the link instead.";
-  else if (sending.isError) mailMessage = "Couldn't confirm the request. Try again.";
+  else if (sending.isError || delivery.isError)
+    mailMessage = "Couldn't confirm the request. Try again.";
   else if (status?.status === "failed")
     mailMessage = `Sending failed: ${mailFailureReasons[status.failure_category]}. Copy the link instead, or try again.`;
   else if (accepted)
@@ -445,10 +448,13 @@ function LinkResultContent({
           <Button
             isPending={queued}
             onPress={() => {
-              sending.mutate();
+              if (delivery.isError) void delivery.refetch();
+              else sending.mutate();
             }}
           >
-            {status?.status === "failed" || sending.isError ? "Try again" : "Send email"}
+            {status?.status === "failed" || sending.isError || delivery.isError
+              ? "Try again"
+              : "Send email"}
           </Button>
         ) : null}
         <Button

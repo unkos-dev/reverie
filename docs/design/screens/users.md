@@ -96,10 +96,13 @@ delivery's status every 3 seconds and stops at Accepted, Failed, Inactive or whe
 | `timeout`            | "the mail server didn't respond in time"          |
 | `payload_unreadable` | "the queued message couldn't be read"             |
 
-"Try again" sends the same link as a new delivery. A 503 response shows "Email isn't available right now. Copy the link
-instead." A refusal because the link was replaced, cancelled or expired shows "This link is no longer active. Create a
-new link to send it." A network failure shows "Couldn't confirm the request. Try again." In every case the link and
-"Copy link" stay available. Closing the dialog stops status refresh and discards the link.
+After a failed submission or a failed delivery, "Try again" sends the same link as a new delivery. After a failed
+delivery-status check, automatic refresh stops and "Try again" rechecks that delivery without sending another email. The
+retry button is disabled while the check runs. A queued result resumes automatic refresh; a terminal result stops it. A
+503 response shows "Email isn't available right now. Copy the link instead." A refusal because the link was replaced,
+cancelled or expired shows "This link is no longer active. Create a new link to send it." A network failure shows
+"Couldn't confirm the request. Try again." In every case the link and "Copy link" stay available. Closing the dialog
+stops status refresh and discards the link.
 
 Link email, with {origin} the configured public URL, {expiry} the link's expiry in the email date format of
 [authentication mail delivery](../../specs/operations/design/0029-authentication-mail-delivery.md) and {support} the

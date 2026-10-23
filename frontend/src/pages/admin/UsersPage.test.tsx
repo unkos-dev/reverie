@@ -723,6 +723,80 @@ test.each([
 );
 
 test.each([
+  { job_id: mailJob, status: "accepted", failure_category: null },
+  { job_id: mailJob, status: "queued", failure_category: null },
+] satisfies usersApi.CredentialLinkEmail[])(
+  "rechecks the same delivery after a status failure and resumes with %j",
+  async (recovered) => {
+    const send = vi.spyOn(usersApi, "sendCredentialLinkEmail").mockResolvedValue({
+      job_id: mailJob,
+      status: "queued",
+      failure_category: null,
+    });
+    const poll = vi
+      .spyOn(usersApi, "fetchCredentialLinkEmail")
+      .mockRejectedValueOnce(new TypeError("network failure"));
+    await openMailableLink();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 3000);
+      });
+    });
+    expect(await screen.findByText("Couldn't confirm the request. Try again.")).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: "Try again" });
+    expect(retry).toBeEnabled();
+    expect(retry).not.toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeEnabled();
+    expect(screen.getByLabelText("Credential link")).toHaveValue(
+      `${window.location.origin}/reset-password#${mailToken}`,
+    );
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 3000);
+      });
+    });
+    expect(poll).toHaveBeenCalledTimes(1);
+    let finishRetry: ((value: usersApi.CredentialLinkEmail) => void) | undefined;
+    poll.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRetry = resolve;
+        }),
+    );
+    poll.mockResolvedValue({ job_id: mailJob, status: "accepted", failure_category: null });
+    await user.click(retry);
+    await waitFor(() => {
+      expect(poll).toHaveBeenCalledTimes(2);
+    });
+    expect(retry).toHaveAttribute("aria-disabled", "true");
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(poll).toHaveBeenLastCalledWith(
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      mailJob,
+      expect.any(AbortSignal),
+    );
+    act(() => {
+      finishRetry?.(recovered);
+    });
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 3000);
+      });
+    });
+    expect(
+      await screen.findByText(
+        "The mail server accepted the email for bob@example.com. This doesn't confirm it reached the inbox.",
+      ),
+    ).toBeInTheDocument();
+    expect(poll).toHaveBeenCalledTimes(recovered.status === "queued" ? 3 : 2);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  },
+);
+
+test.each([
   [
     new ApiError(503, null, "Unavailable", ""),
     "Email isn't available right now. Copy the link instead.",
