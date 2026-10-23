@@ -466,10 +466,25 @@ function LinkResultContent({
   );
 }
 
-function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): ReactElement {
+function useLinkDialogState() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LinkResult | null>(null);
+  function changeOpen(resetMutation: () => void): (next: boolean) => void {
+    return (next: boolean): void => {
+      setOpen(next);
+      if (!next) {
+        setError(null);
+        setResult(null);
+        if (result !== null) resetMutation();
+      }
+    };
+  }
+  return { open, error, result, setOpen, setError, setResult, changeOpen };
+}
+
+function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): ReactElement {
+  const { open, error, result, setOpen, setError, setResult, changeOpen } = useLinkDialogState();
   const mutation = useMutation({
     mutationFn: (input: CreateUserInput) => createUser(input),
     gcTime: 0,
@@ -489,14 +504,7 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
       setError(errorDetail(err));
     },
   });
-  function handleOpenChange(next: boolean): void {
-    setOpen(next);
-    if (!next) {
-      setError(null);
-      setResult(null);
-      if (result !== null) mutation.reset();
-    }
-  }
+  const handleOpenChange = changeOpen(mutation.reset);
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
     setError(null);
@@ -584,9 +592,7 @@ function ResetPasswordDialog({
   linkActive,
   onIssued,
 }: Readonly<{ user: User; linkActive: boolean; onIssued: () => void }>): ReactElement {
-  const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<LinkResult | null>(null);
+  const { open, error, result, setOpen, setError, setResult, changeOpen } = useLinkDialogState();
   const mutation = useMutation({
     mutationFn: () => issueCredentialLink(user.id),
     gcTime: 0,
@@ -610,14 +616,7 @@ function ResetPasswordDialog({
       );
     },
   });
-  function handleOpenChange(next: boolean): void {
-    setOpen(next);
-    if (!next) {
-      setError(null);
-      setResult(null);
-      if (result !== null) mutation.reset();
-    }
-  }
+  const handleOpenChange = changeOpen(mutation.reset);
   return (
     <Dialog isOpen={open} onOpenChange={handleOpenChange}>
       <Button variant="outline" size="sm">

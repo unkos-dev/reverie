@@ -12,6 +12,81 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { queryKeys } from "@/lib/query/keys";
 import { AuthShell } from "./auth-shell";
 
+type VerificationView = "verified" | "invalid" | "signed-out" | "loading" | "ready";
+
+function verificationView(
+  verified: boolean,
+  invalid: boolean,
+  signedOut: boolean,
+  loaded: boolean,
+): VerificationView {
+  if (verified) return "verified";
+  if (invalid) return "invalid";
+  if (signedOut) return "signed-out";
+  return loaded ? "ready" : "loading";
+}
+
+const verificationCopy = {
+  verified: { heading: "Email address verified", body: "Your email address is verified." },
+  invalid: {
+    heading: "This link can't be used",
+    body: "It may have expired, already been used, or belong to a different account. Send a new verification email from your email settings.",
+  },
+  "signed-out": {
+    heading: "Sign in to verify your email",
+    body: "Sign in to the account this email was sent to, then open the link in the email again.",
+  },
+  ready: { heading: "Verify your email address", body: "" },
+  loading: { heading: "", body: "" },
+};
+
+function VerificationActions({
+  view,
+  error,
+  pending,
+  onVerify,
+}: Readonly<{
+  view: VerificationView;
+  error: string | null;
+  pending: boolean;
+  onVerify: () => void;
+}>): ReactElement {
+  if (view === "signed-out")
+    return (
+      <Link to="/login" className="hover:text-fg underline underline-offset-4">
+        Go to sign in
+      </Link>
+    );
+  if (view !== "ready")
+    return (
+      <Link to="/account/email" className="hover:text-fg underline underline-offset-4">
+        Go to email settings
+      </Link>
+    );
+  return (
+    <>
+      {error !== null ? (
+        <FieldError>
+          {error === "ambiguous" ? (
+            <>
+              Your email address may already be verified.{" "}
+              <Link to="/account/email" className="underline underline-offset-4">
+                Check your email settings
+              </Link>{" "}
+              before trying again.
+            </>
+          ) : (
+            error
+          )}
+        </FieldError>
+      ) : null}
+      <Button className="w-full" isDisabled={pending} onPress={onVerify}>
+        Verify email
+      </Button>
+    </>
+  );
+}
+
 export function Component(): ReactElement {
   const token = z.string().parse(useLoaderData());
   const usable = emailProofTokenField.safeParse(token).success;
@@ -35,15 +110,12 @@ export function Component(): ReactElement {
     signedOut ||
     (status.error instanceof ApiError &&
       (status.error.status === 401 || status.error.status === 403));
-  const view = verified
-    ? "verified"
-    : !usable || invalid || status.data?.email === null
-      ? "invalid"
-      : unauthenticated
-        ? "signed-out"
-        : status.data === undefined
-          ? "loading"
-          : "ready";
+  const view = verificationView(
+    verified,
+    !usable || invalid || status.data?.email === null,
+    unauthenticated,
+    status.data !== undefined,
+  );
   useEffect(() => {
     if (view !== "loading") title.current?.focus();
   }, [view]);
@@ -70,22 +142,11 @@ export function Component(): ReactElement {
         </div>
       </AuthShell>
     );
-  const heading =
-    view === "verified"
-      ? "Email address verified"
-      : view === "invalid"
-        ? "This link can't be used"
-        : view === "signed-out"
-          ? "Sign in to verify your email"
-          : "Verify your email address";
+  const heading = verificationCopy[view].heading;
   const body =
-    view === "verified"
-      ? "Your email address is verified."
-      : view === "invalid"
-        ? "It may have expired, already been used, or belong to a different account. Send a new verification email from your email settings."
-        : view === "signed-out"
-          ? "Sign in to the account this email was sent to, then open the link in the email again."
-          : `Confirm ${status.data?.email ?? ""} as the email address for your account.`;
+    view === "ready"
+      ? `Confirm ${status.data?.email ?? ""} as the email address for your account.`
+      : verificationCopy[view].body;
   return (
     <AuthShell
       title={
@@ -96,42 +157,14 @@ export function Component(): ReactElement {
       description={body}
     >
       <div className="flex flex-col gap-4">
-        {view === "signed-out" ? (
-          <Link to="/login" className="hover:text-fg underline underline-offset-4">
-            Go to sign in
-          </Link>
-        ) : view !== "ready" ? (
-          <Link to="/account/email" className="hover:text-fg underline underline-offset-4">
-            Go to email settings
-          </Link>
-        ) : (
-          <>
-            {error !== null ? (
-              <FieldError>
-                {error === "ambiguous" ? (
-                  <>
-                    Your email address may already be verified.{" "}
-                    <Link to="/account/email" className="underline underline-offset-4">
-                      Check your email settings
-                    </Link>{" "}
-                    before trying again.
-                  </>
-                ) : (
-                  error
-                )}
-              </FieldError>
-            ) : null}
-            <Button
-              className="w-full"
-              isDisabled={confirmation.isPending}
-              onPress={() => {
-                confirmation.mutate();
-              }}
-            >
-              Verify email
-            </Button>
-          </>
-        )}
+        <VerificationActions
+          view={view}
+          error={error}
+          pending={confirmation.isPending}
+          onVerify={() => {
+            confirmation.mutate();
+          }}
+        />
       </div>
     </AuthShell>
   );

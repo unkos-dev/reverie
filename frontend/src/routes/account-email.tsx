@@ -3,13 +3,43 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Link } from "react-router";
 
 import { ApiError } from "@/api";
-import { fetchEmailVerification, requestEmailVerification } from "@/api/auth";
+import {
+  fetchEmailVerification,
+  requestEmailVerification,
+  type EmailVerification,
+} from "@/api/auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { queryKeys } from "@/lib/query/keys";
 import { AuthShell } from "./auth-shell";
+
+type EmailView = "loading" | "no-address" | "verified" | "unavailable" | "sent" | "unverified";
+
+function emailView(status: EmailVerification | undefined, sent: boolean): EmailView {
+  if (status === undefined) return "loading";
+  if (status.email === null) return "no-address";
+  if (status.email_verified) return "verified";
+  if (!status.mail_enabled) return "unavailable";
+  return sent ? "sent" : "unverified";
+}
+
+const emailBody = {
+  "no-address": "Your account has no email address. Ask your administrator to add one.",
+  verified: "Your email address is verified.",
+  unavailable: "Email isn't set up on this server, so this address can't be verified yet.",
+  sent: "Verification email requested. Open the link in it while signed in to this account. The email says when the link expires.",
+  unverified: "Verify that you control this email address.",
+};
+
+function requestError(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    if (cause.status === 503) return "Email isn't available right now. Try again later.";
+    if (cause.status === 429) return cause.detail;
+  }
+  return "Could not confirm the request. Try again.";
+}
 
 export function Component(): ReactElement {
   const status = useQuery({
@@ -20,18 +50,7 @@ export function Component(): ReactElement {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const title = useRef<HTMLHeadingElement>(null);
-  const view =
-    status.data === undefined
-      ? "loading"
-      : status.data.email === null
-        ? "no-address"
-        : status.data.email_verified
-          ? "verified"
-          : !status.data.mail_enabled
-            ? "unavailable"
-            : sent
-              ? "sent"
-              : "unverified";
+  const view = emailView(status.data, sent);
   useEffect(() => {
     if (view !== "loading") title.current?.focus();
   }, [view]);
@@ -43,13 +62,7 @@ export function Component(): ReactElement {
     },
     onError: (cause) => {
       setSent(false);
-      setError(
-        cause instanceof ApiError && cause.status === 503
-          ? "Email isn't available right now. Try again later."
-          : cause instanceof ApiError && cause.status === 429
-            ? cause.detail
-            : "Could not confirm the request. Try again.",
-      );
+      setError(requestError(cause));
     },
   });
   const footer = (
@@ -80,16 +93,6 @@ export function Component(): ReactElement {
         )}
       </AuthShell>
     );
-  const body =
-    view === "no-address"
-      ? "Your account has no email address. Ask your administrator to add one."
-      : view === "verified"
-        ? "Your email address is verified."
-        : view === "unavailable"
-          ? "Email isn't set up on this server, so this address can't be verified yet."
-          : view === "sent"
-            ? "Verification email requested. Open the link in it while signed in to this account. The email says when the link expires."
-            : "Verify that you control this email address.";
   return (
     <AuthShell
       title={
@@ -97,7 +100,7 @@ export function Component(): ReactElement {
           Email address
         </h1>
       }
-      description={body}
+      description={emailBody[view === "loading" ? "unverified" : view]}
       footer={footer}
     >
       <div className="flex flex-col gap-4">
