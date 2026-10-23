@@ -103,7 +103,9 @@ existing replacement proofs. A lost response can leave the outcome uncertain; tr
 
 ## Delivery and retention
 
-One supervised worker submits encrypted Postgres jobs. Each SMTP attempt has a 30-second bound. Connection, TLS,
+One supervised worker submits encrypted Postgres jobs. Each SMTP attempt has a 30-second bound. Positive acceptance is
+retained if QUIT fails or stalls. The complete worker step, including database waits, has a 60-second bound; a timeout
+ends the run so supervision can restart it. Startup and shutdown reclaim each have a 30-second bound. Connection, TLS,
 authentication, temporary refusal and timeout failures retry after 30 seconds, two minutes, five minutes and fifteen
 minutes: five attempts in total. Permanent refusal and unreadable payloads stop immediately. Restart recovers an
 interrupted attempt, which still counts against that budget. A lost acknowledgement can produce a duplicate; the stable

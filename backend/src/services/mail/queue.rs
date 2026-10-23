@@ -508,7 +508,7 @@ async fn deliver(
 /// supervisor restarts it and the next run reclaims.
 ///
 /// # Errors
-/// Returns the database failure that ended the run.
+/// Returns the database failure or deadline expiry that ended the run.
 pub async fn run_worker(
     pool: PgPool,
     runtime: Arc<MailRuntime>,
@@ -520,7 +520,11 @@ pub async fn run_worker(
     let mut reclaimed = false;
     while !cancel.is_cancelled() {
         if !reclaimed {
-            match reclaim_in_progress(&pool).await {
+            let result = tokio::select! {
+                () = cancel.cancelled() => break,
+                result = tokio::time::timeout(transport::SUBMISSION_TIMEOUT, reclaim_in_progress(&pool)) => result,
+            };
+            match result.context("mail startup reclaim timed out")? {
                 Ok(count) => {
                     if count > 0 {
                         tracing::info!(count, "mail jobs interrupted by a stop were reclaimed");
@@ -534,7 +538,14 @@ pub async fn run_worker(
                 }
             }
         }
-        match process_next(&pool, &runtime, &cancel).await {
+        let result = tokio::select! {
+            () = cancel.cancelled() => break,
+            result = tokio::time::timeout(
+                transport::SUBMISSION_TIMEOUT * 2,
+                process_next(&pool, &runtime, &cancel),
+            ) => result,
+        };
+        match result.context("mail worker step timed out")? {
             Ok(true) => continue,
             Ok(false) => {}
             Err(StepError::Claim(error)) => {
@@ -546,8 +557,9 @@ pub async fn run_worker(
         }
         sleep_or_cancel(idle_wait, &cancel).await;
     }
-    reclaim_in_progress(&pool)
+    tokio::time::timeout(transport::SUBMISSION_TIMEOUT, reclaim_in_progress(&pool))
         .await
+        .context("mail shutdown reclaim timed out")?
         .context("returning in-flight mail jobs at shutdown")?;
     Ok(())
 }
@@ -662,6 +674,153 @@ mod tests {
         })
         .await
         .unwrap_or_else(|_| panic!("job never reached {wanted}"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_queue_reclaim_lock_wait_ends_the_worker_run(pool: PgPool) {
+        let f = fixture(&pool, Behaviour::Accept).await;
+        let job = enqueue_notice(&f.app, f.user, MailPurpose::NoticePasswordSet, ADDRESS).await;
+        claim_next(&f.app).await.unwrap().unwrap();
+        let mut lock = pool.begin().await.unwrap();
+        sqlx::query!(
+            "UPDATE mail_jobs SET next_attempt_at = clock_timestamp() WHERE id = $1",
+            job
+        )
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+        let worker = tokio::spawn(run_worker(
+            f.app.clone(),
+            Arc::clone(&f.runtime),
+            CancellationToken::new(),
+            POLL_INTERVAL,
+        ));
+        crate::test_support::wait_for_blocked_query(&pool, "%UPDATE mail_jobs%", 1).await;
+        tokio::time::pause();
+        tokio::time::advance(transport::SUBMISSION_TIMEOUT + Duration::from_secs(1)).await;
+        let result = tokio::time::timeout(Duration::from_secs(1), worker)
+            .await
+            .expect("the worker must leave a blocked reclaim")
+            .unwrap();
+        tokio::time::resume();
+        assert!(result.is_err());
+        lock.rollback().await.unwrap();
+        assert_eq!(state_of(&pool, job).await, "in_progress");
+        let cancel = CancellationToken::new();
+        let restarted = tokio::spawn(run_worker(
+            f.app.clone(),
+            Arc::clone(&f.runtime),
+            cancel.clone(),
+            POLL_INTERVAL,
+        ));
+        wait_for_state(&pool, job, "accepted").await;
+        cancel.cancel();
+        restarted.await.unwrap().unwrap();
+        assert_eq!(attempts(&pool, job).await.0, 2);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_queue_record_lock_wait_ends_the_worker_run(pool: PgPool) {
+        let f = fixture(&pool, Behaviour::Hang).await;
+        let job = enqueue_notice(&f.app, f.user, MailPurpose::NoticePasswordSet, ADDRESS).await;
+        let worker = tokio::spawn(run_worker(
+            f.app.clone(),
+            Arc::clone(&f.runtime),
+            CancellationToken::new(),
+            POLL_INTERVAL,
+        ));
+        tokio::time::timeout(Duration::from_secs(20), async {
+            while f.relay.messages().is_empty() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let mut lock = pool.begin().await.unwrap();
+        sqlx::query!(
+            "UPDATE mail_jobs SET next_attempt_at = clock_timestamp() WHERE id = $1",
+            job
+        )
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+        tokio::time::pause();
+        tokio::time::advance(transport::SUBMISSION_TIMEOUT + Duration::from_secs(1)).await;
+        tokio::time::resume();
+        crate::test_support::wait_for_blocked_query(&pool, "%UPDATE mail_jobs%", 1).await;
+        tokio::time::pause();
+        tokio::time::advance(transport::SUBMISSION_TIMEOUT + Duration::from_secs(1)).await;
+        let result = tokio::time::timeout(Duration::from_secs(1), worker)
+            .await
+            .expect("the worker must leave a blocked outcome update")
+            .unwrap();
+        tokio::time::resume();
+        assert!(result.unwrap_err().to_string().contains("step timed out"));
+        lock.rollback().await.unwrap();
+        assert_eq!(state_of(&pool, job).await, "in_progress");
+        f.make_due(&pool, job).await;
+        f.relay.set(Behaviour::Accept);
+        let cancel = CancellationToken::new();
+        let restarted = tokio::spawn(run_worker(
+            f.app.clone(),
+            Arc::clone(&f.runtime),
+            cancel.clone(),
+            POLL_INTERVAL,
+        ));
+        wait_for_state(&pool, job, "accepted").await;
+        cancel.cancel();
+        restarted.await.unwrap().unwrap();
+        assert_eq!(attempts(&pool, job).await.0, 2);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_queue_shutdown_reclaim_lock_wait_is_bounded(pool: PgPool) {
+        let f = fixture(&pool, Behaviour::Accept).await;
+        let job = enqueue_notice(&f.app, f.user, MailPurpose::NoticePasswordSet, ADDRESS).await;
+        claim_next(&f.app).await.unwrap().unwrap();
+        let mut lock = pool.begin().await.unwrap();
+        sqlx::query!(
+            "UPDATE mail_jobs SET next_attempt_at = clock_timestamp() WHERE id = $1",
+            job
+        )
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let worker = tokio::spawn(run_worker(
+            f.app.clone(),
+            Arc::clone(&f.runtime),
+            cancel,
+            POLL_INTERVAL,
+        ));
+        crate::test_support::wait_for_blocked_query(&pool, "%UPDATE mail_jobs%", 1).await;
+        tokio::time::pause();
+        tokio::time::advance(transport::SUBMISSION_TIMEOUT + Duration::from_secs(1)).await;
+        let result = tokio::time::timeout(Duration::from_secs(1), worker)
+            .await
+            .expect("shutdown must leave a blocked reclaim")
+            .unwrap();
+        tokio::time::resume();
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("shutdown reclaim timed out")
+        );
+        lock.rollback().await.unwrap();
+        assert_eq!(state_of(&pool, job).await, "in_progress");
+        let cancel = CancellationToken::new();
+        let restarted = tokio::spawn(run_worker(
+            f.app.clone(),
+            Arc::clone(&f.runtime),
+            cancel.clone(),
+            POLL_INTERVAL,
+        ));
+        wait_for_state(&pool, job, "accepted").await;
+        cancel.cancel();
+        restarted.await.unwrap().unwrap();
+        assert_eq!(attempts(&pool, job).await.0, 2);
     }
 
     #[sqlx::test(migrations = "./migrations")]

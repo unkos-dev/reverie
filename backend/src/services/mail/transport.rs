@@ -161,7 +161,7 @@ async fn session(
 async fn exchange(
     settings: &MailTransportConfig,
     message: &Message,
-) -> Result<(), FailureCategory> {
+) -> Result<AsyncSmtpConnection, FailureCategory> {
     let hello = ClientId::default();
     let implicit = if settings.security == SmtpSecurity::ImplicitTls {
         Some(tls_parameters(settings)?)
@@ -178,15 +178,11 @@ async fn exchange(
     .await
     .map_err(|error| categorise(&error, Phase::Connect))?;
 
-    let outcome = session(&mut connection, settings, message, &hello).await;
-    if outcome.is_ok() {
-        if connection.quit().await.is_err() {
-            tracing::debug!("relay closed the session without acknowledging QUIT");
-        }
-    } else {
+    if let Err(error) = session(&mut connection, settings, message, &hello).await {
         connection.abort().await;
+        return Err(error);
     }
-    outcome
+    Ok(connection)
 }
 
 /// Submit one message, succeeding only once the relay positively accepts it.
@@ -202,9 +198,17 @@ pub async fn submit(
     mail: &OutgoingMail,
 ) -> Result<(), FailureCategory> {
     let message = compose(settings, mail)?;
-    tokio::time::timeout(SUBMISSION_TIMEOUT, exchange(settings, &message))
+    let deadline = tokio::time::Instant::now() + SUBMISSION_TIMEOUT;
+    let mut connection = tokio::time::timeout_at(deadline, exchange(settings, &message))
         .await
-        .unwrap_or(Err(FailureCategory::Timeout))
+        .unwrap_or(Err(FailureCategory::Timeout))?;
+    if !matches!(
+        tokio::time::timeout_at(deadline, connection.quit()).await,
+        Ok(Ok(_))
+    ) {
+        tracing::debug!("relay closed the session without acknowledging QUIT");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -231,6 +235,7 @@ mod tests {
         rcpt: &'static str,
         end_of_data: &'static str,
         hang_after_greeting: bool,
+        hang_on_quit: bool,
     }
 
     impl Default for Script {
@@ -243,6 +248,7 @@ mod tests {
                 rcpt: "250 recipient ok",
                 end_of_data: "250 queued as 42",
                 hang_after_greeting: false,
+                hang_on_quit: false,
             }
         }
     }
@@ -252,6 +258,31 @@ mod tests {
             .write_all(format!("{text}\r\n").as_bytes())
             .await
             .unwrap();
+    }
+
+    async fn ehlo(writer: &mut tokio::net::tcp::OwnedWriteHalf, script: &Script) {
+        let mut lines = vec!["fake.example"];
+        lines.extend(script.extensions.iter().copied());
+        let last = lines.len() - 1;
+        for (index, text) in lines.iter().enumerate() {
+            let separator = if index == last { ' ' } else { '-' };
+            reply(writer, &format!("250{separator}{text}")).await;
+        }
+    }
+
+    async fn read_data(reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>) -> Option<String> {
+        let mut data = String::new();
+        let mut line = String::new();
+        loop {
+            line.clear();
+            if reader.read_line(&mut line).await.unwrap_or(0) == 0 {
+                return None;
+            }
+            if line == ".\r\n" {
+                return Some(data);
+            }
+            data.push_str(&line);
+        }
     }
 
     async fn serve(stream: TcpStream, script: Script, log: Log) {
@@ -271,13 +302,7 @@ mod tests {
             log.lock().unwrap().push(command.clone());
             let upper = command.to_ascii_uppercase();
             if upper.starts_with("EHLO") {
-                let mut lines = vec!["fake.example"];
-                lines.extend(script.extensions.iter().copied());
-                let last = lines.len() - 1;
-                for (index, text) in lines.iter().enumerate() {
-                    let separator = if index == last { ' ' } else { '-' };
-                    reply(&mut writer, &format!("250{separator}{text}")).await;
-                }
+                ehlo(&mut writer, &script).await;
             } else if upper.starts_with("STARTTLS") {
                 reply(&mut writer, script.starttls).await;
             } else if upper.starts_with("AUTH") {
@@ -288,20 +313,15 @@ mod tests {
                 reply(&mut writer, script.rcpt).await;
             } else if upper.starts_with("DATA") {
                 reply(&mut writer, "354 end with <CRLF>.<CRLF>").await;
-                let mut data = String::new();
-                loop {
-                    line.clear();
-                    if reader.read_line(&mut line).await.unwrap_or(0) == 0 {
-                        return;
-                    }
-                    if line == ".\r\n" {
-                        break;
-                    }
-                    data.push_str(&line);
-                }
+                let Some(data) = read_data(&mut reader).await else {
+                    return;
+                };
                 log.lock().unwrap().push(format!("DATA\n{data}"));
                 reply(&mut writer, script.end_of_data).await;
             } else if upper.starts_with("QUIT") {
+                if script.hang_on_quit {
+                    std::future::pending::<()>().await;
+                }
                 reply(&mut writer, "221 bye").await;
                 break;
             } else {
@@ -496,6 +516,32 @@ mod tests {
             assert!(!diagnostic.contains(marker), "{marker} in {diagnostic}");
         }
         assert!(std::error::Error::source(&error).is_none());
+    }
+
+    #[tokio::test]
+    async fn smtp_transport_acceptance_survives_a_stalled_quit() {
+        let (port, log) = fake_relay(Script {
+            hang_on_quit: true,
+            ..Script::default()
+        })
+        .await;
+        let started = tokio::time::Instant::now();
+        let submission = tokio::spawn(async move {
+            submit(&settings(port, SmtpSecurity::Plaintext, false), &mail()).await
+        });
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !sent(&log, "QUIT") {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the relay must accept DATA before the clock advances");
+        tokio::time::pause();
+        tokio::time::advance(SUBMISSION_TIMEOUT).await;
+        assert_eq!(submission.await.unwrap(), Ok(()));
+        assert!(sent(&log, "DATA"));
+        assert!(sent(&log, "QUIT"));
+        assert!(started.elapsed() <= SUBMISSION_TIMEOUT + Duration::from_secs(1));
     }
 
     #[tokio::test(start_paused = true)]

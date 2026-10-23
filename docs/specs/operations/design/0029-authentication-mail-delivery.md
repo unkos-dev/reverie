@@ -97,7 +97,9 @@ The worker orders due notices before other due mail, then by enqueue time and jo
 
 A failed check cancels or expires the job. Otherwise the worker opens the payload and submits, with the whole SMTP
 exchange bounded to 30 seconds. No database transaction or lock is held during submission. Each message carries a
-Message-ID derived from the job UUID.
+Message-ID derived from the job UUID. Positive acceptance is retained if QUIT fails or exhausts the remaining SMTP
+budget. The complete worker step, including database waits and outcome recording, is bounded to 60 seconds; expiry of
+that budget ends the run for supervised restart.
 
 A temporary failure is retried 30 seconds, two minutes, five minutes and fifteen minutes after the preceding failure:
 five attempts in total. Permanent refusal and unreadable payloads stop at once. An interrupted fifth attempt records
@@ -105,8 +107,9 @@ five attempts in total. Permanent refusal and unreadable payloads stop at once. 
 enqueue time.
 
 On startup, including a supervised restart, `in_progress` jobs return to `pending` and the interrupted attempt counts.
-Shutdown stops new claims and cancels unfinished work within the worker stop budget. When mail is disabled, no job is
-queued and no worker runs; stored jobs wait, and on re-enable expired or revoked ones are discarded before submission.
+Startup and shutdown reclaim each have a 30-second bound; exceeding it ends the run with an error. Shutdown stops new
+claims and cancels unfinished work within the worker stop budget. When mail is disabled, no job is queued and no worker
+runs; stored jobs wait, and on re-enable expired or revoked ones are discarded before submission.
 
 ## Failure and recovery
 
