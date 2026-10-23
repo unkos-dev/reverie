@@ -3,8 +3,9 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0063"
 title: "Optional SMTP delivery through an encrypted durable mail queue"
-status: proposed
+status: accepted
 recorded-on: "2026-10-21"
+decided-on: "2026-10-23"
 decision-makers:
   - "John Unkovich"
 ---

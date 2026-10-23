@@ -468,7 +468,7 @@
       "id": "REV-ADR-0063",
       "kind": "adr",
       "path": "docs/adr/0063-optional-smtp-delivery-through-an-encrypted-durable-mail-queue.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Optional SMTP delivery through an encrypted durable mail queue"
     },
     {
