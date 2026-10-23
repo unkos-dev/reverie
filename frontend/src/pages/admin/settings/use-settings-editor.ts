@@ -359,7 +359,6 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
     setDraft(EMPTY_DRAFT);
     setElsewhere({});
     setNotice({ kind: "none" });
-    setPendingConfirm(null);
   }
 
   function startSave(patch: SettingsPatch): void {
@@ -413,7 +412,6 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
     setDraft(EMPTY_DRAFT);
     setElsewhere({});
     setNotice({ kind: "none" });
-    setPendingConfirm(null);
     void queryClient.invalidateQueries({ queryKey: queryKeys.settings.snapshot() });
   }
 

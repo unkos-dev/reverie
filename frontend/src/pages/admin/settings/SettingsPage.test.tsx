@@ -1030,8 +1030,11 @@ describe("validation", () => {
     await user.click(save());
     const field = screen.getByRole("textbox", { name: "Concurrent lookups" });
     await waitFor(() => {
-      expect(field).toHaveAccessibleDescription(/Enter a whole number from 1 to 10\./);
+      expect(field).toHaveAccessibleDescription(/Enter a whole number from 1 to 10\.$/);
     });
+    const message = screen.getByText("Enter a whole number from 1 to 10.");
+    expect(message.textContent).toBe("Enter a whole number from 1 to 10.");
+    expect(message.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     await type(user, "Concurrent lookups", "8");
     await user.tab();
     expect(field).not.toHaveAttribute("aria-invalid");
@@ -1805,6 +1808,30 @@ describe("a stale write", () => {
       expect(server.puts[1]?.patch).toEqual({ enrichment_fetch_budget_secs: 31 });
       expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("8");
       expect(invalidControls()).toHaveLength(0);
+    });
+
+    test("a failed Save my choices keeps the other edit, clears the discarded error and still blocks invalid retained text", async () => {
+      const user = userEvent.setup();
+      const field = await conflictWithInvalidText(user, true);
+      await user.click(screen.getByRole("radio", { name: "Use theirs (8 lookups)" }));
+      server.putMode = "500";
+      await user.click(screen.getByRole("button", { name: "Save my choices" }));
+      expect(
+        await screen.findByText("The server returned an error. Your edits are still here."),
+      ).toBeInTheDocument();
+      expect(server.puts).toHaveLength(2);
+      expect(field).toHaveValue("8");
+      expect(field).not.toHaveAttribute("aria-invalid");
+      expect(field).not.toHaveAccessibleDescription(/Enter a number/);
+      const other = screen.getByRole("textbox", { name: "Time allowed per source" });
+      expect(other).toHaveValue("30");
+      await type(user, "Time allowed per source", "0");
+      await user.click(save());
+      await waitFor(() => {
+        expect(other).toHaveFocus();
+      });
+      expect(other).toHaveAttribute("aria-invalid", "true");
+      expect(server.puts).toHaveLength(2);
     });
 
     test("choosing Keep mine again restores the field's validation", async () => {

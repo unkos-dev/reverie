@@ -1,3 +1,4 @@
+import { TriangleAlert } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import {
   FieldError as AriaFieldError,
@@ -31,7 +32,18 @@ import {
 import { labelId } from "./ids";
 import type { ConflictRow, SettingsEditor } from "./use-settings-editor";
 
-const FIELD_ERROR = "text-destructive mt-1.5 text-sm font-normal";
+function RowError(): ReactElement {
+  return (
+    <AriaFieldError className="mt-1.5 flex items-baseline gap-1.5 text-[13px] font-medium leading-normal">
+      {({ validationErrors }) => (
+        <>
+          <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 translate-y-0.5" />
+          {validationErrors.join(" ")}
+        </>
+      )}
+    </AriaFieldError>
+  );
+}
 
 const TAG =
   "ml-2 inline-block rounded-full border px-1.5 py-px align-middle font-mono text-[11px] uppercase leading-[1.4] tracking-[0.04em]";
@@ -113,7 +125,7 @@ function NumberRow({
             {formatBytes(bytes)}
           </div>
         ) : null}
-        <AriaFieldError className={FIELD_ERROR} />
+        <RowError />
       </RowFrame>
     </TextField>
   );
@@ -150,7 +162,7 @@ function SwitchRow({
             {on ? "On" : "Off"}
           </span>
         </div>
-        <AriaFieldError className={FIELD_ERROR} />
+        <RowError />
       </RowFrame>
     </AriaSwitchField>
   );
@@ -208,7 +220,7 @@ function FormatsRow({
             would have nothing to import.
           </p>
         ) : null}
-        <AriaFieldError className={FIELD_ERROR} />
+        <RowError />
       </RowFrame>
     </CheckboxGroup>
   );

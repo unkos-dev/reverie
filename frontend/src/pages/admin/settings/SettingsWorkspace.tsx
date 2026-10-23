@@ -260,6 +260,10 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
     return () => {};
   }, [idle, validationErrors]);
 
+  function cancelValueReset(event: SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+  }
+
   function resetForm(): void {
     formRef.current?.reset();
   }
@@ -291,6 +295,7 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
           aria-label={`${info.title} settings`}
           validationErrors={validationErrors}
           onSubmit={submit}
+          render={(props) => <form {...props} onResetCapture={cancelValueReset} />}
         >
           <section aria-labelledby={`heading-${area}`} className="pb-2">
             <header>
