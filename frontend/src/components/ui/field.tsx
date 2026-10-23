@@ -244,7 +244,7 @@ function TextInputField({
       </AriaLabel>
       <AriaInput render={(inputProps) => <Input {...inputProps} />} />
       {children}
-      <AriaFieldError className="text-destructive text-sm font-normal" />
+      <AriaFieldError className="text-fg text-sm font-normal" />
     </TextField>
   )
 }
