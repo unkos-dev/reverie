@@ -49,9 +49,9 @@ export function Notices({ notice }: Readonly<{ notice: Notice }>): ReactElement 
         </Note>
       );
     case "validation":
-      return notice.unmapped === null ? null : (
+      return (
         <Note title="Settings were not saved" role="alert" strong>
-          <NoteText>{notice.unmapped}</NoteText>
+          <NoteText>{notice.unmapped ?? "Review the field errors and try again."}</NoteText>
         </Note>
       );
     case "conflict":

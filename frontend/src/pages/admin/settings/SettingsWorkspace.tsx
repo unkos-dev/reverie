@@ -128,7 +128,7 @@ function SaveBar({
   const pristine = !conflict && editor.dirty.length === 0;
   const saveLabel = conflict ? "Save my choices" : "Save changes";
   return (
-    <div className="bg-surface border-border-strong sticky bottom-0 z-20 -mx-10 mt-8 flex items-center gap-3 border-t px-10 py-3">
+    <div className="bg-surface border-border-strong sticky bottom-0 z-20 -mx-10 mt-auto flex items-center gap-3 border-t px-10 py-3">
       <div className="text-fg-muted mr-auto text-sm">{barSummary(editor)}</div>
       <Button
         type="button"
@@ -248,17 +248,6 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
   const formRef = useRef<HTMLFormElement>(null);
   const failed = editor.notice.kind === "validation" ? editor.notice.errors : null;
   const validationErrors = useMemo(() => namedErrors(failed), [failed]);
-  const idle = editor.phase === "idle";
-  const reported = useRef<ValidationErrors | null>(null);
-
-  useEffect(() => {
-    if (!idle || validationErrors === NO_ERRORS || reported.current === validationErrors) {
-      return () => {};
-    }
-    reported.current = validationErrors;
-    formRef.current?.reportValidity();
-    return () => {};
-  }, [idle, validationErrors]);
 
   function cancelValueReset(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -288,10 +277,11 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
   return (
     <>
       <Notices notice={editor.notice} />
-      <div className="mt-4 grid grid-cols-[15rem_minmax(0,1fr)] gap-12">
+      <div className="mt-4 grid flex-1 grid-cols-[15rem_minmax(0,1fr)] gap-12">
         <SubNav area={area} base={base} dirty={editor.dirty.length > 0} />
         <Form
           ref={formRef}
+          className="flex flex-col"
           aria-label={`${info.title} settings`}
           validationErrors={validationErrors}
           onSubmit={submit}

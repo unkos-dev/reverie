@@ -133,7 +133,7 @@ export function SettingsPage(): ReactElement {
   }
 
   return (
-    <div className="mx-auto max-w-[1180px] px-10 pt-6">
+    <div className="mx-auto flex min-h-screen max-w-[1180px] flex-col px-10 pt-6">
       <div className="text-fg-faint mb-2 font-mono text-xs uppercase tracking-[0.04em]">
         Admin / Settings / {areaById(area).title}
       </div>

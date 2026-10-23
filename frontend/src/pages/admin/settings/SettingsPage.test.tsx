@@ -811,7 +811,9 @@ describe("accepted formats", () => {
       await user.click(save());
       const message = await screen.findByText("accepted_formats must name a supported format");
       expect(message).toBeInTheDocument();
-      expect(screen.queryByText("Settings were not saved")).not.toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Settings were not savedReview the field errors and try again.",
+      );
       expect(screen.getByRole("checkbox", { name: "PDF" })).toBeChecked();
       expect(screen.getByRole("checkbox", { name: "PDF" })).toHaveAccessibleDescription(
         /accepted_formats must name a supported format/,
@@ -1142,7 +1144,7 @@ describe("validation", () => {
     expect(await screen.findByText("Enter a number.")).toBeInTheDocument();
   });
 
-  test("a server 422 that names a field lands on that field as written", async () => {
+  test("a server 422 that names a field marks that field and announces the refusal without moving focus", async () => {
     server.putMode = "422";
     const user = userEvent.setup();
     await loaded();
@@ -1154,13 +1156,16 @@ describe("validation", () => {
     });
     expect(field).toHaveAccessibleDescription(/enrichment_concurrency must be between 1 and 10/);
     expect(field).toHaveValue("6");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Settings were not savedReview the field errors and try again.",
+    );
     await waitFor(() => {
-      expect(field).toHaveFocus();
+      expect(save()).toBeEnabled();
     });
-    expect(screen.queryByText("Settings were not saved")).not.toBeInTheDocument();
+    expect(save()).toHaveFocus();
   });
 
-  test("a mapped server 422 on a switch lands on that switch and focuses it once saving ends", async () => {
+  test("a mapped server 422 on a switch marks that switch without moving focus", async () => {
     server.putMode = "422-switch";
     const user = userEvent.setup();
     await loaded();
@@ -1173,9 +1178,11 @@ describe("validation", () => {
     expect(control).toHaveAccessibleDescription(
       /enrichment_enabled cannot change while a lookup runs/,
     );
+    expect(screen.getByRole("alert")).toHaveTextContent("Review the field errors and try again.");
     await waitFor(() => {
-      expect(control).toHaveFocus();
+      expect(save()).toBeEnabled();
     });
+    expect(save()).toHaveFocus();
     expect(control).not.toBeChecked();
     expect(server.puts).toHaveLength(1);
   });
