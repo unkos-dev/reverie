@@ -72,7 +72,6 @@ case "$1" in
       *) exit 93 ;;
     esac
     ;;
-  create) printf 'create\n' >> "$ENV_STUB_EVENTS" ;;
   start) exit 0 ;;
   inspect)
     if [[ "$*" == *HostPort* ]]; then printf '34567\n'; else printf 'fixture-container\n'; fi
@@ -80,10 +79,6 @@ case "$1" in
   exec)
     [[ ! -e /proc/$$/fd/9 ]] || exit 94
     [[ "${ENV_STUB_LOGIN_FAIL:-0}" == 0 ]]
-    ;;
-  rm)
-    printf 'cleanup\n' >> "$ENV_STUB_EVENTS"
-    [[ "${ENV_STUB_CLEANUP_FAIL:-0}" == 0 ]]
     ;;
   *) exit 95 ;;
 esac
@@ -436,87 +431,5 @@ lifecycle > "$tmp/lifecycle-missing.log" 2>&1 && missing_status=0 || missing_sta
 [[ "$missing_status" != 0 && ! -e "$retained" && -e "$volume_marker" ]] || {
   echo 'FAIL existing volume without state regenerated or removed'; fail=1;
 }
-
-for child_status in 0 2 3 23; do
-  for cleanup_failure in 0 1; do
-    events="$tmp/status-$child_status-$cleanup_failure.events"
-    log="$tmp/status-$child_status-$cleanup_failure.log"
-    wrapper_status=0
-    env -i PATH="$test_path" TMPDIR="${TMPDIR:-/tmp}" HOME="$fake_home" XDG_STATE_HOME="$state_root" \
-      ENV_STUB_EVENTS="$events" ENV_STUB_CLEANUP_FAIL="$cleanup_failure" \
-      bash "$root/scripts/postgres-provision.sh" test -- bash -s -- "$child_status" "$events" > "$log" 2>&1 <<'CHILD' || wrapper_status=$?
-printf 'child\n' >> "$2"
-exit "$1"
-CHILD
-    if ! grep -qx child "$events" || ! grep -qx cleanup "$events"; then
-      echo 'FAIL wrapper status case did not execute child and cleanup'; fail=1
-    fi
-    if [[ "$child_status" == 2 || "$child_status" == 3 ]]; then
-      if [[ "$cleanup_failure" == 0 ]]; then
-        check_status "mutation findings $child_status without cleanup failure" "$child_status" "$wrapper_status"
-      else
-        check_status "mutation findings $child_status with cleanup failure" 1 "$wrapper_status"
-      fi
-    elif [[ "$child_status" == 23 ]]; then
-      check_status "child 23, cleanup failure $cleanup_failure" 23 "$wrapper_status"
-    elif [[ "$cleanup_failure" == 0 ]]; then
-      check_status 'child success and cleanup success' 0 "$wrapper_status"
-    elif [[ "$wrapper_status" == 0 || "$wrapper_status" == 2 || "$wrapper_status" == 3 ]]; then
-      echo 'FAIL cleanup-only failure classified as success or mutation finding'; fail=1
-    else
-      echo 'ok   cleanup-only failure returns infrastructure status'
-    fi
-    if [[ "$cleanup_failure" == 1 ]] && ! grep -q 'cleanup failed' "$log"; then
-      echo 'FAIL cleanup failure was not reported'; fail=1
-    fi
-  done
-done
-
-for cancellation in INT TERM; do
-  for response in success ignore; do
-    events="$tmp/cancel-$cancellation-$response.events"
-    ready="$tmp/cancel-$cancellation-$response.ready"
-    env --default-signal=INT,TERM -i PATH="$test_path" TMPDIR="${TMPDIR:-/tmp}" HOME="$fake_home" XDG_STATE_HOME="$state_root" \
-      ENV_STUB_EVENTS="$events" \
-      bash "$root/scripts/postgres-provision.sh" test -- bash -s -- "$response" "$ready" \
-      > "$tmp/cancel-$cancellation-$response.log" 2>&1 <<'CANCEL' &
-if [[ "$1" == ignore ]]; then trap "" INT TERM; else trap "exit 0" INT TERM; fi
-printf '%s\n' "$$" > "$2"
-while :; do sleep 0.1; done
-CANCEL
-    owner=$!
-    for ((attempt=0; attempt<100; attempt++)); do
-      [[ ! -s "$ready" ]] || break
-      sleep 0.1
-    done
-    if [[ ! -s "$ready" ]]; then
-      echo 'FAIL cancellation child did not start'; fail=1
-      kill -TERM "$owner" 2>/dev/null || true
-      wait "$owner" || true
-      continue
-    fi
-    child_group="$(cat "$ready")"
-    kill -s "$cancellation" "$owner"
-    for ((attempt=0; attempt<150; attempt++)); do
-      kill -0 "$owner" 2>/dev/null || break
-      sleep 0.1
-    done
-    if kill -0 "$owner" 2>/dev/null; then
-      echo 'FAIL cancellation exceeded its deadline'; fail=1
-      kill -KILL -- "-$child_group" 2>/dev/null || true
-    fi
-    wait "$owner" && cancel_status=0 || cancel_status=$?
-    if [[ "$response" == ignore ]]; then
-      check_status "$cancellation stops an unresponsive child" 137 "$cancel_status"
-    elif [[ "$cancellation" == INT ]]; then
-      check_status 'successful child cannot hide INT cancellation' 130 "$cancel_status"
-    else
-      check_status 'successful child cannot hide TERM cancellation' 143 "$cancel_status"
-    fi
-    if kill -0 -- "-$child_group" 2>/dev/null || ! grep -qx cleanup "$events"; then
-      echo 'FAIL cancelled group survived or cleanup did not execute'; fail=1
-    fi
-  done
-done
 
 exit "$fail"

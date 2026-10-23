@@ -289,11 +289,12 @@ and its siblings against the same per-test database.
 ## Failure and recovery
 
 The disposable owner forwards INT/TERM to the child group, allows ten seconds for termination, kills an unresponsive
-group, waits and removes its socket contents, container, storage and credential directory. Cancellation remains a
-failure even when the child exits successfully. Child failures propagate; cleanup failure makes a successful child or
-mutation-findings status an infrastructure failure. Forced termination, host failure or daemon loss can leave named
-resources for manual cleanup. Persistent startup refuses missing or malformed credential state for an existing volume. A
-confirmed dev reset recreates only that project's volume, retaining valid credentials and permanently deleting its data.
+group, waits and removes its socket contents, container, storage and credential directory. It exits with the child's
+status, or when cancelled with the signal's status: 130 or 143, or 137 when the group has to be killed. Cleanup and
+termination failures are reported without changing the exit status. Forced termination, host failure or daemon loss can
+leave named resources for manual cleanup. Persistent startup refuses missing or malformed credential state for an
+existing volume. A confirmed dev reset recreates only that project's volume, retaining valid credentials and permanently
+deleting its data.
 
 - **`MigrationError::Connection`**: the ephemeral migration pool could not connect. Nothing was attempted; the message
   never includes DSN credentials (`resolve_migration_dsn` and the connect path pass only the parsed error through).

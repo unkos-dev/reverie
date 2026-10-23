@@ -191,7 +191,7 @@ Two aggregates anchor the local loop and should be the default reflex:
   `preflight-scope-selftest`, because its subject decides which lanes a local gate runs, so an edit that narrows the
   gate can deselect the very check that would catch it. Neither failure can be asserted from inside its own subject.
   `backend-dev-env-selftest` also gates in local lint and the unconditional CI guards job: it exercises the actual
-  provisioner's child-status and cleanup-failure handling, alongside dev-state parsing, locking and reuse.
+  provisioner's dev-state parsing, locking and reuse.
 - `just check` remains the fast offline subset for mid-task iteration; it includes zizmor's offline-only audits but not
   the token-gated ones.
 - `just preflight-detach [scoped|full]` runs either gate detached from the terminal (setsid), so a long run survives a
