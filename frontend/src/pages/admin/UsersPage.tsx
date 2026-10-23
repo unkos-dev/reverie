@@ -392,8 +392,10 @@ function LinkResultContent({
     initialData: sending.data,
     gcTime: 0,
     staleTime: Infinity,
-    refetchInterval: (query) =>
-      query.state.status === "error" ? false : query.state.data?.status === "queued" ? 3000 : false,
+    refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
+      return query.state.data?.status === "queued" ? 3000 : false;
+    },
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: false,
@@ -420,6 +422,8 @@ function LinkResultContent({
   const description = result.newAccount
     ? `${result.name} uses this link to choose a password. It expires ${expiry}. You won't see it again. If it's lost, create a new link from the user list.`
     : `${result.name} uses this link to choose a new password. It expires ${expiry}. You won't see it again.`;
+  const sendLabel =
+    status?.status === "failed" || sending.isError || delivery.isError ? "Try again" : "Send email";
   async function copyLink(): Promise<void> {
     try {
       await navigator.clipboard.writeText(url);
@@ -452,9 +456,7 @@ function LinkResultContent({
               else sending.mutate();
             }}
           >
-            {status?.status === "failed" || sending.isError || delivery.isError
-              ? "Try again"
-              : "Send email"}
+            {sendLabel}
           </Button>
         ) : null}
         <Button
