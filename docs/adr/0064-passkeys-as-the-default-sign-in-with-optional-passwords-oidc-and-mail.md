@@ -3,8 +3,9 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0064"
 title: "Passkeys as the default sign-in, with optional passwords, OIDC and mail"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-10-23"
+decided-on: "2026-10-19"
 decision-makers:
   - "John Unkovich"
 ---

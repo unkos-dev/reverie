@@ -475,7 +475,7 @@
       "id": "REV-ADR-0064",
       "kind": "adr",
       "path": "docs/adr/0064-passkeys-as-the-default-sign-in-with-optional-passwords-oidc-and-mail.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Passkeys as the default sign-in, with optional passwords, OIDC and mail"
     },
     {
