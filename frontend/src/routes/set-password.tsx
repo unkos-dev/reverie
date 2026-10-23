@@ -1,12 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
-import {
-  FieldError as AriaFieldError,
-  Form,
-  Input as AriaInput,
-  Label as AriaLabel,
-  TextField,
-} from "react-aria-components";
+import { Form } from "react-aria-components";
 import { Link, useLoaderData } from "react-router";
 import { z } from "zod";
 
@@ -14,8 +8,7 @@ import { ApiError } from "@/api";
 import { lookupCredentialLink, redeemCredentialLink } from "@/api/auth";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FieldError, TextInputField } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePasswordPolicy, type PasswordPolicyState } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
@@ -218,37 +211,30 @@ function CredentialForm({
   return (
     <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <input type="hidden" name="username" autoComplete="username" value={email} />
-      <TextField
+      <TextInputField
         name="password"
         type="password"
         autoComplete="new-password"
         isRequired
         onChange={setPassword}
         validate={(value) => (ready ? (validate(value) ?? null) : null)}
-        render={(props) => <Field {...props} />}
+        label="New password"
       >
-        <AriaLabel render={(props) => <FieldLabel {...props} />}>New password</AriaLabel>
-        <AriaInput render={(props) => <Input {...props} />} />
         <PasswordPolicyHint
           policy={policy}
           failed={policyError}
           onRetry={onRetryPolicy}
           retrying={policyRetrying}
         />
-        <AriaFieldError className="text-destructive text-sm font-normal" />
-      </TextField>
-      <TextField
+      </TextInputField>
+      <TextInputField
         name="confirm_password"
         type="password"
         autoComplete="new-password"
         isRequired
         validate={(value) => (value === password ? null : "The passwords don't match.")}
-        render={(props) => <Field {...props} />}
-      >
-        <AriaLabel render={(props) => <FieldLabel {...props} />}>Confirm password</AriaLabel>
-        <AriaInput render={(props) => <Input {...props} />} />
-        <AriaFieldError className="text-destructive text-sm font-normal" />
-      </TextField>
+        label="Confirm password"
+      />
       {error !== null ? <FieldError>{error}</FieldError> : null}
       <Button type="submit" isPending={pending} isDisabled={!ready}>
         Set password

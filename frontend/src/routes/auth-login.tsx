@@ -15,13 +15,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from "react";
-import {
-  FieldError as AriaFieldError,
-  Form,
-  Input as AriaInput,
-  Label as AriaLabel,
-  TextField,
-} from "react-aria-components";
+import { Form } from "react-aria-components";
 import { Link, Navigate, useLocation } from "react-router";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -30,8 +24,7 @@ import { ApiError } from "@/api";
 import { fetchSetupStatus, loginLocal } from "@/api/auth";
 import { currentPasswordField, emailField } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FieldError, TextInputField } from "@/components/ui/field";
 import { formString } from "@/lib/form";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -163,30 +156,22 @@ export function Component(): ReactElement {
 
   const localForm = status.local_auth_enabled ? (
     <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <TextField
+      <TextInputField
         name="email"
         type="email"
         autoComplete="email"
         isRequired
         validate={validateEmail}
-        render={(props) => <Field {...props} />}
-      >
-        <AriaLabel render={(props) => <FieldLabel {...props} />}>Email</AriaLabel>
-        <AriaInput render={(props) => <Input {...props} />} />
-        <AriaFieldError className="text-destructive text-sm font-normal" />
-      </TextField>
-      <TextField
+        label="Email"
+      />
+      <TextInputField
         name="password"
         type="password"
         autoComplete="current-password"
         isRequired
         validate={validatePassword}
-        render={(props) => <Field {...props} />}
-      >
-        <AriaLabel render={(props) => <FieldLabel {...props} />}>Password</AriaLabel>
-        <AriaInput render={(props) => <Input {...props} />} />
-        <AriaFieldError className="text-destructive text-sm font-normal" />
-      </TextField>
+        label="Password"
+      />
       {error !== null ? <FieldError>{error}</FieldError> : null}
       <Button type="submit" isPending={loginMutation.isPending}>
         Sign in

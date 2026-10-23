@@ -11,13 +11,7 @@
  */
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
-import {
-  FieldError as AriaFieldError,
-  Form,
-  Input as AriaInput,
-  Label as AriaLabel,
-  TextField,
-} from "react-aria-components";
+import { Form } from "react-aria-components";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -26,8 +20,7 @@ import { requestPasswordReset, resetPassword } from "@/api/auth";
 import { emailField, pinField } from "@/api/auth.schemas";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FieldError, TextInputField } from "@/components/ui/field";
 import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 
@@ -109,18 +102,14 @@ export function Component(): ReactElement {
         footer={<BackToSignIn />}
       >
         <Form key="request" onSubmit={handleRequest} className="flex flex-col gap-4">
-          <TextField
+          <TextInputField
             name="email"
             type="email"
             autoComplete="email"
             isRequired
             validate={validateEmail}
-            render={(props) => <Field {...props} />}
-          >
-            <AriaLabel render={(props) => <FieldLabel {...props} />}>Email</AriaLabel>
-            <AriaInput render={(props) => <Input {...props} />} />
-            <AriaFieldError className="text-destructive text-sm font-normal" />
-          </TextField>
+            label="Email"
+          />
           {error !== null ? <FieldError>{error}</FieldError> : null}
           <Button type="submit" isPending={requestMutation.isPending}>
             Send recovery PIN
@@ -133,32 +122,25 @@ export function Component(): ReactElement {
   return (
     <AuthShell title="Enter recovery PIN" description={RECOVERY_NOTICE} footer={<BackToSignIn />}>
       <Form key="reset" onSubmit={handleReset} className="flex flex-col gap-4">
-        <TextField
+        <TextInputField
           name="pin"
           type="text"
           inputMode="numeric"
           autoComplete="one-time-code"
           isRequired
           validate={validatePin}
-          render={(props) => <Field {...props} />}
-        >
-          <AriaLabel render={(props) => <FieldLabel {...props} />}>Recovery PIN</AriaLabel>
-          <AriaInput render={(props) => <Input {...props} />} />
-          <AriaFieldError className="text-destructive text-sm font-normal" />
-        </TextField>
-        <TextField
+          label="Recovery PIN"
+        />
+        <TextInputField
           name="new_password"
           type="password"
           autoComplete="new-password"
           isRequired
           validate={(value) => (ready ? (validate(value) ?? null) : null)}
-          render={(props) => <Field {...props} />}
+          label="New password"
         >
-          <AriaLabel render={(props) => <FieldLabel {...props} />}>New password</AriaLabel>
-          <AriaInput render={(props) => <Input {...props} />} />
           <PasswordPolicyHint policy={policy} failed={policyError} />
-          <AriaFieldError className="text-destructive text-sm font-normal" />
-        </TextField>
+        </TextInputField>
         {error !== null ? <FieldError>{error}</FieldError> : null}
         <Button type="submit" isPending={resetMutation.isPending} isDisabled={!ready}>
           Reset password

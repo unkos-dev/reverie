@@ -1,10 +1,4 @@
-import {
-  FieldError as AriaFieldError,
-  Form,
-  Input as AriaInput,
-  Label as AriaLabel,
-  TextField,
-} from "react-aria-components";
+import { Form, Input as AriaInput, Label as AriaLabel, TextField } from "react-aria-components";
 /**
  * `/tokens` — self-service device-token management.
  *
@@ -53,7 +47,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel, TextInputField } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -302,17 +296,13 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
               </DialogDescription>
             </DialogHeader>
             <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <TextField
+              <TextInputField
                 name="name"
                 type="text"
                 isRequired
                 validate={validateName}
-                render={(props) => <Field {...props} />}
-              >
-                <AriaLabel render={(props) => <FieldLabel {...props} />}>Name</AriaLabel>
-                <AriaInput render={(props) => <Input {...props} />} />
-                <AriaFieldError className="text-destructive text-sm font-normal" />
-              </TextField>
+                label="Name"
+              />
               <Field>
                 <Select
                   className="flex flex-col gap-2"

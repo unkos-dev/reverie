@@ -16,13 +16,7 @@
  */
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
-import {
-  FieldError as AriaFieldError,
-  Form,
-  Input as AriaInput,
-  Label as AriaLabel,
-  TextField,
-} from "react-aria-components";
+import { Form } from "react-aria-components";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -31,8 +25,7 @@ import { register } from "@/api/auth";
 import { displayNameField, emailField } from "@/api/auth.schemas";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FieldError, TextInputField } from "@/components/ui/field";
 import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 
@@ -101,43 +94,32 @@ export function Component(): ReactElement {
       }
     >
       <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <TextField
+        <TextInputField
           name="display_name"
           type="text"
           autoComplete="name"
           isRequired
           validate={validateDisplayName}
-          render={(props) => <Field {...props} />}
-        >
-          <AriaLabel render={(props) => <FieldLabel {...props} />}>Display name</AriaLabel>
-          <AriaInput render={(props) => <Input {...props} />} />
-          <AriaFieldError className="text-destructive text-sm font-normal" />
-        </TextField>
-        <TextField
+          label="Display name"
+        />
+        <TextInputField
           name="email"
           type="email"
           autoComplete="email"
           isRequired
           validate={validateEmail}
-          render={(props) => <Field {...props} />}
-        >
-          <AriaLabel render={(props) => <FieldLabel {...props} />}>Email</AriaLabel>
-          <AriaInput render={(props) => <Input {...props} />} />
-          <AriaFieldError className="text-destructive text-sm font-normal" />
-        </TextField>
-        <TextField
+          label="Email"
+        />
+        <TextInputField
           name="password"
           type="password"
           autoComplete="new-password"
           isRequired
           validate={(value) => (ready ? (validate(value) ?? null) : null)}
-          render={(props) => <Field {...props} />}
+          label="Password"
         >
-          <AriaLabel render={(props) => <FieldLabel {...props} />}>Password</AriaLabel>
-          <AriaInput render={(props) => <Input {...props} />} />
           <PasswordPolicyHint policy={policy} failed={policyError} />
-          <AriaFieldError className="text-destructive text-sm font-normal" />
-        </TextField>
+        </TextInputField>
         {error !== null ? <FieldError>{error}</FieldError> : null}
         <Button type="submit" isPending={registerMutation.isPending} isDisabled={!ready}>
           Create account

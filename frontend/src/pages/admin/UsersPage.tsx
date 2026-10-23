@@ -1,10 +1,4 @@
-import {
-  FieldError as AriaFieldError,
-  Form,
-  Input as AriaInput,
-  Label as AriaLabel,
-  TextField,
-} from "react-aria-components";
+import { Form, Label as AriaLabel } from "react-aria-components";
 /**
  * `/admin/users` — admin-only user management page.
  *
@@ -58,7 +52,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, TextInputField } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -459,29 +453,21 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
             </DialogDescription>
           </DialogHeader>
           <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <TextField
+            <TextInputField
               name="display_name"
               type="text"
               isRequired
               validate={validateDisplayName}
-              render={(props) => <Field {...props} />}
-            >
-              <AriaLabel render={(props) => <FieldLabel {...props} />}>Display name</AriaLabel>
-              <AriaInput render={(props) => <Input {...props} />} />
-              <AriaFieldError className="text-destructive text-sm font-normal" />
-            </TextField>
-            <TextField
+              label="Display name"
+            />
+            <TextInputField
               name="email"
               type="email"
               autoComplete="off"
               isRequired
               validate={validateEmail}
-              render={(props) => <Field {...props} />}
-            >
-              <AriaLabel render={(props) => <FieldLabel {...props} />}>Email</AriaLabel>
-              <AriaInput render={(props) => <Input {...props} />} />
-              <AriaFieldError className="text-destructive text-sm font-normal" />
-            </TextField>
+              label="Email"
+            />
             <Field>
               <Select className="flex flex-col gap-2" name="role" defaultValue="adult">
                 <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
