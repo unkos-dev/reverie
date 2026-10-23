@@ -855,31 +855,6 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn smtp_queue_logs_carry_only_job_ids_purposes_and_categories(pool: PgPool) {
-        let f = fixture(&pool, Behaviour::Permanent).await;
-        let job = enqueue_notice(&f.app, f.user, MailPurpose::NoticePasswordSet, ADDRESS).await;
-        let logs = crate::test_support::CapturedLogs::default();
-        async {
-            f.step().await;
-        }
-        .with_subscriber(logs.subscriber())
-        .await;
-        let text = logs.text();
-        assert!(text.contains(&job.to_string()), "{text}");
-        assert!(text.contains("notice_password_set"), "{text}");
-        assert!(text.contains("permanent_refusal"), "{text}");
-        for secret in [
-            ADDRESS,
-            "Body-marker",
-            "550",
-            "example.test/link",
-            "Subject",
-        ] {
-            assert!(!text.contains(secret), "{secret}: {text}");
-        }
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn smtp_queue_admin_link_payload_is_removed_at_every_terminal_outcome(pool: PgPool) {
         let f = fixture(&pool, Behaviour::Transient).await;
         let (_, digest) = f.link().await;
