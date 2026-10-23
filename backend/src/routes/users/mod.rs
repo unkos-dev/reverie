@@ -1427,7 +1427,7 @@ async fn retire_old_address(
     patch,
     path = "/api/v1/users/{id}",
     summary = "Update a user's name or email",
-    description = "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. An actual change or removal of `email` clears its verification and mailbox proofs and withdraws queued link mail. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
+    description = "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. An actual change or removal of `email` clears its verification and mailbox proofs, cancels the administrator or host credential link, including copied or delivered links, and withdraws queued link mail. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),

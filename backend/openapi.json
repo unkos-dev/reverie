@@ -5611,7 +5611,7 @@
           "users"
         ],
         "summary": "Update a user's name or email",
-        "description": "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. An actual change or removal of `email` clears its verification and mailbox proofs and withdraws queued link mail. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
+        "description": "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. An actual change or removal of `email` clears its verification and mailbox proofs, cancels the administrator or host credential link, including copied or delivered links, and withdraws queued link mail. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
         "operationId": "update_user",
         "parameters": [
           {
