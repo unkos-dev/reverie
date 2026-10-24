@@ -210,14 +210,14 @@ url = "https://github.com/crate-ci/typos/releases/download/v1.51.1/typos-v1.51.1
 url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/616653682"
 
 [[tools.uv]]
-version = "0.13.3"
+version = "0.13.4"
 backend = "aqua:astral-sh/uv"
-specifiers = ["0.13.3"]
+specifiers = ["0.13.4"]
 
 [tools.uv."platforms.linux-x64"]
-checksum = "sha256:e4f169ec380f1793b898a6f1fcbacd22db25cf7ca0349a6e96ffb85b69998d04"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.3/uv-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/657907872"
+checksum = "sha256:2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.4/uv-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/659693663"
 provenance = "github-attestations"
 
 [[tools.vacuum]]
