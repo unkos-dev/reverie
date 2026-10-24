@@ -147,14 +147,14 @@ url = "https://github.com/opengrep/opengrep/releases/download/v1.31.0/opengrep_m
 url_api = "https://api.github.com/repos/opengrep/opengrep/releases/assets/643824125"
 
 [[tools.pnpm]]
-version = "11.28.6"
+version = "11.28.7"
 backend = "aqua:pnpm/pnpm"
-specifiers = ["11.28.6"]
+specifiers = ["11.28.7"]
 
 [tools.pnpm."platforms.linux-x64"]
-checksum = "sha256:10ff3203f3a38d637561182bec457c7abf43658c27c9f4a7d0dd78ac6f4c891c"
-url = "https://github.com/pnpm/pnpm/releases/download/v11.28.6/pnpm-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/643978148"
+checksum = "sha256:62a7af5b9251558674bf2354f456e9b5b77cd03703892875c5c10f96c3eb215c"
+url = "https://github.com/pnpm/pnpm/releases/download/v11.28.7/pnpm-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/662237984"
 provenance = "github-attestations"
 
 [[tools.rumdl]]
