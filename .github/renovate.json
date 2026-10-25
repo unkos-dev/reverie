@@ -175,8 +175,8 @@
       "enabled": false
     },
     {
-      "description": "Group Vite+ with its core packages and alias because vp migrate owns their joint update.",
-      "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**"],
+      "description": "Group Vite+ with its core packages, alias, and Vitest browser provider.",
+      "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**", "@vitest/browser-playwright"],
       "groupName": "vite-plus"
     },
     {
