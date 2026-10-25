@@ -489,7 +489,7 @@
       "id": "REV-ADR-0066",
       "kind": "adr",
       "path": "docs/adr/0066-library-visit-state-and-local-day-filter-boundaries.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Library visit state and local-day filter boundaries"
     },
     {

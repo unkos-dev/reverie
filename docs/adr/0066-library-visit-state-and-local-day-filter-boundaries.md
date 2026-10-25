@@ -3,7 +3,7 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0066"
 title: "Library visit state and local-day filter boundaries"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-10-25"
 decision-makers:
   - "John Unkovich"
