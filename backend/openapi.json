@@ -818,21 +818,21 @@
           {
             "name": "created_at_gte",
             "in": "query",
-            "description": "Lower bound (day-inclusive) on the added date, ISO 8601 calendar date.\nA query parameter arrives as a string, so the value is parsed through\n[`filters::iso_date_opt`], which accepts `YYYY-MM-DD` and nothing else;\na malformed date fails deserialization and is a 400.",
+            "description": "Inclusive lower bound on the added timestamp, as an RFC 3339 instant.",
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date"
+              "format": "date-time"
             }
           },
           {
-            "name": "created_at_lte",
+            "name": "created_at_lt",
             "in": "query",
-            "description": "Upper bound (day-inclusive) on the added date, ISO 8601 calendar date.",
+            "description": "Exclusive upper bound on the added timestamp, as an RFC 3339 instant.",
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date"
+              "format": "date-time"
             }
           },
           {

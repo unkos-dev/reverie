@@ -10,7 +10,7 @@
  * bounded undo stack (toast action plus Ctrl+Z). The query cache stays
  * server-confirmed throughout: there is no optimistic commit.
  *
- * `listKey` must be the exact key the library page's suspense query reads
+ * `listKey` must be the exact key the library page's displayed query reads
  * (cursor stripped). The caller owns computing that key; this hook only
  * consumes it. A mismatched key silently writes a dead cache entry.
  */
@@ -108,7 +108,7 @@ type ReadingUndoEntry = {
   previousRow: BookListItem;
 };
 
-type UndoEntry = MetadataUndoEntry | ReadingUndoEntry;
+type UndoEntry = (MetadataUndoEntry | ReadingUndoEntry) & { listKey: BooksListKey };
 
 /** `${row.id}:${columnKey}`, the shared key shape for the pending-cells map. */
 export function pendingKey(rowId: string, columnKey: string): string {
@@ -306,7 +306,7 @@ function formatError(err: unknown): string {
 }
 
 export type UseCellEditOptions = {
-  /** Exact key of the suspense list query this hook patches (cursor stripped). */
+  /** Exact key of the displayed list this hook patches (cursor stripped). */
   listKey: BooksListKey;
   /** Column defs, consulted only for their `accessor` to stage a pending display value. */
   columns: readonly GridColumn<BookListItem>[];
@@ -396,7 +396,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
             patch: entry.counterPatch,
           });
         }
-        restoreMetadataRow(queryClient, listKey, entry);
+        restoreMetadataRow(queryClient, entry.listKey, entry);
         // Mirrors handleCellEdit's own invalidation, including the sibling
         // fan-out for a work-scoped field: without it, a book-detail view
         // open on any restored sibling can keep serving the undone value
@@ -412,7 +412,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
           manifestationId: entry.manifestationId,
           patch: entry.counterPatch,
         });
-        restoreReadingRow(queryClient, listKey, entry, response);
+        restoreReadingRow(queryClient, entry.listKey, entry, response);
         // The reading pipeline never fans out across sibling editions.
         void queryClient.invalidateQueries({
           queryKey: queryKeys.books.detail(entry.manifestationId),
@@ -456,7 +456,11 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
     });
   }
 
-  function announceSuccess(columnKey: EditableColumnKey, entry: UndoEntry | null): void {
+  function announceSuccess(
+    columnKey: EditableColumnKey,
+    prior: MetadataUndoEntry | ReadingUndoEntry | null,
+  ): void {
+    const entry: UndoEntry | null = prior === null ? null : { ...prior, listKey };
     const label = COLUMN_LABELS[columnKey];
     if (entry === null) {
       toast.success(`${label} updated.`);

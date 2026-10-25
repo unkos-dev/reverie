@@ -1,7 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { NuqsAdapter } from "nuqs/adapters/react-router/v8";
+import {
+  emptyFilterState,
+  filterStateToParams,
+  LibraryVisitSchema,
+  type FilterState,
+} from "@/routes/library-params";
 import { useState, type ReactElement } from "react";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -11,13 +16,13 @@ import type { SortLevelParam } from "@/api";
 import { FilterRail } from "./FilterRail";
 
 const SERIES = [
-  { id: "s-1", name: "Discworld" },
-  { id: "s-2", name: "Culture" },
+  { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Discworld" },
+  { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Culture" },
 ];
 
 const SHELVES = [
   {
-    id: "shelf-1",
+    id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
     name: "Wishlist",
     is_system: false,
     created_at: "2026-01-01T00:00:00Z",
@@ -25,7 +30,7 @@ const SHELVES = [
     item_count: 3,
   },
   {
-    id: "shelf-2",
+    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     name: "Favourites",
     is_system: false,
     created_at: "2026-01-01T00:00:00Z",
@@ -71,18 +76,38 @@ let sortChanges: (readonly SortLevelParam[])[] = [];
  * preferences hook. Sort deliberately does not flow through the URL here,
  * because it has no URL form.
  */
-function SortOwner({ initialOverride }: { initialOverride: readonly SortLevelParam[] | null }) {
+function SortOwner({
+  initialOverride,
+  initialFilters,
+}: {
+  initialOverride: readonly SortLevelParam[] | null;
+  initialFilters: Partial<FilterState>;
+}) {
+  const [filters, setFilters] = useState({ ...emptyFilterState(), ...initialFilters });
   const [override, setOverride] = useState<readonly SortLevelParam[] | null>(initialOverride);
   return (
-    <FilterRail
-      seriesOptions={SERIES}
-      sortLevels={override ?? DEFAULT_STACK}
-      sortInherited={override === null}
-      onSortChange={(next) => {
-        sortChanges.push(next);
-        setOverride(next.length === 0 ? null : next);
-      }}
-    />
+    <>
+      <FilterRail
+        owner={{
+          filters,
+          view: undefined,
+          commitAll: setFilters,
+          clearAll: () => {
+            setFilters(emptyFilterState());
+          },
+          setView: () => {},
+        }}
+        showContradiction
+        seriesOptions={SERIES}
+        sortLevels={override ?? DEFAULT_STACK}
+        sortInherited={override === null}
+        onSortChange={(next) => {
+          sortChanges.push(next);
+          setOverride(next.length === 0 ? null : next);
+        }}
+      />
+      <output data-testid="filter-state">{JSON.stringify(filters)}</output>
+    </>
   );
 }
 
@@ -93,19 +118,19 @@ function SortOwner({ initialOverride }: { initialOverride: readonly SortLevelPar
  * its location in memory where those writes never land.
  */
 function renderRail(
-  initialEntry = "/library",
+  initialFilters: Partial<FilterState> = {},
   sortOverride: readonly SortLevelParam[] | null = null,
 ): void {
-  window.history.replaceState(null, "", initialEntry);
+  window.history.replaceState(null, "", "/library");
   const router = createBrowserRouter([
     {
       path: "/library",
       element: (
-        <NuqsAdapter>
+        <>
           <Providers>
-            <SortOwner initialOverride={sortOverride} />
+            <SortOwner initialOverride={sortOverride} initialFilters={initialFilters} />
           </Providers>
-        </NuqsAdapter>
+        </>
       ),
     },
   ]);
@@ -113,11 +138,14 @@ function renderRail(
 }
 
 function currentSearch(): URLSearchParams {
-  return new URLSearchParams(window.location.search);
-}
-
-async function debounceSettled(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  const raw: unknown = JSON.parse(screen.getByTestId("filter-state").textContent);
+  const observed = LibraryVisitSchema.parse({ filters: raw }).filters;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filterStateToParams(observed))) {
+    if (Array.isArray(value)) for (const token of value) params.append(key, token);
+    else params.set(key, String(value));
+  }
+  return params;
 }
 
 function sectionByTitle(title: string): HTMLElement {
@@ -155,18 +183,18 @@ afterEach(() => {
 });
 
 describe("FilterRail series facet", () => {
-  test("selecting a series sets ?series= with single-select semantics", async () => {
+  test("selecting a series sets the series with single-select semantics", async () => {
     renderRail();
     openSection("Series");
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
     await waitFor(() => {
-      expect(currentSearch().get("series")).toBe("s-1");
+      expect(currentSearch().get("series")).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     });
   });
 
   test("selecting the active series again clears the filter", async () => {
-    renderRail("/library?series=s-1");
+    renderRail({ series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
     const user = userEvent.setup();
     const box = screen.getByRole("checkbox", { name: "Discworld" });
     expect(box).toBeChecked();
@@ -177,7 +205,7 @@ describe("FilterRail series facet", () => {
   });
 
   test("section clear resets the series param and drops any cursor", async () => {
-    renderRail("/library?series=s-2&cursor=abc");
+    renderRail({ series: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Clear Series filters" }));
     await waitFor(() => {
@@ -189,20 +217,20 @@ describe("FilterRail series facet", () => {
 });
 
 describe("FilterRail shelf facet", () => {
-  test("lists shelves from the API and picking one writes ?shelf=", async () => {
-    renderRail("/library?cursor=abc");
+  test("lists shelves from the API and picking one sets the shelf", async () => {
+    renderRail({});
     openSection("Shelf");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("checkbox", { name: "Wishlist" }));
     await waitFor(() => {
       const search = currentSearch();
-      expect(search.get("shelf")).toBe("shelf-1");
+      expect(search.get("shelf")).toBe("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
       expect(search.get("cursor")).toBeNull();
     });
   });
 
   test("Space re-picks an active shelf to clear its single value", async () => {
-    renderRail("/library?shelf=shelf-1");
+    renderRail({ shelf: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" });
     const user = userEvent.setup();
     const shelf = await screen.findByRole("checkbox", { name: "Wishlist" });
     expect(shelf).toBeChecked();
@@ -216,7 +244,7 @@ describe("FilterRail shelf facet", () => {
   });
 
   test("section clear removes the shelf filter", async () => {
-    renderRail("/library?shelf=shelf-2");
+    renderRail({ shelf: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Clear Shelf filters" }));
     await waitFor(() => {
@@ -237,7 +265,7 @@ describe("FilterRail status section", () => {
   });
 
   test("section clear drops status_any and status_none together", async () => {
-    renderRail("/library?status_any=reading&status_none=abandoned");
+    renderRail({ status: { any: ["reading"], none: ["abandoned"] } });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Clear Status filters" }));
     await waitFor(() => {
@@ -249,12 +277,12 @@ describe("FilterRail status section", () => {
 });
 
 describe("FilterRail typed sections", () => {
-  test("title text commits title_contains after the debounce", async () => {
+  test("title text commits title_contains on native completion", async () => {
     renderRail();
     const user = userEvent.setup();
     const title = openSection("Title");
     await user.type(within(title).getByRole("textbox", { name: "Filter value" }), "dune");
-    await debounceSettled();
+
     await waitFor(() => {
       expect(currentSearch().get("title_contains")).toBe("dune");
     });
@@ -270,14 +298,14 @@ describe("FilterRail typed sections", () => {
     const input = within(title).getByRole("textbox", { name: "Filter value" });
     await user.type(input, "the sea");
     expect(input).toHaveValue("the sea");
-    await debounceSettled();
+
     await waitFor(() => {
       expect(currentSearch().get("title_contains")).toBe("the sea");
     });
   });
 
   test("a section clear empties the box it cleared", async () => {
-    renderRail("/library?title_contains=the+sea");
+    renderRail({ title: { op: "contains", text: "the sea" } });
     const user = userEvent.setup();
     const title = sectionByTitle("Title");
     expect(within(title).getByRole("textbox", { name: "Filter value" })).toHaveValue("the sea");
@@ -286,72 +314,11 @@ describe("FilterRail typed sections", () => {
       expect(within(title).getByRole("textbox", { name: "Filter value" })).toHaveValue("");
     });
   });
-
-  test("pages min commits pages_gte after the debounce", async () => {
-    renderRail();
-    const user = userEvent.setup();
-    const pages = openSection("Pages");
-    await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
-    await debounceSettled();
-    await waitFor(() => {
-      expect(currentSearch().get("pages_gte")).toBe("300");
-    });
-  });
-
-  test("a debounced commit in one section preserves another section's pending draft", async () => {
-    renderRail();
-    const user = userEvent.setup();
-    const pages = openSection("Pages");
-    await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
-    const title = openSection("Title");
-    const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
-    await user.type(titleInput, "sea");
-    await debounceSettled();
-    await waitFor(() => {
-      const search = currentSearch();
-      expect(search.get("pages_gte")).toBe("300");
-      expect(search.get("title_contains")).toBe("sea");
-    });
-    expect(titleInput).toHaveValue("sea");
-  });
-
-  test("an immediate commit elsewhere preserves a pending typed draft", async () => {
-    renderRail();
-    const user = userEvent.setup();
-    const title = openSection("Title");
-    openSection("Series");
-    const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
-    await user.type(titleInput, "sea");
-    await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
-    await debounceSettled();
-    await waitFor(() => {
-      const search = currentSearch();
-      expect(search.get("series")).toBe("s-1");
-      expect(search.get("title_contains")).toBe("sea");
-    });
-    expect(titleInput).toHaveValue("sea");
-  });
-
-  test("section clear during a pending draft does not resurrect the value", async () => {
-    renderRail("/library?pages_lte=900");
-    const user = userEvent.setup();
-    const pages = sectionByTitle("Pages");
-    const min = within(pages).getByRole("spinbutton", { name: "Min" });
-    await user.type(min, "300");
-    await user.click(within(pages).getByRole("button", { name: "Clear Pages filters" }));
-    await debounceSettled();
-    await waitFor(() => {
-      const search = currentSearch();
-      expect(search.get("pages_gte")).toBeNull();
-      expect(search.get("pages_lte")).toBeNull();
-    });
-    expect(min).toHaveValue(null);
-  });
 });
 
 describe("FilterRail section state", () => {
   test("a section with active conditions mounts open, with a count badge", () => {
-    renderRail("/library?pages_gte=300&pages_lte=900");
+    renderRail({ pages: { gte: 300, lte: 900 } });
     const pages = sectionByTitle("Pages");
     expect(disclosureOf(pages)).toHaveAttribute("aria-expanded", "true");
     expect(within(pages).getByText("2")).toBeInTheDocument();
@@ -367,7 +334,7 @@ describe("FilterRail section state", () => {
   });
 
   test("the clear control is a sibling of the disclosure, never nested in it", () => {
-    renderRail("/library?pages_gte=300");
+    renderRail({ pages: { gte: 300 } });
     const pages = sectionByTitle("Pages");
     const clear = within(pages).getByRole("button", { name: "Clear Pages filters" });
     expect(disclosureOf(pages)).not.toContainElement(clear);
@@ -375,7 +342,7 @@ describe("FilterRail section state", () => {
   });
 
   test("Enter and Space toggle the disclosure from the keyboard", async () => {
-    renderRail("/library?pages_gte=300");
+    renderRail({ pages: { gte: 300 } });
     const user = userEvent.setup();
     const pages = sectionByTitle("Pages");
     const disclosure = disclosureOf(pages);
@@ -401,26 +368,8 @@ describe("FilterRail section state", () => {
     expect(content).not.toHaveAttribute("hidden");
   });
 
-  test("collapsing retains a mounted uncommitted range draft", async () => {
-    renderRail("/library?pages_lte=900");
-    const user = userEvent.setup();
-    const pages = sectionByTitle("Pages");
-    const min = within(pages).getByRole("spinbutton", { name: "Min" });
-    fireEvent.change(min, { target: { value: "1000" } });
-    expect(currentSearch().get("pages_gte")).toBeNull();
-    const disclosure = disclosureOf(pages);
-    disclosure.focus();
-    await user.keyboard("{Enter}");
-    expect(min).toBeInTheDocument();
-    expect(min).toHaveValue(1000);
-    await user.keyboard(" ");
-    expect(within(pages).getByRole("spinbutton", { name: "Min" })).toBe(min);
-    expect(min).toHaveValue(1000);
-    expect(disclosure).toHaveAttribute("aria-expanded", "true");
-  });
-
   test("Tab moves from the disclosure to its clear control", async () => {
-    renderRail("/library?pages_gte=300");
+    renderRail({ pages: { gte: 300 } });
     const user = userEvent.setup();
     const pages = sectionByTitle("Pages");
     disclosureOf(pages).focus();
@@ -429,7 +378,7 @@ describe("FilterRail section state", () => {
   });
 
   test("clearing from the keyboard leaves the disclosure state alone", async () => {
-    renderRail("/library?pages_gte=300");
+    renderRail({ pages: { gte: 300 } });
     const user = userEvent.setup();
     const pages = sectionByTitle("Pages");
     within(pages).getByRole("button", { name: "Clear Pages filters" }).focus();
@@ -441,7 +390,7 @@ describe("FilterRail section state", () => {
   });
 
   test("clearing a collapsed section does not expand it", async () => {
-    renderRail("/library?pages_gte=300");
+    renderRail({ pages: { gte: 300 } });
     const user = userEvent.setup();
     const pages = sectionByTitle("Pages");
     await user.click(disclosureOf(pages));
@@ -452,26 +401,8 @@ describe("FilterRail section state", () => {
     expect(disclosureOf(pages)).toHaveAttribute("aria-expanded", "false");
   });
 
-  test("a keyboard clear on a collapsed section cancels its pending draft", async () => {
-    renderRail("/library?pages_lte=900");
-    const user = userEvent.setup();
-    const pages = sectionByTitle("Pages");
-    const min = within(pages).getByRole("spinbutton", { name: "Min" });
-    await user.type(min, "300");
-    disclosureOf(pages).focus();
-    await user.keyboard("{Enter}");
-    await user.tab();
-    await user.keyboard(" ");
-    await debounceSettled();
-    const search = currentSearch();
-    expect(search.get("pages_gte")).toBeNull();
-    expect(search.get("pages_lte")).toBeNull();
-    expect(disclosureOf(pages)).toHaveAttribute("aria-expanded", "false");
-    expect(min).toHaveValue(null);
-  });
-
   test("vocabulary sections badge the token count from every mode", () => {
-    renderRail("/library?tag_any=fantasy&tag_any=magic&tag_none=grimdark");
+    renderRail({ tags: { all: [], any: ["fantasy", "magic"], none: ["grimdark"] } });
     const tags = sectionByTitle("Tags");
     expect(disclosureOf(tags)).toHaveAttribute("aria-expanded", "true");
     expect(within(tags).getByText("3")).toBeInTheDocument();
@@ -497,7 +428,7 @@ describe("FilterRail sort section", () => {
   });
 
   test("direction toggle, reorder, and remove dispatch the edited stack", async () => {
-    renderRail("/library", [
+    renderRail({}, [
       { field: "title", desc: false },
       { field: "created_at", desc: true },
     ]);
@@ -523,7 +454,7 @@ describe("FilterRail sort section", () => {
   });
 
   test("reset dispatches an empty stack and the section returns to the inherited order", async () => {
-    renderRail("/library", [{ field: "pages", desc: true }]);
+    renderRail({}, [{ field: "pages", desc: true }]);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Reset sort to the installation order" }));
     await waitFor(() => {
@@ -539,7 +470,7 @@ describe("FilterRail sort section", () => {
   });
 
   test("removing the last level is the reset gesture, not an unsorted state", async () => {
-    renderRail("/library", [{ field: "pages", desc: true }]);
+    renderRail({}, [{ field: "pages", desc: true }]);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Remove Pages from sort" }));
     await waitFor(() => {
@@ -568,7 +499,7 @@ describe("FilterRail sort section", () => {
   });
 
   test("an override's sole level keeps a working remove: it is the reset gesture", () => {
-    renderRail("/library", [{ field: "pages", desc: true }]);
+    renderRail({}, [{ field: "pages", desc: true }]);
     expect(screen.getByRole("button", { name: "Remove Pages from sort" })).toBeEnabled();
   });
 
@@ -583,13 +514,13 @@ describe("FilterRail sort section", () => {
   });
 
   test("the rail hosts no live region of its own; announcements are page-level", () => {
-    renderRail("/library", [{ field: "pages", desc: true }]);
+    renderRail({}, [{ field: "pages", desc: true }]);
     const rail = screen.getByRole("complementary", { name: "Filters" });
     expect(rail.querySelector('[aria-live="polite"], [aria-live="assertive"]')).toBeNull();
   });
 
   test("the add-field picker hides fields already in the stack and caps the stack", () => {
-    renderRail("/library", [
+    renderRail({}, [
       { field: "title", desc: false },
       { field: "created_at", desc: true },
       { field: "pages", desc: false },
@@ -600,7 +531,9 @@ describe("FilterRail sort section", () => {
 
 describe("FilterRail vocabulary sections", () => {
   test("clearing a vocabulary section drops all three mode params", async () => {
-    renderRail("/library?author=a-1&author_any=a-2&author_none=a-3");
+    renderRail({
+      authors: { all: ["eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"], any: ["a-2"], none: ["a-3"] },
+    });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Clear Authors filters" }));
     const search = currentSearch();

@@ -1,0 +1,398 @@
+import { expect, test, type Page, type Route } from "@playwright/test";
+
+const BOOK = {
+  id: "11111111-1111-4111-8111-111111111111",
+  work_id: "22222222-2222-4222-8222-222222222222",
+  title: "The Sea",
+  subtitle: null,
+  authors: ["A Reader"],
+  contributors: [],
+  series: null,
+  isbn_13: null,
+  pages: 200,
+  tags: [],
+  genres: [],
+  moods: [],
+  content_rating: null,
+  cover_url: "",
+  ingestion_status: "complete",
+  validation_status: "clean",
+  enrichment_status: "complete",
+  reading_state: null,
+  created_at: "2026-10-25T04:00:00Z",
+};
+const PREFERENCES = {
+  hidden_columns: null,
+  density: null,
+  view: null,
+  sort_stack: null,
+  defaults: { hidden_columns: [], density: "comfortable", view: "grid", sort_stack: "-created_at" },
+};
+
+type Fixture = {
+  requests: URLSearchParams[];
+  observations: { atMs: number; params: string }[];
+  hold: (route: Route, url: URL) => Promise<boolean>;
+};
+async function intercept(page: Page): Promise<Fixture> {
+  const started = performance.now();
+  const fixture: Fixture = { requests: [], observations: [], hold: () => Promise.resolve(false) };
+  await page.route(/^https?:\/\/[^/]+\/(?:api|auth)\//, async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path === "/auth/me") {
+      await route.fulfill({
+        json: {
+          id: "33333333-3333-4333-8333-333333333333",
+          display_name: "Reader",
+          email: null,
+          role: "adult",
+          is_child: false,
+          has_local_password: true,
+          theme_preference: "dark",
+          csrf_token: "synthetic-journey-csrf-value",
+        },
+      });
+    } else if (path === "/auth/setup/status") {
+      await route.fulfill({
+        json: {
+          setup_required: false,
+          local_auth_enabled: true,
+          oidc_enabled: false,
+          email_recovery_enabled: false,
+          password_min_length: 15,
+          password_max_length: 256,
+        },
+      });
+    } else if (path === "/auth/me/preferences") {
+      await route.fulfill({ json: PREFERENCES });
+    } else if (path === "/api/v1/books") {
+      fixture.requests.push(url.searchParams);
+      fixture.observations.push({
+        atMs: performance.now() - started,
+        params: url.searchParams.toString(),
+      });
+      if (await fixture.hold(route, url)) return;
+      const p = url.searchParams;
+      const q = p.get("q") ?? p.get("title_contains") ?? p.get("title_eq") ?? "";
+      const lower = p.get("created_at_gte");
+      const upper = p.get("created_at_lt");
+      const empty =
+        !BOOK.title.toLowerCase().includes(q.toLowerCase()) ||
+        Number(p.get("pages_gte") ?? 0) > BOOK.pages ||
+        Number(p.get("pages_lte") ?? 2147483647) < BOOK.pages ||
+        (lower !== null && Date.parse(lower) > Date.parse(BOOK.created_at)) ||
+        (upper !== null && Date.parse(upper) <= Date.parse(BOOK.created_at));
+      await route.fulfill({ json: { items: empty ? [] : [BOOK], next_cursor: null } });
+    } else if (path === `/api/v1/books/${BOOK.id}`) {
+      await route.fulfill({
+        json: {
+          ...BOOK,
+          description: null,
+          language: "en",
+          isbn_10: null,
+          publisher: null,
+          pub_date: null,
+          metadata_version_summary: { pending: 0, accepted: 0 },
+          metadata_versions: [],
+          updated_at: BOOK.created_at,
+        },
+      });
+    } else if (path === "/api/v1/shelves") {
+      await route.fulfill({ json: { items: [], next_cursor: null } });
+    } else if (path === "/api/v1/authors" || path === "/api/v1/suggest") {
+      await route.fulfill({ json: { items: [], suggestions: [] } });
+    } else {
+      await route.fulfill({ status: 404, json: { error: `Unprovided synthetic API: ${path}` } });
+    }
+  });
+  return fixture;
+}
+const search = (page: Page) => page.getByRole("searchbox", { name: "Search your library" });
+async function ready(page: Page): Promise<void> {
+  await expect(search(page)).toBeVisible();
+}
+async function refine(page: Page) {
+  await page.getByRole("button", { name: /^Filters/ }).click();
+  const drawer = page.getByRole("dialog", { name: "Refine" });
+  await expect(drawer).toBeVisible();
+  return drawer;
+}
+async function section(page: Page, title: string) {
+  const drawer = page.getByRole("dialog", { name: "Refine" });
+  const button = drawer.getByRole("button", { name: new RegExp(`^${title}(?:\\s*\\d+)?$`) });
+  if ((await button.getAttribute("aria-expanded")) === "false") await button.click();
+  return button.locator("xpath=ancestor::section[1]");
+}
+
+test("rapid edits reload with their first request and no URL grammar", async ({ page }) => {
+  const fixture = await intercept(page);
+  await page.goto("/library");
+  await ready(page);
+  await search(page).fill("The Sea");
+  const before = fixture.requests.length;
+  await page.reload();
+  await ready(page);
+  await expect(search(page)).toHaveValue("The Sea");
+  expect(fixture.requests[before]?.get("q")).toBe("The Sea");
+  await expect(page.getByRole("heading", { name: "The Sea", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/library$/);
+});
+
+test("book Back and Forward restore a visit; Back past Library does not undo edits", async ({
+  page,
+}) => {
+  await intercept(page);
+  await page.goto("/shelves");
+  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await ready(page);
+  await search(page).fill("Sea");
+  await search(page).fill("The Sea");
+  await page
+    .getByRole("link", { name: /The Sea/ })
+    .last()
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/b/${BOOK.id}$`));
+  await page.goBack();
+  await ready(page);
+  await expect(search(page)).toHaveValue("The Sea");
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: "The Sea" })).toBeVisible();
+  await page.goBack();
+  await ready(page);
+  await expect(search(page)).toHaveValue("The Sea");
+  await page.goBack();
+  await expect(page).toHaveURL(/\/shelves$/);
+});
+
+test("fresh same-route entry and direct context start clean; traversing restores each destination", async ({
+  page,
+  context,
+}) => {
+  await intercept(page);
+  await page.goto("/library?entry=first");
+  await ready(page);
+  await search(page).fill("Sea");
+  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await expect(search(page)).toHaveValue("");
+  await page.goBack();
+  await expect(search(page)).toHaveValue("Sea");
+  await page.goForward();
+  await expect(search(page)).toHaveValue("");
+  const direct = await context.newPage();
+  await intercept(direct);
+  await direct.goto("/library?q=legacy&view=table");
+  await ready(direct);
+  await expect(search(direct)).toHaveValue("");
+  await expect(direct.getByTestId("library-grid")).toBeVisible();
+});
+
+test("replacement navigation starts a clean destination and preserves earlier visit history", async ({
+  page,
+}) => {
+  await intercept(page);
+  await page.goto("/library");
+  await ready(page);
+  await search(page).fill("Sea");
+  await page.goto("/");
+  await ready(page);
+  await expect(search(page)).toHaveValue("");
+  await page.goBack();
+  await ready(page);
+  await expect(search(page)).toHaveValue("Sea");
+});
+
+for (const dismissal of ["Escape", "close", "outside"]) {
+  test(`Refine ${dismissal} retains live text and range edits and returns focus`, async ({
+    page,
+  }, testInfo) => {
+    const fixture = await intercept(page);
+    await page.goto("/library");
+    await ready(page);
+    const opener = page.getByRole("button", { name: /^Filters/ });
+    await refine(page);
+    const title = await section(page, "Title");
+    await title.getByRole("textbox", { name: "Filter value" }).fill("The Sea ");
+    const pages = await section(page, "Pages");
+    const lower = pages.getByRole("textbox", { name: "Pages minimum" });
+    await lower.fill("300");
+    await lower.press("Enter");
+    const upper = pages.getByRole("textbox", { name: "Pages maximum" });
+    await upper.fill("200");
+    await upper.press("Enter");
+    if (dismissal === "Escape") await upper.press("Escape");
+    else if (dismissal === "close")
+      await page.getByRole("button", { name: "Close", exact: true }).click();
+    else await page.mouse.click(10, 400);
+    await expect(page.getByRole("dialog", { name: "Refine" })).toBeHidden();
+    await expect(opener).toBeFocused();
+    await expect(page.getByText("No books match these filters", { exact: true })).toBeVisible();
+    expect(
+      fixture.requests.some(
+        (p) =>
+          p.get("pages_gte") === "300" &&
+          p.get("pages_lte") === "200" &&
+          p.get("title_contains") === "The Sea",
+      ),
+    ).toBe(true);
+    await refine(page);
+    await expect(
+      (await section(page, "Title")).getByRole("textbox", { name: "Filter value" }),
+    ).toHaveValue("The Sea ");
+    await expect(
+      (await section(page, "Pages")).getByText(
+        "Minimum is above maximum. No books match this range.",
+      ),
+    ).toBeVisible();
+    if (testInfo.project.name === "library-chromium" && dismissal === "close") {
+      await pages.getByRole("textbox", { name: "Pages minimum" }).fill("2147483647");
+      await pages.getByRole("textbox", { name: "Pages minimum" }).press("Enter");
+      await page.screenshot({ path: testInfo.outputPath("maximum-pages.png") });
+    }
+    await pages.getByRole("button", { name: "Clear Pages filters" }).click();
+    await expect(title.getByRole("textbox", { name: "Filter value" })).toHaveValue("The Sea ");
+  });
+}
+
+test("clear preserves view and search applies one character without delays", async ({ page }) => {
+  const fixture = await intercept(page);
+  await page.goto("/library");
+  await ready(page);
+  await search(page).fill("S");
+  await expect.poll(() => fixture.requests.at(-1)?.get("q")).toBe("S");
+  await page.getByRole("radio", { name: "Table", exact: true }).click();
+  await expect(page.getByTestId("library-table")).toBeVisible();
+  await page.getByRole("button", { name: "Clear all", exact: true }).click();
+  await expect(search(page)).toHaveValue("");
+  await expect(page.getByTestId("library-table")).toBeVisible();
+  await expect(page).toHaveURL(/\/library$/);
+});
+
+test("local date calendar, partial input and year prefixes keep controls mounted through updating and empty results", async ({
+  page,
+}, testInfo) => {
+  const fixture = await intercept(page);
+  await page.goto("/library");
+  await ready(page);
+  await refine(page);
+  const added = await section(page, "Added");
+  const after = added.getByRole("group", { name: "Added on or after" });
+  const before = added.getByRole("group", { name: "Added on or before" });
+  const afterTrigger = after.getByRole("button");
+  await afterTrigger.click();
+  await expect(page.getByRole("grid").last()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("calendar-after.png") });
+  await page.getByRole("button", { name: /25 October 2026/ }).click();
+  await expect
+    .poll(() => fixture.requests.at(-1)?.get("created_at_gte"))
+    .toBe("2026-10-24T16:00:00.000Z");
+  await page.screenshot({ path: testInfo.outputPath("local-day.png") });
+  await before.getByRole("button").click();
+  await expect(page.getByRole("grid").last()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("calendar-before.png") });
+  await page.keyboard.press("Escape");
+  await expect(before.getByRole("button")).toBeFocused();
+  await before.getByRole("spinbutton", { name: /day/i }).fill("12");
+  expect(fixture.requests.at(-1)?.has("created_at_lt")).toBe(false);
+  await expect(after.getByRole("spinbutton", { name: /year/i })).toHaveText("2026");
+  await added.getByRole("button", { name: "Clear Added filters" }).click();
+  await afterTrigger.click();
+  await page.getByRole("button", { name: /25 October 2026/ }).click();
+  await before.getByRole("button").click();
+  await page.getByRole("button", { name: /25 October 2026/ }).click();
+  const year = after.getByRole("spinbutton", { name: /year/i });
+  await year.focus();
+  await year.press("2");
+  await expect
+    .poll(() => fixture.requests.some((p) => p.get("created_at_gte")?.startsWith("0002-")))
+    .toBe(true);
+  await expect(year).toBeFocused();
+  await year.press("0");
+  await year.press("2");
+  await year.press("7");
+  await expect(
+    added.getByText("Start date is after end date. No books match this range."),
+  ).toBeVisible();
+  await expect(year).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath("date-contradiction.png") });
+  await year.press("Backspace");
+  await year.press("Backspace");
+  await year.press("Backspace");
+  await year.press("Backspace");
+  await expect(year).toHaveAttribute("data-placeholder");
+  await after.getByRole("spinbutton", { name: /month/i }).press("Backspace");
+  await after.getByRole("spinbutton", { name: /month/i }).press("Backspace");
+  await after.getByRole("spinbutton", { name: /day/i }).press("Backspace");
+  await after.getByRole("spinbutton", { name: /day/i }).press("Backspace");
+  await expect.poll(() => fixture.requests.at(-1)?.has("created_at_gte")).toBe(false);
+  await testInfo.attach("date-requests.json", {
+    body: JSON.stringify(fixture.observations, null, 2),
+    contentType: "application/json",
+  });
+});
+
+test("delayed date updates retain rows and focus; cached prefix edits remain usable", async ({
+  page,
+}, testInfo) => {
+  const fixture = await intercept(page);
+  await page.goto("/library");
+  await ready(page);
+  await refine(page);
+  const added = await section(page, "Added");
+  const after = added.getByRole("group", { name: "Added on or after" });
+  const before = added.getByRole("group", { name: "Added on or before" });
+  await after.getByRole("button").click();
+  await page.getByRole("button", { name: /25 October 2026/ }).click();
+  await before.getByRole("button").click();
+  await page.getByRole("button", { name: /25 October 2026/ }).click();
+  let release: () => void = () => {
+    throw new Error("delayed request not started");
+  };
+  fixture.hold = async (route, url) => {
+    if (!url.searchParams.get("created_at_gte")?.startsWith("2027-")) return false;
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await route.fulfill({ json: { items: [], next_cursor: null } });
+    return true;
+  };
+  const year = after.getByRole("spinbutton", { name: /year/i });
+  await year.focus();
+  await year.press("2");
+  await expect
+    .poll(() => fixture.requests.some((p) => p.get("created_at_gte")?.startsWith("0002-")))
+    .toBe(true);
+  await year.press("0");
+  await year.press("2");
+  await year.press("7");
+  await expect
+    .poll(() => fixture.requests.at(-1)?.get("created_at_gte")?.startsWith("2027-"))
+    .toBe(true);
+  await expect(page.getByText("Updating results…")).toBeVisible();
+  await expect(
+    page.getByTestId("library-grid").getByText("The Sea", { exact: true }),
+  ).toBeVisible();
+  await expect(year).toBeFocused();
+  await expect(
+    added.getByText("Start date is after end date. No books match this range."),
+  ).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath("date-updating.png") });
+  release();
+  await expect(
+    added.getByText("Start date is after end date. No books match this range."),
+  ).toBeVisible();
+  await expect(year).toBeFocused();
+  const requestCount = fixture.requests.length;
+  await year.press("2");
+  await expect(year).toHaveText("2");
+  await expect(
+    added.getByText("Start date is after end date. No books match this range."),
+  ).toBeHidden();
+  expect(fixture.requests.length).toBe(requestCount);
+  await expect(year).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath("cached-year-prefix.png") });
+  await testInfo.attach("date-requests.json", {
+    body: JSON.stringify(fixture.observations, null, 2),
+    contentType: "application/json",
+  });
+});

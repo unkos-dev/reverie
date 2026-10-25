@@ -1,50 +1,34 @@
-/**
- * Debounced quick-search input over the library's `q` filter.
- *
- * Owns the `q` key outright (see `lib/hooks/use-library-filters`), so it
- * takes no props and coordinates with nothing: a sibling filter edit
- * writes other keys and cannot disturb what is being typed here.
- */
-import { Search } from "lucide-react";
-import { useState, type ReactElement } from "react";
+import { Search, X } from "lucide-react";
+import type { ReactElement } from "react";
+import { SearchField, Input } from "react-aria-components";
+import { Button } from "@/components/ui/button";
 
-import { Input } from "@/components/ui/input";
-import { projectQuery, useQuickSearchFilter } from "@/lib/hooks/use-library-filters";
+type QuickSearchProps = { value: string; onChange: (value: string) => void };
 
-export function QuickSearch(): ReactElement {
-  const { query, setQuery } = useQuickSearchFilter();
-  // Below the minimum length the box deliberately holds text that is not a
-  // filter, so the input cannot just render `query`.
-  const [text, setText] = useState(query ?? "");
-  const [syncedQuery, setSyncedQuery] = useState(query);
-  const projected = projectQuery(text);
-  // Resync only when the committed value moved somewhere this box did not
-  // put it: a clear affordance, a chip removal, or navigation. Comparing it
-  // against what the current text projects to tells that apart from our own
-  // write landing, without asking who wrote it. Render-phase state
-  // adjustment, the compiler-accepted alternative to a sync effect.
-  if (query !== syncedQuery) {
-    setSyncedQuery(query);
-    if (query !== projected) setText(query ?? "");
-  }
-
+export function QuickSearch({ value, onChange }: Readonly<QuickSearchProps>): ReactElement {
   return (
-    <div className="relative min-w-0 flex-1">
+    <SearchField
+      aria-label="Search your library"
+      value={value}
+      onChange={onChange}
+      className="relative min-w-0 flex-1"
+    >
       <Search
         aria-hidden="true"
         className="text-fg-muted pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2"
       />
       <Input
-        type="search"
-        aria-label="Search your library"
         placeholder="Search your library"
-        className="h-9 pl-9"
-        value={text}
-        onChange={(event) => {
-          setText(event.target.value);
-          setQuery(projectQuery(event.target.value));
-        }}
+        className="border-input text-fg placeholder:text-fg-muted dark:bg-input/30 h-9 w-full min-w-0 rounded-lg border bg-transparent pl-9 pr-9 text-sm outline-none"
       />
-    </div>
+      <Button
+        aria-label="Clear search"
+        variant="ghost"
+        size="icon"
+        className="absolute right-0.5 top-0.5 data-[disabled]:hidden"
+      >
+        <X aria-hidden="true" />
+      </Button>
+    </SearchField>
   );
 }

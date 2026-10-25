@@ -4262,55 +4262,88 @@ async fn filter_pages_band_and_empty(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn filter_created_at_bounds_are_day_inclusive(pool: PgPool) {
+async fn filter_created_at_inclusive_lower_exclusive_upper_and_cursor_identity(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    // Three books on three distinct calendar days (UTC).
-    let day = |iso: &str| {
-        chrono::DateTime::parse_from_rfc3339(iso)
-            .unwrap()
-            .with_timezone(&chrono::Utc)
-    };
-    insert_book_at(
-        &ingestion_pool,
-        "d1",
-        "June 29",
-        day("2026-06-29T23:59:00Z"),
-    )
-    .await;
-    insert_book_at(
-        &ingestion_pool,
-        "d2",
-        "June 30",
-        day("2026-06-30T12:00:00Z"),
-    )
-    .await;
-    insert_book_at(&ingestion_pool, "d3", "July 1", day("2026-07-01T00:01:00Z")).await;
+    for (marker, title, instant) in [
+        ("before", "Before", "2026-06-29T15:59:59.999999Z"),
+        ("lower", "Lower", "2026-06-29T16:00:00Z"),
+        ("inside", "Inside", "2026-06-30T15:59:59.999999Z"),
+        ("upper", "Upper", "2026-06-30T16:00:00Z"),
+    ] {
+        insert_book_at(
+            &ingestion_pool,
+            marker,
+            title,
+            chrono::DateTime::parse_from_rfc3339(instant)
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        )
+        .await;
+    }
     let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
-
-    // gte is inclusive of the whole start day; lte is inclusive of the whole
-    // end day (a same-day upper bound keeps that day's late rows).
-    let mut band = filtered_titles(
-        &server,
-        &basic,
-        "/api/v1/books?created_at_gte=2026-06-30&created_at_lte=2026-06-30",
-    )
-    .await;
-    band.sort();
-    assert_eq!(band, vec!["June 30"]);
-
-    let mut through_july =
-        filtered_titles(&server, &basic, "/api/v1/books?created_at_gte=2026-06-30").await;
-    through_july.sort();
-    assert_eq!(through_july, vec!["July 1", "June 30"]);
-
-    // A malformed date is a 400 (type-level), not a 422.
-    let bad = server
-        .get("/api/v1/books?created_at_gte=2026-13-40")
+    for (query, expected) in [
+        (
+            "created_at_gte=2026-06-29T16:00:00Z&created_at_lt=2026-06-30T16:00:00Z",
+            vec!["Inside", "Lower"],
+        ),
+        (
+            "created_at_gte=2026-06-29T16:00:00Z",
+            vec!["Inside", "Lower", "Upper"],
+        ),
+        (
+            "created_at_lt=2026-06-30T16:00:00Z",
+            vec!["Before", "Inside", "Lower"],
+        ),
+        (
+            "created_at_gte=2026-06-30T16:00:00Z&created_at_lt=2026-06-30T16:00:00Z",
+            vec![],
+        ),
+        (
+            "created_at_gte=2026-07-01T00:00:00Z&created_at_lt=2026-06-30T16:00:00Z",
+            vec![],
+        ),
+    ] {
+        let mut titles = filtered_titles(&server, &basic, &format!("/api/v1/books?{query}")).await;
+        titles.sort();
+        assert_eq!(titles, expected, "{query}");
+    }
+    for query in [
+        "created_at_gte=2026-06-30",
+        "created_at_lt=2026-02-30T00:00:00Z",
+        "created_at_gte=nope",
+    ] {
+        let bad = server
+            .get(&format!("/api/v1/books?{query}"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        test_support::assert_problem(&bad, problems::MALFORMED_QUERY, StatusCode::BAD_REQUEST);
+    }
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 1);
+    let first = server
+        .get("/api/v1/books?created_at_gte=2026-06-29T16:00:00Z&created_at_lt=2026-06-30T16:00:00Z")
         .add_header(AUTHORIZATION, basic.clone())
         .await;
-    assert_eq!(bad.status_code(), StatusCode::BAD_REQUEST, "{}", bad.text());
+    assert_eq!(first.status_code(), StatusCode::OK);
+    let body: serde_json::Value = first.json();
+    let cursor = body["next_cursor"]
+        .as_str()
+        .expect("two matches mint a cursor");
+    let same = server.get(&format!("/api/v1/books?created_at_gte=2026-06-30T00:00:00%2B08:00&created_at_lt=2026-07-01T00:00:00%2B08:00&cursor={cursor}"))
+        .add_header(AUTHORIZATION, basic.clone()).await;
+    assert_eq!(same.status_code(), StatusCode::OK, "{}", same.text());
+    let next: serde_json::Value = same.json();
+    assert!(next["next_cursor"].is_null());
+    let mut titles = vec![
+        body["items"][0]["title"].as_str().unwrap(),
+        next["items"][0]["title"].as_str().unwrap(),
+    ];
+    titles.sort();
+    assert_eq!(titles, vec!["Inside", "Lower"]);
+    let changed = server.get(&format!("/api/v1/books?created_at_gte=2026-06-29T16:00:01Z&created_at_lt=2026-06-30T16:00:00Z&cursor={cursor}"))
+        .add_header(AUTHORIZATION, basic).await;
+    assert_eq!(changed.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -4522,6 +4555,30 @@ async fn filter_combination_conjunction_and_contradiction_is_empty(pool: PgPool)
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn filter_numeric_equal_bounds_match_and_inverted_bounds_are_empty(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (_, id) = insert_book(&ingestion_pool, "exact", "Exact").await;
+    set_pages(&ingestion_pool, id, 500).await;
+    set_reading(&app_pool, admin, id, None, Some(4)).await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+    for query in ["pages_gte=500&pages_lte=500", "rating_gte=4&rating_lte=4"] {
+        assert_eq!(
+            filtered_titles(&server, &basic, &format!("/api/v1/books?{query}")).await,
+            vec!["Exact"]
+        );
+    }
+    for query in ["pages_gte=501&pages_lte=500", "rating_gte=5&rating_lte=4"] {
+        assert!(
+            filtered_titles(&server, &basic, &format!("/api/v1/books?{query}"))
+                .await
+                .is_empty()
+        );
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn filter_validation_errors_400_and_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -4569,27 +4626,10 @@ async fn filter_validation_errors_400_and_422(pool: PgPool) {
         StatusCode::BAD_REQUEST
     );
 
-    for query in [
-        "pages_gte=501&pages_lte=500",
-        "rating_gte=5&rating_lte=4",
-        "created_at_gte=2026-07-01&created_at_lte=2026-06-30",
-    ] {
+    for query in ["pages_gte=-1", "rating_gte=6", "rating_lte=0"] {
         assert_eq!(
             status_of(format!("/api/v1/books?{query}")).await,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "inverted range should be rejected: {query}"
-        );
-    }
-
-    for query in [
-        "pages_gte=500&pages_lte=500",
-        "rating_gte=4&rating_lte=4",
-        "created_at_gte=2026-06-30&created_at_lte=2026-06-30",
-    ] {
-        assert_eq!(
-            status_of(format!("/api/v1/books?{query}")).await,
-            StatusCode::OK,
-            "equal range bounds should be accepted: {query}"
+            StatusCode::UNPROCESSABLE_ENTITY
         );
     }
 

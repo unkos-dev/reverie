@@ -112,11 +112,26 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: "library-model",
+          environment: "node",
+          include: [
+            "src/routes/library-params.test.ts",
+            "src/components/library/filter-summary.test.ts",
+          ],
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: "frontend",
           environment: "jsdom",
           globals: true,
           setupFiles: ["./tests/setup.ts"],
           include: ["src/**/*.{test,spec}.{ts,tsx}"],
+          exclude: [
+            "src/routes/library-params.test.ts",
+            "src/components/library/filter-summary.test.ts",
+          ],
           // Must stay above the async query ceiling in tests/setup.ts.
           // At the 5s default the two collide: a failing `findBy*` spends
           // its whole budget waiting, so the test times out first and the

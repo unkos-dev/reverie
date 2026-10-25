@@ -3,7 +3,7 @@
  * switcher, and the Filters trigger in every mode; the density toggle and
  * Columns popover in table mode only, where they have something to drive.
  *
- * The toolbar owns no state: quick search owns its own URL key, the view
+ * The toolbar owns no state: quick search dispatches to the page owner, the view
  * switcher and Filters trigger dispatch to the container, and display
  * preferences arrive as props.
  */
@@ -20,6 +20,8 @@ import type { LibraryView } from "@/routes/library-params";
 import { ColumnsPopover } from "./ColumnsPopover";
 
 type LibraryToolbarProps = {
+  query: string;
+  onQueryChange: (value: string) => void;
   view: LibraryView;
   onViewChange: (view: LibraryView) => void;
   /** Filters drawer trigger state. */
@@ -41,6 +43,8 @@ const DENSITY_LABELS: Record<Density, string> = {
 };
 
 export function LibraryToolbar({
+  query,
+  onQueryChange,
   view,
   onViewChange,
   filtersOpen,
@@ -55,7 +59,7 @@ export function LibraryToolbar({
 }: Readonly<LibraryToolbarProps>): ReactElement {
   return (
     <div data-chrome="" className="mb-4 flex flex-wrap items-center gap-2">
-      <QuickSearch />
+      <QuickSearch value={query} onChange={onQueryChange} />
       <div className="flex flex-wrap items-center gap-2">
         {view === "table" ? (
           <>

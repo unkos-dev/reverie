@@ -26,7 +26,6 @@
 //!   pre-fold escape. `isbn_13_contains` (nothing to fold) and the unfolded
 //!   `_eq`/`_ne` exact legs escape in Rust via [`escape_like`].
 
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -36,49 +35,26 @@ use crate::models::reading_status::ReadingStatus;
 
 use super::{ListParams, MAX_TAG_FILTERS};
 
-/// `deserialize_with` shim for the `created_at_*` date filters. Query params
-/// arrive as strings even when they carry a date, so the date params route
-/// through here: an absent field defaults to `None` (never reaching this),
-/// and a present value parses via [`parse_iso_date`], failing deserialization
-/// (a 400) on a malformed date rather than silently dropping it. Parsing here
-/// rather than leaning on [`NaiveDate`]'s own serde also pins the accepted
-/// spelling to `YYYY-MM-DD` alone.
-pub(super) mod iso_date_opt {
-    use chrono::NaiveDate;
+pub(super) mod timestamp_opt {
+    use chrono::{DateTime, Utc};
     use serde::{Deserialize, Deserializer};
 
-    /// Deserialize `Option<NaiveDate>` from an optional ISO 8601 calendar-date
-    /// string.
+    /// Decode an optional RFC 3339 instant into UTC for predicates and cursor identity.
     ///
     /// # Errors
-    /// Returns the deserializer's error when the value is present but is not a
-    /// `YYYY-MM-DD` calendar date.
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<NaiveDate>, D::Error>
+    /// Returns a deserialisation error for a malformed timestamp.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
     where
         D: Deserializer<'de>,
     {
         let raw: Option<String> = Option::deserialize(deserializer)?;
-        raw.map_or(Ok(None), |text| {
-            super::parse_iso_date(&text).map(Some).ok_or_else(|| {
-                serde::de::Error::custom("expected an ISO 8601 calendar date (YYYY-MM-DD)")
-            })
+        raw.map(|text| {
+            DateTime::parse_from_rfc3339(&text)
+                .map(|instant| instant.with_timezone(&Utc))
+                .map_err(serde::de::Error::custom)
         })
+        .transpose()
     }
-}
-
-/// Parse a `YYYY-MM-DD` calendar date with no format machinery: three integer
-/// components fed to [`NaiveDate::from_ymd_opt`], which rejects an out-of-range
-/// month or a day past the month's length. `None` on any malformed input
-/// (extra components, non-numeric parts, an impossible date).
-fn parse_iso_date(text: &str) -> Option<NaiveDate> {
-    let mut parts = text.split('-');
-    let year: i32 = parts.next()?.parse().ok()?;
-    let month: u32 = parts.next()?.parse().ok()?;
-    let day: u32 = parts.next()?.parse().ok()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    NaiveDate::from_ymd_opt(year, month, day)
 }
 
 /// Upper bound on any single text-filter needle. Bounds the worst-case
@@ -108,7 +84,7 @@ pub fn escape_like(raw: &str) -> String {
 /// Semantic validation of the filter params (422 on failure). Type-level
 /// failures (bad uuid, non-integer, bad date) are already rejected by serde
 /// as a 400 before this runs; this layer catches over-cap value lists,
-/// over-long text, out-of-range ratings, negative page bounds, inverted ranges,
+/// over-long text, out-of-range ratings, negative page bounds,
 /// and unknown status tokens.
 ///
 /// # Errors
@@ -170,28 +146,6 @@ pub(super) fn validate(p: &ListParams) -> Result<(), AppError> {
                 "{param} must not be negative"
             )));
         }
-    }
-
-    if let (Some(lower), Some(upper)) = (p.pages_gte, p.pages_lte)
-        && lower > upper
-    {
-        return Err(AppError::Validation(
-            "pages_gte must not exceed pages_lte".into(),
-        ));
-    }
-    if let (Some(lower), Some(upper)) = (p.rating_gte, p.rating_lte)
-        && lower > upper
-    {
-        return Err(AppError::Validation(
-            "rating_gte must not exceed rating_lte".into(),
-        ));
-    }
-    if let (Some(lower), Some(upper)) = (p.created_at_gte, p.created_at_lte)
-        && lower > upper
-    {
-        return Err(AppError::Validation(
-            "created_at_gte must not exceed created_at_lte".into(),
-        ));
     }
 
     for (param, list) in [
@@ -283,8 +237,8 @@ pub(super) fn canonical_filter_string(p: &ListParams) -> String {
     if let Some(d) = p.created_at_gte {
         parts.push(format!("created_at_gte={d}"));
     }
-    if let Some(d) = p.created_at_lte {
-        parts.push(format!("created_at_lte={d}"));
+    if let Some(d) = p.created_at_lt {
+        parts.push(format!("created_at_lt={d}"));
     }
 
     parts.sort();
@@ -547,26 +501,14 @@ fn push_pages_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     }
 }
 
-/// Push the `created_at` bounds as day-inclusive on both ends without
-/// casting the indexed column: `_gte` compares `>= $date` at midnight UTC,
-/// `_lte` compares `< ($date + 1 day)` at midnight UTC so the whole upper
-/// day is included.
 fn push_created_at_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
-    if let Some(d) = p.created_at_gte {
+    if let Some(instant) = p.created_at_gte {
         qb.push(" AND m.created_at >= ");
-        qb.push_bind(d.and_time(NaiveTime::MIN).and_utc());
+        qb.push_bind(instant);
     }
-    if let Some(d) = p.created_at_lte {
-        // Day-inclusive upper bound: strictly before the next day's midnight.
-        // At `NaiveDate::MAX` there is no next day, so fall back to `<=` the
-        // maximum timestamp; no real row reaches it.
-        if let Some(next) = d.succ_opt() {
-            qb.push(" AND m.created_at < ");
-            qb.push_bind(next.and_time(NaiveTime::MIN).and_utc());
-        } else {
-            qb.push(" AND m.created_at <= ");
-            qb.push_bind(DateTime::<Utc>::MAX_UTC);
-        }
+    if let Some(instant) = p.created_at_lt {
+        qb.push(" AND m.created_at < ");
+        qb.push_bind(instant);
     }
 }
 
@@ -786,37 +728,25 @@ mod tests {
     }
 
     #[test]
-    fn parse_iso_date_accepts_calendar_dates_and_rejects_bad_input() {
-        assert_eq!(
-            parse_iso_date("2026-06-30").map(|d| d.to_string()),
-            Some("2026-06-30".to_owned())
-        );
-        // Rejections: impossible day, bad month, non-numeric, extra components,
-        // and a datetime string (the date filter takes a bare calendar date).
-        assert!(parse_iso_date("2026-02-30").is_none());
-        assert!(parse_iso_date("2026-13-01").is_none());
-        assert!(parse_iso_date("2026-06").is_none());
-        assert!(parse_iso_date("2026-06-30-01").is_none());
-        assert!(parse_iso_date("2026-06-30T00:00:00Z").is_none());
-        assert!(parse_iso_date("nonsense").is_none());
-    }
-
-    #[test]
-    fn iso_date_opt_deserializes_present_and_absent() {
+    fn timestamp_opt_decodes_offsets_and_rejects_malformed_values() {
         #[derive(serde::Deserialize)]
         struct Wrap {
-            #[serde(default, deserialize_with = "iso_date_opt::deserialize")]
-            d: Option<NaiveDate>,
+            #[serde(default, deserialize_with = "timestamp_opt::deserialize")]
+            d: Option<chrono::DateTime<chrono::Utc>>,
         }
-        let present: Wrap = serde_json::from_str(r#"{"d":"2026-06-30"}"#).expect("present parses");
-        assert_eq!(
-            present.d.map(|d| d.to_string()),
-            Some("2026-06-30".to_owned())
-        );
-        let absent: Wrap = serde_json::from_str("{}").expect("absent parses");
+        let utc: Wrap = serde_json::from_str(r#"{"d":"2026-06-30T00:00:00Z"}"#).unwrap();
+        let offset: Wrap = serde_json::from_str(r#"{"d":"2026-06-30T08:00:00+08:00"}"#).unwrap();
+        assert_eq!(utc.d, offset.d);
+        let absent: Wrap = serde_json::from_str("{}").unwrap();
         assert!(absent.d.is_none());
-        let bad: Result<Wrap, _> = serde_json::from_str(r#"{"d":"nope"}"#);
-        assert!(bad.is_err(), "a malformed date must fail deserialization");
+        for text in ["2026-06-30", "2026-02-30T00:00:00Z", "nope"] {
+            assert!(serde_json::from_value::<Wrap>(serde_json::json!({"d": text})).is_err());
+        }
+        let mut a = params();
+        a.created_at_gte = utc.d;
+        let mut b = params();
+        b.created_at_gte = offset.d;
+        assert_eq!(filter_fingerprint(&a), filter_fingerprint(&b));
     }
 
     #[test]
@@ -895,30 +825,16 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_inverted_ranges_and_accepts_equal_bounds() {
-        let mut pages = params();
-        pages.pages_gte = Some(501);
-        pages.pages_lte = Some(500);
-        assert!(matches!(validate(&pages), Err(AppError::Validation(_))));
-        pages.pages_gte = Some(500);
-        assert!(validate(&pages).is_ok());
-
-        let mut rating = params();
-        rating.rating_gte = Some(5);
-        rating.rating_lte = Some(4);
-        assert!(matches!(validate(&rating), Err(AppError::Validation(_))));
-        rating.rating_gte = Some(4);
-        assert!(validate(&rating).is_ok());
-
-        let mut created_at = params();
-        created_at.created_at_gte = Some(NaiveDate::from_ymd_opt(2026, 7, 1).unwrap());
-        created_at.created_at_lte = Some(NaiveDate::from_ymd_opt(2026, 6, 30).unwrap());
-        assert!(matches!(
-            validate(&created_at),
-            Err(AppError::Validation(_))
-        ));
-        created_at.created_at_gte = Some(NaiveDate::from_ymd_opt(2026, 6, 30).unwrap());
-        assert!(validate(&created_at).is_ok());
+    fn validate_accepts_inverted_and_equal_numeric_bounds() {
+        let mut p = params();
+        p.pages_gte = Some(501);
+        p.pages_lte = Some(500);
+        p.rating_gte = Some(5);
+        p.rating_lte = Some(4);
+        assert!(validate(&p).is_ok());
+        p.pages_gte = Some(500);
+        p.rating_gte = Some(4);
+        assert!(validate(&p).is_ok());
     }
 
     #[test]

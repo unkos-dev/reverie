@@ -4,7 +4,7 @@
  * REAL production route set with the network stubbed at `fetch`.
  */
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { createBrowserRouter, Navigate, RouterProvider, type RouteObject } from "react-router";
@@ -160,9 +160,6 @@ function stubFetch(role: string): void {
   });
 }
 
-// A browser router, so the document URL is the one truth: navigation goes
-// through the router, while search-param writes go through
-// history.replaceState. A memory router would see only the first of those.
 function renderApp(): { router: ReturnType<typeof createBrowserRouter> } {
   const routes: RouteObject[] = [
     {
@@ -196,9 +193,21 @@ function renderApp(): { router: ReturnType<typeof createBrowserRouter> } {
 beforeEach(() => {
   queryClient.clear();
   setUnauthenticatedHandler(() => {});
+  let state: unknown;
+  const events = new EventTarget();
+  vi.stubGlobal("navigation", {
+    currentEntry: { key: "shell", getState: () => state },
+    updateCurrentEntry: ({ state: next }: { state: unknown }) => {
+      state = next;
+    },
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+  });
 });
 
 afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
   queryClient.clear();
   setUnauthenticatedHandler(() => {});
   vi.restoreAllMocks();
@@ -308,12 +317,7 @@ describe("shell navigation — click reachability (admin)", () => {
   });
 });
 
-// A filter write is a shallow history update, so it starts no navigation
-// and the route loader does not re-run. What this covers is the seam below
-// it: the param write changes the query key and the component-level fetch
-// re-fires. The loader path is exercised on a fresh load and on
-// back/forward, not here.
-describe("filter rail — param-write to component-refetch seam", () => {
+describe("filter rail — visit intent to component-refetch seam", () => {
   test("selecting a series facet refetches the grid with the filter applied", async () => {
     stubFetch("admin");
     renderApp();
@@ -331,7 +335,7 @@ describe("filter rail — param-write to component-refetch seam", () => {
     await user.click(await screen.findByRole("checkbox", { name: "Discworld" }));
     await waitFor(
       () => {
-        expect(new URLSearchParams(window.location.search).get("series")).toBe("series-1");
+        expect(window.location.search).toBe("");
       },
       { timeout: 5000 },
     );
@@ -360,7 +364,7 @@ describe("filter rail — param-write to component-refetch seam", () => {
     await user.click(activeBox);
     await waitFor(
       () => {
-        expect(new URLSearchParams(window.location.search).get("series")).toBeNull();
+        expect(activeBox).not.toBeChecked();
       },
       { timeout: 5000 },
     );

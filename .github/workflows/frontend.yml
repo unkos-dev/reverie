@@ -74,28 +74,35 @@ jobs:
           mise-install-args: just
           vp: "true"
 
-      - name: Resolve component Playwright version
+      - name: Resolve installed Playwright versions
         id: playwright
-        run: echo "version=$(node -e "console.log(require('playwright/package.json').version)")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -e "console.log(require('playwright/package.json').version)")" >> "$GITHUB_OUTPUT"
+          echo "journey-version=$(node -e "console.log(require('@playwright/test/package.json').version)")" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+          key: playwright-library-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.journey-version }}
 
       - name: Install component Chromium and system dependencies
         run: node ./node_modules/playwright/cli.js install --with-deps chromium
 
+      - name: Install journey Chromium and Firefox with system dependencies
+        run: node ./node_modules/@playwright/test/cli.js install --with-deps chromium firefox
+
       - name: Test
         run: just js::test
 
-      - name: Upload component browser failures
+      - name: Upload browser failures
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: component-browser-failures
-          path: frontend/test-results/browser/
+          name: browser-failures
+          path: |
+            frontend/test-results/browser/
+            frontend/test-results/library/
           if-no-files-found: ignore
 
   build:

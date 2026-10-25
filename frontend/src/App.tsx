@@ -1,5 +1,4 @@
 import { RouterProvider as AriaRouterProvider } from "react-aria-components";
-import { NuqsAdapter } from "nuqs/adapters/react-router/v8";
 import { ViewTransition, type ReactElement } from "react";
 import { Outlet, useHref, useNavigate } from "react-router";
 
@@ -15,13 +14,6 @@ import { AppShell } from "@/components/shell/AppShell";
  * `CommandPalette` as a sibling so its Cmd-K binding survives route
  * transitions.
  *
- * `NuqsAdapter` wraps the shell because typed search-param state is read
- * and written below it. It must mount INSIDE the router (it consumes
- * router context), which is why it lives here rather than around
- * `RouterProvider` in `main.tsx`. Consequence worth knowing: the
- * pre-auth screens and `/account/password` are siblings of this root route,
- * not children, so they sit outside the adapter and cannot use search-param
- * state.
  */
 function App(): ReactElement {
   const navigate = useNavigate();
@@ -32,14 +24,12 @@ function App(): ReactElement {
       }}
       useHref={useHref}
     >
-      <NuqsAdapter>
-        <ViewTransition>
-          <AppShell>
-            <Outlet />
-          </AppShell>
-        </ViewTransition>
-        <CommandPalette />
-      </NuqsAdapter>
+      <ViewTransition>
+        <AppShell>
+          <Outlet />
+        </AppShell>
+      </ViewTransition>
+      <CommandPalette />
     </AriaRouterProvider>
   );
 }

@@ -9,6 +9,7 @@ satisfies:
   - "REV-REQ-0058"
   - "REV-REQ-0059"
 governed-by:
+  - "REV-ADR-0066"
   - "REV-ADR-0019"
   - "REV-ADR-0037"
   - "REV-ADR-0038"
@@ -77,22 +78,19 @@ views, indirectly, through the client Design above.
 condition (`title_contains`, `pages_gte`, `status_any`, and so on), decoded by `axum_extra::extract::Query` rather than
 `axum::Query` so a repeated key such as `?tag=a&tag=b` extends a `Vec` instead of failing. Every field decodes at the
 extractor boundary; a value that cannot decode into its declared type (an ill-formed UUID, a non-integer, a non-
-boolean, or a date that is not `YYYY-MM-DD`) never reaches this module at all; the date fields route through
-`filters::iso_date_opt::deserialize`, which accepts only the calendar-date spelling via `parse_iso_date` (three integer
-components fed to `NaiveDate::from_ymd_opt`) so a datetime string or a two-component date fails deserialisation the same
-as a non-numeric one.
+boolean, or a malformed RFC 3339 instant) never reaches this module. Timestamp fields use
+`filters::timestamp_opt::deserialize`, which parses RFC 3339 and normalises offsets to `DateTime<Utc>` before predicates
+or cursor fingerprints use them. `created_at_gte` is inclusive and `created_at_lt` exclusive; both bind their instants
+directly against `m.created_at`, without casting the indexed column.
 
 `validate(&ListParams)` runs once the request has fully decoded, and is the sole home of the semantic-bound checks: a
 multi-value list (`tag`, `genre`, `mood`, `author`, `status_any`/`status_none` and each list's `_any`/`_none` variants,
 fourteen fields in total) longer than `MAX_TAG_FILTERS` (20, defined in `library::mod`); a trimmed text value (`q`,
 `title_contains`, `title_eq`, `title_ne`, `subtitle_contains`, `isbn_13_contains`, `isbn_13_eq`) longer than
 `MAX_TEXT_FILTER_CHARS` (200); a rating bound outside `1..=5`; a negative `pages_gte`/`pages_lte`; a
-`status_any`/`status_none` token that is neither a `ReadingStatus::from_wire` name nor the literal `unread`; and,
-checked after every individual bound, an inverted pair on each of the three two-sided ranges the grammar exposes:
-`pages_gte` greater than `pages_lte`, `rating_gte` greater than `rating_lte`, and `created_at_gte` greater than
-`created_at_lte`. Each of the three inverted-range checks returns its own message
-(`"pages_gte must not exceed pages_lte"` and the equivalent wording for the rating and `created_at` pairs); equal bounds
-pass every check.
+`status_any`/`status_none` token that is neither a `ReadingStatus::from_wire` name nor the literal `unread`. Complete
+inverted bounds are valid conjunctions whose result is empty. Equal numeric endpoints match an exact value; equal
+timestamp endpoints describe an empty half-open interval.
 
 `push_filter_predicates` is the single entry point that appends every active condition onto the query's `WHERE` clause,
 in a fixed order (author triple, then `series`, then `shelf`, then the tag/genre/mood vocabulary triples, then text,
@@ -220,6 +218,9 @@ off rather than owns.
 "Library filter and sort state" builds the `sort` query parameter from its own resolved sort stack and treats `cursor`
 and `next_cursor` as values to store and replay, never to parse.
 
+Timestamp bounds are canonical UTC instants in the fingerprint, so equivalent RFC 3339 offsets do not change a cursor's
+filter identity. A different instant changes the fingerprint even if the local calendar date is unchanged.
+
 ## Data and state
 
 Nothing here is durable. `ListParams`, the parsed `SortSpec`, the filter fingerprint and the decoded `SortCursor` are
@@ -239,10 +240,8 @@ added for, but read identically here, so an operator who changes it changes both
 
 1. `Query<ListParams>` decodes both values as `i32`; a non-integer value here would instead reject at this step, with
    `list` never running past its first line (`let Query(params) = params?;`).
-2. `filters::validate` checks each bound is non-negative, then compares the two bounds against each other: `pages_gte`
-   (200) does not exceed `pages_lte` (400), so this range passes. Had the request instead named `pages_gte` above
-   `pages_lte`, `validate` would return `AppError::Validation("pages_gte must not exceed pages_lte")`, a `422`, and
-   `push_filter_predicates` would never run.
+2. `filters::validate` checks each page bound is non-negative. The endpoints are independent; a lower bound above the
+   upper bound reaches the predicates and matches no row.
 3. `push_filter_predicates` calls `push_pages_predicates`, which appends `AND m.pages >= $1` then `AND m.pages <= $2`
    (each `$n` a bound parameter, never interpolated text) onto the query built so far, alongside whatever other filters,
    the keyset predicate and the `ORDER BY`/`LIMIT` that follow.
@@ -275,8 +274,8 @@ added for, but read identically here, so an operator who changes it changes both
 ## Failure and recovery
 
 - **A filter or path-level query parameter that fails to decode** (an ill-formed UUID on `author`/`series`/`shelf`, a
-  non-integer on a numeric filter, a non-`YYYY-MM-DD` value on a date filter, an unrecognised boolean literal on an
-  `_empty` flag) is rejected by the `Query<ListParams>` extractor before `list`'s body runs, as
+  non-integer on a numeric filter, a malformed RFC 3339 instant on a timestamp filter, an unrecognised boolean literal
+  on an `_empty` flag) is rejected by the `Query<ListParams>` extractor before `list`'s body runs, as
   `AppError::MalformedQuery` (`400`), via the crate-wide `From<QueryRejection>` conversion.
 - **A `?sort=` value that names an unwhitelisted field, repeats a column, or exceeds three levels** decodes as a
   syntactically valid string (`sort` is a plain `Option<String>` at the extractor boundary) but fails inside
@@ -285,9 +284,8 @@ added for, but read identically here, so an operator who changes it changes both
   over-cap filter list are both "the value named something outside what the server accepts." Only extractor-level decode
   failures answer `400`.
 - **A filter value that decodes but violates a semantic bound** — an over-cap multi-value list, over-long trimmed text,
-  an out-of-range rating, a negative page bound, an inverted `pages`, `rating` or `created_at` range, or a
-  `status_any`/`status_none` token that is neither a real status nor `unread` — is rejected by `filters::validate` as
-  `AppError::Validation` (`422`), before any query is built.
+  an out-of-range rating, a negative page bound, or a `status_any`/`status_none` token that is neither a real status nor
+  `unread` — is rejected by `filters::validate` as `AppError::Validation` (`422`), before any query is built.
 - **A cursor that fails to decode, names the wrong tag, or disagrees with the request's sort or filter set** — bad
   base64, non-UTF-8 bytes, a missing tag delimiter, a tag other than `m`, a JSON payload that will not parse or whose
   key count, kinds or null-handling disagree with the freshly parsed `SortSpec`, an embedded spec string that does not

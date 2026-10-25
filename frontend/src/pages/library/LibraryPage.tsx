@@ -1,21 +1,4 @@
-/**
- * Production `/library` page.
- *
- * One route, one query, two projections: filters and search live in the
- * URL, sort rides the reader's account preference, and all of it applies
- * identically to the cover grid and the table; the view switcher changes
- * the projection, never the query. The toolbar is view-neutral (search,
- * view switcher, Filters trigger) with table-only display controls
- * (density, columns); active filters render as removable chips under it.
- *
- * Two right-side overlays share one slot: the filter drawer and the
- * book-detail drawer are mutually exclusive by construction, with the
- * Sheet primitive supplying the shared scrim, Escape handling, and focus
- * return. Selection is table-only and clears whenever the query identity
- * changes: acting on rows the current query no longer shows would be
- * worse than re-selecting.
- */
-import { useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { useInfiniteQuery, keepPreviousData, type InfiniteData } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import {
   lazy,
@@ -42,15 +25,12 @@ import { Separator } from "@/components/ui/separator";
 import { SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
-import { useLibraryFilters, useLibrarySearchParams } from "@/lib/hooks/use-library-filters";
+import { useLibraryFilters } from "@/lib/hooks/use-library-filters";
 import { queryKeys } from "@/lib/query/keys";
 
 import {
   filterStateToParams,
   hasActiveFilterState,
-  paramsFromSearch,
-  parseFilterParams,
-  viewFromSearch,
   type LibraryView,
 } from "@/routes/library-params";
 
@@ -74,27 +54,13 @@ const LibraryTableView = lazy(() =>
 /** The library's one overlay slot: filters or one book's details, never both. */
 type OverlayState = "filters" | { detail: string } | null;
 
-/**
- * Top-level page component. The `<Suspense>` boundary catches the
- * initial fetch (already prefetched by the loader, but the boundary
- * is required by `useSuspenseInfiniteQuery` semantics in failure /
- * cache-miss scenarios).
- */
-export function LibraryPage(): ReactElement {
-  return (
-    <Suspense fallback={<LibrarySkeleton />}>
-      <LibraryContent />
-    </Suspense>
-  );
-}
+type BookPages = InfiniteData<BookListResponse, string | undefined> & {
+  originKey?: ReturnType<typeof queryKeys.books.list>;
+};
 
-function LibraryContent(): ReactElement {
-  // Reads come from the nuqs-aware view of the params, never React
-  // Router's: search-param writes land via `history.replaceState`, which
-  // the router's history does not observe, so its own `useSearchParams`
-  // would go stale against anything quick search writes.
-  const searchParams = useLibrarySearchParams();
-  const { commitAll, clearAll, setView: setViewParam } = useLibraryFilters();
+export function LibraryPage(): ReactElement {
+  const owner = useLibraryFilters();
+  const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
@@ -103,40 +69,14 @@ function LibraryContent(): ReactElement {
   const preferences = useLibraryPreferences();
   const { density, hiddenColumns, sortOverride, sortLevels, setSortLevels } = preferences;
 
-  // URL param is canonical for the current projection; the stored preference
-  // only supplies the default when the param is absent, so a chosen view
-  // survives leaving and returning, and now also survives a change of device.
-  const viewMode: LibraryView = viewFromSearch(searchParams) ?? preferences.view;
-  const params = paramsFromSearch(searchParams);
-  // Sort has no URL form: the reader's override rides the request explicitly,
-  // and an inheriting reader sends none, taking the installation order the
-  // list endpoint applies anyway. Deferred so a sort gesture keeps the
-  // current rows on screen while the re-sorted page loads, instead of
-  // dropping the whole page to the Suspense skeleton; the controls flip
-  // immediately from `sortLevels` and `sortPending` marks the list stale.
+  const viewMode: LibraryView = owner.view ?? preferences.view;
+  const params = filterStateToParams(filterState);
   const deferredSortOverride = useDeferredValue(sortOverride);
   const sortPending = deferredSortOverride !== sortOverride;
   if (deferredSortOverride !== "") params.sort = deferredSortOverride;
-  const filterState = parseFilterParams(searchParams);
-  // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
-  const cacheParams = { ...params };
-  delete cacheParams.cursor;
-
-  // Selection lifecycle: a changed query identity (filters, search, sort)
-  // or projection switch clears it — the selected rows may no longer be in
-  // the result set or may land far from where they were, and a batch action
-  // on rows the reader can no longer see is worse than re-selecting. Paging
-  // appends to the same query and keeps it. Sort joins the token explicitly
-  // now that it is not a URL param; the immediate (not deferred) value, so
-  // the selection clears at gesture time. Render-phase state adjustment, the
-  // compiler-accepted alternative to a sync effect.
-  const queryToken = (() => {
-    const token = new URLSearchParams(searchParams);
-    token.delete("cursor");
-    token.set("sort", sortOverride);
-    token.sort();
-    return token.toString();
-  })();
+  const cacheParams = params;
+  const listKey = queryKeys.books.list(cacheParams);
+  const queryToken = JSON.stringify([filterState, sortOverride, viewMode]);
   const [syncedQueryToken, setSyncedQueryToken] = useState(queryToken);
   if (queryToken !== syncedQueryToken) {
     setSyncedQueryToken(queryToken);
@@ -146,23 +86,33 @@ function LibraryContent(): ReactElement {
   const {
     data,
     error: fetchNextPageError,
+    isPending,
+    isError,
+    isPlaceholderData,
+    isFetching,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
-  } = useSuspenseInfiniteQuery<
+  } = useInfiniteQuery<
     BookListResponse,
     Error,
-    InfiniteData<BookListResponse, string | undefined>,
+    BookPages,
     ReturnType<typeof queryKeys.books.list>,
     string | undefined
   >({
-    queryKey: queryKeys.books.list(cacheParams),
+    queryKey: listKey,
     queryFn: ({ signal, pageParam }) =>
       listBooks(
         pageParam === undefined ? cacheParams : { ...cacheParams, cursor: pageParam },
         signal,
       ),
+    placeholderData: (previous, previousQuery) => {
+      const retained = keepPreviousData(previous);
+      return retained === undefined
+        ? undefined
+        : { ...retained, originKey: previousQuery?.queryKey };
+    },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
@@ -172,21 +122,17 @@ function LibraryContent(): ReactElement {
   // 500 / parse failure leaves a developer breadcrumb.
   useEffect(() => {
     if (isFetchNextPageError)
-      console.error("[LibraryContent] failed to load the next page", fetchNextPageError);
+      console.error("[LibraryPage] failed to load the next page", fetchNextPageError);
   }, [isFetchNextPageError, fetchNextPageError]);
 
-  // Stable across renders that did not refetch, so the memoised grid below
-  // can actually skip. The page re-renders on every keystroke in a filter
-  // input: the write authority subscribes to the pending values of every
-  // library key, and a keystroke changes one of them. Those renders are
-  // behaviourally inert here (every read on this page comes from the
-  // applied view), but re-rendering a card per loaded cover on each
-  // keystroke is not free.
-  const items: BookListItem[] = useMemo(() => data.pages.flatMap((p) => p.items), [data]);
+  const items: BookListItem[] = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
+  const displayedKey = data?.originKey ?? listKey;
+  const updating = sortPending || isPlaceholderData || (isFetching && !isFetchingNextPage);
+  const canLoadMore = hasNextPage && !isPlaceholderData;
 
   function setView(next: LibraryView): void {
     preferences.setView(next);
-    setViewParam(next === "grid" ? null : next);
+    setVisitView(next);
   }
 
   /**
@@ -207,9 +153,6 @@ function LibraryContent(): ReactElement {
     preferences.setHiddenColumns(next);
   }
 
-  // Counted on the wire projection, not raw URL keys: a param the codec
-  // rejects (malformed number, unknown status token) is never sent, so it
-  // must not light the badge or flip the empty state either.
   const activeFilterCount = Object.keys(filterStateToParams(filterState)).length;
 
   function openOverlay(next: Exclude<OverlayState, null>): void {
@@ -226,11 +169,7 @@ function LibraryContent(): ReactElement {
     return (
       <TableChunkBoundary
         onFallbackToGrid={() => {
-          // Session-local escape from a device-local failure: the explicit
-          // `?view=grid` param wins over the stored preference without
-          // touching it, so a transient chunk-load error on one device
-          // cannot rewrite the reader's view on every device.
-          setViewParam("grid");
+          setVisitView("grid");
         }}
       >
         <Suspense fallback={<Skeleton className="h-96 w-full" />}>
@@ -238,13 +177,13 @@ function LibraryContent(): ReactElement {
             items={items}
             sort={sortLevels}
             onSortChange={handleSortChange}
-            hasNextPage={hasNextPage}
+            hasNextPage={canLoadMore}
             isFetchingNextPage={isFetchingNextPage}
             isFetchNextPageError={isFetchNextPageError}
             onLoadMore={() => {
               void fetchNextPage();
             }}
-            listQueryKey={queryKeys.books.list(cacheParams)}
+            listQueryKey={displayedKey}
             density={density}
             hiddenColumns={hiddenColumns}
             selectedIds={selectedIds}
@@ -268,6 +207,9 @@ function LibraryContent(): ReactElement {
   const seriesOptions: SeriesFacetOption[] = [...seriesById]
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  if (isPending) return <LibrarySkeleton />;
+  if (isError && !isFetchNextPageError) throw fetchNextPageError;
 
   return (
     <>
@@ -299,6 +241,10 @@ function LibraryContent(): ReactElement {
             {sortStackSummary(sortLevels)}
           </p>
           <LibraryToolbar
+            query={filterState.q ?? ""}
+            onQueryChange={(q) => {
+              commitAll((current) => ({ ...current, q }));
+            }}
             view={viewMode}
             onViewChange={setView}
             filtersOpen={overlay === "filters"}
@@ -324,14 +270,15 @@ function LibraryContent(): ReactElement {
           {/* `aria-busy` while a sort gesture's re-sorted page is loading:
               the deferred query key keeps the previous rows visible, and
               this is the stale-content marker for that window. */}
-          <div aria-busy={sortPending || undefined} className={sortPending ? "opacity-60" : ""}>
+          {updating ? <p className="text-fg-muted mb-3 text-sm">Updating results…</p> : null}
+          <div aria-busy={updating || undefined} className={updating ? "opacity-60" : ""}>
             {renderBooks()}
           </div>
 
           {viewMode === "table" ? (
             <BatchBar
               selectedIds={selectedIds}
-              hasMorePages={hasNextPage}
+              hasMorePages={canLoadMore}
               onClearSelection={() => {
                 setSelectedIds(new Set());
               }}
@@ -349,7 +296,7 @@ function LibraryContent(): ReactElement {
               end-of-list) inside LibraryTableView; rendering this block
               there too would announce the same failure twice and offer two
               Retry controls. */}
-          {viewMode !== "table" && hasNextPage ? (
+          {viewMode !== "table" && canLoadMore ? (
             <div className="mt-10 flex flex-col items-center gap-3">
               {/* A failed `fetchNextPage` keeps the loaded pages on screen; the
                   error is hue-less (One-Accent rule — the danger hue is reserved
@@ -405,6 +352,8 @@ function LibraryContent(): ReactElement {
           <SheetTitle className="font-display text-2xl font-medium">Refine</SheetTitle>
         </SheetHeader>
         <FilterRail
+          owner={owner}
+          showContradiction={!updating && !isError}
           seriesOptions={seriesOptions}
           sortLevels={sortLevels}
           sortInherited={preferences.sortInherited}

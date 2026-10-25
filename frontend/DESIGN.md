@@ -348,14 +348,26 @@ Active filters use native `TagGroup` and `TagList` composition below the toolbar
 empty-collection focus. The empty collection stays mounted with the muted text `No active filters.` and a disabled Clear
 all button. View and table density use native single-selection `ToggleButtonGroup` controls with a required selection.
 
-Range controls constrain each endpoint by the other endpoint. Number steppers and date pickers offer only values within
-that interval, including equal endpoints. Typing remains editable: an incomplete or out-of-bounds draft stays in its
-input without changing the applied filter. On blur or Enter, a completed value stops at the nearest legal bound; the
-opposite endpoint never moves. A message below the input describes the correction and announces it through a polite live
-region. The message clears on the next edit. Clearing an input removes that endpoint. Escape, the close button and
-outside dismissal retain valid edits through the filter owner. Incomplete text remains local to the editor and follows
-blur and Enter validation. Page counts are non-negative integers and ratings range from 1 to 5. The controls retain
-their paired layout and labels.
+Range endpoints stack vertically, with 12px between fields and 4px between each label and control. Numeric groups are
+36px high, with full-width input space and two native 32px steppers. Visible Minimum/Maximum labels include Pages or
+Rating in their accessible names. Pages range from 0 to 2147483647 and ratings from 1 to 5, with integer steps and
+native snapping. Each endpoint has only its intrinsic bounds.
+
+Added uses two optional DatePickers labelled On or after and On or before, including Added in their accessible names.
+Both selected local days are included. Each 36px field group retains locale-ordered keyboard segments and a 32px
+calendar trigger. The one-month calendar popover is 280px wide, capped at viewport minus 16px, with 8px padding and 36px
+day targets. Native popup placement, collision handling, calendar navigation and focus return govern its placement and
+interaction.
+
+Complete inverted ranges retain their values. Settled current results show muted 14px explanation text below the pair
+with an 8px top gap: “Minimum is above maximum. No books match this range.” or “Start date is after end date. No books
+match this range.” The feedback is ordinary narrowing copy, without a danger banner or live announcement. Equal numeric
+bounds are exact matches and equal selected days include one local day. Native controls own partial and invalid input.
+
+Escape, the close button and outside dismissal retain published edits without an Apply or Cancel transaction. Search and
+text fields publish native changes immediately, retaining raw text and the selected operator. The Refine sheet remains
+340px wide with 24px padding and vertical scrolling. Controls stay mounted while results change; retained rows show
+“Updating results…” and the existing busy treatment. Initial uncached loading uses the Library skeleton.
 
 Columns Reset restores inherited visibility and closes the popover; native dismissal returns focus to Columns.
 
@@ -430,7 +442,7 @@ is not used to create or regenerate primitives.
 
 Native `data-selected`, `data-expanded`, `data-focus-visible`, `data-disabled` and `data-pending` attributes drive
 control styles. The last selected settings format uses native read-only behaviour. Filter disclosures retain mounted
-draft editors; ingestion disclosures mount query children only while expanded. Book tabs mount only their selected
+native editors; ingestion disclosures mount query children only while expanded. Book tabs mount only their selected
 panel.
 
 The canonical brand palette, Radix Colors and generated colour primitives remain the colour foundation. The
