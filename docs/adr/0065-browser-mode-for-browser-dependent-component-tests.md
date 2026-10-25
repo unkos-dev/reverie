@@ -42,25 +42,14 @@ foundation, not full suite conversion, new product behaviour or new navigation j
 Chosen option: **Vitest Browser Mode for browser-dependent components**, because it exercises native browser semantics
 within the Vite+-owned test runner while keeping pure logic and document navigation in environments suited to them.
 
-The foundation uses the supported Playwright provider and its directly declared Playwright peer, aligned with the Vitest
-version owned by Vite+. The durable Chromium component project has an isolated React and Tailwind host that loads
-application CSS, with browser matcher types separated from app and Node declarations. Native browser behaviour replaces
-geometry, focus and browser API emulation in these component tests.
+The chosen browser provider is Playwright, retaining supported integration with the Vitest version owned by Vite+. Node
+remains the choice for pure logic because those assertions gain no browser semantics to justify the extra cost.
+Standalone browser journeys remain the choice for actual document navigation because navigating the embedded component
+frame can destroy its test runner.
 
-Jsdom coexistence is temporary transition coverage. Superseded jsdom cases are removed as equivalent required outcomes
-are verified in their appropriate environment: browser-dependent components in Browser Mode, pure logic in Node and
-actual document navigation in standalone journeys. Jsdom and its global stubs are removed when no required assertion
-depends on them. This does not require an all-at-once conversion or permanent duplicate suites.
-
-Actual navigation remains a separate journey boundary. The existing three jsdom logout intent checks remain until
-appropriate replacements are verified; standalone logout journeys are not implemented by this foundation. Component
-tests do not certify application bootstrap, CSP enforcement, session invalidation or end-to-end navigation. Application
-CSP plugins, headers, proxy and HTML processing retain their separate verification, as does the accessibility gate.
-
-Local and CI execution share the test recipe. CI provisions the matching Chromium binary and operating-system
-dependencies, caches browsers by operating system, architecture and Playwright version, and retains available failure
-screenshots. Operational commands and host limitations live in the
-[frontend testing guidance](../../frontend/README.md#testing).
+Temporary jsdom coexistence avoids a coverage gap during migration. The chosen strategy retires jsdom coverage as its
+required outcomes gain verified replacement homes, with jsdom itself retired once no required outcome depends on it.
+This permits incremental adoption without making duplicate suites permanent.
 
 ### Consequences
 
@@ -72,6 +61,8 @@ screenshots. Operational commands and host limitations live in the
 - Negative: provider, runner and browser dependency alignment becomes part of test maintenance.
 - Negative: temporary coexistence carries duplicate coverage and two environments until replacements are verified.
 - Negative: embedded component execution cannot cover document navigation, leaving journey work outside this foundation.
+- Negative: isolated component coverage does not establish application bootstrap, CSP enforcement, session invalidation
+  or end-to-end navigation, and does not replace separate accessibility and render verification.
 
 ## Pros and cons of the options
 
@@ -92,6 +83,7 @@ screenshots. Operational commands and host limitations live in the
 
 ## More information
 
+- [Frontend testing guidance](../../frontend/README.md#testing) covers operational setup and migration details.
 - [Vite+ toolchain decision](0033-adopt-the-vite-vp-monorepo-toolchain.md) retains toolchain ownership.
 - [Playwright accessibility decision](0040-accessibility-gate-and-render-verification-on-playwright.md) retains the
   separate accessibility and render-verification boundary.
