@@ -447,13 +447,19 @@ test("a delayed search cannot replace newer results", async () => {
   const old = new Promise<Response>((resolve) => {
     resolveOld = resolve;
   });
-  vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
-    new URL(
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-    ).searchParams.get("q") === "old"
+  vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    let raw: string;
+    if (typeof input === "string") {
+      raw = input;
+    } else if (input instanceof URL) {
+      raw = input.href;
+    } else {
+      raw = input.url;
+    }
+    return new URL(raw).searchParams.get("q") === "old"
       ? old
-      : Promise.resolve(jsonResponse({ items: [] })),
-  );
+      : Promise.resolve(jsonResponse({ items: [] }));
+  });
   renderPalette();
   triggerCmdK();
   const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");

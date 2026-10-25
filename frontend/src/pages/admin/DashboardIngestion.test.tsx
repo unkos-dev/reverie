@@ -1646,12 +1646,15 @@ describe("bulk retry group controls", () => {
           name: "Retry all 2",
         }),
       );
-      const text =
-        status === 401
-          ? "Your session has ended. Sign in again to retry files."
-          : status === 403
-            ? "This account cannot retry files. Sign in as an administrator."
-            : "Could not confirm whether these files were queued. Refresh the group before trying again.";
+      let text: string;
+      if (status === 401) {
+        text = "Your session has ended. Sign in again to retry files.";
+      } else if (status === 403) {
+        text = "This account cannot retry files. Sign in as an administrator.";
+      } else {
+        text =
+          "Could not confirm whether these files were queued. Refresh the group before trying again.";
+      }
       expect(await screen.findByText(text)).toHaveAttribute("role", "alert");
       const retry = within(screen.getByRole("region", { name: /Needs attention/ })).getByRole(
         "button",
@@ -1876,12 +1879,15 @@ describe("bulk retry retained states", () => {
     const card = screen.getByRole("region", { name: /Enrichment problems/ });
     const [action] = await within(card).findAllByRole("button", { name: "Retry 1 book" });
     fireEvent.click(action);
-    const text =
-      status === 401
-        ? "Your session has ended. Sign in again to retry books."
-        : status === 403
-          ? "This account cannot retry books. Sign in as an administrator."
-          : "Could not confirm whether these books were queued. Refresh the group before trying again.";
+    let text: string;
+    if (status === 401) {
+      text = "Your session has ended. Sign in again to retry books.";
+    } else if (status === 403) {
+      text = "This account cannot retry books. Sign in as an administrator.";
+    } else {
+      text =
+        "Could not confirm whether these books were queued. Refresh the group before trying again.";
+    }
     expect(await within(card).findByText(text)).toHaveAttribute("role", "alert");
     expect(retryEnrichmentFailures).toHaveBeenCalledOnce();
     if (status === 403) {

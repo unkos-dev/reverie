@@ -26,7 +26,14 @@ function json(status: number, body: unknown): Response {
 
 function stubApi(mutationPath: string): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    let url: string;
+    if (typeof input === "string") {
+      url = input;
+    } else if (input instanceof URL) {
+      url = input.href;
+    } else {
+      url = input.url;
+    }
     if (url.includes("/auth/me")) return Promise.resolve(json(200, STUB_ME));
     if (url.includes("/auth/setup/status")) {
       return Promise.resolve(

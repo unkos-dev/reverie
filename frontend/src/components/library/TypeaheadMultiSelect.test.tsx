@@ -177,9 +177,15 @@ describe("TypeaheadMultiSelect", () => {
 
   test("disjoint search results retain selected chips without adding them to suggestions", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-      const url = new URL(
-        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-      );
+      let raw: string;
+      if (typeof input === "string") {
+        raw = input;
+      } else if (input instanceof URL) {
+        raw = input.href;
+      } else {
+        raw = input.url;
+      }
+      const url = new URL(raw);
       const suggestions =
         url.searchParams.get("q") === "le"
           ? [{ id: LE_GUIN, value: "Ursula K. Le Guin" }]
@@ -351,9 +357,15 @@ test("late suggestions cannot replace the current query or resurrect committed i
     resolveOld = resolve;
   });
   vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-    const url = new URL(
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-    );
+    let raw: string;
+    if (typeof input === "string") {
+      raw = input;
+    } else if (input instanceof URL) {
+      raw = input.href;
+    } else {
+      raw = input.url;
+    }
+    const url = new URL(raw);
     return url.searchParams.get("q") === "old"
       ? old
       : Promise.resolve(jsonResponse({ suggestions: [{ id: LEM, value: "New author" }] }));
@@ -392,13 +404,19 @@ test("disabled controls cannot change a hydrated selection", async () => {
 });
 
 test("empty and failed suggestion requests expose their status", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
-    new URL(
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-    ).searchParams.get("q") === "fail"
+  vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    let raw: string;
+    if (typeof input === "string") {
+      raw = input;
+    } else if (input instanceof URL) {
+      raw = input.href;
+    } else {
+      raw = input.url;
+    }
+    return new URL(raw).searchParams.get("q") === "fail"
       ? Promise.resolve(new Response("failed", { status: 500 }))
-      : Promise.resolve(jsonResponse({ suggestions: [] })),
-  );
+      : Promise.resolve(jsonResponse({ suggestions: [] }));
+  });
   render(<Harness />);
   const input = screen.getByRole("combobox");
   await userEvent.setup().click(input);

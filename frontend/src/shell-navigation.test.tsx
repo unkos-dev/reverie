@@ -146,10 +146,15 @@ const USER_TIMESTAMPS = {
 
 function stubFetch(role: string): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-    const url = new URL(
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-      "http://localhost",
-    );
+    let raw: string;
+    if (typeof input === "string") {
+      raw = input;
+    } else if (input instanceof URL) {
+      raw = input.href;
+    } else {
+      raw = input.url;
+    }
+    const url = new URL(raw, "http://localhost");
     const body = bodyFor(url, role);
     return Promise.resolve(
       new Response(JSON.stringify(body), {

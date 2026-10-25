@@ -269,6 +269,18 @@ function LibraryContent(): ReactElement {
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  function renderLoadMoreLabel(): ReactElement | string {
+    if (isFetchingNextPage) {
+      return (
+        <>
+          <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+          Loading…
+        </>
+      );
+    }
+    return isFetchNextPageError ? "Retry" : "Load more";
+  }
+
   return (
     <>
       <Atmosphere />
@@ -368,16 +380,7 @@ function LibraryContent(): ReactElement {
                   void fetchNextPage();
                 }}
               >
-                {isFetchingNextPage ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
-                    Loading…
-                  </>
-                ) : isFetchNextPageError ? (
-                  "Retry"
-                ) : (
-                  "Load more"
-                )}
+                {renderLoadMoreLabel()}
               </Button>
             </div>
           ) : null}
