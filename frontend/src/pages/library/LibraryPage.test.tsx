@@ -1792,6 +1792,130 @@ test("a successful empty response replaces placeholders", async () => {
   fetchSpy.mockRestore();
 });
 
+test.each(["grid", "table"] as const)(
+  "invalid active text prevents the whole %s request, paging and invalidation until corrected",
+  async (view) => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(booksResponse([bookFixture({ title: "Corrected" })]));
+    const { client } = renderLibrary({
+      items: [bookFixture()],
+      nextCursor: "next-page",
+      visit: { view, filters: { pages: { gte: 100 } } },
+      cacheParams: { pages_gte: 100 },
+    });
+    await screen.findByRole("searchbox");
+    if (view === "table") await findLibraryTable();
+    fireEvent.change(searchBox(), { target: { value: "x".repeat(201) } });
+    expect(searchBox()).toHaveValue("x".repeat(201));
+    expect(searchBox()).toHaveAttribute("aria-invalid", "true");
+    expect(searchBox()).toHaveAccessibleDescription(
+      "Use 200 characters or fewer, excluding surrounding spaces.",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Results are paused.");
+    expect(screen.queryByRole("button", { name: /Load more/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.books.all });
+      await client.refetchQueries({ queryKey: queryKeys.books.all });
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("visit-params")).toHaveTextContent("pages_gte=100");
+    fireEvent.change(searchBox(), { target: { value: "The Sea" } });
+    await screen.findByText("Corrected");
+    const requested = fetchSpy.mock.calls.map(
+      ([input]) =>
+        new URL(
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+          window.location.origin,
+        ).searchParams,
+    );
+    expect(requested.filter((params) => params.get("q") === "The Sea")).toHaveLength(1);
+    expect(requested.every((params) => params.get("pages_gte") === "100")).toBe(true);
+    expect(requested.filter((params) => !params.has("q"))).toHaveLength(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fetchSpy.mockRestore();
+  },
+);
+
+test("an uncached restored overlong filter stays editable and Clear recovers the full request", async () => {
+  const pending = deferredResponse();
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+  renderLibrary({
+    items: [],
+    nextCursor: null,
+    uncached: true,
+    visit: { filters: { title: { op: "ne", text: "😀".repeat(201) }, q: "Sea" } },
+  });
+  expect(await screen.findByRole("searchbox")).toHaveValue("Sea");
+  expect(screen.getByRole("alert")).toHaveTextContent("Results are paused.");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /^Filters/ }));
+  const title = drawerSection(screen.getByRole("dialog"), "Title");
+  const input = within(title).getByRole("textbox", { name: "Filter value" });
+  expect(input).toHaveValue("😀".repeat(201));
+  expect(input).toHaveAttribute("aria-invalid", "true");
+  expect(input).toHaveAccessibleDescription(
+    "Use 200 characters or fewer, excluding surrounding spaces.",
+  );
+  expect(fetchSpy).not.toHaveBeenCalled();
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: /^Clear all$/ }));
+  expect(searchBox()).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^Filters/ })).toBeInTheDocument();
+  expect(screen.getByText("Updating results…")).toBeInTheDocument();
+  expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+  expect(screen.queryByText("No books yet")).not.toBeInTheDocument();
+  expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+  expect(fetchSpy.mock.calls.map(([input]) => input)).toEqual([
+    new URL("/api/v1/books", window.location.origin),
+  ]);
+  pending.resolve(booksResponse([bookFixture({ title: "Recovered" })]));
+  await screen.findByText("Recovered");
+  expect(searchBox()).toHaveValue("");
+  expect(screen.queryByText("Updating results…")).not.toBeInTheDocument();
+  expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  expect(fetchSpy.mock.calls[0]?.[0]).toEqual(new URL("/api/v1/books", window.location.origin));
+  fetchSpy.mockRestore();
+});
+
+test.each([false, true])(
+  "server 422 remains recoverable with controls mounted, initial=%s",
+  async (uncached) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 422,
+          type: "https://reverie.example/probs/invalid-query",
+          title: "Invalid query",
+          detail: "A server-side restriction",
+        }),
+        { status: 422, headers: { "Content-Type": "application/problem+json" } },
+      ),
+    );
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      uncached,
+      visit: { filters: { q: "restricted" } },
+      cacheParams: { q: "restricted" },
+    });
+    if (!uncached)
+      fireEvent.change(await screen.findByRole("searchbox"), { target: { value: "rejected" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("These filters could not be used.");
+    expect(searchBox()).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Filters/ })).toBeInTheDocument();
+    expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockResolvedValue(booksResponse([bookFixture({ title: "Recovered" })]));
+    fireEvent.change(searchBox(), { target: { value: "corrected" } });
+    await screen.findByText("Recovered");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fetchSpy.mockRestore();
+  },
+);
+
 test("an initial uncached load uses the skeleton, then mounts the controls with its result", async () => {
   const pending = deferredResponse();
   const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);

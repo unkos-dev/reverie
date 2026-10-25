@@ -271,6 +271,7 @@ test("clear preserves view and search applies one character without delays", asy
 test("local date calendar, partial input and year prefixes keep controls mounted through updating and empty results", async ({
   page,
 }, testInfo) => {
+  await page.clock.setFixedTime("2026-10-25T04:00:00Z");
   const fixture = await intercept(page);
   await page.goto("/library");
   await ready(page);
@@ -334,6 +335,7 @@ test("local date calendar, partial input and year prefixes keep controls mounted
 test("delayed date updates retain rows and focus; cached prefix edits remain usable", async ({
   page,
 }, testInfo) => {
+  await page.clock.setFixedTime("2026-10-25T04:00:00Z");
   const fixture = await intercept(page);
   await page.goto("/library");
   await ready(page);
@@ -393,4 +395,181 @@ test("delayed date updates retain rows and focus; cached prefix edits remain usa
     body: JSON.stringify(fixture.observations, null, 2),
     contentType: "application/json",
   });
+});
+
+test("overlong search and filter text prevent whole requests through reload and traversal, then recover", async ({
+  page,
+}, testInfo) => {
+  const fixture = await intercept(page);
+  await page.goto("/shelves");
+  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await ready(page);
+  await expect(page.getByTestId("library-grid")).toBeVisible();
+  const before = fixture.requests.length;
+  const overlong = "😀".repeat(201);
+  await search(page).fill(overlong);
+  await expect(search(page)).toBeFocused();
+  await expect(search(page)).toHaveAttribute("aria-invalid", "true");
+  await expect(search(page)).toHaveAccessibleDescription(
+    "Use 200 characters or fewer, excluding surrounding spaces.",
+  );
+  await expect(page.getByRole("alert")).toContainText("Results are paused.");
+  await page.screenshot({ path: testInfo.outputPath("text-search-invalid.png") });
+  await page.reload();
+  await ready(page);
+  await expect(search(page)).toHaveValue(overlong);
+  await expect(page.getByRole("alert")).toContainText("Results are paused.");
+  await page.goBack();
+  await expect(page).toHaveURL(/\/shelves$/);
+  await page.goForward();
+  await ready(page);
+  await expect(search(page)).toHaveValue(overlong);
+  expect(fixture.requests).toHaveLength(before);
+  let releaseCorrection: () => void = () => {
+    throw new Error("Correction request has not started");
+  };
+  fixture.hold = async (route, url) => {
+    if (url.searchParams.get("q") !== "😀".repeat(200)) return false;
+    await new Promise<void>((resolve) => {
+      releaseCorrection = resolve;
+    });
+    await route.fulfill({ json: { items: [], next_cursor: null } });
+    return true;
+  };
+  await search(page).fill(`  ${"😀".repeat(200)}  `);
+  await expect(search(page)).not.toHaveAttribute("aria-invalid", "true");
+  await expect.poll(() => fixture.requests.at(-1)?.get("q")).toBe("😀".repeat(200));
+  await expect(search(page)).toBeFocused();
+  await expect(page.getByRole("button", { name: /^Filters/ })).toBeVisible();
+  await expect(page.getByText("Updating results…")).toBeVisible();
+  await expect(page.locator('[aria-busy="true"]')).toBeVisible();
+  await expect(page.getByText("No books yet")).toHaveCount(0);
+  await expect(page.getByText("No books match these filters")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("text-correction-pending.png") });
+  releaseCorrection();
+  await expect(page.getByText("No books match these filters")).toBeVisible();
+  await expect(search(page)).toBeFocused();
+  await page.getByRole("button", { name: "Clear search", exact: true }).click();
+  await expect(page.getByTestId("library-grid")).toBeVisible();
+  await refine(page);
+  const subtitle = await section(page, "Subtitle");
+  const input = subtitle.getByRole("textbox", { name: "Filter value" });
+  const activeCount = fixture.requests.length;
+  await input.fill("x".repeat(201));
+  await expect(input).toBeFocused();
+  await expect(input).toHaveAttribute("aria-invalid", "true");
+  await expect(input).toHaveAccessibleDescription(
+    "Use 200 characters or fewer, excluding surrounding spaces.",
+  );
+  await page.screenshot({ path: testInfo.outputPath("text-filter-invalid.png") });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: /^Filters/ })).toBeFocused();
+  await expect(page.getByRole("alert")).toContainText("Results are paused.");
+  await page.screenshot({ path: testInfo.outputPath("text-filter-closed.png") });
+  expect(fixture.requests).toHaveLength(activeCount);
+  await refine(page);
+  const restored = await section(page, "Subtitle");
+  await expect(restored.getByRole("textbox", { name: "Filter value" })).toHaveValue(
+    "x".repeat(201),
+  );
+  await restored.getByRole("button", { name: /Operator/ }).click();
+  await page.getByRole("option", { name: "is empty", exact: true }).click();
+  await expect.poll(() => fixture.requests.at(-1)?.get("subtitle_empty")).toBe("true");
+  await restored.getByRole("button", { name: /Operator/ }).click();
+  const dormantCount = fixture.requests.length;
+  await page.getByRole("option", { name: "contains", exact: true }).click();
+  await expect(restored.getByRole("textbox", { name: "Filter value" })).toHaveValue(
+    "x".repeat(201),
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("alert")).toContainText("Results are paused.");
+  expect(fixture.requests).toHaveLength(dormantCount);
+  await page.reload();
+  await ready(page);
+  await expect(page.getByRole("alert")).toContainText("Results are paused.");
+  let releaseClear: () => void = () => {
+    throw new Error("Clear request has not started");
+  };
+  fixture.hold = async (route, url) => {
+    if (url.search !== "") return false;
+    await new Promise<void>((resolve) => {
+      releaseClear = resolve;
+    });
+    await route.fulfill({ json: { items: [BOOK], next_cursor: null } });
+    return true;
+  };
+  const clearCount = fixture.requests.length;
+  await page.getByRole("button", { name: "Clear all", exact: true }).click();
+  await expect.poll(() => fixture.requests.length).toBe(clearCount + 1);
+  expect(fixture.requests.at(-1)?.toString()).toBe("");
+  await expect(search(page)).toHaveValue("");
+  await expect(page.getByText("Updating results…")).toBeVisible();
+  await expect(page.locator('[aria-busy="true"]')).toBeVisible();
+  await expect(page.getByText("No books yet")).toHaveCount(0);
+  await expect(page.getByText("No books match these filters")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("text-clear-pending.png") });
+  await refine(page);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: /^Filters/ })).toBeFocused();
+  releaseClear();
+  await expect(page.getByTestId("library-grid")).toBeVisible();
+  await expect(page.getByText("Updating results…")).toHaveCount(0);
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await testInfo.attach("text-requests.json", {
+    body: JSON.stringify(fixture.observations, null, 2),
+    contentType: "application/json",
+  });
+});
+
+test("a genuine server 422 keeps Search, Filters and Clear available for recovery", async ({
+  page,
+}, testInfo) => {
+  const fixture = await intercept(page);
+  fixture.hold = async (route, url) => {
+    if (url.searchParams.get("q") !== "restricted") return false;
+    await route.fulfill({
+      status: 422,
+      contentType: "application/problem+json",
+      body: JSON.stringify({
+        type: "https://reverie.example/probs/invalid-query",
+        title: "Invalid query",
+        status: 422,
+        detail: "Synthetic server validation without field identifiers",
+      }),
+    });
+    return true;
+  };
+  await page.goto("/library");
+  await ready(page);
+  await search(page).fill("restricted");
+  await expect(page.getByRole("alert")).toContainText("These filters could not be used.");
+  await expect(search(page)).toBeFocused();
+  await expect(search(page)).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByRole("button", { name: /^Filters/ })).toBeVisible();
+  await expect(page.getByText("No books match these filters")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("text-server-422.png") });
+  const rejectedResponses: number[] = [];
+  page.on("response", (response) => {
+    if (response.status() === 422) rejectedResponses.push(response.status());
+  });
+  await page.reload();
+  await ready(page);
+  await expect(search(page)).toHaveValue("restricted");
+  await expect(page.getByRole("alert")).toContainText("These filters could not be used.");
+  expect(rejectedResponses).toHaveLength(1);
+  await search(page).fill("The Sea");
+  await expect(page.getByTestId("library-grid")).toBeVisible();
+  await expect(page.getByRole("grid", { name: "Active filters" })).toContainText(
+    'Search "The Sea"',
+  );
+  await expect(page.getByText("Updating results…")).toHaveCount(0);
+  await search(page).fill("restricted");
+  await expect(page.getByRole("grid", { name: "Active filters" })).toContainText(
+    'Search "restricted"',
+  );
+  await expect(page.getByRole("alert")).toContainText("These filters could not be used.");
+  await page.getByRole("button", { name: "Clear all", exact: true }).click();
+  await expect(search(page)).toHaveValue("");
+  await expect(page.getByTestId("library-grid")).toBeVisible();
 });

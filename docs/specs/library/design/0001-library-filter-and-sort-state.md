@@ -82,11 +82,18 @@ destination visit; a fresh push or replacement starts clean, including same-rout
 page. Library has no prefetch loader, so the restored owner supplies the first list request. Browser query parameters
 carry no filter or view state and have no compatibility decoder.
 
-The list request uses current filter intent immediately. Sort retains `useDeferredValue` so its controls resolve at
-gesture time while the request catches up. Initial uncached loading uses LibrarySkeleton. Later changes retain the
-controls and previous pages with visible “Updating results…” and busy treatment. Placeholder pages cannot load more.
-Successful responses replace placeholders, including real empty results for contradictory bounds. Range explanations
-appear against settled current results, rather than describing retained rows as the current result set.
+The current query key follows published filter intent immediately. A request is eligible only when every active text
+predicate contains at most 200 Unicode scalar values after trimming surrounding whitespace. Blank optional text has no
+predicate; text retained under an `empty` operator is dormant. SearchField and TextField use controlled `isInvalid` and
+associated FieldError feedback immediately, without native `maxLength` truncation. Raw overlong text remains published
+and persisted, including across reload and traversal. An ineligible visit prevents the whole list request, pagination
+and source-cache refetches. The results region explains that results are paused; correction or Clear restores request
+eligibility. Sort retains `useDeferredValue` so its controls resolve at gesture time while the request catches up.
+Initial uncached loading uses LibrarySkeleton. Later changes retain the controls with visible “Updating results…” and
+busy treatment during fetching. Pending recovery without previous pages uses a skeleton inside the results region;
+neither empty state appears until the request settles. Placeholder pages cannot load more. Successful responses replace
+placeholders, including real empty results for contradictory bounds. Range explanations appear against settled current
+results, rather than describing retained rows as the current result set.
 
 Displayed placeholder pages carry their originating query key. A second infinite-query observer reads that source cache
 while placeholders are displayed, sharing the same query function and pagination options. It is enabled only during
@@ -109,8 +116,10 @@ calendar values are checked before restored data drives controls or requests.
 
 Malformed API timestamps, numbers, `UUID` and boolean values retain `400` decode errors. Domain, cap, status and cursor
 errors retain `422`; contradictory complete intervals return successful empty data. Network and server errors remain
-errors. Initial or changed-query failures reach the route error boundary. Failed load-more requests retain loaded pages
-and provide the existing Retry action.
+errors. A books-list `422` stays in the results region with recoverable feedback and no automatic retry. Search, Filters
+and Clear remain usable; correction or Clear can request results again. The Problem Details envelope supplies no field
+map, so server detail does not identify field errors. Other initial or changed-query failures reach the route error
+boundary. Other failed load-more requests retain loaded pages and provide the existing Retry action.
 
 A table chunk failure selects the visit's grid override without rewriting the account preference. A failed preference
 write keeps the local choice for the current session and logs the failure; a late preference response cannot overwrite a

@@ -2,7 +2,10 @@ import {
   useInfiniteQuery,
   infiniteQueryOptions,
   keepPreviousData,
+  skipToken,
+  useQueryClient,
   type InfiniteData,
+  type QueryClient,
 } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import {
@@ -14,11 +17,18 @@ import {
   useMemo,
   useState,
   type CSSProperties,
+  type ReactNode,
   type ReactElement,
 } from "react";
-import { Link } from "react-router";
+import { Link, matchPath } from "react-router";
 
-import { listBooks, type BookListItem, type BookListResponse, type SortLevelParam } from "@/api";
+import {
+  ApiError,
+  listBooks,
+  type BookListItem,
+  type BookListResponse,
+  type SortLevelParam,
+} from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
@@ -36,6 +46,7 @@ import { queryKeys, type BooksListKey } from "@/lib/query/keys";
 import {
   filterStateToParams,
   hasActiveFilterState,
+  isLibraryRequestEligible,
   type LibraryView,
 } from "@/routes/library-params";
 
@@ -63,38 +74,31 @@ type BookPages = InfiniteData<BookListResponse, string | undefined> & {
   originKey?: BooksListKey;
 };
 
-function listOptions(queryKey: BooksListKey) {
+function listOptions(queryKey: BooksListKey, eligible: boolean, client: QueryClient) {
+  const retryPolicy =
+    client.getQueryDefaults(queryKey).retry ?? client.getDefaultOptions().queries?.retry;
+  function retry(count: number, error: Error): boolean {
+    if (error instanceof ApiError && error.status === 422) return false;
+    if (typeof retryPolicy === "function") return retryPolicy(count, error);
+    if (typeof retryPolicy === "boolean") return retryPolicy;
+    return count < (retryPolicy ?? 3);
+  }
   return infiniteQueryOptions<BookListResponse, Error, BookPages, BooksListKey, string | undefined>(
     {
       queryKey,
-      queryFn: ({ queryKey: [, , params], signal, pageParam }) =>
-        listBooks(pageParam === undefined ? params : { ...params, cursor: pageParam }, signal),
+      queryFn: eligible
+        ? ({ queryKey: [, , params], signal, pageParam }) =>
+            listBooks(pageParam === undefined ? params : { ...params, cursor: pageParam }, signal)
+        : skipToken,
       initialPageParam: undefined,
+      retry,
       getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     },
   );
 }
 
-export function LibraryPage(): ReactElement {
-  const owner = useLibraryFilters();
-  const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
-  // Drives cinematic mode via the document `data-cinematic` attribute (CSS
-  // reads it); the boolean return is unused — visibility is CSS-only.
-  useCinematicMode();
-  const [overlay, setOverlay] = useState<OverlayState>(null);
-  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  const preferences = useLibraryPreferences();
-  const { density, hiddenColumns, sortOverride, sortLevels, setSortLevels } = preferences;
-
-  const viewMode: LibraryView = owner.view ?? preferences.view;
-  const params = filterStateToParams(filterState);
-  const deferredSortOverride = useDeferredValue(sortOverride);
-  const sortPending = deferredSortOverride !== sortOverride;
-  if (deferredSortOverride !== "") params.sort = deferredSortOverride;
-  const cacheParams = params;
-  const listKey = queryKeys.books.list(cacheParams);
-  const queryToken = JSON.stringify([filterState, sortOverride, viewMode]);
-
+function useLibraryBooks(listKey: BooksListKey, eligible: boolean, sortPending: boolean) {
+  const client = useQueryClient();
   const {
     data,
     error: fetchNextPageError,
@@ -107,7 +111,7 @@ export function LibraryPage(): ReactElement {
     isFetchingNextPage,
     isFetchNextPageError,
   } = useInfiniteQuery({
-    ...listOptions(listKey),
+    ...listOptions(listKey, eligible, client),
     placeholderData: (previous, previousQuery) => {
       const retained = keepPreviousData(previous);
       return retained === undefined
@@ -118,18 +122,12 @@ export function LibraryPage(): ReactElement {
 
   const displayedKey = data?.originKey ?? listKey;
   const retained = useInfiniteQuery({
-    ...listOptions(displayedKey),
-    enabled: isPlaceholderData,
+    ...listOptions(displayedKey, eligible, client),
+    enabled: eligible && isPlaceholderData,
     staleTime: Infinity,
   });
   const displayedData = isPlaceholderData ? retained.data : data;
-  const selectionToken = JSON.stringify([queryToken, displayedKey]);
-  const [syncedSelectionToken, setSyncedSelectionToken] = useState(selectionToken);
-  if (selectionToken !== syncedSelectionToken) {
-    setSyncedSelectionToken(selectionToken);
-    if (selectedIds.size > 0) setSelectedIds(new Set());
-  }
-
+  const rejected = fetchNextPageError instanceof ApiError && fetchNextPageError.status === 422;
   // The user-facing Load-more error is rendered below; this routes the raw
   // error to the console too (QueryCache.onError only forwards 401s), so a
   // 500 / parse failure leaves a developer breadcrumb.
@@ -142,8 +140,80 @@ export function LibraryPage(): ReactElement {
     () => displayedData?.pages.flatMap((p) => p.items) ?? [],
     [displayedData],
   );
-  const updating = sortPending || isPlaceholderData || (isFetching && !isFetchingNextPage);
-  const canLoadMore = hasNextPage && !isPlaceholderData;
+  const blocked = !eligible || rejected;
+  const updating =
+    !blocked &&
+    (sortPending ||
+      isPlaceholderData ||
+      (isFetching && !isFetchingNextPage) ||
+      retained.isRefetching);
+  const canLoadMore = !blocked && hasNextPage && !isPlaceholderData;
+  let blockedMessage: string | undefined;
+  if (!eligible)
+    blockedMessage =
+      "Results are paused. Shorten the search or filter text to 200 characters or fewer, or clear the filters.";
+  else if (rejected)
+    blockedMessage = "These filters could not be used. Change or clear them to try again.";
+
+  if (isError && !isFetchNextPageError && !rejected && eligible) throw fetchNextPageError;
+
+  return {
+    items,
+    displayedKey,
+    blocked,
+    blockedMessage,
+    updating,
+    canLoadMore,
+    loading: eligible && isPending,
+    showContradiction: !blocked && !updating && !isError,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  };
+}
+
+export function LibraryPage(): ReactElement {
+  const owner = useLibraryFilters();
+  const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
+  // Drives cinematic mode via the document `data-cinematic` attribute (CSS
+  // reads it); the boolean return is unused — visibility is CSS-only.
+  useCinematicMode();
+  const [overlay, setOverlay] = useState<OverlayState>(null);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [hasRenderedControls, setHasRenderedControls] = useState(false);
+  const preferences = useLibraryPreferences();
+  const { density, hiddenColumns, sortOverride, sortLevels, setSortLevels } = preferences;
+
+  const viewMode: LibraryView = owner.view ?? preferences.view;
+  const params = filterStateToParams(filterState);
+  const deferredSortOverride = useDeferredValue(sortOverride);
+  const sortPending = deferredSortOverride !== sortOverride;
+  if (deferredSortOverride !== "") params.sort = deferredSortOverride;
+  const cacheParams = params;
+  const listKey = queryKeys.books.list(cacheParams);
+  const queryToken = JSON.stringify([filterState, sortOverride, viewMode]);
+
+  const eligible =
+    matchPath("/library", window.location.pathname) !== null && isLibraryRequestEligible(params);
+  const {
+    items,
+    displayedKey,
+    blocked,
+    blockedMessage,
+    updating,
+    canLoadMore,
+    loading,
+    showContradiction,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useLibraryBooks(listKey, eligible, sortPending);
+  const selectionToken = JSON.stringify([queryToken, displayedKey]);
+  const [syncedSelectionToken, setSyncedSelectionToken] = useState(selectionToken);
+  if (selectionToken !== syncedSelectionToken) {
+    setSyncedSelectionToken(selectionToken);
+    if (selectedIds.size > 0) setSelectedIds(new Set());
+  }
 
   function setView(next: LibraryView): void {
     preferences.setView(next);
@@ -174,57 +244,10 @@ export function LibraryPage(): ReactElement {
     setOverlay(next);
   }
 
-  /** Empty states first, then one branch per projection. */
-  function renderBooks(): ReactElement {
-    if (items.length === 0) {
-      if (hasActiveFilterState(filterState)) return <FilteredEmptyState onClear={clearAll} />;
-      return <EmptyLibrary />;
-    }
-    if (viewMode === "grid") return <BookGrid items={items} />;
-    return (
-      <TableChunkBoundary
-        onFallbackToGrid={() => {
-          setVisitView("grid");
-        }}
-      >
-        <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-          <LibraryTableView
-            items={items}
-            sort={sortLevels}
-            onSortChange={handleSortChange}
-            hasNextPage={canLoadMore}
-            isFetchingNextPage={isFetchingNextPage}
-            isFetchNextPageError={isFetchNextPageError}
-            onLoadMore={() => {
-              void fetchNextPage();
-            }}
-            listQueryKey={displayedKey}
-            density={density}
-            hiddenColumns={hiddenColumns}
-            selectedIds={selectedIds}
-            onSelectionChange={setSelectedIds}
-            onRowActivate={(book) => {
-              openOverlay({ detail: book.id });
-            }}
-          />
-        </Suspense>
-      </TableChunkBoundary>
-    );
-  }
-
-  // Facet options derive from the loaded pages — `SeriesRef` carries
-  // the id the backend filter wants; authors have no stable id, so they
-  // group by display name only.
-  const seriesById = new Map<string, string>();
-  for (const book of items) {
-    if (book.series !== null) seriesById.set(book.series.id, book.series.name);
-  }
-  const seriesOptions: SeriesFacetOption[] = [...seriesById]
-    .map(([id, name]) => ({ id, name }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  if (isPending) return <LibrarySkeleton />;
-  if (isError && !isFetchNextPageError) throw fetchNextPageError;
+  const seriesOptions = librarySeriesOptions(items);
+  const seriesById = new Map(seriesOptions.map(({ id, name }) => [id, name]));
+  if (!loading && !hasRenderedControls) setHasRenderedControls(true);
+  if (loading && !hasRenderedControls) return <LibrarySkeleton />;
 
   return (
     <>
@@ -282,15 +305,45 @@ export function LibraryPage(): ReactElement {
           />
           <Separator className="mb-8" />
 
-          {/* `aria-busy` while a sort gesture's re-sorted page is loading:
-              the deferred query key keeps the previous rows visible, and
-              this is the stale-content marker for that window. */}
-          {updating ? <p className="text-fg-muted mb-3 text-sm">Updating results…</p> : null}
-          <div aria-busy={updating || undefined} className={updating ? "opacity-60" : ""}>
-            {renderBooks()}
-          </div>
+          <LibraryBooks
+            items={items}
+            filtered={hasActiveFilterState(filterState)}
+            onClear={clearAll}
+            viewMode={viewMode}
+            blockedMessage={blockedMessage}
+            loading={loading}
+            updating={updating}
+          >
+            <TableChunkBoundary
+              onFallbackToGrid={() => {
+                setVisitView("grid");
+              }}
+            >
+              <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                <LibraryTableView
+                  items={items}
+                  sort={sortLevels}
+                  onSortChange={handleSortChange}
+                  hasNextPage={canLoadMore}
+                  isFetchingNextPage={isFetchingNextPage}
+                  isFetchNextPageError={isFetchNextPageError}
+                  onLoadMore={() => {
+                    void fetchNextPage();
+                  }}
+                  listQueryKey={displayedKey}
+                  density={density}
+                  hiddenColumns={hiddenColumns}
+                  selectedIds={selectedIds}
+                  onSelectionChange={setSelectedIds}
+                  onRowActivate={(book) => {
+                    openOverlay({ detail: book.id });
+                  }}
+                />
+              </Suspense>
+            </TableChunkBoundary>
+          </LibraryBooks>
 
-          {viewMode === "table" ? (
+          {viewMode === "table" && !blocked ? (
             <BatchBar
               selectedIds={selectedIds}
               hasMorePages={canLoadMore}
@@ -307,41 +360,14 @@ export function LibraryPage(): ReactElement {
             />
           ) : null}
 
-          {/* Table mode owns its paging UI (loading, error, Load-more,
-              end-of-list) inside LibraryTableView; rendering this block
-              there too would announce the same failure twice and offer two
-              Retry controls. */}
           {viewMode !== "table" && canLoadMore ? (
-            <div className="mt-10 flex flex-col items-center gap-3">
-              {/* A failed `fetchNextPage` keeps the loaded pages on screen; the
-                  error is hue-less (One-Accent rule — the danger hue is reserved
-                  for unrecoverable errors, and this one is retryable) and carried
-                  by copy + the Retry control. `role="alert"` announces it. */}
-              {isFetchNextPageError ? (
-                <p role="alert" className="text-fg-muted text-sm">
-                  Couldn&apos;t load more books. Check your connection and try again.
-                </p>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                isDisabled={isFetchingNextPage}
-                onPress={() => {
-                  void fetchNextPage();
-                }}
-              >
-                {isFetchingNextPage ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
-                    Loading…
-                  </>
-                ) : isFetchNextPageError ? (
-                  "Retry"
-                ) : (
-                  "Load more"
-                )}
-              </Button>
-            </div>
+            <LibraryPagination
+              isFetching={isFetchingNextPage}
+              isError={isFetchNextPageError}
+              onLoadMore={() => {
+                void fetchNextPage();
+              }}
+            />
           ) : null}
           <footer className="border-border text-fg-faint mt-16 border-t pt-6 text-center font-mono text-[0.68rem] uppercase tracking-[0.18em]">
             Reverie · MMXXVI · Set in Author, Satoshi and JetBrains Mono
@@ -368,7 +394,7 @@ export function LibraryPage(): ReactElement {
         </SheetHeader>
         <FilterRail
           owner={owner}
-          showContradiction={!updating && !isError}
+          showContradiction={showContradiction}
           seriesOptions={seriesOptions}
           sortLevels={sortLevels}
           sortInherited={preferences.sortInherited}
@@ -383,6 +409,91 @@ export function LibraryPage(): ReactElement {
         }}
       />
     </>
+  );
+}
+
+function librarySeriesOptions(items: BookListItem[]): SeriesFacetOption[] {
+  const byId = new Map<string, string>();
+  for (const book of items) {
+    if (book.series !== null) byId.set(book.series.id, book.series.name);
+  }
+  return [...byId].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+type LibraryBooksProps = {
+  items: BookListItem[];
+  filtered: boolean;
+  onClear: () => void;
+  viewMode: LibraryView;
+  blockedMessage: string | undefined;
+  loading: boolean;
+  updating: boolean;
+  children: ReactNode;
+};
+
+function LibraryBooks({
+  items,
+  filtered,
+  onClear,
+  viewMode,
+  blockedMessage,
+  loading,
+  updating,
+  children,
+}: Readonly<LibraryBooksProps>): ReactElement {
+  if (blockedMessage !== undefined)
+    return (
+      <p role="alert" className="text-fg-muted text-sm">
+        {blockedMessage}
+      </p>
+    );
+  let books = children;
+  if (loading || (updating && items.length === 0)) books = <Skeleton className="h-96 w-full" />;
+  else if (items.length === 0)
+    books = filtered ? <FilteredEmptyState onClear={onClear} /> : <EmptyLibrary />;
+  else if (viewMode === "grid") books = <BookGrid items={items} />;
+  return (
+    <>
+      {updating ? <p className="text-fg-muted mb-3 text-sm">Updating results…</p> : null}
+      <div aria-busy={updating || undefined} className={updating ? "opacity-60" : ""}>
+        {books}
+      </div>
+    </>
+  );
+}
+
+type LibraryPaginationProps = {
+  isFetching: boolean;
+  isError: boolean;
+  onLoadMore: () => void;
+};
+
+function LibraryPagination({
+  isFetching,
+  isError,
+  onLoadMore,
+}: Readonly<LibraryPaginationProps>): ReactElement {
+  return (
+    <div className="mt-10 flex flex-col items-center gap-3">
+      {/* Retryable paging errors reserve the danger hue for unrecoverable failures. */}
+      {isError ? (
+        <p role="alert" className="text-fg-muted text-sm">
+          Couldn&apos;t load more books. Check your connection and try again.
+        </p>
+      ) : null}
+      <Button type="button" variant="outline" isDisabled={isFetching} onPress={onLoadMore}>
+        {isFetching ? (
+          <>
+            <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+            Loading…
+          </>
+        ) : isError ? (
+          "Retry"
+        ) : (
+          "Load more"
+        )}
+      </Button>
+    </div>
   );
 }
 

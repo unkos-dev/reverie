@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/select";
 import {
   isTextOp,
+  libraryTextError,
   type FilterState,
   type RangeFilter,
   type SetFilter,
@@ -69,6 +70,7 @@ export function TextFilterEditor({
   const id = useId();
   const op = value.op ?? ops[0];
   const text = value.text ?? "";
+  const error = op === "empty" ? undefined : libraryTextError(text);
 
   return (
     <div className="flex flex-col gap-2">
@@ -97,6 +99,7 @@ export function TextFilterEditor({
       {op === "empty" ? null : (
         <TextField
           value={text}
+          isInvalid={error !== undefined}
           onChange={(next) => {
             onChange({ op, text: next });
           }}
@@ -106,6 +109,7 @@ export function TextFilterEditor({
             Value
           </AriaLabel>
           <AriaInput render={(props) => <Input {...props} />} />
+          <FieldError className="text-fg-muted text-sm">{error}</FieldError>
         </TextField>
       )}
     </div>
@@ -144,7 +148,7 @@ export function RangeFilterEditor({
           <NumberField
             key={side}
             aria-describedby={contradictory ? id : undefined}
-            value={value[side] ?? NaN}
+            value={value[side] ?? Number.NaN}
             minValue={min}
             maxValue={max}
             step={1}

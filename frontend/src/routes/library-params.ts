@@ -93,6 +93,24 @@ export function effectiveText(filter: TextFilter): string | undefined {
   return text === "" ? undefined : text;
 }
 
+export function libraryTextError(value: string | undefined): string | undefined {
+  return Array.from(value?.trim() ?? "").length > 200
+    ? "Use 200 characters or fewer, excluding surrounding spaces."
+    : undefined;
+}
+
+export function isLibraryRequestEligible(params: ListBooksParams): boolean {
+  return [
+    params.q,
+    params.title_contains,
+    params.title_eq,
+    params.title_ne,
+    params.subtitle_contains,
+    params.isbn_13_contains,
+    params.isbn_13_eq,
+  ].every((value) => libraryTextError(value) === undefined);
+}
+
 function assignText(params: ListBooksParams, prefix: TextColumn, filter: TextFilter): void {
   const op = filter.op ?? "contains";
   if (op === "empty") {

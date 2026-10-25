@@ -1,9 +1,13 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "vite-plus/test/browser";
 import { useState, type ReactElement } from "react";
-import { expect, test } from "vite-plus/test";
+import { afterEach, expect, test, vi } from "vite-plus/test";
 import { DateRangeEditor, RangeFilterEditor } from "@/components/library/editors";
 import type { RangeFilter } from "@/routes/library-params";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function NumericHarness({ rating = false }: { rating?: boolean }): ReactElement {
   const [value, setValue] = useState<RangeFilter>(rating ? {} : { gte: 100, lte: 200 });
@@ -93,6 +97,7 @@ function DateHarness(): ReactElement {
   );
 }
 test("date segments and calendars map optional independent endpoints", async () => {
+  vi.setSystemTime(new Date("2026-10-25T04:00:00Z"));
   render(<DateHarness />);
   const before = screen.getByRole("group", { name: "Added on or before" });
   await userEvent.click(within(before).getByRole("button"));

@@ -65,14 +65,7 @@ function pushText(
   const op = filter.op ?? "contains";
   const text = effectiveText(filter) ?? "";
   if (op !== "empty" && text === "") return;
-  const words =
-    op === "contains"
-      ? `contains "${text}"`
-      : op === "eq"
-        ? `is "${text}"`
-        : op === "ne"
-          ? `is not "${text}"`
-          : "is empty";
+  const words = textSummary(op, text);
   segments.push({
     key: `${key}_${op}`,
     text: `${label} ${words}`,
@@ -81,6 +74,19 @@ function pushText(
       [prop]: { ...current[prop], op: op === "empty" ? undefined : op, text: undefined },
     }),
   });
+}
+
+function textSummary(op: TextFilter["op"], text: string): string {
+  switch (op) {
+    case "contains":
+      return `contains "${text}"`;
+    case "eq":
+      return `is "${text}"`;
+    case "ne":
+      return `is not "${text}"`;
+    default:
+      return "is empty";
+  }
 }
 
 function pushRange(

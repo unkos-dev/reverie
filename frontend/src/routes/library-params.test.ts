@@ -4,10 +4,58 @@ import {
   filterStateToParams,
   hasActiveFilterState,
   LibraryVisitSchema,
+  libraryTextError,
+  isLibraryRequestEligible,
   TEXT_COLUMN_OPS,
 } from "./library-params";
 
 describe("Library visit projection", () => {
+  test.each([
+    ["a".repeat(200), true],
+    ["a".repeat(201), false],
+    ["😀".repeat(200), true],
+    ["😀".repeat(201), false],
+    [`  ${"a".repeat(200)}  `, true],
+    [" ".repeat(201), true],
+    ["e\u0301".repeat(100), true],
+    [`${"e\u0301".repeat(100)}e`, false],
+  ])("validates trimmed Unicode scalar values without changing raw intent: %s", (q, eligible) => {
+    const filters = { ...emptyFilterState(), q };
+    expect(LibraryVisitSchema.parse({ filters }).filters.q).toBe(q);
+    expect(isLibraryRequestEligible(filterStateToParams(filters))).toBe(eligible);
+    expect(libraryTextError(q) === undefined).toBe(eligible);
+  });
+  test("rejects the whole active request for each capped text predicate without dropping it", () => {
+    const text = "x".repeat(201);
+    for (const field of [
+      "q",
+      "title_contains",
+      "title_eq",
+      "title_ne",
+      "subtitle_contains",
+      "isbn_13_contains",
+      "isbn_13_eq",
+    ] as const) {
+      const params = { [field]: text, pages_gte: 100 };
+      expect(isLibraryRequestEligible(params)).toBe(false);
+      expect(params).toEqual({ [field]: text, pages_gte: 100 });
+    }
+  });
+  test("ignores dormant text under empty operators and revalidates it when active", () => {
+    const text = "x".repeat(201);
+    const filters = {
+      ...emptyFilterState(),
+      subtitle: { op: "empty", text },
+      isbn13: { op: "empty", text },
+    } as const;
+    expect(isLibraryRequestEligible(filterStateToParams(filters))).toBe(true);
+    expect(filterStateToParams(filters)).toEqual({ subtitle_empty: true, isbn_13_empty: true });
+    expect(
+      isLibraryRequestEligible(
+        filterStateToParams({ ...filters, subtitle: { op: "contains", text } }),
+      ),
+    ).toBe(false);
+  });
   test("empty visits have no effective predicates", () => {
     expect(filterStateToParams(emptyFilterState())).toEqual({});
     expect(hasActiveFilterState(emptyFilterState())).toBe(false);
