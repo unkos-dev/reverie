@@ -28,6 +28,7 @@ yanked = "warn"
 # osv-scanner.toml applies these rulings to OpenSSF Scorecard's OSV scan, which
 # cannot read this file; change the two together.
 ignore = [
+  { id = "RUSTSEC-2026-0387", reason = "accepted for assessed OIDC signature-verification-only use; affected crypto-bigint arithmetic remains reachable and timing leakage is not ruled out. Remove when the graph has no affected crypto-bigint; reassess immediately for signing, ECDH, other secret-integer use or contrary exploit evidence. Review by 2026-11-08 is documented, not automatically enforced; see debt/2026-10-25-crypto-bigint-verification-only.md" },
   # rsa: the Marvin timing sidechannel leaks private-key information over the
   # network, and no release fixes it. The advisory's own workaround allows local
   # use, which is the only place this codebase holds an RSA private key.
