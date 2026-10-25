@@ -222,14 +222,14 @@ url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/664336023"
 provenance = "github-attestations"
 
 [[tools.vacuum]]
-version = "0.33.2"
+version = "0.35.0"
 backend = "aqua:daveshanley/vacuum"
-specifiers = ["0.33.2"]
+specifiers = ["0.35.0"]
 
 [tools.vacuum."platforms.linux-x64"]
-checksum = "sha256:f6986baeb4d50365fb620f68b2a450e54fc1c9c2d48b7524d330bf9476c29bf9"
-url = "https://github.com/daveshanley/vacuum/releases/download/v0.33.2/vacuum_0.33.2_linux_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/daveshanley/vacuum/releases/assets/657394043"
+checksum = "sha256:1732561b38f065b16b60a89bdc248e690c643a1fbfd34a4fbcbf423b27177d4e"
+url = "https://github.com/daveshanley/vacuum/releases/download/v0.35.0/vacuum_0.35.0_linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/daveshanley/vacuum/releases/assets/665972161"
 provenance = "cosign"
 
 [[tools.vale]]
