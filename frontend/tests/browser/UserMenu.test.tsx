@@ -111,17 +111,29 @@ describe("UserChip", () => {
     expect(link).toHaveAttribute("href", "/account/password");
   });
 
-  test("theme submenu exposes the three preferences and writes through", async () => {
-    renderChip();
-    const user = userEvent;
-    await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
-    await user.click(await screen.findByRole("menuitem", { name: "Theme" }));
-    const dark = await screen.findByRole("menuitemradio", { name: "Dark" });
-    expect(screen.getByRole("menuitemradio", { name: "System" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitemradio", { name: "Light" })).toBeInTheDocument();
-    await user.click(dark);
-    expect(setPreferenceMock).toHaveBeenCalledWith("dark");
-  });
+  test.each(["pointer", "keyboard"])(
+    "theme submenu exposes the three preferences and writes through with %s",
+    async (input) => {
+      renderChip();
+      const user = userEvent;
+      await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+      if (input === "pointer") {
+        await user.click(await screen.findByRole("menuitem", { name: "Theme" }));
+      } else {
+        await user.keyboard("{End}{ArrowUp}{ArrowRight}{End}");
+      }
+      const dark = await screen.findByRole("menuitemradio", { name: "Dark" });
+      expect(screen.getByRole("menuitemradio", { name: "System" })).toBeInTheDocument();
+      expect(screen.getByRole("menuitemradio", { name: "Light" })).toBeInTheDocument();
+      if (input === "pointer") {
+        await user.click(dark);
+      } else {
+        expect(dark).toHaveFocus();
+        await user.keyboard("{Enter}");
+      }
+      expect(setPreferenceMock).toHaveBeenCalledWith("dark");
+    },
+  );
 });
 test("OIDC-only accounts can open email settings", async () => {
   const me = useAuthMeMock().data;

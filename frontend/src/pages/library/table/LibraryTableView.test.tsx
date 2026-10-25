@@ -98,11 +98,6 @@ function rowFixture(index: number, overrides: Partial<BookListItem> = {}): BookL
   };
 }
 
-// react-data-grid's jsdom virtualization only mounts the rows that fit the
-// stubbed 768px viewport (tests/setup.ts) at scrollTop 0 — roughly the first
-// 20 of 36px-tall rows. Row 0 carries every nullable field cleared so the
-// em-dash and title-link assertions both land on a row that's guaranteed to
-// be mounted, rather than relying on a scroll to reach a later row.
 const ROWS: BookListItem[] = Array.from({ length: 30 }, (_, index) =>
   index === 0
     ? rowFixture(index, { subtitle: null, isbn_13: null, pages: null, reading_state: null })
@@ -161,68 +156,7 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
   return props;
 }
 
-/**
- * Drives the binding's fetch-on-scroll gate. jsdom never lays out real
- * scroll geometry, so the three dimensions the `isAtBottom` check reads are
- * stubbed directly on the grid element; the values place it unambiguously
- * past the 10px slack in `isAtBottom`.
- */
-function scrollToBottom(grid: HTMLElement): void {
-  Object.defineProperty(grid, "scrollHeight", { value: 1000, configurable: true });
-  Object.defineProperty(grid, "clientHeight", { value: 300, configurable: true });
-  Object.defineProperty(grid, "scrollTop", { value: 1000, configurable: true });
-  fireEvent.scroll(grid);
-}
-
 describe("LibraryTableView", () => {
-  test("mounts an ARIA grid labeled Library books, with the title linking to /b/{id}", async () => {
-    renderTableView();
-    const grid = await screen.findByRole("grid", { name: "Library books" });
-    const link = within(grid).getByRole("link", { name: ROWS[0].title });
-    expect(link.getAttribute("href")).toBe(`/b/${ROWS[0].id}`);
-  });
-
-  test("hosts no filter surface of its own", () => {
-    renderTableView();
-    expect(screen.queryByTestId("filter-bar")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Quick search")).not.toBeInTheDocument();
-  });
-
-  test("a row with every nullable field null renders the em-dash placeholder", async () => {
-    renderTableView();
-    await screen.findByRole("grid");
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
-  });
-
-  test("clicking the Authors header sorts by author", async () => {
-    const onSortChange = vi.fn();
-    renderTableView({ onSortChange });
-    const grid = await screen.findByRole("grid");
-    // Title and Subtitle (unwidthed columns) each auto-size to the full 1024px
-    // viewport stubbed by `tests/setup.ts`'s getBoundingClientRect override, so
-    // Authors starts at x≈2048 and sits outside the initial horizontal
-    // virtualization window. scrollLeft=1500 lands inside (1024, 2098) — the
-    // range that brings Authors' header cell into the mounted window without
-    // scrolling past it. If that 1024px stub value ever changes, these two
-    // numbers need to move with it.
-    Object.defineProperty(grid, "scrollWidth", { value: 2600, configurable: true });
-    Object.defineProperty(grid, "scrollLeft", { value: 1500, configurable: true });
-    fireEvent.scroll(grid);
-    const user = userEvent.setup();
-    const header = await screen.findByRole("columnheader", { name: "Authors" });
-    await user.click(header);
-    expect(onSortChange).toHaveBeenCalledWith([{ field: "author", desc: false }]);
-  });
-
-  test("clicking the Title header sorts by title", async () => {
-    const onSortChange = vi.fn();
-    renderTableView({ onSortChange });
-    const user = userEvent.setup();
-    const header = await screen.findByRole("columnheader", { name: "Title" });
-    await user.click(header);
-    expect(onSortChange).toHaveBeenCalledWith([{ field: "title", desc: false }]);
-  });
-
   test("clicking the Pages header sorts by pages", async () => {
     const onSortChange = vi.fn();
     renderTableView({
@@ -440,38 +374,6 @@ describe("LibraryTableView", () => {
         vi.resetModules();
       }
     });
-  });
-
-  test("scrolling to the bottom calls onLoadMore when a next page is available", async () => {
-    const onLoadMore = vi.fn();
-    renderTableView({ hasNextPage: true, isFetchingNextPage: false, onLoadMore });
-    const grid = await screen.findByRole("grid");
-    scrollToBottom(grid);
-    expect(onLoadMore).toHaveBeenCalledTimes(1);
-  });
-
-  test("scrolling to the bottom does NOT call onLoadMore while a fetch is already in flight", async () => {
-    const onLoadMore = vi.fn();
-    renderTableView({ hasNextPage: true, isFetchingNextPage: true, onLoadMore });
-    const grid = await screen.findByRole("grid");
-    scrollToBottom(grid);
-    expect(onLoadMore).not.toHaveBeenCalled();
-  });
-
-  test("scrolling to the bottom does NOT call onLoadMore when there is no next page", async () => {
-    const onLoadMore = vi.fn();
-    renderTableView({ hasNextPage: false, isFetchingNextPage: false, onLoadMore });
-    const grid = await screen.findByRole("grid");
-    scrollToBottom(grid);
-    expect(onLoadMore).not.toHaveBeenCalled();
-  });
-
-  test("scrolling to the bottom does NOT call onLoadMore after a failed fetch; Retry is the only refire path", async () => {
-    const onLoadMore = vi.fn();
-    renderTableView({ hasNextPage: true, isFetchNextPageError: true, onLoadMore });
-    const grid = await screen.findByRole("grid");
-    scrollToBottom(grid);
-    expect(onLoadMore).not.toHaveBeenCalled();
   });
 
   test("shows the end-of-list line once every loaded row has been fetched", async () => {
@@ -783,49 +685,7 @@ describe("LibraryTableView", () => {
     });
   });
 
-  describe("selection", () => {
-    test("renders the loaded-rows select-all label and reports row selection", async () => {
-      const onSelectionChange = vi.fn();
-      renderTableView({ onSelectionChange });
-      const grid = await screen.findByRole("grid");
-      expect(grid).toHaveAttribute("aria-multiselectable", "true");
-      expect(screen.getByRole("checkbox", { name: "Select all loaded books" })).toBeInTheDocument();
-      const user = userEvent.setup();
-      await user.click(screen.getAllByRole("checkbox", { name: "Select" })[0]);
-      expect(onSelectionChange).toHaveBeenCalledWith(new Set([ROWS[0].id]));
-    });
-
-    test("select-all covers every loaded row", async () => {
-      const onSelectionChange = vi.fn();
-      renderTableView({ onSelectionChange });
-      await screen.findByRole("grid");
-      const user = userEvent.setup();
-      await user.click(screen.getByRole("checkbox", { name: "Select all loaded books" }));
-      expect(onSelectionChange).toHaveBeenCalledWith(new Set(ROWS.map((row) => row.id)));
-    });
-
-    test("selected rows carry aria-selected", async () => {
-      renderTableView({ selectedIds: new Set([ROWS[0].id]) });
-      await screen.findByRole("grid");
-      const selectedRows = screen
-        .getAllByRole("row")
-        .filter((row) => row.getAttribute("aria-selected") === "true");
-      expect(selectedRows).toHaveLength(1);
-    });
-  });
-
   describe("row activation", () => {
-    test("the details button opens the drawer for its row", async () => {
-      const onRowActivate = vi.fn();
-      renderTableView({ onRowActivate });
-      const user = userEvent.setup();
-      await user.click(
-        await screen.findByRole("button", { name: `Open details for ${ROWS[0].title}` }),
-      );
-      expect(onRowActivate).toHaveBeenCalledTimes(1);
-      expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
-    });
-
     test("clicking a read-only cell activates the row; an editable cell does not", async () => {
       const onRowActivate = vi.fn();
       const row = rowFixture(1, { series: { id: "s1", name: "Discworld", position: 8 } });

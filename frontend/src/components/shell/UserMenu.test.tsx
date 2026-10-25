@@ -72,83 +72,6 @@ afterEach(() => {
 });
 
 describe("UserChip", () => {
-  test("hides Change password for an OIDC-only account", async () => {
-    const me = useAuthMeMock().data;
-    if (me === undefined) throw new Error("fixture missing");
-    useAuthMeMock.mockReturnValue({
-      data: { ...me, has_local_password: false },
-      isLoading: false,
-      isError: false,
-    });
-    renderChip();
-    await userEvent.setup().click(screen.getByRole("button", { name: /Ada Lovelace/ }));
-    expect(await screen.findByRole("menu")).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Change password" })).not.toBeInTheDocument();
-  });
-
-  test("renders nothing while authn is pending or logged out", () => {
-    useAuthMeMock.mockReturnValue({ data: undefined, isLoading: true, isError: false });
-    const { container } = renderChip();
-    expect(container).toBeEmptyDOMElement();
-  });
-
-  test("chip shows initials and opens the menu with account identity", async () => {
-    renderChip();
-    const user = userEvent.setup();
-    const chip = screen.getByRole("button", { name: /Ada Lovelace/ });
-    expect(chip).toHaveTextContent("AL");
-    await user.click(chip);
-    expect(await screen.findByRole("menu")).toBeInTheDocument();
-    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
-  });
-
-  test("an administrator gets a Settings link to the settings area", async () => {
-    const me = useAuthMeMock().data;
-    if (me === undefined) throw new Error("fixture missing");
-    useAuthMeMock.mockReturnValue({
-      data: { ...me, role: "admin" },
-      isLoading: false,
-      isError: false,
-    });
-    renderChip();
-    await userEvent.setup().click(screen.getByRole("button", { name: /Ada Lovelace/ }));
-    const settings = await screen.findByRole("menuitem", { name: "Settings" });
-    expect(settings).toHaveAttribute("href", "/admin/settings");
-    expect(settings).not.toHaveAttribute("aria-disabled");
-  });
-
-  test("a non-admin sees no Settings item and no planned hint", async () => {
-    renderChip();
-    await userEvent.setup().click(screen.getByRole("button", { name: /Ada Lovelace/ }));
-    expect(await screen.findByRole("menu")).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: /Settings/ })).not.toBeInTheDocument();
-    expect(screen.queryByText("planned")).not.toBeInTheDocument();
-  });
-
-  test("exposes a Change password link to the account screen", async () => {
-    renderChip();
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
-    const link = await screen.findByRole("menuitem", { name: "Change password" });
-    expect(link).toHaveAttribute("href", "/account/password");
-  });
-
-  test("theme submenu exposes the three preferences and writes through", async () => {
-    renderChip();
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
-    await user.click(await screen.findByRole("menuitem", { name: "Theme" }));
-    const dark = await screen.findByRole("menuitemradio", { name: "Dark" });
-    expect(screen.getByRole("menuitemradio", { name: "System" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitemradio", { name: "Light" })).toBeInTheDocument();
-    // Keyboard activation — Radix's pointer-intent tracking swallows
-    // synthetic jsdom clicks inside submenus; Enter drives the same
-    // onSelect path a real pointer does.
-    dark.focus();
-    await user.keyboard("{Enter}");
-    expect(setPreferenceMock).toHaveBeenCalledWith("dark");
-  });
-
   test("sign out calls the logout endpoint then hard-navigates to /login", async () => {
     const loc = mockLocation();
     renderChip();
@@ -190,21 +113,4 @@ describe("UserChip", () => {
     });
     expect(consoleSpy).toHaveBeenCalled();
   });
-});
-
-test("OIDC-only accounts can open email settings", async () => {
-  const me = useAuthMeMock().data;
-  if (me === undefined) throw new Error("fixture missing");
-  useAuthMeMock.mockReturnValue({
-    data: { ...me, has_local_password: false },
-    isLoading: false,
-    isError: false,
-  });
-  renderChip();
-  await userEvent.setup().click(screen.getByRole("button", { name: /Ada Lovelace/ }));
-  expect(await screen.findByRole("menuitem", { name: "Email address" })).toHaveAttribute(
-    "href",
-    "/account/email",
-  );
-  expect(screen.queryByRole("menuitem", { name: "Change password" })).not.toBeInTheDocument();
 });

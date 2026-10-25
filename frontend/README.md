@@ -33,9 +33,9 @@ Choose the environment by the assertion:
 The `frontend` jsdom project is temporary migration coverage. Keep its required assertions until each has an equivalent
 home: browser-dependent outcomes in Browser Mode, pure logic in Node, and actual navigation in standalone journeys.
 Remove superseded jsdom cases as those outcomes are verified, then remove jsdom and its geometry, focus and browser API
-stubs once no required assertion depends on them. The representative browser suites retain their source counterparts
-during this transition; expanding duplicate suites is not the migration strategy. Complete suite conversion is separate
-work.
+stubs once no required assertion depends on them. Dialog coverage lives in Browser Mode. UserMenu retains logout
+navigation intent in jsdom, and LibraryTableView retains grid outcomes without browser replacements. Complete suite
+conversion is separate work.
 
 From `frontend/`, run `vp test run --project components-chromium` for focused browser work or
 `vp test --project components-chromium --browser.headless=false` for interactive debugging. Browser matcher types live
