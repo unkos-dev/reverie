@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [crypto-bigint timing risk in OIDC signature verification](2026-10-25-crypto-bigint-verification-only.md): lifts when
+  the resolved dependency graph contains no version affected by RUSTSEC-2026-0387.
 - [Ubuntu 26.04 ARM runner label exception](2026-10-22-actionlint-ubuntu-26-runner.md): lifts when the pinned
   `actionlint` recognises the label and workflow lint passes without the exception.
 - [Vacuum request bounds](2026-10-13-vacuum-request-bounds.md): lifts when all temporary bound exceptions are resolved.
