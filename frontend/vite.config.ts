@@ -68,12 +68,13 @@ export default defineConfig({
         plugins: lazyPlugins(() => [react(), tailwindcss()] as PluginOption[]),
         resolve: { alias: { "@": path.resolve(__dirname, "src") } },
         test: {
-          name: "browser-pilot",
+          name: "components-chromium",
           include: ["tests/browser/**/*.test.tsx"],
           setupFiles: ["./tests/browser/setup.ts"],
           browser: {
             enabled: true,
             headless: true,
+            screenshotDirectory: "./test-results/browser",
             provider: playwright(),
             instances: [{ browser: "chromium", viewport: { width: 1280, height: 800 } }],
           },
