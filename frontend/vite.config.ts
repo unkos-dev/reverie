@@ -1,5 +1,5 @@
 import path from "node:path";
-import { defineConfig, lazyPlugins, type PluginOption } from "vite-plus";
+import { defineConfig, lazyPlugins } from "vite-plus";
 import { playwright } from "vite-plus/test/browser-playwright";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -17,10 +17,7 @@ const DEV_CSP = buildDevCsp(process.env.REVERIE_DEV_HOSTS);
 export default defineConfig({
   // fmt + lint are defined in the root vite.config.ts; this file is frontend
   // build/server/test config only.
-  // vp lazyPlugins returns Plugin<any>[] which TS cannot reconcile with the
-  // PluginOption[] vite-plus expects across the rolldown-vite type graph
-  // (vitejs/vite#20948); the assertion is the documented vp-recommended fix.
-  plugins: lazyPlugins(() => [react(), tailwindcss(), cspHashPlugin()] as PluginOption[]),
+  plugins: lazyPlugins(() => [react(), tailwindcss(), cspHashPlugin()]),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
@@ -65,7 +62,7 @@ export default defineConfig({
       {
         extends: false,
         optimizeDeps: { include: ["@tanstack/react-query", "react-router"] },
-        plugins: lazyPlugins(() => [react(), tailwindcss()] as PluginOption[]),
+        plugins: lazyPlugins(() => [react(), tailwindcss()]),
         resolve: { alias: { "@": path.resolve(__dirname, "src") } },
         test: {
           name: "components-chromium",
