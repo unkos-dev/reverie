@@ -10,7 +10,8 @@ import {
   type LibraryVisit,
 } from "@/routes/library-params";
 import { RouterProvider, createBrowserRouter, type RouteObject } from "react-router";
-import { useSyncExternalStore, type ReactElement } from "react";
+import { useSyncExternalStore, type MouseEvent, type ReactElement } from "react";
+import { toast } from "sonner";
 
 import type {
   BookDetail,
@@ -29,6 +30,8 @@ import { rememberActiveUser } from "@/lib/active-user";
 
 import { displayStorageKey } from "./display-storage";
 import { LibraryPage } from "./LibraryPage";
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const { observedListKeys } = vi.hoisted(() => ({ observedListKeys: [] as unknown[] }));
 vi.mock("./table/useCellEdit", async (importOriginal) => {
@@ -54,6 +57,8 @@ afterEach(() => {
   localStorage.clear();
   window.history.replaceState(null, "", "/library");
   cleanup();
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
   vi.unstubAllGlobals();
 });
 
@@ -1698,39 +1703,47 @@ function booksResponse(items: BookListItem[], next_cursor: string | null = null)
   });
 }
 
-test("placeholder rows keep their source key, controls and edit capability while current intent clears selection", async () => {
+test("selection made on retained rows clears when a disjoint result replaces them", async () => {
   const pending = deferredResponse();
   const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
-  const origin = bookFixture({ title: "Origin", id: "origin" });
+  const origin = bookFixture({ title: "Alpha", id: "alpha" });
   const destination = bookFixture({
-    title: "Destination",
-    id: "destination",
+    title: "Beta",
+    id: "beta",
     work_id: "different",
   });
   const { client } = renderLibrary({
     items: [origin],
     nextCursor: "old-page",
-    visit: { view: "table" },
+    visit: { filters: { q: "alpha" }, view: "table" },
+    cacheParams: { q: "alpha" },
     me: meFixture(),
   });
   await findLibraryTable();
   const user = userEvent.setup();
   await user.click(screen.getByRole("checkbox", { name: "Select all loaded books" }));
-  fireEvent.change(searchBox(), { target: { value: "destination" } });
+  fireEvent.change(searchBox(), { target: { value: "beta" } });
   expect(await screen.findByText("Updating results…")).toBeInTheDocument();
-  expect(observedListKeys.at(-1)).toEqual(queryKeys.books.list({}));
-  expect(screen.getByText("Origin")).toBeInTheDocument();
+  expect(observedListKeys.at(-1)).toEqual(queryKeys.books.list({ q: "alpha" }));
+  expect(screen.getByText("Alpha")).toBeInTheDocument();
   expect(screen.getByRole("checkbox", { name: "Select all loaded books" })).not.toBeChecked();
   expect(screen.queryByRole("button", { name: /Load more/i })).not.toBeInTheDocument();
-  expect(client.getQueryData(queryKeys.books.list({ q: "destination" }))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.books.list({ q: "beta" }))).toBeUndefined();
+  await user.click(screen.getByRole("checkbox", { name: "Select" }));
+  expect(await screen.findByRole("toolbar", { name: "Batch actions" })).toHaveTextContent(
+    "1 selected",
+  );
   pending.resolve(booksResponse([destination]));
-  await screen.findByText("Destination");
-  expect(observedListKeys.at(-1)).toEqual(queryKeys.books.list({ q: "destination" }));
+  await screen.findByText("Beta");
+  expect(screen.queryByRole("toolbar", { name: "Batch actions" })).not.toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: "Select" })).not.toBeChecked();
+  expect(observedListKeys.at(-1)).toEqual(queryKeys.books.list({ q: "beta" }));
   expect(
-    client.getQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({}))?.pages[0].items,
+    client.getQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({ q: "alpha" }))
+      ?.pages[0].items,
   ).toEqual([origin]);
   expect(
-    client.getQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({ q: "destination" }))
+    client.getQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({ q: "beta" }))
       ?.pages[0].items,
   ).toEqual([destination]);
   fetchSpy.mockRestore();
@@ -1834,5 +1847,240 @@ test("a superseded filter request is aborted and cannot overwrite the current ro
   });
   expect(screen.queryByText("Obsolete Result")).not.toBeInTheDocument();
   expect(screen.getByText("Current Result")).toBeInTheDocument();
+  fetchSpy.mockRestore();
+});
+
+test("loading another page retains selected books", async () => {
+  const fetchSpy = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(booksResponse([bookFixture({ id: "page-two", title: "Second page" })]));
+  renderLibrary({
+    items: [bookFixture({ title: "First page" })],
+    nextCursor: "page-two",
+    visit: { view: "table" },
+  });
+  await findLibraryTable();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("checkbox", { name: "Select" }));
+  await user.click(screen.getByRole("button", { name: /Load more/i }));
+  await screen.findByText("Second page");
+  expect(screen.getByRole("toolbar", { name: "Batch actions" })).toHaveTextContent("1 selected");
+  expect(screen.getAllByRole("checkbox", { name: "Select" })[0]).toBeChecked();
+  expect(screen.getAllByRole("checkbox", { name: "Select" })[1]).not.toBeChecked();
+  fetchSpy.mockRestore();
+});
+
+function toastAction(kind: "success" | "error", label: string): () => void {
+  const action = vi
+    .mocked(toast[kind])
+    .mock.calls.map((call) => call[1]?.action)
+    .find(
+      (candidate) =>
+        candidate !== null &&
+        typeof candidate === "object" &&
+        "label" in candidate &&
+        candidate.label === label,
+    );
+  if (action === null || typeof action !== "object" || !("onClick" in action))
+    throw new Error(`Missing ${label} action`);
+  return () => {
+    action.onClick({} as MouseEvent<HTMLButtonElement>);
+  };
+}
+
+async function editTitle(title: string, next: string): Promise<void> {
+  const cell = screen.getByText(title).closest('[role="gridcell"]');
+  if (cell === null) throw new Error("Missing title cell");
+  fireEvent.doubleClick(cell);
+  const input = await screen.findByRole("textbox");
+  fireEvent.change(input, { target: { value: next } });
+  fireEvent.keyDown(input, { key: "Enter" });
+}
+
+function metadataResponse(title: string): Response {
+  return new Response(
+    JSON.stringify({
+      title,
+      subtitle: null,
+      description: null,
+      language: null,
+      publisher: null,
+      pub_date: null,
+      isbn_10: null,
+      isbn_13: null,
+      pages: null,
+      content_rating: null,
+      genres: [],
+      moods: [],
+      tags: [],
+      contributors: { author: [], editor: [], translator: [] },
+      work_identifiers: {},
+      manifestation_identifiers: {},
+    }),
+    { headers: { "Content-Type": "application/json", ETag: '"alpha-version"' } },
+  );
+}
+
+test.each(["before", "after"])(
+  "a visible source edit begun %s intent changes and its undo stay live while the destination loads",
+  async (timing) => {
+    const destination = deferredResponse();
+    const edit = deferredResponse();
+    const origin = bookFixture({ title: "Alpha", id: "alpha" });
+    const beta = bookFixture({ title: "Beta", id: "beta", work_id: "beta-work" });
+    const alphaKey = queryKeys.books.list({ q: "alpha" });
+    const betaKey = queryKeys.books.list({ q: "beta" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const path =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (path.includes("/metadata/revert"))
+        return Promise.resolve(new Response(null, { status: 204 }));
+      if (path.endsWith("/metadata"))
+        return init?.method === "PATCH" ? edit.promise : Promise.resolve(metadataResponse("Alpha"));
+      if (path.includes("q=beta")) return destination.promise;
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+    const { client } = renderLibrary({
+      items: [origin],
+      nextCursor: null,
+      cacheParams: { q: "alpha" },
+      visit: { filters: { q: "alpha" }, view: "table" },
+      me: meFixture(),
+    });
+    await findLibraryTable();
+    if (timing === "before") await editTitle("Alpha", "Alpha edited");
+    fireEvent.change(searchBox(), { target: { value: "beta" } });
+    await screen.findByText("Updating results…");
+    if (timing === "after") await editTitle("Alpha", "Alpha edited");
+    edit.resolve(
+      new Response(
+        JSON.stringify({
+          fields: {
+            title: {
+              value: "Alpha edited",
+              version_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              previous_version_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            },
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    expect(await screen.findByRole("link", { name: "Alpha edited" })).toBeInTheDocument();
+    expect(
+      client.getQueryData<InfiniteData<BookListResponse>>(alphaKey)?.pages[0].items[0].title,
+    ).toBe("Alpha edited");
+    expect(client.getQueryData(betaKey)).toBeUndefined();
+    act(() => {
+      toastAction("success", "Undo")();
+    });
+    expect(await screen.findByRole("link", { name: "Alpha" })).toBeInTheDocument();
+    expect(client.getQueryData<InfiniteData<BookListResponse>>(alphaKey)?.pages[0].items).toEqual([
+      origin,
+    ]);
+    expect(client.getQueryData(betaKey)).toBeUndefined();
+    destination.resolve(booksResponse([beta]));
+    await screen.findByText("Beta");
+    expect(client.getQueryData<InfiniteData<BookListResponse>>(betaKey)?.pages[0].items).toEqual([
+      beta,
+    ]);
+    fetchSpy.mockRestore();
+  },
+);
+
+test("conflict Reload fetches and displays the retained source without changing the destination", async () => {
+  const destination = deferredResponse();
+  const origin = bookFixture({ title: "Alpha", id: "alpha" });
+  const refreshed = { ...origin, title: "Alpha refreshed" };
+  const beta = bookFixture({ title: "Beta", id: "beta", work_id: "beta-work" });
+  const alphaKey = queryKeys.books.list({ q: "alpha" });
+  const betaKey = queryKeys.books.list({ q: "beta" });
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const path = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (path.endsWith("/metadata"))
+      return Promise.resolve(
+        init?.method === "PATCH"
+          ? new Response(
+              JSON.stringify({
+                status: 412,
+                type: "https://reverie.example/probs/if-match-mismatch",
+                title: "Precondition Failed",
+              }),
+              { status: 412, headers: { "Content-Type": "application/problem+json" } },
+            )
+          : metadataResponse("Alpha refreshed"),
+      );
+    if (path.includes("q=beta")) return destination.promise;
+    if (path.includes("q=alpha")) return Promise.resolve(booksResponse([refreshed]));
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const { client } = renderLibrary({
+    items: [origin],
+    nextCursor: null,
+    cacheParams: { q: "alpha" },
+    visit: { filters: { q: "alpha" }, view: "table" },
+    me: meFixture(),
+  });
+  await findLibraryTable();
+  fireEvent.change(searchBox(), { target: { value: "beta" } });
+  await screen.findByText("Updating results…");
+  await editTitle("Alpha", "Rejected edit");
+  await waitFor(() => {
+    expect(vi.mocked(toast.error)).toHaveBeenCalled();
+  });
+  act(() => {
+    toastAction("error", "Reload")();
+  });
+  expect(await screen.findByText("Alpha refreshed")).toBeInTheDocument();
+  expect(client.getQueryData<InfiniteData<BookListResponse>>(alphaKey)?.pages[0].items).toEqual([
+    refreshed,
+  ]);
+  expect(client.getQueryData(betaKey)).toBeUndefined();
+  destination.resolve(booksResponse([beta]));
+  await screen.findByText("Beta");
+  expect(client.getQueryData<InfiniteData<BookListResponse>>(betaKey)?.pages[0].items).toEqual([
+    beta,
+  ]);
+  fetchSpy.mockRestore();
+  errorSpy.mockRestore();
+});
+
+test("rapid intent changes keep source patches live and returning to cached source preserves provenance", async () => {
+  const pending = deferredResponse();
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+  const origin = bookFixture({ title: "Alpha", id: "alpha" });
+  const alphaKey = queryKeys.books.list({ q: "alpha" });
+  const { client } = renderLibrary({
+    items: [origin],
+    nextCursor: null,
+    cacheParams: { q: "alpha" },
+    visit: { filters: { q: "alpha" }, view: "table" },
+  });
+  await findLibraryTable();
+  fireEvent.change(searchBox(), { target: { value: "beta" } });
+  await screen.findByText("Updating results…");
+  fireEvent.change(searchBox(), { target: { value: "gamma" } });
+  act(() => {
+    client.setQueryData<InfiniteData<BookListResponse>>(alphaKey, {
+      pages: [{ items: [{ ...origin, title: "Alpha patched" }], next_cursor: null }],
+      pageParams: [undefined],
+    });
+  });
+  expect(await screen.findByRole("link", { name: "Alpha patched" })).toBeInTheDocument();
+  expect(observedListKeys.at(-1)).toEqual(alphaKey);
+  expect(client.getQueryData(queryKeys.books.list({ q: "beta" }))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.books.list({ q: "gamma" }))).toBeUndefined();
+  fireEvent.change(searchBox(), { target: { value: "alpha" } });
+  await waitFor(() => {
+    expect(screen.queryByText("Updating results…")).not.toBeInTheDocument();
+  });
+  expect(screen.getByRole("link", { name: "Alpha patched" })).toBeInTheDocument();
+  expect(observedListKeys.at(-1)).toEqual(alphaKey);
+  pending.resolve(booksResponse([bookFixture({ title: "Obsolete", id: "obsolete" })]));
+  await act(async () => {
+    await pending.promise;
+  });
+  expect(screen.queryByText("Obsolete")).not.toBeInTheDocument();
   fetchSpy.mockRestore();
 });

@@ -88,10 +88,15 @@ controls and previous pages with visible “Updating results…” and busy trea
 Successful responses replace placeholders, including real empty results for contradictory bounds. Range explanations
 appear against settled current results, rather than describing retained rows as the current result set.
 
-Displayed placeholder pages carry their originating query key. Row edits, undo and conflict reload use that origin,
-including mutations already in flight when intent changes. No placeholder data is inserted into the destination cache.
+Displayed placeholder pages carry their originating query key. A second infinite-query observer reads that source cache
+while placeholders are displayed, sharing the same query function and pagination options. It is enabled only during
+placeholder display and uses an infinite stale time, so retention alone does not refetch the source. Cache patches and
+undo update the visible rows, and conflict invalidation refetches the enabled source query. Row actions retain their
+origin even when intent changes during a mutation. No placeholder data enters the destination cache.
+
 API cursors remain page parameters; changing intent starts another list key, so a late old page cannot append to it.
-Selection clears at filter, sort or view intent and survives paging within the same query.
+Selection clears at filter, sort or view intent and when the displayed source key changes. Paging within the same query
+retains selection.
 
 Uniform Escape, close and outside dismissal retains published edits and returns focus through native overlay handling.
 Closure creates no separate commit or rollback transaction.

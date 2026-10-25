@@ -1,4 +1,9 @@
-import { useInfiniteQuery, keepPreviousData, type InfiniteData } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  infiniteQueryOptions,
+  keepPreviousData,
+  type InfiniteData,
+} from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import {
   lazy,
@@ -26,7 +31,7 @@ import { SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { useLibraryFilters } from "@/lib/hooks/use-library-filters";
-import { queryKeys } from "@/lib/query/keys";
+import { queryKeys, type BooksListKey } from "@/lib/query/keys";
 
 import {
   filterStateToParams,
@@ -55,8 +60,20 @@ const LibraryTableView = lazy(() =>
 type OverlayState = "filters" | { detail: string } | null;
 
 type BookPages = InfiniteData<BookListResponse, string | undefined> & {
-  originKey?: ReturnType<typeof queryKeys.books.list>;
+  originKey?: BooksListKey;
 };
+
+function listOptions(queryKey: BooksListKey) {
+  return infiniteQueryOptions<BookListResponse, Error, BookPages, BooksListKey, string | undefined>(
+    {
+      queryKey,
+      queryFn: ({ queryKey: [, , params], signal, pageParam }) =>
+        listBooks(pageParam === undefined ? params : { ...params, cursor: pageParam }, signal),
+      initialPageParam: undefined,
+      getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    },
+  );
+}
 
 export function LibraryPage(): ReactElement {
   const owner = useLibraryFilters();
@@ -77,11 +94,6 @@ export function LibraryPage(): ReactElement {
   const cacheParams = params;
   const listKey = queryKeys.books.list(cacheParams);
   const queryToken = JSON.stringify([filterState, sortOverride, viewMode]);
-  const [syncedQueryToken, setSyncedQueryToken] = useState(queryToken);
-  if (queryToken !== syncedQueryToken) {
-    setSyncedQueryToken(queryToken);
-    if (selectedIds.size > 0) setSelectedIds(new Set());
-  }
 
   const {
     data,
@@ -94,28 +106,29 @@ export function LibraryPage(): ReactElement {
     hasNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
-  } = useInfiniteQuery<
-    BookListResponse,
-    Error,
-    BookPages,
-    ReturnType<typeof queryKeys.books.list>,
-    string | undefined
-  >({
-    queryKey: listKey,
-    queryFn: ({ signal, pageParam }) =>
-      listBooks(
-        pageParam === undefined ? cacheParams : { ...cacheParams, cursor: pageParam },
-        signal,
-      ),
+  } = useInfiniteQuery({
+    ...listOptions(listKey),
     placeholderData: (previous, previousQuery) => {
       const retained = keepPreviousData(previous);
       return retained === undefined
         ? undefined
         : { ...retained, originKey: previousQuery?.queryKey };
     },
-    initialPageParam: undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
+
+  const displayedKey = data?.originKey ?? listKey;
+  const retained = useInfiniteQuery({
+    ...listOptions(displayedKey),
+    enabled: isPlaceholderData,
+    staleTime: Infinity,
+  });
+  const displayedData = isPlaceholderData ? retained.data : data;
+  const selectionToken = JSON.stringify([queryToken, displayedKey]);
+  const [syncedSelectionToken, setSyncedSelectionToken] = useState(selectionToken);
+  if (selectionToken !== syncedSelectionToken) {
+    setSyncedSelectionToken(selectionToken);
+    if (selectedIds.size > 0) setSelectedIds(new Set());
+  }
 
   // The user-facing Load-more error is rendered below; this routes the raw
   // error to the console too (QueryCache.onError only forwards 401s), so a
@@ -125,8 +138,10 @@ export function LibraryPage(): ReactElement {
       console.error("[LibraryPage] failed to load the next page", fetchNextPageError);
   }, [isFetchNextPageError, fetchNextPageError]);
 
-  const items: BookListItem[] = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
-  const displayedKey = data?.originKey ?? listKey;
+  const items: BookListItem[] = useMemo(
+    () => displayedData?.pages.flatMap((p) => p.items) ?? [],
+    [displayedData],
+  );
   const updating = sortPending || isPlaceholderData || (isFetching && !isFetchingNextPage);
   const canLoadMore = hasNextPage && !isPlaceholderData;
 
