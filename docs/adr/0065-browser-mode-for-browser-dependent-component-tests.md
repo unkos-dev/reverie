@@ -3,7 +3,7 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0065"
 title: "Browser Mode for browser-dependent component tests"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-10-25"
 decision-makers:
   - "John Unkovich"

@@ -482,7 +482,7 @@
       "id": "REV-ADR-0065",
       "kind": "adr",
       "path": "docs/adr/0065-browser-mode-for-browser-dependent-component-tests.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Browser Mode for browser-dependent component tests"
     },
     {
