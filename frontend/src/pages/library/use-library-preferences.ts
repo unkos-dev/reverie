@@ -192,24 +192,28 @@ export function useLibraryPreferences(): LibraryPreferences {
   // Columns resolve like sort, not like density: `null` is a meaningful
   // layer value (reset to inherit), so a bare `??` chain would fall through
   // it and resurrect the override still cached beneath.
-  const columnKeys =
-    localColumns !== undefined
-      ? (localColumns ?? defaultColumns)
-      : data !== undefined
-        ? (data.hidden_columns ?? data.defaults.hidden_columns)
-        : (mirror.hiddenColumns ?? BOOTSTRAP.hiddenColumns);
+  let columnKeys: readonly string[];
+  if (localColumns !== undefined) {
+    columnKeys = localColumns ?? defaultColumns;
+  } else if (data !== undefined) {
+    columnKeys = data.hidden_columns ?? data.defaults.hidden_columns;
+  } else {
+    columnKeys = mirror.hiddenColumns ?? BOOTSTRAP.hiddenColumns;
+  }
   // Whether a columns override EXISTS, which is what the reset control acts
   // on: an override whose value equals the installation default is still an
   // override, and dropping it is a real change, because it re-subscribes
   // the reader to future changes of that default. Only the pre-response
   // window falls back to comparing values, since the mirror stores effective
   // columns and cannot know override-ness.
-  const columnsOverridden =
-    localColumns !== undefined
-      ? localColumns !== null
-      : data !== undefined
-        ? data.hidden_columns !== null
-        : !sameKeys(columnKeys, defaultColumns);
+  let columnsOverridden: boolean;
+  if (localColumns !== undefined) {
+    columnsOverridden = localColumns !== null;
+  } else if (data !== undefined) {
+    columnsOverridden = data.hidden_columns !== null;
+  } else {
+    columnsOverridden = !sameKeys(columnKeys, defaultColumns);
+  }
   // Sort cannot use the chain above: an inherited sort resolves to "no
   // override", not to a value, so a `??` chain would fall through to the
   // mirror and resurrect an override the server has already dropped.

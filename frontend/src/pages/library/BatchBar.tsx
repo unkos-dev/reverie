@@ -90,6 +90,12 @@ export function BatchBar({
     onCompleted(succeeded);
   }
 
+  function shelfStatusText(): string {
+    if (shelvesError) return "Couldn't load shelves";
+    if (shelves === undefined) return "Loading…";
+    return "No shelves yet";
+  }
+
   return (
     <div
       role="toolbar"
@@ -123,13 +129,7 @@ export function BatchBar({
         </Button>
         <DropdownMenuContent placement="bottom end">
           {shelves === undefined || shelves.length === 0 ? (
-            <DropdownMenuItem isDisabled>
-              {shelvesError
-                ? "Couldn't load shelves"
-                : shelves === undefined
-                  ? "Loading…"
-                  : "No shelves yet"}
-            </DropdownMenuItem>
+            <DropdownMenuItem isDisabled>{shelfStatusText()}</DropdownMenuItem>
           ) : (
             shelves.map((shelf) => (
               <DropdownMenuItem
