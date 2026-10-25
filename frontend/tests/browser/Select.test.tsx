@@ -54,12 +54,20 @@ test("dismisses the nested popup before the dialog and restores trigger focus", 
   await user.click(selectTrigger);
   expect(await screen.findByRole("listbox")).toBeInTheDocument();
   await user.keyboard("{Escape}");
-  await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+  await waitFor(() => {
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
   expect(screen.getByRole("dialog", { name: "Editor" })).toBeInTheDocument();
-  await waitFor(() => expect(selectTrigger).toHaveFocus());
+  await waitFor(() => {
+    expect(selectTrigger).toHaveFocus();
+  });
   await user.keyboard("{Escape}");
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  await waitFor(() => expect(opener).toHaveFocus());
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(opener).toHaveFocus();
+  });
 });
 
 test("selects an enabled value and closes through a native close action", async () => {
@@ -74,7 +82,9 @@ test("selects an enabled value and closes through a native close action", async 
   await user.click(screen.getByRole("option", { name: "Done" }));
   expect(screen.getByRole("button", { name: /Status$/ })).toHaveTextContent("Done");
   await user.click(screen.getByRole("button", { name: "Finish" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
 
 test("dismisses an open dialog through its outside overlay", async () => {
@@ -83,9 +93,15 @@ test("dismisses an open dialog through its outside overlay", async () => {
   const opener = screen.getByRole("button", { name: "Open editor" });
   await user.click(opener);
   await screen.findByRole("dialog", { name: "Editor" });
-  await user.click(document.body);
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  await waitFor(() => expect(opener).toHaveFocus());
+  const overlay = document.querySelector(".fixed.inset-0");
+  if (!(overlay instanceof HTMLElement)) throw new Error("overlay missing");
+  await user.click(overlay, { position: { x: 8, y: 8 } });
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(opener).toHaveFocus();
+  });
 });
 
 function NestedConfirmation(): ReactElement {
@@ -121,11 +137,17 @@ test("a destructive confirmation blocks outside dismissal and cancellation prese
   await user.click(trigger);
   const confirmation = await screen.findByRole("alertdialog", { name: "Confirm deletion" });
   const cancel = screen.getByRole("button", { name: "Cancel deletion" });
-  await waitFor(() => expect(cancel).toHaveFocus());
-  await user.click(document.body);
+  await waitFor(() => {
+    expect(cancel).toHaveFocus();
+  });
+  const overlay = confirmation.closest(".fixed.inset-0");
+  if (!(overlay instanceof HTMLElement)) throw new Error("overlay missing");
+  await user.click(overlay, { position: { x: 8, y: 8 } });
   expect(confirmation).toBeInTheDocument();
   await user.click(cancel);
-  await waitFor(() => expect(confirmation).not.toBeInTheDocument());
+  await waitFor(() => {
+    expect(confirmation).not.toBeInTheDocument();
+  });
   expect(parent).toBeInTheDocument();
   await waitFor(() => {
     expect(parent.contains(document.activeElement)).toBe(true);
@@ -171,7 +193,9 @@ test("a dialog remains dismissable when its opener unmounts", async () => {
   await screen.findByRole("dialog", { name: "Temporary editor" });
   expect(opener).not.toBeInTheDocument();
   await user.keyboard("{Escape}");
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
   expect(document.activeElement).not.toBe(opener);
   await user.click(screen.getByRole("button", { name: "Remaining action" }));
   expect(screen.getByRole("button", { name: "Remaining action" })).toHaveFocus();

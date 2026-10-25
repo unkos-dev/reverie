@@ -63,7 +63,10 @@ export default defineConfig({
   test: {
     projects: [
       {
-        extends: true,
+        extends: false,
+        optimizeDeps: { include: ["@tanstack/react-query", "react-router"] },
+        plugins: lazyPlugins(() => [react(), tailwindcss()] as PluginOption[]),
+        resolve: { alias: { "@": path.resolve(__dirname, "src") } },
         test: {
           name: "browser-pilot",
           include: ["tests/browser/**/*.test.tsx"],
@@ -72,7 +75,7 @@ export default defineConfig({
             enabled: true,
             headless: true,
             provider: playwright(),
-            instances: [{ browser: "chromium" }],
+            instances: [{ browser: "chromium", viewport: { width: 1280, height: 800 } }],
           },
         },
       },
