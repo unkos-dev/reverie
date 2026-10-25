@@ -4339,7 +4339,7 @@ async fn filter_created_at_inclusive_lower_exclusive_upper_and_cursor_identity(p
         body["items"][0]["title"].as_str().unwrap(),
         next["items"][0]["title"].as_str().unwrap(),
     ];
-    titles.sort();
+    titles.sort_unstable();
     assert_eq!(titles, vec!["Inside", "Lower"]);
     let changed = server.get(&format!("/api/v1/books?created_at_gte=2026-06-29T16:00:01Z&created_at_lt=2026-06-30T16:00:00Z&cursor={cursor}"))
         .add_header(AUTHORIZATION, basic).await;
@@ -4570,10 +4570,9 @@ async fn filter_numeric_equal_bounds_match_and_inverted_bounds_are_empty(pool: P
         );
     }
     for query in ["pages_gte=501&pages_lte=500", "rating_gte=5&rating_lte=4"] {
-        assert!(
-            filtered_titles(&server, &basic, &format!("/api/v1/books?{query}"))
-                .await
-                .is_empty()
+        assert_eq!(
+            filtered_titles(&server, &basic, &format!("/api/v1/books?{query}")).await,
+            Vec::<String>::new()
         );
     }
 }
