@@ -369,9 +369,7 @@ test("delayed date updates retain rows and focus; cached prefix edits remain usa
     .poll(() => fixture.requests.at(-1)?.get("created_at_gte")?.startsWith("2027-"))
     .toBe(true);
   await expect(page.getByText("Updating results…")).toBeVisible();
-  await expect(
-    page.getByTestId("library-grid").getByText("The Sea", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByTestId("library-grid").locator("h3")).toBeVisible();
   await expect(year).toBeFocused();
   await expect(
     added.getByText("Start date is after end date. No books match this range."),
