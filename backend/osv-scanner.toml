@@ -2,6 +2,10 @@
 # each entry applies a deny.toml ruling, so change the two together.
 
 [[IgnoredVulns]]
+id = "RUSTSEC-2026-0387"
+reason = "accepted for assessed OIDC signature-verification-only use; affected crypto-bigint arithmetic remains reachable and timing leakage is not ruled out. Remove when the graph has no affected crypto-bigint; reassess immediately for signing, ECDH, other secret-integer use or contrary exploit evidence. Review by 2026-11-08 is documented, not automatically enforced; see debt/2026-10-25-crypto-bigint-verification-only.md"
+
+[[IgnoredVulns]]
 id = "RUSTSEC-2023-0071"
 reason = "No patched rsa release. Production uses rsa only for public-key signature verification, and private-key operations happen only in tests; deny.toml ignores it on the same grounds."
 
