@@ -79,7 +79,10 @@ test("selects an enabled value and closes through a native close action", async 
     "aria-disabled",
     "true",
   );
-  await user.click(screen.getByRole("option", { name: "Done" }));
+  await user.keyboard("{ArrowDown}{Enter}");
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /Status$/ })).toHaveFocus();
+  });
   expect(screen.getByRole("button", { name: /Status$/ })).toHaveTextContent("Done");
   await user.click(screen.getByRole("button", { name: "Finish" }));
   await waitFor(() => {

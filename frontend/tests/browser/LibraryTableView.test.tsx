@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "vite-plus/test/browser";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router";
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -128,7 +128,9 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
   function Wrapper(): ReactElement {
     return (
       <QueryClientProvider client={client}>
-        <RouterProvider router={router} />
+        <div data-testid="pilot-container" className="w-[640px]">
+          <RouterProvider router={router} />
+        </div>
       </QueryClientProvider>
     );
   }
@@ -204,6 +206,87 @@ describe("LibraryTableView", () => {
       await screen.findByRole("button", { name: `Open details for ${ROWS[0].title}` }),
     );
     expect(onRowActivate).toHaveBeenCalledTimes(1);
+    expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
+  });
+  test("clicking the Authors header sorts by author", async () => {
+    const onSortChange = vi.fn();
+    renderTableView({ onSortChange });
+    const grid = await screen.findByRole("grid");
+    expect(grid.scrollWidth).toBeGreaterThan(grid.clientWidth);
+    const wideWidth = grid.clientWidth;
+    screen.getByTestId("pilot-container").className = "w-[320px]";
+    await waitFor(() => {
+      expect(grid.clientWidth).toBeLessThan(wideWidth);
+    });
+    const before = screen.queryByRole("columnheader", { name: "Authors" });
+    if (before !== null)
+      expect(before.getBoundingClientRect().right).toBeGreaterThan(
+        grid.getBoundingClientRect().right,
+      );
+    grid.scrollTo({ left: grid.clientWidth / 2 });
+    await waitFor(() => {
+      expect(grid.scrollLeft).toBeGreaterThan(0);
+    });
+    const header = await screen.findByRole("columnheader", { name: "Authors" });
+    await waitFor(() => {
+      expect(header.getBoundingClientRect().right).toBeLessThanOrEqual(
+        grid.getBoundingClientRect().right,
+      );
+    });
+    await userEvent.click(header);
+    expect(onSortChange).toHaveBeenCalledWith([{ field: "author", desc: false }]);
+  });
+
+  test.each([
+    ["available", true, false, false, 1],
+    ["in flight", true, true, false, 0],
+    ["no next page", false, false, false, 0],
+    ["failed fetch", true, false, true, 0],
+  ])(
+    "real bottom scrolling respects paging state: %s",
+    async (_, hasNextPage, isFetchingNextPage, isFetchNextPageError, calls) => {
+      const onLoadMore = vi.fn();
+      renderTableView({ hasNextPage, isFetchingNextPage, isFetchNextPageError, onLoadMore });
+      const grid = await screen.findByRole("grid");
+      expect(grid.scrollHeight).toBeGreaterThan(grid.clientHeight);
+      const scrolled = new Promise<void>((resolve) => {
+        grid.addEventListener(
+          "scroll",
+          () => {
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      grid.scrollTo({ top: grid.scrollHeight });
+      await scrolled;
+      await waitFor(() => {
+        expect(grid.scrollTop).toBeGreaterThan(0);
+        expect(grid.scrollHeight - grid.clientHeight - grid.scrollTop).toBeLessThanOrEqual(1);
+        expect(screen.getByRole("link", { name: ROWS[29].title })).toBeInTheDocument();
+      });
+      expect(onLoadMore).toHaveBeenCalledTimes(calls);
+    },
+  );
+
+  test("resizing the real container keeps trailing content reachable", async () => {
+    const onRowActivate = vi.fn();
+    renderTableView({ onRowActivate });
+    const grid = await screen.findByRole("grid");
+    const initialWidth = grid.clientWidth;
+    const title = screen.getByRole("columnheader", { name: "Title" });
+    const initialTitleWidth = title.getBoundingClientRect().width;
+    const container = screen.getByTestId("pilot-container");
+    container.className = "w-[1100px]";
+    await waitFor(() => {
+      expect(grid.clientWidth).toBeGreaterThan(initialWidth);
+    });
+    await waitFor(() => {
+      expect(title.getBoundingClientRect().width).toBeGreaterThan(initialTitleWidth);
+    });
+    await userEvent.click(
+      await screen.findByRole("button", { name: `Open details for ${ROWS[0].title}` }),
+    );
     expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
   });
 });
