@@ -473,6 +473,7 @@ function LibraryPagination({
   isError,
   onLoadMore,
 }: Readonly<LibraryPaginationProps>): ReactElement {
+  const idleLabel = isError ? "Retry" : "Load more";
   return (
     <div className="mt-10 flex flex-col items-center gap-3">
       {/* Retryable paging errors reserve the danger hue for unrecoverable failures. */}
@@ -487,10 +488,8 @@ function LibraryPagination({
             <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
             Loading…
           </>
-        ) : isError ? (
-          "Retry"
         ) : (
-          "Load more"
+          idleLabel
         )}
       </Button>
     </div>
