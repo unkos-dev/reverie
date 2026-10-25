@@ -1,5 +1,6 @@
 import path from "node:path";
 import { defineConfig, lazyPlugins, type PluginOption } from "vite-plus";
+import { playwright } from "vite-plus/test/browser-playwright";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { parseAllowedHosts } from "./vite-plugins/allowed-hosts";
@@ -61,6 +62,20 @@ export default defineConfig({
   },
   test: {
     projects: [
+      {
+        extends: true,
+        test: {
+          name: "browser-pilot",
+          include: ["tests/browser/**/*.test.tsx"],
+          setupFiles: ["./tests/browser/setup.ts"],
+          browser: {
+            enabled: true,
+            headless: true,
+            provider: playwright(),
+            instances: [{ browser: "chromium" }],
+          },
+        },
+      },
       {
         extends: true,
         test: {
