@@ -479,6 +479,13 @@
       "title": "Passkeys as the default sign-in, with optional passwords, OIDC and mail"
     },
     {
+      "id": "REV-ADR-0065",
+      "kind": "adr",
+      "path": "docs/adr/0065-browser-mode-for-browser-dependent-component-tests.md",
+      "status": "proposed",
+      "title": "Browser Mode for browser-dependent component tests"
+    },
+    {
       "governed-by": [
         "REV-ADR-0062",
         "REV-ADR-0047"
