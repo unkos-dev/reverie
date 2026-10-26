@@ -25,10 +25,10 @@ type ClothTone = "bordeaux" | "oxblood" | "midnight" | "charcoal" | "sepia" | "t
 /** Binding-cloth weave drawn over the cloth ground. */
 type Texture = "linen" | "buckram" | "marbled" | "plain" | "leather";
 
-interface Binding {
+type Binding = {
   tone: ClothTone;
   texture: Texture;
-}
+};
 
 /** Six warm-dark bindings, each cloth tone paired with a weave. */
 const BINDINGS: readonly Binding[] = [
@@ -156,12 +156,12 @@ function texturePattern(id: string, kind: Texture): ReactElement {
   }
 }
 
-interface CoverArtworkProps {
+type CoverArtworkProps = {
   bookId: string;
   title: string;
   authors: string[];
   className?: string;
-}
+};
 
 /**
  * Deterministic cloth-bound cover. Fills its container (`size-full`); the

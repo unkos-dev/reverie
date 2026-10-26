@@ -64,10 +64,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-interface MockLocation {
+type MockLocation = {
   assign: ReturnType<typeof vi.fn>;
   href: string;
-}
+};
 
 function mockLocation(): MockLocation {
   const loc: MockLocation = { assign: vi.fn(), href: "http://localhost/" };

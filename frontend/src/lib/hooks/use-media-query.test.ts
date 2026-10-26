@@ -3,10 +3,10 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { useMediaQuery } from "./use-media-query";
 
-interface MatchMediaShim {
+type MatchMediaShim = {
   trigger: (matches: boolean) => void;
   listenerCount: () => number;
-}
+};
 
 function installMatchMedia(initial: boolean): MatchMediaShim {
   let matches = initial;

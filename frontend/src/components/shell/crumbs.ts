@@ -15,16 +15,16 @@
  * `detail.name`); `satisfies TitleData` at the return site keeps that
  * contract compile-checked across modules.
  */
-export interface TitleData {
+export type TitleData = {
   /** Trailing breadcrumb label for the route. */
   title: string;
-}
+};
 
 /** Shape of `handle` on breadcrumb-bearing routes. */
-export interface CrumbHandle {
+export type CrumbHandle = {
   /** Maps loader data to the trailing crumb label (`null` = no label). */
   crumb: (data: unknown) => string | null;
-}
+};
 
 /** Narrow an unknown route `handle` to {@link CrumbHandle}. */
 export function isCrumbHandle(handle: unknown): handle is CrumbHandle {

@@ -34,9 +34,9 @@ import { useTheme } from "@/lib/theme/ThemeProvider";
 
 import { LeftRail } from "./LeftRail";
 
-interface AppShellProps {
+type AppShellProps = {
   children: ReactNode;
-}
+};
 
 /** Shell chrome: skip link, left rail (or drawer), main column. */
 export function AppShell({ children }: Readonly<AppShellProps>): ReactElement {
@@ -124,10 +124,10 @@ export type AppZone = "admin";
  * `satisfies ZoneHandle` so a zone typo is a compile error instead of
  * a silently missed tone shift.
  */
-export interface ZoneHandle {
+export type ZoneHandle = {
   /** Zone flag read by the shell's `data-zone` attribute. */
   zone: AppZone;
-}
+};
 
 /** Narrow a route `handle` to the admin-zone flag. */
 function hasAdminZone(handle: unknown): boolean {

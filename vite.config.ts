@@ -50,6 +50,7 @@ export default defineConfig({
       {
         files: ["frontend/**/*.{ts,tsx}"],
         rules: {
+          "typescript/consistent-type-definitions": ["error", "type"],
           "eslint/no-nested-ternary": "error",
           "unicorn/prefer-export-from": "error",
           "jsx-a11y/label-has-associated-control": "error",

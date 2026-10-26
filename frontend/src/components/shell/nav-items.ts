@@ -12,14 +12,14 @@
  */
 
 /** One primary-nav entry in the left rail. */
-export interface NavItem {
+export type NavItem = {
   /** Visible label (text-only nav — no icons, spec §12). */
   label: string;
   /** Route path for live entries; absent on disabled placeholders. */
   to?: string;
   /** Spec S3 placeholder: rendered but non-interactive, out of tab order. */
   disabled?: boolean;
-}
+};
 
 /** Tooltip copy for disabled placeholder entries (spec S3). */
 export const PLANNED_TOOLTIP = "Planned — not in this release";

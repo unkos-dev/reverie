@@ -538,10 +538,12 @@ test("delayed date updates retain rows and focus; cached prefix edits remain usa
   };
   const year = after.getByRole("spinbutton", { name: /year/i });
   await year.focus();
+  const prefixResponse = page.waitForResponse((response) =>
+    response.url().includes("created_at_gte=0002-"),
+  );
   await year.press("2");
-  await expect
-    .poll(() => fixture.requests.some((p) => p.get("created_at_gte")?.startsWith("0002-")))
-    .toBe(true);
+  expect(await (await prefixResponse).finished()).toBeNull();
+  await expect(page.getByText("Updating results…")).toBeHidden();
   await year.press("0");
   await year.press("2");
   await year.press("7");

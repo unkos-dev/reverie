@@ -35,12 +35,12 @@ import {
 } from "../library/editors";
 
 /** One selectable series in the facet (id is the URL/param value). */
-export interface SeriesFacetOption {
+export type SeriesFacetOption = {
   id: string;
   name: string;
-}
+};
 
-interface FilterRailProps {
+type FilterRailProps = {
   owner: LibraryFilters;
   showContradiction: boolean;
   /** Distinct series from the loaded pages. */
@@ -52,7 +52,7 @@ interface FilterRailProps {
   sortInherited: boolean;
   /** The page's one sort intent handler; an empty stack means reset. */
   onSortChange: (levels: readonly SortLevelParam[]) => void;
-}
+};
 
 /** The library's filter and sort editing surface; see the module docstring. */
 export function FilterRail({
