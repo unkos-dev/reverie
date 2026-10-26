@@ -83,6 +83,9 @@ empty and shows `No active filters.`; Clear all stays mounted and disabled. View
 selection in native `ToggleButtonGroup` controls, with changes dispatched to the page visit and account preference
 owners.
 
+Table-load failures stay inside the results region. Reload page starts a fresh application load and restores the Library
+visit; Switch to grid view keeps browsing available without reloading or changing the account's view preference.
+
 Create-user role and token expiry use named, uncontrolled Selects. Submission reads and validates their FormData values;
 failed requests retain the choices, and reopening a closed dialog restores the defaults.
 

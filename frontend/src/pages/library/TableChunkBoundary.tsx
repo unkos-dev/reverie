@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from "react";
-import { ErrorBoundary, useErrorBoundary } from "react-error-boundary";
+import { ErrorBoundary } from "react-error-boundary";
 
 import { Button } from "@/components/ui/button";
 
@@ -12,7 +12,6 @@ type Props = {
 function TableFailure({
   onFallbackToGrid,
 }: Readonly<Pick<Props, "onFallbackToGrid">>): ReactElement {
-  const { resetBoundary } = useErrorBoundary();
   return (
     <div
       role="alert"
@@ -25,10 +24,10 @@ function TableFailure({
           variant="outline"
           size="sm"
           onPress={() => {
-            resetBoundary();
+            window.location.reload();
           }}
         >
-          Try again
+          Reload page
         </Button>
         <Button type="button" variant="ghost" size="sm" onPress={onFallbackToGrid}>
           Switch to grid view

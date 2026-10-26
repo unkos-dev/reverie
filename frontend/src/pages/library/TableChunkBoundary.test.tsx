@@ -51,14 +51,14 @@ describe("TableChunkBoundary", () => {
     );
   });
 
-  test("Try again resets the boundary and re-renders recovered children", async () => {
+  test("a parent update leaves the failure and explicit reload action available", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const user = userEvent.setup();
     render(<Harness />);
     await user.click(screen.getByRole("button", { name: "defuse" }));
-    await user.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByTestId("table-content")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load the table view.");
+    expect(screen.getByRole("button", { name: "Reload page" })).toBeEnabled();
+    expect(screen.queryByTestId("table-content")).not.toBeInTheDocument();
   });
 
   test("Switch to grid view invokes the fallback callback", async () => {
