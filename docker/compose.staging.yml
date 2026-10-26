@@ -46,7 +46,7 @@ services:
     # Dictionary changes can leave folded indexes and works.search_vector stale
     # on this persistent volume; see the risk statement in
     # docs/adr/0044-match-time-accent-folding-via-unaccent-expression-indexes.md.
-    image: postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     # Scope explicitly: postgres only needs bootstrap credentials and the
     # init-roles.sql password inputs. Loading the full app `.env` would
     # leak unrelated secrets (DATABASE_URL, OIDC client secret, session
