@@ -32,8 +32,8 @@ allowBuilds:
 # every importer, which is what keeps the vp version from being restated across
 # root and frontend manifests.
 catalog:
-  vite: "npm:@voidzero-dev/vite-plus-core@1.3.0"
-  vite-plus: "1.3.0"
+  vite: "npm:@voidzero-dev/vite-plus-core@1.4.0"
+  vite-plus: "1.4.0"
   "@vitest/browser-playwright": "5.0.5"
 
 # Transitive security floors. Each entry is a deliberate minimum, not a
