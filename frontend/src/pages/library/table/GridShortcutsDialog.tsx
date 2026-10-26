@@ -62,10 +62,10 @@ export function useShortcutsHotkey(setOpen: (open: boolean) => void): void {
   }, [setOpen]);
 }
 
-interface ShortcutRow {
+type ShortcutRow = {
   keys: string[];
   description: string;
-}
+};
 
 const SHORTCUT_ROWS: ShortcutRow[] = [
   { keys: ["↑", "↓", "←", "→"], description: "Move focus one cell" },

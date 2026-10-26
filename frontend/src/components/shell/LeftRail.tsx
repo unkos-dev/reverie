@@ -96,9 +96,9 @@ const ITEM_BASE =
   "relative flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-body " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
-interface RailItemProps {
+type RailItemProps = {
   item: NavItem;
-}
+};
 
 /**
  * One primary-nav row. Live entries are `NavLink`s with the
@@ -151,9 +151,9 @@ function RailItem({ item }: Readonly<RailItemProps>): ReactElement {
   );
 }
 
-interface ShelfListProps {
+type ShelfListProps = {
   shelves: Shelf[] | undefined;
-}
+};
 
 /**
  * Shelf rows nested under the Shelves entry (spec S4). Renders nothing

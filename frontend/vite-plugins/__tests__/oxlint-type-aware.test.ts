@@ -23,10 +23,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
 const PROBE_DIR = join(process.cwd(), "src", "__tests__", "__type-aware-probe__");
 
-interface LintResult {
+type LintResult = {
   code: number;
   output: string;
-}
+};
 
 function lint(file: string): LintResult {
   try {

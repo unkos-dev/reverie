@@ -146,10 +146,10 @@ async function cancelCredentialLink(id: string): Promise<void> {
 }
 
 /** Fields accepted by `PATCH /api/v1/users/{id}`. */
-interface UpdateUserFields {
+type UpdateUserFields = {
   display_name?: string | null;
   email?: string | null;
-}
+};
 
 /** `PATCH /api/v1/users/{id}` — update display name / email (admin only). */
 async function updateUser(

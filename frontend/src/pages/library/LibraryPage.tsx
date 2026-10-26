@@ -498,9 +498,9 @@ function LibraryPagination({
   );
 }
 
-interface BookGridProps {
+type BookGridProps = {
   items: BookListItem[];
-}
+};
 
 const BookGrid = memo(function BookGrid({ items }: BookGridProps): ReactElement {
   return (
@@ -524,9 +524,9 @@ const BookGrid = memo(function BookGrid({ items }: BookGridProps): ReactElement 
   );
 });
 
-interface BookCardProps {
+type BookCardProps = {
   book: BookListItem;
-}
+};
 
 function BookCard({ book }: Readonly<BookCardProps>): ReactElement {
   // Spine fallback active when there is no art to fall back FROM, or
@@ -582,10 +582,10 @@ function BookCard({ book }: Readonly<BookCardProps>): ReactElement {
   );
 }
 
-interface FilteredEmptyStateProps {
+type FilteredEmptyStateProps = {
   /** Drops every filter param, returning the browse to the full library. */
   onClear: () => void;
-}
+};
 
 /**
  * Filtered-empty state: the library has books, but the active filters

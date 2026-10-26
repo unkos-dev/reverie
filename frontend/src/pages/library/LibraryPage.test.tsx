@@ -169,7 +169,7 @@ function parseJsonBody(body: BodyInit | null | undefined): unknown {
 
 const PREFERENCES_PATH = "/auth/me/preferences";
 
-interface RenderOpts {
+type RenderOpts = {
   items: BookListItem[];
   nextCursor: string | null;
   visit?: { filters?: Partial<FilterState>; view?: LibraryVisit["view"] };
@@ -189,7 +189,7 @@ interface RenderOpts {
   details?: BookDetail[];
   withPalette?: boolean;
   uncached?: boolean;
-}
+};
 
 function findLibraryTable(): Promise<HTMLElement> {
   return screen.findByTestId("library-table", {}, { timeout: 3_000 });

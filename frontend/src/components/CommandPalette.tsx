@@ -158,10 +158,10 @@ export function CommandPalette(): ReactElement {
   );
 }
 
-interface HighlightedSnippetProps {
+type HighlightedSnippetProps = {
   text: string;
   className?: string;
-}
+};
 
 /**
  * Split a `ts_headline` snippet on the STX/ETX markers Postgres

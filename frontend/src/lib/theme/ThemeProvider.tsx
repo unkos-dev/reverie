@@ -17,20 +17,20 @@ const PATCH_FAILURE_MESSAGE = "Could not save theme preference. Reverted to your
 
 type EffectiveTheme = "light" | "dark";
 
-interface ThemeContextValue {
+type ThemeContextValue = {
   preference: ThemePreference;
   effective: EffectiveTheme;
   setPreference: (next: ThemePreference) => Promise<void>;
-}
+};
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const BROADCAST_CHANNEL = "reverie-theme";
 
-interface InitialState {
+type InitialState = {
   preference: ThemePreference;
   effective: EffectiveTheme;
-}
+};
 
 /** Synchronous initial-state derivation. preference comes from the cookie
  *  (so we keep "system" intent); effective comes from <html data-theme>
@@ -61,9 +61,9 @@ function resolveEffective(preference: ThemePreference, systemDark: boolean): Eff
   return preference;
 }
 
-interface ThemeProviderProps {
+type ThemeProviderProps = {
   children: ReactNode;
-}
+};
 
 /**
  * Top-level provider for the theme stack. Holds the cookie-derived

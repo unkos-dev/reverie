@@ -59,20 +59,20 @@ import { queryKeys } from "@/lib/query/keys";
 
 /** One editable field on the edit form. Its canonical value seeds from a
  *  fresh `GET`, not from a caller-supplied snapshot. */
-export interface EditableField {
+export type EditableField = {
   /** Wire name — must match a key in [`UpdateBookMetadataFields`] and a
    *  scalar field on [`BookMetadata`]. */
   name: keyof UpdateBookMetadataFields;
   /** Display label shown above the input. */
   label: string;
-}
+};
 
-interface EditMetadataDialogProps {
+type EditMetadataDialogProps = {
   manifestationId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   fields: readonly EditableField[];
-}
+};
 
 /** Reads one editable field's canonical value off a fresh `BookMetadata`
  *  read. Limited to the scalar string fields [`VersionsTab`] currently
@@ -148,11 +148,11 @@ export function EditMetadataDialog({
   );
 }
 
-interface EditMetadataFormProps {
+type EditMetadataFormProps = {
   manifestationId: string;
   fields: readonly EditableField[];
   onDone: () => void;
-}
+};
 
 /**
  * Fetches a fresh metadata read before rendering anything editable: the
@@ -203,12 +203,12 @@ function EditMetadataForm({
   );
 }
 
-interface EditMetadataFieldsProps {
+type EditMetadataFieldsProps = {
   manifestationId: string;
   fields: readonly EditableField[];
   metadata: BookMetadata;
   onDone: () => void;
-}
+};
 
 function EditMetadataFields({
   manifestationId,
@@ -371,12 +371,12 @@ function EditMetadataFields({
   );
 }
 
-interface FieldRowProps {
+type FieldRowProps = {
   field: EditableField;
   hasCanonicalValue: boolean;
   state: { value: string; touched: boolean };
   onChange: (value: string) => void;
-}
+};
 
 function FieldRow({
   field,

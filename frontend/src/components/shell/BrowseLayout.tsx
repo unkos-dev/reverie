@@ -26,7 +26,7 @@ import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/compo
  */
 export const RAIL_DESKTOP_MEDIA_QUERY = "(min-width: 1280px)";
 
-interface BrowseLayoutProps {
+type BrowseLayoutProps = {
   /** The filter rail (a `FilterRail`, typically). */
   rail: ReactElement;
   children: ReactNode;
@@ -35,7 +35,7 @@ interface BrowseLayoutProps {
   /** Controls the <1280px rail sheet. */
   sheetOpen: boolean;
   onSheetOpenChange: (open: boolean) => void;
-}
+};
 
 /**
  * Content + filter-rail grid with the <1280px rail sheet. The sheet needs
