@@ -44,24 +44,22 @@ expressions and cannot serve the tsvector leg at all.
 
 Two subtleties are part of the decision, not incidental:
 
-- The `IMMUTABLE` declaration is a documented lie. Postgres marks `unaccent()` STABLE because the dictionary can change;
-  wrapping it trades a plan-time rejection for silent staleness whenever the effective dictionary changes. This is a
-  permanent operating duty of the design, not tracked debt: any change to the dictionary against a persistent database
-  (a Postgres image refresh, major bump or not; an extension update; a rules-file change) requires a `REINDEX` of the
-  folded expression indexes and a `works.search_vector` recompute. CI databases are created fresh per run and carry no
-  such duty. The warning lives at the dev and staging image pins, the only places a dictionary change enters a
-  persistent database here.
+- The `IMMUTABLE` wrapper assumes a stable dictionary. Postgres marks `unaccent()` STABLE because the dictionary can
+  change; wrapping it trades a plan-time rejection for silent staleness whenever the effective dictionary changes.
+  Folded expression indexes and stored search vectors can then disagree with queries even when the schema is unchanged.
+  An image refresh, extension update or rules-file change can alter folding behaviour; a new image digest alone does not
+  establish that it has changed.
 - Escaping composes with folding in one direction only. The unaccent dictionary maps fullwidth punctuation into
-  `%`/`_`/`\`, so LIKE escaping must run after folding, in SQL (`immutable_unaccent_like`); callers bind raw needles on
-  folded legs and never pre-escape.
+  `%`/`_`/`\`, so escaping before folding can turn a literal needle into a wildcard pattern. SQL-side escaping after
+  folding preserves literal matching through the same dictionary.
 
 ### Consequences
 
 - Positive: `garcia` finds `García` on search, suggest, and filters alike, with stored accents intact and every leg
   index-backed.
 - Positive: `isbn_13` stays unfolded: digits and `X` have nothing to fold, so it keeps the plain escaped `ILIKE` path.
-- Negative: index correctness now depends on dictionary stability with no failure signal; the recomputation duty above
-  is the compensating control.
+- Negative: index and stored search-vector correctness depend on dictionary stability with no failure signal. Preserving
+  search correctness across dictionary changes adds regeneration and coordination to the upgrade process.
 - Negative: schema rollback is deliberately partial: the wrappers, configuration, and extension survive the down
   migration so a deployed binary that names them keeps returning accent-insensitive results instead of erroring, but its
   folded trigram expressions run unindexed until the application image is rolled back too; full removal requires rolling
@@ -69,10 +67,9 @@ Two subtleties are part of the decision, not incidental:
 
 ## More information
 
-Revisit on any Postgres image or unaccent change (the recomputation duty above) and if match-time folding ever extends
-to write-side identity (dedup uses raw-column similarity by design today).
+Persistent database upgrades are a reason to revisit the dictionary-stability assumption. The maintenance mechanism
+needs separate evaluation; this record does not select a detection or regeneration process or assign maintenance to end
+users.
 
-The identified hardening path for persistent deployments is a dictionary fingerprint: fold a canary corpus at migration
-time, store the digest alongside the schema, and compare at application startup, failing closed until the indexes and
-`search_vector` are rebuilt. That converts the silent staleness above into a loud refusal. Deliberately unbuilt while
-every database here is disposable; revisit with the first persistent deployment.
+Revisit if match-time folding extends to write-side identity, where dictionary changes would also affect identity
+comparisons.
