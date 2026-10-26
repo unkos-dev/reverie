@@ -52,10 +52,12 @@ screenshot.
 The `library-model` Node project owns pure Library projection and summary tests. Focused native numeric/date bindings
 live in `tests/browser/editors.test.tsx`; query, cache and selection assertions remain in their existing source suites.
 `just js::library-journeys` runs `tests/journeys/library-navigation.spec.ts` through `playwright.library.config.ts` in
-Chromium and patched Firefox. It owns a strict loopback server on port 5174 with reuse disabled and intercepts synthetic
-APIs through the real application bootstrap and Router. It needs no database or real login credentials. It proves
-navigation and client request/result integration, not actual authentication or database predicates. The WCAG config and
-allowlist remain separate. Missing browser system libraries stop local verification; local gates never install them.
+Chromium and patched Firefox. Each invocation builds through `just js::build`, then serves the production output with
+`vp preview` to exclude development tooling. It owns a strict loopback server on port 5174 with reuse disabled and
+intercepts synthetic APIs through the real application bootstrap and Router. It needs no database or real login
+credentials. It proves navigation and client request/result integration, not actual authentication or database
+predicates. The WCAG config and allowlist remain separate. Missing browser system libraries stop local verification;
+local gates never install them.
 
 Library requires recent browsers with the Navigation API. Its one page-level React owner persists published filter
 intent and an optional view override on the current entry. Reload and Back/Forward recover that visit; fresh entries

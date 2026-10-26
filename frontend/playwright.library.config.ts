@@ -21,7 +21,7 @@ export default defineConfig({
     { name: "library-firefox", use: { browserName: "firefox" } },
   ],
   webServer: {
-    command: "vp dev --host 127.0.0.1 --port 5174 --strictPort",
+    command: "just js::build && vp preview --host 127.0.0.1 --port 5174 --strictPort",
     url: "http://127.0.0.1:5174/library",
     reuseExistingServer: false,
     timeout: 120_000,
