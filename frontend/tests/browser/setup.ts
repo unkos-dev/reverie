@@ -1,5 +1,2 @@
 import "@/index.css";
-import { cleanup } from "@testing-library/react";
-import { afterEach } from "vite-plus/test";
-
-afterEach(cleanup);
+import "vitest-browser-react";

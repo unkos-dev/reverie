@@ -116,7 +116,8 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 <testing_standards>
 
-- **Behavioral Testing:** Use Vitest + React Testing Library. Test behavior, not implementation details.
+- **Behavioural Testing:** Use Vitest Browser Mode with `vitest-browser-react` for browser-dependent components. Keep
+  React Testing Library for remaining jsdom coverage. Test behaviour, not implementation details.
 - **Accessibility Gate:** CI runs Playwright + axe-core (WCAG 2.2 AA) over the shipped pre-auth routes in
   `scripts/a11y/allowlist.mjs`'s `DEFAULT_TARGETS`; reproduce locally with `vp run a11y` (Playwright owns the dev-server
   lifecycle). Never narrow the WCAG tag ladder. An accepted violation requires a rationale-bearing carve-out in the same

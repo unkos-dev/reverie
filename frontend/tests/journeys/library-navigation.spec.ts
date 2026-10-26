@@ -112,6 +112,9 @@ async function intercept(page: Page): Promise<Fixture> {
 const search = (page: Page) => page.getByRole("searchbox", { name: "Search your library" });
 async function ready(page: Page): Promise<void> {
   await expect(search(page)).toBeVisible();
+  await page.evaluate(async () => {
+    await document.activeViewTransition?.finished;
+  });
 }
 async function refine(page: Page) {
   await page.getByRole("button", { name: /^Filters/ }).click();
@@ -375,6 +378,60 @@ for (const dismissal of ["Escape", "close", "outside"]) {
     }
     await pages.getByRole("button", { name: "Clear Pages filters" }).click();
     await expect(title.getByRole("textbox", { name: "Filter value" })).toHaveValue("The Sea ");
+  });
+}
+
+for (const unavailableAfterReload of [false, true]) {
+  test(`table chunk recovery reloads the page and preserves the visit; still unavailable=${String(unavailableAfterReload)}`, async ({
+    page,
+  }, testInfo) => {
+    await intercept(page);
+    let unavailable = true;
+    let blockedRequests = 0;
+    await page.route(/\/assets\/LibraryTableView-[^/]+\.js$/, async (route) => {
+      if (unavailable) {
+        blockedRequests += 1;
+        await route.abort("failed");
+      } else {
+        await route.continue();
+      }
+    });
+    await page.goto("/library");
+    await ready(page);
+    await search(page).fill("Sea");
+    await page.getByRole("radio", { name: "Table", exact: true }).click();
+    const failure = page.getByRole("alert").filter({ hasText: "Couldn't load the table view." });
+    await expect(failure).toBeVisible();
+    expect(blockedRequests).toBeGreaterThan(0);
+    await expect(search(page)).toBeEnabled();
+    const reload = failure.getByRole("button", { name: "Reload page", exact: true });
+    await reload.focus();
+    await expect(reload).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(failure.getByRole("button", { name: "Switch to grid view" })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(reload).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath("table-chunk-failure.png") });
+    unavailable = unavailableAfterReload;
+    await Promise.all([
+      page.waitForEvent("domcontentloaded"),
+      unavailableAfterReload ? reload.click() : reload.press("Enter"),
+    ]);
+    await ready(page);
+    await expect(search(page)).toHaveValue("Sea");
+    await expect(page.getByRole("radio", { name: "Table", exact: true })).toBeChecked();
+    if (unavailableAfterReload) {
+      await expect(failure).toBeVisible();
+      await failure.getByRole("button", { name: "Switch to grid view", exact: true }).click();
+      await expect(page.getByRole("radio", { name: "Grid", exact: true })).toBeChecked();
+      await expect(failure).toHaveCount(0);
+      await expect(search(page)).toHaveValue("Sea");
+    } else {
+      await expect(page.getByTestId("library-table")).toBeVisible();
+      await expect(page.getByRole("link", { name: BOOK.title, exact: true })).toBeVisible();
+      await expect(failure).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath("table-chunk-recovered.png") });
+    }
   });
 }
 
