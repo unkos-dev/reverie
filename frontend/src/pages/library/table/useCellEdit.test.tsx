@@ -166,9 +166,15 @@ function makeClient(): QueryClient {
 /** Test harness: one button per report, firing `onCellEdit` on click, and
  *  a wrapper carrying `onGridKeyDown` so Ctrl+Z can be exercised the same
  *  way the real table's wrapper div does. */
-function Harness({ reports }: { reports: readonly CellEditReport<BookListItem>[] }): ReactElement {
+function Harness({
+  reports,
+  listKey = LIST_KEY,
+}: {
+  reports: readonly CellEditReport<BookListItem>[];
+  listKey?: BooksListKey;
+}): ReactElement {
   const { pendingCells, onCellEdit, onGridKeyDown } = useCellEdit({
-    listKey: LIST_KEY,
+    listKey,
     columns: TEST_COLUMNS,
   });
   return (
@@ -1100,4 +1106,99 @@ describe("useCellEdit", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: LIST_KEY });
     expect(getBookMetadata).toHaveBeenCalledWith(row.id);
   });
+});
+
+test("an in-flight edit and Ctrl+Z retain their originating key after the displayed query changes", async () => {
+  const client = makeClient();
+  const row = rowFixture();
+  const destination = queryKeys.books.list({ q: "destination" });
+  const other = rowFixture({ id: "other", work_id: "other-work", title: "Destination Title" });
+  seedCache(client, [row]);
+  const destinationData = {
+    pages: [{ items: [other], next_cursor: null }],
+    pageParams: [undefined],
+  };
+  client.setQueryData(destination, destinationData);
+  let resolveMutation: (value: UpdateMetadataResponse) => void = () => {
+    throw new Error("mutation not started");
+  };
+  vi.mocked(updateBookMetadata).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveMutation = resolve;
+      }),
+  );
+  vi.mocked(revertField).mockResolvedValue(undefined);
+  const report: CellEditReport<BookListItem> = {
+    row: { ...row, title: "Edited Origin" },
+    previousRow: row,
+    columnKey: "title",
+  };
+  const { rerender } = render(
+    <QueryClientProvider client={client}>
+      <Harness reports={[report]} />
+    </QueryClientProvider>,
+  );
+  await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+  rerender(
+    <QueryClientProvider client={client}>
+      <Harness reports={[report]} listKey={destination} />
+    </QueryClientProvider>,
+  );
+  resolveMutation({ fields: { title: fieldChange("Edited Origin") } });
+  await waitFor(() => {
+    expect(readCache(client)[0].title).toBe("Edited Origin");
+  });
+  expect(client.getQueryData(destination)).toEqual(destinationData);
+  fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
+  await waitFor(() => {
+    expect(readCache(client)[0].title).toBe(row.title);
+  });
+  expect(client.getQueryData(destination)).toEqual(destinationData);
+});
+
+test("a conflict reload remains attached to the edit origin after the displayed query changes", async () => {
+  const client = makeClient();
+  const row = rowFixture();
+  seedCache(client, [row]);
+  const destination = queryKeys.books.list({ q: "different" });
+  client.setQueryData(destination, {
+    pages: [{ items: [rowFixture({ id: "different", title: "Different" })], next_cursor: null }],
+    pageParams: [undefined],
+  });
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  let rejectMutation: (error: Error) => void = () => {
+    throw new Error("mutation not started");
+  };
+  vi.mocked(updateBookMetadata).mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        rejectMutation = reject;
+      }),
+  );
+  const report: CellEditReport<BookListItem> = {
+    row: { ...row, title: "Edit" },
+    previousRow: row,
+    columnKey: "title",
+  };
+  const { rerender } = render(
+    <QueryClientProvider client={client}>
+      <Harness reports={[report]} />
+    </QueryClientProvider>,
+  );
+  await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+  rerender(
+    <QueryClientProvider client={client}>
+      <Harness reports={[report]} listKey={destination} />
+    </QueryClientProvider>,
+  );
+  rejectMutation(
+    new ApiError(412, "https://reverie.example/probs/if-match-mismatch", "Precondition Failed", ""),
+  );
+  await waitFor(() => {
+    expect(toast.error).toHaveBeenCalled();
+  });
+  getErrorAction(0)();
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: LIST_KEY });
+  expect(invalidate).not.toHaveBeenCalledWith({ queryKey: destination });
 });

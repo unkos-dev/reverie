@@ -8,6 +8,7 @@ import {
   Button,
   ComboBox,
   ComboBoxValue,
+  FieldError,
   Input,
   Label,
   ListBox,
@@ -16,6 +17,7 @@ import {
   Tag,
   TagGroup,
   TagList,
+  Text,
   type Key,
 } from "react-aria-components";
 import { X } from "lucide-react";
@@ -32,6 +34,7 @@ type Props = {
   selected: readonly TypeaheadOption[];
   onChange: (next: TypeaheadOption[]) => void;
   disabled?: boolean;
+  maxSelectedItems?: number;
 };
 
 /** Emits the complete selection on add/remove and clears the search query after an option is committed. */
@@ -41,6 +44,7 @@ export function TypeaheadMultiSelect({
   selected,
   onChange,
   disabled = false,
+  maxSelectedItems,
 }: Readonly<Props>): ReactElement {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -61,6 +65,12 @@ export function TypeaheadMultiSelect({
   const optionsByKey = new Map<Key, TypeaheadOption>(
     [...suggestions, ...selected].map((item) => [keyFor(item), item]),
   );
+  const selectedKeys = selected.map(keyFor);
+  const atLimit = maxSelectedItems !== undefined && selected.length >= maxSelectedItems;
+  const overLimit = maxSelectedItems !== undefined && selected.length > maxSelectedItems;
+  const disabledKeys = atLimit
+    ? suggestions.map(keyFor).filter((key) => !selectedKeys.includes(key))
+    : [];
   function changeSelection(keys: Key[]): void {
     onChange(
       keys.flatMap((key) => {
@@ -82,11 +92,14 @@ export function TypeaheadMultiSelect({
       items={suggestions}
       inputValue={query}
       onInputChange={setQuery}
-      value={selected.map(keyFor)}
+      value={selectedKeys}
+      disabledKeys={disabledKeys}
       onChange={changeSelection}
       onOpenChange={setOpen}
       allowsEmptyCollection
       isDisabled={disabled}
+      isInvalid={overLimit}
+      validationBehavior="aria"
       className="flex flex-col gap-2"
     >
       <Label className="sr-only">Add {label}</Label>
@@ -129,6 +142,12 @@ export function TypeaheadMultiSelect({
           </TagList>
         </TagGroup>
       </ComboBoxValue>
+      <Text slot="description" className="text-sm text-muted-foreground empty:hidden">
+        {atLimit && !overLimit && <>{maxSelectedItems} selected. Remove one to add another.</>}
+      </Text>
+      <FieldError className="text-fg-muted text-sm">
+        Choose {maxSelectedItems} or fewer values.
+      </FieldError>
       <Popover className="z-50 w-(--trigger-width) max-w-[calc(100vw-2rem)] rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
         {status && (
           <p role="status" className="px-2 py-3 text-sm text-muted-foreground">
@@ -143,7 +162,7 @@ export function TypeaheadMultiSelect({
             <ListBoxItem
               id={keyFor(item)}
               textValue={item.value}
-              className="cursor-default rounded-md px-2 py-1.5 text-sm outline-none data-focused:bg-muted data-selected:font-semibold"
+              className="cursor-default rounded-md px-2 py-1.5 text-sm outline-none data-focused:bg-muted data-selected:font-semibold data-disabled:opacity-50"
             >
               {item.value}
             </ListBoxItem>

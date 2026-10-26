@@ -486,7 +486,15 @@
       "title": "Browser Mode for browser-dependent component tests"
     },
     {
+      "id": "REV-ADR-0066",
+      "kind": "adr",
+      "path": "docs/adr/0066-library-visit-state-and-local-day-filter-boundaries.md",
+      "status": "accepted",
+      "title": "Library visit state and local-day filter boundaries"
+    },
+    {
       "governed-by": [
+        "REV-ADR-0066",
         "REV-ADR-0062",
         "REV-ADR-0047"
       ],
@@ -758,6 +766,7 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0066",
         "REV-ADR-0019",
         "REV-ADR-0037",
         "REV-ADR-0038",
@@ -922,6 +931,9 @@
       "title": "Library sort resolves only from the per-user preference"
     },
     {
+      "governed-by": [
+        "REV-ADR-0066"
+      ],
       "id": "REV-REQ-0002",
       "kind": "req",
       "path": "docs/specs/library/requirements/0002-library-filter-state-has-exactly-one-writer.md",
@@ -929,6 +941,7 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0066",
         "REV-ADR-0038"
       ],
       "id": "REV-REQ-0003",

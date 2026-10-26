@@ -117,7 +117,7 @@ const MAX_TAG_FILTERS: usize = 20;
 /// below) also fold accents, so an unaccented needle matches an accented
 /// stored value, while `_eq`/`_ne` stay accent-sensitive; numeric
 /// (`pages_gte/_lte/_empty`) and date
-/// (`created_at_gte/_lte`, day-inclusive) are scalar bounds; `status_any/_none`
+/// (`created_at_gte/_lt`, inclusive lower and exclusive upper instants) are scalar bounds; `status_any/_none`
 /// (with the `unread` pseudo-value) and `rating_gte/_lte/_empty` probe the
 /// caller's RLS-scoped `reading_state`; `author`/`author_any`/`author_none`
 /// mirror the vocabulary triple over the `author` role; `q` is a full-text
@@ -229,15 +229,12 @@ struct ListParams {
     /// `true` keeps only rows with no page count; `false` only rows with one.
     #[serde(default)]
     pages_empty: Option<bool>,
-    /// Lower bound (day-inclusive) on the added date, ISO 8601 calendar date.
-    /// A query parameter arrives as a string, so the value is parsed through
-    /// [`filters::iso_date_opt`], which accepts `YYYY-MM-DD` and nothing else;
-    /// a malformed date fails deserialization and is a 400.
-    #[serde(default, deserialize_with = "filters::iso_date_opt::deserialize")]
-    created_at_gte: Option<chrono::NaiveDate>,
-    /// Upper bound (day-inclusive) on the added date, ISO 8601 calendar date.
-    #[serde(default, deserialize_with = "filters::iso_date_opt::deserialize")]
-    created_at_lte: Option<chrono::NaiveDate>,
+    /// Inclusive lower bound on the added timestamp, as an RFC 3339 instant.
+    #[serde(default, deserialize_with = "filters::timestamp_opt::deserialize")]
+    created_at_gte: Option<DateTime<Utc>>,
+    /// Exclusive upper bound on the added timestamp, as an RFC 3339 instant.
+    #[serde(default, deserialize_with = "filters::timestamp_opt::deserialize")]
+    created_at_lt: Option<DateTime<Utc>>,
     /// Any-of reading-status filter. Each value is a `reading_status` wire
     /// name or the `unread` pseudo-value (no status set); a row qualifies
     /// when it matches at least one.

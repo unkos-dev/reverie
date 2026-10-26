@@ -1,10 +1,17 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
+import { cleanup, act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import { NuqsAdapter, useOptimisticSearchParams } from "nuqs/adapters/react-router/v8";
+import {
+  emptyFilterState,
+  filterStateToParams,
+  LibraryVisitSchema,
+  type FilterState,
+  type LibraryVisit,
+} from "@/routes/library-params";
 import { RouterProvider, createBrowserRouter, type RouteObject } from "react-router";
-import type { ReactElement } from "react";
+import { useSyncExternalStore, type MouseEvent, type ReactElement } from "react";
+import { toast } from "sonner";
 
 import type {
   BookDetail,
@@ -15,6 +22,7 @@ import type {
 } from "@/api";
 import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
+import type { useCellEdit as useCellEditType, UseCellEditOptions } from "./table/useCellEdit";
 
 import { CommandPalette } from "@/components/CommandPalette";
 
@@ -22,6 +30,20 @@ import { rememberActiveUser } from "@/lib/active-user";
 
 import { displayStorageKey } from "./display-storage";
 import { LibraryPage } from "./LibraryPage";
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
+const { observedListKeys } = vi.hoisted(() => ({ observedListKeys: [] as unknown[] }));
+vi.mock("./table/useCellEdit", async (importOriginal) => {
+  const original = await importOriginal<{ useCellEdit: typeof useCellEditType }>();
+  return {
+    ...original,
+    useCellEdit: (options: UseCellEditOptions) => {
+      observedListKeys.push(options.listKey);
+      return original.useCellEdit(options);
+    },
+  };
+});
 
 // The masthead reads the effective theme to pick its hero asset; these tests
 // exercise the page, not theme resolution, so the provider is stubbed.
@@ -33,10 +55,11 @@ afterEach(() => {
   // The page mirrors its effective preferences to localStorage on every
   // change, so one test's choice would otherwise seed the next one's paint.
   localStorage.clear();
-  // Search-param state lives in the document URL, which is shared across
-  // tests in this file; without this a filter set by one test leaks into
-  // the next one's initial state.
   window.history.replaceState(null, "", "/library");
+  cleanup();
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
+  vi.unstubAllGlobals();
 });
 
 function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
@@ -149,7 +172,7 @@ const PREFERENCES_PATH = "/auth/me/preferences";
 interface RenderOpts {
   items: BookListItem[];
   nextCursor: string | null;
-  initialEntries?: string[];
+  visit?: { filters?: Partial<FilterState>; view?: LibraryVisit["view"] };
   /**
    * Preferences to serve from cache. `null` leaves the slot empty, which is
    * how a test exercises the window before the response lands; the test then
@@ -165,6 +188,7 @@ interface RenderOpts {
   /** Prefill book-detail cache slots so the drawer renders without a fetch. */
   details?: BookDetail[];
   withPalette?: boolean;
+  uncached?: boolean;
 }
 
 function findLibraryTable(): Promise<HTMLElement> {
@@ -174,13 +198,14 @@ function findLibraryTable(): Promise<HTMLElement> {
 function renderLibrary({
   items,
   nextCursor,
-  initialEntries,
+  visit,
   preferences,
   cacheParams,
   extraCacheParams = [],
   me,
   details = [],
   withPalette = false,
+  uncached = false,
 }: RenderOpts): {
   client: QueryClient;
 } {
@@ -189,9 +214,10 @@ function renderLibrary({
     // (there is no network in these tests to serve the refetch).
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
+  client.setQueryData(queryKeys.shelves.list(), []);
   const params: ListBooksParams = cacheParams ?? {};
   const response: BookListResponse = { items, next_cursor: nextCursor };
-  for (const slot of [params, ...extraCacheParams]) {
+  for (const slot of uncached ? [] : [params, ...extraCacheParams]) {
     client.setQueryData(queryKeys.books.list(slot), {
       pages: [response],
       pageParams: [undefined],
@@ -205,30 +231,52 @@ function renderLibrary({
     client.setQueryData(queryKeys.books.detail(detail.id), detail);
   }
 
-  // Sibling probe exposing the live search string. It reads the
-  // search-param view rather than the router's location: writes reach the
-  // URL via history.replaceState, which the router does not observe, so
-  // useLocation would never show a filter or sort change.
+  let entryState: Record<string, unknown> = {
+    reverieLibrary: { filters: { ...emptyFilterState(), ...visit?.filters }, view: visit?.view },
+  };
+  const events = new EventTarget();
+  vi.stubGlobal("navigation", {
+    currentEntry: { key: "library-test", getState: () => entryState },
+    updateCurrentEntry: ({ state }: { state: Record<string, unknown> }) => {
+      entryState = state;
+      events.dispatchEvent(
+        Object.assign(new Event("currententrychange"), { navigationType: null }),
+      );
+    },
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+  });
   function LocationProbe(): ReactElement {
-    const search = useOptimisticSearchParams();
-    return <div data-testid="location-search">{search.toString()}</div>;
+    const state = useSyncExternalStore(
+      (onChange) => {
+        events.addEventListener("currententrychange", onChange);
+        return () => {
+          events.removeEventListener("currententrychange", onChange);
+        };
+      },
+      () => entryState,
+    );
+    const restored = LibraryVisitSchema.parse(state.reverieLibrary);
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filterStateToParams(restored.filters))) {
+      if (Array.isArray(value)) for (const item of value) params.append(key, item);
+      else params.set(key, String(value));
+    }
+    if (restored.view !== undefined) params.set("view", restored.view);
+    return <div data-testid="visit-params">{params.toString()}</div>;
   }
-
-  // The real adapter over a browser router, matching production. A memory
-  // router keeps its location in memory, where search-param writes never
-  // land, so it would make every write invisible to the page.
-  window.history.replaceState(null, "", initialEntries?.[0] ?? "/library");
+  window.history.replaceState(null, "", "/library");
 
   function Wrapper(): ReactElement {
     const routes: RouteObject[] = [
       {
         path: "/library",
         element: (
-          <NuqsAdapter>
+          <>
             <LibraryPage />
             {withPalette && <CommandPalette />}
             <LocationProbe />
-          </NuqsAdapter>
+          </>
         ),
       },
     ];
@@ -277,7 +325,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         me: meFixture(),
         withPalette: true,
       });
@@ -363,8 +411,14 @@ describe("LibraryPage", () => {
   test("the filter drawer lists distinct series from the loaded pages", async () => {
     renderLibrary({
       items: [
-        bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } }),
-        bookFixture({ id: "b", series: { id: "s-1", name: "Discworld", position: 2 } }),
+        bookFixture({
+          id: "a",
+          series: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Discworld", position: 1 },
+        }),
+        bookFixture({
+          id: "b",
+          series: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Discworld", position: 2 },
+        }),
         bookFixture({ id: "c", series: null }),
       ],
       nextCursor: null,
@@ -435,7 +489,7 @@ describe("LibraryPage", () => {
     expect(within(view).getByRole("radio", { name: "Table" })).toBeChecked();
     expect(within(view).getByRole("radio", { name: "Grid" })).not.toBeChecked();
     await waitFor(() => {
-      expect(screen.getByTestId("location-search")).toHaveTextContent("view=table");
+      expect(screen.getByTestId("visit-params")).toHaveTextContent("view=table");
     });
     await user.keyboard(" ");
     expect(within(view).getByRole("radio", { name: "Table" })).toBeChecked();
@@ -458,31 +512,22 @@ describe("LibraryPage", () => {
     fetchSpy.mockRestore();
   });
 
-  test("renders the table view when ?view=table (lazy-loaded)", async () => {
+  test("renders the table view for a visit override (lazy-loaded)", async () => {
     renderLibrary({
       items: [bookFixture({ title: "Stoner" })],
       nextCursor: null,
-      initialEntries: ["/library?view=table"],
+      visit: { view: "table" },
     });
     expect(await findLibraryTable()).toBeInTheDocument();
   });
 
-  test("the stored view preference mounts the table when ?view= is absent", async () => {
+  test("the stored view preference mounts the table when the visit override is absent", async () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
       preferences: preferencesFixture({ view: "table" }),
     });
     expect(await findLibraryTable()).toBeInTheDocument();
-  });
-
-  test("stale ?view=list and unknown values fall back to grid", async () => {
-    renderLibrary({
-      items: [bookFixture({ title: "Stoner" })],
-      nextCursor: null,
-      initialEntries: ["/library?view=list"],
-    });
-    expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
   });
 
   test("clicking a view toggle persists the choice to the account", async () => {
@@ -499,11 +544,11 @@ describe("LibraryPage", () => {
     fetchSpy.mockRestore();
   });
 
-  test("URL ?view= beats the stored view preference", async () => {
+  test("Visit view beats the stored view preference", async () => {
     renderLibrary({
       items: [bookFixture({ title: "Stoner" })],
       nextCursor: null,
-      initialEntries: ["/library?view=grid"],
+      visit: { view: "grid" },
       preferences: preferencesFixture({ view: "table" }),
     });
     expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
@@ -517,7 +562,7 @@ describe("LibraryPage", () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
-      initialEntries: ["/library?view=table"],
+      visit: { view: "table" },
       extraCacheParams: [{ sort: "title" }],
     });
     await findLibraryTable();
@@ -526,18 +571,24 @@ describe("LibraryPage", () => {
     await waitFor(() => {
       expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
     });
-    expect(screen.getByTestId("location-search").textContent).not.toContain("sort=");
+    expect(screen.getByTestId("visit-params").textContent).not.toContain("sort=");
     fetchSpy.mockRestore();
   });
 
-  test("a pending toolbar search and a header sort preserve each other (search first)", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(preferencesResponse(preferencesFixture({ sort_stack: "title" })));
+  test("toolbar search and a header sort preserve each other (search first)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
+      Promise.resolve(
+        input === PREFERENCES_PATH
+          ? preferencesResponse(preferencesFixture({ sort_stack: "title" }))
+          : new Response(JSON.stringify({ items: [bookFixture()], next_cursor: null }), {
+              headers: { "Content-Type": "application/json" },
+            }),
+      ),
+    );
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
-      initialEntries: ["/library?view=table"],
+      visit: { view: "table" },
       extraCacheParams: [{ q: "war" }, { sort: "title" }, { q: "war", sort: "title" }],
     });
     await findLibraryTable();
@@ -545,20 +596,26 @@ describe("LibraryPage", () => {
     await user.type(searchBox(), "war");
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
     await waitFor(() => {
-      expect(screen.getByTestId("location-search").textContent).toContain("q=war");
+      expect(screen.getByTestId("visit-params").textContent).toContain("q=war");
       expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
     });
     fetchSpy.mockRestore();
   });
 
   test("a header sort and a following toolbar search preserve each other (sort first)", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(preferencesResponse(preferencesFixture({ sort_stack: "title" })));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
+      Promise.resolve(
+        input === PREFERENCES_PATH
+          ? preferencesResponse(preferencesFixture({ sort_stack: "title" }))
+          : new Response(JSON.stringify({ items: [bookFixture()], next_cursor: null }), {
+              headers: { "Content-Type": "application/json" },
+            }),
+      ),
+    );
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
-      initialEntries: ["/library?view=table"],
+      visit: { view: "table" },
       extraCacheParams: [{ q: "war" }, { sort: "title" }, { q: "war", sort: "title" }],
     });
     await findLibraryTable();
@@ -566,34 +623,17 @@ describe("LibraryPage", () => {
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
     await user.type(searchBox(), "war");
     await waitFor(() => {
-      expect(screen.getByTestId("location-search").textContent).toContain("q=war");
+      expect(screen.getByTestId("visit-params").textContent).toContain("q=war");
       expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
     });
     fetchSpy.mockRestore();
-  });
-
-  test("the toolbar search writes ?q= and clears any cursor param", async () => {
-    renderLibrary({
-      items: [bookFixture()],
-      nextCursor: null,
-      initialEntries: ["/library?cursor=stale123"],
-      extraCacheParams: [{ q: "war" }],
-    });
-    await screen.findByRole("heading", { name: "Library" });
-    const user = userEvent.setup();
-    await user.type(searchBox(), "war");
-    await waitFor(() => {
-      const search = screen.getByTestId("location-search").textContent;
-      expect(search).toContain("q=war");
-      expect(search).not.toContain("cursor=");
-    });
   });
 
   test("a typed filter with no matches shows the filtered-empty state", async () => {
     renderLibrary({
       items: [],
       nextCursor: null,
-      initialEntries: ["/library?status_any=unread"],
+      visit: { filters: { status: { any: ["unread"], none: [] } } },
       cacheParams: { status_any: ["unread"] },
       extraCacheParams: [{}],
     });
@@ -604,50 +644,24 @@ describe("LibraryPage", () => {
     renderLibrary({
       items: [],
       nextCursor: null,
-      initialEntries: ["/library?status_any=unread&pages_gte=500"],
+      visit: { filters: { status: { any: ["unread"], none: [] }, pages: { gte: 500 } } },
       cacheParams: { status_any: ["unread"], pages_gte: 500 },
       extraCacheParams: [{}],
     });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
     await waitFor(() => {
-      const search = screen.getByTestId("location-search").textContent;
+      const search = screen.getByTestId("visit-params").textContent;
       expect(search).not.toContain("status_any");
       expect(search).not.toContain("pages_gte");
     });
-  });
-
-  test("dead params neither light the filter badge nor flip the empty state", async () => {
-    renderLibrary({
-      items: [],
-      nextCursor: null,
-      initialEntries: ["/library?title_empty=true&subtitle_eq=x&subtitle_ne=y&isbn_13_ne=z"],
-    });
-    // None of these reach the API, so the page must read as unfiltered: the
-    // onboarding empty state, and a Filters trigger with no count badge
-    // (a badge would change its accessible name to "Filters N").
-    expect(await screen.findByText("No books yet")).toBeInTheDocument();
-    expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
-  });
-
-  test("a malformed live-key value neither lights the badge nor flips the empty state", async () => {
-    renderLibrary({
-      items: [],
-      nextCursor: null,
-      initialEntries: ["/library?pages_gte=abc&created_at_gte=notadate&status_any=bogus"],
-    });
-    // The codec drops all three values, so nothing reaches the wire: the
-    // page must read as unfiltered even though the live keys are present.
-    expect(await screen.findByText("No books yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
   });
 
   test("a well-formed filter lights the badge with the sent-param count", async () => {
     renderLibrary({
       items: [],
       nextCursor: null,
-      initialEntries: ["/library?pages_gte=500"],
+      visit: { filters: { pages: { gte: 500 } } },
       cacheParams: { pages_gte: 500 },
       extraCacheParams: [{}],
     });
@@ -655,23 +669,6 @@ describe("LibraryPage", () => {
     // The count badge renders inside the trigger, so it joins the accessible
     // name with no separator.
     expect(screen.getByRole("button", { name: "Filters1" })).toBeInTheDocument();
-  });
-
-  test("clear-all also sweeps dead params off the URL", async () => {
-    renderLibrary({
-      items: [],
-      nextCursor: null,
-      initialEntries: ["/library?series=s-1&title_empty=true"],
-      cacheParams: { series: "s-1" },
-      extraCacheParams: [{}],
-    });
-    const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
-    await waitFor(() => {
-      const search = screen.getByTestId("location-search").textContent;
-      expect(search).not.toContain("series");
-      expect(search).not.toContain("title_empty");
-    });
   });
 
   test("renders the empty state when items is empty", async () => {
@@ -715,8 +712,8 @@ describe("LibraryPage", () => {
     renderLibrary({
       items: [],
       nextCursor: null,
-      initialEntries: ["/library?series=s-1"],
-      cacheParams: { series: "s-1" },
+      visit: { filters: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } },
+      cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
       extraCacheParams: [{}],
     });
     expect(await screen.findByText("No books match these filters")).toBeInTheDocument();
@@ -728,8 +725,8 @@ describe("LibraryPage", () => {
     renderLibrary({
       items: [],
       nextCursor: null,
-      initialEntries: ["/library?series=s-1&cursor=eyJ4Ijox"],
-      cacheParams: { series: "s-1" },
+      visit: { filters: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } },
+      cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
       extraCacheParams: [{}],
     });
     const user = userEvent.setup();
@@ -753,37 +750,7 @@ describe("LibraryPage", () => {
 
   test("a failed Load more surfaces an inline error and a Retry control", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
-    // staleTime Infinity so the cached first page never background-refetches
-    // and consumes the mock — only the explicit Load more fetch should fail.
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-    });
-    client.setQueryData(queryKeys.books.list({}), {
-      pages: [{ items: [bookFixture()], next_cursor: "eyJ4Ijox" }],
-      pageParams: [undefined],
-    });
-    // Prefilled so the preferences read never reaches the scripted fetch
-    // mock, which belongs to the paging assertions below.
-    client.setQueryData(queryKeys.auth.preferences(), preferencesFixture());
-    function Wrapper(): ReactElement {
-      const routes: RouteObject[] = [
-        {
-          path: "/library",
-          element: (
-            <NuqsAdapter>
-              <LibraryPage />
-            </NuqsAdapter>
-          ),
-        },
-      ];
-      const router = createBrowserRouter(routes);
-      return (
-        <QueryClientProvider client={client}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>
-      );
-    }
-    render(<Wrapper />);
+    renderLibrary({ items: [bookFixture()], nextCursor: "eyJ4Ijox" });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /load more/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't load more/i);
@@ -807,37 +774,10 @@ describe("LibraryPage", () => {
           headers: { "Content-Type": "application/json" },
         }),
       );
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    renderLibrary({
+      items: [bookFixture({ title: "The Brothers Karamazov" })],
+      nextCursor: "eyJ4Ijox",
     });
-    client.setQueryData(queryKeys.books.list({}), {
-      pages: [
-        { items: [bookFixture({ title: "The Brothers Karamazov" })], next_cursor: "eyJ4Ijox" },
-      ],
-      pageParams: [undefined],
-    });
-    // Prefilled so the preferences read never reaches the scripted fetch
-    // mock, which belongs to the paging assertions below.
-    client.setQueryData(queryKeys.auth.preferences(), preferencesFixture());
-    function Wrapper(): ReactElement {
-      const routes: RouteObject[] = [
-        {
-          path: "/library",
-          element: (
-            <NuqsAdapter>
-              <LibraryPage />
-            </NuqsAdapter>
-          ),
-        },
-      ];
-      const router = createBrowserRouter(routes);
-      return (
-        <QueryClientProvider client={client}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>
-      );
-    }
-    render(<Wrapper />);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: /load more/i }));
@@ -856,39 +796,41 @@ describe("LibraryPage", () => {
     errorSpy.mockRestore();
   });
 
-  test("clear-all discards a pending toolbar-search draft; the cleared filter cannot resurrect", async () => {
+  test("clear-all discards a toolbar search; the cleared filter cannot resurrect", async () => {
     renderLibrary({
       items: [],
       nextCursor: null,
-      initialEntries: ["/library?series=s-1"],
-      cacheParams: { series: "s-1" },
-      extraCacheParams: [{}, { q: "du" }, { series: "s-1", q: "du" }],
+      visit: { filters: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } },
+      cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
+      extraCacheParams: [
+        {},
+        { q: "du" },
+        { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", q: "du" },
+      ],
     });
     const user = userEvent.setup();
     await screen.findByText("No books match these filters");
     await user.type(searchBox(), "du");
     await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
-    // Past the debounce window: the pending draft must not have committed.
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    const search = screen.getByTestId("location-search").textContent;
+    const search = screen.getByTestId("visit-params").textContent;
     expect(search).not.toContain("q=");
     expect(search).not.toContain("series=");
     expect(searchBox()).toHaveValue("");
   });
 
-  test("clearing all filters preserves the view param and the stored sort", async () => {
+  test("clearing all filters preserves the visit view and the stored sort", async () => {
     renderLibrary({
       items: [],
       nextCursor: null,
-      initialEntries: ["/library?series=s-1&view=table"],
+      visit: { filters: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, view: "table" },
       preferences: preferencesFixture({ sort_stack: "title" }),
-      cacheParams: { series: "s-1", sort: "title" },
+      cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sort: "title" },
       extraCacheParams: [{ sort: "title" }],
     });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
     await waitFor(() => {
-      const search = screen.getByTestId("location-search").textContent;
+      const search = screen.getByTestId("visit-params").textContent;
       expect(search).toContain("view=table");
       expect(search).not.toContain("series=");
     });
@@ -900,10 +842,19 @@ describe("LibraryPage", () => {
   describe("filter chips", () => {
     test("pointer removal retains adjacent focus and final removal focuses the empty collection", async () => {
       renderLibrary({
-        items: [bookFixture({ series: { id: "s-1", name: "Discworld", position: 1 } })],
+        items: [
+          bookFixture({
+            series: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Discworld", position: 1 },
+          }),
+        ],
         nextCursor: null,
-        initialEntries: ["/library?series=s-1&status_any=unread"],
-        cacheParams: { series: "s-1", status_any: ["unread"] },
+        visit: {
+          filters: {
+            series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            status: { any: ["unread"], none: [] },
+          },
+        },
+        cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", status_any: ["unread"] },
         extraCacheParams: [{ status_any: ["unread"] }, {}],
       });
       const user = userEvent.setup();
@@ -926,7 +877,7 @@ describe("LibraryPage", () => {
         renderLibrary({
           items: [bookFixture()],
           nextCursor: null,
-          initialEntries: ["/library?status_any=unread&pages_gte=500"],
+          visit: { filters: { status: { any: ["unread"], none: [] }, pages: { gte: 500 } } },
           cacheParams: { status_any: ["unread"], pages_gte: 500 },
           extraCacheParams: [{ pages_gte: 500 }, {}],
         });
@@ -963,10 +914,15 @@ describe("LibraryPage", () => {
 
     test("an active series filter renders a chip with the resolved name, not a raw id", async () => {
       renderLibrary({
-        items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+        items: [
+          bookFixture({
+            id: "a",
+            series: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Discworld", position: 1 },
+          }),
+        ],
         nextCursor: null,
-        initialEntries: ["/library?series=s-1"],
-        cacheParams: { series: "s-1" },
+        visit: { filters: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } },
+        cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
       });
       const chips = await screen.findByTestId("filter-chips");
       expect(within(chips).getByText(/Series: Discworld/)).toBeInTheDocument();
@@ -975,17 +931,27 @@ describe("LibraryPage", () => {
 
     test("a chip's remove control drops exactly that filter param", async () => {
       renderLibrary({
-        items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+        items: [
+          bookFixture({
+            id: "a",
+            series: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Discworld", position: 1 },
+          }),
+        ],
         nextCursor: null,
-        initialEntries: ["/library?series=s-1&status_any=unread"],
-        cacheParams: { series: "s-1", status_any: ["unread"] },
+        visit: {
+          filters: {
+            series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            status: { any: ["unread"], none: [] },
+          },
+        },
+        cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", status_any: ["unread"] },
         extraCacheParams: [{ status_any: ["unread"] }],
       });
       const chips = await screen.findByTestId("filter-chips");
       const user = userEvent.setup();
       await user.click(within(chips).getByRole("button", { name: /Remove.*Series: Discworld/ }));
       await waitFor(() => {
-        const search = screen.getByTestId("location-search").textContent;
+        const search = screen.getByTestId("visit-params").textContent;
         expect(search).not.toContain("series=");
         expect(search).toContain("status_any=unread");
       });
@@ -995,7 +961,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?status_any=unread&pages_gte=500"],
+        visit: { filters: { status: { any: ["unread"], none: [] }, pages: { gte: 500 } } },
         cacheParams: { status_any: ["unread"], pages_gte: 500 },
         extraCacheParams: [{}],
       });
@@ -1003,7 +969,7 @@ describe("LibraryPage", () => {
       const user = userEvent.setup();
       await user.click(within(chips).getByRole("button", { name: "Clear all" }));
       await waitFor(() => {
-        const search = screen.getByTestId("location-search").textContent;
+        const search = screen.getByTestId("visit-params").textContent;
         expect(search).not.toContain("status_any");
         expect(search).not.toContain("pages_gte");
       });
@@ -1013,7 +979,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?tag=scifi&tag=hugo"],
+        visit: { filters: { tags: { all: ["scifi", "hugo"], any: [], none: [] } } },
         cacheParams: { tag: ["scifi", "hugo"] },
       });
       const chips = await screen.findByTestId("filter-chips");
@@ -1021,11 +987,11 @@ describe("LibraryPage", () => {
     });
 
     test("a chip falls back to a short id when the series is absent from the loaded pages", async () => {
-      const longId = "aaaabbbb-cccc-dddd-eeee-ffffffffffff";
+      const longId = "aaaabbbb-cccc-4ddd-8eee-ffffffffffff";
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: [`/library?series=${longId}`],
+        visit: { filters: { series: longId } },
         cacheParams: { series: longId },
       });
       const chips = await screen.findByTestId("filter-chips");
@@ -1057,7 +1023,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [book],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         details: [detailFixture(book)],
       });
       await screen.findByTestId("library-table");
@@ -1116,7 +1082,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [book],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
@@ -1140,7 +1106,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [book],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
@@ -1157,7 +1123,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [book],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         details: [detailFixture(book)],
       });
       await screen.findByTestId("library-table");
@@ -1177,249 +1143,12 @@ describe("LibraryPage", () => {
     });
   });
 
-  describe("drawer close semantics and cross-surface drafts", () => {
-    test("typing a range keeps incomplete bounds out of list requests and preserves other filters", async () => {
-      const requests: URLSearchParams[] = [];
-      const book = bookFixture();
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-        let raw: string;
-        if (typeof input === "string") {
-          raw = input;
-        } else if (input instanceof URL) {
-          raw = input.href;
-        } else {
-          raw = input.url;
-        }
-        const url = new URL(raw, window.location.origin);
-        if (url.pathname === "/api/v1/books") {
-          requests.push(url.searchParams);
-          const lower = url.searchParams.get("pages_gte");
-          const upper = url.searchParams.get("pages_lte");
-          if (lower !== null && upper !== null && Number(lower) > Number(upper)) {
-            return Promise.resolve(
-              new Response(
-                JSON.stringify({
-                  type: "about:blank",
-                  title: "Invalid range",
-                  status: 422,
-                  detail: "pages_gte must not exceed pages_lte",
-                }),
-                { status: 422, headers: { "Content-Type": "application/problem+json" } },
-              ),
-            );
-          }
-          return Promise.resolve(
-            new Response(JSON.stringify({ items: [book], next_cursor: null }), {
-              headers: { "Content-Type": "application/json" },
-            }),
-          );
-        }
-        return Promise.resolve(
-          new Response(JSON.stringify({ items: [], next_cursor: null }), {
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      });
-      try {
-        renderLibrary({
-          items: [book],
-          nextCursor: null,
-          me: meFixture(),
-          initialEntries: ["/library?pages_gte=300&title_contains=dune"],
-          cacheParams: { pages_gte: 300, title_contains: "dune" },
-        });
-        const user = userEvent.setup();
-        await user.click(await screen.findByRole("button", { name: /^Filters/ }));
-        const drawer = await screen.findByRole("dialog");
-        const pages = drawerSection(drawer, "Pages");
-        const upper = within(pages).getByRole("spinbutton", { name: "Max" });
-        await user.type(upper, "9");
-        await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 400));
-        });
-        expect(new URLSearchParams(window.location.search).get("pages_lte")).toBeNull();
-        expect(screen.getByRole("dialog")).toBeInTheDocument();
-        await user.type(upper, "00");
-        await waitFor(() => {
-          expect(requests.some((params) => params.get("pages_lte") === "900")).toBe(true);
-          expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("900");
-          expect(upper).toHaveValue(900);
-        });
-        expect(new URLSearchParams(window.location.search).get("title_contains")).toBe("dune");
-        expect(
-          requests.every(
-            (params) => params.get("pages_lte") === null || Number(params.get("pages_lte")) >= 300,
-          ),
-        ).toBe(true);
-
-        await user.clear(upper);
-        await user.type(upper, "1");
-        await user.click(within(pages).getByRole("button", { name: "Clear Pages filters" }));
-        await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 400));
-        });
-        const cleared = new URLSearchParams(window.location.search);
-        expect(cleared.has("pages_gte")).toBe(false);
-        expect(cleared.has("pages_lte")).toBe(false);
-        expect(cleared.get("title_contains")).toBe("dune");
-        expect(within(pages).getByRole("spinbutton", { name: "Max" })).toHaveValue(null);
-      } finally {
-        fetchSpy.mockRestore();
-      }
-    });
-
-    test("a toolbar search draft survives a rail commit made from the drawer", async () => {
-      renderLibrary({
-        items: [bookFixture()],
-        nextCursor: null,
-        extraCacheParams: [{ status_any: ["reading"] }],
-      });
-      await screen.findByRole("heading", { name: "Library" });
-      const user = userEvent.setup();
-      // One character: below MIN_Q_LEN, so it stays a pure draft forever.
-      await user.type(searchBox(), "d");
-      await user.click(screen.getByRole("button", { name: /^Filters/ }));
-      const drawer = await screen.findByRole("dialog");
-      drawerSection(drawer, "Status");
-      await user.click(within(drawer).getByRole("checkbox", { name: "Reading" }));
-      await user.keyboard("{Escape}");
-      await waitFor(() => {
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-      });
-      const search = screen.getByTestId("location-search").textContent;
-      expect(search).toContain("status_any=reading");
-      expect(searchBox()).toHaveValue("d");
-    });
-
-    test("a nested vocabulary popup Escape preserves the Refine range draft", async () => {
-      renderLibrary({
-        items: [bookFixture()],
-        nextCursor: null,
-        initialEntries: ["/library?pages_gte=300&pages_lte=900"],
-        cacheParams: { pages_gte: 300, pages_lte: 900 },
-        extraCacheParams: [{ pages_gte: 300, pages_lte: 600 }],
-      });
-      const user = userEvent.setup();
-      const opener = await screen.findByRole("button", { name: /^Filters/ });
-      await user.click(opener);
-      const drawer = await screen.findByRole("dialog");
-      const pages = drawerSection(drawer, "Pages");
-      const upper = within(pages).getByRole("spinbutton", { name: "Max" });
-      fireEvent.change(upper, { target: { value: "600" } });
-      const authors = drawerSection(drawer, "Authors");
-      await user.click(within(authors).getByRole("button", { name: /Show authors .*suggestions/ }));
-      expect(await screen.findByRole("listbox")).toBeInTheDocument();
-      await user.keyboard("{Escape}");
-      await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
-      expect(drawer).toBeInTheDocument();
-      expect(upper).toHaveValue(600);
-      await waitFor(() =>
-        expect(within(drawer).getByRole("combobox", { name: /Add authors/ })).toHaveFocus(),
-      );
-      await user.keyboard("{Escape}");
-      await waitFor(() => expect(drawer).not.toBeInTheDocument());
-      await waitFor(() => expect(opener).toHaveFocus());
-      await waitFor(() => {
-        expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("600");
-      });
-    });
-
-    test("closing Refine blurs and clamps an out-of-bounds range draft", async () => {
-      renderLibrary({
-        items: [bookFixture()],
-        nextCursor: null,
-        initialEntries: ["/library?pages_gte=300&pages_lte=900"],
-        cacheParams: { pages_gte: 300, pages_lte: 900 },
-        extraCacheParams: [{ pages_gte: 300, pages_lte: 300 }],
-      });
-      const user = userEvent.setup();
-      const opener = await screen.findByRole("button", { name: /^Filters/ });
-      await user.click(opener);
-      const drawer = await screen.findByRole("dialog");
-      const upper = within(drawerSection(drawer, "Pages")).getByRole("spinbutton", { name: "Max" });
-      await user.click(upper);
-      fireEvent.change(upper, { target: { value: "9" } });
-      expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("900");
-      await user.click(within(drawer).getByRole("button", { name: "Close" }));
-      await waitFor(() => expect(drawer).not.toBeInTheDocument());
-      await waitFor(() => {
-        const search = new URLSearchParams(window.location.search);
-        expect(search.get("pages_gte")).toBe("300");
-        expect(search.get("pages_lte")).toBe("300");
-      });
-      await user.click(opener);
-      const reopenedPages = drawerSection(await screen.findByRole("dialog"), "Pages");
-      expect(await within(reopenedPages).findByRole("spinbutton", { name: "Max" })).toHaveValue(
-        300,
-      );
-    });
-
-    test.each(["Escape", "close button", "outside"])(
-      "%s closes Refine and settles pending text and range edits",
-      async (dismissal) => {
-        renderLibrary({
-          items: [bookFixture()],
-          nextCursor: null,
-          initialEntries: ["/library?pages_gte=300&pages_lte=900"],
-          cacheParams: { pages_gte: 300, pages_lte: 900 },
-          extraCacheParams: [
-            { title_contains: "dune", pages_gte: 300, pages_lte: 900 },
-            { pages_gte: 300, pages_lte: 600 },
-            { title_contains: "dune", pages_gte: 300, pages_lte: 600 },
-          ],
-        });
-        const user = userEvent.setup();
-        const opener = await screen.findByRole("button", { name: /^Filters/ });
-        await user.click(opener);
-        const drawer = await screen.findByRole("dialog");
-        const title = within(drawerSection(drawer, "Title")).getByRole("textbox", {
-          name: "Filter value",
-        });
-        const upper = within(drawerSection(drawer, "Pages")).getByRole("spinbutton", {
-          name: "Max",
-        });
-        await user.click(upper);
-        act(() => {
-          fireEvent.change(title, { target: { value: "dune" } });
-          fireEvent.change(upper, { target: { value: "600" } });
-        });
-        expect(new URLSearchParams(window.location.search).get("title_contains")).toBeNull();
-        expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("900");
-        if (dismissal === "Escape") {
-          await user.keyboard("{Escape}");
-        } else if (dismissal === "close button") {
-          await user.click(within(drawer).getByRole("button", { name: "Close" }));
-        } else {
-          await user.click(document.body);
-        }
-        await waitFor(() => expect(drawer).not.toBeInTheDocument());
-        await waitFor(() => expect(opener).toHaveFocus());
-        await waitFor(() => {
-          const search = new URLSearchParams(window.location.search);
-          expect(search.get("title_contains")).toBe("dune");
-          expect(search.get("pages_gte")).toBe("300");
-          expect(search.get("pages_lte")).toBe("600");
-        });
-        await user.click(opener);
-        const reopened = await screen.findByRole("dialog");
-        expect(
-          await within(drawerSection(reopened, "Title")).findByRole("textbox", {
-            name: "Filter value",
-          }),
-        ).toHaveValue("dune");
-        expect(
-          await within(drawerSection(reopened, "Pages")).findByRole("spinbutton", { name: "Max" }),
-        ).toHaveValue(600);
-      },
-    );
-  });
-
   describe("selection and batch bar", () => {
     test("selecting rows raises the batch bar with count, clear, and no Remove action", async () => {
       renderLibrary({
         items: [bookFixture({ id: "a", title: "Stoner" }), bookFixture({ id: "b" })],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
@@ -1436,7 +1165,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture({ id: "a" })],
         nextCursor: "eyJ4Ijox",
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
@@ -1449,7 +1178,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture({ id: "a" })],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         extraCacheParams: [{ q: "war" }],
       });
       await screen.findByTestId("library-table");
@@ -1466,7 +1195,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture({ id: "a" })],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         extraCacheParams: [{}],
       });
       await screen.findByTestId("library-table");
@@ -1497,7 +1226,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       const group = screen.getByRole("radiogroup", { name: "Table density" });
@@ -1524,7 +1253,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       expect(screen.getByRole("columnheader", { name: /^Subtitle/ })).toBeInTheDocument();
@@ -1546,7 +1275,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         preferences: preferencesFixture({ hidden_columns: ["subtitle"] }),
       });
       await screen.findByTestId("library-table");
@@ -1557,11 +1286,11 @@ describe("LibraryPage", () => {
     test("several column toggles inside the debounce window send one merged patch", async () => {
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
-        .mockResolvedValue(preferencesResponse(preferencesFixture()));
+        .mockImplementation(() => Promise.resolve(preferencesResponse(preferencesFixture())));
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
@@ -1593,7 +1322,7 @@ describe("LibraryPage", () => {
         renderLibrary({
           items: [bookFixture()],
           nextCursor: null,
-          initialEntries: ["/library?view=table"],
+          visit: { view: "table" },
           preferences: preferencesFixture({
             hidden_columns: ["subtitle"],
             density: "compact",
@@ -1649,7 +1378,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
@@ -1665,7 +1394,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         preferences: preferencesFixture({ hidden_columns: [] }),
       });
       await screen.findByTestId("library-table");
@@ -1675,7 +1404,7 @@ describe("LibraryPage", () => {
       expect(reset).toBeEnabled();
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
-        .mockResolvedValue(preferencesResponse(preferencesFixture()));
+        .mockImplementation(() => Promise.resolve(preferencesResponse(preferencesFixture())));
       await user.click(reset);
       await waitFor(() => {
         expect(preferenceWrites(fetchSpy)).toEqual([{ hidden_columns: null }]);
@@ -1693,7 +1422,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
@@ -1725,7 +1454,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         preferences: null,
       });
       await screen.findByTestId("library-table");
@@ -1743,7 +1472,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
       });
       await screen.findByTestId("library-table");
       expect(screen.getByRole("columnheader", { name: /^Subtitle/ })).toBeInTheDocument();
@@ -1769,7 +1498,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         preferences: null,
       });
       await screen.findByTestId("library-table");
@@ -1813,7 +1542,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?sort=title"],
+        visit: {},
         preferences: preferencesFixture({ sort_stack: "-pages" }),
         cacheParams: { sort: "-pages" },
       });
@@ -1840,7 +1569,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         extraCacheParams: [{ sort: "title" }],
       });
       await findLibraryTable();
@@ -1864,7 +1593,7 @@ describe("LibraryPage", () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?view=table"],
+        visit: { view: "table" },
         preferences: preferencesFixture({ sort_stack: "-title" }),
         cacheParams: { sort: "-title" },
         extraCacheParams: [{ sort: "title" }],
@@ -1882,7 +1611,7 @@ describe("LibraryPage", () => {
     test("the rail's reset drops the override and returns to the installation order", async () => {
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
-        .mockResolvedValue(preferencesResponse(preferencesFixture()));
+        .mockImplementation(() => Promise.resolve(preferencesResponse(preferencesFixture())));
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
@@ -1905,7 +1634,7 @@ describe("LibraryPage", () => {
       fetchSpy.mockRestore();
     });
 
-    test("a preferences response landing after the loader's seed re-sorts the list once", async () => {
+    test("a late preferences response re-sorts the initial list once", async () => {
       // The loader can only seed from the mirror; a device without one seeds
       // the installation order. When the response reveals an override, the
       // component asks for the sorted key: the sequence must reach the wire
@@ -1961,4 +1690,540 @@ describe("LibraryPage", () => {
       fetchSpy.mockRestore();
     });
   });
+});
+
+function deferredResponse(): {
+  promise: Promise<Response>;
+  resolve: (response: Response) => void;
+  reject: (error: Error) => void;
+} {
+  let resolve: (response: Response) => void = () => {
+    throw new Error("promise not initialised");
+  };
+  let reject: (error: Error) => void = () => {
+    throw new Error("promise not initialised");
+  };
+  const promise = new Promise<Response>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+function booksResponse(items: BookListItem[], next_cursor: string | null = null): Response {
+  return new Response(JSON.stringify({ items, next_cursor }), {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+test("selection made on retained rows clears when a disjoint result replaces them", async () => {
+  const pending = deferredResponse();
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+  const origin = bookFixture({ title: "Alpha", id: "alpha" });
+  const destination = bookFixture({
+    title: "Beta",
+    id: "beta",
+    work_id: "different",
+  });
+  const { client } = renderLibrary({
+    items: [origin],
+    nextCursor: "old-page",
+    visit: { filters: { q: "alpha" }, view: "table" },
+    cacheParams: { q: "alpha" },
+    me: meFixture(),
+  });
+  await findLibraryTable();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("checkbox", { name: "Select all loaded books" }));
+  fireEvent.change(searchBox(), { target: { value: "beta" } });
+  expect(await screen.findByText("Updating results…")).toBeInTheDocument();
+  expect(observedListKeys.at(-1)).toEqual(queryKeys.books.list({ q: "alpha" }));
+  expect(screen.getByText("Alpha")).toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: "Select all loaded books" })).not.toBeChecked();
+  expect(screen.queryByRole("button", { name: /Load more/i })).not.toBeInTheDocument();
+  expect(client.getQueryData(queryKeys.books.list({ q: "beta" }))).toBeUndefined();
+  await user.click(screen.getByRole("checkbox", { name: "Select" }));
+  expect(await screen.findByRole("toolbar", { name: "Batch actions" })).toHaveTextContent(
+    "1 selected",
+  );
+  pending.resolve(booksResponse([destination]));
+  await screen.findByText("Beta");
+  expect(screen.queryByRole("toolbar", { name: "Batch actions" })).not.toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: "Select" })).not.toBeChecked();
+  expect(observedListKeys.at(-1)).toEqual(queryKeys.books.list({ q: "beta" }));
+  expect(
+    client.getQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({ q: "alpha" }))
+      ?.pages[0].items,
+  ).toEqual([origin]);
+  expect(
+    client.getQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({ q: "beta" }))
+      ?.pages[0].items,
+  ).toEqual([destination]);
+  fetchSpy.mockRestore();
+});
+
+test("a late old page cannot append to a new filter result", async () => {
+  const oldPage = deferredResponse();
+  const origin = bookFixture({ title: "Origin" });
+  const destination = bookFixture({ title: "Destination", id: "destination" });
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    let raw: string;
+    if (typeof input === "string") raw = input;
+    else if (input instanceof URL) raw = input.href;
+    else raw = input.url;
+    const params = new URL(raw, window.location.origin).searchParams;
+    return params.has("cursor") ? oldPage.promise : Promise.resolve(booksResponse([destination]));
+  });
+  const { client } = renderLibrary({ items: [origin], nextCursor: "old-page" });
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Load more" }));
+  fireEvent.change(searchBox(), { target: { value: "destination" } });
+  await screen.findByText("Destination");
+  oldPage.resolve(booksResponse([bookFixture({ title: "Late Old Page", id: "late" })]));
+  await act(async () => {
+    await oldPage.promise;
+  });
+  expect(screen.queryByText("Late Old Page")).not.toBeInTheDocument();
+  expect(
+    client.getQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({ q: "destination" }))
+      ?.pages,
+  ).toHaveLength(1);
+  fetchSpy.mockRestore();
+});
+
+test("a successful empty response replaces placeholders", async () => {
+  const pending = deferredResponse();
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+  const { client } = renderLibrary({ items: [bookFixture({ title: "Origin" })], nextCursor: null });
+  fireEvent.change(await screen.findByRole("searchbox"), { target: { value: "missing" } });
+  expect(screen.getByText("Origin")).toBeInTheDocument();
+  pending.resolve(booksResponse([]));
+  expect(await screen.findByText("No books match these filters")).toBeInTheDocument();
+  expect(screen.queryByText("Origin")).not.toBeInTheDocument();
+  expect(
+    client.getQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({ q: "missing" }))
+      ?.pages[0].items,
+  ).toEqual([]);
+  fetchSpy.mockRestore();
+});
+
+test.each(["grid", "table"] as const)(
+  "invalid active text prevents the whole %s request, paging and invalidation until corrected",
+  async (view) => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(booksResponse([bookFixture({ title: "Corrected" })]));
+    const { client } = renderLibrary({
+      items: [bookFixture()],
+      nextCursor: "next-page",
+      visit: { view, filters: { pages: { gte: 100 } } },
+      cacheParams: { pages_gte: 100 },
+    });
+    await screen.findByRole("searchbox");
+    if (view === "table") await findLibraryTable();
+    fireEvent.change(searchBox(), { target: { value: "x".repeat(201) } });
+    expect(searchBox()).toHaveValue("x".repeat(201));
+    expect(searchBox()).toHaveAttribute("aria-invalid", "true");
+    expect(searchBox()).toHaveAccessibleDescription(
+      "Use 200 characters or fewer, excluding surrounding spaces.",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Results are paused.");
+    expect(screen.queryByRole("button", { name: /Load more/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.books.all });
+      await client.refetchQueries({ queryKey: queryKeys.books.all });
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("visit-params")).toHaveTextContent("pages_gte=100");
+    fireEvent.change(searchBox(), { target: { value: "The Sea" } });
+    await screen.findByText("Corrected");
+    const requested = fetchSpy.mock.calls.map(([input]) => {
+      let raw: string;
+      if (typeof input === "string") raw = input;
+      else if (input instanceof URL) raw = input.href;
+      else raw = input.url;
+      return new URL(raw, window.location.origin).searchParams;
+    });
+    expect(requested.filter((params) => params.get("q") === "The Sea")).toHaveLength(1);
+    expect(requested.every((params) => params.get("pages_gte") === "100")).toBe(true);
+    expect(requested.filter((params) => !params.has("q"))).toHaveLength(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fetchSpy.mockRestore();
+  },
+);
+
+test("an uncached restored overlong filter stays editable and Clear recovers the full request", async () => {
+  const pending = deferredResponse();
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+  renderLibrary({
+    items: [],
+    nextCursor: null,
+    uncached: true,
+    visit: { filters: { title: { op: "ne", text: "😀".repeat(201) }, q: "Sea" } },
+  });
+  expect(await screen.findByRole("searchbox")).toHaveValue("Sea");
+  expect(screen.getByRole("alert")).toHaveTextContent("Results are paused.");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /^Filters/ }));
+  const title = drawerSection(screen.getByRole("dialog"), "Title");
+  const input = within(title).getByRole("textbox", { name: "Filter value" });
+  expect(input).toHaveValue("😀".repeat(201));
+  expect(input).toHaveAttribute("aria-invalid", "true");
+  expect(input).toHaveAccessibleDescription(
+    "Use 200 characters or fewer, excluding surrounding spaces.",
+  );
+  expect(fetchSpy).not.toHaveBeenCalled();
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: /^Clear all$/ }));
+  expect(searchBox()).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^Filters/ })).toBeInTheDocument();
+  expect(screen.getByText("Updating results…")).toBeInTheDocument();
+  expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+  expect(screen.queryByText("No books yet")).not.toBeInTheDocument();
+  expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+  expect(fetchSpy.mock.calls.map(([input]) => input)).toEqual([
+    new URL("/api/v1/books", window.location.origin),
+  ]);
+  pending.resolve(booksResponse([bookFixture({ title: "Recovered" })]));
+  await screen.findByText("Recovered");
+  expect(searchBox()).toHaveValue("");
+  expect(screen.queryByText("Updating results…")).not.toBeInTheDocument();
+  expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  expect(fetchSpy.mock.calls[0]?.[0]).toEqual(new URL("/api/v1/books", window.location.origin));
+  fetchSpy.mockRestore();
+});
+
+test.each([false, true])(
+  "server 422 remains recoverable with controls mounted, initial=%s",
+  async (uncached) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 422,
+          type: "https://reverie.example/probs/invalid-query",
+          title: "Invalid query",
+          detail: "A server-side restriction",
+        }),
+        { status: 422, headers: { "Content-Type": "application/problem+json" } },
+      ),
+    );
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      uncached,
+      visit: { filters: { q: "restricted" } },
+      cacheParams: { q: "restricted" },
+    });
+    if (!uncached)
+      fireEvent.change(await screen.findByRole("searchbox"), { target: { value: "rejected" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("These filters could not be used.");
+    expect(searchBox()).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Filters/ })).toBeInTheDocument();
+    expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockResolvedValue(booksResponse([bookFixture({ title: "Recovered" })]));
+    fireEvent.change(searchBox(), { target: { value: "corrected" } });
+    await screen.findByText("Recovered");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fetchSpy.mockRestore();
+  },
+);
+
+test("an initial uncached load uses the skeleton, then mounts the controls with its result", async () => {
+  const pending = deferredResponse();
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+  renderLibrary({ items: [], nextCursor: null, uncached: true });
+  expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+  expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+  pending.resolve(booksResponse([bookFixture({ title: "Initial Result" })]));
+  expect(await screen.findByText("Initial Result")).toBeInTheDocument();
+  expect(searchBox()).toBeInTheDocument();
+  fetchSpy.mockRestore();
+});
+
+test("a changed-query failure reaches the error boundary without manufacturing an empty result", async () => {
+  const pending = deferredResponse();
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  renderLibrary({ items: [bookFixture()], nextCursor: null });
+  fireEvent.change(await screen.findByRole("searchbox"), { target: { value: "different" } });
+  pending.reject(new Error("Query unavailable"));
+  expect(await screen.findByText("Query unavailable")).toBeInTheDocument();
+  expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+  fetchSpy.mockRestore();
+  errorSpy.mockRestore();
+});
+
+test("a superseded filter request is aborted and cannot overwrite the current rows", async () => {
+  const obsolete = deferredResponse();
+  let obsoleteSignal: AbortSignal | undefined;
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    let raw: string;
+    if (typeof input === "string") raw = input;
+    else if (input instanceof URL) raw = input.href;
+    else raw = input.url;
+    const url = new URL(raw, window.location.origin);
+    if (url.searchParams.get("q") === "obsolete") {
+      obsoleteSignal = init?.signal ?? undefined;
+      return obsolete.promise;
+    }
+    return Promise.resolve(
+      booksResponse([bookFixture({ title: "Current Result", id: "current" })]),
+    );
+  });
+  renderLibrary({ items: [bookFixture({ title: "Origin" })], nextCursor: null });
+  fireEvent.change(await screen.findByRole("searchbox"), { target: { value: "obsolete" } });
+  await waitFor(() => {
+    expect(obsoleteSignal).toBeDefined();
+  });
+  fireEvent.change(searchBox(), { target: { value: "current" } });
+  await screen.findByText("Current Result");
+  expect(obsoleteSignal?.aborted).toBe(true);
+  obsolete.resolve(booksResponse([bookFixture({ title: "Obsolete Result", id: "obsolete" })]));
+  await act(async () => {
+    await obsolete.promise;
+  });
+  expect(screen.queryByText("Obsolete Result")).not.toBeInTheDocument();
+  expect(screen.getByText("Current Result")).toBeInTheDocument();
+  fetchSpy.mockRestore();
+});
+
+test("loading another page retains selected books", async () => {
+  const fetchSpy = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(booksResponse([bookFixture({ id: "page-two", title: "Second page" })]));
+  renderLibrary({
+    items: [bookFixture({ title: "First page" })],
+    nextCursor: "page-two",
+    visit: { view: "table" },
+  });
+  await findLibraryTable();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("checkbox", { name: "Select" }));
+  await user.click(screen.getByRole("button", { name: /Load more/i }));
+  await screen.findByText("Second page");
+  expect(screen.getByRole("toolbar", { name: "Batch actions" })).toHaveTextContent("1 selected");
+  expect(screen.getAllByRole("checkbox", { name: "Select" })[0]).toBeChecked();
+  expect(screen.getAllByRole("checkbox", { name: "Select" })[1]).not.toBeChecked();
+  fetchSpy.mockRestore();
+});
+
+function toastAction(kind: "success" | "error", label: string): () => void {
+  const action = vi
+    .mocked(toast[kind])
+    .mock.calls.map((call) => call[1]?.action)
+    .find(
+      (candidate) =>
+        candidate !== null &&
+        typeof candidate === "object" &&
+        "label" in candidate &&
+        candidate.label === label,
+    );
+  if (action === null || typeof action !== "object" || !("onClick" in action))
+    throw new Error(`Missing ${label} action`);
+  return () => {
+    action.onClick({} as MouseEvent<HTMLButtonElement>);
+  };
+}
+
+async function editTitle(title: string, next: string): Promise<void> {
+  const cell = screen.getByText(title).closest('[role="gridcell"]');
+  if (cell === null) throw new Error("Missing title cell");
+  fireEvent.doubleClick(cell);
+  const input = await screen.findByRole("textbox");
+  fireEvent.change(input, { target: { value: next } });
+  fireEvent.keyDown(input, { key: "Enter" });
+}
+
+function metadataResponse(title: string): Response {
+  return new Response(
+    JSON.stringify({
+      title,
+      subtitle: null,
+      description: null,
+      language: null,
+      publisher: null,
+      pub_date: null,
+      isbn_10: null,
+      isbn_13: null,
+      pages: null,
+      content_rating: null,
+      genres: [],
+      moods: [],
+      tags: [],
+      contributors: { author: [], editor: [], translator: [] },
+      work_identifiers: {},
+      manifestation_identifiers: {},
+    }),
+    { headers: { "Content-Type": "application/json", ETag: '"alpha-version"' } },
+  );
+}
+
+test.each(["before", "after"])(
+  "a visible source edit begun %s intent changes and its undo stay live while the destination loads",
+  async (timing) => {
+    const destination = deferredResponse();
+    const edit = deferredResponse();
+    const origin = bookFixture({ title: "Alpha", id: "alpha" });
+    const beta = bookFixture({ title: "Beta", id: "beta", work_id: "beta-work" });
+    const alphaKey = queryKeys.books.list({ q: "alpha" });
+    const betaKey = queryKeys.books.list({ q: "beta" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      let path: string;
+      if (typeof input === "string") path = input;
+      else if (input instanceof URL) path = input.href;
+      else path = input.url;
+      if (path.includes("/metadata/revert"))
+        return Promise.resolve(new Response(null, { status: 204 }));
+      if (path.endsWith("/metadata"))
+        return init?.method === "PATCH" ? edit.promise : Promise.resolve(metadataResponse("Alpha"));
+      if (path.includes("q=beta")) return destination.promise;
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+    const { client } = renderLibrary({
+      items: [origin],
+      nextCursor: null,
+      cacheParams: { q: "alpha" },
+      visit: { filters: { q: "alpha" }, view: "table" },
+      me: meFixture(),
+    });
+    await findLibraryTable();
+    if (timing === "before") await editTitle("Alpha", "Alpha edited");
+    fireEvent.change(searchBox(), { target: { value: "beta" } });
+    await screen.findByText("Updating results…");
+    if (timing === "after") await editTitle("Alpha", "Alpha edited");
+    edit.resolve(
+      new Response(
+        JSON.stringify({
+          fields: {
+            title: {
+              value: "Alpha edited",
+              version_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              previous_version_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            },
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    expect(await screen.findByRole("link", { name: "Alpha edited" })).toBeInTheDocument();
+    expect(
+      client.getQueryData<InfiniteData<BookListResponse>>(alphaKey)?.pages[0].items[0].title,
+    ).toBe("Alpha edited");
+    expect(client.getQueryData(betaKey)).toBeUndefined();
+    act(() => {
+      toastAction("success", "Undo")();
+    });
+    expect(await screen.findByRole("link", { name: "Alpha" })).toBeInTheDocument();
+    expect(client.getQueryData<InfiniteData<BookListResponse>>(alphaKey)?.pages[0].items).toEqual([
+      origin,
+    ]);
+    expect(client.getQueryData(betaKey)).toBeUndefined();
+    destination.resolve(booksResponse([beta]));
+    await screen.findByText("Beta");
+    expect(client.getQueryData<InfiniteData<BookListResponse>>(betaKey)?.pages[0].items).toEqual([
+      beta,
+    ]);
+    fetchSpy.mockRestore();
+  },
+);
+
+test("conflict Reload fetches and displays the retained source without changing the destination", async () => {
+  const destination = deferredResponse();
+  const origin = bookFixture({ title: "Alpha", id: "alpha" });
+  const refreshed = { ...origin, title: "Alpha refreshed" };
+  const beta = bookFixture({ title: "Beta", id: "beta", work_id: "beta-work" });
+  const alphaKey = queryKeys.books.list({ q: "alpha" });
+  const betaKey = queryKeys.books.list({ q: "beta" });
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    let path: string;
+    if (typeof input === "string") path = input;
+    else if (input instanceof URL) path = input.href;
+    else path = input.url;
+    if (path.endsWith("/metadata"))
+      return Promise.resolve(
+        init?.method === "PATCH"
+          ? new Response(
+              JSON.stringify({
+                status: 412,
+                type: "https://reverie.example/probs/if-match-mismatch",
+                title: "Precondition Failed",
+              }),
+              { status: 412, headers: { "Content-Type": "application/problem+json" } },
+            )
+          : metadataResponse("Alpha refreshed"),
+      );
+    if (path.includes("q=beta")) return destination.promise;
+    if (path.includes("q=alpha")) return Promise.resolve(booksResponse([refreshed]));
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const { client } = renderLibrary({
+    items: [origin],
+    nextCursor: null,
+    cacheParams: { q: "alpha" },
+    visit: { filters: { q: "alpha" }, view: "table" },
+    me: meFixture(),
+  });
+  await findLibraryTable();
+  fireEvent.change(searchBox(), { target: { value: "beta" } });
+  await screen.findByText("Updating results…");
+  await editTitle("Alpha", "Rejected edit");
+  await waitFor(() => {
+    expect(vi.mocked(toast.error)).toHaveBeenCalled();
+  });
+  act(() => {
+    toastAction("error", "Reload")();
+  });
+  expect(await screen.findByText("Alpha refreshed")).toBeInTheDocument();
+  expect(client.getQueryData<InfiniteData<BookListResponse>>(alphaKey)?.pages[0].items).toEqual([
+    refreshed,
+  ]);
+  expect(client.getQueryData(betaKey)).toBeUndefined();
+  destination.resolve(booksResponse([beta]));
+  await screen.findByText("Beta");
+  expect(client.getQueryData<InfiniteData<BookListResponse>>(betaKey)?.pages[0].items).toEqual([
+    beta,
+  ]);
+  fetchSpy.mockRestore();
+  errorSpy.mockRestore();
+});
+
+test("rapid intent changes keep source patches live and returning to cached source preserves provenance", async () => {
+  const pending = deferredResponse();
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+  const origin = bookFixture({ title: "Alpha", id: "alpha" });
+  const alphaKey = queryKeys.books.list({ q: "alpha" });
+  const { client } = renderLibrary({
+    items: [origin],
+    nextCursor: null,
+    cacheParams: { q: "alpha" },
+    visit: { filters: { q: "alpha" }, view: "table" },
+  });
+  await findLibraryTable();
+  fireEvent.change(searchBox(), { target: { value: "beta" } });
+  await screen.findByText("Updating results…");
+  fireEvent.change(searchBox(), { target: { value: "gamma" } });
+  act(() => {
+    client.setQueryData<InfiniteData<BookListResponse>>(alphaKey, {
+      pages: [{ items: [{ ...origin, title: "Alpha patched" }], next_cursor: null }],
+      pageParams: [undefined],
+    });
+  });
+  expect(await screen.findByRole("link", { name: "Alpha patched" })).toBeInTheDocument();
+  expect(observedListKeys.at(-1)).toEqual(alphaKey);
+  expect(client.getQueryData(queryKeys.books.list({ q: "beta" }))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.books.list({ q: "gamma" }))).toBeUndefined();
+  fireEvent.change(searchBox(), { target: { value: "alpha" } });
+  await waitFor(() => {
+    expect(screen.queryByText("Updating results…")).not.toBeInTheDocument();
+  });
+  expect(screen.getByRole("link", { name: "Alpha patched" })).toBeInTheDocument();
+  expect(observedListKeys.at(-1)).toEqual(alphaKey);
+  pending.resolve(booksResponse([bookFixture({ title: "Obsolete", id: "obsolete" })]));
+  await act(async () => {
+    await pending.promise;
+  });
+  expect(screen.queryByText("Obsolete")).not.toBeInTheDocument();
+  fetchSpy.mockRestore();
 });

@@ -1,33 +1,3 @@
-/**
- * Contextual filter rail for browse surfaces: the editing surface for the
- * library's filter grammar and sort stack. Quick search lives in the page
- * toolbar (`components/library/QuickSearch`) and owns its own URL key, so
- * the two surfaces share no state and need no protocol between them.
- *
- * One collapsible section per editable concern: the sort stack, the shelf
- * and series facets, the vocabulary families (authors, tags, genres,
- * moods), reading status, the text-operator columns (title, subtitle,
- * ISBN), the numeric ranges (pages, rating), and the added-date range. A
- * section with active conditions opens on mount, shows a count beside its
- * name, and carries a clear affordance; inactive sections mount collapsed
- * to keep the column scannable.
- *
- * URL state is canonical for filters, and each section writes only the keys
- * of its own slice (see `lib/hooks/use-library-filters`). Free-text and
- * numeric sections debounce their writes, which defers the URL update
- * without deferring the value they render. Range inputs keep incomplete
- * drafts locally; date writes are immediate. A clear affordance writes immediately, and that is what
- * cancels a debounced write still queued on the same keys, so a pending
- * keystroke cannot resurrect a condition the user just cleared. Nothing
- * here can disturb a sibling section, because nothing here writes a
- * sibling's keys.
- *
- * Sort is the exception: it is a per-user preference with no URL form
- * (docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md), so the sort section
- * renders and edits the resolved stack the page passes down, and its
- * gestures dispatch to the page's one sort intent handler. The table view's
- * header click / ctrl-click edits the same stack through the same handler.
- */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from "lucide-react";
 import { Button as AriaButton } from "react-aria-components";
@@ -46,11 +16,10 @@ import {
 } from "@/components/ui/select";
 import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
 import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
-import { useLibraryFilters, type FilterSlice } from "@/lib/hooks/use-library-filters";
+import type { LibraryFilters } from "@/lib/hooks/use-library-filters";
 import { queryKeys } from "@/lib/query/keys";
 import {
   TEXT_COLUMN_OPS,
-  type FilterState,
   type RangeFilter,
   type TextFilter,
   type TextOp,
@@ -72,6 +41,8 @@ export interface SeriesFacetOption {
 }
 
 interface FilterRailProps {
+  owner: LibraryFilters;
+  showContradiction: boolean;
   /** Distinct series from the loaded pages. */
   seriesOptions: SeriesFacetOption[];
   /** The resolved effective sort stack; see the module docstring. */
@@ -85,28 +56,24 @@ interface FilterRailProps {
 
 /** The library's filter and sort editing surface; see the module docstring. */
 export function FilterRail({
+  owner,
+  showContradiction,
   seriesOptions,
   sortLevels,
   sortInherited,
   onSortChange,
 }: Readonly<FilterRailProps>): ReactElement {
-  const { filters, commitSlice } = useLibraryFilters();
+  const { filters, commitAll } = owner;
 
   const authorIds = [
     ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
   ];
   const authorNames = useAuthorLabels(authorIds);
 
-  /** Typed inputs debounce; every other gesture writes immediately, which
-   *  is also what cancels a debounced write still queued on those keys. */
-  const commitTyped = (slice: FilterSlice, patch: (current: FilterState) => FilterState): void => {
-    commitSlice(slice, patch, { debounced: true });
-  };
-
   const setCount = (set: { all: string[]; any: string[]; none: string[] }): number =>
     set.all.length + set.any.length + set.none.length;
   const textCount = (value: TextFilter): number =>
-    [value.contains, value.eq, value.ne, value.empty].filter((part) => part !== undefined).length;
+    value.op === "empty" || (value.text?.trim() ?? "") !== "" ? 1 : 0;
   const rangeCount = (value: RangeFilter): number =>
     [value.gte, value.lte, value.empty].filter((part) => part !== undefined).length;
 
@@ -115,7 +82,7 @@ export function FilterRail({
       title={title}
       activeCount={setCount(filters[family])}
       onClear={() => {
-        commitSlice(family, (current) => ({
+        commitAll((current) => ({
           ...current,
           [family]: { all: [], any: [], none: [] },
         }));
@@ -128,7 +95,7 @@ export function FilterRail({
           // Take only this editor's family from its output: the rest of the
           // editor's state is a render snapshot and must not overwrite a
           // commit that landed since.
-          commitSlice(family, (current) => ({ ...current, [family]: next[family] }));
+          commitAll((current) => ({ ...current, [family]: next[family] }));
         }}
         resolveAuthorLabel={authorNames.labelFor}
       />
@@ -141,17 +108,17 @@ export function FilterRail({
       <ShelfSection
         activeShelf={filters.shelf}
         onPick={(shelf) => {
-          commitSlice("shelf", (current) => ({ ...current, shelf }));
+          commitAll((current) => ({ ...current, shelf }));
         }}
         onClear={() => {
-          commitSlice("shelf", (current) => ({ ...current, shelf: undefined }));
+          commitAll((current) => ({ ...current, shelf: undefined }));
         }}
       />
       <RailSection
         title="Series"
         activeCount={filters.series === undefined ? 0 : 1}
         onClear={() => {
-          commitSlice("series", (current) => ({ ...current, series: undefined }));
+          commitAll((current) => ({ ...current, series: undefined }));
         }}
       >
         <FacetList
@@ -159,7 +126,7 @@ export function FilterRail({
           active={filters.series}
           emptyText="No series in view."
           onPick={(series) => {
-            commitSlice("series", (current) => ({ ...current, series }));
+            commitAll((current) => ({ ...current, series }));
           }}
         />
       </RailSection>
@@ -171,13 +138,13 @@ export function FilterRail({
         title="Status"
         activeCount={filters.status.any.length + filters.status.none.length}
         onClear={() => {
-          commitSlice("status", (current) => ({ ...current, status: { any: [], none: [] } }));
+          commitAll((current) => ({ ...current, status: { any: [], none: [] } }));
         }}
       >
         <StatusEditor
           value={filters.status.any}
           onChange={(any) => {
-            commitSlice("status", (current) => ({
+            commitAll((current) => ({
               ...current,
               status: { ...current.status, any },
             }));
@@ -190,10 +157,10 @@ export function FilterRail({
         value={filters.title}
         activeCount={textCount(filters.title)}
         onChange={(title) => {
-          commitTyped("title", (current) => ({ ...current, title }));
+          commitAll((current) => ({ ...current, title }));
         }}
         onClear={() => {
-          commitSlice("title", (current) => ({ ...current, title: {} }));
+          commitAll((current) => ({ ...current, title: {} }));
         }}
       />
       <TextSection
@@ -202,10 +169,10 @@ export function FilterRail({
         value={filters.subtitle}
         activeCount={textCount(filters.subtitle)}
         onChange={(subtitle) => {
-          commitTyped("subtitle", (current) => ({ ...current, subtitle }));
+          commitAll((current) => ({ ...current, subtitle }));
         }}
         onClear={() => {
-          commitSlice("subtitle", (current) => ({ ...current, subtitle: {} }));
+          commitAll((current) => ({ ...current, subtitle: {} }));
         }}
       />
       <TextSection
@@ -214,35 +181,38 @@ export function FilterRail({
         value={filters.isbn13}
         activeCount={textCount(filters.isbn13)}
         onChange={(isbn13) => {
-          commitTyped("isbn13", (current) => ({ ...current, isbn13 }));
+          commitAll((current) => ({ ...current, isbn13 }));
         }}
         onClear={() => {
-          commitSlice("isbn13", (current) => ({ ...current, isbn13: {} }));
+          commitAll((current) => ({ ...current, isbn13: {} }));
         }}
       />
       <RangeSection
         title="Pages"
+        showContradiction={showContradiction}
         min={0}
+        max={2147483647}
         value={filters.pages}
         activeCount={rangeCount(filters.pages)}
-        onChange={(pages) => {
-          commitTyped("pages", (current) => ({ ...current, pages }));
+        onChange={(patch) => {
+          commitAll((current) => ({ ...current, pages: patch(current.pages) }));
         }}
         onClear={() => {
-          commitSlice("pages", (current) => ({ ...current, pages: {} }));
+          commitAll((current) => ({ ...current, pages: {} }));
         }}
       />
       <RangeSection
         title="Rating"
+        showContradiction={showContradiction}
         min={1}
         max={5}
         value={filters.rating}
         activeCount={rangeCount(filters.rating)}
-        onChange={(rating) => {
-          commitTyped("rating", (current) => ({ ...current, rating }));
+        onChange={(patch) => {
+          commitAll((current) => ({ ...current, rating: patch(current.rating) }));
         }}
         onClear={() => {
-          commitSlice("rating", (current) => ({ ...current, rating: {} }));
+          commitAll((current) => ({ ...current, rating: {} }));
         }}
       />
       <RailSection
@@ -251,7 +221,7 @@ export function FilterRail({
           (filters.addedAfter === undefined ? 0 : 1) + (filters.addedBefore === undefined ? 0 : 1)
         }
         onClear={() => {
-          commitSlice("added", (current) => ({
+          commitAll((current) => ({
             ...current,
             addedAfter: undefined,
             addedBefore: undefined,
@@ -259,14 +229,14 @@ export function FilterRail({
         }}
       >
         <DateRangeEditor
+          showContradiction={showContradiction}
           after={filters.addedAfter}
           before={filters.addedBefore}
-          onChange={({ after, before }) => {
-            commitSlice("added", (current) => ({
-              ...current,
-              addedAfter: after,
-              addedBefore: before,
-            }));
+          onChange={(patch) => {
+            commitAll((current) => {
+              const next = patch({ after: current.addedAfter, before: current.addedBefore });
+              return { ...current, addedAfter: next.after, addedBefore: next.before };
+            });
           }}
         />
       </RailSection>
@@ -569,13 +539,9 @@ type TextSectionProps = {
   value: TextFilter;
   activeCount: number;
   onChange: (next: TextFilter) => void;
-  /** Clear affordance, undebounced, so it cancels a pending typed write. */
   onClear: () => void;
 };
 
-/** The editor renders the slice's own state directly: there is no draft to
- *  hold, because a debounced write updates that state at once and defers
- *  only the URL. */
 function TextSection({
   title,
   ops,
@@ -592,17 +558,18 @@ function TextSection({
 }
 
 type RangeSectionProps = {
+  showContradiction: boolean;
   title: string;
   min?: number;
   max?: number;
   value: RangeFilter;
   activeCount: number;
-  onChange: (next: RangeFilter) => void;
-  /** Clear affordance, undebounced, so it cancels a pending typed write. */
+  onChange: (patch: (current: RangeFilter) => RangeFilter) => void;
   onClear: () => void;
 };
 
 function RangeSection({
+  showContradiction,
   title,
   min,
   max,
@@ -613,7 +580,15 @@ function RangeSection({
 }: Readonly<RangeSectionProps>): ReactElement {
   return (
     <RailSection title={title} activeCount={activeCount} onClear={onClear}>
-      <RangeFilterEditor value={value} min={min} max={max} allowEmpty onChange={onChange} />
+      <RangeFilterEditor
+        label={title}
+        showContradiction={showContradiction}
+        value={value}
+        min={min}
+        max={max}
+        allowEmpty
+        onChange={onChange}
+      />
     </RailSection>
   );
 }

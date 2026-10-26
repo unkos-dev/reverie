@@ -1,243 +1,136 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { NuqsAdapter } from "nuqs/adapters/react-router/v8";
-import type { ReactElement } from "react";
-import { createBrowserRouter, RouterProvider } from "react-router";
-import { afterEach, describe, expect, test } from "vite-plus/test";
+import { cleanup, act, fireEvent, render, screen } from "@testing-library/react";
+import { useState, type ReactElement } from "react";
+import { MemoryRouter } from "react-router";
+import { afterEach, expect, test, vi } from "vite-plus/test";
+import { emptyFilterState } from "@/routes/library-params";
+import { useLibraryFilters } from "./use-library-filters";
 
-import { FILTER_PARAM_KEYS, PURGE_ONLY_PARAM_KEYS, TEXT_COLUMN_OPS } from "@/routes/library-params";
-
-import { ALL_FILTER_KEYS, SLICE_KEYS, useLibraryFilters } from "./use-library-filters";
-
+let entry: Record<string, unknown>;
+function installNavigation(state: Record<string, unknown> = {}): void {
+  entry = state;
+  const events = new EventTarget();
+  vi.stubGlobal("navigation", {
+    currentEntry: { key: "visit", getState: () => entry },
+    updateCurrentEntry: ({ state: next }: { state: Record<string, unknown> }) => {
+      entry = next;
+    },
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+  });
+}
 function Probe(): ReactElement {
-  const { commitSlice, clearAll, commitAll } = useLibraryFilters();
+  const owner = useLibraryFilters();
+  const [, rerender] = useState(0);
   return (
-    <div>
+    <>
+      <output>{JSON.stringify({ filters: owner.filters, view: owner.view })}</output>
       <button
-        type="button"
         onClick={() => {
-          // Two typed slices, one tick: both writes are debounced and both
-          // are still queued when the clear below lands.
-          commitSlice("title", (current) => ({ ...current, title: { contains: "dune" } }), {
-            debounced: true,
-          });
-          commitSlice("pages", (current) => ({ ...current, pages: { gte: 300 } }), {
-            debounced: true,
-          });
+          owner.commitAll((current) => ({ ...current, title: { op: "eq", text: "the sea " } }));
+          owner.commitAll((current) => ({ ...current, pages: { gte: 300 } }));
         }}
       >
-        type-two-slices
+        siblings
       </button>
       <button
-        type="button"
         onClick={() => {
-          // Different slices, one tick, neither debounced.
-          commitSlice("shelf", (current) => ({ ...current, shelf: "shelf-1" }));
-          commitSlice("series", (current) => ({ ...current, series: "series-1" }));
+          owner.commitAll((current) => ({ ...current, pages: { gte: 999 } }));
+          owner.clearAll();
+          owner.commitAll((current) => ({ ...current, q: " a " }));
         }}
       >
-        pick-two-slices
-      </button>
-      <button type="button" onClick={clearAll}>
-        clear-all
+        blur-clear-type
       </button>
       <button
-        type="button"
         onClick={() => {
-          // Two values in one set family, to prove the key survives as a
-          // repeated param rather than collapsing to the last one.
-          commitSlice("genres", (current) => ({
-            ...current,
-            genres: { ...current.genres, any: ["scifi", "fantasy"] },
-          }));
-          commitSlice("status", (current) => ({
-            ...current,
-            status: { ...current.status, any: ["reading", "finished"] },
-          }));
+          owner.setView("table");
+          owner.clearAll();
         }}
       >
-        pick-multi
+        view-clear
       </button>
       <button
-        type="button"
         onClick={() => {
-          // The chip-removal shape: drop one condition, leave the rest.
-          commitAll((current) => ({ ...current, shelf: undefined }));
+          rerender((value) => value + 1);
         }}
       >
-        remove-chip
+        render
       </button>
-    </div>
+    </>
   );
 }
-
-function renderProbe(initialEntry = "/library"): void {
-  window.history.replaceState(null, "", initialEntry);
-  const router = createBrowserRouter([
-    {
-      path: "/library",
-      element: (
-        <NuqsAdapter>
-          <Probe />
-        </NuqsAdapter>
-      ),
-    },
-  ]);
-  render(<RouterProvider router={router} />);
+function mount(state?: Record<string, unknown>): void {
+  installNavigation(state);
+  render(
+    <MemoryRouter>
+      <Probe />
+    </MemoryRouter>,
+  );
 }
-
-function currentSearch(): URLSearchParams {
-  return new URLSearchParams(window.location.search);
-}
-
-async function debounceSettled(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 400));
-}
-
 afterEach(() => {
-  window.history.replaceState(null, "", "/library");
+  cleanup();
+  vi.unstubAllGlobals();
 });
-
-describe("useLibraryFilters", () => {
-  test("same-tick writes to different slices both land", async () => {
-    renderProbe("/library?keep=yes");
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "pick-two-slices" }));
-    await waitFor(() => {
-      const search = currentSearch();
-      expect(search.get("shelf")).toBe("shelf-1");
-      expect(search.get("series")).toBe("series-1");
-      expect(search.get("keep")).toBe("yes");
-    });
+test("same-turn sibling edits compose and preserve unrelated native entry data", () => {
+  mount({ routerData: { keep: 1 } });
+  fireEvent.click(screen.getByText("siblings"));
+  expect(entry).toEqual({
+    routerData: { keep: 1 },
+    reverieLibrary: {
+      filters: {
+        ...emptyFilterState(),
+        title: { op: "eq", text: "the sea " },
+        pages: { gte: 300 },
+      },
+    },
   });
-
-  test("a filter write drops the cursor in the same update", async () => {
-    renderProbe("/library?cursor=abc");
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "pick-two-slices" }));
-    await waitFor(() => {
-      const search = currentSearch();
-      expect(search.get("shelf")).toBe("shelf-1");
-      // Same update, so there is no window in which a filter change is
-      // observable with the stale keyset position still attached.
-      expect(search.get("cursor")).toBeNull();
-    });
+  expect(screen.getByRole("status")).toHaveTextContent("the sea ");
+});
+test("blur, Clear and subsequent typing use the current intent without resurrection", () => {
+  mount();
+  fireEvent.click(screen.getByText("siblings"));
+  fireEvent.click(screen.getByText("blur-clear-type"));
+  expect(entry.reverieLibrary).toEqual({ filters: { ...emptyFilterState(), q: " a " } });
+});
+test("clear preserves the visit view override", () => {
+  mount();
+  fireEvent.click(screen.getByText("view-clear"));
+  expect(entry.reverieLibrary).toEqual({ view: "table", filters: emptyFilterState() });
+});
+test.each([
+  undefined,
+  { filters: { ...emptyFilterState(), pages: { gte: -1 } }, view: "table" },
+  { filters: emptyFilterState(), view: "list" },
+])("unusable owned payload starts a clean visit without a recovery write: %j", (payload) => {
+  mount({ keep: 1, reverieLibrary: payload });
+  expect(screen.getByRole("status")).toHaveTextContent(
+    JSON.stringify({ filters: emptyFilterState() }),
+  );
+  expect(entry).toEqual({ keep: 1, reverieLibrary: payload });
+  fireEvent.click(screen.getByText("view-clear"));
+  expect(entry).toEqual({
+    keep: 1,
+    reverieLibrary: { filters: emptyFilterState(), view: "table" },
   });
-
-  test("clear-all cancels pending writes across every typed slice at once", async () => {
-    renderProbe();
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "type-two-slices" }));
-    await user.click(screen.getByRole("button", { name: "clear-all" }));
-    await debounceSettled();
-    const search = currentSearch();
-    expect(search.get("title_contains")).toBeNull();
-    expect(search.get("pages_gte")).toBeNull();
+});
+test("restores a complete visit before consumers render", () => {
+  const visit = {
+    filters: { ...emptyFilterState(), q: "restored", addedAfter: "2026-10-25" },
+    view: "table",
+  };
+  mount({ reverieLibrary: visit });
+  expect(JSON.parse(screen.getByRole("status").textContent)).toEqual(visit);
+});
+test("a fresh entry resets a reused owner instead of writing the departed snapshot", () => {
+  mount();
+  fireEvent.click(screen.getByText("siblings"));
+  act(() => {
+    Object.defineProperty(navigation.currentEntry, "key", { value: "fresh" });
   });
-
-  test("clear-all removes conditions the URL already carried", async () => {
-    renderProbe("/library?title_contains=dune&genre_any=scifi&status_any=reading&cursor=abc");
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "clear-all" }));
-    await waitFor(() => {
-      const search = currentSearch();
-      expect(search.get("title_contains")).toBeNull();
-      expect(search.getAll("genre_any")).toEqual([]);
-      expect(search.getAll("status_any")).toEqual([]);
-      expect(search.get("cursor")).toBeNull();
-    });
-  });
-
-  test("clear-all purges a dead param no wire predicate reads", async () => {
-    // `title_empty` has no predicate, so nothing parses or sends it, but a
-    // hand-crafted or stale URL can still carry one.
-    renderProbe("/library?title_empty=true");
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "clear-all" }));
-    await waitFor(() => {
-      expect(currentSearch().get("title_empty")).toBeNull();
-    });
-  });
-
-  test("a whole-grammar clear discards a pending edit rather than publishing it", async () => {
-    renderProbe("/library?shelf=shelf-1");
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "type-two-slices" }));
-    await user.click(screen.getByRole("button", { name: "remove-chip" }));
-    await debounceSettled();
-    const search = currentSearch();
-    // Being undebounced cancels the queued writes. Patching the applied
-    // grammar rather than the pending one is what stops it carrying those
-    // half-typed values out to the URL and the wire early instead.
-    expect(search.get("title_contains")).toBeNull();
-    expect(search.get("pages_gte")).toBeNull();
-    expect(search.get("shelf")).toBeNull();
-  });
-
-  test("each text slice owns exactly the keys its column declares", () => {
-    // The union assertion below cannot see this: moving a key between the
-    // codec's live and dead lists leaves their union unchanged, so the
-    // coarse census stays green while the slice that has to write the key
-    // never learns about it. The gesture would then clear the column's
-    // other keys and never write the new one. Assert the partition.
-    const textSlices = [
-      ["title", "title"],
-      ["subtitle", "subtitle"],
-      ["isbn13", "isbn_13"],
-    ] as const;
-    for (const [slice, column] of textSlices) {
-      const declared = TEXT_COLUMN_OPS[column].map((op) => `${column}_${op}`);
-      expect([...SLICE_KEYS[slice]].sort()).toEqual([...declared].sort());
-    }
-  });
-
-  test("the dead-param sweep equals the codec's purge-only list", () => {
-    // The other half of the same partition: keys clear-all sweeps that no
-    // slice owns must be exactly the params the codec declares dead.
-    const owned = new Set<string>(Object.values(SLICE_KEYS).flat());
-    const dead = ALL_FILTER_KEYS.filter((key) => key !== "q" && !owned.has(key));
-    expect([...dead].sort()).toEqual([...PURGE_ONLY_PARAM_KEYS].sort());
-  });
-
-  test("the clear-all census matches the codec's, in both directions", () => {
-    // The transport keeps its own list of every key it may write, because
-    // the codec's is `readonly string[]` and cannot be narrowed to this
-    // module's key union without a cast or a silent drop. Two lists means
-    // they can drift, so this holds them together: a filter the codec
-    // parses but clear-all never sweeps stays set forever, and a key here
-    // that the codec no longer knows is dead weight nothing will catch.
-    //
-    // Every entry having a parser is already proven by the type, so it is
-    // deliberately not re-asserted here.
-    const canonical = new Set([...FILTER_PARAM_KEYS, ...PURGE_ONLY_PARAM_KEYS]);
-    const census = new Set<string>(ALL_FILTER_KEYS);
-
-    expect([...canonical].filter((key) => !census.has(key))).toEqual([]);
-    expect([...census].filter((key) => !canonical.has(key))).toEqual([]);
-  });
-
-  test("every set-valued key round-trips as a repeated param", async () => {
-    renderProbe();
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "pick-multi" }));
-    await waitFor(() => {
-      const search = currentSearch();
-      // A key wired as a single-value parser would keep only the last
-      // value here, which the codec's clamped sets would then silently
-      // under-report rather than fail on.
-      expect(search.getAll("genre_any")).toEqual(["scifi", "fantasy"]);
-      expect(search.getAll("status_any")).toEqual(["reading", "finished"]);
-    });
-  });
-
-  test("clear-all leaves sort alone; ordering is not a filter", async () => {
-    renderProbe("/library?sort=title&title_contains=dune");
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "clear-all" }));
-    await waitFor(() => {
-      const search = currentSearch();
-      expect(search.get("title_contains")).toBeNull();
-      expect(search.get("sort")).toBe("title");
-    });
-  });
+  entry = { unrelated: "destination" };
+  fireEvent.click(screen.getByText("render"));
+  expect(screen.getByRole("status")).toHaveTextContent(
+    JSON.stringify({ filters: emptyFilterState() }),
+  );
+  expect(entry).toEqual({ unrelated: "destination" });
 });

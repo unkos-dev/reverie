@@ -70,25 +70,32 @@ test("dismisses the nested popup before the dialog and restores trigger focus", 
   });
 });
 
-test("selects an enabled value and closes through a native close action", async () => {
-  const user = userEvent;
-  render(<NestedDialog />);
-  await user.click(screen.getByRole("button", { name: "Open editor" }));
-  await user.click(await screen.findByRole("button", { name: /Status$/ }));
-  expect(await screen.findByRole("option", { name: "Unavailable" })).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  await user.keyboard("{ArrowDown}{Enter}");
-  await waitFor(() => {
-    expect(screen.getByRole("button", { name: /Status$/ })).toHaveFocus();
-  });
-  expect(screen.getByRole("button", { name: /Status$/ })).toHaveTextContent("Done");
-  await user.click(screen.getByRole("button", { name: "Finish" }));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-});
+test.each(["pointer", "keyboard"])(
+  "selects an enabled value by %s and closes through a native close action",
+  async (input) => {
+    const user = userEvent;
+    render(<NestedDialog />);
+    await user.click(screen.getByRole("button", { name: "Open editor" }));
+    await user.click(await screen.findByRole("button", { name: /Status$/ }));
+    expect(await screen.findByRole("option", { name: "Unavailable" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    if (input === "pointer") {
+      await user.click(screen.getByRole("option", { name: "Done" }));
+    } else {
+      await user.keyboard("{ArrowDown}{Enter}");
+    }
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Status$/ })).toHaveFocus();
+    });
+    expect(screen.getByRole("button", { name: /Status$/ })).toHaveTextContent("Done");
+    await user.click(screen.getByRole("button", { name: "Finish" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  },
+);
 
 test("dismisses an open dialog through its outside overlay", async () => {
   const user = userEvent;

@@ -224,9 +224,9 @@ export type ListBooksParams = {
   rating_gte?: number;
   rating_lte?: number;
   rating_empty?: boolean;
-  // Added-date bounds, day-inclusive ISO 8601 calendar dates (`YYYY-MM-DD`).
+  // Added timestamps: inclusive lower and exclusive upper RFC 3339 instants.
   created_at_gte?: string;
-  created_at_lte?: string;
+  created_at_lt?: string;
 };
 
 /**

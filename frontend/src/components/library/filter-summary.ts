@@ -4,7 +4,12 @@
  * each carrying its own removal patch. Kept apart from the chips
  * component so the projection tests need no queries.
  */
-import type { FilterState, RangeFilter, TextFilter } from "@/routes/library-params";
+import {
+  effectiveText,
+  type FilterState,
+  type RangeFilter,
+  type TextFilter,
+} from "@/routes/library-params";
 
 const STATUS_LABELS: Record<string, string> = {
   unread: "Unread",
@@ -57,27 +62,31 @@ function pushText(
   filter: TextFilter,
   prop: "title" | "subtitle" | "isbn13",
 ): void {
-  const drop = dropOp(prop);
-  if (filter.contains !== undefined)
-    segments.push({
-      key: `${key}_contains`,
-      text: `${label} contains "${filter.contains}"`,
-      remove: drop("contains"),
-    });
-  if (filter.eq !== undefined)
-    segments.push({ key: `${key}_eq`, text: `${label} is "${filter.eq}"`, remove: drop("eq") });
-  if (filter.ne !== undefined)
-    segments.push({
-      key: `${key}_ne`,
-      text: `${label} is not "${filter.ne}"`,
-      remove: drop("ne"),
-    });
-  if (filter.empty !== undefined)
-    segments.push({
-      key: `${key}_empty`,
-      text: filter.empty ? `${label} is empty` : `${label} is set`,
-      remove: drop("empty"),
-    });
+  const op = filter.op ?? "contains";
+  const text = effectiveText(filter) ?? "";
+  if (op !== "empty" && text === "") return;
+  const words = textSummary(op, text);
+  segments.push({
+    key: `${key}_${op}`,
+    text: `${label} ${words}`,
+    remove: (current) => ({
+      ...current,
+      [prop]: { ...current[prop], op: op === "empty" ? undefined : op, text: undefined },
+    }),
+  });
+}
+
+function textSummary(op: TextFilter["op"], text: string): string {
+  switch (op) {
+    case "contains":
+      return `contains "${text}"`;
+    case "eq":
+      return `is "${text}"`;
+    case "ne":
+      return `is not "${text}"`;
+    default:
+      return "is empty";
+  }
 }
 
 function pushRange(
@@ -161,10 +170,11 @@ export function buildFilterSummary(
 ): SummarySegment[] {
   const segments: SummarySegment[] = [];
   const emptyVocab = { all: [], any: [], none: [] };
-  if (filters.q !== undefined)
+  const query = filters.q?.trim() ?? "";
+  if (query !== "")
     segments.push({
       key: "q",
-      text: `Search "${filters.q}"`,
+      text: `Search "${query}"`,
       remove: (current) => ({ ...current, q: undefined }),
     });
   if (filters.shelf !== undefined)
@@ -229,13 +239,13 @@ export function buildFilterSummary(
   if (filters.addedAfter !== undefined)
     segments.push({
       key: "added_after",
-      text: `Added after ${filters.addedAfter}`,
+      text: `Added on or after ${filters.addedAfter}`,
       remove: (current) => ({ ...current, addedAfter: undefined }),
     });
   if (filters.addedBefore !== undefined)
     segments.push({
       key: "added_before",
-      text: `Added before ${filters.addedBefore}`,
+      text: `Added on or before ${filters.addedBefore}`,
       remove: (current) => ({ ...current, addedBefore: undefined }),
     });
   return segments;

@@ -26,6 +26,8 @@
   "include": [
     "vite.config.ts",
     "playwright.config.ts",
+    "playwright.library.config.ts",
+    "tests/journeys/**/*.spec.ts",
     "vite-plugins/**/*.ts",
     "scripts/a11y/*.spec.ts",
     "scripts/radix-gen/**/*.ts"

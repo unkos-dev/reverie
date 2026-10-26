@@ -120,6 +120,13 @@ a11y:
 [working-directory('frontend')]
 test:
     vp test run
+    just js::library-journeys
+
+# Library navigation and native filter journeys in an owned browser server.
+[group('js')]
+[working-directory('frontend')]
+library-journeys:
+    vp exec playwright test --config playwright.library.config.ts
 
 # Frontend production build (vp build; typecheck rides js::oxlint via tsgo).
 [group('js')]

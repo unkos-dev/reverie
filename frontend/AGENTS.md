@@ -80,26 +80,27 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 - **One Writer Per Shared State:** Client state with more than one writer gets a single owner; components dispatch to
   it, never independently read-modify-write the same URL params or store slice.
-- **Library URL State:** The library's filter and view state lives in typed per-key search params
-  (`lib/hooks/use-library-filters.ts`). Every read and every write on that surface goes through it. React Router's
-  `useSearchParams` is banned there by lint, in both directions: those writes reach the URL through
-  `history.replaceState`, which the router's history does not observe, so a read through it returns filter state that
-  goes stale as soon as anything writes, and a write through it lands where the surface cannot read it.
+- **Library Visit State:** One page-level `useLibraryFilters` owner holds published filters and the optional view
+  override after Router setup. Persist with `navigation.updateCurrentEntry`, preserving unrelated entry data. Reload and
+  traversal restore the destination; fresh entries start clean even when the page remains mounted. Filter edits do not
+  navigate. All editing surfaces receive state and dispatch functions from the page.
 - **Library Sort Is Not URL State:** Sort is a one-layer per-user preference
   (`docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md`): every sort gesture writes `sort_stack`
   through the page's one intent handler, every surface reads the one resolved stack, and the list request carries the
   override explicitly. Never add a `?sort=` reader or writer to the library surface, never send the installation default
   sort in a request, and never resolve sort independently in a component: a second resolution is the read split that
   made an inherited descending sort unclearable.
-- **A Gesture Writes Only Its Own Keys:** Each editing surface owns a slice and writes that slice alone. Writing the
-  whole grammar on every commit pushes a sibling slice's current value into that slice's pending write, overwriting an
-  edit still being typed.
-- **Clear Affordances Are Undebounced Writes:** A write that does not ask to be debounced cancels the pending debounced
-  write on the same keys before queueing its own. That is what stops a queued keystroke resurrecting a condition a clear
-  just removed, which is why no timer re-checks validity when it fires and no generation counter exists for it to check.
-- **Filters Live in the URL for Their Lifetime, Not for Sharing:** They must survive a refresh and in-app navigation,
-  but must not survive into a fresh visit days later, and no other medium has that shape without extra machinery. Link
-  sharing is not the reason; this is a self-hosted household instance. </state_ownership>
+- **Compose Current Intent:** Apply edits against the current visit snapshot so sibling edits and blur/Clear compose.
+  Clear removes filters while preserving view and sort. No Library filter timer, custom draft buffer, compatibility URL
+  parser or second persistence store is permitted.
+- **Native Input Defaults:** Use supported React Aria composition and defaults. NumberFields use integer steps and
+  intrinsic domains, without peer constraints. Optional DatePickers retain segments and calendars. Native unfinished
+  input stays with its control; complete inverted intervals remain entered and request a true empty result.
+- **Local Added Days:** Persist calendar dates. Project the lower local midnight and the upper day's following local
+  midnight into inclusive `created_at_gte` and exclusive `created_at_lt` instants. Add a calendar day before timezone
+  conversion; never add 24 elapsed hours.
+- **Displayed Cache Provenance:** Retained rows use their source query key for edits, undo and conflict reload. Current
+  intent clears selection, and placeholder pages cannot load more. </state_ownership>
 
 <styling_architecture>
 
