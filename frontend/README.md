@@ -23,8 +23,10 @@ includes OS, architecture and both installed Playwright versions.
 Choose the environment by the assertion:
 
 - Browser-dependent component behaviour belongs in `tests/browser/**/*.test.tsx`, in the `components-chromium` project.
-  Use native keyboard, focus, layout, scrolling and ResizeObserver behaviour. The dialog, UserMenu and LibraryTableView
-  suites are working examples. Do not import the jsdom setup or fabricate geometry and focus.
+  Render with `vitest-browser-react`, query with locators and assert DOM state with `await expect.element(...)`. Use
+  `userEvent` from `vite-plus/test/browser` for native keyboard and pointer interaction, with real focus, layout,
+  scrolling and ResizeObserver behaviour. The renderer owns component cleanup before each test. Do not import the jsdom
+  setup or fabricate geometry and focus.
 - Browser-independent logic belongs in a Node project. The existing `vite-plugins`, `radix-gen` and `a11y` projects
   demonstrate Node configuration; classify source tests before moving them.
 - Actual document navigation belongs in standalone browser journeys. Component tests run inside an embedded Vitest

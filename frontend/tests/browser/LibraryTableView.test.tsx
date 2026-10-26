@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
-import { userEvent } from "vite-plus/test/browser";
+import { render } from "vitest-browser-react";
+import { page, userEvent } from "vite-plus/test/browser";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router";
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { useState, type ComponentProps, type ReactElement } from "react";
@@ -104,7 +104,7 @@ function TableHarness({ sort, onSortChange, ...rest }: TableProps): ReactElement
   );
 }
 
-function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
+async function renderTableView(overrides: Partial<TableProps> = {}): Promise<TableProps> {
   const props: TableProps = {
     items: ROWS,
     sort: [],
@@ -134,35 +134,35 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
       </QueryClientProvider>
     );
   }
-  render(<Wrapper />);
+  await render(<Wrapper />);
   return props;
 }
 
 describe("LibraryTableView", () => {
   test("mounts an ARIA grid labeled Library books, with the title linking to /b/{id}", async () => {
-    renderTableView();
-    const grid = await screen.findByRole("grid", { name: "Library books" });
-    const link = within(grid).getByRole("link", { name: ROWS[0].title });
-    expect(link.getAttribute("href")).toBe(`/b/${ROWS[0].id}`);
+    await renderTableView();
+    const grid = page.getByRole("grid", { name: "Library books" });
+    const link = grid.getByRole("link", { name: ROWS[0].title });
+    await expect.element(link).toHaveAttribute("href", `/b/${ROWS[0].id}`);
   });
 
-  test("hosts no filter surface of its own", () => {
-    renderTableView();
-    expect(screen.queryByTestId("filter-bar")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Quick search")).not.toBeInTheDocument();
+  test("hosts no filter surface of its own", async () => {
+    await renderTableView();
+    await expect.element(page.getByTestId("filter-bar")).not.toBeInTheDocument();
+    await expect.element(page.getByLabelText("Quick search")).not.toBeInTheDocument();
   });
 
   test("a row with every nullable field null renders the em-dash placeholder", async () => {
-    renderTableView();
-    await screen.findByRole("grid");
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    await renderTableView();
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
+    await expect.element(page.getByText("—", { exact: true }).first()).toBeInTheDocument();
   });
 
   test("clicking the Title header sorts by title", async () => {
     const onSortChange = vi.fn();
-    renderTableView({ onSortChange });
+    await renderTableView({ onSortChange });
     const user = userEvent;
-    const header = await screen.findByRole("columnheader", { name: "Title" });
+    const header = page.getByRole("columnheader", { name: "Title (all editions)" });
     await user.click(header);
     expect(onSortChange).toHaveBeenCalledWith([{ field: "title", desc: false }]);
   });
@@ -170,69 +170,61 @@ describe("LibraryTableView", () => {
   describe("selection", () => {
     test("renders the loaded-rows select-all label and reports row selection", async () => {
       const onSelectionChange = vi.fn();
-      renderTableView({ onSelectionChange });
-      const grid = await screen.findByRole("grid");
-      expect(grid).toHaveAttribute("aria-multiselectable", "true");
-      expect(screen.getByRole("checkbox", { name: "Select all loaded books" })).toBeInTheDocument();
+      await renderTableView({ onSelectionChange });
+      const grid = page.getByRole("grid");
+      await expect.element(grid).toHaveAttribute("aria-multiselectable", "true");
+      await expect
+        .element(page.getByRole("checkbox", { name: "Select all loaded books" }))
+        .toBeInTheDocument();
       const user = userEvent;
-      await user.click(screen.getAllByRole("checkbox", { name: "Select" })[0]);
+      await user.click(page.getByRole("checkbox", { name: "Select", exact: true }).first());
       expect(onSelectionChange).toHaveBeenCalledWith(new Set([ROWS[0].id]));
     });
 
     test("select-all covers every loaded row", async () => {
       const onSelectionChange = vi.fn();
-      renderTableView({ onSelectionChange });
-      await screen.findByRole("grid");
+      await renderTableView({ onSelectionChange });
+      await expect.element(page.getByRole("grid")).toBeInTheDocument();
       const user = userEvent;
-      await user.click(screen.getByRole("checkbox", { name: "Select all loaded books" }));
+      await user.click(page.getByRole("checkbox", { name: "Select all loaded books" }));
       expect(onSelectionChange).toHaveBeenCalledWith(new Set(ROWS.map((row) => row.id)));
     });
 
     test("selected rows carry aria-selected", async () => {
-      renderTableView({ selectedIds: new Set([ROWS[0].id]) });
-      await screen.findByRole("grid");
-      const selectedRows = screen
-        .getAllByRole("row")
-        .filter((row) => row.getAttribute("aria-selected") === "true");
-      expect(selectedRows).toHaveLength(1);
+      await renderTableView({ selectedIds: new Set([ROWS[0].id]) });
+      await expect.element(page.getByRole("grid")).toBeInTheDocument();
+      await expect.poll(() => page.getByRole("row", { selected: true }).elements()).toHaveLength(1);
     });
   });
 
   test("the details button opens the drawer for its row", async () => {
     const onRowActivate = vi.fn();
-    renderTableView({ onRowActivate });
+    await renderTableView({ onRowActivate });
     const user = userEvent;
-    await user.click(
-      await screen.findByRole("button", { name: `Open details for ${ROWS[0].title}` }),
-    );
+    await user.click(page.getByRole("button", { name: `Open details for ${ROWS[0].title}` }));
     expect(onRowActivate).toHaveBeenCalledTimes(1);
     expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
   });
   test("clicking the Authors header sorts by author", async () => {
     const onSortChange = vi.fn();
-    renderTableView({ onSortChange });
-    const grid = await screen.findByRole("grid");
+    await renderTableView({ onSortChange });
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
+    const grid = page.getByRole("grid").element();
     expect(grid.scrollWidth).toBeGreaterThan(grid.clientWidth);
     const wideWidth = grid.clientWidth;
-    screen.getByTestId("pilot-container").className = "w-[320px]";
-    await waitFor(() => {
-      expect(grid.clientWidth).toBeLessThan(wideWidth);
-    });
-    const before = screen.queryByRole("columnheader", { name: "Authors" });
+    page.getByTestId("pilot-container").element().setAttribute("class", "w-[320px]");
+    await expect.poll(() => grid.clientWidth).toBeLessThan(wideWidth);
+    const before = page.getByRole("columnheader", { name: "Authors (all editions)" }).query();
     if (before !== null)
       expect(before.getBoundingClientRect().right).toBeGreaterThan(
         grid.getBoundingClientRect().right,
       );
     grid.scrollTo({ left: grid.clientWidth / 2 });
-    await waitFor(() => {
-      expect(grid.scrollLeft).toBeGreaterThan(0);
-    });
-    const header = await screen.findByRole("columnheader", { name: "Authors" });
-    await waitFor(() => {
-      expect(header.getBoundingClientRect().right).toBeLessThanOrEqual(
-        grid.getBoundingClientRect().right,
-      );
-    });
+    await expect.poll(() => grid.scrollLeft).toBeGreaterThan(0);
+    const header = page.getByRole("columnheader", { name: "Authors (all editions)" });
+    await expect
+      .poll(() => header.element().getBoundingClientRect().right)
+      .toBeLessThanOrEqual(grid.getBoundingClientRect().right);
     await userEvent.click(header);
     expect(onSortChange).toHaveBeenCalledWith([{ field: "author", desc: false }]);
   });
@@ -246,8 +238,9 @@ describe("LibraryTableView", () => {
     "real bottom scrolling respects paging state: %s",
     async (_, hasNextPage, isFetchingNextPage, isFetchNextPageError, calls) => {
       const onLoadMore = vi.fn();
-      renderTableView({ hasNextPage, isFetchingNextPage, isFetchNextPageError, onLoadMore });
-      const grid = await screen.findByRole("grid");
+      await renderTableView({ hasNextPage, isFetchingNextPage, isFetchNextPageError, onLoadMore });
+      await expect.element(page.getByRole("grid")).toBeInTheDocument();
+      const grid = page.getByRole("grid").element();
       expect(grid.scrollHeight).toBeGreaterThan(grid.clientHeight);
       const scrolled = new Promise<void>((resolve) => {
         grid.addEventListener(
@@ -260,33 +253,30 @@ describe("LibraryTableView", () => {
       });
       grid.scrollTo({ top: grid.scrollHeight });
       await scrolled;
-      await waitFor(() => {
-        expect(grid.scrollTop).toBeGreaterThan(0);
-        expect(grid.scrollHeight - grid.clientHeight - grid.scrollTop).toBeLessThanOrEqual(1);
-        expect(screen.getByRole("link", { name: ROWS[29].title })).toBeInTheDocument();
-      });
+      await expect.poll(() => grid.scrollTop).toBeGreaterThan(0);
+      await expect
+        .poll(() => grid.scrollHeight - grid.clientHeight - grid.scrollTop)
+        .toBeLessThanOrEqual(1);
+      await expect.element(page.getByRole("link", { name: ROWS[29].title })).toBeInTheDocument();
       expect(onLoadMore).toHaveBeenCalledTimes(calls);
     },
   );
 
   test("resizing the real container keeps trailing content reachable", async () => {
     const onRowActivate = vi.fn();
-    renderTableView({ onRowActivate });
-    const grid = await screen.findByRole("grid");
+    await renderTableView({ onRowActivate });
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
+    const grid = page.getByRole("grid").element();
     const initialWidth = grid.clientWidth;
-    const title = screen.getByRole("columnheader", { name: "Title" });
-    const initialTitleWidth = title.getBoundingClientRect().width;
-    const container = screen.getByTestId("pilot-container");
-    container.className = "w-[1100px]";
-    await waitFor(() => {
-      expect(grid.clientWidth).toBeGreaterThan(initialWidth);
-    });
-    await waitFor(() => {
-      expect(title.getBoundingClientRect().width).toBeGreaterThan(initialTitleWidth);
-    });
-    await userEvent.click(
-      await screen.findByRole("button", { name: `Open details for ${ROWS[0].title}` }),
-    );
+    const title = page.getByRole("columnheader", { name: "Title (all editions)" });
+    const initialTitleWidth = title.element().getBoundingClientRect().width;
+    const container = page.getByTestId("pilot-container").element();
+    container.setAttribute("class", "w-[1100px]");
+    await expect.poll(() => grid.clientWidth).toBeGreaterThan(initialWidth);
+    await expect
+      .poll(() => title.element().getBoundingClientRect().width)
+      .toBeGreaterThan(initialTitleWidth);
+    await userEvent.click(page.getByRole("button", { name: `Open details for ${ROWS[0].title}` }));
     expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
   });
 });
