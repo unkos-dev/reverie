@@ -184,11 +184,11 @@ function DashboardPage(): ReactElement {
   );
 }
 
-interface StatCardProps {
+type StatCardProps = {
   label: string;
   value: string;
   icon: ReactElement;
-}
+};
 
 function StatCard({ label, value, icon }: Readonly<StatCardProps>): ReactElement {
   return (

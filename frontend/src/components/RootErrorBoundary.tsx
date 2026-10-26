@@ -64,10 +64,10 @@ export function RootErrorBoundary(): ReactElement {
   );
 }
 
-interface ErrorSurfaceProps {
+type ErrorSurfaceProps = {
   title: string;
   detail: string;
-}
+};
 
 function ErrorSurface({ title, detail }: Readonly<ErrorSurfaceProps>): ReactElement {
   return (

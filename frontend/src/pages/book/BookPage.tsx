@@ -44,9 +44,9 @@ export function BookPage(): ReactElement {
   );
 }
 
-interface BookContentProps {
+type BookContentProps = {
   id: string;
-}
+};
 
 function BookContent({ id }: Readonly<BookContentProps>): ReactElement {
   const { data: book } = useSuspenseQuery({
@@ -124,9 +124,9 @@ function BookContent({ id }: Readonly<BookContentProps>): ReactElement {
   );
 }
 
-interface DetailCoverProps {
+type DetailCoverProps = {
   book: BookDetail;
-}
+};
 
 /**
  * Real cover art with the typographic spine fallback (spec S8) — the
@@ -152,9 +152,9 @@ function DetailCover({ book }: Readonly<DetailCoverProps>): ReactElement {
   );
 }
 
-interface TabProps {
+type TabProps = {
   book: BookDetail;
-}
+};
 
 function OverviewTab({ book }: Readonly<TabProps>): ReactElement {
   return (
@@ -188,11 +188,11 @@ function OverviewTab({ book }: Readonly<TabProps>): ReactElement {
   );
 }
 
-interface FieldProps {
+type FieldProps = {
   label: string;
   value: string;
   mono?: boolean;
-}
+};
 
 function Field({ label, value, mono = false }: Readonly<FieldProps>): ReactElement {
   return (

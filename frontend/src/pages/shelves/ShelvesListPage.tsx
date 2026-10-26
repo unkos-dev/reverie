@@ -178,14 +178,14 @@ function ShelvesContent(): ReactElement {
   );
 }
 
-interface NameDialogProps {
+type NameDialogProps = {
   open: boolean;
   title: string;
   initialName?: string;
   pending: boolean;
   onClose: () => void;
   onSubmit: (name: string) => void;
-}
+};
 
 function NameDialog({
   open,

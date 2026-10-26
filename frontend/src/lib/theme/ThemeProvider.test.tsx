@@ -17,10 +17,10 @@ vi.mock("sonner", () => ({
   },
 }));
 
-interface MatchMediaShim {
+type MatchMediaShim = {
   set: (matches: boolean) => void;
   trigger: () => void;
-}
+};
 
 function installMatchMedia(initial: boolean): MatchMediaShim {
   let matches = initial;

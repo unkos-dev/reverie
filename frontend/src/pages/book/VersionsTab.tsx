@@ -45,9 +45,9 @@ const FIELD_LABEL: Record<string, string> = {
   isbn_13: "ISBN-13",
 };
 
-interface VersionsTabProps {
+type VersionsTabProps = {
   book: BookDetail;
-}
+};
 
 /**
  * Top-level Versions tab. Owns the Edit dialog open state but delegates
@@ -109,12 +109,12 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
   );
 }
 
-interface FieldGroupProps {
+type FieldGroupProps = {
   manifestationId: string;
   field: string;
   canonical: string | null;
   rows: MetadataVersionRow[];
-}
+};
 
 /** One field's section: current canonical row + pending alternatives. */
 function FieldGroup({
@@ -197,9 +197,9 @@ function FieldGroup({
   );
 }
 
-interface CanonicalRowProps {
+type CanonicalRowProps = {
   canonical: string | null;
-}
+};
 
 function CanonicalRow({ canonical }: Readonly<CanonicalRowProps>): ReactElement {
   return (
@@ -215,11 +215,11 @@ function CanonicalRow({ canonical }: Readonly<CanonicalRowProps>): ReactElement 
   );
 }
 
-interface PendingRowProps {
+type PendingRowProps = {
   manifestationId: string;
   field: string;
   row: MetadataVersionRow;
-}
+};
 
 function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>): ReactElement {
   const queryClient = useQueryClient();

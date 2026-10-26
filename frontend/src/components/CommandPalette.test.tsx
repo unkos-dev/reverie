@@ -40,9 +40,9 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
   });
 }
 
-interface PaletteHarness {
+type PaletteHarness = {
   router: ReturnType<typeof createMemoryRouter>;
-}
+};
 
 function renderPalette(
   initialEntries: string[] = ["/library"],
