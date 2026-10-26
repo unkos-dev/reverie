@@ -112,6 +112,9 @@ async function intercept(page: Page): Promise<Fixture> {
 const search = (page: Page) => page.getByRole("searchbox", { name: "Search your library" });
 async function ready(page: Page): Promise<void> {
   await expect(search(page)).toBeVisible();
+  await page.evaluate(async () => {
+    await document.activeViewTransition?.finished;
+  });
 }
 async function refine(page: Page) {
   await page.getByRole("button", { name: /^Filters/ }).click();
