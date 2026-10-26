@@ -1054,8 +1054,14 @@ describe("LibraryPage", () => {
       // fetch from an unrelated query cannot eat the scripted rejection.
       let detailCalls = 0;
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-        const url =
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        let url: string;
+        if (typeof input === "string") {
+          url = input;
+        } else if (input instanceof URL) {
+          url = input.href;
+        } else {
+          url = input.url;
+        }
         if (url.includes(`/books/${book.id}`)) {
           detailCalls += 1;
           if (detailCalls === 1) return Promise.reject(new Error("network down"));
@@ -1637,8 +1643,14 @@ describe("LibraryPage", () => {
       let resolveRead: ((value: Response) => void) | undefined;
       const listCalls: string[] = [];
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-        const url =
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        let url: string;
+        if (typeof input === "string") {
+          url = input;
+        } else if (input instanceof URL) {
+          url = input.href;
+        } else {
+          url = input.url;
+        }
         if (url.includes(PREFERENCES_PATH) && init?.method !== "PATCH") {
           return new Promise<Response>((resolve) => {
             resolveRead = resolve;
@@ -1754,10 +1766,11 @@ test("a late old page cannot append to a new filter result", async () => {
   const origin = bookFixture({ title: "Origin" });
   const destination = bookFixture({ title: "Destination", id: "destination" });
   const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-    const params = new URL(
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-      window.location.origin,
-    ).searchParams;
+    let raw: string;
+    if (typeof input === "string") raw = input;
+    else if (input instanceof URL) raw = input.href;
+    else raw = input.url;
+    const params = new URL(raw, window.location.origin).searchParams;
     return params.has("cursor") ? oldPage.promise : Promise.resolve(booksResponse([destination]));
   });
   const { client } = renderLibrary({ items: [origin], nextCursor: "old-page" });
@@ -1823,13 +1836,13 @@ test.each(["grid", "table"] as const)(
     expect(screen.getByTestId("visit-params")).toHaveTextContent("pages_gte=100");
     fireEvent.change(searchBox(), { target: { value: "The Sea" } });
     await screen.findByText("Corrected");
-    const requested = fetchSpy.mock.calls.map(
-      ([input]) =>
-        new URL(
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-          window.location.origin,
-        ).searchParams,
-    );
+    const requested = fetchSpy.mock.calls.map(([input]) => {
+      let raw: string;
+      if (typeof input === "string") raw = input;
+      else if (input instanceof URL) raw = input.href;
+      else raw = input.url;
+      return new URL(raw, window.location.origin).searchParams;
+    });
     expect(requested.filter((params) => params.get("q") === "The Sea")).toHaveLength(1);
     expect(requested.every((params) => params.get("pages_gte") === "100")).toBe(true);
     expect(requested.filter((params) => !params.has("q"))).toHaveLength(1);
@@ -1945,10 +1958,11 @@ test("a superseded filter request is aborted and cannot overwrite the current ro
   const obsolete = deferredResponse();
   let obsoleteSignal: AbortSignal | undefined;
   const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-    const url = new URL(
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-      window.location.origin,
-    );
+    let raw: string;
+    if (typeof input === "string") raw = input;
+    else if (input instanceof URL) raw = input.href;
+    else raw = input.url;
+    const url = new URL(raw, window.location.origin);
     if (url.searchParams.get("q") === "obsolete") {
       obsoleteSignal = init?.signal ?? undefined;
       return obsolete.promise;
@@ -2055,8 +2069,10 @@ test.each(["before", "after"])(
     const alphaKey = queryKeys.books.list({ q: "alpha" });
     const betaKey = queryKeys.books.list({ q: "beta" });
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-      const path =
-        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      let path: string;
+      if (typeof input === "string") path = input;
+      else if (input instanceof URL) path = input.href;
+      else path = input.url;
       if (path.includes("/metadata/revert"))
         return Promise.resolve(new Response(null, { status: 204 }));
       if (path.endsWith("/metadata"))
@@ -2120,7 +2136,10 @@ test("conflict Reload fetches and displays the retained source without changing 
   const alphaKey = queryKeys.books.list({ q: "alpha" });
   const betaKey = queryKeys.books.list({ q: "beta" });
   const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-    const path = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    let path: string;
+    if (typeof input === "string") path = input;
+    else if (input instanceof URL) path = input.href;
+    else path = input.url;
     if (path.endsWith("/metadata"))
       return Promise.resolve(
         init?.method === "PATCH"

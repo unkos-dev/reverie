@@ -7,7 +7,7 @@ just = "1.59.0"
 # here rather than installed with apt so CI resolves it through the same
 # checksum-verified path as every other tool.
 mold = "3.0.0"
-opengrep = "1.31.0"
+opengrep = "1.32.0"
 rumdl = "v0.3.0"
 shellcheck = "0.11.0"
 snyk = "v1.1308.2"
@@ -16,8 +16,8 @@ typos = "1.51.1"
 uv = "0.13.5"
 # OpenAPI linter for the generated spec, run by the openapi-policy CI job
 # against .vacuum.yaml.
-vacuum = "0.33.2"
-vale = "3.24.0"
+vacuum = "0.35.0"
+vale = "3.25.1"
 zizmor = "1.31.1"
 # The package manager, resolved through mise's aqua backend and so
 # checksum-verified. Two bootstraps need pnpm before any node_modules exists

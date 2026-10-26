@@ -137,14 +137,15 @@ url = "https://github.com/rui314/mold/releases/download/v3.0.0/mold-3.0.0-x86_64
 url_api = "https://api.github.com/repos/rui314/mold/releases/assets/612122001"
 
 [[tools.opengrep]]
-version = "1.31.0"
+version = "1.32.0"
 backend = "aqua:opengrep/opengrep"
-specifiers = ["1.31.0"]
+specifiers = ["1.32.0"]
 
 [tools.opengrep."platforms.linux-x64"]
-checksum = "sha256:dbbe3c2058dbe600c449a8ba22ea79a1643a6660658400090d0323a8d0d31147"
-url = "https://github.com/opengrep/opengrep/releases/download/v1.31.0/opengrep_manylinux_x86"
-url_api = "https://api.github.com/repos/opengrep/opengrep/releases/assets/643824125"
+checksum = "sha256:7360d60174880bd9214f2dfbe439b7bce82b7a3d44cfe945ba833c85cc8bda75"
+checksum_source = "mise-versions"
+url = "https://github.com/opengrep/opengrep/releases/download/v1.32.0/opengrep_manylinux_x86"
+url_api = "https://api.github.com/repos/opengrep/opengrep/releases/assets/665721606"
 
 [[tools.pnpm]]
 version = "11.28.7"
@@ -221,25 +222,26 @@ url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/664336023"
 provenance = "github-attestations"
 
 [[tools.vacuum]]
-version = "0.33.2"
+version = "0.35.0"
 backend = "aqua:daveshanley/vacuum"
-specifiers = ["0.33.2"]
+specifiers = ["0.35.0"]
 
 [tools.vacuum."platforms.linux-x64"]
-checksum = "sha256:f6986baeb4d50365fb620f68b2a450e54fc1c9c2d48b7524d330bf9476c29bf9"
-url = "https://github.com/daveshanley/vacuum/releases/download/v0.33.2/vacuum_0.33.2_linux_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/daveshanley/vacuum/releases/assets/657394043"
+checksum = "sha256:1732561b38f065b16b60a89bdc248e690c643a1fbfd34a4fbcbf423b27177d4e"
+url = "https://github.com/daveshanley/vacuum/releases/download/v0.35.0/vacuum_0.35.0_linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/daveshanley/vacuum/releases/assets/665972161"
 provenance = "cosign"
 
 [[tools.vale]]
-version = "3.24.0"
+version = "3.25.1"
 backend = "aqua:vale-cli/vale"
-specifiers = ["3.24.0"]
+specifiers = ["3.25.1"]
 
 [tools.vale."platforms.linux-x64"]
-checksum = "sha256:867534ddb678abca7f214bc4706ead0922bd5252ffe8035fc227013f66c8b214"
-url = "https://github.com/vale-cli/vale/releases/download/v3.24.0/vale_3.24.0_Linux_64-bit.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/603879404"
+checksum = "sha256:4bf5c5176b682b1da0830f471584d3494f1c2e27ee3029e1ad6f6661d4962182"
+checksum_source = "mise-versions"
+url = "https://github.com/vale-cli/vale/releases/download/v3.25.1/vale_3.25.1_Linux_64-bit.tar.gz"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/667037022"
 
 [[tools.zizmor]]
 version = "1.31.1"

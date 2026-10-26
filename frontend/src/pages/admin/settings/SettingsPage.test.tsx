@@ -33,7 +33,14 @@ const BodySchema = z.record(z.string(), z.unknown());
 type Values = Record<string, unknown>;
 
 function urlOf(input: RequestInfo | URL): URL {
-  const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  let raw: string;
+  if (typeof input === "string") {
+    raw = input;
+  } else if (input instanceof URL) {
+    raw = input.href;
+  } else {
+    raw = input.url;
+  }
   return new URL(raw, "http://localhost");
 }
 
