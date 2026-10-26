@@ -86,6 +86,11 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-library-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.journey-version }}
 
+      - name: Use Ubuntu archive for browser dependencies
+        run: |
+          grep -Eq '^https://archive\.ubuntu\.com/ubuntu/?([[:space:]]|$)' /etc/apt/apt-mirrors.txt
+          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+
       - name: Install component Chromium and system dependencies
         run: node ./node_modules/playwright/cli.js install --with-deps chromium
 
@@ -162,6 +167,11 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+      - name: Use Ubuntu archive for browser dependencies
+        run: |
+          grep -Eq '^https://archive\.ubuntu\.com/ubuntu/?([[:space:]]|$)' /etc/apt/apt-mirrors.txt
+          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
 
       # Unconditional even on a cache hit: `--with-deps` installs OS-level apt
       # packages that aren't cached and must be present every run.
