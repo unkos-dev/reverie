@@ -3420,9 +3420,9 @@ checksum = "ac9999039f74cd73c03158cddfe4362991703c74efe5ce5c8073026f80a5e48c"
 
 [[package]]
 name = "redactable"
-version = "0.14.1"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bd63fbf1a49c38fc6d3cf4bceafa124cd1673f6edd1d732c37f36fc731d5c56"
+checksum = "0e8f4f2059cf52543b2b5307d9c293c5699740acea7d2926d2cf6e73586eb98b"
 dependencies = [
  "redactable-derive",
  "serde",
@@ -3431,9 +3431,9 @@ dependencies = [
 
 [[package]]
 name = "redactable-derive"
-version = "0.14.1"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c1e052c5b28f75394cfaf07ac158e0807cd006f6bd7402b4c33565515a40c2b"
+checksum = "007aa026eb16f3ac2356b83dd29dcf726793ddc3f2e0311138bf20bed7e09ce0"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
