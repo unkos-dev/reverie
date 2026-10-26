@@ -33,6 +33,11 @@ Native NumberFields publish numeric values with snapping, steppers and intrinsic
 DatePickers provide keyboard segments and calendars. SearchField and TextField publish raw text immediately. Native
 controls own unfinished input; the application holds no separate draft or delayed filter queue.
 
+Vocabulary filters compose multiple-selection ComboBoxes with a limit of 20 values per mode. At the limit,
+`disabledKeys` disables suggestions outside the current selection while selected options and removal tags remain usable.
+Associated description text explains how to make room; oversized selections use controlled invalidity and FieldError
+feedback.
+
 `useLibraryPreferences()` resolves sort and display preferences. The page supplies its one sort intent handler to the
 rail and table headers. `useInfiniteQuery` observes the current filter request, retaining previous pages through
 `keepPreviousData` while a changed request loads.
@@ -82,18 +87,19 @@ destination visit; a fresh push or replacement starts clean, including same-rout
 page. Library has no prefetch loader, so the restored owner supplies the first list request. Browser query parameters
 carry no filter or view state and have no compatibility decoder.
 
-The current query key follows published filter intent immediately. A request is eligible only when every active text
-predicate contains at most 200 Unicode scalar values after trimming surrounding whitespace. Blank optional text has no
-predicate; text retained under an `empty` operator is dormant. SearchField and TextField use controlled `isInvalid` and
-associated FieldError feedback immediately, without native `maxLength` truncation. Raw overlong text remains published
-and persisted, including across reload and traversal. An ineligible visit prevents the whole list request, pagination
-and source-cache refetches. The results region explains that results are paused; correction or Clear restores request
-eligibility. Sort retains `useDeferredValue` so its controls resolve at gesture time while the request catches up.
-Initial uncached loading uses LibrarySkeleton. Later changes retain the controls with visible “Updating results…” and
-busy treatment during fetching. Pending recovery without previous pages uses a skeleton inside the results region;
-neither empty state appears until the request settles. Placeholder pages cannot load more. Successful responses replace
-placeholders, including real empty results for contradictory bounds. Range explanations appear against settled current
-results, rather than describing retained rows as the current result set.
+The current query key follows published filter intent immediately. A request is eligible only when each multi-value
+predicate contains at most 20 values and every active text predicate contains at most 200 Unicode scalar values after
+trimming surrounding whitespace. Blank optional text has no predicate; text retained under an `empty` operator is
+dormant. SearchField and TextField use controlled `isInvalid` and associated FieldError feedback immediately, without
+native `maxLength` truncation. Raw overlong text and oversized selections remain published and persisted, including
+across reload and traversal. An ineligible visit prevents the whole list request, pagination and source-cache refetches.
+The results region explains that results are paused; correction or Clear restores request eligibility. Sort retains
+`useDeferredValue` so its controls resolve at gesture time while the request catches up. Initial uncached loading uses
+LibrarySkeleton. Later changes retain the controls with visible “Updating results…” and busy treatment during fetching.
+Pending recovery without previous pages uses a skeleton inside the results region; neither empty state appears until the
+request settles. Placeholder pages cannot load more. Successful responses replace placeholders, including real empty
+results for contradictory bounds. Range explanations appear against settled current results, rather than describing
+retained rows as the current result set.
 
 Displayed placeholder pages carry their originating query key. A second infinite-query observer reads that source cache
 while placeholders are displayed, sharing the same query function and pagination options. It is enabled only during
@@ -113,6 +119,9 @@ Closure creates no separate commit or rollback transaction.
 An absent or malformed owned payload starts a clean visit as a unit. Restoration preserves unrelated entry data and adds
 no recovery write or UI; the next ordinary owner write replaces the owned payload. Intrinsic numeric domains and
 calendar values are checked before restored data drives controls or requests.
+
+Exceeding a text or selection-count limit does not make an otherwise well-formed visit malformed. Such visits retain all
+filters and the view override for correction or clearing, while request eligibility enforces those limits.
 
 Malformed API timestamps, numbers, `UUID` and boolean values retain `400` decode errors. Domain, cap, status and cursor
 errors retain `422`; contradictory complete intervals return successful empty data. Network and server errors remain

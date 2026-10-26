@@ -11,6 +11,53 @@ import {
 
 describe("Library visit projection", () => {
   test.each([
+    "author",
+    "author_any",
+    "author_none",
+    "tag",
+    "tag_any",
+    "tag_none",
+    "genre",
+    "genre_any",
+    "genre_none",
+    "mood",
+    "mood_any",
+    "mood_none",
+    "status_any",
+    "status_none",
+  ] as const)("bounds the whole request by the %s selection count", (field) => {
+    const values = Array.from({ length: 21 }, (_, index) => `value-${String(index)}`);
+    expect(isLibraryRequestEligible({ [field]: values.slice(0, 20), q: "Sea" })).toBe(true);
+    expect(isLibraryRequestEligible({ [field]: values, q: "Sea" })).toBe(false);
+    expect(values).toHaveLength(21);
+  });
+  test.each(["authors", "tags", "genres", "moods"] as const)(
+    "restores oversized %s selections without losing sibling intent or view",
+    (family) => {
+      const values = Array.from({ length: 21 }, (_, index) =>
+        family === "authors"
+          ? `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`
+          : `value-${String(index)}`,
+      );
+      for (const mode of ["all", "any", "none"] as const) {
+        const filters = emptyFilterState();
+        filters.q = "Sea";
+        filters[family][mode] = values;
+        const visit = { filters, view: "table" };
+        expect(LibraryVisitSchema.parse(visit)).toEqual(visit);
+        expect(isLibraryRequestEligible(filterStateToParams(filters))).toBe(false);
+        filters[family][mode] = values.slice(0, 20);
+        expect(isLibraryRequestEligible(filterStateToParams(filters))).toBe(true);
+      }
+    },
+  );
+  test("applies the selection cap independently to each filter mode", () => {
+    const values = Array.from({ length: 20 }, (_, index) => `value-${String(index)}`);
+    expect(isLibraryRequestEligible({ tag: values, tag_any: values, genre_none: values })).toBe(
+      true,
+    );
+  });
+  test.each([
     ["a".repeat(200), true],
     ["a".repeat(201), false],
     ["😀".repeat(200), true],

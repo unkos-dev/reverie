@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { z } from "zod";
 
 const BOOK = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -124,6 +125,129 @@ async function section(page: Page, title: string) {
   if ((await button.getAttribute("aria-expanded")) === "false") await button.click();
   return button.locator("xpath=ancestor::section[1]");
 }
+
+const TAG_VALUES = Array.from(
+  { length: 21 },
+  (_, index) => `Tag ${String(index).padStart(2, "0")}`,
+);
+async function restoreTags(page: Page, values: string[]): Promise<void> {
+  const state = z
+    .looseObject({
+      reverieLibrary: z.looseObject({ filters: z.record(z.string(), z.unknown()) }),
+    })
+    .parse(await page.evaluate((): unknown => navigation.currentEntry?.getState()));
+  state.reverieLibrary.filters.tags = { all: [], any: values, none: [] };
+  await page.evaluate((next) => {
+    navigation.updateCurrentEntry({ state: next });
+  }, state);
+  await page.reload();
+  await ready(page);
+}
+
+test("vocabulary selections stop at twenty while removal and other modes remain usable", async ({
+  page,
+}, testInfo) => {
+  const fixture = await intercept(page);
+  await page.route("**/api/v1/tags/suggest?*", (route) => {
+    const query = new URL(route.request().url()).searchParams.get("q") ?? "";
+    return route.fulfill({
+      json: {
+        suggestions: TAG_VALUES.map((value, index) => ({
+          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+          value,
+        }))
+          .filter(({ value }) => value.toLowerCase().includes(query.toLowerCase()))
+          .slice(0, 20),
+      },
+    });
+  });
+  await page.goto("/library");
+  await ready(page);
+  await search(page).fill("Sea");
+  await restoreTags(page, TAG_VALUES.slice(0, 19));
+  await refine(page);
+  const tags = await section(page, "Tags");
+  const input = page.getByRole("combobox", { name: /^Add tags/ });
+  await input.fill("Tag");
+  await page.getByRole("option", { name: "Tag 19", exact: true }).click();
+  await expect.poll(() => fixture.requests.at(-1)?.getAll("tag_any").length).toBe(20);
+  await expect(input).toHaveAccessibleDescription(/20 selected\. Remove one to add another\./);
+  await input.fill("Tag 20");
+  const option = page.getByRole("option", { name: "Tag 20", exact: true });
+  await expect(option).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath("selection-disabled-option.png") });
+  await input.press("Enter");
+  await input.press("Tab");
+  await expect(
+    tags.getByRole("grid", { name: "Selected tags (any of)" }).getByRole("row"),
+  ).toHaveCount(20);
+  expect(fixture.requests.every((params) => params.getAll("tag_any").length <= 20)).toBe(true);
+  await tags.getByText("20 selected. Remove one to add another.").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("selection-limit.png") });
+  await tags.getByRole("button", { name: "Remove Tag 00", exact: true }).click();
+  await input.fill("Tag 20");
+  await expect(option).toBeEnabled();
+  await option.click();
+  await expect.poll(() => fixture.requests.at(-1)?.getAll("tag_any").includes("Tag 20")).toBe(true);
+  expect(fixture.requests.at(-1)?.getAll("tag_any")).toHaveLength(20);
+  await page.keyboard.press("Escape");
+  await tags.getByRole("button", { name: "Match mode" }).click();
+  await page.getByRole("option", { name: "none of", exact: true }).click();
+  await input.fill("Tag 00");
+  await page.getByRole("option", { name: "Tag 00", exact: true }).click();
+  await expect.poll(() => fixture.requests.at(-1)?.getAll("tag_none")).toEqual(["Tag 00"]);
+  expect(fixture.requests.at(-1)?.getAll("tag_any")).toHaveLength(20);
+});
+
+test("oversized saved vocabulary selections survive reload and traversal without requests, then recover", async ({
+  page,
+}, testInfo) => {
+  const fixture = await intercept(page);
+  await page.goto("/shelves");
+  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await ready(page);
+  await search(page).fill("Sea");
+  await expect.poll(() => fixture.requests.at(-1)?.get("q")).toBe("Sea");
+  const before = fixture.requests.length;
+  await restoreTags(page, TAG_VALUES);
+  await expect(search(page)).toHaveValue("Sea");
+  await expect(page.getByRole("alert")).toContainText(
+    "Choose 20 or fewer values in each filter mode",
+  );
+  await page.goBack();
+  await expect(page).toHaveURL(/\/shelves$/);
+  await page.goForward();
+  await ready(page);
+  await expect(search(page)).toHaveValue("Sea");
+  await expect(page.getByRole("alert")).toContainText("Results are paused.");
+  expect(fixture.requests).toHaveLength(before);
+  await refine(page);
+  const tags = await section(page, "Tags");
+  await expect(
+    tags.getByRole("grid", { name: "Selected tags (any of)" }).getByRole("row"),
+  ).toHaveCount(21);
+  await expect(tags.getByRole("combobox")).toHaveAttribute("aria-invalid", "true");
+  await expect(tags.getByRole("combobox")).toHaveAccessibleDescription(
+    /Choose 20 or fewer values\./,
+  );
+  await tags.getByText("Choose 20 or fewer values.").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("selection-over-limit.png") });
+  await tags.getByRole("button", { name: "Remove Tag 00", exact: true }).click();
+  await expect.poll(() => fixture.requests.length).toBe(before + 1);
+  expect(fixture.requests.at(-1)?.get("q")).toBe("Sea");
+  expect(fixture.requests.at(-1)?.getAll("tag_any")).toHaveLength(20);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await restoreTags(page, TAG_VALUES);
+  await expect(page.getByRole("alert")).toContainText("Results are paused.");
+  await refine(page);
+  const restored = await section(page, "Tags");
+  await restored.getByRole("button", { name: /^Clear/ }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(search(page)).toHaveValue("Sea");
+  await expect.poll(() => fixture.requests.at(-1)?.getAll("tag_any")).toEqual([]);
+});
 
 test("rapid edits reload with their first request and no URL grammar", async ({ page }) => {
   const fixture = await intercept(page);

@@ -37,6 +37,7 @@ import {
 import {
   isTextOp,
   libraryTextError,
+  MAX_FILTER_VALUES,
   type FilterState,
   type RangeFilter,
   type SetFilter,
@@ -432,6 +433,7 @@ export function VocabEditor({
         kind={VOCAB_KIND[family]}
         label={`${family} (${MODE_WORD[mode]})`}
         selected={selected}
+        maxSelectedItems={MAX_FILTER_VALUES}
         onChange={handleChange}
       />
     </div>

@@ -31,10 +31,12 @@ function Harness({
   initial = [],
   kind = "authors",
   disabled = false,
+  maxSelectedItems,
 }: {
   initial?: TypeaheadOption[];
   kind?: SuggestKind;
   disabled?: boolean;
+  maxSelectedItems?: number;
 }): ReactElement {
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
@@ -45,6 +47,7 @@ function Harness({
       <TypeaheadMultiSelect
         kind={kind}
         disabled={disabled}
+        maxSelectedItems={maxSelectedItems}
         label="author"
         selected={selected}
         onChange={setSelected}
@@ -63,6 +66,37 @@ beforeEach(() => {
 });
 
 describe("TypeaheadMultiSelect", () => {
+  test("a caller without a selection limit can add beyond twenty", async () => {
+    const initial = Array.from({ length: 20 }, (_, index) => ({ value: `Tag ${String(index)}` }));
+    mockSuggest([{ id: LE_GUIN, value: "Another tag" }]);
+    render(<Harness kind="tags" initial={initial} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("combobox"), "Another");
+    await user.click(await screen.findByRole("option", { name: "Another tag" }));
+    expect(JSON.parse(screen.getByTestId("selection").textContent)).toHaveLength(21);
+  });
+  test("limited author suggestions use UUID identity and keep selected options removable", async () => {
+    mockSuggest([
+      { id: LE_GUIN, value: "Changed author label" },
+      { id: LEM, value: "Another author" },
+    ]);
+    render(
+      <Harness initial={[{ id: LE_GUIN, value: "Original author label" }]} maxSelectedItems={1} />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("combobox"), "author");
+    const another = await screen.findByRole("option", { name: "Another author" });
+    expect(another).toHaveAttribute("aria-disabled", "true");
+    const selected = screen.getByRole("option", { name: "Changed author label" });
+    expect(selected).not.toHaveAttribute("aria-disabled", "true");
+    await user.click(selected);
+    expect(screen.getByTestId("selection")).toHaveTextContent("[]");
+    await user.type(screen.getByRole("combobox"), "author");
+    await user.click(await screen.findByRole("option", { name: "Another author" }));
+    expect(JSON.parse(screen.getByTestId("selection").textContent)).toEqual([
+      { id: LEM, value: "Another author" },
+    ]);
+  });
   test("gates the request below the minimum query length", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")

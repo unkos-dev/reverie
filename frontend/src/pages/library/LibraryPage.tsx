@@ -47,6 +47,7 @@ import {
   filterStateToParams,
   hasActiveFilterState,
   isLibraryRequestEligible,
+  hasOverLimitSelection,
   type LibraryView,
 } from "@/routes/library-params";
 
@@ -150,8 +151,9 @@ function useLibraryBooks(listKey: BooksListKey, eligible: boolean, sortPending: 
   const canLoadMore = !blocked && hasNextPage && !isPlaceholderData;
   let blockedMessage: string | undefined;
   if (!eligible)
-    blockedMessage =
-      "Results are paused. Shorten the search or filter text to 200 characters or fewer, or clear the filters.";
+    blockedMessage = hasOverLimitSelection(listKey[2])
+      ? "Results are paused. Choose 20 or fewer values in each filter mode, or clear the filters."
+      : "Results are paused. Shorten the search or filter text to 200 characters or fewer, or clear the filters.";
   else if (rejected)
     blockedMessage = "These filters could not be used. Change or clear them to try again.";
 

@@ -39,11 +39,11 @@ const rangeFilterSchema = (min: number, max: number) =>
     lte: z.number().int().min(min).max(max).optional(),
     empty: z.boolean().optional(),
   });
-const tokens = z.array(z.string()).max(MAX_FILTER_VALUES);
-const ids = z.array(z.uuid()).max(MAX_FILTER_VALUES);
+const tokens = z.array(z.string());
+const ids = z.array(z.uuid());
 const setFilterSchema = (values: typeof tokens | typeof ids) =>
   z.strictObject({ all: values, any: values, none: values });
-const statuses = z.array(z.enum([...ReadingStatusSchema.options, "unread"])).max(MAX_FILTER_VALUES);
+const statuses = z.array(z.enum([...ReadingStatusSchema.options, "unread"]));
 
 export const LibraryVisitSchema = z.strictObject({
   filters: z.strictObject({
@@ -99,7 +99,14 @@ export function libraryTextError(value: string | undefined): string | undefined 
     : undefined;
 }
 
+export function hasOverLimitSelection(params: ListBooksParams): boolean {
+  return Object.values(params).some(
+    (value) => Array.isArray(value) && value.length > MAX_FILTER_VALUES,
+  );
+}
+
 export function isLibraryRequestEligible(params: ListBooksParams): boolean {
+  if (hasOverLimitSelection(params)) return false;
   return [
     params.q,
     params.title_contains,
