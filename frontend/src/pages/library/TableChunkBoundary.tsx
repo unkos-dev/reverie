@@ -9,7 +9,9 @@ type Props = {
   onFallbackToGrid: () => void;
 };
 
-function TableFailure({ onFallbackToGrid }: Pick<Props, "onFallbackToGrid">): ReactElement {
+function TableFailure({
+  onFallbackToGrid,
+}: Readonly<Pick<Props, "onFallbackToGrid">>): ReactElement {
   const { resetBoundary } = useErrorBoundary();
   return (
     <div
