@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render } from "vitest-browser-react";
+import { page } from "vite-plus/test/browser";
 import { describe, expect, test } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import type { ReactElement } from "react";
@@ -7,7 +8,7 @@ import type { ReactElement } from "react";
 import type { ShelfWithItems } from "@/api";
 import { queryKeys } from "@/lib/query/keys";
 
-import { ShelfDetailPage } from "./ShelfDetailPage";
+import { ShelfDetailPage } from "@/pages/shelves/ShelfDetailPage";
 
 const SHELF_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 
@@ -25,7 +26,7 @@ function shelfFixture(itemIds: string[]): ShelfWithItems {
   };
 }
 
-function renderShelf(shelf: ShelfWithItems): void {
+async function renderShelf(shelf: ShelfWithItems): Promise<void> {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -42,32 +43,35 @@ function renderShelf(shelf: ShelfWithItems): void {
     );
   }
 
-  render(<Wrapper />);
+  await render(<Wrapper />);
 }
 
 describe("ShelfDetailPage", () => {
   test("lists the items in the order the server returned them", async () => {
-    renderShelf(shelfFixture(["22222222-aaaa", "11111111-bbbb", "33333333-cccc"]));
-    expect(await screen.findByRole("heading", { name: "To be read" })).toBeInTheDocument();
-    expect(screen.getByText("3 items")).toBeInTheDocument();
-    const rows = screen.getAllByRole("listitem").map((row) => row.textContent);
+    await renderShelf(shelfFixture(["22222222-aaaa", "11111111-bbbb", "33333333-cccc"]));
+    await expect.element(page.getByRole("heading", { name: "To be read" })).toBeInTheDocument();
+    await expect.element(page.getByText("3 items")).toBeInTheDocument();
+    const rows = page
+      .getByRole("listitem")
+      .elements()
+      .map((row) => row.textContent);
     expect(rows).toEqual(["22222222", "11111111", "33333333"]);
   });
 
   test("offers no reorder control", async () => {
-    renderShelf(shelfFixture(["22222222-aaaa", "11111111-bbbb"]));
-    await screen.findByRole("heading", { name: "To be read" });
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    await renderShelf(shelfFixture(["22222222-aaaa", "11111111-bbbb"]));
+    await expect.element(page.getByRole("heading", { name: "To be read" })).toBeInTheDocument();
+    await expect.element(page.getByRole("button")).not.toBeInTheDocument();
   });
 
   test("uses the singular for a single item", async () => {
-    renderShelf(shelfFixture(["22222222-aaaa"]));
-    expect(await screen.findByText("1 item")).toBeInTheDocument();
+    await renderShelf(shelfFixture(["22222222-aaaa"]));
+    await expect.element(page.getByText("1 item")).toBeInTheDocument();
   });
 
   test("renders an empty shelf with no rows", async () => {
-    renderShelf(shelfFixture([]));
-    expect(await screen.findByText("0 items")).toBeInTheDocument();
-    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    await renderShelf(shelfFixture([]));
+    await expect.element(page.getByText("0 items")).toBeInTheDocument();
+    expect(page.getByRole("listitem").elements()).toHaveLength(0);
   });
 });

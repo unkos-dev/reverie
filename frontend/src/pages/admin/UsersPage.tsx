@@ -6,7 +6,7 @@ import { Form, Label as AriaLabel } from "react-aria-components";
  * re-enable an account, and reset a password. Non-admin callers are redirected
  * to `/library`.
  */
-import { type ReactElement, type SyntheticEvent, useCallback, useState } from "react";
+import { type ReactElement, useActionState, useCallback, useState } from "react";
 import { Navigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -214,11 +214,13 @@ function UsersPage(): ReactElement {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead scope="col">Name</TableHead>
+              <TableHead scope="col">Email</TableHead>
+              <TableHead scope="col">Role</TableHead>
+              <TableHead scope="col">Status</TableHead>
+              <TableHead scope="col" className="text-right">
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -518,19 +520,24 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
     },
   });
   const handleOpenChange = changeOpen(mutation.reset);
-  function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
-    event.preventDefault();
+  async function submit(data: FormData): Promise<string | null> {
+    if (mutation.isPending) return null;
     setError(null);
-    const data = new FormData(event.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
     const email = emailField.safeParse(formString(data, "email"));
-    if (!displayName.success || !email.success) return;
+    if (!displayName.success || !email.success) return null;
     const role = roleField.safeParse(data.get("role"));
-    if (!role.success) {
-      setError("Choose a valid role.");
-      return;
+    if (!role.success) return "Choose a valid role.";
+    try {
+      await mutation.mutateAsync({
+        email: email.data,
+        display_name: displayName.data,
+        role: role.data,
+      });
+      return null;
+    } catch (err) {
+      return errorDetail(err);
     }
-    mutation.mutate({ email: email.data, display_name: displayName.data, role: role.data });
   }
   return (
     <Dialog isOpen={open} onOpenChange={handleOpenChange}>
@@ -552,51 +559,83 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
                 own password.
               </DialogDescription>
             </DialogHeader>
-            <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <TextInputField
-                name="display_name"
-                type="text"
-                isRequired
-                validate={validateDisplayName}
-                label="Display name"
-              />
-              <TextInputField
-                name="email"
-                type="email"
-                autoComplete="off"
-                isRequired
-                validate={validateEmail}
-                label="Email"
-              />
-              <Field>
-                <Select className="flex flex-col gap-2" name="role" defaultValue="adult">
-                  <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
-                    Role
-                  </AriaLabel>
-                  <SelectTrigger id="create-role" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ROLE_OPTIONS.map((value) => (
-                      <SelectItem key={value} id={value}>
-                        {value}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              {error !== null ? <FieldError>{error}</FieldError> : null}
-              <DialogFooter>
-                <DialogClose type="button">Cancel</DialogClose>
-                <Button type="submit" isPending={mutation.isPending}>
-                  Create user
-                </Button>
-              </DialogFooter>
-            </Form>
+            <CreateUserForm submit={submit} pending={mutation.isPending} serverError={error} />
           </>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CreateUserForm({
+  submit,
+  pending,
+  serverError,
+}: Readonly<{
+  serverError: string | null;
+  submit: (data: FormData) => Promise<string | null>;
+  pending: boolean;
+}>): ReactElement {
+  const [state, action, actionPending] = useActionState<
+    { values: Partial<Record<string, string>>; error: string | null },
+    FormData
+  >(
+    async (
+      _previous: { values: Partial<Record<string, string>>; error: string | null },
+      data: FormData,
+    ) => {
+      const values = z.record(z.string(), z.string()).parse(Object.fromEntries(data));
+      return { values, error: await submit(data) };
+    },
+    { values: {}, error: null },
+  );
+  const error = actionPending ? null : (state.error ?? serverError);
+  return (
+    <Form action={action} validationErrors={{}} className="flex flex-col gap-4">
+      <TextInputField
+        name="display_name"
+        type="text"
+        isRequired
+        validate={validateDisplayName}
+        label="Display name"
+        defaultValue={state.values.display_name}
+      />
+      <TextInputField
+        name="email"
+        type="email"
+        autoComplete="off"
+        isRequired
+        validate={validateEmail}
+        label="Email"
+        defaultValue={state.values.email}
+      />
+      <Field>
+        <Select
+          className="flex flex-col gap-2"
+          name="role"
+          defaultValue={state.values.role ?? "adult"}
+        >
+          <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">Role</AriaLabel>
+          <SelectTrigger id="create-role" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ROLE_OPTIONS.map((value) => (
+              <SelectItem key={value} id={value}>
+                {value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      {error !== null ? <FieldError>{error}</FieldError> : null}
+      <DialogFooter>
+        <DialogClose type="button">Cancel</DialogClose>
+        <Button type="submit" isPending={pending || actionPending}>
+          Create user
+        </Button>
+      </DialogFooter>
+    </Form>
   );
 }
 

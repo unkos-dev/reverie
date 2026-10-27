@@ -11,7 +11,7 @@ import { Form, Input as AriaInput, Label as AriaLabel, TextField } from "react-a
  * higher level subsumes the lower ones, so the dialog offers a single level
  * rather than independent scope toggles.
  */
-import { type ReactElement, type SyntheticEvent, useCallback, useState } from "react";
+import { type ReactElement, useActionState, useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +22,6 @@ import { queryKeys } from "@/lib/query/keys";
 import { listTokens, createToken, revokeToken } from "@/api/tokens";
 import type { Token, Scope, CreateTokenResponse } from "@/api/tokens";
 import { ApiError } from "@/api";
-import { formString } from "@/lib/form";
 import {
   Table,
   TableBody,
@@ -159,11 +158,13 @@ function TokensPage(): ReactElement {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Scopes</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Last used</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead scope="col">Name</TableHead>
+              <TableHead scope="col">Scopes</TableHead>
+              <TableHead scope="col">Expires</TableHead>
+              <TableHead scope="col">Last used</TableHead>
+              <TableHead scope="col" className="text-right">
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -229,6 +230,7 @@ type CreateTokenDialogProps = {
 function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogProps>): ReactElement {
   const [open, setOpen] = useState(false);
   const [level, setLevel] = useState<Scope>("write");
+
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreateTokenResponse | null>(null);
 
@@ -255,23 +257,23 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
     }
   }
 
-  function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    if (mutation.isPending) return;
+  async function submit(data: FormData): Promise<string | null> {
+    if (mutation.isPending) return null;
     setError(null);
-    const data = new FormData(e.currentTarget);
-    const name = formString(data, "name").trim();
-    if (validateName(name) !== null) return;
+    const name = z.string().parse(data.get("name")).trim();
+    if (validateName(name) !== null) return null;
     const expiry = expiryField.safeParse(data.get("expiry"));
-    if (!expiry.success) {
-      setError("Choose a valid expiry.");
-      return;
+    if (!expiry.success) return "Choose a valid expiry.";
+    try {
+      await mutation.mutateAsync({
+        name,
+        scopes: [level],
+        expiresInDays: expiry.data === "never" ? null : Number(expiry.data),
+      });
+      return null;
+    } catch (err) {
+      return errorDetail(err);
     }
-    mutation.mutate({
-      name,
-      scopes: [level],
-      expiresInDays: expiry.data === "never" ? null : Number(expiry.data),
-    });
   }
 
   const availableLevels = ACCESS_LEVELS.filter((l) => l.value !== "admin" || isAdmin);
@@ -295,72 +297,118 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
                 The credential is shown once after creation. Store it somewhere safe.
               </DialogDescription>
             </DialogHeader>
-            <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <TextInputField
-                name="name"
-                type="text"
-                isRequired
-                validate={validateName}
-                label="Name"
-              />
-              <Field>
-                <Select
-                  className="flex flex-col gap-2"
-                  name="level"
-                  value={level}
-                  onChange={(v) => {
-                    if (typeof v !== "string") return;
-                    const match = ACCESS_LEVELS.find((l) => l.value === v);
-                    if (match) setLevel(match.value);
-                  }}
-                >
-                  <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
-                    Access level
-                  </AriaLabel>
-                  <SelectTrigger id="create-token-level" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableLevels.map((l) => (
-                      <SelectItem key={l.value} id={l.value}>
-                        {l.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-muted-foreground text-xs">
-                  {ACCESS_LEVELS.find((l) => l.value === level)?.hint}
-                </p>
-              </Field>
-              <Field>
-                <Select className="flex flex-col gap-2" name="expiry" defaultValue="90">
-                  <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
-                    Expires
-                  </AriaLabel>
-                  <SelectTrigger id="create-token-expiry" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EXPIRY_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} id={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              {error ? <FieldError>{error}</FieldError> : null}
-              <DialogFooter>
-                <DialogClose type="button">Cancel</DialogClose>
-                <Button type="submit" isPending={mutation.isPending}>
-                  Create
-                </Button>
-              </DialogFooter>
-            </Form>
+            <CreateTokenForm
+              submit={submit}
+              pending={mutation.isPending}
+              serverError={error}
+              level={level}
+              setLevel={setLevel}
+              availableLevels={availableLevels}
+            />
           </>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CreateTokenForm({
+  submit,
+  pending,
+  serverError,
+  level,
+  setLevel,
+  availableLevels,
+}: Readonly<{
+  submit: (data: FormData) => Promise<string | null>;
+  pending: boolean;
+  serverError: string | null;
+  level: Scope;
+  setLevel: (level: Scope) => void;
+  availableLevels: readonly (typeof ACCESS_LEVELS)[number][];
+}>): ReactElement {
+  const [state, action, actionPending] = useActionState<
+    { values: Partial<Record<string, string>>; error: string | null },
+    FormData
+  >(
+    async (
+      _previous: { values: Partial<Record<string, string>>; error: string | null },
+      data: FormData,
+    ) => {
+      const values = z.record(z.string(), z.string()).parse(Object.fromEntries(data));
+      return { values, error: await submit(data) };
+    },
+    { values: {}, error: null },
+  );
+  const error = actionPending ? null : (state.error ?? serverError);
+  return (
+    <Form action={action} validationErrors={{}} className="flex flex-col gap-4">
+      <TextInputField
+        name="name"
+        type="text"
+        isRequired
+        validate={validateName}
+        label="Name"
+        defaultValue={state.values.name}
+      />
+      <Field>
+        <Select
+          className="flex flex-col gap-2"
+          name="level"
+          value={level}
+          onChange={(v) => {
+            if (typeof v !== "string") return;
+            const match = ACCESS_LEVELS.find((l) => l.value === v);
+            if (match) setLevel(match.value);
+          }}
+        >
+          <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
+            Access level
+          </AriaLabel>
+          <SelectTrigger id="create-token-level" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {availableLevels.map((l) => (
+              <SelectItem key={l.value} id={l.value}>
+                {l.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-muted-foreground text-xs">
+          {ACCESS_LEVELS.find((l) => l.value === level)?.hint}
+        </p>
+      </Field>
+      <Field>
+        <Select
+          className="flex flex-col gap-2"
+          name="expiry"
+          defaultValue={state.values.expiry ?? "90"}
+        >
+          <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
+            Expires
+          </AriaLabel>
+          <SelectTrigger id="create-token-expiry" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {EXPIRY_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} id={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      {error ? <FieldError>{error}</FieldError> : null}
+      <DialogFooter>
+        <DialogClose type="button">Cancel</DialogClose>
+        <Button type="submit" isPending={pending || actionPending}>
+          Create
+        </Button>
+      </DialogFooter>
+    </Form>
   );
 }
 

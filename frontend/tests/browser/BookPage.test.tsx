@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render } from "vitest-browser-react";
+import { page, userEvent } from "vite-plus/test/browser";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { acceptVersion, getBook, ApiError, type BookDetail } from "@/api";
 import { queryKeys } from "@/lib/query/keys";
 
-import { BookPage } from "./BookPage";
+import { BookPage } from "@/pages/book/BookPage";
 
 vi.mock("@/api", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
@@ -49,7 +49,7 @@ function bookFixture(overrides: Partial<BookDetail> = {}): BookDetail {
   };
 }
 
-function renderBook(book: BookDetail, path: string = `/b/${book.id}`): void {
+async function renderBook(book: BookDetail, path: string = `/b/${book.id}`): Promise<void> {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -66,67 +66,73 @@ function renderBook(book: BookDetail, path: string = `/b/${book.id}`): void {
     );
   }
 
-  render(<Wrapper />);
+  await render(<Wrapper />);
 }
 
 describe("BookPage", () => {
   test("renders the title and author from the cache", async () => {
-    renderBook(bookFixture());
-    expect(
-      await screen.findByRole("heading", { name: "The Brothers Karamazov" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Fyodor Dostoevsky")).toBeInTheDocument();
+    await renderBook(bookFixture());
+    await expect
+      .element(page.getByRole("heading", { name: "The Brothers Karamazov" }))
+      .toBeInTheDocument();
+    await expect.element(page.getByText("Fyodor Dostoevsky")).toBeInTheDocument();
   });
 
   test("renders the series label as a link to the series detail", async () => {
-    renderBook(
+    await renderBook(
       bookFixture({
         series: { id: "s-1", name: "Karamazov Trilogy", position: 1 },
       }),
     );
-    const label = await screen.findByText(/Karamazov Trilogy · #1/);
-    expect(label.closest("a")).toHaveAttribute("href", "/series/s-1");
+    const label = page.getByRole("link", { name: /Karamazov Trilogy · #1/ });
+    await expect.element(label).toHaveAttribute("href", "/series/s-1");
   });
 
   test("renders the three tabs (Overview, Versions, Activity)", async () => {
-    renderBook(bookFixture());
-    expect(await screen.findByRole("tab", { name: /overview/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /versions/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /activity/i })).toBeInTheDocument();
+    await renderBook(bookFixture());
+    await expect.element(page.getByRole("tab", { name: /overview/i })).toBeInTheDocument();
+    await expect.element(page.getByRole("tab", { name: /versions/i })).toBeInTheDocument();
+    await expect.element(page.getByRole("tab", { name: /activity/i })).toBeInTheDocument();
   });
 
   test("renders the description in the Overview tab", async () => {
-    renderBook(bookFixture());
-    const overviewPanel = await screen.findByRole("tabpanel", { name: /overview/i });
-    expect(within(overviewPanel).getByText(/passionate, polyphonic novel/)).toBeInTheDocument();
+    await renderBook(bookFixture());
+    const overviewPanel = page.getByRole("tabpanel", { name: /overview/i });
+    await expect
+      .element(overviewPanel.getByText(/passionate, polyphonic novel/))
+      .toBeInTheDocument();
   });
 
   test("tabs activate automatically from the keyboard and mount only the selected panel", async () => {
-    const user = userEvent.setup();
-    renderBook(bookFixture());
-    const tabs = await screen.findByRole("tablist", { name: "Book details" });
-    const overview = within(tabs).getByRole("tab", { name: "Overview" });
-    expect(overview).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("button", { name: /edit metadata/i })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
-    overview.focus();
+    const user = userEvent;
+    await renderBook(bookFixture());
+    const tabs = page.getByRole("tablist", { name: "Book details" });
+    const overview = tabs.getByRole("tab", { name: "Overview" });
+    await expect.element(overview).toHaveAttribute("aria-selected", "true");
+    await expect
+      .element(page.getByRole("button", { name: /edit metadata/i }))
+      .not.toBeInTheDocument();
+    expect(page.getByRole("tabpanel").elements()).toHaveLength(1);
+    await user.click(overview);
     await user.keyboard("{ArrowRight}");
-    expect(within(tabs).getByRole("tab", { name: "Versions" })).toHaveFocus();
-    expect(screen.getByRole("tabpanel", { name: "Versions" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /edit metadata/i })).toBeInTheDocument();
+    await expect.element(tabs.getByRole("tab", { name: "Versions" })).toHaveFocus();
+    await expect.element(page.getByRole("tabpanel", { name: "Versions" })).toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: /edit metadata/i })).toBeInTheDocument();
     await user.keyboard("{ArrowRight}");
-    expect(screen.getByRole("tabpanel", { name: "Activity" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /edit metadata/i })).not.toBeInTheDocument();
+    await expect.element(page.getByRole("tabpanel", { name: "Activity" })).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("button", { name: /edit metadata/i }))
+      .not.toBeInTheDocument();
     await user.keyboard("{Home}");
-    expect(overview).toHaveFocus();
-    expect(screen.getByRole("tabpanel", { name: "Overview" })).toBeInTheDocument();
-    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    await expect.element(overview).toHaveFocus();
+    await expect.element(page.getByRole("tabpanel", { name: "Overview" })).toBeInTheDocument();
+    expect(page.getByRole("tabpanel").elements()).toHaveLength(1);
     expect(getBook).not.toHaveBeenCalled();
   });
 
   test("Versions tab badges the pending count and exposes the editor", async () => {
-    const user = userEvent.setup();
-    renderBook(
+    const user = userEvent;
+    await renderBook(
       bookFixture({
         metadata_version_summary: { pending: 3, accepted: 5 },
         metadata_versions: [
@@ -164,28 +170,30 @@ describe("BookPage", () => {
       }),
     );
     // Tab label badge surfaces the pending count.
-    const versionsTab = await screen.findByRole("tab", { name: /versions/i });
-    expect(within(versionsTab).getByText("3")).toBeInTheDocument();
+    const versionsTab = page.getByRole("tab", { name: /versions/i });
+    await expect.element(versionsTab.getByText("3")).toBeInTheDocument();
 
     await user.click(versionsTab);
-    const panel = await screen.findByRole("tabpanel", { name: /versions/i });
-    expect(within(panel).getByRole("heading", { name: /title/i, level: 3 })).toBeInTheDocument();
-    expect(within(panel).getAllByRole("list")).toHaveLength(2);
-    expect(within(panel).getAllByRole("listitem")).toHaveLength(5);
-    expect(within(panel).getByText("The Brothers Karamazov")).toBeInTheDocument();
-    expect(within(panel).getByText("unset")).toBeInTheDocument();
+    const panel = page.getByRole("tabpanel", { name: /versions/i });
+    await expect
+      .element(panel.getByRole("heading", { name: /title/i, level: 3 }))
+      .toBeInTheDocument();
+    expect(panel.getByRole("list").elements()).toHaveLength(2);
+    expect(panel.getByRole("listitem").elements()).toHaveLength(5);
+    await expect.element(panel.getByText("The Brothers Karamazov")).toBeInTheDocument();
+    await expect.element(panel.getByText("unset")).toBeInTheDocument();
     // Pending row exposes the draft value + Accept/Reject buttons.
-    expect(within(panel).getByText("Alt Title")).toBeInTheDocument();
-    expect(within(panel).getAllByRole("button", { name: /accept/i })).toHaveLength(3);
-    expect(within(panel).getAllByRole("button", { name: /reject/i })).toHaveLength(3);
+    await expect.element(panel.getByText("Alt Title")).toBeInTheDocument();
+    expect(panel.getByRole("button", { name: /accept/i }).elements()).toHaveLength(3);
+    expect(panel.getByRole("button", { name: /reject/i }).elements()).toHaveLength(3);
     // Manual edit button is always present.
-    expect(within(panel).getByRole("button", { name: /edit metadata/i })).toBeInTheDocument();
+    await expect.element(panel.getByRole("button", { name: /edit metadata/i })).toBeInTheDocument();
   });
 
   test.each(["success", "rejected", "unavailable"])(
     "refreshes the draft list after %s acceptance",
     async (outcome) => {
-      const user = userEvent.setup();
+      const user = userEvent;
       const book = bookFixture({
         metadata_version_summary: { pending: 1, accepted: 0 },
         metadata_versions: [
@@ -216,15 +224,15 @@ describe("BookPage", () => {
             : new ApiError(503, null, "Service Unavailable", "Try again later."),
         );
       }
-      renderBook(book);
-      await user.click(await screen.findByRole("tab", { name: /versions/i }));
-      expect(screen.getByText("Alt Title")).toBeInTheDocument();
+      await renderBook(book);
+      await user.click(page.getByRole("tab", { name: /versions/i }));
+      await expect.element(page.getByText("Alt Title")).toBeInTheDocument();
       expect(getBook).not.toHaveBeenCalled();
-      await user.click(screen.getByRole("button", { name: /accept/i }));
-      await waitFor(() => {
-        expect(screen.queryByText("Alt Title")).not.toBeInTheDocument();
+      await user.click(page.getByRole("button", { name: /accept/i }));
+      await vi.waitFor(async () => {
+        await expect.element(page.getByText("Alt Title")).not.toBeInTheDocument();
       });
-      expect(screen.queryByRole("button", { name: /accept/i })).not.toBeInTheDocument();
+      await expect.element(page.getByRole("button", { name: /accept/i })).not.toBeInTheDocument();
       expect(acceptVersion).toHaveBeenCalledExactlyOnceWith(book.id, "v-1");
       expect(getBook).toHaveBeenCalledTimes(1);
       if (outcome === "rejected") {
@@ -240,13 +248,13 @@ describe("BookPage", () => {
   );
 
   test("falls back to italic placeholder when description is null", async () => {
-    renderBook(bookFixture({ description: null }));
-    expect(await screen.findByText(/no description yet/i)).toBeInTheDocument();
+    await renderBook(bookFixture({ description: null }));
+    await expect.element(page.getByText(/no description yet/i)).toBeInTheDocument();
   });
 
   test("Clear button on a draft field opens the confirmation AlertDialog", async () => {
-    const user = userEvent.setup();
-    renderBook(
+    const user = userEvent;
+    await renderBook(
       bookFixture({
         description: "Existing prose",
         metadata_version_summary: { pending: 1, accepted: 0 },
@@ -264,30 +272,30 @@ describe("BookPage", () => {
         ],
       }),
     );
-    const versionsTab = await screen.findByRole("tab", { name: /versions/i });
+    const versionsTab = page.getByRole("tab", { name: /versions/i });
     await user.click(versionsTab);
-    const panel = await screen.findByRole("tabpanel", { name: /versions/i });
-    const clearButton = within(panel).getByRole("button", { name: /^clear$/i });
+    const panel = page.getByRole("tabpanel", { name: /versions/i });
+    const clearButton = panel.getByRole("button", { name: /^clear$/i });
     await user.click(clearButton);
     // AlertDialog is portal-rendered outside the panel — search at screen scope.
-    expect(
-      await screen.findByRole("alertdialog", { name: /clear description/i }),
-    ).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("alertdialog", { name: /clear description/i }))
+      .toBeInTheDocument();
   });
 
   test("cover load error swaps in the cloth spine", async () => {
-    renderBook(bookFixture());
-    const img = await screen.findByRole("img", { name: /Cover of/ });
+    await renderBook(bookFixture());
+    const img = page.getByRole("img", { name: /Cover of/ });
     expect(document.querySelector("[data-cloth]")).toBeNull();
-    fireEvent.error(img);
-    await waitFor(() => {
+    await expect.element(img).not.toBeInTheDocument();
+    await vi.waitFor(() => {
       expect(document.querySelector("[data-cloth]")).not.toBeNull();
     });
   });
 
   test("back link points to /library", async () => {
-    renderBook(bookFixture());
-    const back = await screen.findByRole("link", { name: /library/i });
-    expect(back.getAttribute("href")).toBe("/library");
+    await renderBook(bookFixture());
+    const back = page.getByRole("link", { name: /library/i });
+    expect(back.element().getAttribute("href")).toBe("/library");
   });
 });

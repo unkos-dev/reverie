@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render } from "vitest-browser-react";
+import { page, userEvent } from "vite-plus/test/browser";
 import type { ReactElement } from "react";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { ApiError, getBookMetadata, updateBookMetadata, type BookMetadata } from "@/api";
 import { queryKeys } from "@/lib/query/keys";
 
-import { EditMetadataDialog, type EditableField } from "./EditMetadataDialog";
+import { EditMetadataDialog, type EditableField } from "@/pages/book/EditMetadataDialog";
 
 vi.mock("@/api", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
@@ -44,7 +44,10 @@ function metadataFixture(overrides: Partial<BookMetadata> = {}): BookMetadata {
   };
 }
 
-function renderDialog(): { client: QueryClient; onOpenChange: ReturnType<typeof vi.fn> } {
+async function renderDialog(): Promise<{
+  client: QueryClient;
+  onOpenChange: ReturnType<typeof vi.fn>;
+}> {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onOpenChange = vi.fn();
   function Wrapper(): ReactElement {
@@ -59,24 +62,24 @@ function renderDialog(): { client: QueryClient; onOpenChange: ReturnType<typeof 
       </QueryClientProvider>
     );
   }
-  render(<Wrapper />);
+  await render(<Wrapper />);
   return { client, onOpenChange };
 }
 
 async function submitEdit(): Promise<void> {
-  const user = userEvent.setup();
-  const input = await screen.findByLabelText("Subtitle");
-  await user.clear(input);
+  const user = userEvent;
+  const input = page.getByLabelText("Subtitle");
+  await input.fill("");
   await user.type(input, "Updated Subtitle");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(page.getByRole("button", { name: "Save" }));
 }
 
 describe("EditMetadataDialog", () => {
   test("fetches and seeds from a fresh GET rather than a caller-supplied canonical", async () => {
     vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture({ subtitle: "Fetched Subtitle" }));
-    renderDialog();
+    await renderDialog();
 
-    expect(await screen.findByLabelText("Subtitle")).toHaveValue("Fetched Subtitle");
+    await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Fetched Subtitle");
     expect(getBookMetadata).toHaveBeenCalledWith("book-1", expect.anything());
   });
 
@@ -89,12 +92,12 @@ describe("EditMetadataDialog", () => {
       "",
     );
     vi.mocked(updateBookMetadata).mockRejectedValue(conflict);
-    const { client, onOpenChange } = renderDialog();
+    const { client, onOpenChange } = await renderDialog();
     const invalidateSpy = vi.spyOn(client, "invalidateQueries");
 
     await submitEdit();
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(
         "This book's metadata changed elsewhere.",
         expect.objectContaining({ action: expect.anything() as unknown }),
@@ -116,10 +119,10 @@ describe("EditMetadataDialog", () => {
       "",
     );
     vi.mocked(updateBookMetadata).mockRejectedValue(conflict);
-    const { onOpenChange } = renderDialog();
+    const { onOpenChange } = await renderDialog();
 
     await submitEdit();
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(toast.error).toHaveBeenCalled();
     });
 
@@ -138,14 +141,62 @@ describe("EditMetadataDialog", () => {
     vi.mocked(updateBookMetadata).mockRejectedValue(
       new ApiError(422, null, "Validation Error", "Subtitle is too long."),
     );
-    const { client } = renderDialog();
+    const { client } = await renderDialog();
     const invalidateSpy = vi.spyOn(client, "invalidateQueries");
 
     await submitEdit();
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith("Validation Error: Subtitle is too long.");
     });
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+});
+
+test("awaits save, retains failed values and closes only after successful retry", async () => {
+  vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
+  let reject: (error: Error) => void = () => {};
+  vi.mocked(updateBookMetadata).mockReturnValueOnce(
+    new Promise((_resolve, fail) => {
+      reject = fail;
+    }),
+  );
+  const { onOpenChange } = await renderDialog();
+  await submitEdit();
+  await expect.element(page.getByRole("button", { name: "Save" })).toHaveAttribute("data-pending");
+  await expect.element(page.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
+  expect(onOpenChange).not.toHaveBeenCalled();
+  reject(new ApiError(422, null, "Validation Error", "Subtitle is too long."));
+  await expect.element(page.getByRole("alert")).toMatchTextContent("Subtitle is too long.");
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
+  await expect
+    .element(page.getByRole("button", { name: "Save" }))
+    .not.toHaveAttribute("data-pending");
+  vi.mocked(updateBookMetadata).mockResolvedValueOnce({ fields: {} });
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => {
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+  expect(updateBookMetadata).toHaveBeenLastCalledWith("book-1", { subtitle: "Updated Subtitle" });
+});
+
+test("cancelling a populated-field clear keeps the edit and sends nothing; confirmation saves null", async () => {
+  vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
+  vi.mocked(updateBookMetadata).mockResolvedValue({ fields: {} });
+  await renderDialog();
+  const input = page.getByLabelText("Subtitle");
+  await expect.element(input).toHaveValue("Original Subtitle");
+  await input.fill("");
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
+  const confirmation = page.getByRole("alertdialog", { name: "Clear populated field?" });
+  await userEvent.click(confirmation.getByRole("button", { name: "Cancel" }));
+  await expect.element(confirmation).not.toBeInTheDocument();
+  await expect.element(input).toHaveValue("");
+  expect(updateBookMetadata).not.toHaveBeenCalled();
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
+  await userEvent.click(confirmation.getByRole("button", { name: "Clear and save" }));
+  await vi.waitFor(() => {
+    expect(updateBookMetadata).toHaveBeenCalledExactlyOnceWith("book-1", { subtitle: null });
   });
 });

@@ -23,7 +23,16 @@
  * affordance on [`VersionsTab`].
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactElement } from "react";
+import { useActionState, useId, useRef, useState, type ReactElement } from "react";
+import { z } from "zod";
+import {
+  Form,
+  TextField,
+  Label as AriaLabel,
+  Input as AriaInput,
+  TextArea as AriaTextArea,
+} from "react-aria-components";
+import { FieldError } from "@/components/ui/field";
 import { toast } from "sonner";
 
 import {
@@ -103,10 +112,6 @@ function canonicalValue(
       return null;
   }
 }
-
-type FieldState = Partial<
-  Record<keyof UpdateBookMetadataFields, { value: string; touched: boolean }>
->;
 
 const FIELDS_AS_TEXTAREA: ReadonlySet<string> = new Set(["description"]);
 
@@ -217,11 +222,9 @@ function EditMetadataFields({
   onDone,
 }: Readonly<EditMetadataFieldsProps>): ReactElement {
   const queryClient = useQueryClient();
-  const [state, setState] = useState<FieldState>(() => buildInitialState(fields, metadata));
-  const [pendingClearConfirm, setPendingClearConfirm] = useState<UpdateBookMetadataFields | null>(
-    null,
-  );
-
+  const touched = useRef(new Set<keyof UpdateBookMetadataFields>());
+  const [pendingClearConfirm, setPendingClearConfirm] = useState(false);
+  const formId = useId();
   const mutation = useMutation({
     mutationFn: (body: UpdateBookMetadataFields) => updateBookMetadata(manifestationId, body),
     onSuccess: () => {
@@ -253,13 +256,15 @@ function EditMetadataFields({
     },
   });
 
-  function buildBody(): { body: UpdateBookMetadataFields; clears: string[] } {
+  function buildBody(values: Record<string, string>): {
+    body: UpdateBookMetadataFields;
+    clears: string[];
+  } {
     const raw: Record<string, string | null> = {};
     const clears: string[] = [];
     for (const field of fields) {
-      const slot = state[field.name];
-      if (!slot || !slot.touched) continue;
-      const trimmed = slot.value.trim();
+      if (!touched.current.has(field.name)) continue;
+      const trimmed = (values[field.name] ?? "").trim();
       if (trimmed.length === 0) {
         raw[field.name] = null;
         if (canonicalValue(metadata, field.name) !== null) clears.push(field.label);
@@ -275,30 +280,47 @@ function EditMetadataFields({
     return { body, clears };
   }
 
+  const [state, action, pending] = useActionState<
+    { values: Partial<Record<string, string>>; error: string | null },
+    FormData
+  >(
+    async (_previous, data) => {
+      const values = z.record(z.string(), z.string()).parse(Object.fromEntries(data));
+      let body: UpdateBookMetadataFields;
+      let clears: string[];
+      try {
+        ({ body, clears } = buildBody(values));
+      } catch (err) {
+        console.error("[EditMetadataDialog.buildBody] schema parse failed", err);
+        const error = "Form has an invalid value. Refresh and try again.";
+        toast.error(error);
+        return { values, error };
+      }
+      if (Object.keys(body).length === 0) {
+        const error = "No fields touched — nothing to save.";
+        toast.error(error);
+        return { values, error };
+      }
+      if (clears.length > 0 && data.get("confirm_clear") !== "true") {
+        setPendingClearConfirm(true);
+        return { values, error: null };
+      }
+      try {
+        await mutation.mutateAsync(body);
+        return { values, error: null };
+      } catch (err) {
+        return { values, error: isIfMatchMismatch(err) ? null : formatError(err) };
+      }
+    },
+    { values: {}, error: null },
+  );
+
   return (
     <>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          let body: UpdateBookMetadataFields;
-          let clears: string[];
-          try {
-            ({ body, clears } = buildBody());
-          } catch (err) {
-            console.error("[EditMetadataDialog.buildBody] schema parse failed", err);
-            toast.error("Form has an invalid value. Refresh and try again.");
-            return;
-          }
-          if (Object.keys(body).length === 0) {
-            toast.error("No fields touched — nothing to save.");
-            return;
-          }
-          if (clears.length > 0) {
-            setPendingClearConfirm(body);
-            return;
-          }
-          mutation.mutate(body);
-        }}
+      <Form
+        id={formId}
+        action={action}
+        validationErrors={{}}
         className="flex flex-1 flex-col overflow-y-auto px-4"
       >
         <div className="space-y-4 py-2">
@@ -307,16 +329,14 @@ function EditMetadataFields({
               key={field.name}
               field={field}
               hasCanonicalValue={canonicalValue(metadata, field.name) !== null}
-              state={state[field.name] ?? { value: "", touched: false }}
-              onChange={(value) => {
-                setState((prev) => ({
-                  ...prev,
-                  [field.name]: { value, touched: true },
-                }));
+              defaultValue={state.values[field.name] ?? canonicalValue(metadata, field.name) ?? ""}
+              onChange={() => {
+                touched.current.add(field.name);
               }}
             />
           ))}
         </div>
+        {state.error ? <FieldError>{state.error}</FieldError> : null}
         <SheetFooter className="mt-auto pt-4">
           <Button
             type="button"
@@ -328,16 +348,16 @@ function EditMetadataFields({
           >
             Cancel
           </Button>
-          <Button type="submit" isDisabled={mutation.isPending}>
+          <Button type="submit" isPending={pending}>
             Save
           </Button>
         </SheetFooter>
-      </form>
+      </Form>
 
       <AlertDialogContent
-        isOpen={pendingClearConfirm !== null}
+        isOpen={pendingClearConfirm}
         onOpenChange={(o) => {
-          if (!o) setPendingClearConfirm(null);
+          if (!o) setPendingClearConfirm(false);
         }}
       >
         <AlertDialogHeader>
@@ -350,19 +370,12 @@ function EditMetadataFields({
         <AlertDialogFooter>
           <AlertDialogCancel
             onPress={() => {
-              setPendingClearConfirm(null);
+              setPendingClearConfirm(false);
             }}
           >
             Cancel
           </AlertDialogCancel>
-          <AlertDialogAction
-            onPress={() => {
-              if (pendingClearConfirm) {
-                mutation.mutate(pendingClearConfirm);
-                setPendingClearConfirm(null);
-              }
-            }}
-          >
+          <AlertDialogAction type="submit" form={formId} name="confirm_clear" value="true">
             Clear and save
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -374,50 +387,33 @@ function EditMetadataFields({
 type FieldRowProps = {
   field: EditableField;
   hasCanonicalValue: boolean;
-  state: { value: string; touched: boolean };
-  onChange: (value: string) => void;
+  defaultValue: string;
+  onChange: () => void;
 };
 
 function FieldRow({
   field,
   hasCanonicalValue,
-  state,
+  defaultValue,
   onChange,
 }: Readonly<FieldRowProps>): ReactElement {
-  const id = `edit-${field.name}`;
   const useTextarea = FIELDS_AS_TEXTAREA.has(field.name);
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{field.label}</Label>
+    <TextField
+      name={field.name}
+      defaultValue={defaultValue}
+      onChange={onChange}
+      className="space-y-1.5"
+    >
+      <AriaLabel render={(props) => <Label {...props} />}>{field.label}</AriaLabel>
       {useTextarea ? (
-        <Textarea
-          id={id}
-          value={state.value}
-          onChange={(e) => {
-            onChange(e.target.value);
-          }}
-          rows={4}
-        />
+        <AriaTextArea render={(props) => <Textarea {...props} />} rows={4} />
       ) : (
-        <Input
-          id={id}
-          value={state.value}
-          onChange={(e) => {
-            onChange(e.target.value);
-          }}
-        />
+        <AriaInput render={(props) => <Input {...props} />} />
       )}
       {hasCanonicalValue ? null : <p className="text-fg-muted text-xs">No canonical value yet.</p>}
-    </div>
+    </TextField>
   );
-}
-
-function buildInitialState(fields: readonly EditableField[], metadata: BookMetadata): FieldState {
-  const out: FieldState = {};
-  for (const field of fields) {
-    out[field.name] = { value: canonicalValue(metadata, field.name) ?? "", touched: false };
-  }
-  return out;
 }
 
 function formatError(err: unknown): string {

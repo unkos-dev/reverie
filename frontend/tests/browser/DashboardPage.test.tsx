@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render } from "vitest-browser-react";
+import { page } from "vite-plus/test/browser";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
@@ -8,9 +9,9 @@ import type * as IngestionApi from "@/api/ingestion";
 import { queryKeys } from "@/lib/query/keys";
 import type { DashboardStats, DashboardActivity } from "@/api/dashboard";
 import { getDashboardStats, getDashboardActivity } from "@/api/dashboard";
-import { ACTIVITY_LIMIT } from "./DashboardPage";
+import { ACTIVITY_LIMIT } from "@/pages/admin/DashboardPage";
 
-import { DashboardPage } from "./DashboardPage";
+import { DashboardPage } from "@/pages/admin/DashboardPage";
 
 // Spy on the API client so error states can be driven deterministically.
 // Both default to rejecting: seeded-cache tests render from the primed cache,
@@ -87,11 +88,11 @@ function activityFixture(): DashboardActivity {
   };
 }
 
-function renderDashboard(
+async function renderDashboard(
   meData: typeof ADMIN_ME | typeof ADULT_ME | null,
   stats: DashboardStats | null,
   activity: DashboardActivity | null,
-): void {
+): Promise<void> {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (meData !== null) client.setQueryData(queryKeys.auth.me(), meData);
   if (stats !== null) client.setQueryData(queryKeys.dashboard.stats(), stats);
@@ -111,50 +112,54 @@ function renderDashboard(
       </QueryClientProvider>
     );
   }
-  render(<Wrapper />);
+  await render(<Wrapper />);
 }
 
 describe("DashboardPage", () => {
   test("renders heading and book total for admin", async () => {
-    renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
-    expect(await screen.findByRole("heading", { name: /library health/i })).toBeInTheDocument();
-    expect(screen.getByText("1,204")).toBeInTheDocument();
+    await renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
+    await expect
+      .element(page.getByRole("heading", { name: /library health/i }))
+      .toBeInTheDocument();
+    await expect.element(page.getByText("1,204")).toBeInTheDocument();
   });
 
   test("names every metadata coverage progress bar", async () => {
-    renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
+    await renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
     for (const name of ["Description", "Language", "ISBN-13", "Cover"]) {
-      expect(await screen.findByRole("progressbar", { name })).toBeInTheDocument();
+      await expect.element(page.getByRole("progressbar", { name })).toBeInTheDocument();
     }
   });
 
   test("redirects non-admin to /library", async () => {
-    renderDashboard(ADULT_ME, null, null);
-    expect(await screen.findByTestId("library-page")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /library health/i })).not.toBeInTheDocument();
+    await renderDashboard(ADULT_ME, null, null);
+    await expect.element(page.getByTestId("library-page")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("heading", { name: /library health/i }))
+      .not.toBeInTheDocument();
   });
 
   test("renders recent ingestion batch row", async () => {
-    renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
+    await renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
     // Batch total (42) appears in the activity table.
-    expect(await screen.findByText("42")).toBeInTheDocument();
+    await expect.element(page.getByText("42")).toBeInTheDocument();
   });
 
   test("footnotes the clean bucket with non-epub count", async () => {
-    renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
-    expect(await screen.findByText(/104/)).toBeInTheDocument();
+    await renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
+    await expect.element(page.getByText(/104/)).toBeInTheDocument();
   });
 
   test("surfaces an error when stats fail to load", async () => {
     vi.mocked(getDashboardStats).mockRejectedValueOnce(new Error("stats boom"));
-    renderDashboard(ADMIN_ME, null, { batches: [] });
-    expect(await screen.findByText(/failed to load metrics/i)).toBeInTheDocument();
+    await renderDashboard(ADMIN_ME, null, { batches: [] });
+    await expect.element(page.getByText(/failed to load metrics/i)).toBeInTheDocument();
   });
 
   test("surfaces an error when ingestion activity fails to load", async () => {
     vi.mocked(getDashboardActivity).mockRejectedValueOnce(new Error("activity boom"));
-    renderDashboard(ADMIN_ME, statsFixture(), null);
-    expect(await screen.findByText(/failed to load ingestion activity/i)).toBeInTheDocument();
+    await renderDashboard(ADMIN_ME, statsFixture(), null);
+    await expect.element(page.getByText(/failed to load ingestion activity/i)).toBeInTheDocument();
   });
 
   test("renders empty library without dividing by zero", async () => {
@@ -171,9 +176,11 @@ describe("DashboardPage", () => {
         has_cover: 0,
       },
     });
-    renderDashboard(ADMIN_ME, empty, { batches: [] });
-    expect(await screen.findByRole("heading", { name: /library health/i })).toBeInTheDocument();
+    await renderDashboard(ADMIN_ME, empty, { batches: [] });
+    await expect
+      .element(page.getByRole("heading", { name: /library health/i }))
+      .toBeInTheDocument();
     // Coverage shows 0% (not NaN%) on an empty library.
-    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    await expect.element(page.getByText(/NaN/)).not.toBeInTheDocument();
   });
 });
