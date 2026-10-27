@@ -55,6 +55,10 @@ Actions stay pending until the awaited mutation and its completion work settle. 
 and allow correction or retry. Successful submission preserves each screen's navigation, reset or dialog closure
 behaviour. Token receipt values use read-only TextFields with associated Labels and styled Inputs.
 
+Settings saves use the router's default transitions. Navigation requested during a save remains pending until the action
+settles. A successful save proceeds through the blocked navigation; a failed save keeps the draft and presents the
+leave-or-stay prompt.
+
 Vocabulary pickers supply server suggestions to the ComboBox collection. ComboBoxValue renders hydrated selections
 separately, in selected-key order rather than server rank. Multiple selection retains the native popup lifecycle.
 
