@@ -2,7 +2,8 @@
 
 _(Operator detail: see `./README.md`)_
 
-<foundations>
+## Foundations
+
 Vite+, React 19, React Aria Components, Tailwind v4, Vite+'s bundled Vitest and Playwright are Reverie's chosen tools.
 Use their documented defaults. An alternative implementation needs evidence that the default is deficient or incorrect
 for Reverie, with approval governed by the root rules. Existing code follows the same standard: an existing workaround
@@ -16,48 +17,47 @@ does not justify keeping it when the chosen tool meets the requirement.
 - **Recipes, not tools:** Use `just js::test`, `just js::check`, `just js::a11y` and `just js::detect`. `vp test`,
   `vp build` and `vp lint` are Vite+ built-ins and ignore a `package.json` script of the same name; `vp run <script>`
   runs the script.
-</foundations>
 
-<interaction>
+## Interaction
+
 - **React Aria owns interaction:** Build interactive UI from the React Aria Components wrappers in `src/components/ui/`,
   styled with Reverie tokens and Tailwind data-attribute modifiers (`data-selected:`). Use the `ui/button` wrapper with
   `onPress`. Never run the shadcn CLI, overwrite existing wrappers with starter output, or reintroduce Radix UI or
   `cmdk`.
 - **No stand-in controls:** Never make a `<div>` or `<span>` act as a control, and never rebuild focus, keyboard or
   dismissal behaviour that a React Aria component already provides.
-</interaction>
 
-<react>
+## React
+
 - **Function components:** Write components as functions. Component-level error boundaries use `react-error-boundary`;
   routes use React Router's `errorElement`.
 - **Server state:** API calls live in `src/api/`, and lint bans `fetch` elsewhere. Fetching, caching and mutations go
   through React Query, never `useState` or `useEffect`.
-- **Effects:** Keep dependency arrays complete and never suppress the rule. Use `useEffectEvent` for
-  non-reactive event logic an Effect calls, never to drop a dependency that should resynchronise the Effect. Return a
-  cleanup when the Effect starts something that must be stopped or undone. Never pass an async function directly. An
-  async Effect for non-server state cancels obsolete work from its cleanup
-  (`AbortController` where the API supports it, a staleness flag otherwise), suppresses only the expected cancellation
-  error, and lets every other failure propagate. Give each Effect one lifecycle concern.
+- **Effects:** Keep dependency arrays complete and never suppress the rule. Use `useEffectEvent` for non-reactive event
+  logic an Effect calls, never to drop a dependency that should resynchronise the Effect. Return a cleanup when the
+  Effect starts something that must be stopped or undone. Never pass an async function directly. An async Effect for
+  non-server state cancels obsolete work from its cleanup (`AbortController` where the API supports it, a staleness flag
+  otherwise), suppresses only the expected cancellation error, and lets every other failure propagate. Give each Effect
+  one lifecycle concern.
 - **Error boundaries:** Every `<Suspense>` needs an error boundary above it. The route `errorElement`
   (`RootErrorBoundary`) counts. Add a local boundary only when a failure should stay inside part of the page, as
   `TableChunkBoundary` does.
-- **Forms:** Use React Aria `Form` with uncontrolled fields, submitted through the `action` prop. Validation uses
-  React Aria constraints, `validate` and `FieldError`. React resets uncontrolled fields once the action succeeds, so
-  await the request inside the action and handle expected failures there: return the submitted values and server
-  errors through `useActionState`, and feed them back as `defaultValue` and `validationErrors`. A thrown error reaches
-  the nearest error boundary. Keep pending state until the request settles and preserve entered values and feedback
-  after expected failures. Each existing form migration verifies pending state, failure feedback and retained values.
-  Control a field only when its value drives other UI or needs realtime validation.
+- **Forms:** Use React Aria `Form` with uncontrolled fields, submitted through the `action` prop. Validation uses React
+  Aria constraints, `validate` and `FieldError`. React resets uncontrolled fields once the action succeeds, so await the
+  request inside the action and handle expected failures there: return the submitted values and server errors through
+  `useActionState`, and feed them back as `defaultValue` and `validationErrors`. A thrown error reaches the nearest
+  error boundary. Keep pending state until the request settles and preserve entered values and feedback after expected
+  failures. Each existing form migration verifies pending state, failure feedback and retained values. Control a field
+  only when its value drives other UI or needs realtime validation.
 - **Client state:** Start with `useState` in the owning component, then composition, then lifting to the nearest common
   ancestor. Use Context only for low-frequency values such as theme and auth.
 - **Memoisation:** The React Compiler lint rules are on and the compiler transform is off. Add `memo`, `useMemo` or
-  `useCallback` only for a measured performance need, reference stability or an API contract. Leave existing
-  memoisation in place unless you test the removal.
+  `useCallback` only for a measured performance need, reference stability or an API contract. Leave existing memoisation
+  in place unless you test the removal.
 - **Logging:** No production `console.log` or `console.debug`. `console.error` belongs to error boundaries and degraded
   paths.
-</react>
 
-<typescript_invariants>
+## TypeScript invariants
 
 - **Lint is the authority:** The root `vite.config.ts` enforces type-aware strict rules, including no `any`, no non-null
   assertions, no unsafe member access, no object-literal type assertions and no array-index keys. Narrow `unknown` with
@@ -74,9 +74,8 @@ does not justify keeping it when the chosen tool meets the requirement.
   `z.string()`. Timestamps use bare `z.iso.datetime()`: the API emits `Z`-terminated RFC 3339, and `{ offset: true }`
   would also accept `+00:00`, which nothing produces. A malformed wire format once reached production through a
   `z.string()` field. Request schemas keep matching what the endpoint accepts, which can be looser.
-</typescript_invariants>
 
-<state_ownership>
+## State ownership
 
 - **One Writer Per Shared State:** Client state with more than one writer gets a single owner; components dispatch to
   it, never independently read-modify-write the same URL params or store slice.
@@ -96,9 +95,9 @@ does not justify keeping it when the chosen tool meets the requirement.
   sort in a request, and never resolve sort independently in a component: a second resolution is the read split that
   made an inherited descending sort unclearable.
 - **Retained rows keep their source:** While previous results stay on screen, row edits, undo and conflict reload use
-  the displayed rows' source query key, not the current one. </state_ownership>
+  the displayed rows' source query key, not the current one.
 
-<styling_architecture>
+## Styling architecture
 
 - **Tailwind v4 utilities and Reverie tokens:** Class names are complete static strings. Merge conditional and consumer
   classes with `cn` (`src/lib/utils.ts`), which resolves conflicts through `tailwind-merge`.
@@ -113,9 +112,9 @@ does not justify keeping it when the chosen tool meets the requirement.
     with the regenerated file.
   - `src/styles/themes/index.css`: Semantic roles and compatibility aliases. Stylelint bans hex here.
   - `src/styles/themes/atmosphere.css`: Sealed art-directed tier.
-</styling_architecture>
 
-<design>
+## Design
+
 `DESIGN.md` and `PRODUCT.md` are this package's design artifacts under the root design-authority rules.
 
 - **Impeccable:** Use the `impeccable` skill for UI work within the design scope those rules authorise. Run
@@ -123,9 +122,8 @@ does not justify keeping it when the chosen tool meets the requirement.
 - **Rendered verification:** Inspect and screenshot the rendered page with the `playwright-cli` skill and compare it
   with the artifact. It is inspection tooling: Browser Mode tests, the Playwright journeys and the accessibility gate
   remain the automated test surfaces.
-</design>
 
-<testing_standards>
+## Testing standards
 
 - **Choose the environment by the assertion:** Browser-dependent component behaviour belongs in `tests/browser/`
   (`components-chromium`), browser-independent logic in a Node project, and document navigation in Playwright journeys
@@ -139,4 +137,4 @@ does not justify keeping it when the chosen tool meets the requirement.
   already on port 5173. Never narrow the WCAG tag ladder. An accepted violation needs a carve-out with its rationale in
   the same file. New scannable routes join `DEFAULT_TARGETS`; `A11Y_TARGETS` is a per-run override that CI does not set.
   A route qualifies only when it renders a single top-level `<main>` without an API, because the lane boots Vite alone:
-  a mount-time query renders an error branch the scan would certify as passing. </testing_standards>
+  a mount-time query renders an error branch the scan would certify as passing.
