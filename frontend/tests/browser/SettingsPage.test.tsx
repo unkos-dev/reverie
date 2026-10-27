@@ -1233,7 +1233,7 @@ describe("validation", () => {
     await user.click(page.getByRole("link", { name: /Covers/ }));
     await user.click(page.getByRole("button", { name: "Leave and discard changes" }));
     await expect.element(page.getByRole("form", { name: "Covers settings" })).toBeInTheDocument();
-    expect(invalidControls()).toHaveLength(0);
+    await expect.poll(invalidControls).toHaveLength(0);
     await user.click(page.getByRole("link", { name: /Enrichment/ }));
     await expect
       .element(page.getByRole("form", { name: "Enrichment settings" }))
@@ -1267,7 +1267,7 @@ describe("validation", () => {
     await expect
       .element(page.getByText("The server returned an error. Your edits are still here."))
       .toBeInTheDocument();
-    expect(invalidControls()).toHaveLength(0);
+    await expect.poll(invalidControls).toHaveLength(0);
     await expect
       .element(page.getByRole("textbox", { name: "Concurrent lookups" }))
       .not.toHaveAccessibleDescription(/server/);
@@ -1378,7 +1378,7 @@ describe("validation", () => {
     await expect
       .element(page.getByRole("textbox", { name: "Concurrent lookups" }))
       .not.toHaveAttribute("aria-invalid");
-    expect(invalidControls()).toHaveLength(0);
+    await expect.poll(invalidControls).toHaveLength(0);
   });
 
   test("a server 422 for the static one-format row stays a general alert", async () => {
@@ -1399,7 +1399,7 @@ describe("validation", () => {
         ),
       )
       .toBeInTheDocument();
-    expect(invalidControls()).toHaveLength(0);
+    await expect.poll(invalidControls).toHaveLength(0);
   });
 });
 
@@ -2102,7 +2102,7 @@ describe("a stale write", () => {
       await expect
         .element(page.getByRole("textbox", { name: "Concurrent lookups" }))
         .toHaveValue("8");
-      expect(invalidControls()).toHaveLength(0);
+      await expect.poll(invalidControls).toHaveLength(0);
     });
 
     test("a failed Save my choices keeps the other edit, clears the discarded error and still blocks invalid retained text", async () => {

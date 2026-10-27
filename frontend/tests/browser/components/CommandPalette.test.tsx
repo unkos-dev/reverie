@@ -218,6 +218,8 @@ describe("CommandPalette — search flow", () => {
     await user.type(input, "williams");
     const first = page.getByRole("menuitem", { name: /Stoner/ });
     const second = page.getByRole("menuitem", { name: /Butcher's Crossing/ });
+    await expect.element(first).toBeInTheDocument();
+    await expect.element(second).toBeInTheDocument();
     await expect.element(input).toHaveFocus();
     await expect.element(input).toHaveAttribute("aria-activedescendant", first.element().id);
     await user.tab();
