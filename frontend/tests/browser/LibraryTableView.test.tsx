@@ -272,7 +272,7 @@ describe("LibraryTableView", () => {
     const title = page.getByRole("columnheader", { name: "Title (all editions)" });
     const initialTitleWidth = title.element().getBoundingClientRect().width;
     const container = page.getByTestId("pilot-container").element();
-    container.setAttribute("class", "w-[1100px]");
+    container.style.width = `${String(grid.scrollWidth + initialWidth)}px`;
     await expect.poll(() => grid.clientWidth).toBeGreaterThan(initialWidth);
     await expect
       .poll(() => title.element().getBoundingClientRect().width)
@@ -321,8 +321,7 @@ describe("LibraryTableView", () => {
     const user = userEvent;
     const titleHeader = page.getByRole("columnheader", { name: "Title (all editions)" });
     await user.click(titleHeader);
-    grid.scrollTo({ left: grid.scrollWidth });
-    grid.scrollTo({ left: grid.scrollWidth });
+    grid.scrollTo({ left: grid.clientWidth / 4 });
 
     const authorsHeader = page.getByRole("grid").getByRole("columnheader", {
       name: "Authors (all editions)",
@@ -470,7 +469,7 @@ describe("LibraryTableView", () => {
       ],
     });
     const grid = page.getByRole("grid").element();
-    grid.scrollTo({ left: grid.scrollWidth });
+    grid.scrollTo({ left: grid.clientWidth / 4 });
     await expect.element(page.getByRole("grid").getByText("Discworld · #8")).toBeInTheDocument();
     grid.scrollTo({ left: grid.scrollWidth });
     await expect.element(page.getByRole("grid").getByText("want to read")).toBeInTheDocument();
@@ -517,7 +516,7 @@ describe("LibraryTableView", () => {
 
   describe("cell editing", () => {
     function scrollToRevealRightColumns(grid: Element): void {
-      grid.scrollTo({ left: grid.scrollWidth });
+      grid.scrollTo({ left: grid.clientWidth / 4 });
     }
 
     function scrollToRevealTrailingColumns(grid: Element): void {
@@ -619,6 +618,79 @@ describe("LibraryTableView", () => {
       await expect.element(page.getByRole("group", { name: "Rating" })).toBeInTheDocument();
     });
 
+    test.each(["comfortable", "compact"] as const)(
+      "%s density fits all six rating controls and preserves keyboard and pointer commits",
+      async (density) => {
+        const row = editableRowFixture();
+        vi.mocked(updateReadingState).mockImplementation((_id, patch) =>
+          Promise.resolve({
+            status: "want_to_read",
+            rating: patch.rating ?? null,
+            notes: null,
+            progress_pct: null,
+            started_at: null,
+            finished_at: null,
+            last_read_at: null,
+          }),
+        );
+        await renderTableView({ items: [row], density });
+        const grid = page.getByRole("grid");
+        scrollToRevealRightColumns(grid.element());
+        scrollToRevealTrailingColumns(grid.element());
+        const cell = grid.getByText("★★★");
+        const group = page.getByRole("group", { name: "Rating", exact: true });
+        await userEvent.click(cell);
+        await userEvent.keyboard("{Enter}");
+        await expect.element(group).toHaveFocus();
+        const editorCell = group.element().closest('[role="gridcell"]');
+        if (editorCell === null) throw new Error("rating editor has no grid cell");
+        const cellBounds = editorCell.getBoundingClientRect();
+        const style = getComputedStyle(editorCell);
+        const rightEdge = cellBounds.right - Number.parseFloat(style.borderRightWidth);
+        const controls = group.getByRole("button").all();
+        expect(controls).toHaveLength(6);
+        for (const control of controls) {
+          await expect.element(control).toBeVisible();
+          await expect.element(control).toHaveAttribute("tabindex", "-1");
+          const bounds = control.element().getBoundingClientRect();
+          expect(bounds.width).toBe(24);
+          expect(bounds.left).toBeGreaterThanOrEqual(cellBounds.left);
+          expect(bounds.right).toBeLessThanOrEqual(rightEdge);
+          expect(bounds.top).toBeGreaterThanOrEqual(cellBounds.top);
+          expect(bounds.bottom).toBeLessThanOrEqual(cellBounds.bottom);
+        }
+        await page.screenshot({ path: `test-results/browser/library-rating-${density}.png` });
+        await userEvent.keyboard("{ArrowRight}");
+        await expect
+          .element(group.getByRole("button", { name: "Rate 4 of 5" }))
+          .toHaveAttribute("aria-pressed", "true");
+        expect(updateReadingState).not.toHaveBeenCalled();
+        await userEvent.keyboard("{Enter}");
+        await expect
+          .poll(() => vi.mocked(updateReadingState).mock.calls)
+          .toEqual([[row.id, { rating: 4 }]]);
+        await expect.element(group).not.toBeInTheDocument();
+        for (const rating of [1, 2, 3, 4, 5, null]) {
+          await expect.element(cell).not.toHaveAttribute("aria-busy", "true");
+          await userEvent.click(cell);
+          await userEvent.keyboard("{Enter}");
+          const name = rating === null ? "Clear rating" : `Rate ${String(rating)} of 5`;
+          await userEvent.click(group.getByRole("button", { name }));
+          await expect.element(group).not.toBeInTheDocument();
+        }
+        await expect
+          .poll(() => vi.mocked(updateReadingState).mock.calls)
+          .toEqual([
+            [row.id, { rating: 4 }],
+            [row.id, { rating: 1 }],
+            [row.id, { rating: 2 }],
+            [row.id, { rating: 4 }],
+            [row.id, { rating: 5 }],
+            [row.id, { rating: null }],
+          ]);
+      },
+    );
+
     test("Enter opens the authors popover editor", async () => {
       const row = editableRowFixture();
       await renderTableView({ items: [row] });
@@ -715,7 +787,7 @@ describe("LibraryTableView", () => {
       const row = rowFixture(1, { series: { id: "s1", name: "Discworld", position: 8 } });
       await renderTableView({ items: [row], onRowActivate });
       const grid = page.getByRole("grid").element();
-      grid.scrollTo({ left: grid.scrollWidth });
+      grid.scrollTo({ left: grid.clientWidth / 4 });
       const user = userEvent;
       const seriesCell = page.getByRole("grid").getByText("Discworld · #8");
       await user.click(seriesCell);

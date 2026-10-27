@@ -369,7 +369,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
     key: "rating",
     name: "Rating",
     sortable: false,
-    width: 90,
+    width: 173,
     accessor: (row) => {
       const rating = row.reading_state?.rating ?? null;
       // Guarding below 1 here rather than in the zod schema: a schema bound
