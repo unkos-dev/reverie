@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import { forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
+import { activeUserId, forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
 
 import { readDisplayPreferences, writeDisplayPreferences } from "./display-storage";
 import { readRailCollapsed, writeRailCollapsed } from "./rail-storage";
@@ -22,4 +22,14 @@ test("unavailable storage preserves display and rail fallback contracts", () => 
     writeRailCollapsed(true);
   }).not.toThrow();
   forgetActiveUser();
+});
+
+test("unavailable storage does not escape active-account operations", () => {
+  expect(activeUserId()).toBeNull();
+  expect(() => {
+    rememberActiveUser("user-a");
+  }).not.toThrow();
+  expect(() => {
+    forgetActiveUser();
+  }).not.toThrow();
 });

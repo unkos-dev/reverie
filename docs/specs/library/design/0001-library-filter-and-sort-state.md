@@ -130,9 +130,11 @@ and Clear remain usable; correction or Clear can request results again. The Prob
 map, so server detail does not identify field errors. Other initial or changed-query failures reach the route error
 boundary. Other failed load-more requests retain loaded pages and provide the existing Retry action.
 
-A table chunk failure selects the visit's grid override without rewriting the account preference. A failed preference
-write keeps the local choice for the current session and logs the failure; a late preference response cannot overwrite a
-local choice. A missing or stale first-paint mirror can cause one correction when account preferences arrive.
+A table-load failure stays inside the results region. Reload page starts a fresh application load and restores the
+Library visit. Switch to grid view selects the visit's grid override without rewriting the account preference. A failed
+preference write keeps the local choice for the current session and logs the failure; a late preference response cannot
+overwrite a local choice. A missing or stale first-paint mirror can cause one correction when account preferences
+arrive.
 
 ## Security and operations
 

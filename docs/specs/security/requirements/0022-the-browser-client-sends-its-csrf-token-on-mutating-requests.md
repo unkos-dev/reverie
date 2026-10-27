@@ -27,12 +27,12 @@ server access logs. See the
 ## Acceptance criteria
 
 - A `GET` request never carries the `X-CSRF-Token` header even when a token is cached. Checked by
-  `"GET does NOT inject X-CSRF-Token even when token is cached"` in `frontend/src/api/fetch.test.ts`.
+  `"GET does NOT inject X-CSRF-Token even when token is cached"` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A `POST` request carries the header when a token is cached. Checked by
-  `"POST injects X-CSRF-Token when token is cached"` in `frontend/src/api/fetch.test.ts`.
+  `"POST injects X-CSRF-Token when token is cached"` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A `POST` issued with no cached token triggers exactly one hydration fetch before the request is sent, and the header
   is still omitted if hydration yields no token. Checked by
   `"POST with no cached token hydrates once; still omits the header when none is issued"` in
-  `frontend/src/api/fetch.test.ts`.
+  `frontend/tests/browser/api/fetch.test.tsx`.
 - A token consisting of an empty string is treated as no token: the cache clears rather than holding the empty value.
   Checked by `"clears cache when csrf_token is empty string"` in `frontend/src/api/csrf.test.ts`.

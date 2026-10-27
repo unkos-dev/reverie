@@ -1,9 +1,7 @@
 import { describe, it, expect } from "vite-plus/test";
 import { render } from "vitest-browser-react";
-import { page } from "vite-plus/test/browser";
+import { page, server } from "vite-plus/test/browser";
 import { Lockup } from "@/components/Lockup";
-import slotFaviconSvg from "../../../public/brand/glyph/slot-favicon.svg?raw";
-import slotSvg from "../../../public/brand/glyph/slot.svg?raw";
 
 describe("Lockup", () => {
   it("renders the wordmark text", async () => {
@@ -25,11 +23,12 @@ describe("Lockup", () => {
   });
 
   it.each([
-    { size: 17, artwork: slotFaviconSvg },
-    { size: 18, artwork: slotSvg },
+    { size: 17, asset: "slot-favicon.svg" },
+    { size: 18, asset: "slot.svg" },
   ])(
     "inlines the exact canonical knockout at the $size px variant boundary",
-    async ({ size, artwork }) => {
+    async ({ size, asset }) => {
+      const artwork = await server.commands.readFile(`public/brand/glyph/${asset}`);
       const { container } = await render(<Lockup size={size} />);
       const paths = container.querySelectorAll("svg path");
       const canonical = new DOMParser().parseFromString(artwork, "image/svg+xml");

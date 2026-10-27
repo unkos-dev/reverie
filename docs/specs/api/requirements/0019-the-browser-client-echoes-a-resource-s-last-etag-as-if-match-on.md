@@ -25,16 +25,17 @@ explicitly sets its own `If-Match` is never overridden.
 
 - A `PATCH` for a resource follows a `GET` of that same resource: the `PATCH` request carries the `ETag` value the `GET`
   response carried, as `If-Match`. Checked by `a GET response's ETag is echoed as If-Match on that resource's PATCH` in
-  `frontend/src/api/fetch.test.ts`.
+  `frontend/tests/browser/api/fetch.test.tsx`.
 - After a successful `PATCH` on a resource, a further `PATCH` on that same resource carries the `ETag` value the
   successful `PATCH`'s own response carried, not the one from an earlier response. Checked by
-  `a successful PATCH's own ETag replaces the retained tag for the next PATCH` in `frontend/src/api/fetch.test.ts`.
+  `a successful PATCH's own ETag replaces the retained tag for the next PATCH` in
+  `frontend/tests/browser/api/fetch.test.tsx`.
 - After a `412` response on a resource, a further `PATCH` on that same resource carries the current `ETag` value the
   `412` response carried, not the stale value that caused the mismatch. Checked by
-  `a 412's current ETag replaces the stale retained tag` in `frontend/src/api/fetch.test.ts`.
+  `a 412's current ETag replaces the stale retained tag` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A `PATCH` for a resource for which the client holds no retained `ETag` carries no `If-Match` header at all. Checked by
-  `a resource with no retained tag PATCHes without If-Match` in `frontend/src/api/fetch.test.ts`.
+  `a resource with no retained tag PATCHes without If-Match` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A last-seen `ETag` for one resource is never sent as `If-Match` on a `PATCH` to a different resource, even when both
   are in flight in the same session. Checked by
   `a retained tag on a manifestation's metadata resource is not sent for an unrelated shelves PATCH` in
-  `frontend/src/api/fetch.test.ts`.
+  `frontend/tests/browser/api/fetch.test.tsx`.

@@ -56,8 +56,7 @@ Number.prototype.toLocaleString = function toLocaleString(
   return new Intl.NumberFormat(locales, options).format(this);
 };
 
-// jsdom has no ResizeObserver; cmdk (via Radix Dialog) requires it.
-// No-op stub is sufficient — tests don't observe resizes themselves.
+// Migration-only substitutes for browser APIs missing from jsdom.
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
     observe(): void {}
@@ -66,10 +65,7 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   };
 }
 
-// jsdom implements none of the Pointer Capture API or scrollIntoView, both of
-// which Radix Select touches when its trigger opens. No-op stubs let Select
-// (and any Radix primitive built on pointer capture) open under test. The DOM
-// lib types declare these as always present, so assign unconditionally.
+// The DOM types declare these browser APIs as present, while jsdom omits them.
 Element.prototype.hasPointerCapture = (): boolean => false;
 Element.prototype.setPointerCapture = (): void => {};
 Element.prototype.releasePointerCapture = (): void => {};

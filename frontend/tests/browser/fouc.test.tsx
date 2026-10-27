@@ -16,8 +16,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
   document.cookie = `${THEME_COOKIE_NAME}=; Path=/; Max-Age=0`;
   document.documentElement.removeAttribute("data-theme");
 });
@@ -88,19 +86,36 @@ describe("fouc.js", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 
-  test("matchMedia throws → catch fallback sets light + warns", () => {
-    document.cookie = `${THEME_COOKIE_NAME}=system`;
-    vi.stubGlobal("matchMedia", () => {
-      throw new Error("matchMedia unavailable");
-    });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-    runFouc();
-
-    expect(document.documentElement.dataset.theme).toBe("light");
-    expect(warn).toHaveBeenCalled();
-    const msg: unknown = warn.mock.calls[0]?.[0];
-    expect(typeof msg).toBe("string");
-    expect(msg).toMatch(/FOUC/);
+  test("native cookie denial selects light and emits the FOUC warning", async () => {
+    const session = cdp();
+    const warnings: unknown[] = [];
+    const observe = (event: { type: string; args: { value?: unknown }[] }): void => {
+      if (event.type === "warning") warnings.push(event.args[0]?.value);
+    };
+    session.on("Runtime.consoleAPICalled", observe);
+    await session.send("Runtime.enable");
+    const frame = document.createElement("iframe");
+    frame.setAttribute("sandbox", "allow-scripts");
+    const messages: unknown[] = [];
+    const receive = (event: MessageEvent<unknown>): void => {
+      if (event.source === frame.contentWindow) messages.push(event.data);
+    };
+    window.addEventListener("message", receive);
+    frame.srcdoc = `<script>${FOUC_BODY}</script><script>parent.postMessage(document.documentElement.dataset.theme, "*")</script>`;
+    try {
+      document.body.append(frame);
+      await vi.waitFor(() => {
+        expect(messages).toEqual(["light"]);
+      });
+      await vi.waitFor(() => {
+        expect(
+          warnings.some((message) => typeof message === "string" && /FOUC/.test(message)),
+        ).toBe(true);
+      });
+    } finally {
+      frame.remove();
+      window.removeEventListener("message", receive);
+      session.off("Runtime.consoleAPICalled", observe);
+    }
   });
 });

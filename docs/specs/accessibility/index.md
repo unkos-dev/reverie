@@ -9,3 +9,4 @@
 ## Designs
 
 - [REV-DESIGN-0002](design/0002-accessibility-gate-and-manual-audit.md): Accessibility gate and manual audit
+- [REV-DESIGN-0030](design/0030-accessible-application-controls.md): Accessible application controls

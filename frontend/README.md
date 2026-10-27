@@ -71,44 +71,15 @@ For Library visit persistence and local-day projection, see the
 [Library state Design](../docs/specs/library/design/0001-library-filter-and-sort-state.md) and
 [Navigation-entry decision](../docs/adr/0066-library-visit-state-and-local-day-filter-boundaries.md).
 
-## Interactive components
+## Application behaviour
 
-Follow the React Aria composition rules in [AGENTS.md](AGENTS.md). Visual and interaction specifications live in
-[DESIGN.md](DESIGN.md#layout); the
-[Library state Design](../docs/specs/library/design/0001-library-filter-and-sort-state.md) records ownership and runtime
-behaviour.
+The [Accessible application controls Design](../docs/specs/accessibility/design/0030-accessible-application-controls.md)
+records field composition, form actions, pending and failure states, selection controls, overlays and command-palette
+navigation. The [Library state Design](../docs/specs/library/design/0001-library-filter-and-sort-state.md) covers filter
+ownership, vocabulary selection, visit restoration and table-load recovery.
 
-Vocabulary pickers supply server suggestions to the `ComboBox` collection and render hydrated selections inside
-`ComboBoxValue` separately. Selection order follows the selected keys, not server ranking. Multiple selection keeps the
-native popup lifecycle. The command palette uses `MenuItem` links with native routing and closure. Arrow navigation
-retains input focus through `Autocomplete`; Tab traverses result links. Scrolling belongs to the `Menu`. Dialog and
-select labels belong to their native parent composition.
-
-Table-load failures stay inside the results region. Reload page starts a fresh application load and restores the Library
-visit; Switch to grid view keeps browsing available without reloading or changing the account's view preference.
-
-Create-user role and token expiry use named, uncontrolled Selects. Submission reads and validates their FormData values;
-failed requests retain the choices, and reopening a closed dialog restores the defaults.
-
-Selection controls compose native fields and buttons with labelled content. Use `isSelected`, `isReadOnly`, `isDisabled`
-and `isPending` for their native states. Ingestion mounts query children only while expanded. Book tabs activate from
-arrow keys and mount only the selected panel. Buttons styled as navigation links use React Router Link with
-`buttonVariants`.
-
-Token receipt fields use native `TextField`, `Label` and `Input` composition for their read-only values and label
-associations. The supported `render` prop retains the shared field styling.
-
-Settings actions are disabled when pristine; Save stays in the tab order while pending.
-
-Radix Colors and `src/styles/themes/primitives.generated.css` supply the colour foundation independently of the
-interaction library. The Radix UI runtime is not installed. The grid engine and its editing, sorting and loading state
-remain separate from the shared controls.
-
-## Native form validation
-
-React Aria fields own validation messages, their associations and first-invalid-field focus. Domain validators and API
-mutations remain in their owning modules. Settings retains its drafts, dirty patches and concurrency handling;
-validation appears beside each field. General API failures remain alerts.
+Implementation rules live in [AGENTS.md](AGENTS.md). Visual and interaction authority remains in
+[DESIGN.md](DESIGN.md).
 
 ## Environment Variables
 

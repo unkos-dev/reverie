@@ -923,6 +923,18 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0060"
+      ],
+      "id": "REV-DESIGN-0030",
+      "kind": "design",
+      "path": "docs/specs/accessibility/design/0030-accessible-application-controls.md",
+      "satisfies": [
+        "REV-REQ-0004"
+      ],
+      "title": "Accessible application controls"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
