@@ -10,7 +10,7 @@ artifacts and design-authority rules govern its use.
 ## Testing
 
 Run `just js::test` from the repository root to execute all frontend test projects, running Vitest first and then the
-same Library navigation journeys used by CI. After the lockfile-backed `just install`, provision the browser from
+same application navigation journeys used by CI. After the lockfile-backed `just install`, provision the browser from
 `frontend/`:
 
 ```bash
@@ -32,8 +32,8 @@ Choose the environment by the assertion:
   `userEvent` from `vite-plus/test/browser` for native keyboard and pointer interaction, with real focus, layout,
   scrolling and ResizeObserver behaviour. The renderer owns component cleanup before each test. Do not import the jsdom
   setup or fabricate geometry and focus.
-- Browser-independent logic belongs in a Node project. The existing `vite-plugins`, `radix-gen` and `a11y` projects
-  demonstrate Node configuration; classify source tests before moving them.
+- Browser-independent source logic belongs in `frontend-node`. The `vite-plugins`, `radix-gen` and `a11y` projects cover
+  their respective tooling.
 - Actual document navigation belongs in standalone browser journeys under `tests/journeys/`. Component tests run inside
   an embedded Vitest frame; navigation can destroy that frame. They do not establish the final logout destination or
   session invalidation.
@@ -41,9 +41,8 @@ Choose the environment by the assertion:
 The `frontend` jsdom project is temporary migration coverage. Add no new tests to it. Keep its required assertions until
 each has an equivalent home: browser-dependent outcomes in Browser Mode, pure logic in Node, and actual navigation in
 standalone journeys. Remove superseded jsdom cases as those outcomes are verified, then remove jsdom and its geometry,
-focus and browser API stubs once no required assertion depends on them. Dialog coverage lives in Browser Mode. UserMenu
-retains logout navigation intent in jsdom, and LibraryTableView retains grid outcomes without browser replacements.
-Complete suite conversion is separate work.
+focus and browser API stubs once no required assertion depends on them. Authentication and logout journeys check final
+document destinations; source suites remain only where replacement verification is incomplete.
 
 From `frontend/`, run `vp test run --project components-chromium` for focused browser work or
 `vp test --project components-chromium --browser.headless=false` for interactive debugging. Browser matcher types live
@@ -57,15 +56,14 @@ output and automatic screenshots under `frontend/test-results/browser/` when cap
 directory alongside `test-results/library/` journey traces as `browser-failures`. A browser launch failure may have no
 screenshot.
 
-The `library-model` Node project owns pure Library projection and summary tests. Focused native numeric/date bindings
-live in `tests/browser/editors.test.tsx`; query, cache and selection assertions remain in their existing source suites.
-`just js::library-journeys` runs `tests/journeys/library-navigation.spec.ts` through `playwright.library.config.ts` in
-Chromium and patched Firefox. Each invocation builds through `just js::build`, then serves the production output with
-`vp preview` to exclude development tooling. It owns a strict loopback server on port 5174 with reuse disabled and
-intercepts synthetic APIs through the real application bootstrap and Router. It needs no database or real login
-credentials. It proves navigation and client request/result integration, not actual authentication or database
-predicates. The WCAG config and allowlist remain separate. Missing browser system libraries stop local verification;
-local gates never install them.
+The `frontend-node` project includes pure Library projection and summary tests. Native numeric/date bindings live in
+`tests/browser/editors.test.tsx`; the Library browser suites cover query, cache and selection behaviour.
+`just js::library-journeys` runs `tests/journeys/*.spec.ts` through `playwright.library.config.ts` in Chromium and
+patched Firefox. Each invocation builds through `just js::build`, then serves the production output with `vp preview` to
+exclude development tooling. It owns a strict loopback server on port 5174 with reuse disabled and intercepts synthetic
+APIs through the real application bootstrap and Router. It needs no database or real login credentials. It proves
+navigation and client request/result integration, not actual authentication or database predicates. The WCAG config and
+allowlist remain separate. Missing browser system libraries stop local verification; local gates never install them.
 
 For Library visit persistence and local-day projection, see the
 [Library state Design](../docs/specs/library/design/0001-library-filter-and-sort-state.md) and
