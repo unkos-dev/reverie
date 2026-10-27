@@ -307,7 +307,7 @@ describe("TypeaheadMultiSelect", () => {
     const user = userEvent;
 
     const remove = page.getByRole("button", { name: /Remove Ursula K\. Le Guin/i });
-    expect(remove).toHaveAccessibleName("Remove Ursula K. Le Guin");
+    await expect.element(remove).toHaveAccessibleName("Remove Ursula K. Le Guin");
     await user.click(remove);
 
     await expect
@@ -367,6 +367,7 @@ test.each(["tags", "genres", "moods"] as const)(
     await render(<Harness kind={kind} initial={[{ value: "fiction" }]} />);
     const user = userEvent;
     await user.type(page.getByRole("combobox"), "fi");
+    await expect.element(page.getByRole("option", { name: "fiction" }).first()).toBeInTheDocument();
     expect(page.getByRole("option", { name: "fiction" }).all()).toHaveLength(1);
     await expect
       .element(page.getByRole("option", { name: "fiction" }))
@@ -389,9 +390,15 @@ test("same-named authors remain distinct and a second selection clears the new q
   const user = userEvent;
   const input = page.getByRole("combobox");
   await user.type(input, "al");
-  await user.click(page.getByRole("option", { name: "Alex Smith" }).all()[0]);
+  await expect
+    .element(page.getByRole("option", { name: "Alex Smith" }).first())
+    .toBeInTheDocument();
+  await user.click(page.getByRole("option", { name: "Alex Smith" }).first());
   await expect.element(input).toHaveValue("");
   await user.type(input, "alex");
+  await expect
+    .element(page.getByRole("option", { name: "Alex Smith" }).first())
+    .toBeInTheDocument();
   const options = page.getByRole("option", { name: "Alex Smith" }).all();
   await expect.element(options[0]).toHaveAttribute("aria-selected", "true");
   await user.click(options[1]);

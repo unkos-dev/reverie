@@ -6,8 +6,8 @@ import { Atmosphere } from "@/components/library/Atmosphere";
 describe("Atmosphere", () => {
   test("renders the ember field and grain as decorative layers", async () => {
     const { container } = await render(<Atmosphere />);
-    const atm = container.querySelector<HTMLElement>("@/components/library/.lib-atm");
-    const grain = container.querySelector<HTMLElement>("@/components/library/.lib-grain");
+    const atm = container.querySelector<HTMLElement>(".lib-atm");
+    const grain = container.querySelector<HTMLElement>(".lib-grain");
     await expect.element(atm).toBeInTheDocument();
     await expect.element(grain).toBeInTheDocument();
     await expect.element(atm).toHaveAttribute("aria-hidden", "true");

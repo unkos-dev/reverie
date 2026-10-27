@@ -1,3 +1,4 @@
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "vitest-browser-react";
 import { createElement, type ReactNode } from "react";
@@ -21,6 +22,7 @@ function makeWrapper() {
 }
 
 beforeEach(() => {
+  __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
   vi.restoreAllMocks();
 });
 

@@ -20,7 +20,7 @@ describe("LibraryMasthead", () => {
     const h1 = page.getByRole("heading", { level: 1, name: "Library" });
     await expect.element(h1).toHaveClass("lib-hero-title");
     await expect
-      .element(container.querySelector<HTMLElement>("@/components/library/.lib-hero"))
+      .element(container.querySelector<HTMLElement>(".lib-hero"))
       .toContainElement(h1.element());
   });
 
@@ -63,8 +63,6 @@ describe("LibraryMasthead", () => {
 
   test("hero bleed classes are overridable", async () => {
     const { container } = await render(<LibraryMasthead heroBleedClassName="mx-0" />);
-    await expect
-      .element(container.querySelector<HTMLElement>("@/components/library/.lib-hero"))
-      .toHaveClass("mx-0");
+    await expect.element(container.querySelector<HTMLElement>(".lib-hero")).toHaveClass("mx-0");
   });
 });

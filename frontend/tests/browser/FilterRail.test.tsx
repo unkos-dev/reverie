@@ -1,3 +1,4 @@
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -167,6 +168,7 @@ async function openSection(title: string): Promise<HTMLElement> {
 }
 
 beforeEach(() => {
+  __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
   mockFetchByUrl();
   sortChanges = [];
 });

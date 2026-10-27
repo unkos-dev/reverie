@@ -120,3 +120,20 @@ test("a mobile navigation link closes the drawer and reaches its destination", a
   await expect(page).toHaveURL(/\/shelves$/);
   await expect(drawer).not.toBeVisible();
 });
+
+test("a fresh entry resets a reused Library owner without writing the departed snapshot", async ({
+  page,
+}) => {
+  await intercept(page);
+  await page.goto("/library");
+  const search = page.getByRole("searchbox", { name: "Search your library" });
+  await search.fill("the sea ");
+  await expect(search).toHaveValue("the sea ");
+  await page.evaluate(() => {
+    history.pushState({ unrelated: "destination" }, "", location.href);
+  });
+  await expect(search).toHaveValue("");
+  expect(await page.evaluate((): unknown => navigation.currentEntry?.getState())).toEqual({
+    unrelated: "destination",
+  });
+});
