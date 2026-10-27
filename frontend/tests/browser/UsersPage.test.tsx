@@ -266,12 +266,12 @@ describe("UsersPage", () => {
     });
     await renderUsersPage(ADMIN_ME, []);
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     const dialog = page.getByRole("dialog", { name: "Create user" }).element();
     await expect.element(page.getByLabelText(/password/i)).not.toBeInTheDocument();
     await user.type(page.getByLabelText("Display name"), "Carol");
     await user.type(page.getByLabelText("Email"), "carol@example.com");
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     expect(create).toHaveBeenCalledWith({
       email: "carol@example.com",
       display_name: "Carol",
@@ -305,7 +305,7 @@ describe("UsersPage", () => {
       .mockRejectedValue(new Error("Creation refused"));
     await renderUsersPage(ADMIN_ME, []);
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     const form = page.getByLabelText("Display name").element().closest("form");
     if (!form) throw new Error("Create-user form missing");
     expect(new FormData(form).get("role")).toBe("adult");
@@ -314,7 +314,7 @@ describe("UsersPage", () => {
     await user.click(page.getByRole("button", { name: /Role/ }));
     await user.click(page.getByRole("option", { name: "child" }));
     expect(new FormData(form).get("role")).toBe("child");
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     await expect.element(page.getByRole("alert")).toMatchTextContent("Creation refused");
     expect(create).toHaveBeenCalledWith({
       display_name: "Carol",
@@ -324,7 +324,7 @@ describe("UsersPage", () => {
     expect(new FormData(form).get("role")).toBe("child");
     await expect.element(page.getByRole("button", { name: /Role/ })).toMatchTextContent("child");
     await user.click(page.getByRole("button", { name: "Cancel" }));
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     const reopened = page.getByLabelText("Display name").element().closest("form");
     if (!reopened) throw new Error("Reopened form missing");
     expect(new FormData(reopened).get("role")).toBe("adult");
@@ -337,12 +337,12 @@ describe("UsersPage", () => {
       .mockRejectedValue(new Error("Creation refused"));
     await renderUsersPage(ADMIN_ME, []);
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     await user.type(page.getByLabelText("Display name"), "Carol");
     await user.type(page.getByLabelText("Email"), "carol@example.com");
     await user.click(page.getByRole("button", { name: /Role/ }));
     await user.click(page.getByRole("option", { name: role }));
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     expect(create).toHaveBeenCalledWith({
       display_name: "Carol",
       email: "carol@example.com",
@@ -357,7 +357,7 @@ describe("UsersPage", () => {
       const create = vi.spyOn(usersApi, "createUser");
       await renderUsersPage(ADMIN_ME, []);
       const user = userEvent;
-      await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+      await user.click(page.getByRole("button", { name: "Create user" }).last());
       const form = page.getByLabelText("Display name").element().closest("form");
       if (!form) throw new Error("Create-user form missing");
       const select = form.querySelector('select[name="role"]');
@@ -379,12 +379,12 @@ describe("UsersPage", () => {
     const create = vi.spyOn(usersApi, "createUser");
     await renderUsersPage(ADMIN_ME, []);
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     const displayName = page.getByLabelText("Display name");
     const email = page.getByLabelText("Email");
     await user.type(displayName, "   ");
     await user.type(email, "not-an-email");
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
 
     expect(create).not.toHaveBeenCalled();
     await expect.element(displayName).toHaveAccessibleDescription("Enter a display name.");
@@ -399,9 +399,9 @@ describe("UsersPage", () => {
     const create = vi.spyOn(usersApi, "createUser");
     await renderUsersPage(ADMIN_ME, []);
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     await user.type(page.getByLabelText("Email"), "carol@example.com");
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     await expect
       .element(page.getByLabelText("Display name"))
       .toHaveAccessibleDescription("Enter a display name.");
@@ -413,10 +413,10 @@ describe("UsersPage", () => {
     vi.spyOn(usersApi, "createUser").mockRejectedValue(new Error("Creation refused"));
     await renderUsersPage(ADMIN_ME, []);
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     await user.type(page.getByLabelText("Display name"), "Carol");
     await user.type(page.getByLabelText("Email"), "carol@example.com");
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
 
     await expect.element(page.getByRole("alert")).toMatchTextContent("Creation refused");
     await expect.element(page.getByLabelText("Display name")).toHaveValue("Carol");
@@ -434,10 +434,10 @@ describe("UsersPage", () => {
     );
     await renderUsersPage(ADMIN_ME, []);
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     await user.type(page.getByLabelText("Display name"), "Carol");
     await user.type(page.getByLabelText("Email"), "carol@example.com");
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
     await user.keyboard("{Enter}");
     await user.click(page.getByLabelText("Email"));
@@ -459,12 +459,12 @@ describe("UsersPage", () => {
     );
     await renderUsersPage(ADMIN_ME, []);
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     await user.type(page.getByLabelText("Display name"), "Carol");
     await user.type(page.getByLabelText("Email"), "carol@example.com");
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
     await user.click(page.getByRole("button", { name: "Cancel" }));
-    await user.click(page.getByRole("button", { name: "Create user" }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: "Create user" }).last());
 
     await expect.element(page.getByLabelText("Display name")).toHaveValue("");
     await expect.element(page.getByRole("button", { name: /Role/ })).toMatchTextContent("adult");
@@ -728,7 +728,7 @@ test.each(["create", "reset"])(
       await user.type(page.getByLabelText("Display name"), "Bob");
       await user.type(page.getByLabelText("Email"), "bob@example.com");
     }
-    await user.click(page.getByRole("button", { name: submit }).last(), { force: true });
+    await user.click(page.getByRole("button", { name: submit }).last());
     await expect
       .element(page.getByRole("button", { name: submit }).last())
       .toHaveAttribute("aria-disabled", "true");
@@ -778,7 +778,7 @@ test.each([
     await openMailableLink();
     expect(send).not.toHaveBeenCalled();
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Send email" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Send email" }));
     {
       await new Promise((resolve) => {
         setTimeout(resolve, 0);
@@ -855,7 +855,7 @@ test.each([
       .mockRejectedValueOnce(new TypeError("network failure"));
     await openMailableLink();
     const user = userEvent;
-    await user.click(page.getByRole("button", { name: "Send email" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Send email" }));
     {
       await new Promise((resolve) => {
         setTimeout(resolve, 3000);
@@ -931,7 +931,7 @@ test.each([
   vi.spyOn(usersApi, "sendCredentialLinkEmail").mockRejectedValue(error);
   await openMailableLink();
   const user = userEvent;
-  await user.click(page.getByRole("button", { name: "Send email" }), { force: true });
+  await user.click(page.getByRole("button", { name: "Send email" }));
   await expect.element(page.getByText(copy)).toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Copy link" })).toBeEnabled();
   await expect

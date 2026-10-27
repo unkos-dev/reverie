@@ -62,7 +62,12 @@ export default defineConfig({
       {
         extends: false,
         optimizeDeps: {
-          include: ["@tanstack/react-query", "react-router", "react-error-boundary"],
+          include: [
+            "@tanstack/react-query",
+            "react-router",
+            "react-error-boundary",
+            "react-dom/client",
+          ],
         },
         plugins: lazyPlugins(() => [react(), tailwindcss()]),
         resolve: { alias: { "@": path.resolve(__dirname, "src") } },

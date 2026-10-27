@@ -145,7 +145,7 @@ describe("TokensPage", () => {
     const user = userEvent;
 
     await user.click(page.getByRole("button", { name: "New token" }));
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
 
     await expect
       .element(page.getByLabelText("Name"))
@@ -163,20 +163,20 @@ describe("TokensPage", () => {
     const name = page.getByLabelText("Name");
 
     await user.type(name, "   ");
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
     await expect.element(name).toHaveAccessibleDescription("Enter a name (1-255 characters).");
 
     await name.fill("");
     await user.click(name);
     await name.fill("a".repeat(256));
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
     await expect.element(name).toHaveAccessibleDescription("Enter a name (1-255 characters).");
     expect(create).not.toHaveBeenCalled();
 
     await name.fill("");
     await user.click(name);
     await name.fill(` ${"a".repeat(255)} `);
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
     expect(create).toHaveBeenCalledExactlyOnceWith({
       name: "a".repeat(255),
       scopes: ["write"],
@@ -212,7 +212,7 @@ describe("TokensPage", () => {
     const user = userEvent;
     await user.click(page.getByRole("button", { name: "New token" }));
     await user.type(page.getByLabelText("Name"), "reader");
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
     await user.click(page.getByRole("button", { name: "Create" }), { force: true });
     await user.keyboard("{Enter}");
     await user.click(page.getByLabelText("Name"));
@@ -238,7 +238,7 @@ describe("TokensPage", () => {
     await user.type(page.getByLabelText("Name"), "reader");
     await user.click(page.getByRole("button", { name: /Expires/ }));
     await user.click(page.getByRole("option", { name: "30 days" }));
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
     await user.click(page.getByRole("button", { name: "Cancel" }));
     await user.click(page.getByRole("button", { name: "New token" }));
 
@@ -265,7 +265,7 @@ describe("TokensPage", () => {
 
     await user.click(page.getByRole("button", { name: "New token" }));
     await user.type(page.getByLabelText("Name"), "reader");
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
 
     expect(create).toHaveBeenCalledWith({
       name: "reader",
@@ -288,7 +288,7 @@ describe("TokensPage", () => {
     await user.click(page.getByRole("button", { name: /Expires/ }));
     await user.click(page.getByRole("option", { name: "30 days" }));
     expect(new FormData(form).get("expiry")).toBe("30");
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
     await expect.element(page.getByRole("alert")).toMatchTextContent("Creation refused");
     expect(create).toHaveBeenCalledWith({ name: "reader", scopes: ["write"], expiresInDays: 30 });
     expect(new FormData(form).get("expiry")).toBe("30");
@@ -315,7 +315,7 @@ describe("TokensPage", () => {
     await user.type(page.getByLabelText("Name"), "reader");
     await user.click(page.getByRole("button", { name: /Expires/ }));
     await user.click(page.getByRole("option", { name: `${String(days)} days` }));
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
     expect(create).toHaveBeenCalledWith({ name: "reader", scopes: ["write"], expiresInDays: days });
     await expect.element(page.getByRole("alert")).toBeInTheDocument();
   });
@@ -355,7 +355,7 @@ describe("TokensPage", () => {
     await user.type(page.getByLabelText("Name"), "forever");
     await user.click(page.getByRole("button", { name: /Expires/ }));
     await user.click(page.getByRole("option", { name: "Never" }));
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
 
     expect(create).toHaveBeenCalledWith({
       name: "forever",
@@ -376,7 +376,7 @@ describe("TokensPage", () => {
     await user.type(page.getByLabelText("Name"), "ops");
     await user.click(page.getByRole("button", { name: /Access level/ }));
     await user.click(page.getByRole("option", { name: "Admin" }));
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
 
     expect(create).toHaveBeenCalledWith({
       name: "ops",
@@ -392,7 +392,7 @@ describe("TokensPage", () => {
 
     await user.click(page.getByRole("button", { name: "New token" }));
     await user.type(page.getByLabelText("Name"), "reader");
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
 
     await expect.element(page.getByRole("alert")).toMatchTextContent("Forbidden");
     await expect.element(page.getByText("Token created")).not.toBeInTheDocument();
@@ -408,7 +408,7 @@ describe("TokensPage", () => {
 
     await user.click(page.getByRole("button", { name: "New token" }));
     await user.type(page.getByLabelText("Name"), "reader");
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
 
     await expect.element(page.getByText("Token created")).toBeInTheDocument();
 
@@ -439,7 +439,7 @@ describe("TokensPage", () => {
 
     await user.click(page.getByRole("button", { name: "New token" }));
     await user.type(page.getByLabelText("Name"), "reader");
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
 
     await expect.element(page.getByText("Token created")).toBeInTheDocument();
     await expect
@@ -459,7 +459,7 @@ describe("TokensPage", () => {
 
     await user.click(page.getByRole("button", { name: "New token" }));
     await user.type(page.getByLabelText("Name"), "reader");
-    await user.click(page.getByRole("button", { name: "Create" }), { force: true });
+    await user.click(page.getByRole("button", { name: "Create" }));
     await expect.element(page.getByText("Token created")).toBeInTheDocument();
 
     const { targetInfo } = await cdp().send("Target.getTargetInfo");
