@@ -4,6 +4,7 @@ import { useState, type ReactElement, type UIEvent } from "react";
 import { describe, expect, test, vi } from "vite-plus/test";
 
 import { Button } from "@/components/ui/button";
+import { SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import type {
   CellEditReport,
@@ -468,7 +469,11 @@ test("a React Aria row action keeps its cell active for subsequent keyboard edit
           name: "Action",
           sortable: false,
           accessor: () => "",
-          renderCell: () => <Button onPress={onAction}>Open details</Button>,
+          renderCell: (_row, tabIndex) => (
+            <Button excludeFromTabOrder={tabIndex === -1} onPress={onAction}>
+              Open details
+            </Button>
+          ),
         },
         COLUMNS[0],
       ]}
@@ -486,4 +491,69 @@ test("a React Aria row action keeps its cell active for subsequent keyboard edit
   expect(onCellFocus).toHaveBeenCalledWith({ row, rowIdx: 0, columnKey: "action" });
   await userEvent.keyboard("{ArrowRight}{Enter}");
   await expect.element(page.getByRole("textbox", { name: "Title editor" })).toHaveValue(row.title);
+});
+
+test("keyboard entry and drawer dismissal preserve the grid's active row action", async () => {
+  function Harness(): ReactElement {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <Button>Before grid</Button>
+        <ReactDataGridBinding<TestRow>
+          rows={ROWS.slice(0, 2)}
+          columns={[
+            {
+              key: "action",
+              name: "Action",
+              sortable: false,
+              accessor: () => "",
+              renderCell: (row, tabIndex) => (
+                <Button
+                  excludeFromTabOrder={tabIndex === -1}
+                  onPress={() => {
+                    setOpen(true);
+                  }}
+                >
+                  Open {row.title}
+                </Button>
+              ),
+            },
+          ]}
+          rowKey={(row) => row.id}
+          sort={[]}
+          onSortChange={() => {}}
+          onCellFocus={() => {}}
+          height={400}
+        />
+        <Button>After grid</Button>
+        <SheetContent isOpen={open} onOpenChange={setOpen}>
+          <SheetTitle>Book details</SheetTitle>
+        </SheetContent>
+      </>
+    );
+  }
+  await render(<Harness />);
+  const first = page.getByRole("button", { name: "Open Title 0" });
+  const second = page.getByRole("button", { name: "Open Title 1" });
+  await userEvent.click(page.getByRole("button", { name: "Before grid" }));
+  await userEvent.tab();
+  await expect.element(page.getByRole("columnheader", { name: "Action" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowDown}");
+  await expect.element(first).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(page.getByRole("dialog", { name: "Book details" })).toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await expect.element(first).toHaveFocus();
+  await userEvent.tab();
+  await expect.element(second).toHaveFocus();
+  await userEvent.tab();
+  await expect.element(page.getByRole("button", { name: "After grid" })).toHaveFocus();
+  await userEvent.tab({ shift: true });
+  await expect.element(second).toHaveFocus();
+  await userEvent.keyboard("{ArrowUp}");
+  await expect.element(first).toHaveFocus();
+  await expect.element(second).toHaveAttribute("tabindex", "-1");
+  await userEvent.click(page.getByRole("button", { name: "After grid" }));
+  await userEvent.tab({ shift: true });
+  await expect.element(first).toHaveFocus();
 });

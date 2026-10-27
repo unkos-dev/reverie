@@ -441,7 +441,7 @@ function composeColumns(
   });
   const withTitleCell = visible.map((col) => {
     if (col.key !== "title") return col;
-    const renderCell = (row: BookListItem): ReactNode => (
+    const renderCell = (row: BookListItem, tabIndex: number): ReactNode => (
       <div className="flex min-w-0 items-center gap-3">
         {density === "comfortable" ? <TitleCellMark row={row} /> : null}
         <div className="min-w-0">
@@ -449,6 +449,7 @@ function composeColumns(
               floor; an inline anchor's line box alone falls under it. */}
           <Link
             to={`/b/${row.id}`}
+            tabIndex={tabIndex}
             className="text-fg hover:text-accent inline-flex min-h-6 max-w-full items-center truncate font-medium"
           >
             {row.title}
@@ -469,9 +470,10 @@ function composeColumns(
     sortable: false,
     width: 44,
     accessor: () => "",
-    renderCell: (row) => (
+    renderCell: (row, tabIndex) => (
       <Button
         type="button"
+        excludeFromTabOrder={tabIndex === -1}
         variant="ghost"
         size="icon-xs"
         aria-label={`Open details for ${row.title}`}
@@ -507,9 +509,9 @@ function useComposedColumns(
       composeColumns(hiddenColumns, density, isMobile, onRowActivate).map((col) => {
         if (col.renderEditCell === undefined) return col;
         const renderFinal = col.renderCell ?? col.accessor;
-        const renderCell = (row: BookListItem): ReactNode => {
+        const renderCell = (row: BookListItem, tabIndex: number): ReactNode => {
           const draft = pendingCells.get(pendingKey(row.id, col.key));
-          if (draft === undefined) return renderFinal(row);
+          if (draft === undefined) return renderFinal(row, tabIndex);
           return (
             <span aria-busy="true" className="text-fg-muted italic">
               {draft}

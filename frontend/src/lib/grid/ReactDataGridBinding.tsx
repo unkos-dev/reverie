@@ -30,6 +30,7 @@ import {
   type CellMouseEvent,
   type Column,
   type RenderCheckboxProps,
+  type RenderCellProps,
   type RenderEditCellProps,
   type RenderHeaderCellProps,
   type RenderSortStatusProps,
@@ -179,8 +180,8 @@ function toRdgColumns<R>(columns: GridBindingProps<R>["columns"]): readonly Colu
       name: col.name,
       sortable: col.sortable,
       width: col.width,
-      renderCell: ({ row }: { row: R }): ReactNode =>
-        col.renderCell === undefined ? col.accessor(row) : col.renderCell(row),
+      renderCell: ({ row, tabIndex }: RenderCellProps<R>): ReactNode =>
+        col.renderCell === undefined ? col.accessor(row) : col.renderCell(row, tabIndex),
       ...headerFields,
       ...editFields,
     };

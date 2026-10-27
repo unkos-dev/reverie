@@ -35,6 +35,9 @@ React Aria exposes native state through `isSelected`, `isReadOnly`, `isDisabled`
 data attributes for styling. Label and description associations belong to the parent field or overlay composition.
 Buttons handle activation through `onPress`; navigation links retain link semantics and Router integration.
 
+Grid cell renderers receive the engine's child tab index. Title links forward it, and details buttons translate it to
+React Aria's `excludeFromTabOrder`, so keyboard entry returns to the active cell and arrow keys reach its controls.
+
 Submit forms use React Aria `Form` and the React `action` prop. Actions await API mutations. Named fields supply
 FormData, and domain validators parse that input before requests. The React Aria `validationErrors` contract associates
 field errors and moves focus to the first invalid field on a blocked submission.
@@ -76,6 +79,9 @@ Field-specific validation appears beside its field with native associations. Gen
 alerts rather than being assigned to an unrelated field. Pending controls suppress duplicate submission while keeping
 the entered values available when the request settles. Cancellation and successful completion retain the owning screen's
 existing state transitions.
+
+Metadata clear confirmations suppress repeated activation while the request is pending. Completion closes the
+confirmation; a refused save leaves the sheet open with the entered values and error feedback.
 
 Table-load recovery belongs to the Library results region and is described in the Library state Design. Shared controls
 do not change query-cache ownership or the grid's edit transaction.

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
-import type { ReactElement } from "react";
+import { ViewTransition, type ReactElement } from "react";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
@@ -53,12 +53,16 @@ async function renderDialog(): Promise<{
   function Wrapper(): ReactElement {
     return (
       <QueryClientProvider client={client}>
-        <EditMetadataDialog
-          manifestationId="book-1"
-          open
-          onOpenChange={onOpenChange}
-          fields={FIELDS}
-        />
+        <ViewTransition>
+          <div>
+            <EditMetadataDialog
+              manifestationId="book-1"
+              open
+              onOpenChange={onOpenChange}
+              fields={FIELDS}
+            />
+          </div>
+        </ViewTransition>
       </QueryClientProvider>
     );
   }
@@ -199,4 +203,43 @@ test("cancelling a populated-field clear keeps the edit and sends nothing; confi
   await vi.waitFor(() => {
     expect(updateBookMetadata).toHaveBeenCalledExactlyOnceWith("book-1", { subtitle: null });
   });
+});
+
+test("a pending clear suppresses duplicate activation and exposes a refusal with the edit retained", async () => {
+  vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
+  let reject: (error: Error) => void = () => {};
+  vi.mocked(updateBookMetadata).mockReturnValueOnce(
+    new Promise((_resolve, fail) => {
+      reject = fail;
+    }),
+  );
+  const { onOpenChange } = await renderDialog();
+  const input = page.getByLabelText("Subtitle");
+  await expect.element(input).toHaveValue("Original Subtitle");
+  await input.fill("");
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
+  const confirmation = page.getByRole("alertdialog", { name: "Clear populated field?" });
+  const confirm = confirmation.getByRole("button", { name: "Clear and save" });
+  await userEvent.click(confirm);
+  await expect.element(confirm).toHaveAttribute("data-pending");
+  await userEvent.click(confirm, { force: true });
+  await userEvent.keyboard("{Enter}");
+  expect(updateBookMetadata).toHaveBeenCalledExactlyOnceWith("book-1", { subtitle: null });
+  expect(onOpenChange).not.toHaveBeenCalled();
+
+  reject(new ApiError(422, null, "Validation Error", "Subtitle cannot be cleared."));
+  await expect.element(confirmation).not.toBeInTheDocument();
+  await expect.element(page.getByRole("alert")).toMatchTextContent("Subtitle cannot be cleared.");
+  await expect.element(input).toHaveValue("");
+  expect(updateBookMetadata).toHaveBeenCalledTimes(1);
+  expect(onOpenChange).not.toHaveBeenCalled();
+
+  vi.mocked(updateBookMetadata).mockResolvedValueOnce({ fields: {} });
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
+  await userEvent.click(confirm);
+  await vi.waitFor(() => {
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+  expect(updateBookMetadata).toHaveBeenCalledTimes(2);
+  expect(updateBookMetadata).toHaveBeenLastCalledWith("book-1", { subtitle: null });
 });

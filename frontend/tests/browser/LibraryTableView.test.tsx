@@ -206,6 +206,21 @@ describe("LibraryTableView", () => {
     expect(onRowActivate).toHaveBeenCalledTimes(1);
     expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
   });
+  test("details buttons and title links participate in the grid's roving tab order", async () => {
+    await renderTableView();
+    const details = page.getByRole("button", { name: `Open details for ${ROWS[0].title}` });
+    const nextDetails = page.getByRole("button", { name: `Open details for ${ROWS[1].title}` });
+    const title = page.getByRole("link", { name: ROWS[0].title, exact: true });
+    await expect.element(details).toHaveAttribute("tabindex", "-1");
+    await expect.element(title).toHaveAttribute("tabindex", "-1");
+    await userEvent.click(details);
+    await expect.element(details).toHaveAttribute("tabindex", "0");
+    await expect.element(nextDetails).toHaveAttribute("tabindex", "-1");
+    await userEvent.keyboard("{ArrowRight}");
+    await expect.element(title).toHaveFocus();
+    await expect.element(title).toHaveAttribute("tabindex", "0");
+    await expect.element(details).toHaveAttribute("tabindex", "-1");
+  });
   test("clicking the Authors header sorts by author", async () => {
     const onSortChange = vi.fn();
     await renderTableView({ onSortChange });

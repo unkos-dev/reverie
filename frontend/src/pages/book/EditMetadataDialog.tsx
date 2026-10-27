@@ -305,6 +305,7 @@ function EditMetadataFields({
         setPendingClearConfirm(true);
         return { values, error: null };
       }
+      setPendingClearConfirm(false);
       try {
         await mutation.mutateAsync(body);
         return { values, error: null };
@@ -369,13 +370,20 @@ function EditMetadataFields({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel
+            isDisabled={pending}
             onPress={() => {
               setPendingClearConfirm(false);
             }}
           >
             Cancel
           </AlertDialogCancel>
-          <AlertDialogAction type="submit" form={formId} name="confirm_clear" value="true">
+          <AlertDialogAction
+            type="submit"
+            form={formId}
+            name="confirm_clear"
+            value="true"
+            isPending={pending}
+          >
             Clear and save
           </AlertDialogAction>
         </AlertDialogFooter>

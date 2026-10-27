@@ -62,7 +62,7 @@ export type GridColumn<R> = {
   sortable: boolean;
   width?: number;
   accessor: (row: R) => string;
-  renderCell?: (row: R) => ReactNode;
+  renderCell?: (row: R, tabIndex: number) => ReactNode;
   editable?: (row: R) => boolean;
   renderEditCell?: (props: GridEditorProps<R>) => ReactNode;
   editorOptions?: { commitOnOutsideClick?: boolean };
