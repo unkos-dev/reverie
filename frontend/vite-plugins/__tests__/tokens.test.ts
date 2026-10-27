@@ -14,7 +14,7 @@ import { resolve } from "node:path";
 // Lives under `vite-plugins/__tests__/` (not co-located with the CSS) for the
 // same reason as no-shadcn-accent.guard.test.ts: it reads files from disk, so it
 // needs node env + node types, and the app tsconfig is browser-only — placing it
-// under `src/` breaks `tsc -b` (and the jsdom project stubs CSS imports empty).
+// under `src/` mixes tooling and application type contexts.
 const THEMES_DIR = resolve(__dirname, "..", "..", "src", "styles", "themes");
 const primitivesCss = readFileSync(resolve(THEMES_DIR, "primitives.generated.css"), "utf8");
 const indexCss = readFileSync(resolve(THEMES_DIR, "index.css"), "utf8");

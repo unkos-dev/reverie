@@ -1,32 +1,16 @@
 # Testing Scope for the Design System
 
-The Step 10 design system is tested at two distinct bars.
+Browser-dependent component behaviour runs in Vitest Browser Mode with `vitest-browser-react`. The suites under
+`frontend/tests/browser/` cover Lockup variants and accessibility, theme resolution and persistence, native controls,
+focus, keyboard interaction and pending states. Browser-independent logic and build plugins run in Node. Application
+navigation runs against production builds in Chromium and Firefox through `just js::library-journeys`.
 
-## What ships with deterministic unit tests
+The CSP-hash plugin tests remain under `frontend/vite-plugins/__tests__/csp-hash.test.ts`. The backend's cookie response
+contract is covered by `backend/tests/cookie_jar_sanity.rs`.
 
-- **Today (D0–D2):**
-  - `Lockup` brand component: React Testing Library coverage of the wordmark variants and accessibility contract
-    (`frontend/src/components/Lockup.test.tsx`).
-  - The CSP-hash Vite plugin: node-environment unit tests under `frontend/vite-plugins/__tests__/csp-hash.test.ts`.
-  - The `axum_extra` `CookieJar` tuple-response contract that the backend design-system sliver (theme PATCH, OIDC
-    callback cookie seed) depends on: `backend/tests/cookie_jar_sanity.rs`.
-  - Vitest harness validation: `frontend/src/App.test.tsx` asserts the application renders under the jsdom test project
-    (the earlier `smoke.test.ts` placeholder it replaced is gone).
-- **D3–D5 acceptance bar (added before the relevant feature lands):**
-  - Theme provider: initial resolution from cookie/DB/`prefers-color-scheme`, persistence, and API sync.
-  - Theme cookie helpers (read, write, expiry).
+Visual acceptance requires rendered inspection against `frontend/DESIGN.md`, including light and dark themes and the
+applicable viewport sizes. Component assertions do not replace that inspection. Playwright and axe-core check the
+shipped routes listed in `frontend/scripts/a11y/allowlist.mjs` through `just js::a11y`.
 
-## What is exempt from unit tests
-
-Visual and composition work is verified by:
-
-- Playwright with `@axe-core/playwright` against the shipped routes in `DEFAULT_TARGETS` (`vp run a11y`; the list lives
-  in `frontend/scripts/a11y/allowlist.mjs`).
-- Manual Dark/Light toggle.
-- The `/crosscheck` dual-model review gate at D5.
-
-Applied-page Lighthouse gates are Step 11's responsibility.
-
-This split is deliberate. Snapshotting visual output in per-component unit tests locks styling into a pixel-brittle
-contract that Step 11 cannot move. The design system's acceptance bar is the axe-core hard gate plus a human review;
-per-component visual regression tooling is not adopted.
+See the [frontend testing guide](../../frontend/README.md#testing) for setup and environment ownership, and the
+[Browser Mode decision](../adr/0065-browser-mode-for-browser-dependent-component-tests.md) for the testing boundaries.

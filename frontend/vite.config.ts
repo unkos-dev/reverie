@@ -14,33 +14,6 @@ import { parseHmrConfig } from "./vite-plugins/hmr-config";
 // rationale and the Cloudflare RUM beacon allowances.
 const DEV_CSP = buildDevCsp(process.env.REVERIE_DEV_HOSTS);
 
-const browserApiTests = [
-  "books",
-  "fetch",
-  "preferences",
-  "reading",
-  "search",
-  "settings",
-  "shelves",
-  "suggest",
-  "users",
-];
-
-const nodeTests = [
-  "src/api/**/*.test.ts",
-  ...browserApiTests.map((name) => `!src/api/${name}.test.ts`),
-  "src/routes/*.test.ts",
-  "!src/routes/admin-settings.test.ts",
-  "src/components/library/*-summary.test.ts",
-  "src/pages/admin/settings/*.test.ts",
-  "src/pages/admin/ingestion/*.test.ts",
-  "src/pages/library/table/edit-routing.test.ts",
-  "src/lib/format/*.test.ts",
-  "src/lib/command-palette.test.ts",
-  "src/pages/library/storage-unavailable.test.ts",
-  "src/lib/query/keys.test.ts",
-];
-
 export default defineConfig({
   // fmt + lint are defined in the root vite.config.ts; this file is frontend
   // build/server/test config only.
@@ -144,24 +117,7 @@ export default defineConfig({
           name: "frontend-node",
           environment: "node",
           setupFiles: ["./tests/setup.node.ts"],
-          include: nodeTests,
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "frontend",
-          environment: "jsdom",
-          globals: true,
-          setupFiles: ["./tests/setup.ts"],
           include: ["src/**/*.{test,spec}.{ts,tsx}"],
-          exclude: nodeTests.filter((pattern) => !pattern.startsWith("!")),
-          // Must stay above the async query ceiling in tests/setup.ts.
-          // At the 5s default the two collide: a failing `findBy*` spends
-          // its whole budget waiting, so the test times out first and the
-          // report blames the test rather than naming the element that
-          // never appeared.
-          testTimeout: 15_000,
         },
       },
     ],

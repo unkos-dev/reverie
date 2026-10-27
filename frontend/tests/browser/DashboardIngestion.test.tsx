@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, cleanup } from "vitest-browser-react";
+import { page, userEvent, type Locator } from "vite-plus/test/browser";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import type { ReactElement } from "react";
@@ -35,12 +35,12 @@ import {
 import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
-import { DashboardPage } from "./DashboardPage";
+import { DashboardPage } from "@/pages/admin/DashboardPage";
 import {
   GRACE_WINDOW_MS,
   POLL_INTERVAL_MS,
   STATUS_POLL_INTERVAL_MS,
-} from "./ingestion/use-ingestion-monitor";
+} from "@/pages/admin/ingestion/use-ingestion-monitor";
 
 vi.mock("@/api/dashboard", () => ({
   getDashboardStats: vi.fn(),
@@ -73,10 +73,10 @@ const DAMAGED_PAGE = {
   next_cursor: null,
 };
 
-function renderPage(
+async function renderPage(
   me: AuthMe = ADMIN_ME,
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
-): QueryClient {
+): Promise<QueryClient> {
   client.setQueryData(queryKeys.auth.me(), me);
   const router = createMemoryRouter(
     [
@@ -93,7 +93,7 @@ function renderPage(
       </QueryClientProvider>
     );
   }
-  render(<Wrapper />);
+  await render(<Wrapper />);
   return client;
 }
 
@@ -127,32 +127,31 @@ afterEach(() => {
 });
 
 async function flush(): Promise<void> {
-  await act(async () => {
+  {
     await vi.advanceTimersByTimeAsync(20);
-  });
+  }
 }
 
 describe("scan control and notices", () => {
   test("starts idle with the Primary button, its hint and an empty status region", async () => {
-    renderPage();
-    expect(await screen.findByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
-    expect(screen.getByText("Checks every file in the folder.")).toBeInTheDocument();
-    const region = document.querySelector("[aria-live=polite]");
-    expect(region).toBeEmptyDOMElement();
+    await renderPage();
+    await expect.element(page.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
+    await expect.element(page.getByText("Checks every file in the folder.")).toBeInTheDocument();
+    const region = document.querySelector<HTMLElement>("[aria-live=polite]");
+    await expect.element(region).toBeEmptyDOMElement();
   });
 
   test("shows the requesting state while the scan is pending", async () => {
     vi.mocked(scanIngestion).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Scan ingestion folder" }));
-    expect(screen.getByRole("button", { name: "Scanning" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    expect(screen.getByText("Scanning the ingestion folder")).toBeInTheDocument();
-    expect(
-      screen.getByText("Looking at every file. This usually takes a few seconds."),
-    ).toBeInTheDocument();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await expect
+      .element(page.getByRole("button", { name: "Scanning" }))
+      .toHaveAttribute("aria-disabled", "true");
+    await expect.element(page.getByText("Scanning the ingestion folder")).toBeInTheDocument();
+    await expect
+      .element(page.getByText("Looking at every file. This usually takes a few seconds."))
+      .toBeInTheDocument();
   });
 
   test("an accepted scan spells out the three counts and keeps zero figures", async () => {
@@ -162,13 +161,15 @@ describe("scan control and notices", () => {
       suppressed: 5,
       monitor: "/m",
     });
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Scan ingestion folder" }));
-    expect(
-      await screen.findByText("Scan started. 12 queued, 0 waiting, 5 unchanged."),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/The scan queued new or changed files\./)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await expect
+      .element(page.getByText("Scan started. 12 queued, 0 waiting, 5 unchanged."))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByText(/The scan queued new or changed files\./))
+      .toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
   });
 
   test.each([
@@ -194,10 +195,10 @@ describe("scan control and notices", () => {
     ],
   ])("scan result %j shows %s", async (counts, title, detail) => {
     vi.mocked(scanIngestion).mockResolvedValue({ ...counts, monitor: "/m" });
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Scan ingestion folder" }));
-    expect(await screen.findByText(title)).toBeInTheDocument();
-    expect(screen.getByText(detail)).toBeInTheDocument();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await expect.element(page.getByText(title)).toBeInTheDocument();
+    await expect.element(page.getByText(detail)).toBeInTheDocument();
   });
 
   test("a failed request reads as a recoverable alert and offers Try again", async () => {
@@ -208,37 +209,41 @@ describe("scan control and notices", () => {
       suppressed: 0,
       monitor: "/m",
     });
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Scan ingestion folder" }));
-    const alert = await screen.findByRole("alert");
-    expect(within(alert).getByText("The scan did not start")).toBeInTheDocument();
-    await userEvent.click(within(alert).getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("Nothing to import")).toBeInTheDocument();
-    expect(screen.queryByText("The scan did not start")).not.toBeInTheDocument();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    const alert = page.getByRole("alert");
+    await expect.element(alert.getByText("The scan did not start")).toBeInTheDocument();
+    await userEvent.click(alert.getByRole("button", { name: "Try again" }));
+    await expect.element(page.getByText("Nothing to import")).toBeInTheDocument();
+    await expect.element(page.getByText("The scan did not start")).not.toBeInTheDocument();
   });
 
   test("a network failure is treated like a failed request", async () => {
     vi.mocked(scanIngestion).mockRejectedValue(new TypeError("Failed to fetch"));
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Scan ingestion folder" }));
-    expect(await screen.findByText("The scan did not start")).toBeInTheDocument();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await expect.element(page.getByText("The scan did not start")).toBeInTheDocument();
   });
 
   test("a 403 disables the button and says the account cannot scan", async () => {
     vi.mocked(scanIngestion).mockRejectedValue(new ApiError(403, null, "Forbidden", ""));
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Scan ingestion folder" }));
-    expect(await screen.findByText("This account cannot start a scan")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeDisabled();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await expect.element(page.getByText("This account cannot start a scan")).toBeInTheDocument();
+    await expect.element(page.getByRole("alert")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("button", { name: "Scan ingestion folder" }))
+      .toBeDisabled();
   });
 
   test("a 401 says the session has ended", async () => {
     vi.mocked(scanIngestion).mockRejectedValue(new ApiError(401, null, "Unauthorized", ""));
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Scan ingestion folder" }));
-    expect(await screen.findByText("Your session has ended")).toBeInTheDocument();
-    expect(screen.getByText("Sign in again to scan the ingestion folder.")).toBeInTheDocument();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await expect.element(page.getByText("Your session has ended")).toBeInTheDocument();
+    await expect
+      .element(page.getByText("Sign in again to scan the ingestion folder."))
+      .toBeInTheDocument();
   });
 
   test("names files sent for another try once the refetch shows fewer needs-change files", async () => {
@@ -255,16 +260,18 @@ describe("scan control and notices", () => {
       suppressed: 0,
       monitor: "/m",
     });
-    renderPage();
-    await screen.findByText("7 files, 5 reasons");
-    await userEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
-    expect(await screen.findByText("Files were sent for another try")).toBeInTheDocument();
-    expect(screen.getByText(/Rejected files were left as they are/)).toBeInTheDocument();
-    expect(await screen.findByText("2 files, 1 reason")).toBeInTheDocument();
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    expect(
-      within(card).getByText(/Files marked Needs a change were sent for another try/),
-    ).toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByText("7 files, 5 reasons")).toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await expect.element(page.getByText("Files were sent for another try")).toBeInTheDocument();
+    await expect
+      .element(page.getByText(/Rejected files were left as they are/))
+      .toBeInTheDocument();
+    await expect.element(page.getByText("2 files, 1 reason")).toBeInTheDocument();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    await expect
+      .element(card.getByText(/Files marked Needs a change were sent for another try/))
+      .toBeInTheDocument();
   });
 
   test("does not claim a retry when the needs-change count did not fall", async () => {
@@ -274,11 +281,11 @@ describe("scan control and notices", () => {
       suppressed: 0,
       monitor: "/m",
     });
-    renderPage();
-    await screen.findByText("7 files, 5 reasons");
-    await userEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
-    await screen.findByText(/Scan started/);
-    expect(screen.queryByText("Files were sent for another try")).not.toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByText("7 files, 5 reasons")).toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await expect.element(page.getByText(/Scan started/)).toBeInTheDocument();
+    await expect.element(page.getByText("Files were sent for another try")).not.toBeInTheDocument();
   });
 });
 
@@ -296,39 +303,43 @@ describe("ingestion blockers", () => {
         });
       if (combination & 4) blockers.push({ kind: "restarting" });
       vi.mocked(getIngestionStatus).mockResolvedValue({ blockers });
-      renderPage();
-      await screen.findByText("7 files, 5 reasons");
-      expect(screen.queryByRole("heading", { name: "Imports are paused" }) !== null).toBe(
+      await renderPage();
+      await expect.element(page.getByText("7 files, 5 reasons")).toBeInTheDocument();
+      expect(page.getByRole("heading", { name: "Imports are paused" }).query() !== null).toBe(
         combination !== 0,
       );
-      expect(screen.queryByText("New imports have been paused by an administrator.") !== null).toBe(
-        Boolean(combination & 1),
-      );
-      expect(screen.queryByText("The library folder has no free space left.") !== null).toBe(
+      expect(
+        page.getByText("New imports have been paused by an administrator.").query() !== null,
+      ).toBe(Boolean(combination & 1));
+      expect(page.getByText("The library folder has no free space left.").query() !== null).toBe(
         Boolean(combination & 2),
       );
-      expect(screen.queryByText("The ingestion worker is restarting.") !== null).toBe(
+      expect(page.getByText("The ingestion worker is restarting.").query() !== null).toBe(
         Boolean(combination & 4),
       );
-      expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
+      await expect
+        .element(page.getByRole("button", { name: "Scan ingestion folder" }))
+        .toBeEnabled();
       if (combination & 1)
-        expect(screen.getByRole("link", { name: "Open Acquisition settings" })).toHaveAttribute(
-          "href",
-          "/admin/settings/acquisition",
-        );
+        await expect
+          .element(page.getByRole("link", { name: "Open Acquisition settings" }))
+          .toHaveAttribute("href", "/admin/settings/acquisition");
       if (combination & 2)
-        expect(screen.getByText(/Dependency problem since/).querySelector("time")).toHaveAttribute(
-          "datetime",
-          "2026-10-16T03:00:00Z",
-        );
+        await expect
+          .element(
+            (await rendered(page.getByText(/Dependency problem since/))).querySelector("time"),
+          )
+          .toHaveAttribute("datetime", "2026-10-16T03:00:00Z");
       if (combination !== 0) {
-        const notice = screen.getByRole("region", { name: "Imports are paused" });
-        expect(notice.closest('[aria-live="polite"]')).not.toBeNull();
-        expect(notice).toHaveTextContent(
-          "Queued files are kept. Work already started can finish, and scans and recovery continue. New imports resume when Import files is on, dependencies are available and the worker is running.",
-        );
+        const notice = page.getByRole("region", { name: "Imports are paused" });
+        expect((await rendered(notice)).closest('[aria-live="polite"]')).not.toBeNull();
+        await expect
+          .element(notice)
+          .toMatchTextContent(
+            "Queued files are kept. Work already started can finish, and scans and recovery continue. New imports resume when Import files is on, dependencies are available and the worker is running.",
+          );
         if (combination === 7) {
-          const copy = notice.textContent;
+          const copy = (await rendered(notice)).textContent;
           expect(copy.indexOf("administrator.")).toBeLessThan(copy.indexOf("no free space"));
           expect(copy.indexOf("no free space")).toBeLessThan(copy.indexOf("worker is restarting"));
         }
@@ -373,9 +384,9 @@ describe("ingestion blockers", () => {
       vi.mocked(getIngestionStatus).mockResolvedValue({
         blockers: [{ kind: "dependency", reason, since: "2026-10-16T03:00:00Z" }],
       });
-      renderPage();
-      expect(await screen.findByText(sentence)).toBeInTheDocument();
-      expect(screen.getByText(check, { exact: false })).toBeInTheDocument();
+      await renderPage();
+      await expect.element(page.getByText(sentence)).toBeInTheDocument();
+      await expect.element(page.getByText(check, { exact: false })).toBeInTheDocument();
     },
   );
 
@@ -386,22 +397,24 @@ describe("ingestion blockers", () => {
       suppressed: 0,
       monitor: "/m",
     });
-    const client = renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Scan ingestion folder" }));
+    const client = await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
     const title = "Scan started. 2 queued, 1 waiting, 0 unchanged.";
-    await screen.findByText(title);
-    act(() => {
+    await expect.element(page.getByText(title)).toBeInTheDocument();
+    {
       client.setQueryData(queryKeys.ingestion.status(), {
         blockers: [{ kind: "paused_by_admin" }, { kind: "restarting" }],
       });
-    });
-    expect(screen.getByText(title)).toBeInTheDocument();
-    expect(await screen.findByText("The ingestion worker is restarting.")).toBeInTheDocument();
-    expect(screen.getByText(/The scan queued new or changed files/)).toBeInTheDocument();
-    expect(screen.queryByText(/being imported now/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
-    await userEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
-    await waitFor(() => {
+    }
+    await expect.element(page.getByText(title)).toBeInTheDocument();
+    await expect.element(page.getByText("The ingestion worker is restarting.")).toBeInTheDocument();
+    await expect
+      .element(page.getByText(/The scan queued new or changed files/))
+      .toBeInTheDocument();
+    await expect.element(page.getByText(/being imported now/)).not.toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await vi.waitFor(() => {
       expect(scanIngestion).toHaveBeenCalledTimes(2);
     });
   });
@@ -409,38 +422,44 @@ describe("ingestion blockers", () => {
   test("suppresses the running line during a pause and restores it after recovery", async () => {
     vi.mocked(getDashboardActivity).mockResolvedValue(batch({ ended_at: null, in_progress: 4 }));
     vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [{ kind: "restarting" }] });
-    const client = renderPage();
-    await screen.findByText("The ingestion worker is restarting.");
-    expect(screen.queryByText(/Latest activity\./)).not.toBeInTheDocument();
+    const client = await renderPage();
+    await expect.element(page.getByText("The ingestion worker is restarting.")).toBeInTheDocument();
+    await expect.element(page.getByText(/Latest activity\./)).not.toBeInTheDocument();
     vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [] });
-    await act(async () => {
+    {
       await client.invalidateQueries({ queryKey: queryKeys.ingestion.status() });
-    });
-    expect(await screen.findByText(/Latest activity\./)).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Imports are paused" })).not.toBeInTheDocument();
+    }
+    await expect.element(page.getByText(/Latest activity\./)).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("heading", { name: "Imports are paused" }))
+      .not.toBeInTheDocument();
   });
 
   test("a failed refresh replaces stale blockers with the quiet failure and retry recovers", async () => {
     vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [{ kind: "paused_by_admin" }] });
-    const client = renderPage();
-    await screen.findByText("New imports have been paused by an administrator.");
+    const client = await renderPage();
+    await expect
+      .element(page.getByText("New imports have been paused by an administrator."))
+      .toBeInTheDocument();
     vi.mocked(getIngestionStatus).mockRejectedValue(new TypeError("network unavailable"));
-    await act(async () => {
+    {
       await client.invalidateQueries({ queryKey: queryKeys.ingestion.status() });
-    });
-    expect(
-      await screen.findByText("Could not check whether ingestion is running."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Files may still be importing.")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Imports are paused" })).not.toBeInTheDocument();
+    }
+    await expect
+      .element(page.getByText("Could not check whether ingestion is running."))
+      .toBeInTheDocument();
+    await expect.element(page.getByText("Files may still be importing.")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("heading", { name: "Imports are paused" }))
+      .not.toBeInTheDocument();
     vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [] });
     await userEvent.click(
-      within(screen.getByRole("status", { name: "Ingestion status" })).getByRole("button", {
+      page.getByRole("status", { name: "Ingestion status" }).getByRole("button", {
         name: "Try again",
       }),
     );
-    await waitFor(() => {
-      expect(screen.queryByText("Files may still be importing.")).not.toBeInTheDocument();
+    await vi.waitFor(async () => {
+      await expect.element(page.getByText("Files may still be importing.")).not.toBeInTheDocument();
     });
   });
 
@@ -451,37 +470,43 @@ describe("ingestion blockers", () => {
     vi.mocked(getIngestionStatus).mockRejectedValue(
       new ApiError(code, null, "denied", "/private/path"),
     );
-    renderPage();
-    expect(await screen.findByRole("alert")).toHaveTextContent(title);
-    expect(screen.getByText(detail)).toBeInTheDocument();
-    expect(screen.queryByText("/private/path")).not.toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByRole("alert")).toMatchTextContent(title);
+    await expect.element(page.getByText(detail)).toBeInTheDocument();
+    await expect.element(page.getByText("/private/path")).not.toBeInTheDocument();
   });
 
   test("shows no notice while the initial probe observation is loading", async () => {
     vi.mocked(getIngestionStatus).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    await screen.findByText("7 files, 5 reasons");
-    expect(screen.queryByRole("heading", { name: "Imports are paused" })).not.toBeInTheDocument();
-    expect(screen.queryByText(/checking ingestion dependencies/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
+    await renderPage();
+    await expect.element(page.getByText("7 files, 5 reasons")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("heading", { name: "Imports are paused" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(page.getByText(/checking ingestion dependencies/i))
+      .not.toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
   });
 });
 
 describe("Needs attention", () => {
   test("says nothing about files being sent for another try before any scan", async () => {
-    renderPage();
-    await screen.findByText("7 files, 5 reasons");
-    expect(screen.queryByText(/were sent for another try/)).not.toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByText("7 files, 5 reasons")).toBeInTheDocument();
+    await expect.element(page.getByText(/were sent for another try/)).not.toBeInTheDocument();
   });
 
   test("headline total equals the sum of the group counts and excludes ignored files", async () => {
-    renderPage();
-    await screen.findByText("7 files, 5 reasons");
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    const shown = Array.from(card.querySelectorAll("button[aria-expanded]")).map((b) => {
-      const label = /(\d+) files?$/.exec(b.textContent)?.[1];
-      return { ignored: b.textContent.includes("Ignored"), count: Number(label) };
-    });
+    await renderPage();
+    await expect.element(page.getByText("7 files, 5 reasons")).toBeInTheDocument();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    const shown = Array.from((await rendered(card)).querySelectorAll("button[aria-expanded]")).map(
+      (b) => {
+        const label = /(\d+) files?$/.exec(b.textContent)?.[1];
+        return { ignored: b.textContent.includes("Ignored"), count: Number(label) };
+      },
+    );
     expect(shown).toHaveLength(6);
     expect(shown.find((g) => g.ignored)?.count).toBe(14);
     const attentionSum = shown.filter((g) => !g.ignored).reduce((sum, g) => sum + g.count, 0);
@@ -489,12 +514,12 @@ describe("Needs attention", () => {
   });
 
   test("orders groups by severity and gives each its action sentence once", async () => {
-    renderPage();
-    const card = await screen.findByRole("region", { name: /Needs attention/ });
-    await within(card).findByText("The file is damaged");
-    const titles = Array.from(card.querySelectorAll("button[aria-expanded] strong")).map(
-      (el) => el.textContent,
-    );
+    await renderPage();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    await expect.element(card.getByText("The file is damaged")).toBeInTheDocument();
+    const titles = Array.from(
+      (await rendered(card)).querySelectorAll("button[aria-expanded] strong"),
+    ).map((el) => el.textContent);
     expect(titles).toEqual([
       "The file is damaged",
       "Not a valid EPUB",
@@ -503,16 +528,22 @@ describe("Needs attention", () => {
       "Failed after several tries",
       "Ignored: format not accepted",
     ]);
-    expect(screen.getAllByText("Download or export the book again, then scan.")).toHaveLength(1);
+    await expect
+      .poll(() => page.getByText("Download or export the book again, then scan.").elements())
+      .toHaveLength(1);
   });
 
   test("expands the first group on load and lists a two-reason file once with an Also line", async () => {
-    renderPage();
-    expect(await screen.findByText("Marlow - The Salt Archive.epub")).toBeInTheDocument();
-    expect(screen.getByText("Also: Not a valid EPUB")).toBeInTheDocument();
-    expect(screen.getAllByText("Marlow - The Salt Archive.epub")).toHaveLength(1);
-    expect(screen.getByText("Showing 2 of 2")).toBeInTheDocument();
-    expect(screen.getByText("incoming/older/")).toHaveClass("text-fg-muted");
+    await renderPage();
+    await expect
+      .element(page.getByText("Marlow - The Salt Archive.epub", { exact: false }))
+      .toBeInTheDocument();
+    await expect.element(page.getByText("Also: Not a valid EPUB")).toBeInTheDocument();
+    await expect
+      .poll(() => page.getByText("Marlow - The Salt Archive.epub", { exact: false }).elements())
+      .toHaveLength(1);
+    await expect.element(page.getByText("Showing 2 of 2")).toBeInTheDocument();
+    await expect.element(page.getByText("incoming/older/")).toHaveClass("text-fg-muted");
     expect(vi.mocked(listInputs).mock.calls.map(([p]) => p.reason)).toEqual(["damaged"]);
   });
 
@@ -526,18 +557,20 @@ describe("Needs attention", () => {
       ],
       next_cursor: null,
     });
-    renderPage();
-    expect(
-      await screen.findByText("Also: Not a valid EPUB; Reason not specified"),
-    ).toBeInTheDocument();
+    await renderPage();
+    await expect
+      .element(page.getByText("Also: Not a valid EPUB; Reason not specified"))
+      .toBeInTheDocument();
   });
 
   test("collapsed groups make no requests; expanding one requests its own reason", async () => {
-    renderPage();
-    await screen.findByText("Marlow - The Salt Archive.epub");
+    await renderPage();
+    await expect
+      .element(page.getByText("Marlow - The Salt Archive.epub", { exact: false }))
+      .toBeInTheDocument();
     expect(listInputs).toHaveBeenCalledTimes(1);
-    await userEvent.click(screen.getByRole("button", { name: /Not a valid EPUB/ }));
-    expect(await screen.findByText("Book 50.epub")).toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: /Not a valid EPUB/ }));
+    await expect.element(page.getByText("Book 50.epub", { exact: false })).toBeInTheDocument();
     expect(vi.mocked(listInputs).mock.calls.map(([p]) => p.reason)).toEqual([
       "damaged",
       "invalid_structure",
@@ -545,13 +578,15 @@ describe("Needs attention", () => {
   });
 
   test("the group header is a button that toggles aria-expanded", async () => {
-    renderPage();
-    const button = await screen.findByRole("button", { name: /The file is damaged/ });
-    expect(button).toHaveAttribute("aria-expanded", "true");
-    expect(button).toHaveAttribute("aria-controls");
-    await userEvent.click(button);
-    expect(button).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("Marlow - The Salt Archive.epub")).not.toBeInTheDocument();
+    await renderPage();
+    const button = await rendered(page.getByRole("button", { name: /The file is damaged/ }));
+    await expect.element(button).toHaveAttribute("aria-expanded", "true");
+    await expect.element(button).toHaveAttribute("aria-controls");
+    await userEvent.click(button, { force: true });
+    await expect.element(button).toHaveAttribute("aria-expanded", "false");
+    await expect
+      .element(page.getByText("Marlow - The Salt Archive.epub", { exact: false }))
+      .not.toBeInTheDocument();
   });
 
   test("Show more opens the next page by its own cursor and keeps the loaded rows", async () => {
@@ -565,13 +600,15 @@ describe("Needs attention", () => {
           : { items: [inputItem(2), inputItem(3)], next_cursor: null },
       ),
     );
-    renderPage();
-    expect(await screen.findByText("Showing 2 of 3")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Show more" }));
-    expect(await screen.findByText("Showing 3 of 3")).toBeInTheDocument();
-    expect(screen.getAllByText("Book 2.epub")).toHaveLength(1);
-    expect(screen.getByText("Book 3.epub")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByText("Showing 2 of 3")).toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: "Show more" }));
+    await expect.element(page.getByText("Showing 3 of 3")).toBeInTheDocument();
+    await expect
+      .poll(() => page.getByText("Book 2.epub", { exact: false }).elements())
+      .toHaveLength(1);
+    await expect.element(page.getByText("Book 3.epub", { exact: false })).toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: "Show more" })).not.toBeInTheDocument();
     expect(vi.mocked(listInputs).mock.calls.at(-1)?.[0]).toMatchObject({
       reason: "damaged",
       cursor: "cur-1",
@@ -589,11 +626,11 @@ describe("Needs attention", () => {
           : { items: [inputItem(3)], next_cursor: null },
       ),
     );
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
-    const count = await screen.findByText("Showing 3 of 3");
-    await waitFor(() => {
-      expect(count).toHaveFocus();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Show more" }));
+    const count = page.getByText("Showing 3 of 3");
+    await vi.waitFor(async () => {
+      await expect.element(count).toHaveFocus();
     });
   });
 
@@ -612,15 +649,15 @@ describe("Needs attention", () => {
             release = resolve;
           }),
     );
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
-    const header = screen.getByRole("button", { name: /The file is damaged/ });
-    header.focus();
-    act(() => {
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Show more" }));
+    const header = await rendered(page.getByRole("button", { name: /The file is damaged/ }));
+    (await rendered(header)).focus();
+    {
       release({ items: [inputItem(3)], next_cursor: null });
-    });
-    await screen.findByText("Showing 3 of 3");
-    expect(header).toHaveFocus();
+    }
+    await expect.element(page.getByText("Showing 3 of 3")).toBeInTheDocument();
+    await expect.element(header).toHaveFocus();
   });
 
   test("Show more keeps focus on its button while more pages remain", async () => {
@@ -634,10 +671,10 @@ describe("Needs attention", () => {
           : { items: [inputItem(3), inputItem(4)], next_cursor: "cur-2" },
       ),
     );
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
-    await screen.findByText("Showing 4 of 5");
-    expect(screen.getByRole("button", { name: "Show more" })).toHaveFocus();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Show more" }));
+    await expect.element(page.getByText("Showing 4 of 5")).toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: "Show more" })).toHaveFocus();
   });
 
   test("a failed later page moves focus to its Try again, and a successful retry to the count line", async () => {
@@ -649,19 +686,19 @@ describe("Needs attention", () => {
         ? Promise.resolve({ items: [inputItem(1), inputItem(2)], next_cursor: "cur-1" })
         : Promise.reject(new ApiError(500, null, "Internal", "")),
     );
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
-    await screen.findByText("Could not load these files.");
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    const retry = within(card).getByRole("button", { name: "Try again" });
-    await waitFor(() => {
-      expect(retry).toHaveFocus();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Show more" }));
+    await expect.element(page.getByText("Could not load these files.")).toBeInTheDocument();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    const retry = await rendered(card.getByRole("button", { name: "Try again" }));
+    await vi.waitFor(async () => {
+      await expect.element(retry).toHaveFocus();
     });
     vi.mocked(listInputs).mockResolvedValue({ items: [inputItem(3)], next_cursor: null });
-    await userEvent.click(retry);
-    const count = await screen.findByText("Showing 3 of 3");
-    await waitFor(() => {
-      expect(count).toHaveFocus();
+    await userEvent.click(retry, { force: true });
+    const count = page.getByText("Showing 3 of 3");
+    await vi.waitFor(async () => {
+      await expect.element(count).toHaveFocus();
     });
   });
 
@@ -680,44 +717,48 @@ describe("Needs attention", () => {
             resolveMore = resolve;
           }),
     );
-    renderPage();
-    const more = await screen.findByRole("button", { name: "Show more" });
+    await renderPage();
+    const more = await rendered(page.getByRole("button", { name: "Show more" }));
     await userEvent.click(more);
-    const loading = await screen.findByRole("button", { name: "Loading more" });
-    expect(loading).toHaveAttribute("data-pending");
-    expect(loading).toHaveFocus();
+    const loading = await rendered(page.getByRole("button", { name: "Loading more" }));
+    await expect.element(loading).toHaveAttribute("data-pending");
+    await expect.element(loading).toHaveFocus();
     await userEvent.keyboard("{Enter} ");
-    await userEvent.click(loading);
+    await userEvent.click(loading, { force: true });
     expect(listInputs).toHaveBeenCalledTimes(2);
-    act(() => {
+    {
       resolveMore({ items: [inputItem(3)], next_cursor: null });
-    });
-    expect(await screen.findByText("Loaded 1 more file")).toBeInTheDocument();
+    }
+    await expect.element(page.getByText("Loaded 1 more file")).toBeInTheDocument();
   });
 
   test("an expanded group refetches its first page on window focus", async () => {
-    renderPage();
-    await screen.findByText("Marlow - The Salt Archive.epub");
+    await renderPage();
+    await expect
+      .element(page.getByText("Marlow - The Salt Archive.epub", { exact: false }))
+      .toBeInTheDocument();
     vi.mocked(listInputs).mockResolvedValue({
       items: [inputItem(77, { path: "incoming/Fresh Arrival.epub" })],
       next_cursor: null,
     });
-    act(() => {
+    {
       focusManager.setFocused(false);
       focusManager.setFocused(true);
-    });
-    expect(await screen.findByText("Fresh Arrival.epub")).toBeInTheDocument();
+    }
+    await expect
+      .element(page.getByText("Fresh Arrival.epub", { exact: false }))
+      .toBeInTheDocument();
   });
 
   test("a second press on a pending scan sends no second request", async () => {
     vi.mocked(scanIngestion).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    const button = await screen.findByRole("button", { name: "Scan ingestion folder" });
-    await userEvent.click(button);
-    const pending = await screen.findByRole("button", { name: "Scanning" });
-    expect(pending).toHaveAttribute("data-pending");
-    expect(pending).toHaveFocus();
-    await userEvent.click(pending);
+    await renderPage();
+    const button = await rendered(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await userEvent.click(button, { force: true });
+    const pending = await rendered(page.getByRole("button", { name: "Scanning" }));
+    await expect.element(pending).toHaveAttribute("data-pending");
+    await expect.element(pending).toHaveFocus();
+    await userEvent.click(pending, { force: true });
     await userEvent.keyboard("{Enter}");
     await userEvent.keyboard(" ");
     expect(scanIngestion).toHaveBeenCalledTimes(1);
@@ -732,33 +773,37 @@ describe("Needs attention", () => {
         ? Promise.resolve({ items: [inputItem(1), inputItem(2)], next_cursor: "cur-1" })
         : Promise.reject(new ApiError(500, null, "Internal", "")),
     );
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
-    expect(await screen.findByText("Could not load these files.")).toBeInTheDocument();
-    expect(screen.getByText("Book 1.epub")).toBeInTheDocument();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Show more" }));
+    await expect.element(page.getByText("Could not load these files.")).toBeInTheDocument();
+    await expect.element(page.getByText("Book 1.epub", { exact: false })).toBeInTheDocument();
     vi.mocked(listInputs).mockResolvedValue({ items: [inputItem(3)], next_cursor: null });
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    await userEvent.click(within(card).getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("Book 3.epub")).toBeInTheDocument();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    await userEvent.click(card.getByRole("button", { name: "Try again" }));
+    await expect.element(page.getByText("Book 3.epub", { exact: false })).toBeInTheDocument();
   });
 
   test("a failed first page shows the group error with a retry", async () => {
     vi.mocked(listInputs).mockRejectedValueOnce(new ApiError(500, null, "Internal", ""));
-    renderPage();
-    expect(await screen.findByText("Could not load these files.")).toBeInTheDocument();
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    await userEvent.click(within(card).getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("Marlow - The Salt Archive.epub")).toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByText("Could not load these files.")).toBeInTheDocument();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    await userEvent.click(card.getByRole("button", { name: "Try again" }));
+    await expect
+      .element(page.getByText("Marlow - The Salt Archive.epub", { exact: false }))
+      .toBeInTheDocument();
   });
 
   test("retrying a failed first page keeps keyboard focus on the group header", async () => {
     vi.mocked(listInputs).mockRejectedValueOnce(new ApiError(500, null, "Internal", ""));
-    renderPage();
-    await screen.findByText("Could not load these files.");
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    await userEvent.click(within(card).getByRole("button", { name: "Try again" }));
-    await screen.findByText("Marlow - The Salt Archive.epub");
-    expect(within(card).getByRole("button", { name: /The file is damaged/ })).toHaveFocus();
+    await renderPage();
+    await expect.element(page.getByText("Could not load these files.")).toBeInTheDocument();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    await userEvent.click(card.getByRole("button", { name: "Try again" }));
+    await expect
+      .element(page.getByText("Marlow - The Salt Archive.epub", { exact: false }))
+      .toBeInTheDocument();
+    await expect.element(card.getByRole("button", { name: /The file is damaged/ })).toHaveFocus();
   });
 
   test("failed retry focuses only its own group and Tab can leave a group", async () => {
@@ -767,45 +812,51 @@ describe("Needs attention", () => {
         ? Promise.reject(new ApiError(500, null, "Internal", ""))
         : Promise.resolve(DAMAGED_PAGE),
     );
-    renderPage();
-    const user = userEvent.setup();
-    await screen.findByText("Marlow - The Salt Archive.epub");
-    const first = screen.getByRole("button", { name: /The file is damaged/ });
-    const second = screen.getByRole("button", { name: /Not a valid EPUB.*Try another copy/ });
+    await renderPage();
+    const user = userEvent;
+    await expect
+      .element(page.getByText("Marlow - The Salt Archive.epub", { exact: false }))
+      .toBeInTheDocument();
+    const first = await rendered(page.getByRole("button", { name: /The file is damaged/ }));
+    const second = await rendered(
+      page.getByRole("button", { name: /Not a valid EPUB.*Try another copy/ }),
+    );
     await user.click(second);
-    const panel = screen.getByRole("group", { name: /Not a valid EPUB.*Try another copy/ });
-    const retry = await within(panel).findByRole("button", { name: "Try again" });
+    const panel = page.getByRole("group", { name: /Not a valid EPUB.*Try another copy/ });
+    const retry = await rendered(panel.getByRole("button", { name: "Try again" }));
     vi.mocked(listInputs).mockResolvedValue({ items: [inputItem(50)], next_cursor: null });
-    retry.focus();
+    (await rendered(retry)).focus();
     await user.keyboard("{Enter}");
-    await within(panel).findByText("Book 50.epub");
-    expect(second).toHaveFocus();
-    expect(first).not.toHaveFocus();
-    const last = screen.getByRole("button", { name: /Ignored: format not accepted/ });
+    await expect.element(panel.getByText("Book 50.epub", { exact: false })).toBeInTheDocument();
+    await expect.element(second).toHaveFocus();
+    await expect.element(first).not.toHaveFocus();
+    const last = await rendered(page.getByRole("button", { name: /Ignored: format not accepted/ }));
     const lastGroup = document.getElementById(
-      last.getAttribute("aria-controls") ?? "",
+      (await rendered(last)).getAttribute("aria-controls") ?? "",
     )?.parentElement;
     if (lastGroup === undefined || lastGroup === null) throw new Error("group missing");
-    last.focus();
+    (await rendered(last)).focus();
     await user.tab();
     expect(lastGroup.contains(document.activeElement)).toBe(false);
     await user.tab({ shift: true });
-    expect(last).toHaveFocus();
+    await expect.element(last).toHaveFocus();
   });
 
   test("count refresh retains the user's group expansion", async () => {
-    const client = renderPage();
-    const user = userEvent.setup();
-    const first = await screen.findByRole("button", { name: /The file is damaged/ });
-    const second = screen.getByRole("button", { name: /Not a valid EPUB.*Try another copy/ });
+    const client = await renderPage();
+    const user = userEvent;
+    const first = await rendered(page.getByRole("button", { name: /The file is damaged/ }));
+    const second = await rendered(
+      page.getByRole("button", { name: /Not a valid EPUB.*Try another copy/ }),
+    );
     await user.click(first);
     await user.click(second);
-    await screen.findByText("Book 50.epub");
-    act(() => {
+    await expect.element(page.getByText("Book 50.epub", { exact: false })).toBeInTheDocument();
+    {
       client.setQueryData(queryKeys.ingestion.counts(), countsFixture());
-    });
-    expect(first).toHaveAttribute("aria-expanded", "false");
-    expect(second).toHaveAttribute("aria-expanded", "true");
+    }
+    await expect.element(first).toHaveAttribute("aria-expanded", "false");
+    await expect.element(second).toHaveAttribute("aria-expanded", "true");
     expect(vi.mocked(listInputs).mock.calls.map(([p]) => p.reason)).toEqual([
       "damaged",
       "invalid_structure",
@@ -832,14 +883,14 @@ describe("Needs attention", () => {
           : DAMAGED_PAGE,
       ),
     );
-    renderPage();
-    await screen.findByText("Showing 2 of 2");
-    await userEvent.click(screen.getByRole("button", { name: /Ignored: format not accepted/ }));
-    expect(await screen.findByText("cover.jpg")).toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByText("Showing 2 of 2")).toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: /Ignored: format not accepted/ }));
+    await expect.element(page.getByText("cover.jpg", { exact: false })).toBeInTheDocument();
     expect(vi.mocked(listInputs).mock.calls.at(-1)?.[0]).toMatchObject({
       reason: "format_not_accepted",
     });
-    expect(screen.getByText("14 files")).toBeInTheDocument();
+    await expect.element(page.getByText("14 files")).toBeInTheDocument();
   });
 
   test("a legacy row shows the masked class and never raw text", async () => {
@@ -850,11 +901,17 @@ describe("Needs attention", () => {
       items: [inputItem(4, { primary_reason: "unspecified", reasons: ["unspecified"] })],
       next_cursor: null,
     });
-    renderPage();
-    expect(await screen.findByRole("button", { name: /Reason not specified/ })).toBeInTheDocument();
-    expect(
-      screen.getByText("Replace the file, or check the server log, then scan."),
-    ).toBeInTheDocument();
+    await renderPage();
+    await expect
+      .element(
+        page
+          .getByRole("region", { name: /Needs attention/ })
+          .getByRole("button", { name: /Reason not specified/ }),
+      )
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByText("Replace the file, or check the server log, then scan."))
+      .toBeInTheDocument();
   });
 
   test("a non-UTF-8 file name renders with its escapes and does not break the row", async () => {
@@ -862,8 +919,10 @@ describe("Needs attention", () => {
       items: [inputItem(5, { path: "incoming/Book \\xe9\\xff <b>.epub" })],
       next_cursor: null,
     });
-    renderPage();
-    expect(await screen.findByText("Book \\xe9\\xff <b>.epub")).toBeInTheDocument();
+    await renderPage();
+    await expect
+      .element(page.getByText("Book \\xe9\\xff <b>.epub", { exact: false }))
+      .toBeInTheDocument();
   });
 
   test("a file never tried shows no time", async () => {
@@ -871,76 +930,81 @@ describe("Needs attention", () => {
       items: [inputItem(6, { completed_at: null })],
       next_cursor: null,
     });
-    renderPage();
-    await screen.findByText("Book 6.epub");
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    expect(within(card).queryAllByText(/\d{1,2}:\d{2}/)).toHaveLength(0);
+    await renderPage();
+    await expect.element(page.getByText("Book 6.epub", { exact: false })).toBeInTheDocument();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    await expect.poll(() => card.getByText(/\d{1,2}:\d{2}/).elements()).toHaveLength(0);
   });
 
   test("shows the empty message when no class needs attention", async () => {
     vi.mocked(getInputCounts).mockResolvedValue({ by_reason: [], attention_total: 0 });
-    renderPage();
-    expect(await screen.findByText("Nothing needs attention.")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Every file Reverie has seen was imported, is waiting its turn, or was ignored.",
-      ),
-    ).toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByText("Nothing needs attention.")).toBeInTheDocument();
+    await expect
+      .element(
+        page.getByText(
+          "Every file Reverie has seen was imported, is waiting its turn, or was ignored.",
+        ),
+      )
+      .toBeInTheDocument();
     expect(listInputs).not.toHaveBeenCalled();
   });
 
   test("shows a busy skeleton with status text while counts load", async () => {
     vi.mocked(getInputCounts).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    expect(await screen.findByText("Loading files that need attention")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /Needs attention/ })).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
+    await renderPage();
+    await expect.element(page.getByText("Loading files that need attention")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("region", { name: /Needs attention/ }))
+      .toHaveAttribute("aria-busy", "true");
   });
 
   test("the group chevron opts out of motion under reduced motion", async () => {
-    renderPage();
+    await renderPage();
     const chevron = (
-      await screen.findByRole("button", { name: /The file is damaged/ })
+      await rendered(page.getByRole("button", { name: /The file is damaged/ }))
     ).querySelector("svg");
-    expect(chevron).toHaveClass("motion-reduce:transition-none");
+    await expect.element(chevron).toHaveClass("motion-reduce:transition-none");
   });
 
   test("the needs-attention skeletons opt out of motion under reduced motion", async () => {
     vi.mocked(getInputCounts).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    const region = await screen.findByRole("region", { name: /Needs attention/ });
-    const skeletons = region.querySelectorAll("[data-slot=skeleton]");
+    await renderPage();
+    const region = page.getByRole("region", { name: /Needs attention/ });
+    const skeletons = (await rendered(region)).querySelectorAll<HTMLElement>(
+      "[data-slot=skeleton]",
+    );
     expect(skeletons.length).toBeGreaterThan(0);
     for (const skeleton of skeletons) {
-      expect(skeleton).toHaveClass("motion-reduce:animate-none");
+      await expect.element(skeleton).toHaveClass("motion-reduce:animate-none");
     }
   });
 
   test("shows one error with a retry when the counts fail", async () => {
     vi.mocked(getInputCounts).mockRejectedValueOnce(new ApiError(500, null, "Internal", ""));
-    renderPage();
-    const region = within(screen.getByRole("region", { name: /Needs attention/ }));
-    expect(await region.findByText("Could not load this list.")).toBeInTheDocument();
-    expect(region.getByText("Your files are untouched. Try again.")).toBeInTheDocument();
+    await renderPage();
+    const region = page.getByRole("region", { name: /Needs attention/ });
+    await expect.element(region.getByText("Could not load this list.")).toBeInTheDocument();
+    await expect
+      .element(region.getByText("Your files are untouched. Try again."))
+      .toBeInTheDocument();
     await userEvent.click(
-      within(screen.getByRole("region", { name: /Needs attention/ })).getByRole("button", {
+      page.getByRole("region", { name: /Needs attention/ }).getByRole("button", {
         name: "Try again",
       }),
     );
-    expect(await screen.findByText("7 files, 5 reasons")).toBeInTheDocument();
+    await expect.element(page.getByText("7 files, 5 reasons")).toBeInTheDocument();
   });
 
   test("keeps the existing metric cards", async () => {
-    renderPage();
-    expect(await screen.findByText("1,204")).toBeInTheDocument();
-    expect(screen.getByText("Recent ingestion batches")).toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByText("1,204")).toBeInTheDocument();
+    await expect.element(page.getByText("Recent ingestion batches")).toBeInTheDocument();
   });
 
   test("a non-admin is redirected and nothing is requested", async () => {
-    renderPage(ADULT_ME);
-    expect(await screen.findByTestId("library-page")).toBeInTheDocument();
+    await renderPage(ADULT_ME);
+    await expect.element(page.getByTestId("library-page")).toBeInTheDocument();
     expect(getInputCounts).not.toHaveBeenCalled();
     expect(getIngestionStatus).not.toHaveBeenCalled();
     expect(getEnrichmentFailureCounts).not.toHaveBeenCalled();
@@ -960,21 +1024,21 @@ describe("Enrichment problems", () => {
       ],
       next_cursor: null,
     });
-    renderPage();
-    const card = await screen.findByRole("region", { name: /Enrichment problems/ });
-    expect(await within(card).findByRole("heading")).toHaveTextContent("4 books, 3 reasons");
-    const titles = Array.from(card.querySelectorAll("button[aria-expanded] strong")).map(
-      (e) => e.textContent,
-    );
+    await renderPage();
+    const card = page.getByRole("region", { name: /Enrichment problems/ });
+    await expect.element(card.getByRole("heading")).toMatchTextContent("4 books, 3 reasons");
+    const titles = Array.from(
+      (await rendered(card)).querySelectorAll("button[aria-expanded] strong"),
+    ).map((e) => e.textContent);
     expect(titles).toEqual([
       "Hardcover: no record found",
       "Open Library: timed out",
       "Reason not specified",
     ]);
-    expect(await within(card).findByText("Book title 1")).toBeInTheDocument();
-    expect(within(card).getByText("Will retry, tried 3 times")).toBeInTheDocument();
-    expect(within(card).getByText("Stopped retrying, tried 1 time")).toBeInTheDocument();
-    expect(within(card).getByText("Also: Hardcover, no record found")).toBeInTheDocument();
+    await expect.element(card.getByText("Book title 1")).toBeInTheDocument();
+    await expect.element(card.getByText("Will retry, tried 3 times")).toBeInTheDocument();
+    await expect.element(card.getByText("Stopped retrying, tried 1 time")).toBeInTheDocument();
+    await expect.element(card.getByText("Also: Hardcover, no record found")).toBeInTheDocument();
     expect(vi.mocked(listEnrichmentFailures).mock.calls[0]?.[0]).toMatchObject({
       source: "hardcover",
       class: "not_found",
@@ -982,20 +1046,18 @@ describe("Enrichment problems", () => {
   });
 
   test("never displays the attempt time, which can be a future retry anchor", async () => {
-    renderPage();
-    await screen.findByText("Book title 1");
-    expect(screen.queryByText(/2099|Jan/)).not.toBeInTheDocument();
-    const card = screen.getByRole("region", { name: /Enrichment problems/ });
-    expect(within(card).queryAllByText(/\d{1,2}:\d{2}/)).toHaveLength(0);
+    await renderPage();
+    await expect.element(page.getByText("Book title 1")).toBeInTheDocument();
+    await expect.element(page.getByText(/2099|Jan/)).not.toBeInTheDocument();
+    const card = page.getByRole("region", { name: /Enrichment problems/ });
+    await expect.poll(() => card.getByText(/\d{1,2}:\d{2}/).elements()).toHaveLength(0);
   });
 
   test("a group with no source requests its class alone", async () => {
-    renderPage();
-    const card = await screen.findByRole("region", { name: /Enrichment problems/ });
-    await userEvent.click(
-      await within(card).findByRole("button", { name: /Reason not specified/ }),
-    );
-    await within(card).findAllByText("Book title 1");
+    await renderPage();
+    const card = page.getByRole("region", { name: /Enrichment problems/ });
+    await userEvent.click(card.getByRole("button", { name: /Reason not specified/ }));
+    await expect.element(card.getByText("Book title 1").first()).toBeInTheDocument();
     const call = vi.mocked(listEnrichmentFailures).mock.calls.find(([p]) => p.source === null);
     expect(call?.[0]).toMatchObject({ source: null, class: "unspecified" });
   });
@@ -1008,33 +1070,37 @@ describe("Enrichment problems", () => {
           finish = resolve;
         }),
     );
-    renderPage();
-    const row = (await screen.findByText("Book title 1")).closest("tr");
+    await renderPage();
+    const row = (await rendered(page.getByText("Book title 1"))).closest("tr");
     if (row === null) throw new Error("row missing");
-    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
-    const pending = within(row).getByRole("button", { name: "Queuing" });
-    expect(pending).toHaveAttribute("data-pending");
-    expect(pending).toHaveFocus();
+    await userEvent.click(page.elementLocator(row).getByRole("button", { name: "Try again" }));
+    const pending = await rendered(
+      page.elementLocator(row).getByRole("button", { name: "Queuing" }),
+    );
+    await expect.element(pending).toHaveAttribute("data-pending");
+    await expect.element(pending).toHaveFocus();
     await userEvent.keyboard("{Enter} ");
-    await userEvent.click(pending);
+    await userEvent.click(pending, { force: true });
     expect(triggerEnrichment).toHaveBeenCalledOnce();
-    act(() => {
+    {
       finish();
-    });
-    expect(
-      await within(row).findByText("Queued. It leaves this list once it runs."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Book title 1")).toBeInTheDocument();
+    }
+    await expect
+      .element(page.elementLocator(row).getByText("Queued. It leaves this list once it runs."))
+      .toBeInTheDocument();
+    await expect.element(page.getByText("Book title 1")).toBeInTheDocument();
     expect(triggerEnrichment).toHaveBeenCalledWith(failureItem(1).manifestation_id);
   });
 
   test("a retried book that fails again shows Try again once its row carries a newer attempt", async () => {
     vi.mocked(triggerEnrichment).mockResolvedValue();
-    renderPage();
-    const row = (await screen.findByText("Book title 1")).closest("tr");
+    await renderPage();
+    const row = (await rendered(page.getByText("Book title 1"))).closest("tr");
     if (row === null) throw new Error("row missing");
-    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
-    await within(row).findByText("Queued. It leaves this list once it runs.");
+    await userEvent.click(page.elementLocator(row).getByRole("button", { name: "Try again" }));
+    await expect
+      .element(page.elementLocator(row).getByText("Queued. It leaves this list once it runs."))
+      .toBeInTheDocument();
     vi.mocked(listEnrichmentFailures).mockResolvedValue({
       items: [
         failureItem(1, { attempted_at: "2099-01-02T00:00:00Z", attempt_count: 1 }),
@@ -1042,41 +1108,47 @@ describe("Enrichment problems", () => {
       ],
       next_cursor: null,
     });
-    act(() => {
+    {
       focusManager.setFocused(false);
       focusManager.setFocused(true);
-    });
-    expect(await within(row).findByRole("button", { name: "Try again" })).toBeInTheDocument();
-    expect(within(row).queryByText(/Queued\./)).not.toBeInTheDocument();
+    }
+    await expect
+      .element(page.elementLocator(row).getByRole("button", { name: "Try again" }))
+      .toBeInTheDocument();
+    await expect.element(page.elementLocator(row).getByText(/Queued\./)).not.toBeInTheDocument();
   });
 
   test("a refetch that returns the same attempt keeps the Queued confirmation", async () => {
     vi.mocked(triggerEnrichment).mockResolvedValue();
-    renderPage();
-    const row = (await screen.findByText("Book title 1")).closest("tr");
+    await renderPage();
+    const row = (await rendered(page.getByText("Book title 1"))).closest("tr");
     if (row === null) throw new Error("row missing");
-    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
-    await within(row).findByText("Queued. It leaves this list once it runs.");
+    await userEvent.click(page.elementLocator(row).getByRole("button", { name: "Try again" }));
+    await expect
+      .element(page.elementLocator(row).getByText("Queued. It leaves this list once it runs."))
+      .toBeInTheDocument();
     const calls = vi.mocked(listEnrichmentFailures).mock.calls.length;
-    act(() => {
+    {
       focusManager.setFocused(false);
       focusManager.setFocused(true);
-    });
-    await waitFor(() => {
+    }
+    await vi.waitFor(() => {
       expect(vi.mocked(listEnrichmentFailures).mock.calls.length).toBeGreaterThan(calls);
     });
-    expect(within(row).getByText("Queued. It leaves this list once it runs.")).toBeInTheDocument();
+    await expect
+      .element(page.elementLocator(row).getByText("Queued. It leaves this list once it runs."))
+      .toBeInTheDocument();
   });
 
   test("a successful retry moves focus to the Queued confirmation", async () => {
     vi.mocked(triggerEnrichment).mockResolvedValue();
-    renderPage();
-    const row = (await screen.findByText("Book title 1")).closest("tr");
+    await renderPage();
+    const row = (await rendered(page.getByText("Book title 1"))).closest("tr");
     if (row === null) throw new Error("row missing");
-    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
-    const queued = await within(row).findByText("Queued. It leaves this list once it runs.");
-    await waitFor(() => {
-      expect(queued).toHaveFocus();
+    await userEvent.click(page.elementLocator(row).getByRole("button", { name: "Try again" }));
+    const queued = page.elementLocator(row).getByText("Queued. It leaves this list once it runs.");
+    await vi.waitFor(async () => {
+      await expect.element(queued).toHaveFocus();
     });
   });
 
@@ -1087,64 +1159,77 @@ describe("Enrichment problems", () => {
         release = resolve;
       }),
     );
-    renderPage();
-    const row = (await screen.findByText("Book title 1")).closest("tr");
+    await renderPage();
+    const row = (await rendered(page.getByText("Book title 1"))).closest("tr");
     if (row === null) throw new Error("row missing");
-    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
-    const other = screen.getByRole("button", { name: /The file is damaged/ });
-    other.focus();
-    act(() => {
+    await userEvent.click(page.elementLocator(row).getByRole("button", { name: "Try again" }));
+    const other = await rendered(page.getByRole("button", { name: /The file is damaged/ }));
+    (await rendered(other)).focus();
+    {
       release();
-    });
-    await within(row).findByText("Queued. It leaves this list once it runs.");
-    expect(other).toHaveFocus();
+    }
+    await expect
+      .element(page.elementLocator(row).getByText("Queued. It leaves this list once it runs."))
+      .toBeInTheDocument();
+    await expect.element(other).toHaveFocus();
   });
 
   test("a second press on a queuing retry sends no second request", async () => {
     vi.mocked(triggerEnrichment).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    const row = (await screen.findByText("Book title 1")).closest("tr");
+    await renderPage();
+    const row = (await rendered(page.getByText("Book title 1"))).closest("tr");
     if (row === null) throw new Error("row missing");
-    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
-    const queuing = within(row).getByRole("button", { name: "Queuing" });
-    queuing.focus();
+    await userEvent.click(page.elementLocator(row).getByRole("button", { name: "Try again" }));
+    const queuing = await rendered(
+      page.elementLocator(row).getByRole("button", { name: "Queuing" }),
+    );
+    (await rendered(queuing)).focus();
     await userEvent.keyboard("{Enter}");
     expect(triggerEnrichment).toHaveBeenCalledTimes(1);
   });
 
   test("a failed retry says so and offers Try again on the same row", async () => {
     vi.mocked(triggerEnrichment).mockRejectedValue(new ApiError(500, null, "Internal", ""));
-    renderPage();
-    const row = (await screen.findByText("Book title 1")).closest("tr");
+    await renderPage();
+    const row = (await rendered(page.getByText("Book title 1"))).closest("tr");
     if (row === null) throw new Error("row missing");
-    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
-    expect(await within(row).findByText("Could not queue it.")).toBeInTheDocument();
-    expect(within(row).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    await userEvent.click(page.elementLocator(row).getByRole("button", { name: "Try again" }));
+    await expect
+      .element(page.elementLocator(row).getByText("Could not queue it."))
+      .toBeInTheDocument();
+    await expect
+      .element(page.elementLocator(row).getByRole("button", { name: "Try again" }))
+      .toBeInTheDocument();
   });
 
   test("shows the empty, loading and error states", async () => {
     vi.mocked(getEnrichmentFailureCounts).mockResolvedValueOnce({ by_failure: [], total: 0 });
-    renderPage();
-    expect(await screen.findByText("No enrichment problems.")).toBeInTheDocument();
-    expect(
-      screen.getByText("Every book was enriched, or is waiting its turn."),
-    ).toBeInTheDocument();
+    await renderPage();
+    await expect.element(page.getByText("No enrichment problems.")).toBeInTheDocument();
+    await expect
+      .element(page.getByText("Every book was enriched, or is waiting its turn."))
+      .toBeInTheDocument();
   });
 
   test("shows a busy skeleton while loading", async () => {
     vi.mocked(getEnrichmentFailureCounts).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    expect(await screen.findByText("Loading books with enrichment problems")).toBeInTheDocument();
+    await renderPage();
+    await expect
+      .element(page.getByText("Loading books with enrichment problems"))
+      .toBeInTheDocument();
   });
 
   test("the enrichment skeletons opt out of motion under reduced motion", async () => {
     vi.mocked(getEnrichmentFailureCounts).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    const status = await screen.findByText("Loading books with enrichment problems");
-    const skeletons = status.parentElement?.querySelectorAll("[data-slot=skeleton]") ?? [];
+    await renderPage();
+    const status = page.getByText("Loading books with enrichment problems");
+    const skeletons =
+      (await rendered(status)).parentElement?.querySelectorAll<HTMLElement>(
+        "[data-slot=skeleton]",
+      ) ?? [];
     expect(skeletons.length).toBeGreaterThan(0);
     for (const skeleton of skeletons) {
-      expect(skeleton).toHaveClass("motion-reduce:animate-none");
+      await expect.element(skeleton).toHaveClass("motion-reduce:animate-none");
     }
   });
 
@@ -1152,13 +1237,13 @@ describe("Enrichment problems", () => {
     vi.mocked(getEnrichmentFailureCounts).mockRejectedValueOnce(
       new ApiError(500, null, "Internal", ""),
     );
-    renderPage();
-    const card = await screen.findByRole("region", { name: /Enrichment problems/ });
-    expect(
-      await within(card).findByText("Your books are untouched. Try again."),
-    ).toBeInTheDocument();
-    await userEvent.click(within(card).getByRole("button", { name: "Try again" }));
-    expect(await within(card).findByRole("heading")).toHaveTextContent("4 books, 3 reasons");
+    await renderPage();
+    const card = page.getByRole("region", { name: /Enrichment problems/ });
+    await expect
+      .element(card.getByText("Your books are untouched. Try again."))
+      .toBeInTheDocument();
+    await userEvent.click(card.getByRole("button", { name: "Try again" }));
+    await expect.element(card.getByRole("heading")).toMatchTextContent("4 books, 3 reasons");
   });
 });
 
@@ -1172,17 +1257,17 @@ describe("polling", () => {
   test("a paused notice does not stop polling admitted work or expanded groups", async () => {
     vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [{ kind: "paused_by_admin" }] });
     vi.mocked(getDashboardActivity).mockResolvedValue(batch({ ended_at: null, in_progress: 4 }));
-    renderPage();
+    await renderPage();
     await flush();
-    expect(screen.queryByText(/Latest activity\./)).not.toBeInTheDocument();
+    await expect.element(page.getByText(/Latest activity\./)).not.toBeInTheDocument();
     const before = {
       counts: vi.mocked(getInputCounts).mock.calls.length,
       activity: vi.mocked(getDashboardActivity).mock.calls.length,
       inputs: vi.mocked(listInputs).mock.calls.length,
     };
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
-    });
+    }
     expect(vi.mocked(getInputCounts).mock.calls.length - before.counts).toBe(2);
     expect(vi.mocked(getDashboardActivity).mock.calls.length - before.activity).toBe(2);
     expect(vi.mocked(listInputs).mock.calls.length - before.inputs).toBe(2);
@@ -1192,38 +1277,38 @@ describe("polling", () => {
     vi.mocked(getIngestionStatus).mockResolvedValue({
       blockers: [{ kind: "paused_by_admin" }, { kind: "restarting" }],
     });
-    renderPage();
+    await renderPage();
     await flush();
     expect(getIngestionStatus).toHaveBeenCalledTimes(1);
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(STATUS_POLL_INTERVAL_MS - 40);
-    });
+    }
     expect(getIngestionStatus).toHaveBeenCalledTimes(1);
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(40);
-    });
+    }
     expect(getIngestionStatus).toHaveBeenCalledTimes(2);
-    act(() => {
+    {
       focusManager.setFocused(false);
-    });
-    await act(async () => {
+    }
+    {
       await vi.advanceTimersByTimeAsync(STATUS_POLL_INTERVAL_MS * 2);
-    });
+    }
     expect(getIngestionStatus).toHaveBeenCalledTimes(2);
-    act(() => {
+    {
       focusManager.setFocused(true);
-    });
+    }
     await flush();
     expect(getIngestionStatus).toHaveBeenCalledTimes(3);
   });
 
   test("status always refetches on mount even when a cached observation is fresh", async () => {
-    const client = renderPage();
+    const client = await renderPage();
     await flush();
-    cleanup();
+    await cleanup();
     client.setQueryDefaults(queryKeys.ingestion.status(), { staleTime: Infinity });
     client.setQueryData(queryKeys.ingestion.status(), { blockers: [{ kind: "restarting" }] });
-    renderPage(ADMIN_ME, client);
+    await renderPage(ADMIN_ME, client);
     await flush();
     expect(client.getQueryData(queryKeys.ingestion.status())).toEqual({ blockers: [] });
     expect(getIngestionStatus).toHaveBeenCalledTimes(2);
@@ -1233,18 +1318,18 @@ describe("polling", () => {
     vi.mocked(getDashboardActivity).mockResolvedValue(
       batch({ ended_at: null, in_progress: 4, completed: 7 }),
     );
-    renderPage();
+    await renderPage();
     await flush();
-    expect(screen.getByText(/Latest activity\./)).toBeInTheDocument();
-    expect(screen.getByText(/Updating every few seconds/)).toBeInTheDocument();
+    await expect.element(page.getByText(/Latest activity\./)).toBeInTheDocument();
+    await expect.element(page.getByText(/Updating every few seconds/)).toBeInTheDocument();
     const before = {
       counts: vi.mocked(getInputCounts).mock.calls.length,
       activity: vi.mocked(getDashboardActivity).mock.calls.length,
       damaged: vi.mocked(listInputs).mock.calls.length,
     };
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
-    });
+    }
     expect(vi.mocked(getInputCounts).mock.calls.length - before.counts).toBe(3);
     expect(vi.mocked(getDashboardActivity).mock.calls.length - before.activity).toBe(3);
     expect(vi.mocked(listInputs).mock.calls.length - before.damaged).toBe(3);
@@ -1257,18 +1342,18 @@ describe("polling", () => {
     vi.mocked(getDashboardActivity).mockResolvedValue(
       batch({ ended_at: null, in_progress: 4, skipped: 2 }),
     );
-    renderPage();
+    await renderPage();
     await flush();
-    expect(screen.getByText(/2 skipped, 4 in progress/)).toBeInTheDocument();
+    await expect.element(page.getByText(/2 skipped, 4 in progress/)).toBeInTheDocument();
   });
 
   test("does not poll when the latest batch has ended", async () => {
-    renderPage();
+    await renderPage();
     await flush();
     const counts = vi.mocked(getInputCounts).mock.calls.length;
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 10);
-    });
+    }
     expect(vi.mocked(getInputCounts).mock.calls).toHaveLength(counts);
   });
 
@@ -1276,19 +1361,21 @@ describe("polling", () => {
     vi.mocked(getDashboardActivity).mockResolvedValueOnce(
       batch({ ended_at: null, in_progress: 4, completed: 7 }),
     );
-    renderPage();
+    await renderPage();
     await flush();
-    expect(screen.queryByText("Latest activity has finished")).not.toBeInTheDocument();
-    await act(async () => {
+    await expect.element(page.getByText("Latest activity has finished")).not.toBeInTheDocument();
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 20);
-    });
-    expect(screen.getByText("Latest activity has finished")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /12 files in the latest batch: 11 imported, 1 did not import\. Batches are not tied/,
-      ),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/Updating every few seconds/)).not.toBeInTheDocument();
+    }
+    await expect.element(page.getByText("Latest activity has finished")).toBeInTheDocument();
+    await expect
+      .element(
+        page.getByText(
+          /12 files in the latest batch: 11 imported, 1 did not import\. Batches are not tied/,
+        ),
+      )
+      .toBeInTheDocument();
+    await expect.element(page.getByText(/Updating every few seconds/)).not.toBeInTheDocument();
   });
 
   test("clears the waiting notice once a newer batch has ended, though no poll saw it running", async () => {
@@ -1298,11 +1385,11 @@ describe("polling", () => {
       suppressed: 0,
       monitor: "/m",
     });
-    renderPage();
+    await renderPage();
     await flush();
-    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
     await flush();
-    expect(screen.getByText("Nothing is ready yet")).toBeInTheDocument();
+    await expect.element(page.getByText("Nothing is ready yet")).toBeInTheDocument();
     vi.mocked(getDashboardActivity).mockResolvedValue(
       batch({
         batch_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
@@ -1311,11 +1398,11 @@ describe("polling", () => {
         failed: 0,
       }),
     );
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 20);
-    });
-    expect(screen.queryByText("Nothing is ready yet")).not.toBeInTheDocument();
-    expect(screen.getByText("Latest activity has finished")).toBeInTheDocument();
+    }
+    await expect.element(page.getByText("Nothing is ready yet")).not.toBeInTheDocument();
+    await expect.element(page.getByText("Latest activity has finished")).toBeInTheDocument();
   });
 
   test("keeps the waiting notice while the latest batch is the one seen before the scan", async () => {
@@ -1325,15 +1412,15 @@ describe("polling", () => {
       suppressed: 0,
       monitor: "/m",
     });
-    renderPage();
+    await renderPage();
     await flush();
-    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
     await flush();
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
-    });
-    expect(screen.getByText("Nothing is ready yet")).toBeInTheDocument();
-    expect(screen.queryByText("Latest activity has finished")).not.toBeInTheDocument();
+    }
+    await expect.element(page.getByText("Nothing is ready yet")).toBeInTheDocument();
+    await expect.element(page.getByText("Latest activity has finished")).not.toBeInTheDocument();
   });
 
   test("a 403 during a running batch outlives the batch and keeps the scan disabled", async () => {
@@ -1341,17 +1428,19 @@ describe("polling", () => {
       batch({ ended_at: null, in_progress: 4, completed: 7 }),
     );
     vi.mocked(scanIngestion).mockRejectedValue(new ApiError(403, null, "Forbidden", ""));
-    renderPage();
+    await renderPage();
     await flush();
-    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
     await flush();
-    expect(screen.getByText("This account cannot start a scan")).toBeInTheDocument();
-    await act(async () => {
+    await expect.element(page.getByText("This account cannot start a scan")).toBeInTheDocument();
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 20);
-    });
-    expect(screen.getByText("Latest activity has finished")).toBeInTheDocument();
-    expect(screen.getByText("This account cannot start a scan")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeDisabled();
+    }
+    await expect.element(page.getByText("Latest activity has finished")).toBeInTheDocument();
+    await expect.element(page.getByText("This account cannot start a scan")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("button", { name: "Scan ingestion folder" }))
+      .toBeDisabled();
   });
 
   test("a failed scan alert outlives a batch that finishes", async () => {
@@ -1359,15 +1448,15 @@ describe("polling", () => {
       batch({ ended_at: null, in_progress: 4, completed: 7 }),
     );
     vi.mocked(scanIngestion).mockRejectedValue(new ApiError(500, null, "Internal", ""));
-    renderPage();
+    await renderPage();
     await flush();
-    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
     await flush();
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 20);
-    });
-    expect(screen.getByText("Latest activity has finished")).toBeInTheDocument();
-    expect(screen.getByText("The scan did not start")).toBeInTheDocument();
+    }
+    await expect.element(page.getByText("Latest activity has finished")).toBeInTheDocument();
+    await expect.element(page.getByText("The scan did not start")).toBeInTheDocument();
   });
 
   test("polls for the two-minute window after a scan that queued files, then stops", async () => {
@@ -1377,42 +1466,42 @@ describe("polling", () => {
       suppressed: 0,
       monitor: "/m",
     });
-    renderPage();
+    await renderPage();
     await flush();
-    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
     await flush();
     const afterScan = vi.mocked(getInputCounts).mock.calls.length;
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(GRACE_WINDOW_MS - POLL_INTERVAL_MS);
-    });
+    }
     expect(vi.mocked(getInputCounts).mock.calls.length - afterScan).toBeGreaterThanOrEqual(30);
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
-    });
+    }
     const stopped = vi.mocked(getInputCounts).mock.calls.length;
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 10);
-    });
+    }
     expect(vi.mocked(getInputCounts).mock.calls).toHaveLength(stopped);
   });
 
   test("refetches activity and counts on window focus once polling has stopped", async () => {
-    renderPage();
+    await renderPage();
     await flush();
-    expect(screen.getByText("7 files, 5 reasons")).toBeInTheDocument();
+    await expect.element(page.getByText("7 files, 5 reasons")).toBeInTheDocument();
     const counts = vi.mocked(getInputCounts).mock.calls.length;
     const activity = vi.mocked(getDashboardActivity).mock.calls.length;
     vi.mocked(getInputCounts).mockResolvedValue(
       countsFixture({ by_reason: [{ reason: "damaged", count: 9 }], attention_total: 9 }),
     );
-    await act(async () => {
+    {
       focusManager.setFocused(false);
       focusManager.setFocused(true);
       await vi.advanceTimersByTimeAsync(20);
-    });
+    }
     expect(vi.mocked(getInputCounts).mock.calls).toHaveLength(counts + 1);
     expect(vi.mocked(getDashboardActivity).mock.calls).toHaveLength(activity + 1);
-    expect(screen.getByText("9 files, 1 reason")).toBeInTheDocument();
+    await expect.element(page.getByText("9 files, 1 reason")).toBeInTheDocument();
   });
 
   test("a scan that queued and deferred nothing starts no poll", async () => {
@@ -1422,26 +1511,26 @@ describe("polling", () => {
       suppressed: 9,
       monitor: "/m",
     });
-    renderPage();
+    await renderPage();
     await flush();
-    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
     await flush();
     const afterScan = vi.mocked(getInputCounts).mock.calls.length;
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 10);
-    });
+    }
     expect(vi.mocked(getInputCounts).mock.calls).toHaveLength(afterScan);
   });
 
   test("the enrichment lists are not polled", async () => {
     vi.mocked(getDashboardActivity).mockResolvedValue(batch({ ended_at: null, in_progress: 4 }));
-    renderPage();
+    await renderPage();
     await flush();
     const enrichment = vi.mocked(getEnrichmentFailureCounts).mock.calls.length;
     const lists = vi.mocked(listEnrichmentFailures).mock.calls.length;
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 5);
-    });
+    }
     expect(vi.mocked(getEnrichmentFailureCounts).mock.calls).toHaveLength(enrichment);
     expect(vi.mocked(listEnrichmentFailures).mock.calls).toHaveLength(lists);
   });
@@ -1458,16 +1547,16 @@ describe("polling", () => {
           : { items: [inputItem(3)], next_cursor: null },
       ),
     );
-    renderPage();
+    await renderPage();
     await flush();
-    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    await userEvent.click(page.getByRole("button", { name: "Show more" }));
     await flush();
     const laterBefore = vi
       .mocked(listInputs)
       .mock.calls.filter(([p]) => p.cursor !== undefined).length;
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
-    });
+    }
     expect(vi.mocked(listInputs).mock.calls.filter(([p]) => p.cursor !== undefined)).toHaveLength(
       laterBefore,
     );
@@ -1477,38 +1566,39 @@ describe("polling", () => {
 describe("bulk retry group controls", () => {
   test("bulk retry only exposes eligible input actions as siblings and sends one pending command", async () => {
     vi.mocked(retryInputs).mockReturnValue(new Promise(() => {}));
-    const client = renderPage();
-    const card = await screen.findByRole("region", { name: /Needs attention/ });
-    const buttons = await within(card).findAllByRole("button", { name: /Retry/ });
+    const client = await renderPage();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    const buttons = await renderedAll(card.getByRole("button", { name: /Retry/ }));
     expect(buttons.map((button) => button.textContent)).toEqual(["Retry all 2", "Retry 1 file"]);
     const action = buttons[0];
     expect(action).toBeDefined();
-    expect(action.parentElement?.querySelector("button[aria-expanded]")).toBeInTheDocument();
+    await expect
+      .element(action.parentElement?.querySelector<HTMLElement>("button[aria-expanded]") ?? null)
+      .toBeInTheDocument();
     await userEvent.click(action);
-    expect(action).toHaveFocus();
-    expect(action).toHaveAttribute("data-pending");
-    act(() => {
+    await expect.element(action).toHaveFocus();
+    await expect.element(action).toHaveAttribute("data-pending");
+    {
       client.setQueryData(
         queryKeys.ingestion.counts(),
         countsFixture({ by_reason: [], attention_total: 0 }),
       );
+    }
+    await vi.waitFor(async () => {
+      await expect
+        .element(card.getByRole("button", { name: /Needs a change/ }))
+        .toMatchTextContent("0 files");
     });
-    await waitFor(() => {
-      expect(within(card).getByRole("button", { name: /Needs a change/ })).toHaveTextContent(
-        "0 files",
-      );
-    });
-    expect(action).not.toBeDisabled();
+    await expect.element(action).not.toHaveAttribute("disabled");
     await userEvent.keyboard("{Enter} ");
-    await userEvent.click(action);
-    await waitFor(() => {
+    await userEvent.click(action, { force: true });
+    await vi.waitFor(() => {
       expect(retryInputs).toHaveBeenCalledExactlyOnceWith("needs_change");
     });
-    expect(await within(card).findByRole("button", { name: "Queuing 2" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    expect(action).toHaveFocus();
+    await expect
+      .element(card.getByRole("button", { name: "Queuing 2" }))
+      .toHaveAttribute("aria-disabled", "true");
+    await expect.element(action).toHaveFocus();
     expect(listInputs).not.toHaveBeenCalledWith(
       expect.objectContaining({ reason: "needs_change" }),
       expect.anything(),
@@ -1520,55 +1610,58 @@ describe("bulk retry group controls", () => {
       Promise.resolve({ queued: reason === "needs_change" ? 2 : 1, remaining: 0 }),
     );
     vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [{ kind: "paused_by_admin" }] });
-    const client = renderPage();
-    const action = await within(screen.getByRole("region", { name: /Needs attention/ })).findByRole(
-      "button",
-      { name: "Retry all 2" },
+    const client = await renderPage();
+    const action = await rendered(
+      page
+        .getByRole("region", { name: /Needs attention/ })
+        .getByRole("button", { name: "Retry all 2" }),
     );
-    action.focus();
-    fireEvent.click(action);
-    await screen.findByText(/Queued 2\. Ingestion is paused/);
-    fireEvent.click(screen.getByRole("button", { name: "Retry 1 file" }));
-    await screen.findByText(/Queued 1\. Ingestion is paused/);
-    act(() => {
+    (await rendered(action)).focus();
+    await userEvent.click(action);
+    await expect.element(page.getByText(/Queued 2\. Ingestion is paused/)).toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: "Retry 1 file" }));
+    await expect.element(page.getByText(/Queued 1\. Ingestion is paused/)).toBeInTheDocument();
+    {
       client.setQueryData(
         queryKeys.ingestion.counts(),
         countsFixture({ by_reason: [], attention_total: 0 }),
       );
-    });
-    expect(screen.getByText(/Queued 2\. Ingestion is paused/)).toBeInTheDocument();
-    expect(screen.getByText(/Queued 1\. Ingestion is paused/)).toBeInTheDocument();
-    expect(action).toBeDisabled();
+    }
+    await expect.element(page.getByText(/Queued 2\. Ingestion is paused/)).toBeInTheDocument();
+    await expect.element(page.getByText(/Queued 1\. Ingestion is paused/)).toBeInTheDocument();
+    await expect.element(action).toBeDisabled();
     vi.mocked(scanIngestion).mockResolvedValue({
       queued: 0,
       deferred: 0,
       suppressed: 0,
       monitor: "/api/v1/dashboard/activity",
     });
-    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
-    await waitFor(() => {
+    await userEvent.click(page.getByRole("button", { name: "Scan ingestion folder" }));
+    await vi.waitFor(() => {
       expect(scanIngestion).toHaveBeenCalledOnce();
     });
-    expect(screen.getByText(/Queued 2\. Ingestion is paused/)).toBeInTheDocument();
-    act(() => {
+    await expect.element(page.getByText(/Queued 2\. Ingestion is paused/)).toBeInTheDocument();
+    {
       client.setQueryData(queryKeys.ingestion.counts(), countsFixture());
-    });
-    expect(
-      await within(screen.getByRole("region", { name: /Needs attention/ })).findByRole("button", {
-        name: "Retry all 2",
-      }),
-    ).toBeEnabled();
+    }
+    await expect
+      .element(
+        page.getByRole("region", { name: /Needs attention/ }).getByRole("button", {
+          name: "Retry all 2",
+        }),
+      )
+      .toBeEnabled();
   });
 
   test("bulk retry retains canonical group order after refreshing to ignored files", async () => {
     vi.mocked(retryInputs).mockResolvedValue({ queued: 2, remaining: 0 });
-    const client = renderPage();
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    const action = await within(card).findByRole("button", { name: "Retry all 2" });
-    action.focus();
-    fireEvent.click(action);
-    await within(card).findByText("Queued 2");
-    act(() => {
+    const client = await renderPage();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    const action = await rendered(card.getByRole("button", { name: "Retry all 2" }));
+    (await rendered(action)).focus();
+    await userEvent.click(action);
+    await expect.element(card.getByText("Queued 2")).toBeInTheDocument();
+    {
       client.setQueryData(
         queryKeys.ingestion.counts(),
         countsFixture({
@@ -1576,16 +1669,17 @@ describe("bulk retry group controls", () => {
           attention_total: 0,
         }),
       );
-    });
-    await waitFor(() => {
-      const toggles = within(card)
-        .getAllByRole("button")
+    }
+    await vi.waitFor(async () => {
+      const toggles = card
+        .getByRole("button")
+        .elements()
         .filter((button) => button.hasAttribute("aria-expanded"));
       expect(toggles).toHaveLength(2);
-      expect(toggles[0]).toHaveTextContent("Needs a change");
-      expect(toggles[1]).toHaveTextContent("Ignored");
+      await expect.element(toggles[0]).toMatchTextContent("Needs a change");
+      await expect.element(toggles[1]).toMatchTextContent("Ignored");
     });
-    expect(action).toBeDisabled();
+    await expect.element(action).toBeDisabled();
   });
 
   test.each(["files", "books"])(
@@ -1607,16 +1701,15 @@ describe("bulk retry group controls", () => {
         total: 501,
         by_failure: [{ source: "openlibrary", class: "timeout", count: 501 }],
       });
-      renderPage();
-      const card = screen.getByRole("region", {
+      await renderPage();
+      const card = page.getByRole("region", {
         name: noun === "files" ? /Needs attention/ : /Enrichment problems/,
       });
-      fireEvent.click(await within(card).findByRole("button", { name: "Retry all 501" }));
-      fireEvent.click(await within(card).findByRole("button", { name: "Retry the rest 1" }));
-      expect(await within(card).findByRole("button", { name: "Queuing 1" })).toHaveAttribute(
-        "aria-disabled",
-        "true",
-      );
+      await userEvent.click(card.getByRole("button", { name: "Retry all 501" }));
+      await userEvent.click(card.getByRole("button", { name: "Retry the rest 1" }));
+      await expect
+        .element(card.getByRole("button", { name: "Queuing 1" }))
+        .toHaveAttribute("aria-disabled", "true");
     },
   );
 
@@ -1627,12 +1720,12 @@ describe("bulk retry group controls", () => {
     vi.mocked(getInputCounts).mockResolvedValue(
       countsFixture({ by_reason: [{ reason: "needs_change", count: 501 }], attention_total: 501 }),
     );
-    renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Retry all 501" }));
-    expect(await screen.findByText("Queued 500, 1 remaining")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Retry the rest 1" }));
-    expect(await screen.findByText("Queued 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Queued" })).toBeDisabled();
+    await renderPage();
+    await userEvent.click(page.getByRole("button", { name: "Retry all 501" }));
+    await expect.element(page.getByText("Queued 500, 1 remaining")).toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: "Retry the rest 1" }));
+    await expect.element(page.getByText("Queued 1")).toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: "Queued" })).toBeDisabled();
     expect(retryInputs).toHaveBeenCalledTimes(2);
   });
 
@@ -1640,9 +1733,9 @@ describe("bulk retry group controls", () => {
     "bulk retry reports %i truthfully without automatic replay",
     async (status) => {
       vi.mocked(retryInputs).mockRejectedValue(new ApiError(status, null, "failed", ""));
-      renderPage();
-      fireEvent.click(
-        await within(screen.getByRole("region", { name: /Needs attention/ })).findByRole("button", {
+      await renderPage();
+      await userEvent.click(
+        page.getByRole("region", { name: /Needs attention/ }).getByRole("button", {
           name: "Retry all 2",
         }),
       );
@@ -1655,39 +1748,40 @@ describe("bulk retry group controls", () => {
         text =
           "Could not confirm whether these files were queued. Refresh the group before trying again.";
       }
-      expect(await screen.findByText(text)).toHaveAttribute("role", "alert");
-      const retry = within(screen.getByRole("region", { name: /Needs attention/ })).getByRole(
-        "button",
-        { name: "Try again" },
+      await expect.element(page.getByText(text)).toHaveAttribute("role", "alert");
+      const retry = await rendered(
+        page
+          .getByRole("region", { name: /Needs attention/ })
+          .getByRole("button", { name: "Try again" }),
       );
       if (status === 403) {
-        fireEvent.click(retry);
-        expect(retry).toBeDisabled();
+        await userEvent.click(retry, { force: true });
+        await expect.element(retry).toBeDisabled();
       }
       expect(retryInputs).toHaveBeenCalledOnce();
-      expect(screen.queryByText(/Nothing was changed/)).not.toBeInTheDocument();
+      await expect.element(page.getByText(/Nothing was changed/)).not.toBeInTheDocument();
     },
   );
 
   test("bulk retry books keeps collapsed feedback through an empty refresh and rearms on fresh failure", async () => {
     vi.mocked(retryEnrichmentFailures).mockResolvedValue({ queued: 3, remaining: 0 });
-    const client = renderPage();
-    const card = await screen.findByRole("region", { name: /Enrichment problems/ });
-    const [action] = await within(card).findAllByRole("button", { name: /Retry all/ });
+    const client = await renderPage();
+    const card = page.getByRole("region", { name: /Enrichment problems/ });
+    const [action] = await renderedAll(card.getByRole("button", { name: /Retry all/ }));
     const count = Number(action.textContent.replace("Retry all ", ""));
-    fireEvent.click(action);
-    expect(await within(card).findByText("Queued 3")).toBeInTheDocument();
-    act(() => {
+    await userEvent.click(action);
+    await expect.element(card.getByText("Queued 3")).toBeInTheDocument();
+    {
       client.setQueryData(queryKeys.enrichmentFailures.counts(), { total: 0, by_failure: [] });
-    });
-    expect(within(card).getByText("Queued 3")).toBeInTheDocument();
-    expect(action).toBeDisabled();
-    act(() => {
+    }
+    await expect.element(card.getByText("Queued 3")).toBeInTheDocument();
+    await expect.element(action).toBeDisabled();
+    {
       client.setQueryData(queryKeys.enrichmentFailures.counts(), failureCountsFixture());
-    });
-    expect(
-      await within(card).findByRole("button", { name: `Retry all ${String(count)}` }),
-    ).toBeInTheDocument();
+    }
+    await expect
+      .element(card.getByRole("button", { name: `Retry all ${String(count)}` }))
+      .toBeInTheDocument();
     expect(retryEnrichmentFailures).toHaveBeenCalledOnce();
   });
 });
@@ -1725,12 +1819,18 @@ describe("bulk retry continuation reset", () => {
       );
       vi.mocked(retryInputs).mockResolvedValue({ queued: 2, remaining: 3 });
       vi.mocked(retryEnrichmentFailures).mockResolvedValue({ queued: 2, remaining: 3 });
-      const client = renderPage();
-      const card = screen.getByRole("region", {
+      const client = await renderPage();
+      const card = page.getByRole("region", {
         name: noun === "files" ? /Needs attention/ : /Enrichment problems/,
       });
-      fireEvent.click(await within(card).findByRole("button", { name: "Show more" }));
-      await within(card).findByText(noun === "files" ? "continuation-2.epub" : "continuation-2");
+      await userEvent.click(card.getByRole("button", { name: "Show more" }));
+      await expect
+        .element(
+          card.getByText(noun === "files" ? "continuation-2.epub" : "continuation-2", {
+            exact: false,
+          }),
+        )
+        .toBeInTheDocument();
       const callsBefore =
         noun === "files"
           ? vi.mocked(listInputs).mock.calls.length
@@ -1741,16 +1841,18 @@ describe("bulk retry continuation reset", () => {
           : queryKeys.enrichmentFailures.groupAfter("hardcover", "not_found", "untouched");
       const untouchedPage = { items: [], next_cursor: "still-valid" };
       client.setQueryData(untouchedKey, untouchedPage);
-      const action = within(card).getByRole("button", { name: "Retry all 5" });
-      action.focus();
-      fireEvent.click(action);
-      await within(card).findByText(/Queued 2, 3 remaining/);
-      await waitFor(() =>
-        expect(
-          within(card).queryByText(noun === "files" ? "continuation-2.epub" : "continuation-2"),
-        ).not.toBeInTheDocument(),
-      );
-      expect(action).toHaveFocus();
+      const action = await rendered(card.getByRole("button", { name: "Retry all 5" }));
+      (await rendered(action)).focus();
+      await userEvent.click(action);
+      await expect.element(card.getByText(/Queued 2, 3 remaining/)).toBeInTheDocument();
+      await expect
+        .element(
+          card.getByText(noun === "files" ? "continuation-2.epub" : "continuation-2", {
+            exact: false,
+          }),
+        )
+        .not.toBeInTheDocument();
+      await expect.element(action).toHaveFocus();
       expect(client.getQueryData(untouchedKey)).toEqual(untouchedPage);
       expect(
         noun === "files"
@@ -1759,7 +1861,7 @@ describe("bulk retry continuation reset", () => {
       ).toBe(callsBefore);
       vi.mocked(listInputs).mockResolvedValue({ items: [file(4)], next_cursor: null });
       vi.mocked(listEnrichmentFailures).mockResolvedValue({ items: [book(4)], next_cursor: null });
-      act(() => {
+      {
         if (noun === "files") {
           client.setQueryData(queryKeys.ingestion.groupFirst("needs_change"), {
             items: [file(3)],
@@ -1782,17 +1884,27 @@ describe("bulk retry continuation reset", () => {
             by_failure: [{ source: "openlibrary", class: "timeout", count: 3 }],
           });
         }
-      });
-      fireEvent.click(await within(card).findByRole("button", { name: "Show more" }));
-      await within(card).findByText(noun === "files" ? "continuation-4.epub" : "continuation-4");
-      expect(
-        within(card).queryByText(noun === "files" ? "continuation-2.epub" : "continuation-2"),
-      ).not.toBeInTheDocument();
+      }
+      await userEvent.click(card.getByRole("button", { name: "Show more" }));
+      await expect
+        .element(
+          card.getByText(noun === "files" ? "continuation-4.epub" : "continuation-4", {
+            exact: false,
+          }),
+        )
+        .toBeInTheDocument();
+      await expect
+        .element(
+          card.getByText(noun === "files" ? "continuation-2.epub" : "continuation-2", {
+            exact: false,
+          }),
+        )
+        .not.toBeInTheDocument();
       vi.mocked(retryInputs).mockResolvedValue({ queued: 3, remaining: 0 });
       vi.mocked(retryEnrichmentFailures).mockResolvedValue({ queued: 3, remaining: 0 });
-      fireEvent.click(await within(card).findByRole("button", { name: "Retry all 3" }));
-      await within(card).findByText(/Queued 3/);
-      act(() => {
+      await userEvent.click(card.getByRole("button", { name: "Retry all 3" }));
+      await expect.element(card.getByText(/Queued 3/)).toBeInTheDocument();
+      {
         if (noun === "files") {
           client.setQueryData(queryKeys.ingestion.groupFirst("needs_change"), {
             items: [],
@@ -1809,11 +1921,15 @@ describe("bulk retry continuation reset", () => {
           });
           client.setQueryData(queryKeys.enrichmentFailures.counts(), { total: 0, by_failure: [] });
         }
-      });
-      expect(await within(card).findByText("Showing 0 of 0")).toBeInTheDocument();
-      expect(
-        within(card).queryByText(noun === "files" ? "continuation-4.epub" : "continuation-4"),
-      ).not.toBeInTheDocument();
+      }
+      await expect.element(card.getByText("Showing 0 of 0")).toBeInTheDocument();
+      await expect
+        .element(
+          card.getByText(noun === "files" ? "continuation-4.epub" : "continuation-4", {
+            exact: false,
+          }),
+        )
+        .not.toBeInTheDocument();
     },
   );
 
@@ -1849,20 +1965,28 @@ describe("bulk retry continuation reset", () => {
       );
       vi.mocked(retryInputs).mockRejectedValue(new ApiError(500, null, "failed", ""));
       vi.mocked(retryEnrichmentFailures).mockRejectedValue(new ApiError(500, null, "failed", ""));
-      const client = renderPage();
-      const card = screen.getByRole("region", {
+      const client = await renderPage();
+      const card = page.getByRole("region", {
         name: noun === "files" ? /Needs attention/ : /Enrichment problems/,
       });
-      fireEvent.click(await within(card).findByRole("button", { name: "Show more" }));
-      await within(card).findByText("Showing 2 of 3");
-      fireEvent.click(within(card).getByRole("button", { name: "Retry all 3" }));
-      await within(card).findByText(
-        `Could not confirm whether these ${noun} were queued. Refresh the group before trying again.`,
-      );
-      expect(
-        within(card).getByText(noun === "files" ? "retained-tail.epub" : "retained-tail"),
-      ).toBeInTheDocument();
-      expect(within(card).getByText("Showing 2 of 3")).toBeInTheDocument();
+      await userEvent.click(card.getByRole("button", { name: "Show more" }));
+      await expect.element(card.getByText("Showing 2 of 3")).toBeInTheDocument();
+      await userEvent.click(card.getByRole("button", { name: "Retry all 3" }));
+      await expect
+        .element(
+          card.getByText(
+            `Could not confirm whether these ${noun} were queued. Refresh the group before trying again.`,
+          ),
+        )
+        .toBeInTheDocument();
+      await expect
+        .element(
+          card.getByText(noun === "files" ? "retained-tail.epub" : "retained-tail", {
+            exact: false,
+          }),
+        )
+        .toBeInTheDocument();
+      await expect.element(card.getByText("Showing 2 of 3")).toBeInTheDocument();
       const key =
         noun === "files"
           ? queryKeys.ingestion.groupAfter("needs_change", "tail")
@@ -1875,10 +1999,10 @@ describe("bulk retry continuation reset", () => {
 describe("bulk retry retained states", () => {
   test.each([401, 403, 500])("bulk retry books reports %i without replay", async (status) => {
     vi.mocked(retryEnrichmentFailures).mockRejectedValue(new ApiError(status, null, "failed", ""));
-    renderPage();
-    const card = screen.getByRole("region", { name: /Enrichment problems/ });
-    const [action] = await within(card).findAllByRole("button", { name: "Retry 1 book" });
-    fireEvent.click(action);
+    await renderPage();
+    const card = page.getByRole("region", { name: /Enrichment problems/ });
+    const [action] = await renderedAll(card.getByRole("button", { name: "Retry 1 book" }));
+    await userEvent.click(action);
     let text: string;
     if (status === 401) {
       text = "Your session has ended. Sign in again to retry books.";
@@ -1888,25 +2012,25 @@ describe("bulk retry retained states", () => {
       text =
         "Could not confirm whether these books were queued. Refresh the group before trying again.";
     }
-    expect(await within(card).findByText(text)).toHaveAttribute("role", "alert");
+    await expect.element(card.getByText(text)).toHaveAttribute("role", "alert");
     expect(retryEnrichmentFailures).toHaveBeenCalledOnce();
     if (status === 403) {
-      const button = within(card).getAllByRole("button", { name: "Try again" })[0];
-      expect(button).toBeDisabled();
-      fireEvent.click(button);
+      const button = await rendered(card.getByRole("button", { name: "Try again" }).first());
+      await expect.element(button).toBeDisabled();
+      await userEvent.click(button, { force: true });
       expect(retryEnrichmentFailures).toHaveBeenCalledOnce();
     }
   });
 
   test("bulk retry empty response stays visible while collapsed and does not fetch group rows", async () => {
     vi.mocked(retryInputs).mockResolvedValue({ queued: 0, remaining: 0 });
-    renderPage();
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    fireEvent.click(await within(card).findByRole("button", { name: "Retry all 2" }));
-    expect(
-      await within(card).findByText("Nothing to retry. This group changed after the page loaded."),
-    ).toBeInTheDocument();
-    expect(within(card).getByRole("button", { name: "Queued" })).toBeDisabled();
+    await renderPage();
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    await userEvent.click(card.getByRole("button", { name: "Retry all 2" }));
+    await expect
+      .element(card.getByText("Nothing to retry. This group changed after the page loaded."))
+      .toBeInTheDocument();
+    await expect.element(card.getByRole("button", { name: "Queued" })).toBeDisabled();
     expect(listInputs).not.toHaveBeenCalledWith(
       expect.objectContaining({ reason: "needs_change" }),
       expect.anything(),
@@ -1918,32 +2042,33 @@ describe("bulk retry retained states", () => {
       toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
     });
     vi.mocked(retryInputs).mockResolvedValue({ queued: 2, remaining: 0 });
-    renderPage();
+    await renderPage();
     await flush();
-    const card = screen.getByRole("region", { name: /Needs attention/ });
-    const action = within(card).getByRole("button", { name: "Retry all 2" });
-    action.focus();
-    fireEvent.click(action);
+    const card = page.getByRole("region", { name: /Needs attention/ });
+    const action = await rendered(card.getByRole("button", { name: "Retry all 2" }));
+    (await rendered(action)).focus();
+    await userEvent.click(action);
     await flush();
     const before = vi.mocked(getInputCounts).mock.calls.length;
     vi.mocked(getInputCounts).mockResolvedValue(
       countsFixture({ by_reason: [], attention_total: 0 }),
     );
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 20);
-    });
+    }
     expect(getInputCounts).toHaveBeenCalledTimes(before + 1);
-    expect(within(card).getByText("Queued 2")).toBeInTheDocument();
-    expect(action).toHaveFocus();
-    await act(async () => {
+    await expect.element(card.getByRole("status")).toHaveTextContent("Queued 2");
+    await expect.element(action).toBeDisabled();
+    await expect.element(action).not.toHaveFocus();
+    {
       await vi.advanceTimersByTimeAsync(GRACE_WINDOW_MS + 20);
-    });
+    }
     const stopped = vi.mocked(getInputCounts).mock.calls.length;
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
-    });
+    }
     expect(getInputCounts).toHaveBeenCalledTimes(stopped);
-    expect(within(card).getByText("Queued 2")).toBeInTheDocument();
+    await expect.element(card.getByText("Queued 2")).toBeInTheDocument();
   });
 });
 
@@ -1981,46 +2106,58 @@ describe("Duplicates card", () => {
     );
   }
 
-  async function card(settled = true): Promise<HTMLElement> {
+  async function card(settled = true): Promise<Locator> {
     if (settled) {
-      await waitFor(() => {
-        expect(screen.getByRole("region", { name: /Skipped as duplicates/ })).not.toHaveAttribute(
-          "aria-busy",
-          "true",
-        );
+      await vi.waitFor(async () => {
+        await expect
+          .element(page.getByRole("region", { name: /Skipped as duplicates/ }))
+          .not.toHaveAttribute("aria-busy", "true");
       });
     }
-    return screen.getByRole("region", { name: /Skipped as duplicates/ });
+    return page.getByRole("region", { name: /Skipped as duplicates/ });
   }
 
   test("sits between Needs attention and Enrichment problems with its count, intro and columns", async () => {
     mockDuplicates();
-    renderPage();
+    await renderPage();
     const region = await card();
-    await within(region).findByRole("columnheader", { name: "Matches" });
-    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    await expect.element(region.getByRole("columnheader", { name: "Matches" })).toBeInTheDocument();
+    const headings = page
+      .getByRole("heading", { level: 2 })
+      .elements()
+      .map((h) => h.textContent);
     const attention = headings.findIndex((h) => h.startsWith("Needs attention"));
     expect(headings[attention + 1]).toBe("Skipped as duplicates2 files");
     expect(headings[attention + 2]).toMatch(/Enrichment problems/);
-    expect(within(region).getByText("2 files")).toBeInTheDocument();
-    expect(
-      within(region).getByText(
-        /Removing duplicate source files under Settings, Acquisition applies only to duplicates found from then on\./,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(region)
-        .getAllByRole("columnheader")
-        .map((h) => h.textContent),
-    ).toEqual(["File", "Matches", "Last tried"]);
-    const attentionRegion = screen.getByRole("region", { name: /Needs attention/ });
-    expect(within(attentionRegion).getByText("7 files, 5 reasons")).toBeInTheDocument();
-    expect(within(attentionRegion).queryByText(/Skipped as duplicates/)).not.toBeInTheDocument();
-    expect(
-      within(attentionRegion)
-        .getAllByRole("button")
-        .filter((button) => button.hasAttribute("aria-expanded")),
-    ).toHaveLength(6);
+    await expect.element(region.getByText("2 files")).toBeInTheDocument();
+    await expect
+      .element(
+        region.getByText(
+          /Removing duplicate source files under Settings, Acquisition applies only to duplicates found from then on\./,
+        ),
+      )
+      .toBeInTheDocument();
+    await expect
+      .poll(() =>
+        region
+          .getByRole("columnheader")
+          .elements()
+          .map((h) => h.textContent),
+      )
+      .toEqual(["File", "Matches", "Last tried"]);
+    const attentionRegion = page.getByRole("region", { name: /Needs attention/ });
+    await expect.element(attentionRegion.getByText("7 files, 5 reasons")).toBeInTheDocument();
+    await expect
+      .element(attentionRegion.getByText(/Skipped as duplicates/))
+      .not.toBeInTheDocument();
+    await expect
+      .poll(() =>
+        attentionRegion
+          .getByRole("button")
+          .elements()
+          .filter((button) => button.hasAttribute("aria-expanded")),
+      )
+      .toHaveLength(6);
   });
 
   test("lists each file once with its muted directory, matched title link and last tried time", async () => {
@@ -2032,14 +2169,14 @@ describe("Duplicates card", () => {
           : DAMAGED_PAGE,
       ),
     );
-    renderPage();
+    await renderPage();
     const region = await card();
-    const link = await within(region).findByRole("link", { name: matched.title });
-    expect(link).toHaveAttribute("href", `/b/${matched.manifestation_id}`);
-    expect(within(region).getAllByRole("row")).toHaveLength(2);
-    expect(within(region).getByText("incoming/")).toHaveClass("text-fg-muted");
-    const cells = within(within(region).getAllByRole("row")[1] ?? region).getAllByRole("cell");
-    expect(cells[0]).toHaveTextContent("incoming/Book 101.epub");
+    const link = region.getByRole("link", { name: matched.title });
+    await expect.element(link).toHaveAttribute("href", `/b/${matched.manifestation_id}`);
+    await expect.poll(() => region.getByRole("row").elements()).toHaveLength(2);
+    await expect.element(region.getByText("incoming/")).toHaveClass("text-fg-muted");
+    const cells = region.getByRole("row").nth(1).getByRole("cell").elements();
+    await expect.element(cells[0]).toMatchTextContent("incoming/Book 101.epub");
     expect(cells[2]?.textContent).not.toBe("");
   });
 
@@ -2052,59 +2189,65 @@ describe("Duplicates card", () => {
           : DAMAGED_PAGE,
       ),
     );
-    renderPage();
+    await renderPage();
     const region = await card();
-    expect(await within(region).findByText("No matching book on record.")).toHaveClass(
-      "text-fg-muted",
-    );
-    expect(within(region).queryByRole("link")).not.toBeInTheDocument();
-    expect(within(region).getByText("1 file")).toBeInTheDocument();
+    await expect
+      .element(region.getByText("No matching book on record."))
+      .toHaveClass("text-fg-muted");
+    await expect.element(region.getByRole("link")).not.toBeInTheDocument();
+    await expect.element(region.getByText("1 file")).toBeInTheDocument();
   });
 
   test("the matched title links to the book page", async () => {
     mockDuplicates(1);
-    renderPage();
-    const links = await within(await card()).findAllByRole("link", { name: matched.title });
+    await renderPage();
+    const links = (await card()).getByRole("link", { name: matched.title }).elements();
     await userEvent.click(links[0] ?? document.body);
-    expect(await screen.findByTestId("book-page")).toBeInTheDocument();
+    await expect.element(page.getByTestId("book-page")).toBeInTheDocument();
   });
 
   test("an empty card keeps its head and intro and requests no list", async () => {
-    renderPage();
+    await renderPage();
     const region = await card();
-    await within(region).findByText("No files were skipped as duplicates.");
-    expect(within(region).getByText("0 files")).toBeInTheDocument();
-    expect(
-      within(region).getByText(/Files that match a book already in the library/),
-    ).toBeInTheDocument();
-    expect(
-      within(region).getByText(
-        /If removal of duplicate source files is on under Settings, Acquisition/,
-      ),
-    ).toBeInTheDocument();
+    await expect
+      .element(region.getByText("No files were skipped as duplicates."))
+      .toBeInTheDocument();
+    await expect.element(region.getByText("0 files")).toBeInTheDocument();
+    await expect
+      .element(region.getByText(/Files that match a book already in the library/))
+      .toBeInTheDocument();
+    await expect
+      .element(
+        region.getByText(/If removal of duplicate source files is on under Settings, Acquisition/),
+      )
+      .toBeInTheDocument();
     expect(vi.mocked(listInputs).mock.calls.some(([p]) => p.reason === "duplicate")).toBe(false);
   });
 
   test("shows a busy skeleton while counts or the first page load", async () => {
     vi.mocked(getInputCounts).mockReturnValue(new Promise(() => {}));
-    renderPage();
+    await renderPage();
     let region = await card(false);
-    expect(region).toHaveAttribute("aria-busy", "true");
-    expect(within(region).getByRole("status")).toHaveTextContent("Loading skipped duplicates");
-    expect(within(region).queryByText(/Files that match/)).not.toBeInTheDocument();
-    cleanup();
+    await expect.element(region).toHaveAttribute("aria-busy", "true");
+    await expect
+      .element(region.getByRole("status"))
+      .toMatchTextContent("Loading skipped duplicates");
+    await expect.element(region.getByText(/Files that match/)).not.toBeInTheDocument();
+    await cleanup();
     mockDuplicates();
     vi.mocked(listInputs).mockImplementation(({ reason }) =>
       reason === "duplicate" ? new Promise(() => {}) : Promise.resolve(DAMAGED_PAGE),
     );
-    renderPage();
+    await renderPage();
     region = await card(false);
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(vi.mocked(listInputs).mock.calls.some(([p]) => p.reason === "duplicate")).toBe(true);
     });
-    expect(region).toHaveAttribute("aria-busy", "true");
-    expect(within(region).getByRole("status")).toHaveTextContent("Loading skipped duplicates");
-    expect(within(region).queryByText("2 files")).not.toBeInTheDocument();
+    await expect.element(region).toHaveAttribute("aria-busy", "true");
+    await expect
+      .element(region.getByRole("status"))
+      .toMatchTextContent("Loading skipped duplicates");
+    await expect.element(region.getByText("2 files")).not.toBeInTheDocument();
   });
 
   test("a failed first page shows the list error and Try again recovers", async () => {
@@ -2114,26 +2257,26 @@ describe("Duplicates card", () => {
         ? Promise.reject(new ApiError(500, null, "Internal", ""))
         : Promise.resolve(DAMAGED_PAGE),
     );
-    renderPage();
+    await renderPage();
     let region = await card();
-    await within(region).findByText("Could not load this list.");
-    expect(within(region).getByRole("alert")).toHaveTextContent(
-      "Your files are untouched. Try again.",
-    );
-    expect(within(region).queryByText("1 file")).not.toBeInTheDocument();
+    await expect.element(region.getByText("Could not load this list.")).toBeInTheDocument();
+    await expect
+      .element(region.getByRole("alert"))
+      .toMatchTextContent("Your files are untouched. Try again.");
+    await expect.element(region.getByText("1 file")).not.toBeInTheDocument();
     const countsBefore = vi.mocked(getInputCounts).mock.calls.length;
     vi.mocked(listInputs).mockResolvedValue({ items: [duplicateItem(101)], next_cursor: null });
-    await userEvent.click(within(region).getByRole("button", { name: "Try again" }));
-    await screen.findByRole("link", { name: matched.title });
+    await userEvent.click(region.getByRole("button", { name: "Try again" }));
+    await expect.element(page.getByRole("link", { name: matched.title })).toBeInTheDocument();
     expect(getInputCounts).toHaveBeenCalledTimes(countsBefore);
-    cleanup();
+    await cleanup();
     vi.mocked(getInputCounts).mockRejectedValueOnce(new ApiError(500, null, "Internal", ""));
-    renderPage();
+    await renderPage();
     region = await card();
-    await within(region).findByText("Could not load this list.");
+    await expect.element(region.getByText("Could not load this list.")).toBeInTheDocument();
     const failedCounts = vi.mocked(getInputCounts).mock.calls.length;
-    await userEvent.click(within(region).getByRole("button", { name: "Try again" }));
-    await screen.findByRole("link", { name: matched.title });
+    await userEvent.click(region.getByRole("button", { name: "Try again" }));
+    await expect.element(page.getByRole("link", { name: matched.title })).toBeInTheDocument();
     expect(getInputCounts).toHaveBeenCalledTimes(failedCounts + 1);
   });
 
@@ -2149,12 +2292,12 @@ describe("Duplicates card", () => {
           : DAMAGED_PAGE,
       ),
     );
-    renderPage();
+    await renderPage();
     const region = await card();
-    const more = await within(region).findByRole("button", { name: "Show more" });
+    const more = await rendered(region.getByRole("button", { name: "Show more" }));
     await userEvent.click(more);
-    expect(await within(region).findByText("Showing 2 of 2")).toHaveFocus();
-    expect(within(region).getByRole("status")).toHaveTextContent("Loaded 1 more file");
+    await expect.element(region.getByText("Showing 2 of 2")).toHaveFocus();
+    await expect.element(region.getByRole("status")).toMatchTextContent("Loaded 1 more file");
     expect(
       vi
         .mocked(listInputs)
@@ -2168,10 +2311,10 @@ describe("Duplicates card", () => {
       items: [duplicateItem(101, { path: "dupes/\\xffcopy.epub" })],
       next_cursor: null,
     });
-    renderPage();
-    expect(
-      await within(await card()).findByText("\\xffcopy.epub", { exact: false }),
-    ).toHaveTextContent("dupes/\\xffcopy.epub");
+    await renderPage();
+    await expect
+      .element((await card()).getByText("\\xffcopy.epub", { exact: false }))
+      .toMatchTextContent("dupes/\\xffcopy.epub");
   });
 
   test("polls its first page with the counts while a batch runs and never polls later pages", async () => {
@@ -2188,11 +2331,11 @@ describe("Duplicates card", () => {
           : DAMAGED_PAGE,
       ),
     );
-    renderPage();
+    await renderPage();
     await flush();
     await flush();
-    const region = screen.getByRole("region", { name: /Skipped as duplicates/ });
-    fireEvent.click(within(region).getByRole("button", { name: "Show more" }));
+    const region = page.getByRole("region", { name: /Skipped as duplicates/ });
+    await userEvent.click(region.getByRole("button", { name: "Show more" }));
     await flush();
     const firstCalls = (): number =>
       vi
@@ -2207,16 +2350,16 @@ describe("Duplicates card", () => {
       later: laterCalls(),
       counts: vi.mocked(getInputCounts).mock.calls.length,
     };
-    await act(async () => {
+    {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
-    });
+    }
     expect(firstCalls() - before.first).toBe(3);
     expect(vi.mocked(getInputCounts).mock.calls.length - before.counts).toBe(3);
     expect(laterCalls()).toBe(before.later);
-    act(() => {
+    {
       focusManager.setFocused(false);
       focusManager.setFocused(true);
-    });
+    }
     await flush();
     expect(firstCalls() - before.first).toBe(4);
     expect(laterCalls()).toBe(before.later);
@@ -2224,18 +2367,33 @@ describe("Duplicates card", () => {
 
   test("offers no Retry all", async () => {
     mockDuplicates();
-    renderPage();
+    await renderPage();
     const region = await card();
-    await within(region).findAllByRole("link");
-    expect(within(region).queryByRole("button", { name: /Retry all/ })).not.toBeInTheDocument();
-    expect(within(region).queryByRole("button", { expanded: false })).not.toBeInTheDocument();
+    await expect.poll(() => region.getByRole("link").elements().length).toBeGreaterThan(0);
+    await expect.element(region.getByRole("button", { name: /Retry all/ })).not.toBeInTheDocument();
+    await expect.element(region.getByRole("button", { expanded: false })).not.toBeInTheDocument();
   });
 
   test("the duplicates skeleton opts out of motion under reduced motion", async () => {
     vi.mocked(getInputCounts).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    const skeletons = (await card(false)).querySelectorAll("[data-slot=skeleton]");
+    await renderPage();
+    const skeletons = (await rendered(await card(false))).querySelectorAll<HTMLElement>(
+      "[data-slot=skeleton]",
+    );
     expect(skeletons).toHaveLength(3);
-    for (const skeleton of skeletons) expect(skeleton).toHaveClass("motion-reduce:animate-none");
+    for (const skeleton of skeletons)
+      await expect.element(skeleton).toHaveClass("motion-reduce:animate-none");
   });
 });
+
+async function rendered(
+  locator: Locator | HTMLElement | SVGElement,
+): Promise<HTMLElement | SVGElement> {
+  await expect.element(locator).toBeInTheDocument();
+  return locator instanceof Element ? locator : locator.element();
+}
+
+async function renderedAll(locator: Locator): Promise<(HTMLElement | SVGElement)[]> {
+  await expect.element(locator.first()).toBeInTheDocument();
+  return locator.elements();
+}

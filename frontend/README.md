@@ -30,24 +30,18 @@ Choose the environment by the assertion:
 - Browser-dependent component behaviour belongs in `tests/browser/**/*.test.tsx`, in the `components-chromium` project.
   Render with `vitest-browser-react`, query with locators and assert DOM state with `await expect.element(...)`. Use
   `userEvent` from `vite-plus/test/browser` for native keyboard and pointer interaction, with real focus, layout,
-  scrolling and ResizeObserver behaviour. The renderer owns component cleanup before each test. Do not import the jsdom
-  setup or fabricate geometry and focus.
+  scrolling and ResizeObserver behaviour. The renderer owns component cleanup before each test. Do not fabricate
+  geometry, focus or browser APIs.
 - Browser-independent source logic belongs in `frontend-node`. The `vite-plugins`, `radix-gen` and `a11y` projects cover
   their respective tooling.
 - Actual document navigation belongs in standalone browser journeys under `tests/journeys/`. Component tests run inside
   an embedded Vitest frame; navigation can destroy that frame. They do not establish the final logout destination or
   session invalidation.
 
-The `frontend` jsdom project is temporary migration coverage. Add no new tests to it. Keep its required assertions until
-each has an equivalent home: browser-dependent outcomes in Browser Mode, pure logic in Node, and actual navigation in
-standalone journeys. Remove superseded jsdom cases as those outcomes are verified, then remove jsdom and its geometry,
-focus and browser API stubs once no required assertion depends on them. Authentication and logout journeys check final
-document destinations; source suites remain only where replacement verification is incomplete.
-
 From `frontend/`, run `vp test run --project components-chromium` for focused browser work or
 `vp test --project components-chromium --browser.headless=false` for interactive debugging. Browser matcher types live
-in `tsconfig.browser.json`; Node and app/jsdom declarations remain separate. The frontend lint gate checks browser files
-along with the rest of the package.
+in `tsconfig.browser.json`; Node and application declarations remain separate. The frontend lint gate checks browser
+files along with the rest of the package.
 
 The component project owns an isolated Vite test host with application styles. It does not inherit application CSP
 plugins, response headers, backend proxies or HTML processing, and it does not prove those controls work in the shipped

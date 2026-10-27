@@ -127,8 +127,7 @@ does not justify keeping it when the chosen tool meets the requirement.
 
 - **Choose the environment by the assertion:** Browser-dependent component behaviour belongs in `tests/browser/`
   (`components-chromium`), browser-independent logic in a Node project, and document navigation in Playwright journeys
-  under `tests/journeys/`. Never fabricate geometry, focus or browser APIs. The `frontend` jsdom project is migration
-  coverage: add no new tests to it.
+  under `tests/journeys/`. Never fabricate geometry, focus or browser APIs.
 - **Browser Mode idiom:** Render with `vitest-browser-react`, query through locators, assert DOM state with
   `await expect.element(...)`, and interact through `userEvent` from `vite-plus/test/browser`.
 - **Behaviour, not implementation:** Assert what a user can observe.
