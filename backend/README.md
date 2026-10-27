@@ -53,22 +53,9 @@ transport, sender and support settings. Neither command needs ingestion configur
 
 ### Bulk retries
 
-Administrators with admin scope can retry one current group with either endpoint:
-
-- `POST /api/v1/dashboard/enrichment-failures/retries` accepts `{ "source": "openlibrary", "class": "timeout" }`. Use
-  `"none"` for a group without a source. Selection matches the primary source and failure class of the group reads,
-  excludes active claims, and preserves provider retry deadlines. The single-book trigger keeps its existing timing
-  reset behaviour.
-- `POST /api/v1/ingestion/inputs/retries` accepts `{ "reason": "needs_change" }` or `{ "reason": "retries_exhausted" }`.
-  The coordinator resets and schedules only that class, preserving readiness, publication exclusions and ingestion pause
-  conditions. It does not scan the folders or retry other classes.
-
-Both return HTTP 202 with `{ "queued": 500, "remaining": 1 }`, capped at 500 resets per request. `queued` counts
-persisted resets, including work waiting for readiness, a provider deadline or ingestion to resume. `remaining` counts
-members still in the selected group after the reset; an empty group returns zero for both fields. Browser sessions
-require the existing CSRF token. Input command admission and reply share a five-second timeout; accepted commands may
-finish after the caller times out. A failed response from either endpoint can leave the outcome uncertain, so refresh
-the group before trying again.
+The [ingestion Design](../docs/specs/ingestion/design/0013-ingestion-pipeline.md) and
+[enrichment Design](../docs/specs/metadata/design/0016-enrichment-pipeline.md) describe the bulk-retry endpoints,
+permissions, request and response formats, limits and failure behaviour.
 
 ### Verification ownership and transports
 
