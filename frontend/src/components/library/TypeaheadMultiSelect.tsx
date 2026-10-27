@@ -66,6 +66,9 @@ export function TypeaheadMultiSelect({
     [...suggestions, ...selected].map((item) => [keyFor(item), item]),
   );
   const selectedKeys = selected.map(keyFor);
+  const selectedValues = selected.map((item) => item.value).join(", ");
+  const selectionLabel =
+    selected.length === 0 ? `Selected ${label}` : `Selected ${label}: ${selectedValues}`;
   const atLimit = maxSelectedItems !== undefined && selected.length >= maxSelectedItems;
   const overLimit = maxSelectedItems !== undefined && selected.length > maxSelectedItems;
   const disabledKeys = atLimit
@@ -117,7 +120,7 @@ export function TypeaheadMultiSelect({
       </div>
       <ComboBoxValue<TypeaheadOption>>
         <TagGroup
-          aria-label={`Selected ${label}${selected.length === 0 ? "" : `: ${selected.map((item) => item.value).join(", ")}`}`}
+          aria-label={selectionLabel}
           disabledKeys={disabled ? selected.map(keyFor) : []}
           onRemove={(keys) => {
             onChange(selected.filter((item) => !keys.has(keyFor(item))));
