@@ -475,8 +475,7 @@ function composeColumns(
         variant="ghost"
         size="icon-xs"
         aria-label={`Open details for ${row.title}`}
-        onPress={(event) => {
-          event.continuePropagation();
+        onPress={() => {
           onRowActivate(row);
         }}
         className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 min-w-6 items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2"

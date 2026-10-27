@@ -64,7 +64,7 @@ describe("GridShortcutsDialog: close behavior", () => {
     await render(<Harness />);
     const user = userEvent;
     await pressQuestionMark();
-    page.getByRole("dialog");
+    await expect.element(page.getByRole("dialog")).toBeInTheDocument();
     await user.keyboard("{Escape}");
     await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
   });
@@ -74,7 +74,7 @@ describe("GridShortcutsDialog: close behavior", () => {
     const user = userEvent;
     const trigger = page.getByRole("button", { name: /keyboard shortcuts/i });
     await user.click(trigger);
-    page.getByRole("dialog");
+    await expect.element(page.getByRole("dialog")).toBeInTheDocument();
     await user.keyboard("{Escape}");
     await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
     await expect.element(trigger).toHaveFocus();
@@ -88,7 +88,7 @@ describe("GridShortcutsDialog: close behavior", () => {
     document.body.appendChild(invoker);
     invoker.focus();
     await pressQuestionMark();
-    page.getByRole("dialog");
+    await expect.element(page.getByRole("dialog")).toBeInTheDocument();
     await user.keyboard("{Escape}");
     await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
     await expect.element(invoker).toHaveFocus();
@@ -100,7 +100,7 @@ describe("GridShortcutsDialog: content", () => {
   test("lists the react-data-grid keyboard model, including the loaded-row Ctrl+End caveat", async () => {
     await render(<Harness />);
     await pressQuestionMark();
-    page.getByRole("dialog");
+    await expect.element(page.getByRole("dialog")).toBeInTheDocument();
     await expect.element(page.getByText(/last loaded row/i)).toBeInTheDocument();
     expect(page.getByText(/exits the grid/i).elements().length).toBeGreaterThan(0);
   });

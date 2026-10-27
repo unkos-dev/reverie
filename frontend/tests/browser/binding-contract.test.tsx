@@ -3,6 +3,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { useState, type ReactElement, type UIEvent } from "react";
 import { describe, expect, test, vi } from "vite-plus/test";
 
+import { Button } from "@/components/ui/button";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import type {
   CellEditReport,
@@ -58,7 +59,13 @@ const COLUMNS: readonly GridColumn<TestRow>[] = [
     accessor: (row) => row.title,
     renderEditCell: TitleEditor,
   },
-  { key: "author", name: "Author", sortable: true, width: 160, accessor: (row) => row.author },
+  {
+    key: "author",
+    name: "Author",
+    sortable: true,
+    width: 160,
+    accessor: (row) => row.author,
+  },
   {
     key: "status",
     name: "Status",
@@ -115,16 +122,20 @@ describe("ReactDataGridBinding contract", () => {
 
   test("renders column headers", async () => {
     await render(<Harness />);
-    page.getByRole("grid");
-    await expect.element(page.getByRole("columnheader", { name: "Title" })).toBeInTheDocument();
-    await expect.element(page.getByRole("columnheader", { name: "Author" })).toBeInTheDocument();
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("columnheader", { name: /^Title(?:\s|$)/ }))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByRole("columnheader", { name: /^Author(?:\s|$)/ }))
+      .toBeInTheDocument();
   });
 
   test("fires onSortChange when a sortable header is clicked", async () => {
     const onSortChange = vi.fn();
     const user = userEvent;
     await render(<Harness onSortChange={onSortChange} />);
-    const header = page.getByRole("columnheader", { name: "Title" });
+    const header = page.getByRole("columnheader", { name: /^Title(?:\s|$)/ });
     await user.click(header);
     await vi.waitFor(() => {
       expect(onSortChange).toHaveBeenCalledWith([{ columnKey: "title", direction: "asc" }]);
@@ -135,9 +146,9 @@ describe("ReactDataGridBinding contract", () => {
     const onSortChange = vi.fn();
     const user = userEvent;
     await render(<Harness onSortChange={onSortChange} />);
-    const titleHeader = page.getByRole("columnheader", { name: "Title" });
+    const titleHeader = page.getByRole("columnheader", { name: /^Title(?:\s|$)/ });
     await user.click(titleHeader);
-    const authorHeader = page.getByRole("columnheader", { name: "Author" });
+    const authorHeader = page.getByRole("columnheader", { name: /^Author(?:\s|$)/ });
     await user.keyboard("{Control>}");
     await user.click(authorHeader);
     await user.keyboard("{/Control}");
@@ -153,9 +164,9 @@ describe("ReactDataGridBinding contract", () => {
     const onSortChange = vi.fn();
     const user = userEvent;
     await render(<Harness onSortChange={onSortChange} />);
-    const titleHeader = page.getByRole("columnheader", { name: "Title" });
+    const titleHeader = page.getByRole("columnheader", { name: /^Title(?:\s|$)/ });
     await user.click(titleHeader);
-    const authorHeader = page.getByRole("columnheader", { name: "Author" });
+    const authorHeader = page.getByRole("columnheader", { name: /^Author(?:\s|$)/ });
     await user.keyboard("{Control>}");
     await user.click(authorHeader);
     await user.keyboard("{/Control}");
@@ -175,9 +186,9 @@ describe("ReactDataGridBinding contract", () => {
   test("a sort-priority indicator exposes an accessible sort-level label", async () => {
     const user = userEvent;
     await render(<Harness />);
-    const titleHeader = page.getByRole("columnheader", { name: "Title" });
+    const titleHeader = page.getByRole("columnheader", { name: /^Title(?:\s|$)/ });
     await user.click(titleHeader);
-    const authorHeader = page.getByRole("columnheader", { name: "Author" });
+    const authorHeader = page.getByRole("columnheader", { name: /^Author(?:\s|$)/ });
     await user.keyboard("{Control>}");
     await user.click(authorHeader);
     await user.keyboard("{/Control}");
@@ -199,7 +210,7 @@ describe("ReactDataGridBinding contract", () => {
     const onSortChange = vi.fn();
     const user = userEvent;
     await render(<Harness onSortChange={onSortChange} />);
-    const header = page.getByRole("columnheader", { name: "Title" });
+    const header = page.getByRole("columnheader", { name: /^Title(?:\s|$)/ });
     await user.click(header);
     await user.click(header);
     await user.click(header);
@@ -348,7 +359,7 @@ function SelectionHarness({
 describe("ReactDataGridBinding selection and activation", () => {
   test("renders a selection column with the caller's select-all label", async () => {
     await render(<SelectionHarness />);
-    page.getByRole("grid");
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
     await expect
       .element(page.getByRole("checkbox", { name: "Select all loaded books" }))
       .toBeInTheDocument();
@@ -376,7 +387,7 @@ describe("ReactDataGridBinding selection and activation", () => {
     const onSelectionChange = vi.fn();
     const user = userEvent;
     await render(<SelectionHarness onSelectionChange={onSelectionChange} />);
-    page.getByRole("grid");
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
     await user.click(page.getByRole("checkbox", { name: "Select all loaded books" }));
     await vi.waitFor(() => {
       expect(onSelectionChange).toHaveBeenCalledWith(new Set(ROWS.map((row) => row.id)));
@@ -387,7 +398,7 @@ describe("ReactDataGridBinding selection and activation", () => {
     const onRowActivate = vi.fn();
     const user = userEvent;
     await render(<SelectionHarness onRowActivate={onRowActivate} />);
-    page.getByRole("grid");
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
     await user.click(page.getByText("Author 3"));
     expect(onRowActivate).toHaveBeenCalledTimes(1);
     expect(onRowActivate).toHaveBeenCalledWith(ROWS[3]);
@@ -397,7 +408,7 @@ describe("ReactDataGridBinding selection and activation", () => {
     const onRowActivate = vi.fn();
     const user = userEvent;
     await render(<SelectionHarness onRowActivate={onRowActivate} />);
-    page.getByRole("grid");
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
     await user.click(page.getByText("Title 2"));
     expect(onRowActivate).not.toHaveBeenCalled();
   });
@@ -406,7 +417,7 @@ describe("ReactDataGridBinding selection and activation", () => {
     const onRowActivate = vi.fn();
     const user = userEvent;
     await render(<SelectionHarness onRowActivate={onRowActivate} />);
-    page.getByRole("grid");
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
     await user.click(page.getByRole("checkbox", { name: "Select", exact: true }).elements()[1]);
     expect(onRowActivate).not.toHaveBeenCalled();
   });
@@ -415,7 +426,7 @@ describe("ReactDataGridBinding selection and activation", () => {
     const onRowActivate = vi.fn();
     const user = userEvent;
     await render(<SelectionHarness onRowActivate={onRowActivate} />);
-    page.getByRole("grid");
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
     await user.click(page.getByText("Author 5"));
     onRowActivate.mockClear();
     await user.keyboard("{Enter}");
@@ -426,7 +437,7 @@ describe("ReactDataGridBinding selection and activation", () => {
     const onRowActivate = vi.fn();
     const user = userEvent;
     await render(<SelectionHarness onRowActivate={onRowActivate} />);
-    page.getByRole("grid");
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
     await user.click(page.getByText("Title 4"));
     await user.keyboard("{Enter}");
     await expect.element(page.getByLabelText("Title editor")).toBeInTheDocument();
@@ -437,8 +448,42 @@ describe("ReactDataGridBinding selection and activation", () => {
     const onRowActivate = vi.fn();
     const user = userEvent;
     await render(<SelectionHarness onRowActivate={onRowActivate} />);
-    page.getByRole("grid");
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
     await user.click(page.getByText("Title 6 [locked]"));
     expect(onRowActivate).not.toHaveBeenCalled();
   });
+});
+
+test("a React Aria row action keeps its cell active for subsequent keyboard editing", async () => {
+  const onAction = vi.fn();
+  const onRowActivate = vi.fn();
+  const onCellFocus = vi.fn();
+  const row = ROWS[0];
+  await render(
+    <ReactDataGridBinding<TestRow>
+      rows={[row]}
+      columns={[
+        {
+          key: "action",
+          name: "Action",
+          sortable: false,
+          accessor: () => "",
+          renderCell: () => <Button onPress={onAction}>Open details</Button>,
+        },
+        COLUMNS[0],
+      ]}
+      rowKey={(item) => item.id}
+      sort={[]}
+      onSortChange={() => {}}
+      onCellFocus={onCellFocus}
+      onRowActivate={onRowActivate}
+      height={400}
+    />,
+  );
+  await userEvent.click(page.getByRole("button", { name: "Open details" }));
+  expect(onAction).toHaveBeenCalledTimes(1);
+  expect(onRowActivate).not.toHaveBeenCalled();
+  expect(onCellFocus).toHaveBeenCalledWith({ row, rowIdx: 0, columnKey: "action" });
+  await userEvent.keyboard("{ArrowRight}{Enter}");
+  await expect.element(page.getByRole("textbox", { name: "Title editor" })).toHaveValue(row.title);
 });

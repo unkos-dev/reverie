@@ -9,12 +9,21 @@
  * but, like every other RDG type, never appears in this module's exports.
  */
 import { Info } from "lucide-react";
-import { useId, useMemo, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import {
+  useId,
+  useMemo,
+  type Key,
+  type ChangeEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+import {
+  Cell,
   DataGrid,
   SelectColumn,
   renderHeaderCell,
   renderSortIcon,
+  type CellRendererProps,
   type CellKeyboardEvent,
   type CellKeyDownArgs,
   type CellMouseArgs,
@@ -210,6 +219,24 @@ function makeRenderCheckbox(selectAllLabel: string) {
   };
 }
 
+function renderCell<R>(key: Key, props: CellRendererProps<R, unknown>): ReactNode {
+  return (
+    <Cell
+      key={key}
+      {...props}
+      onMouseDownCapture={(event) => {
+        if (
+          event.button !== 0 ||
+          !(event.target instanceof Element) ||
+          event.target.closest("button") === null
+        )
+          return;
+        props.setActivePosition({ rowIdx: props.rowIdx, idx: props.column.idx });
+      }}
+    />
+  );
+}
+
 export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): ReactElement {
   const {
     rows,
@@ -338,6 +365,7 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
         rowHeight={rowHeight ?? ROW_HEIGHT}
         headerRowHeight={headerRowHeight ?? HEADER_HEIGHT}
         renderers={{
+          renderCell,
           renderSortStatus,
           ...(selection === undefined
             ? {}

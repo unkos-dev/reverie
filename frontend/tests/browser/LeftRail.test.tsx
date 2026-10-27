@@ -92,7 +92,9 @@ describe("LeftRail — primary navigation", () => {
   test("disabled entries are visible, non-links, out of tab order, with planned description", async () => {
     await renderRail();
     for (const label of ["Home", "Stats"]) {
-      const item = page.getByText(label);
+      const item = page
+        .getByRole("navigation", { name: "Primary" })
+        .getByText(label, { exact: false });
       await expect.element(item).toHaveAttribute("aria-disabled", "true");
       expect(item.element().closest("a")).toBeNull();
       await expect.element(item).not.toHaveAttribute("tabindex");
@@ -139,7 +141,7 @@ describe("LeftRail — shelves", () => {
   test("caps visible shelves at 7 with an All-shelves overflow link", async () => {
     listShelvesMock.mockResolvedValue(Array.from({ length: 9 }, (_, i) => makeShelf(i + 1)));
     await renderRail();
-    page.getByRole("link", { name: /Shelf 1/ });
+    await expect.element(page.getByRole("link", { name: /Shelf 1/ })).toBeInTheDocument();
     await expect.element(page.getByRole("link", { name: /Shelf 8/ })).not.toBeInTheDocument();
     await expect
       .element(page.getByRole("link", { name: /All shelves/ }))

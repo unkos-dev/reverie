@@ -367,7 +367,7 @@ describe("LibraryTableView", () => {
         { field: "author", desc: false },
       ],
     });
-    page.getByRole("grid");
+    await expect.element(page.getByRole("grid")).toBeInTheDocument();
     await expect
       .element(page.getByRole("button", { name: "Move Title later in sort priority" }))
       .not.toBeInTheDocument();
@@ -377,7 +377,7 @@ describe("LibraryTableView", () => {
   describe("work-scoped header tooltip", () => {
     test("the info control opens a dismissable tooltip on focus and Esc closes it", async () => {
       await renderTableView();
-      page.getByRole("grid");
+      await expect.element(page.getByRole("grid")).toBeInTheDocument();
       const user = userEvent;
       const trigger = page.getByRole("button", { name: "(all editions)" }).first();
       await user.tab();
@@ -392,7 +392,7 @@ describe("LibraryTableView", () => {
     test("clicking the info control never toggles the column sort", async () => {
       const onSortChange = vi.fn();
       await renderTableView({ onSortChange });
-      page.getByRole("grid");
+      await expect.element(page.getByRole("grid")).toBeInTheDocument();
       const user = userEvent;
       const trigger = page.getByRole("button", { name: "(all editions)" }).first();
       await user.click(trigger);
@@ -402,7 +402,7 @@ describe("LibraryTableView", () => {
     test("keyboard sort works on a tooltip-bearing header", async () => {
       const onSortChange = vi.fn();
       await renderTableView({ onSortChange });
-      page.getByRole("grid");
+      await expect.element(page.getByRole("grid")).toBeInTheDocument();
       const user = userEvent;
 
       const subtitleCell = page.getByText(ROWS[1].subtitle ?? "");
@@ -601,7 +601,7 @@ describe("LibraryTableView", () => {
       const cell = page.getByRole("grid").getByText("want to read");
       await user.click(cell);
       await user.keyboard("{Enter}");
-      page.getByRole("combobox");
+      await expect.element(page.getByRole("combobox")).toBeInTheDocument();
       expect(getReadingState).toHaveBeenCalledWith(row.id);
       expect(getBookMetadata).not.toHaveBeenCalled();
     });
@@ -655,8 +655,7 @@ describe("LibraryTableView", () => {
       const cell = page.getByRole("grid").getByText("★★★");
       await user.click(cell);
       await user.keyboard("{Enter}");
-      page.getByRole("group", { name: "Rating" });
-
+      await expect.element(page.getByRole("group", { name: "Rating" })).toBeInTheDocument();
       await user.keyboard("5");
 
       const pendingCell = page.getByRole("grid").getByText("★★★★★");
@@ -699,8 +698,7 @@ describe("LibraryTableView", () => {
       const cell = page.getByRole("grid").getByText("★★★");
       await user.click(cell);
       await user.keyboard("{Enter}");
-      page.getByRole("group", { name: "Rating" });
-
+      await expect.element(page.getByRole("group", { name: "Rating" })).toBeInTheDocument();
       await user.keyboard("5");
       const pendingCell = page.getByRole("grid").getByText("★★★★★");
 
@@ -759,11 +757,11 @@ describe("LibraryTableView", () => {
   describe("density and responsive columns", () => {
     test("comfortable density renders the cover mark; compact hides it", async () => {
       await renderTableView({ items: [rowFixture(1)] });
-      page.getByRole("grid");
+      await expect.element(page.getByRole("grid")).toBeInTheDocument();
       expect(page.getByText("BOO").elements().length).toBeGreaterThan(0);
       await cleanup();
       await renderTableView({ items: [rowFixture(1)], density: "compact" });
-      page.getByRole("grid");
+      await expect.element(page.getByRole("grid")).toBeInTheDocument();
       await expect.element(page.getByText("BOO")).not.toBeInTheDocument();
     });
 
