@@ -24,6 +24,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActionState, useId, useRef, useState, type ReactElement } from "react";
+import { flushSync } from "react-dom";
 import { z } from "zod";
 import {
   Form,
@@ -302,7 +303,10 @@ function EditMetadataFields({
         return { values, error };
       }
       if (clears.length > 0 && data.get("confirm_clear") !== "true") {
-        setPendingClearConfirm(true);
+        // Mount before the parent modal's observer can make the confirmation inert.
+        flushSync(() => {
+          setPendingClearConfirm(true);
+        });
         return { values, error: null };
       }
       setPendingClearConfirm(false);
@@ -370,7 +374,7 @@ function EditMetadataFields({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel
-            isDisabled={pending}
+            isDisabled={mutation.isPending}
             onPress={() => {
               setPendingClearConfirm(false);
             }}

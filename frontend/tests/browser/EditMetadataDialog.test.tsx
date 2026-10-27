@@ -194,6 +194,7 @@ test("cancelling a populated-field clear keeps the edit and sends nothing; confi
   await input.fill("");
   await userEvent.click(page.getByRole("button", { name: "Save" }));
   const confirmation = page.getByRole("alertdialog", { name: "Clear populated field?" });
+  await expect.element(confirmation.getByRole("button", { name: "Cancel" })).toHaveFocus();
   await userEvent.click(confirmation.getByRole("button", { name: "Cancel" }));
   await expect.element(confirmation).not.toBeInTheDocument();
   await expect.element(input).toHaveValue("");

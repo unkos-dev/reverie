@@ -166,6 +166,74 @@ test("book navigation preserves the shell through browser back and forward", asy
   await expect(page).toHaveURL(/\/b\/b1$/);
 });
 
+test("metadata clear confirmation stays interactive through pending, refusal and retry", async ({
+  page,
+}) => {
+  await openLibrary(page);
+  let attempts = 0;
+  let refuse = () => {};
+  const held = new Promise<void>((resolve) => {
+    refuse = resolve;
+  });
+  await page.route("**/api/v1/books/b1/metadata", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        headers: { ETag: '"metadata-version"' },
+        json: {
+          ...BOOK_DETAIL,
+          publisher: "Original Publisher",
+          contributors: { author: ["Terry Pratchett"], editor: [], translator: [] },
+          work_identifiers: {},
+          manifestation_identifiers: {},
+        },
+      });
+      return;
+    }
+    expect(route.request().method()).toBe("PATCH");
+    expect(route.request().postDataJSON()).toEqual({ publisher: null });
+    attempts += 1;
+    if (attempts === 1) {
+      await held;
+      await route.fulfill({
+        status: 422,
+        json: {
+          type: "about:blank",
+          title: "Validation Error",
+          detail: "Publisher cannot be cleared.",
+          status: 422,
+        },
+      });
+    } else {
+      await route.fulfill({ json: { fields: {} } });
+    }
+  });
+  await page.getByRole("link", { name: /Guards! Guards!/ }).click();
+  await page.getByRole("tab", { name: "Versions" }).click();
+  await page.getByRole("button", { name: "Edit metadata" }).click();
+  const publisher = page.getByLabel("Publisher", { exact: true });
+  await expect(publisher).toHaveValue("Original Publisher");
+  await publisher.fill("");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Clear populated field?" });
+  await expect(confirmation.getByRole("button", { name: "Cancel" })).toBeFocused();
+  const confirm = confirmation.getByRole("button", { name: "Clear and save" });
+  await confirm.click();
+  await expect(confirm).toHaveAttribute("data-pending");
+  await expect(confirm).toBeFocused();
+  await confirm.press("Enter");
+  await expect.poll(() => attempts).toBe(1);
+  refuse();
+  await expect(confirmation).toHaveCount(0);
+  await expect(page.getByRole("alert")).toContainText("Publisher cannot be cleared.");
+  await expect(publisher).toHaveValue("");
+  expect(attempts).toBe(1);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await confirm.click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/b\/b1$/);
+  expect(attempts).toBe(2);
+});
+
 test("every routed screen is reachable by click from Library", async ({ page }) => {
   await openLibrary(page);
   await page.getByRole("link", { name: /Guards! Guards!/ }).click();
