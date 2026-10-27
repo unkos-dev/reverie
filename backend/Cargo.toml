@@ -22,7 +22,7 @@ name = "reverie-api"
 path = "src/main.rs"
 
 [dependencies]
-redactable = { version = "=0.15.0", default-features = false, features = ["redaction"] }
+redactable = { version = "=0.15.2", default-features = false, features = ["redaction"] }
 anyhow = "1.0.103"
 aes-gcm = { version = "0.11.1", features = ["aes", "alloc", "getrandom"] }
 argon2 = "0.6.0"
