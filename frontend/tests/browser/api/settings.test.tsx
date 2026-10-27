@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __resetEtagCacheForTesting } from "./etags";
-import { ApiError, isIfMatchMismatch } from "./errors";
-import { getReloadStatus, getSettings, updateSettings } from "./settings";
+import { __resetEtagCacheForTesting } from "@/api/etags";
+import { ApiError, isIfMatchMismatch } from "@/api/errors";
+import { getReloadStatus, getSettings, updateSettings } from "@/api/settings";
 
 const VALUES = {
   ingestion_enabled: true,

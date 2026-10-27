@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __seedCsrfTokenForTesting } from "./csrf";
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import {
   listUsers,
   updateUserRole,
@@ -10,7 +10,7 @@ import {
   setAccountStatus,
   issueCredentialLink,
   cancelCredentialLink,
-} from "./users";
+} from "@/api/users";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -265,7 +265,7 @@ describe("credential links", () => {
 describe("credential link email", () => {
   const jobId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   test("posts only the held token and reads only the account's job", async () => {
-    const { sendCredentialLinkEmail, fetchCredentialLinkEmail } = await import("./users");
+    const { sendCredentialLinkEmail, fetchCredentialLinkEmail } = await import("@/api/users");
     const queued = { job_id: jobId, status: "queued", failure_category: null };
     const request = vi
       .spyOn(globalThis, "fetch")
@@ -280,7 +280,7 @@ describe("credential link email", () => {
     );
   });
   test("refuses arbitrary identifiers and unexpected failure details", async () => {
-    const { sendCredentialLinkEmail, fetchCredentialLinkEmail } = await import("./users");
+    const { sendCredentialLinkEmail, fetchCredentialLinkEmail } = await import("@/api/users");
     const request = vi.spyOn(globalThis, "fetch");
     await expect(sendCredentialLinkEmail("../another", "A".repeat(43))).rejects.toThrow();
     expect(request).not.toHaveBeenCalled();

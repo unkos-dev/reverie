@@ -7,7 +7,7 @@ import {
 } from "@/pages/library/rail-storage";
 
 afterEach(() => {
-  localStorage.removeItem(RAIL_STORAGE_KEY);
+  localStorage.clear();
 });
 
 describe("writeRailCollapsed / readRailCollapsed round-trip", () => {
@@ -33,4 +33,13 @@ describe("readRailCollapsed edge cases", () => {
   });
 });
 
-describe("writeRailCollapsed failure handling", () => {});
+test("a full native storage quota does not escape the rail write", () => {
+  localStorage.setItem("quota", "x".repeat(5 * 1024 * 1024 - "quota".length));
+  expect(() => {
+    localStorage.setItem(RAIL_STORAGE_KEY, "true");
+  }).toThrow();
+  expect(() => {
+    writeRailCollapsed(true);
+  }).not.toThrow();
+  expect(readRailCollapsed()).toBeNull();
+});

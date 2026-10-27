@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __seedCsrfTokenForTesting } from "./csrf";
-import { searchLibrary } from "./search";
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
+import { searchLibrary } from "@/api/search";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {

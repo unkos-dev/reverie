@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { activeUserId, forgetActiveUser, rememberActiveUser } from "./active-user";
+import { activeUserId, forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
 
 afterEach(() => {
   localStorage.clear();

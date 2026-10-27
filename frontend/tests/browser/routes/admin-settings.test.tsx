@@ -5,7 +5,7 @@ import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
 
-import { loader } from "./admin-settings";
+import { loader } from "@/routes/admin-settings";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {

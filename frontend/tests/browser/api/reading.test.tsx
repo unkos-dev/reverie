@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __seedCsrfTokenForTesting } from "./csrf";
-import { updateReadingState } from "./reading";
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
+import { updateReadingState } from "@/api/reading";
 
 function parseJsonBody(body: BodyInit | null | undefined): unknown {
   if (typeof body !== "string") throw new Error("expected stringified JSON body");

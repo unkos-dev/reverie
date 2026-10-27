@@ -1,8 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 for (const kind of ["setup", "account", "link"] as const) {
-  test(`${kind} password input preserves pasted Unicode code points`, async ({ page, context }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  test(`${kind} password input preserves pasted Unicode code points`, async ({
+    page,
+    context,
+    browserName,
+  }) => {
+    if (browserName === "chromium")
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await page.route("**/auth/setup/status", async (route) => {
       await route.fulfill({
         json: {
@@ -76,6 +81,7 @@ for (const kind of ["setup", "account", "link"] as const) {
     const submit = page.getByRole("button", { name: scenario.button });
     for (const length of [14, 15]) {
       const value = "🙂".repeat(length);
+      await password.click();
       await page.evaluate(async (text) => {
         await navigator.clipboard.writeText(text);
       }, value);

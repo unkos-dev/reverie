@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __resetCsrfTokenForTesting } from "./csrf";
-import { __resetEtagCacheForTesting } from "./etags";
-import { ApiError } from "./errors";
-import { apiFetch } from "./fetch";
+import { __resetCsrfTokenForTesting } from "@/api/csrf";
+import { __resetEtagCacheForTesting } from "@/api/etags";
+import { ApiError } from "@/api/errors";
+import { apiFetch } from "@/api/fetch";
 
 const SAMPLE_TOKEN = "abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE"; // 43 chars
 const REFRESHED_TOKEN = "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"; // 43 Z
@@ -42,7 +42,7 @@ async function seedCsrf(token: string): Promise<void> {
   const fetchSpy = vi
     .spyOn(globalThis, "fetch")
     .mockResolvedValueOnce(jsonResponse({ csrf_token: token }));
-  const mod = await import("./csrf");
+  const mod = await import("@/api/csrf");
   await mod.refreshCsrfToken();
   fetchSpy.mockRestore();
 }

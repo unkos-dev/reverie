@@ -1,16 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { patchTheme } from "./api";
+import { patchTheme } from "@/lib/theme/api";
 
-// patchTheme must ride apiFetch's CSRF injection; the token module is
-// stubbed so the wire assertion below is deterministic.
-vi.mock("@/api/csrf", () => ({
-  getCsrfToken: () => "test-csrf-token-value",
-  refreshCsrfToken: vi.fn(),
-  // The global test setup seeds the cache through this on every test.
-  __seedCsrfTokenForTesting: vi.fn(),
-  __resetCsrfTokenForTesting: vi.fn(),
-}));
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -21,6 +13,7 @@ function jsonResponse(status: number, body: unknown): Response {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  __seedCsrfTokenForTesting("test-csrf-token-value");
 });
 
 describe("patchTheme", () => {

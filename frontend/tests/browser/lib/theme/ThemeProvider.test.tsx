@@ -1,9 +1,10 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render } from "vitest-browser-react";
+import { page, userEvent, cdp } from "vite-plus/test/browser";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { toast } from "sonner";
-import { ThemeProvider, useTheme } from "./ThemeProvider";
-import { THEME_COOKIE_NAME } from "./cookie";
+import { ThemeProvider, useTheme } from "@/lib/theme/ThemeProvider";
+import { THEME_COOKIE_NAME } from "@/lib/theme/cookie";
 
 // Mock sonner so the "no toast" guarantee on the 401 / 5xx / network
 // branches is enforced explicitly, not inferred from the absence of a
@@ -16,43 +17,6 @@ vi.mock("sonner", () => ({
     message: vi.fn(),
   },
 }));
-
-type MatchMediaShim = {
-  set: (matches: boolean) => void;
-  trigger: () => void;
-};
-
-function installMatchMedia(initial: boolean): MatchMediaShim {
-  let matches = initial;
-  type Listener = (event: MediaQueryListEvent) => void;
-  const listeners = new Set<Listener>();
-  const mql = {
-    get matches(): boolean {
-      return matches;
-    },
-    media: "(prefers-color-scheme: dark)",
-    addEventListener: (_event: string, listener: Listener) => {
-      listeners.add(listener);
-    },
-    removeEventListener: (_event: string, listener: Listener) => {
-      listeners.delete(listener);
-    },
-    addListener: () => undefined,
-    removeListener: () => undefined,
-    dispatchEvent: () => true,
-    onchange: null,
-  } as unknown as MediaQueryList;
-  vi.stubGlobal("matchMedia", () => mql);
-  return {
-    set: (next: boolean) => {
-      matches = next;
-    },
-    trigger: () => {
-      const ev = { matches } as MediaQueryListEvent;
-      for (const l of listeners) l(ev);
-    },
-  };
-}
 
 function Probe(): ReactElement {
   const ctx = useTheme();
@@ -70,8 +34,11 @@ function Probe(): ReactElement {
 const fetchMock = vi.fn();
 const origDataset = document.documentElement.dataset.theme;
 
-beforeEach(() => {
-  document.cookie = "";
+beforeEach(async () => {
+  await cdp().send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+  document.cookie = `${THEME_COOKIE_NAME}=; Path=/; Max-Age=0`;
   document.documentElement.removeAttribute("data-theme");
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
@@ -105,90 +72,85 @@ function mockMeUnauthenticated(): void {
 }
 
 describe("ThemeProvider initial-state derivation", () => {
-  test("cookie=system + dataset.theme=dark → preference=system, effective=dark", () => {
-    installMatchMedia(false);
+  test("cookie=system + dataset.theme=dark → preference=system, effective=dark", async () => {
     document.cookie = `${THEME_COOKIE_NAME}=system`;
     document.documentElement.dataset.theme = "dark";
     mockMe("system");
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    expect(screen.getByTestId("preference").textContent).toBe("system");
-    expect(screen.getByTestId("effective").textContent).toBe("dark");
+    await expect.element(page.getByTestId("preference")).toHaveTextContent("system");
+    await expect.element(page.getByTestId("effective")).toHaveTextContent("dark");
   });
 
-  test("cookie=light + dataset.theme=light → both light", () => {
-    installMatchMedia(false);
+  test("cookie=light + dataset.theme=light → both light", async () => {
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMe("light");
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    expect(screen.getByTestId("preference").textContent).toBe("light");
-    expect(screen.getByTestId("effective").textContent).toBe("light");
+    await expect.element(page.getByTestId("preference")).toHaveTextContent("light");
+    await expect.element(page.getByTestId("effective")).toHaveTextContent("light");
   });
 
-  test("missing cookie + dataset.theme=dark → preference=system, effective=dark", () => {
-    installMatchMedia(false);
+  test("missing cookie + dataset.theme=dark → preference=system, effective=dark", async () => {
     document.documentElement.dataset.theme = "dark";
     mockMe("system");
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    expect(screen.getByTestId("preference").textContent).toBe("system");
-    expect(screen.getByTestId("effective").textContent).toBe("dark");
+    await expect.element(page.getByTestId("preference")).toHaveTextContent("system");
+    await expect.element(page.getByTestId("effective")).toHaveTextContent("dark");
   });
 
   test("logged-out (401) keeps cookie-derived preference, no PATCH", async () => {
-    installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMeUnauthenticated();
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/auth/me", expect.any(Object));
     });
-    expect(screen.getByTestId("preference").textContent).toBe("light");
+    await expect.element(page.getByTestId("preference")).toHaveTextContent("light");
     expect(fetchMock).toHaveBeenCalledTimes(1); // /auth/me only, no PATCH
   });
 });
 
 describe("ThemeProvider reconciliation", () => {
   test("server preference differs from cookie → server wins, cookie + DOM update", async () => {
-    installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMe("dark");
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    await waitFor(() => {
-      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    await vi.waitFor(async () => {
+      await expect.element(page.getByTestId("preference")).toHaveTextContent("dark");
     });
-    expect(screen.getByTestId("effective").textContent).toBe("dark");
+    await expect.element(page.getByTestId("effective")).toHaveTextContent("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
   });
@@ -196,7 +158,6 @@ describe("ThemeProvider reconciliation", () => {
 
 describe("ThemeProvider setPreference", () => {
   test("optimistic update + successful PATCH commits", async () => {
-    installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMe("light");
@@ -206,24 +167,21 @@ describe("ThemeProvider setPreference", () => {
       json: () => Promise.resolve({ theme_preference: "dark" }),
     });
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    act(() => {
-      screen.getByText("set-dark").click();
-    });
+    await userEvent.click(page.getByRole("button", { name: "set-dark" }));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    await vi.waitFor(async () => {
+      await expect.element(page.getByTestId("preference")).toHaveTextContent("dark");
     });
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
   test("PATCH 422 → rollback to prior preference and effective", async () => {
-    installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMe("light");
@@ -236,18 +194,16 @@ describe("ThemeProvider setPreference", () => {
       }),
     );
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    act(() => {
-      screen.getByText("set-dark").click();
-    });
+    await userEvent.click(page.getByRole("button", { name: "set-dark" }));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("preference").textContent).toBe("light");
+    await vi.waitFor(async () => {
+      await expect.element(page.getByTestId("preference")).toHaveTextContent("light");
     });
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=light`);
@@ -255,7 +211,6 @@ describe("ThemeProvider setPreference", () => {
   });
 
   test("PATCH 401 (anonymous) → cookie wins, no rollback, no toast", async () => {
-    installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMeUnauthenticated();
@@ -265,18 +220,16 @@ describe("ThemeProvider setPreference", () => {
       json: () => Promise.resolve({}),
     });
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    act(() => {
-      screen.getByText("set-dark").click();
-    });
+    await userEvent.click(page.getByRole("button", { name: "set-dark" }));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    await vi.waitFor(async () => {
+      await expect.element(page.getByTestId("preference")).toHaveTextContent("dark");
     });
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
@@ -284,7 +237,6 @@ describe("ThemeProvider setPreference", () => {
   });
 
   test("PATCH 403 (expired session / missing CSRF) → cookie wins, no rollback, no toast", async () => {
-    installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMe("light");
@@ -294,18 +246,16 @@ describe("ThemeProvider setPreference", () => {
       json: () => Promise.resolve({}),
     });
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    act(() => {
-      screen.getByText("set-dark").click();
-    });
+    await userEvent.click(page.getByRole("button", { name: "set-dark" }));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    await vi.waitFor(async () => {
+      await expect.element(page.getByTestId("preference")).toHaveTextContent("dark");
     });
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
@@ -313,7 +263,6 @@ describe("ThemeProvider setPreference", () => {
   });
 
   test("PATCH 428 csrf-missing (persistent, null re-hydration) → cookie wins, no rollback, no toast", async () => {
-    installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     // A session that is authenticated but carries no server-side CSRF
@@ -343,29 +292,26 @@ describe("ThemeProvider setPreference", () => {
     );
     fetchMock.mockResolvedValueOnce(csrfMissing428()); // 4. replay → 428
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    act(() => {
-      screen.getByText("set-dark").click();
-    });
+    await userEvent.click(page.getByRole("button", { name: "set-dark" }));
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(4);
     });
     // Retry path actually ran: the wrapper re-read /auth/me between attempts.
     expect(fetchMock.mock.calls[2]?.[0]).toBe("/auth/me");
-    expect(screen.getByTestId("preference").textContent).toBe("dark");
+    await expect.element(page.getByTestId("preference")).toHaveTextContent("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
     expect(toast.error).not.toHaveBeenCalled();
   });
 
   test("PATCH 502 (backend down) → cookie wins, no rollback, no toast", async () => {
-    installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMe("light");
@@ -375,18 +321,16 @@ describe("ThemeProvider setPreference", () => {
       json: () => Promise.resolve({}),
     });
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    act(() => {
-      screen.getByText("set-dark").click();
-    });
+    await userEvent.click(page.getByRole("button", { name: "set-dark" }));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    await vi.waitFor(async () => {
+      await expect.element(page.getByTestId("preference")).toHaveTextContent("dark");
     });
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
@@ -394,24 +338,21 @@ describe("ThemeProvider setPreference", () => {
   });
 
   test("PATCH network error → cookie wins, no rollback, no toast", async () => {
-    installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMe("light");
     fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    act(() => {
-      screen.getByText("set-dark").click();
-    });
+    await userEvent.click(page.getByRole("button", { name: "set-dark" }));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    await vi.waitFor(async () => {
+      await expect.element(page.getByTestId("preference")).toHaveTextContent("dark");
     });
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
@@ -421,26 +362,24 @@ describe("ThemeProvider setPreference", () => {
 
 describe("ThemeProvider system-preference reactivity", () => {
   test("preference=system + matchMedia change → effective updates without page reload", async () => {
-    const mql = installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=system`;
     document.documentElement.dataset.theme = "light";
     mockMe("system");
 
-    render(
+    await render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    expect(screen.getByTestId("effective").textContent).toBe("light");
+    await expect.element(page.getByTestId("effective")).toHaveTextContent("light");
 
-    act(() => {
-      mql.set(true);
-      mql.trigger();
+    await cdp().send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-color-scheme", value: "dark" }],
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId("effective").textContent).toBe("dark");
+    await vi.waitFor(async () => {
+      await expect.element(page.getByTestId("effective")).toHaveTextContent("dark");
     });
     expect(document.documentElement.dataset.theme).toBe("dark");
   });

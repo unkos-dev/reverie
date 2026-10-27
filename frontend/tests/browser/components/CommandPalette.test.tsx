@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render } from "vitest-browser-react";
+import { page, userEvent } from "vite-plus/test/browser";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import {
   createMemoryRouter,
@@ -15,21 +16,13 @@ import { useState, type ReactElement, type ReactNode } from "react";
 
 import { openCommandPalette } from "@/lib/command-palette";
 
-import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
-import { CommandPalette, HighlightedSnippet } from "./CommandPalette";
+import { CommandPalette, HighlightedSnippet } from "@/components/CommandPalette";
 
-/**
- * Trigger the global Cmd-K binding. userEvent.keyboard targets
- * `document.activeElement` which jsdom doesn't always route to a
- * `window`-attached listener; dispatching directly on `window` is the
- * reliable shape for testing window keydown handlers.
- */
-function triggerCmdK(): void {
-  act(() => {
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-  });
+async function triggerCmdK(): Promise<void> {
+  await userEvent.keyboard("{Control>}k{/Control}");
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -44,10 +37,10 @@ type PaletteHarness = {
   router: ReturnType<typeof createMemoryRouter>;
 };
 
-function renderPalette(
+async function renderPalette(
   initialEntries: string[] = ["/library"],
   parent?: ReactNode,
-): PaletteHarness {
+): Promise<PaletteHarness> {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Shell(): ReactElement {
     const navigate = useNavigate();
@@ -82,7 +75,7 @@ function renderPalette(
       </QueryClientProvider>
     );
   }
-  render(<Wrapper />);
+  await render(<Wrapper />);
   return { router };
 }
 
@@ -95,19 +88,19 @@ afterEach(() => {
 });
 
 describe("CommandPalette — Cmd-K binding", () => {
-  test("is closed by default", () => {
-    renderPalette();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  test("is closed by default", async () => {
+    await renderPalette();
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
   });
 
   test("opens on Ctrl+K and closes on Escape", async () => {
-    renderPalette();
-    const user = userEvent.setup();
-    triggerCmdK();
-    expect(await screen.findByRole("dialog", { name: /search library/i })).toBeInTheDocument();
+    await renderPalette();
+    const user = userEvent;
+    await triggerCmdK();
+    await expect.element(page.getByRole("dialog", { name: /search library/i })).toBeInTheDocument();
     await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await vi.waitFor(async () => {
+      await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
     });
   });
 
@@ -117,74 +110,66 @@ describe("CommandPalette — Cmd-K binding", () => {
       vi.spyOn(globalThis, "fetch").mockImplementation(() =>
         Promise.resolve(jsonResponse({ items: [] })),
       );
-      renderPalette();
-      const user = userEvent.setup();
-      act(() => {
-        fireEvent.keyDown(window, { key: "k", [modifier]: true });
-      });
-      const input = await screen.findByRole("searchbox", { name: "Search library" });
+      await renderPalette();
+      const user = userEvent;
+      await userEvent.keyboard(
+        modifier === "ctrlKey" ? "{Control>}k{/Control}" : "{Meta>}k{/Meta}",
+      );
+      const input = page.getByRole("searchbox", { name: "Search library" });
       await user.type(input, "word");
-      expect(input).toHaveValue("word");
-      act(() => {
-        fireEvent.keyDown(window, { key: "k", [modifier]: true });
+      await expect.element(input).toHaveValue("word");
+      await userEvent.keyboard(
+        modifier === "ctrlKey" ? "{Control>}k{/Control}" : "{Meta>}k{/Meta}",
+      );
+      await vi.waitFor(async () => {
+        await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
       });
-      await waitFor(() => {
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-      });
-      act(() => {
-        fireEvent.keyDown(window, { key: "k", [modifier]: true });
-      });
-      expect(await screen.findByRole("searchbox", { name: "Search library" })).toHaveValue("");
+      await userEvent.keyboard(
+        modifier === "ctrlKey" ? "{Control>}k{/Control}" : "{Meta>}k{/Meta}",
+      );
+      await expect.element(page.getByRole("searchbox", { name: "Search library" })).toHaveValue("");
     },
   );
 
   test("opens on '/' when not typing in a field", async () => {
-    renderPalette();
-    act(() => {
-      fireEvent.keyDown(window, { key: "/" });
-    });
-    expect(await screen.findByRole("dialog", { name: /search library/i })).toBeInTheDocument();
+    await renderPalette();
+    await userEvent.keyboard("/");
+    await expect.element(page.getByRole("dialog", { name: /search library/i })).toBeInTheDocument();
   });
 
-  test("ignores '/' while a field is focused", () => {
-    renderPalette();
+  test("ignores '/' while a field is focused", async () => {
+    await renderPalette();
     const field = document.createElement("input");
     document.body.appendChild(field);
     field.focus();
-    act(() => {
-      fireEvent.keyDown(field, { key: "/" });
-    });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await userEvent.keyboard("/");
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
     field.remove();
   });
 });
 
 describe("CommandPalette — module trigger (openCommandPalette)", () => {
   test("opens the dialog when invoked", async () => {
-    renderPalette();
-    act(() => {
-      openCommandPalette();
-    });
-    expect(await screen.findByRole("dialog", { name: /search library/i })).toBeInTheDocument();
+    await renderPalette();
+    openCommandPalette();
+    await expect.element(page.getByRole("dialog", { name: /search library/i })).toBeInTheDocument();
   });
 
   test("escape closes and focus returns to the previously focused element", async () => {
-    renderPalette();
-    const user = userEvent.setup();
+    await renderPalette();
+    const user = userEvent;
     const invoker = document.createElement("button");
     invoker.textContent = "open search";
     document.body.appendChild(invoker);
     invoker.focus();
-    act(() => {
-      openCommandPalette();
-    });
-    await screen.findByRole("dialog");
+    openCommandPalette();
+    await expect.element(page.getByRole("dialog")).toBeInTheDocument();
     await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await vi.waitFor(async () => {
+      await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
     });
-    await waitFor(() => {
-      expect(invoker).toHaveFocus();
+    await vi.waitFor(async () => {
+      await expect.element(invoker).toHaveFocus();
     });
     invoker.remove();
   });
@@ -192,22 +177,20 @@ describe("CommandPalette — module trigger (openCommandPalette)", () => {
 
 describe("CommandPalette — dialog semantics (spec §6)", () => {
   test("dialog hides background content and exposes native menu results and keyboard hints", async () => {
-    renderPalette();
-    triggerCmdK();
-    const dialog = await screen.findByRole("dialog", { name: /search library/i });
-    expect(dialog).toBeInTheDocument();
-    expect(dialog).toHaveAttribute(
-      "aria-labelledby",
-      within(dialog).getByRole("heading", { name: "Search library" }).id,
-    );
-    expect(
-      screen
-        .getByRole("button", { name: "Background action", hidden: true })
-        .closest('[aria-hidden="true"]'),
-    ).not.toBeNull();
-    expect(screen.getByRole("menu", { name: "Books" })).toBeInTheDocument();
-    expect(screen.getByText(/navigate/i)).toBeInTheDocument();
-    expect(screen.getByText(/close/i)).toBeInTheDocument();
+    await renderPalette();
+    await triggerCmdK();
+    const dialog = page.getByRole("dialog", { name: /search library/i });
+    await expect.element(dialog).toBeInTheDocument();
+    await expect
+      .element(dialog)
+      .toHaveAttribute(
+        "aria-labelledby",
+        dialog.getByRole("heading", { name: "Search library" }).element().id,
+      );
+    expect(page.getByText("Background action").element().closest("[inert]")).not.toBeNull();
+    await expect.element(page.getByRole("menu", { name: "Books" })).toBeInTheDocument();
+    await expect.element(page.getByText(/navigate/i)).toBeInTheDocument();
+    await expect.element(page.getByText(/close/i)).toBeInTheDocument();
   });
 });
 
@@ -228,40 +211,41 @@ describe("CommandPalette — search flow", () => {
         }),
       ),
     );
-    const { router } = renderPalette();
-    const user = userEvent.setup();
-    triggerCmdK();
-    const input = await screen.findByRole("searchbox", { name: "Search library" });
+    const { router } = await renderPalette();
+    const user = userEvent;
+    await triggerCmdK();
+    const input = page.getByRole("searchbox", { name: "Search library" });
     await user.type(input, "williams");
-    const first = await screen.findByRole("menuitem", { name: /Stoner/ });
-    const second = screen.getByRole("menuitem", { name: /Butcher's Crossing/ });
-    expect(input).toHaveFocus();
+    const first = page.getByRole("menuitem", { name: /Stoner/ });
+    const second = page.getByRole("menuitem", { name: /Butcher's Crossing/ });
+    await expect.element(input).toHaveFocus();
+    await expect.element(input).toHaveAttribute("aria-activedescendant", first.element().id);
     await user.tab();
-    expect(first).toHaveFocus();
+    await expect.element(first).toHaveFocus();
     await user.tab({ shift: true });
-    expect(input).toHaveFocus();
-    expect(input).toHaveAttribute("aria-activedescendant", first.id);
+    await expect.element(input).toHaveFocus();
+    await expect.element(input).toHaveAttribute("aria-activedescendant", first.element().id);
     await user.keyboard("{ArrowDown}");
-    expect(input).toHaveFocus();
-    expect(input).toHaveAttribute("aria-activedescendant", second.id);
+    await expect.element(input).toHaveFocus();
+    await expect.element(input).toHaveAttribute("aria-activedescendant", second.element().id);
     await user.keyboard("{ArrowUp}");
-    expect(input).toHaveFocus();
-    expect(input).toHaveAttribute("aria-activedescendant", first.id);
+    await expect.element(input).toHaveFocus();
+    await expect.element(input).toHaveAttribute("aria-activedescendant", first.element().id);
     await user.keyboard("{ArrowDown}{Enter}");
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(router.state.location.pathname).toBe("/b/book-1");
     });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    triggerCmdK();
-    expect(await screen.findByRole("searchbox", { name: "Search library" })).toHaveValue("");
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+    await triggerCmdK();
+    await expect.element(page.getByRole("searchbox", { name: "Search library" })).toHaveValue("");
   });
 
   test("does not fire a request while query is under MIN_Q_LEN", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    renderPalette();
-    const user = userEvent.setup();
-    triggerCmdK();
-    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
+    await renderPalette();
+    const user = userEvent;
+    await triggerCmdK();
+    const input = page.getByPlaceholder("Find a volume by title, author, quote…");
     await user.type(input, "g");
     // No call should fire — under MIN_Q_LEN (2).
     await new Promise((r) => setTimeout(r, 300));
@@ -272,12 +256,13 @@ describe("CommandPalette — search flow", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation(() => Promise.resolve(jsonResponse({ items: [] })));
-    renderPalette();
-    triggerCmdK();
-    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
-    fireEvent.change(input, { target: { value: "war" } });
+    await renderPalette();
+    await triggerCmdK();
+    const input = page.getByPlaceholder("Find a volume by title, author, quote…");
+    await userEvent.fill(input, "war");
     expect(fetchSpy).toHaveBeenCalled();
-    const url = fetchSpy.mock.calls[0]?.[0] as URL;
+    const url = fetchSpy.mock.calls[0]?.[0];
+    if (!(url instanceof URL)) throw new Error("Search URL missing");
     expect(url.pathname).toBe("/api/v1/search");
     expect(url.searchParams.get("q")).toBe("war");
   });
@@ -300,20 +285,20 @@ describe("CommandPalette — search flow", () => {
         }),
       ),
     );
-    const { router } = renderPalette();
-    const user = userEvent.setup();
-    triggerCmdK();
-    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
+    const { router } = await renderPalette();
+    const user = userEvent;
+    await triggerCmdK();
+    const input = page.getByPlaceholder("Find a volume by title, author, quote…");
     await user.type(input, "stoner");
-    const result = await screen.findByRole("menuitem", { name: /Stoner/ });
-    expect(result).toHaveAttribute("href", "/b/book%2Fwith%20space");
+    const result = page.getByRole("menuitem", { name: /Stoner/ });
+    await expect.element(result).toHaveAttribute("href", "/b/book%2Fwith%20space");
     await user.click(result);
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(router.state.location.pathname).toBe("/b/book%2Fwith%20space");
     });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    triggerCmdK();
-    expect(await screen.findByRole("searchbox", { name: "Search library" })).toHaveValue("");
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+    await triggerCmdK();
+    await expect.element(page.getByRole("searchbox", { name: "Search library" })).toHaveValue("");
   });
 
   test("shows server results whose title does not contain the query", async () => {
@@ -334,13 +319,13 @@ describe("CommandPalette — search flow", () => {
         }),
       ),
     );
-    renderPalette();
-    const user = userEvent.setup();
-    triggerCmdK();
-    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
+    await renderPalette();
+    const user = userEvent;
+    await triggerCmdK();
+    const input = page.getByPlaceholder("Find a volume by title, author, quote…");
     await user.type(input, "stonre");
-    expect(await screen.findByRole("menuitem", { name: /Stoner/ })).toBeInTheDocument();
-    expect(screen.queryByText("No results.")).not.toBeInTheDocument();
+    await expect.element(page.getByRole("menuitem", { name: /Stoner/ })).toBeInTheDocument();
+    await expect.element(page.getByText("No results.")).not.toBeInTheDocument();
   });
 
   test("logs and surfaces a user message on query error", async () => {
@@ -348,12 +333,12 @@ describe("CommandPalette — search flow", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(() =>
       Promise.resolve(new Response("upstream blew up", { status: 500 })),
     );
-    renderPalette();
-    const user = userEvent.setup();
-    triggerCmdK();
-    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
+    await renderPalette();
+    const user = userEvent;
+    await triggerCmdK();
+    const input = page.getByPlaceholder("Find a volume by title, author, quote…");
     await user.type(input, "war");
-    await screen.findByText(/search failed/i);
+    await expect.element(page.getByText(/search failed/i)).toBeInTheDocument();
     expect(consoleSpy).toHaveBeenCalled();
   });
 });
@@ -362,42 +347,45 @@ describe("HighlightedSnippet", () => {
   const STX = "\u0002";
   const ETX = "\u0003";
 
-  test("plain text without markers renders as a single span (no mark)", () => {
-    render(<HighlightedSnippet text="plain text" />);
-    expect(screen.queryByText("plain text")).toBeInTheDocument();
+  test("plain text without markers renders as a single span (no mark)", async () => {
+    await render(<HighlightedSnippet text="plain text" />);
+    await expect.element(page.getByText("plain text")).toBeInTheDocument();
     expect(document.querySelector("mark")).toBeNull();
   });
 
-  test("wraps text between STX and ETX in a <mark>", () => {
-    render(<HighlightedSnippet text={`the ${STX}galaxy${ETX} awaits`} />);
+  test("wraps text between STX and ETX in a <mark>", async () => {
+    await render(<HighlightedSnippet text={`the ${STX}galaxy${ETX} awaits`} />);
     const marks = document.querySelectorAll("mark");
     expect(marks).toHaveLength(1);
     expect(marks[0].textContent).toBe("galaxy");
   });
 
-  test("handles multiple highlighted runs without key collisions", () => {
-    render(<HighlightedSnippet text={`${STX}war${ETX} and ${STX}peace${ETX}`} />);
+  test("handles multiple highlighted runs without key collisions", async () => {
+    await render(<HighlightedSnippet text={`${STX}war${ETX} and ${STX}peace${ETX}`} />);
     const marks = document.querySelectorAll("mark");
     expect(marks).toHaveLength(2);
     expect(marks[0].textContent).toBe("war");
     expect(marks[1].textContent).toBe("peace");
   });
 
-  test("user-typography ‹› does not become a highlight (no collision)", () => {
+  test("user-typography ‹› does not become a highlight (no collision)", async () => {
     // STX/ETX were chosen specifically because no valid text can carry
     // them — French guillemets must render literally with no <mark>.
-    render(<HighlightedSnippet text="quoted ‹like this›" />);
+    await render(<HighlightedSnippet text="quoted ‹like this›" />);
     expect(document.querySelectorAll("mark")).toHaveLength(0);
   });
 
-  test("HTML in the snippet renders as literal text, not as markup", () => {
-    render(<HighlightedSnippet text={`${STX}<script>alert(1)</script>${ETX}`} />);
-    expect(document.querySelector("script")).toBeNull();
+  test("HTML in the snippet renders as literal text, not as markup", async () => {
+    const { container } = await render(
+      <HighlightedSnippet text={`${STX}<script>alert(1)</script>${ETX}`} />,
+    );
+    expect(container.querySelector("script")).toBeNull();
     expect(document.querySelector("mark")?.textContent).toBe("<script>alert(1)</script>");
   });
 
-  test("does not crash on an unclosed start marker", () => {
-    expect(() => render(<HighlightedSnippet text={`before ${STX}unclosed`} />)).not.toThrow();
+  test("does not crash on an unclosed start marker", async () => {
+    await render(<HighlightedSnippet text={`before ${STX}unclosed`} />);
+    await expect.element(page.getByText("unclosed", { exact: true })).toBeInTheDocument();
   });
 });
 
@@ -418,28 +406,28 @@ test("native Escape clears search, then closes only the palette over an editor",
   vi.spyOn(globalThis, "fetch").mockImplementation(() =>
     Promise.resolve(jsonResponse({ items: [] })),
   );
-  renderPalette(["/library"], <ParentEditor />);
-  const user = userEvent.setup();
-  const opener = screen.getByRole("button", { name: "Open parent editor" });
+  await renderPalette(["/library"], <ParentEditor />);
+  const user = userEvent;
+  const opener = page.getByRole("button", { name: "Open parent editor" });
   await user.click(opener);
-  const parent = await screen.findByRole("dialog", { name: "Parent editor" });
-  const field = within(parent).getByRole("textbox", { name: "Parent value" });
+  const parent = page.getByRole("dialog", { name: "Parent editor" });
+  const field = parent.getByRole("textbox", { name: "Parent value" });
   await user.keyboard("{Control>}K{/Control}");
-  const palette = await screen.findByRole("dialog", { name: "Search library" });
-  const input = within(palette).getByPlaceholderText("Find a volume by title, author, quote…");
+  const palette = page.getByRole("dialog", { name: "Search library" });
+  const input = palette.getByPlaceholder("Find a volume by title, author, quote…");
   await user.type(input, "word");
   await user.keyboard("{Escape}");
-  expect(input).toHaveValue("");
-  expect(palette).toBeInTheDocument();
-  expect(parent).toBeInTheDocument();
+  await expect.element(input).toHaveValue("");
+  await expect.element(palette).toBeInTheDocument();
+  await expect.element(parent).toBeInTheDocument();
   await user.keyboard("{Escape}");
-  await waitFor(() => expect(palette).not.toBeInTheDocument());
-  expect(parent).toBeInTheDocument();
+  await expect.element(palette).not.toBeInTheDocument();
+  await expect.element(parent).toBeInTheDocument();
   await user.type(field, "Continue editing");
-  expect(field).toHaveValue("Continue editing");
+  await expect.element(field).toHaveValue("Continue editing");
   await user.keyboard("{Escape}");
-  await waitFor(() => expect(parent).not.toBeInTheDocument());
-  await waitFor(() => expect(opener).toHaveFocus());
+  await expect.element(parent).not.toBeInTheDocument();
+  await expect.element(opener).toHaveFocus();
 });
 
 test("a delayed search cannot replace newer results", async () => {
@@ -460,13 +448,13 @@ test("a delayed search cannot replace newer results", async () => {
       ? old
       : Promise.resolve(jsonResponse({ items: [] }));
   });
-  renderPalette();
-  triggerCmdK();
-  const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
-  fireEvent.change(input, { target: { value: "old" } });
-  expect(await screen.findByText("Searching…")).toBeInTheDocument();
-  fireEvent.change(input, { target: { value: "new" } });
-  expect(await screen.findByText("No results.")).toBeInTheDocument();
+  await renderPalette();
+  await triggerCmdK();
+  const input = page.getByPlaceholder("Find a volume by title, author, quote…");
+  await userEvent.fill(input, "old");
+  await expect.element(page.getByText("Searching…")).toBeInTheDocument();
+  await userEvent.fill(input, "new");
+  await expect.element(page.getByText("No results.")).toBeInTheDocument();
   await act(async () => {
     resolveOld?.(
       jsonResponse({
@@ -485,6 +473,6 @@ test("a delayed search cannot replace newer results", async () => {
     );
     await old;
   });
-  expect(input).toHaveValue("new");
-  expect(screen.queryByRole("menuitem", { name: "Old result" })).not.toBeInTheDocument();
+  await expect.element(input).toHaveValue("new");
+  await expect.element(page.getByRole("menuitem", { name: "Old result" })).not.toBeInTheDocument();
 });

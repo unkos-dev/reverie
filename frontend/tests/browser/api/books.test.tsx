@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 // Raw import so the committed OpenAPI artifact is usable as a fixture
 // without pulling Node fs types into the browser-typed src tree.
-import openapiRaw from "../../../backend/openapi.json?raw";
+import openapiRaw from "../../../../backend/openapi.json?raw";
 
-import { __seedCsrfTokenForTesting } from "./csrf";
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import {
   ContentRatingSchema,
   ContributorRoleSchema,
@@ -16,8 +16,8 @@ import {
   ReadingStatusSchema,
   updateBookMetadata,
   ValidationStatusSchema,
-} from "./books";
-import { ApiError } from "./errors";
+} from "@/api/books";
+import { ApiError } from "@/api/errors";
 
 function parseJsonBody(body: BodyInit | null | undefined): unknown {
   if (typeof body !== "string") throw new Error("expected stringified JSON body");

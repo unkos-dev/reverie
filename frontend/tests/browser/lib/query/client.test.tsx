@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import { ApiError } from "@/api";
 import { activeUserId, rememberActiveUser } from "@/lib/active-user";
 
-import { invokeUnauthenticatedHandler, queryClient, setUnauthenticatedHandler } from "./client";
+import {
+  invokeUnauthenticatedHandler,
+  queryClient,
+  setUnauthenticatedHandler,
+} from "@/lib/query/client";
 
 beforeEach(() => {
   queryClient.clear();

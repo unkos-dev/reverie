@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __seedCsrfTokenForTesting } from "./csrf";
-import { MAX_RESOLVE_IDS, resolveAuthors, suggestVocab } from "./suggest";
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
+import { MAX_RESOLVE_IDS, resolveAuthors, suggestVocab } from "@/api/suggest";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {

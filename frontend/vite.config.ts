@@ -14,6 +14,33 @@ import { parseHmrConfig } from "./vite-plugins/hmr-config";
 // rationale and the Cloudflare RUM beacon allowances.
 const DEV_CSP = buildDevCsp(process.env.REVERIE_DEV_HOSTS);
 
+const browserApiTests = [
+  "books",
+  "fetch",
+  "preferences",
+  "reading",
+  "search",
+  "settings",
+  "shelves",
+  "suggest",
+  "users",
+];
+
+const nodeTests = [
+  "src/api/**/*.test.ts",
+  ...browserApiTests.map((name) => `!src/api/${name}.test.ts`),
+  "src/routes/*.test.ts",
+  "!src/routes/admin-settings.test.ts",
+  "src/components/library/*-summary.test.ts",
+  "src/pages/admin/settings/*.test.ts",
+  "src/pages/admin/ingestion/*.test.ts",
+  "src/pages/library/table/edit-routing.test.ts",
+  "src/lib/format/*.test.ts",
+  "src/lib/command-palette.test.ts",
+  "src/pages/library/storage-unavailable.test.ts",
+  "src/lib/query/keys.test.ts",
+];
+
 export default defineConfig({
   // fmt + lint are defined in the root vite.config.ts; this file is frontend
   // build/server/test config only.
@@ -61,7 +88,9 @@ export default defineConfig({
     projects: [
       {
         extends: false,
-        optimizeDeps: { include: ["@tanstack/react-query", "react-router"] },
+        optimizeDeps: {
+          include: ["@tanstack/react-query", "react-router", "react-error-boundary"],
+        },
         plugins: lazyPlugins(() => [react(), tailwindcss()]),
         resolve: { alias: { "@": path.resolve(__dirname, "src") } },
         test: {
@@ -72,7 +101,7 @@ export default defineConfig({
             enabled: true,
             headless: true,
             screenshotDirectory: "./test-results/browser",
-            provider: playwright(),
+            provider: playwright({ contextOptions: { locale: "en-AU", timezoneId: "UTC" } }),
             instances: [{ browser: "chromium", viewport: { width: 1280, height: 800 } }],
           },
         },
@@ -112,12 +141,10 @@ export default defineConfig({
       {
         extends: true,
         test: {
-          name: "library-model",
+          name: "frontend-node",
           environment: "node",
-          include: [
-            "src/routes/library-params.test.ts",
-            "src/components/library/filter-summary.test.ts",
-          ],
+          setupFiles: ["./tests/setup.node.ts"],
+          include: nodeTests,
         },
       },
       {
@@ -128,10 +155,7 @@ export default defineConfig({
           globals: true,
           setupFiles: ["./tests/setup.ts"],
           include: ["src/**/*.{test,spec}.{ts,tsx}"],
-          exclude: [
-            "src/routes/library-params.test.ts",
-            "src/components/library/filter-summary.test.ts",
-          ],
+          exclude: nodeTests.filter((pattern) => !pattern.startsWith("!")),
           // Must stay above the async query ceiling in tests/setup.ts.
           // At the 5s default the two collide: a failing `findBy*` spends
           // its whole budget waiting, so the test times out first and the

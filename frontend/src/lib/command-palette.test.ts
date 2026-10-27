@@ -7,20 +7,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mockPlatform(platform: string): void {
-  Object.defineProperty(window.navigator, "platform", {
-    configurable: true,
-    get: () => platform,
-  });
-}
-
-function mockUserAgentData(value: { platform?: string } | undefined): void {
-  Object.defineProperty(window.navigator, "userAgentData", {
-    configurable: true,
-    value,
-  });
-}
-
 describe("openCommandPalette", () => {
   test("invokes the registered opener", () => {
     const opener = vi.fn();
@@ -38,26 +24,18 @@ describe("openCommandPalette", () => {
 
 describe("searchHintLabel", () => {
   test("returns ⌘K on mac platforms", () => {
-    mockPlatform("MacIntel");
-    expect(searchHintLabel()).toBe("⌘K");
+    expect(searchHintLabel({ platform: "MacIntel" })).toBe("⌘K");
   });
 
   test("returns Ctrl K elsewhere", () => {
-    mockPlatform("Win32");
-    expect(searchHintLabel()).toBe("Ctrl K");
+    expect(searchHintLabel({ platform: "Win32" })).toBe("Ctrl K");
   });
 
   test("prefers userAgentData.platform over navigator.platform", () => {
-    mockUserAgentData({ platform: "macOS" });
-    mockPlatform("Win32");
-    expect(searchHintLabel()).toBe("⌘K");
-    mockUserAgentData(undefined);
+    expect(searchHintLabel({ platform: "Win32", userAgentData: { platform: "macOS" } })).toBe("⌘K");
   });
 
   test("falls back to navigator.platform when userAgentData carries no platform", () => {
-    mockUserAgentData({});
-    mockPlatform("MacIntel");
-    expect(searchHintLabel()).toBe("⌘K");
-    mockUserAgentData(undefined);
+    expect(searchHintLabel({ platform: "MacIntel", userAgentData: {} })).toBe("⌘K");
   });
 });

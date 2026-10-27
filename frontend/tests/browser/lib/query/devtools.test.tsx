@@ -5,7 +5,8 @@
  * shape doesn't regress, so a dev hot-reload that fails to resolve
  * `@tanstack/react-query-devtools` doesn't crash the route tree.
  */
-import { render, screen } from "@testing-library/react";
+import { render } from "vitest-browser-react";
+import { page } from "vite-plus/test/browser";
 import { describe, expect, test, vi } from "vite-plus/test";
 
 vi.mock("@tanstack/react-query-devtools", () => ({
@@ -14,8 +15,8 @@ vi.mock("@tanstack/react-query-devtools", () => ({
 
 describe("ReactQueryDevtoolsPanel", () => {
   test("renders the lazily-imported devtools inside a Suspense boundary", async () => {
-    const { ReactQueryDevtoolsPanel } = await import("./devtools");
-    render(<ReactQueryDevtoolsPanel />);
-    expect(await screen.findByTestId("devtools-mock")).toBeInTheDocument();
+    const { ReactQueryDevtoolsPanel } = await import("@/lib/query/devtools");
+    await render(<ReactQueryDevtoolsPanel />);
+    await expect.element(page.getByTestId("devtools-mock")).toBeInTheDocument();
   });
 });

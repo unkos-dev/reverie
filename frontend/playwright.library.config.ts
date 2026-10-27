@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/journeys",
-  testMatch: "library-navigation.spec.ts",
+  testMatch: "*.spec.ts",
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],

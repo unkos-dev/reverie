@@ -130,7 +130,8 @@ test("a fresh entry resets a reused Library owner without writing the departed s
   await search.fill("the sea ");
   await expect(search).toHaveValue("the sea ");
   await page.evaluate(() => {
-    history.pushState({ unrelated: "destination" }, "", location.href);
+    history.pushState(null, "", location.href);
+    navigation.updateCurrentEntry({ state: { unrelated: "destination" } });
   });
   await expect(search).toHaveValue("");
   expect(await page.evaluate((): unknown => navigation.currentEntry?.getState())).toEqual({
