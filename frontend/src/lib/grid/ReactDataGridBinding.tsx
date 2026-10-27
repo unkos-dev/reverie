@@ -9,18 +9,28 @@
  * but, like every other RDG type, never appears in this module's exports.
  */
 import { Info } from "lucide-react";
-import { useId, useMemo, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import {
+  useId,
+  useMemo,
+  type Key,
+  type ChangeEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+import {
+  Cell,
   DataGrid,
   SelectColumn,
   renderHeaderCell,
   renderSortIcon,
+  type CellRendererProps,
   type CellKeyboardEvent,
   type CellKeyDownArgs,
   type CellMouseArgs,
   type CellMouseEvent,
   type Column,
   type RenderCheckboxProps,
+  type RenderCellProps,
   type RenderEditCellProps,
   type RenderHeaderCellProps,
   type RenderSortStatusProps,
@@ -170,8 +180,8 @@ function toRdgColumns<R>(columns: GridBindingProps<R>["columns"]): readonly Colu
       name: col.name,
       sortable: col.sortable,
       width: col.width,
-      renderCell: ({ row }: { row: R }): ReactNode =>
-        col.renderCell === undefined ? col.accessor(row) : col.renderCell(row),
+      renderCell: ({ row, tabIndex }: RenderCellProps<R>): ReactNode =>
+        col.renderCell === undefined ? col.accessor(row) : col.renderCell(row, tabIndex),
       ...headerFields,
       ...editFields,
     };
@@ -208,6 +218,24 @@ function makeRenderCheckbox(selectAllLabel: string) {
       />
     );
   };
+}
+
+function renderCell<R>(key: Key, props: CellRendererProps<R, unknown>): ReactNode {
+  return (
+    <Cell
+      key={key}
+      {...props}
+      onMouseDownCapture={(event) => {
+        if (
+          event.button !== 0 ||
+          !(event.target instanceof Element) ||
+          event.target.closest("button") === null
+        )
+          return;
+        props.setActivePosition({ rowIdx: props.rowIdx, idx: props.column.idx });
+      }}
+    />
+  );
 }
 
 export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): ReactElement {
@@ -338,6 +366,7 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
         rowHeight={rowHeight ?? ROW_HEIGHT}
         headerRowHeight={headerRowHeight ?? HEADER_HEIGHT}
         renderers={{
+          renderCell,
           renderSortStatus,
           ...(selection === undefined
             ? {}

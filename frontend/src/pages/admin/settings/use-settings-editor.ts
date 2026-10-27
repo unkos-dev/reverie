@@ -91,9 +91,9 @@ export type SettingsEditor = {
   confirmDeletion: () => void;
   cancelDeletion: () => void;
   discard: () => void;
-  save: () => void;
+  save: () => Promise<void>;
   choose: (key: SettingsKey, choice: ConflictChoice) => void;
-  saveChoices: () => void;
+  saveChoices: () => Promise<void>;
   discardAndReload: () => void;
 };
 
@@ -294,7 +294,6 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
     onSuccess: (outcome, vars) => {
       handleOutcome(outcome, vars.patch);
     },
-    onError: handleError,
   });
 
   const pending = mutation.isPending;
@@ -361,12 +360,16 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
     setNotice({ kind: "none" });
   }
 
-  function startSave(patch: SettingsPatch): void {
+  async function startSave(patch: SettingsPatch): Promise<void> {
     setNotice({ kind: "none" });
-    mutation.mutate({ base, patch });
+    try {
+      await mutation.mutateAsync({ base, patch });
+    } catch (err) {
+      handleError(err);
+    }
   }
 
-  function save(): void {
+  async function save(): Promise<void> {
     if (pending) return;
     const built = buildPatch(area, draft, base.values);
     if (!built.ok) {
@@ -374,7 +377,7 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
       return;
     }
     if (patchKeys(built.patch).length === 0) return;
-    startSave(built.patch);
+    await startSave(built.patch);
   }
 
   function choose(key: SettingsKey, choice: ConflictChoice): void {
@@ -388,7 +391,7 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
     );
   }
 
-  function saveChoices(): void {
+  async function saveChoices(): Promise<void> {
     if (pending || notice.kind !== "conflict") return;
     const theirs = notice.rows.filter((row) => row.choice === "theirs").map((row) => row.key);
     const next = dropKeys(draft, theirs);
@@ -404,7 +407,7 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
       setNotice({ kind: "none" });
       return;
     }
-    startSave(built.patch);
+    await startSave(built.patch);
   }
 
   function discardAndReload(): void {

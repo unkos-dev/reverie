@@ -29,15 +29,17 @@ that tab without a full page reload.
 ## Acceptance criteria
 
 - A `428` with problem type `csrf-missing` triggers one `GET /auth/me` refresh and one resend carrying the new token.
-  Checked by `"428 csrf-missing refreshes once and retries with the new token"` in `frontend/src/api/fetch.test.ts`.
+  Checked by `"428 csrf-missing refreshes once and retries with the new token"` in
+  `frontend/tests/browser/api/fetch.test.tsx`.
 - A `403` with problem type `csrf-mismatch` triggers one `refreshCsrfToken()` call and one resend. Checked by
-  `"403 csrf-mismatch triggers refreshCsrfToken() once and retries"` in `frontend/src/api/fetch.test.ts`.
+  `"403 csrf-mismatch triggers refreshCsrfToken() once and retries"` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A `428` whose problem type is not `csrf-missing` is not retried and throws immediately. Checked by
-  `"a non-CSRF 428 throws without a retry"` in `frontend/src/api/fetch.test.ts`.
+  `"a non-CSRF 428 throws without a retry"` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A `403` whose problem type is not `csrf-mismatch` is not retried. Checked by
-  `"403 with a NON-csrf-mismatch problem type does not retry"` in `frontend/src/api/fetch.test.ts`.
+  `"403 with a NON-csrf-mismatch problem type does not retry"` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A `204` response on the retried request returns `undefined` without parsing a body. Checked by
-  `"204 on csrf-mismatch retry path returns undefined (does not call .json())"` in `frontend/src/api/fetch.test.ts`.
+  `"204 on csrf-mismatch retry path returns undefined (does not call .json())"` in
+  `frontend/tests/browser/api/fetch.test.tsx`.
 - A second CSRF rejection on the retried request is not retried again. No automated check exercises this case directly;
   it is verified by inspection of `apiFetch` in `frontend/src/api/fetch.ts`, whose retry branch calls `sendRequest`
   exactly once more and returns or throws from that single outcome unconditionally, with no loop or second retry branch.

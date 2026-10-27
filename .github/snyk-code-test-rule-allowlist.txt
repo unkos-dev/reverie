@@ -1,4 +1,4 @@
-# jsdom fixture cookie write; the production writers set Secure and have tests.
+# Browser fixture cookie write; the production writers set Secure and have tests.
 javascript/WebCookieSecureDisabledByDefault/test
 
 # Mocked-fetch request-body fixtures, not credentials; gitleaks covers secrets.

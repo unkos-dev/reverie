@@ -1,6 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useRef, type ReactElement, type SyntheticEvent } from "react";
 import { Form } from "react-aria-components";
+import { useFormStatus } from "react-dom";
 import { NavLink, useBlocker } from "react-router";
 
 import type { SettingsKey, SettingsSnapshot } from "@/api/settings";
@@ -124,7 +125,8 @@ function SaveBar({
   resetForm,
 }: Readonly<{ editor: SettingsEditor; resetForm: () => void }>): ReactElement {
   const conflict = editor.notice.kind === "conflict";
-  const busy = editor.phase !== "idle";
+  const { pending } = useFormStatus();
+  const busy = editor.phase !== "idle" || pending;
   const pristine = !conflict && editor.dirty.length === 0;
   const saveLabel = conflict ? "Save my choices" : "Save changes";
   return (
@@ -235,6 +237,10 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
   );
 
   useEffect(() => {
+    if (editor.notice.kind === "saved" && blocker.state === "blocked") blocker.proceed();
+  }, [editor.notice.kind, blocker]);
+
+  useEffect(() => {
     if (!guard) return () => {};
     function warn(event: BeforeUnloadEvent): void {
       event.preventDefault();
@@ -257,18 +263,17 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
     formRef.current?.reset();
   }
 
-  function submit(event: SyntheticEvent<HTMLFormElement>): void {
-    event.preventDefault();
+  async function submit(): Promise<void> {
     const { notice, draft } = editor;
     if (notice.kind !== "conflict") {
-      editor.save();
+      await editor.save();
       return;
     }
     const invalid: readonly SettingsKey[] = invalidTextKeys(draft);
     if (notice.rows.some((row) => row.choice === "theirs" && invalid.includes(row.key))) {
       resetForm();
     }
-    editor.saveChoices();
+    await editor.saveChoices();
   }
 
   const info = areaById(area);
@@ -282,7 +287,7 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
           className="flex flex-col"
           aria-label={`${info.title} settings`}
           validationErrors={validationErrors}
-          onSubmit={submit}
+          action={submit}
           render={(props) => <form {...props} onResetCapture={cancelValueReset} />}
         >
           <section aria-labelledby={`heading-${area}`} className="pb-2">

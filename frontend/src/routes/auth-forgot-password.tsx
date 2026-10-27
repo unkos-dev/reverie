@@ -1,7 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from "react";
-import { Form } from "react-aria-components";
+import { useActionState, useEffect, useRef, useState, type ReactElement } from "react";
+import { Form, type FormProps } from "react-aria-components";
 import { Link, Navigate } from "react-router";
+import { z } from "zod";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, requestPasswordReset } from "@/api/auth";
@@ -9,7 +10,6 @@ import { emailField, validateEmail } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { FieldError, TextInputField } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formString } from "@/lib/form";
 import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
@@ -22,7 +22,6 @@ export function Component(): ReactElement {
     staleTime: Infinity,
   });
   const [email, setEmail] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const sentTitle = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (email !== null) sentTitle.current?.focus();
@@ -32,21 +31,28 @@ export function Component(): ReactElement {
     onSuccess: (_data, submitted) => {
       setEmail(submitted);
     },
-    onError: (cause) => {
-      setError(
-        cause instanceof ApiError && cause.status === 429
-          ? cause.detail
-          : "Could not send the request. Try again.",
-      );
-    },
   });
-  function submit(event: SyntheticEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    setError(null);
-    const parsed = emailField.safeParse(formString(new FormData(event.currentTarget), "email"));
-    if (!parsed.success) return;
-    request.mutate(parsed.data);
-  }
+  const [state, action, pending] = useActionState<
+    { values?: { email: string }; errors?: FormProps["validationErrors"]; error?: string },
+    FormData
+  >(async (_previous, data) => {
+    const values = z.object({ email: z.string() }).parse(Object.fromEntries(data));
+    const parsed = emailField.safeParse(values.email);
+    if (!parsed.success) return { values, errors: { email: "Enter a valid email address." } };
+    try {
+      await request.mutateAsync(parsed.data);
+      return {};
+    } catch (cause) {
+      return {
+        values,
+        error:
+          cause instanceof ApiError && cause.status === 429
+            ? cause.detail
+            : "Could not send the request. Try again.",
+      };
+    }
+  }, {});
+
   const footer = (
     <Link to="/login" className="hover:text-fg underline underline-offset-4">
       Back to sign in
@@ -98,7 +104,6 @@ export function Component(): ReactElement {
             className="w-full"
             onPress={() => {
               setEmail(null);
-              setError(null);
               request.reset();
             }}
           >
@@ -125,17 +130,18 @@ export function Component(): ReactElement {
       description="Enter your account's email address."
       footer={footer}
     >
-      <Form onSubmit={submit} className="flex flex-col gap-4">
+      <Form action={action} validationErrors={state.errors} className="flex flex-col gap-4">
         <TextInputField
           name="email"
+          defaultValue={state.values?.email}
           type="email"
           autoComplete="email"
           isRequired
           validate={validateEmail}
           label="Email"
         />
-        {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" className="w-full" isDisabled={request.isPending}>
+        {!pending && state.error !== undefined ? <FieldError>{state.error}</FieldError> : null}
+        <Button type="submit" className="w-full" isDisabled={pending}>
           Send reset link
         </Button>
       </Form>

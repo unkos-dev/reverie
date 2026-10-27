@@ -8,13 +8,16 @@
  */
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { Suspense, useState, type ReactElement, type SyntheticEvent } from "react";
+import { Suspense, useActionState, useState, type ReactElement } from "react";
+import { Form, TextField, Input as AriaInput, Label as AriaLabel } from "react-aria-components";
+import { z } from "zod";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
 import { ApiError, createShelf, deleteShelf, listShelves, renameShelf, type Shelf } from "@/api";
 import { Button } from "@/components/ui/button";
 import { DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -145,13 +148,14 @@ function ShelvesContent(): ReactElement {
       </ul>
 
       <NameDialog
+        key={createOpen ? "create-open" : "create-closed"}
         open={createOpen}
         title="New shelf"
         onClose={() => {
           setCreateOpen(false);
         }}
-        onSubmit={(name) => {
-          createMutation.mutate(name);
+        onSubmit={async (name) => {
+          await createMutation.mutateAsync(name);
         }}
         pending={createMutation.isPending}
       />
@@ -167,9 +171,9 @@ function ShelvesContent(): ReactElement {
         onClose={() => {
           setRenameTarget(null);
         }}
-        onSubmit={(name) => {
+        onSubmit={async (name) => {
           if (renameTarget !== null) {
-            renameMutation.mutate({ id: renameTarget.id, name });
+            await renameMutation.mutateAsync({ id: renameTarget.id, name });
           }
         }}
         pending={renameMutation.isPending}
@@ -184,7 +188,7 @@ type NameDialogProps = {
   initialName?: string;
   pending: boolean;
   onClose: () => void;
-  onSubmit: (name: string) => void;
+  onSubmit: (name: string) => Promise<void>;
 };
 
 function NameDialog({
@@ -195,13 +199,20 @@ function NameDialog({
   onClose,
   onSubmit,
 }: Readonly<NameDialogProps>): ReactElement {
-  const [name, setName] = useState(initialName);
-  function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    const trimmed = name.trim();
-    if (trimmed.length === 0) return;
-    onSubmit(trimmed);
-  }
+  const [state, action, actionPending] = useActionState(
+    async (_previous: { name: string; error: string | null }, data: FormData) => {
+      const name = z.string().parse(data.get("name"));
+      const trimmed = name.trim();
+      if (trimmed.length === 0 || pending) return { name, error: null };
+      try {
+        await onSubmit(trimmed);
+        return { name: initialName, error: null };
+      } catch (err) {
+        return { name, error: err instanceof ApiError ? err.detail : "Could not save shelf." };
+      }
+    },
+    { name: initialName, error: null },
+  );
   return (
     <DialogContent
       isOpen={open}
@@ -212,27 +223,21 @@ function NameDialog({
       <DialogHeader>
         <DialogTitle>{title}</DialogTitle>
       </DialogHeader>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="shelf-name">Name</Label>
-          <Input
-            id="shelf-name"
-            autoFocus
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-            }}
-          />
-        </div>
+      <Form action={action} validationErrors={{}} className="space-y-4">
+        <TextField name="name" defaultValue={state.name} className="space-y-2">
+          <AriaLabel render={(props) => <Label {...props} />}>Name</AriaLabel>
+          <AriaInput autoFocus render={(props) => <Input {...props} />} />
+        </TextField>
+        {state.error ? <FieldError>{state.error}</FieldError> : null}
         <DialogFooter>
           <Button type="button" variant="outline" onPress={onClose}>
             Cancel
           </Button>
-          <Button type="submit" isDisabled={pending}>
+          <Button type="submit" isPending={pending || actionPending}>
             Save
           </Button>
         </DialogFooter>
-      </form>
+      </Form>
     </DialogContent>
   );
 }

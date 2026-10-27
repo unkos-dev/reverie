@@ -14,18 +14,17 @@
  * route change.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from "react";
-import { Form } from "react-aria-components";
+import { useActionState, useEffect, useRef, type ReactElement } from "react";
+import { Form, type FormProps } from "react-aria-components";
 import { Link, Navigate, useLocation } from "react-router";
 import { z } from "zod";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, loginLocal } from "@/api/auth";
-import { currentPasswordField, validateEmail } from "@/api/auth.schemas";
+import { LoginLocalSchema, currentPasswordField, validateEmail } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { FieldError, TextInputField } from "@/components/ui/field";
-import { formString } from "@/lib/form";
 import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
@@ -99,8 +98,6 @@ export function Component(): ReactElement {
     staleTime: Infinity,
   });
 
-  const [error, setError] = useState<string | null>(null);
-
   const loginMutation = useMutation({
     mutationFn: ({ email, password }: { email: string; password: string }) =>
       loginLocal(email, password),
@@ -108,13 +105,32 @@ export function Component(): ReactElement {
       void qc.invalidateQueries({ queryKey: queryKeys.auth.me() });
       window.location.assign("/library");
     },
-    onError: (err) => {
+  });
+
+  const [state, action, pending] = useActionState<
+    {
+      values?: { email: string; password: string };
+      errors?: FormProps["validationErrors"];
+      error?: string;
+    },
+    FormData
+  >(async (_previous, data) => {
+    const values = z
+      .object({ email: z.string(), password: z.string() })
+      .parse(Object.fromEntries(data));
+
+    const parsed = LoginLocalSchema.safeParse(values);
+    if (!parsed.success) return { values, errors: z.flattenError(parsed.error).fieldErrors };
+    try {
+      await loginMutation.mutateAsync(parsed.data);
+      return {};
+    } catch (err) {
       const message =
         err instanceof ApiError && err.detail !== "" ? err.detail : "Incorrect email or password.";
-      setError(message);
       toast.error(message);
-    },
-  });
+      return { values, error: message };
+    }
+  }, {});
 
   if (isPending) {
     return (
@@ -140,20 +156,11 @@ export function Component(): ReactElement {
     return <Navigate to="/setup" replace />;
   }
 
-  function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    setError(null);
-    const data = new FormData(e.currentTarget);
-    loginMutation.mutate({
-      email: formString(data, "email"),
-      password: formString(data, "password"),
-    });
-  }
-
   const localForm = status.local_auth_enabled ? (
-    <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+    <Form action={action} validationErrors={state.errors} className="flex flex-col gap-4">
       <TextInputField
         name="email"
+        defaultValue={state.values?.email}
         type="email"
         autoComplete="email"
         isRequired
@@ -162,14 +169,15 @@ export function Component(): ReactElement {
       />
       <TextInputField
         name="password"
+        defaultValue={state.values?.password}
         type="password"
         autoComplete="current-password"
         isRequired
         validate={validatePassword}
         label="Password"
       />
-      {error !== null ? <FieldError>{error}</FieldError> : null}
-      <Button type="submit" isPending={loginMutation.isPending}>
+      {!pending && state.error !== undefined ? <FieldError>{state.error}</FieldError> : null}
+      <Button type="submit" isPending={pending}>
         Sign in
       </Button>
     </Form>

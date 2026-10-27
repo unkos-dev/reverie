@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState, type ReactElement, type SyntheticEvent } from "react";
-import { Form } from "react-aria-components";
+import { useActionState, useState, type ReactElement } from "react";
+import { Form, type FormProps } from "react-aria-components";
 import { Link, useLoaderData, useLocation } from "react-router";
 import { z } from "zod";
 
@@ -11,7 +11,6 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldError, TextInputField } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePasswordPolicy, type PasswordPolicyState } from "@/hooks/usePasswordPolicy";
-import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
 
@@ -65,7 +64,6 @@ function LookupFailure({
 export function Component(): ReactElement {
   const location = useLocation();
   const token = z.string().parse(useLoaderData());
-  const [error, setError] = useState<string | ReactElement | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [hasRetriedLookup, setHasRetriedLookup] = useState(false);
   const {
@@ -83,8 +81,6 @@ export function Component(): ReactElement {
     onError: (err) => {
       if (err instanceof ApiError && err.detail === "invalid or expired link") {
         setInvalid(true);
-      } else {
-        setError(redemptionError(err));
       }
     },
   });
@@ -172,14 +168,9 @@ export function Component(): ReactElement {
         policyError={policyError}
         policyRetrying={policyRetrying}
         ready={ready}
-        pending={redemption.isPending}
-        error={error}
         validate={validate}
         onRetryPolicy={retryPolicy}
-        onSubmit={(password) => {
-          setError(null);
-          redemption.mutate(password);
-        }}
+        onSubmit={(password) => redemption.mutateAsync(password)}
       />
     </AuthShell>
   );
@@ -191,11 +182,9 @@ type CredentialFormProps = {
   policyError: boolean;
   policyRetrying: boolean;
   ready: boolean;
-  pending: boolean;
-  error: string | ReactElement | null;
   validate: PasswordPolicyState["validate"];
   onRetryPolicy: () => void;
-  onSubmit: (password: string) => void;
+  onSubmit: (password: string) => Promise<void>;
 };
 
 function CredentialForm({
@@ -204,29 +193,45 @@ function CredentialForm({
   policyError,
   policyRetrying,
   ready,
-  pending,
-  error,
   validate,
   onRetryPolicy,
   onSubmit,
 }: Readonly<CredentialFormProps>): ReactElement {
   const [password, setPassword] = useState("");
 
-  function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    if (!ready) return;
-    const form = new FormData(event.currentTarget);
-    const submitted = z.string().parse(formString(form, "password"));
-    const confirm = z.string().parse(formString(form, "confirm_password"));
-    if (submitted !== confirm || validate(submitted) !== undefined) return;
-    onSubmit(submitted);
-  }
+  const [state, action, pending] = useActionState<
+    {
+      values?: { password: string; confirm_password: string };
+      errors?: FormProps["validationErrors"];
+      error?: string | ReactElement;
+    },
+    FormData
+  >(async (_previous, data) => {
+    const values = z
+      .object({ password: z.string(), confirm_password: z.string() })
+      .parse(Object.fromEntries(data));
+    if (!ready) return { values };
+    const passwordError = validate(values.password);
+    const errors: NonNullable<FormProps["validationErrors"]> = {};
+    if (passwordError !== undefined) errors.password = passwordError;
+    if (values.password !== values.confirm_password)
+      errors.confirm_password = "The passwords don't match.";
+    if (Object.keys(errors).length > 0) return { values, errors };
+    try {
+      await onSubmit(values.password);
+      return {};
+    } catch (cause) {
+      if (!(cause instanceof Error)) throw cause;
+      return { values, error: redemptionError(cause) };
+    }
+  }, {});
 
   return (
-    <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+    <Form action={action} validationErrors={state.errors} className="flex flex-col gap-4">
       <input type="hidden" name="username" autoComplete="username" value={email} />
       <TextInputField
         name="password"
+        defaultValue={state.values?.password}
         type="password"
         autoComplete="new-password"
         isRequired
@@ -243,13 +248,14 @@ function CredentialForm({
       </TextInputField>
       <TextInputField
         name="confirm_password"
+        defaultValue={state.values?.confirm_password}
         type="password"
         autoComplete="new-password"
         isRequired
         validate={(value) => (value === password ? null : "The passwords don't match.")}
         label="Confirm password"
       />
-      {error !== null ? <FieldError>{error}</FieldError> : null}
+      {!pending && state.error !== undefined ? <FieldError>{state.error}</FieldError> : null}
       <Button type="submit" isPending={pending} isDisabled={!ready}>
         Set password
       </Button>

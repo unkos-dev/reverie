@@ -369,7 +369,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
     key: "rating",
     name: "Rating",
     sortable: false,
-    width: 90,
+    width: 173,
     accessor: (row) => {
       const rating = row.reading_state?.rating ?? null;
       // Guarding below 1 here rather than in the zod schema: a schema bound
@@ -441,7 +441,7 @@ function composeColumns(
   });
   const withTitleCell = visible.map((col) => {
     if (col.key !== "title") return col;
-    const renderCell = (row: BookListItem): ReactNode => (
+    const renderCell = (row: BookListItem, tabIndex: number): ReactNode => (
       <div className="flex min-w-0 items-center gap-3">
         {density === "comfortable" ? <TitleCellMark row={row} /> : null}
         <div className="min-w-0">
@@ -449,6 +449,7 @@ function composeColumns(
               floor; an inline anchor's line box alone falls under it. */}
           <Link
             to={`/b/${row.id}`}
+            tabIndex={tabIndex}
             className="text-fg hover:text-accent inline-flex min-h-6 max-w-full items-center truncate font-medium"
           >
             {row.title}
@@ -469,17 +470,20 @@ function composeColumns(
     sortable: false,
     width: 44,
     accessor: () => "",
-    renderCell: (row) => (
-      <button
+    renderCell: (row, tabIndex) => (
+      <Button
         type="button"
+        excludeFromTabOrder={tabIndex === -1}
+        variant="ghost"
+        size="icon-xs"
         aria-label={`Open details for ${row.title}`}
-        onClick={() => {
+        onPress={() => {
           onRowActivate(row);
         }}
         className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 min-w-6 items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2"
       >
         <PanelRight className="size-4" aria-hidden="true" />
-      </button>
+      </Button>
     ),
   };
   return [detailsColumn, ...withTitleCell];
@@ -505,9 +509,9 @@ function useComposedColumns(
       composeColumns(hiddenColumns, density, isMobile, onRowActivate).map((col) => {
         if (col.renderEditCell === undefined) return col;
         const renderFinal = col.renderCell ?? col.accessor;
-        const renderCell = (row: BookListItem): ReactNode => {
+        const renderCell = (row: BookListItem, tabIndex: number): ReactNode => {
           const draft = pendingCells.get(pendingKey(row.id, col.key));
-          if (draft === undefined) return renderFinal(row);
+          if (draft === undefined) return renderFinal(row, tabIndex);
           return (
             <span aria-busy="true" className="text-fg-muted italic">
               {draft}
@@ -688,9 +692,15 @@ function PagingFooter({
     return (
       <span role="alert">
         Couldn&apos;t load more books.{" "}
-        <button type="button" className="hover:text-accent underline" onClick={onLoadMore}>
+        <Button
+          type="button"
+          variant="link"
+          size="xs"
+          className="h-auto p-0 hover:text-accent underline"
+          onPress={onLoadMore}
+        >
           Retry
-        </button>
+        </Button>
       </span>
     );
   }

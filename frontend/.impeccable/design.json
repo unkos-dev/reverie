@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-28T17:06:16+00:00",
+  "generatedAt": "2026-10-27T07:27:08+00:00",
   "title": "Design System: Reverie",
   "extensions": {
     "colorMeta": {
@@ -905,54 +905,54 @@
     {
       "name": "Primary button",
       "kind": "button",
-      "description": "Current primary button variant.",
+      "description": "Primary action with React Aria press, focus and pending states.",
       "html": "<button type=\"button\" class=\"ds-button-primary\">Primary</button>",
-      "css": ".ds-button-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:var(--accent, #C9A961);color:var(--fg-on-accent, #0E0D0A);border-color:transparent}.ds-button-primary:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-primary:active{transform:translateY(1px)}.ds-button-primary:disabled{pointer-events:none;opacity:.5}",
+      "css": ".ds-button-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:var(--accent, #C9A961);color:var(--fg-on-accent, #0E0D0A);border-color:transparent}.ds-button-primary:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-primary:active{transform:translateY(1px)}.ds-button-primary:disabled,.ds-button-primary[data-disabled]{pointer-events:none;opacity:.5}.ds-button-primary[data-pending]{opacity:.5}.ds-button-primary:hover{background:color-mix(in oklab,var(--accent, #C9A961) 80%,transparent)}",
       "refersTo": "button-primary"
     },
     {
       "name": "Outline button",
       "kind": "button",
-      "description": "Current outline button variant.",
+      "description": "Outline action with React Aria press, focus and pending states.",
       "html": "<button type=\"button\" class=\"ds-button-outline\">Outline</button>",
-      "css": ".ds-button-outline{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:color-mix(in oklab,var(--border, #3E3A32) 30%,transparent);color:var(--fg, #F0EEE9);border-color:var(--border, #3E3A32)}.ds-button-outline:hover{background:color-mix(in oklab,var(--border, #3E3A32) 50%,transparent)}.ds-button-outline:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-outline:active{transform:translateY(1px)}.ds-button-outline:disabled{pointer-events:none;opacity:.5}",
+      "css": ".ds-button-outline{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:color-mix(in oklab,var(--border, #3E3A32) 30%,transparent);color:var(--fg, #F0EEE9);border-color:var(--border, #3E3A32)}.ds-button-outline:hover{background:color-mix(in oklab,var(--border, #3E3A32) 50%,transparent)}.ds-button-outline:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-outline:active{transform:translateY(1px)}.ds-button-outline:disabled,.ds-button-outline[data-disabled]{pointer-events:none;opacity:.5}.ds-button-outline[data-pending]{opacity:.5}",
       "refersTo": "button-outline"
     },
     {
       "name": "Secondary button",
       "kind": "button",
-      "description": "Current secondary button variant.",
+      "description": "Secondary action with React Aria press, focus and pending states.",
       "html": "<button type=\"button\" class=\"ds-button-secondary\">Secondary</button>",
-      "css": ".ds-button-secondary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:var(--surface-2, #2B2924);color:var(--fg, #F0EEE9);border-color:transparent}.ds-button-secondary:hover{background:color-mix(in oklab,var(--surface-2, #2B2924) 80%,transparent)}.ds-button-secondary:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-secondary:active{transform:translateY(1px)}.ds-button-secondary:disabled{pointer-events:none;opacity:.5}"
+      "css": ".ds-button-secondary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:var(--surface-2, #2B2924);color:var(--fg, #F0EEE9);border-color:transparent}.ds-button-secondary:hover{background:color-mix(in oklab,var(--surface-2, #2B2924) 80%,transparent)}.ds-button-secondary:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-secondary:active{transform:translateY(1px)}.ds-button-secondary:disabled,.ds-button-secondary[data-disabled]{pointer-events:none;opacity:.5}.ds-button-secondary[data-pending]{opacity:.5}"
     },
     {
       "name": "Ghost button",
       "kind": "button",
-      "description": "Current ghost button variant.",
+      "description": "Ghost action with React Aria press, focus and pending states.",
       "html": "<button type=\"button\" class=\"ds-button-ghost\">Ghost</button>",
-      "css": ".ds-button-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:transparent;color:var(--fg, #F0EEE9);border-color:transparent}.ds-button-ghost:hover{background:color-mix(in oklab,var(--surface, #24221E) 50%,transparent)}.ds-button-ghost:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-ghost:active{transform:translateY(1px)}.ds-button-ghost:disabled{pointer-events:none;opacity:.5}",
+      "css": ".ds-button-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:transparent;color:var(--fg, #F0EEE9);border-color:transparent}.ds-button-ghost:hover{background:color-mix(in oklab,var(--surface, #24221E) 50%,transparent)}.ds-button-ghost:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-ghost:active{transform:translateY(1px)}.ds-button-ghost:disabled,.ds-button-ghost[data-disabled]{pointer-events:none;opacity:.5}.ds-button-ghost[data-pending]{opacity:.5}",
       "refersTo": "button-ghost"
     },
     {
       "name": "Destructive button",
       "kind": "button",
-      "description": "Current destructive button variant.",
+      "description": "Destructive action with React Aria press, focus and pending states.",
       "html": "<button type=\"button\" class=\"ds-button-destructive\">Remove</button>",
-      "css": ".ds-button-destructive{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:color-mix(in oklab,var(--danger, #B91C1C) 20%,transparent);color:var(--danger, #B91C1C);border-color:transparent}.ds-button-destructive:hover{background:color-mix(in oklab,var(--danger, #B91C1C) 30%,transparent)}.ds-button-destructive:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-destructive:active{transform:translateY(1px)}.ds-button-destructive:disabled{pointer-events:none;opacity:.5}",
+      "css": ".ds-button-destructive{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:color-mix(in oklab,var(--danger, #B91C1C) 20%,transparent);color:var(--danger, #B91C1C);border-color:transparent}.ds-button-destructive:hover{background:color-mix(in oklab,var(--danger, #B91C1C) 30%,transparent)}.ds-button-destructive:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-destructive:active{transform:translateY(1px)}.ds-button-destructive:disabled,.ds-button-destructive[data-disabled]{pointer-events:none;opacity:.5}.ds-button-destructive[data-pending]{opacity:.5}",
       "refersTo": "button-destructive"
     },
     {
       "name": "Link button",
       "kind": "button",
-      "description": "Current link button variant.",
+      "description": "Link action with React Aria press, focus and pending states.",
       "html": "<button type=\"button\" class=\"ds-button-link\">Link</button>",
-      "css": ".ds-button-link{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:transparent;color:var(--accent, #C9A961);border-color:transparent}.ds-button-link:hover{text-decoration:underline;text-underline-offset:4px}.ds-button-link:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-link:active{transform:translateY(1px)}.ds-button-link:disabled{pointer-events:none;opacity:.5}"
+      "css": ".ds-button-link{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:transparent;color:var(--accent, #C9A961);border-color:transparent}.ds-button-link:hover{text-decoration:underline;text-underline-offset:4px}.ds-button-link:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-link:active{transform:translateY(1px)}.ds-button-link:disabled,.ds-button-link[data-disabled]{pointer-events:none;opacity:.5}.ds-button-link[data-pending]{opacity:.5}"
     },
     {
       "name": "Input",
       "kind": "input",
       "refersTo": "input",
-      "description": "Single-line input in the dark theme.",
+      "description": "Styled input rendered inside a React Aria TextField with its label and validation feedback.",
       "html": "<input class=\"ds-input\" aria-label=\"Catalogue field\" placeholder=\"Catalogue field\">",
       "css": ".ds-input{font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);height:32px;width:100%;min-width:0;padding:4px 10px;border:1px solid var(--border, #3E3A32);border-radius:12px;background:color-mix(in oklab,var(--border, #3E3A32) 30%,transparent);color:var(--fg, #F0EEE9);font-size:14px;line-height:20px}.ds-input::placeholder{color:var(--fg-muted, #BAB2A3)}.ds-input:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-input:disabled{opacity:.5;cursor:not-allowed}.ds-input[aria-invalid=true]{border-color:var(--danger, #B91C1C)}"
     },
@@ -981,18 +981,18 @@
   ],
   "narrative": {
     "northStar": "The Curator's Archive",
-    "overview": "The dark Library table view is the visual reference. The light theme remains\nunder review; its tokens below describe the current implementation.\n\nReverie's surfaces feel like a museum after hours \u2014 the collection is the point, the lighting is considered, the chrome stays out of the reader's way. Cinematic-boutique is the locked visual register: the Library is the identity surface and carries the atmosphere (subtle animated warm gradients, a static noise texture, a photographic hero band, a solid accent-text masthead H1, hover-lift on covers, and a press-F cinematic mode that dissolves the chrome). Typography does the structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that inherits palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.\n\nColour is governed through a three-tier token tree: generated Radix primitives (`--sand` / `--gold` / `--danger` ramps), then semantic roles (`--canvas` / `--fg` / `--accent` / \u2026) with a shadcn-compatibility alias layer, then a sealed art-directed atmosphere tier (`--atm-*` / `--cover-*`) that chrome must never consume. The brand has exactly one accent (Reverie Gold) and exactly one state hue (the danger red) \u2014 every other state, hierarchy, and emphasis signal is carried by weight, opacity, type scale, density, and motion. There is no severity ladder; success, warning, and info stay hue-less. The category-reflex check has two altitudes the system answers no to: it does not look like a self-hosted media manager (Calibre, Plex), and it does not look like an AI workflow tool (SaaS-cream chrome, Linear-clone gradients).",
+    "overview": "The dark Library table view is the visual reference. The light theme remains under review; its tokens below describe the\ncurrent implementation.\n\nReverie's surfaces feel like a museum after hours — the collection is the point, the lighting is considered, the chrome\nstays out of the reader's way. Cinematic-boutique is the locked visual register: the Library is the identity surface and\ncarries the atmosphere (subtle animated warm gradients, a static noise texture, a photographic hero band, a solid\naccent-text masthead H1, hover-lift on covers, and a press-F cinematic mode that dissolves the chrome). Typography does\nthe structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that\ninherits palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.\n\nColour is governed through a three-tier token tree: generated Radix primitives (`--sand` / `--gold` / `--danger` ramps),\nthen semantic roles (`--canvas` / `--fg` / `--accent` / …) with a shadcn-compatibility alias layer, then a sealed\nart-directed atmosphere tier (`--atm-*` / `--cover-*`) that chrome must never consume. The brand has exactly one accent\n(Reverie Gold) and exactly one state hue (the danger red) — every other state, hierarchy, and emphasis signal is carried\nby weight, opacity, type scale, density, and motion. There is no severity ladder; success, warning, and info stay\nhue-less. The category-reflex check has two altitudes the system answers no to: it does not look like a self-hosted\nmedia manager (Calibre, Plex), and it does not look like an AI workflow tool (SaaS-cream chrome, Linear-clone\ngradients).",
     "keyCharacteristics": [
       "Editorial pairing: Author (display) + Satoshi (workhorse) + JetBrains Mono (metadata). Sans-only; no content serif.",
       "Two anchored canvases: Parchment (`#E8DCC2`) for light, Ink (`#0E0D0A`) for dark. Both surface ramps tint warmly toward the brand hue. No neutral greys.",
-      "Single gold accent (\u226410% of any screen), single danger hue (bounded exception, destructive, error and invalid-input only, fill/border/icon \u2014 never body text).",
+      "Single gold accent (≤10% of any screen), single danger hue (bounded exception, destructive, error and invalid-input only, fill/border/icon — never body text).",
       "Flat by default; the one signature shadow is the accent-glow cover-lift on the Library grid. Atmospheric depth on the Library page comes from the sealed `--atm-*` tier.",
-      "Motion budget: 180\u2013320 ms ease-out (`--ease-standard` / `--ease-emphasised`), no bounce, no spring; route crossfades via the View Transitions API; `prefers-reduced-motion` respected as a first-class state."
+      "Motion budget: 180–320 ms ease-out (`--ease-standard` / `--ease-emphasised`), no bounce, no spring; route crossfades via the View Transitions API; `prefers-reduced-motion` respected as a first-class state."
     ],
     "rules": [
       {
         "name": "The One Accent Rule",
-        "body": "Reverie Gold is the only accent. State, hierarchy, and emphasis below the level of \"this matters\" are communicated through weight, opacity, type scale, density, and motion \u2014 never through additional hues. There is no severity ladder.",
+        "body": "Reverie Gold is the only accent. State, hierarchy, and emphasis below the level of \"this matters\" are communicated through weight, opacity, type scale, density, and motion — never through additional hues. There is no severity ladder.",
         "section": "colors"
       },
       {
@@ -1012,12 +1012,12 @@
       },
       {
         "name": "The Sans-Only Rule",
-        "body": "Reverie deliberately rejected the chrome-sans / content-serif convention. Author and Satoshi both sit in the sans family \u2014 Author's wide-letterform editorial energy carries the display register that a content serif would normally fill. There is no content serif in the system.",
+        "body": "Reverie deliberately rejected the chrome-sans / content-serif convention. Author and Satoshi both sit in the sans family — Author's wide-letterform editorial energy carries the display register that a content serif would normally fill. There is no content serif in the system.",
         "section": "typography"
       },
       {
         "name": "The 65-75ch Body Rule",
-        "body": "Body text caps at 65\u201375ch for prose surfaces (book descriptions, blog-shape content). Library cards and detail panels are not prose and may exceed this; reader text is user-configurable and overrides the system default.",
+        "body": "Body text caps at 65–75ch for prose surfaces (book descriptions, blog-shape content). Library cards and detail panels are not prose and may exceed this; reader text is user-configurable and overrides the system default.",
         "section": "typography"
       },
       {
@@ -1027,12 +1027,12 @@
       },
       {
         "name": "The No-Black-Weight Rule",
-        "body": "Author and Satoshi black weights (900) are not loaded \u2014 the variable axes run 400\u2013700. Both fight the boutique register; their absence is deliberate. If a display moment needs more weight, increase size or use tracking; do not reach for 900.",
+        "body": "Author and Satoshi black weights (900) are not loaded — the variable axes run 400–700. Both fight the boutique register; their absence is deliberate. If a display moment needs more weight, increase size or use tracking; do not reach for 900.",
         "section": "typography"
       },
       {
         "name": "The Flat-By-Default Rule",
-        "body": "Surfaces are flat at rest. Depth comes from tonal layering (canvas \u2192 surface \u2192 surface-2 \u2192 surface-3). The one chrome shadow is the Library cover-lift on hover / focus; otherwise depth is a response to state (the focus ring). If a card's resting state needs a drop shadow to look complete, the design is wrong.",
+        "body": "Surfaces are flat at rest. Depth comes from tonal layering (canvas → surface → surface-2 → surface-3). The one chrome shadow is the Library cover-lift on hover / focus; otherwise depth is a response to state (the focus ring). If a card's resting state needs a drop shadow to look complete, the design is wrong.",
         "section": "elevation & depth"
       },
       {
@@ -1064,10 +1064,10 @@
     "dos": [
       "**Do** anchor every screen on Parchment (`#E8DCC2`) or the Ink dark canvas (`#0E0D0A`); the two canvases are the only legitimate page backgrounds.",
       "**Do** use Reverie Gold for primary CTAs, recovery actions, the active-nav slot bar, and the Slot mark fill. Use the darker `accent-text` step where gold must read as text or a hairline (e.g. the focus ring); nothing else.",
-      "**Do** restrict the danger hue (`#B91C1C`) to fill, border, or icon \u2014 never body text \u2014 in exactly the three carve-out contexts (irreversible destructive confirm, unrecoverable system error, invalid-input border), always paired with a non-colour signal.",
+      "**Do** restrict the danger hue (`#B91C1C`) to fill, border, or icon — never body text — in exactly the three carve-out contexts (irreversible destructive confirm, unrecoverable system error, invalid-input border), always paired with a non-colour signal.",
       "**Do** carry hierarchy through weight, opacity, type scale, density, and motion. Author or Satoshi at different weights is the system's primary expressiveness.",
-      "**Do** cap body text at 65\u201375ch on prose surfaces; cards and detail panels are not prose and may run wider.",
-      "**Do** keep cards flat at rest (`ring-1 ring-foreground/10`, no shadow). Tonal layering \u2014 canvas \u2192 surface \u2192 surface-2 \u2192 surface-3 \u2014 does the depth work.",
+      "**Do** cap body text at 65–75ch on prose surfaces; cards and detail panels are not prose and may run wider.",
+      "**Do** keep cards flat at rest (`ring-1 ring-foreground/10`, no shadow). Tonal layering — canvas → surface → surface-2 → surface-3 — does the depth work.",
       "**Do** keep the ambient atmosphere and photographic masthead on the Library page only; the app shell, reader, and admin surfaces stay plain.",
       "**Do** use the `bg-overlay` scrim token for modal and sheet backdrops. Popovers have no backdrop.",
       "**Do** respect `prefers-reduced-motion`: tile stagger and dot pulse stop, the warm gradients hold a still frame, route crossfades become instant swaps, cinematic transitions snap. The cinematic register survives in palette and typography when motion withdraws.",
@@ -1076,7 +1076,7 @@
     "donts": [
       "**Don't** introduce a severity colour ladder. No red/amber/green pills. No info-blue callouts. No \"did you know\" banners. Gold says \"this matters\"; the danger hue says \"stop\"; everything else is weight + density + motion. This is the One Accent Rule, hard.",
       "**Don't** ship surfaces that look like **SaaS-cream AI-workflow chrome** (Linear, Stripe, vercel-cream marketing). The first-order category trap for self-hosted media managers in 2026. Reverie is not a workflow tool.",
-      "**Don't** ship surfaces that look like **generic ebook UI** (Calibre, Plex-clone shelves, default-Tailwind grids of identical title + author + cover cards). The category clich\u00e9. Reverie is in the category but must not look like it shipped from the category.",
+      "**Don't** ship surfaces that look like **generic ebook UI** (Calibre, Plex-clone shelves, default-Tailwind grids of identical title + author + cover cards). The category cliché. Reverie is in the category but must not look like it shipped from the category.",
       "**Don't** ship surfaces that look like a **cozy reading nook** (lamp, paper, warm-domestic, hand-drawn book stacks). The library is an archive, not a corner of a living room. The reader recedes; it does not invite.",
       "**Don't** ship surfaces that look like a **severity-coloured dashboard** (red/amber/green pills, info-blue callouts, status banners, hero-metric templates).",
       "**Don't** use `#000`. `#fff` is reserved for `--fg-on-danger` only; every other neutral tints warmly toward the brand hue.",
@@ -1086,9 +1086,9 @@
       "**Don't** load Author or Satoshi black weights (900). Both fight the boutique register; reach for size or tracking instead.",
       "**Don't** use side-stripe borders (`border-left` greater than 1px as a coloured accent). Absolute ban. Use a full border, background tint, leading numeral or icon, or nothing.",
       "**Don't** paint two focus indicators. The global 2px `accent-text` outline (with `box-shadow: none`) is the single indicator; don't reintroduce a competing box-shadow ring.",
-      "**Don't** use em dashes (`\u2014` or `--`) in UI copy. Commas, colons, semicolons, periods, or parentheses do the work.",
+      "**Don't** use em dashes (`—` or `--`) in UI copy. Commas, colons, semicolons, periods, or parentheses do the work.",
       "**Don't** centre the Slot in the glyph (it sits at 53 % from top), recolour the glyph, change the wordmark tracking, stack the Lockup vertically, or apply effects (shadow, glow, gradient, bevel, outline) to either part.",
-      "**Don't** invent additional accents or state hues. Gold is the only accent; the danger red is the only state hue. Do not relitigate success / warning / info colours \u2014 they stay hue-less."
+      "**Don't** invent additional accents or state hues. Gold is the only accent; the danger red is the only state hue. Do not relitigate success / warning / info colours — they stay hue-less."
     ]
   }
 }

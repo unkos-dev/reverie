@@ -61,7 +61,14 @@ export default defineConfig({
     projects: [
       {
         extends: false,
-        optimizeDeps: { include: ["@tanstack/react-query", "react-router"] },
+        optimizeDeps: {
+          include: [
+            "@tanstack/react-query",
+            "react-router",
+            "react-error-boundary",
+            "react-dom/client",
+          ],
+        },
         plugins: lazyPlugins(() => [react(), tailwindcss()]),
         resolve: { alias: { "@": path.resolve(__dirname, "src") } },
         test: {
@@ -72,7 +79,7 @@ export default defineConfig({
             enabled: true,
             headless: true,
             screenshotDirectory: "./test-results/browser",
-            provider: playwright(),
+            provider: playwright({ contextOptions: { locale: "en-AU", timezoneId: "UTC" } }),
             instances: [{ browser: "chromium", viewport: { width: 1280, height: 800 } }],
           },
         },
@@ -112,32 +119,10 @@ export default defineConfig({
       {
         extends: true,
         test: {
-          name: "library-model",
+          name: "frontend-node",
           environment: "node",
-          include: [
-            "src/routes/library-params.test.ts",
-            "src/components/library/filter-summary.test.ts",
-          ],
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "frontend",
-          environment: "jsdom",
-          globals: true,
-          setupFiles: ["./tests/setup.ts"],
+          setupFiles: ["./tests/setup.node.ts"],
           include: ["src/**/*.{test,spec}.{ts,tsx}"],
-          exclude: [
-            "src/routes/library-params.test.ts",
-            "src/components/library/filter-summary.test.ts",
-          ],
-          // Must stay above the async query ceiling in tests/setup.ts.
-          // At the 5s default the two collide: a failing `findBy*` spends
-          // its whole budget waiting, so the test times out first and the
-          // report blames the test rather than naming the element that
-          // never appeared.
-          testTimeout: 15_000,
         },
       },
     ],

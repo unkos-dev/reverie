@@ -26,7 +26,7 @@ met. Surfacing the status unconditionally, independent of the body's shape, is w
 
 - A response with a well-formed Problem Details body surfaces an error carrying the response's status and the body's
   `type`, `title` and `detail`. Checked by `"401 unauthorized → ApiError with parsed type/title/detail"` in
-  `frontend/src/api/fetch.test.ts`.
+  `frontend/tests/browser/api/fetch.test.tsx`.
 - A response with a Problem Details body reporting a server-side failure surfaces an error carrying that status and
   title. Checked by `"500 internal → ApiError with title='Internal Server Error'"` in the same file.
 - A response whose body is not JSON at all still surfaces an error carrying the response's real status, falling back to

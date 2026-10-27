@@ -111,13 +111,15 @@ export function BatchBar({
         </span>
       ) : null}
       <span className="flex-1" />
-      <button
+      <Button
         type="button"
-        onClick={onClearSelection}
+        variant="link"
+        size="xs"
+        onPress={onClearSelection}
         className="text-fg-muted hover:text-fg focus-visible:ring-accent px-1 font-mono text-[0.65rem] uppercase tracking-[0.08em] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2"
       >
         Clear selection
-      </button>
+      </Button>
       <DropdownMenu>
         <Button type="button" variant="outline" size="sm" isDisabled={running}>
           {running ? (

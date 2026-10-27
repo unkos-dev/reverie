@@ -86,14 +86,7 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
 
-  /* shadcn-compatibility alias layer — rebinds shadcn's expected token
-     names onto the canonical brand palette so stock primitives in
-     components/ui/* render brand-aligned without per-file rewrites.
-     New code should prefer the canonical --color-canvas/--color-fg/etc.
-     names; this layer exists so the shadcn registry primitives we
-     install (button, card, dropdown-menu, etc.) drop in without
-     visual drift to the default neutral-grey palette. Destructive now
-     routes to the real --danger hue (see the per-token note below). */
+  /* Existing styled controls consume these aliases; new code uses canonical semantic tokens. */
   --color-background: var(--canvas);
   --color-foreground: var(--fg);
   --color-card: var(--surface);
@@ -112,7 +105,6 @@
      docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md). Previously
      aliased to --fg under the no-hue policy. */
   --color-destructive: var(--danger);
-  --color-destructive-foreground: var(--fg-on-danger);
 
   /* Cover-artwork palette (theme-independent).
      Production cover art comes from EPUB / enrichment; the design-system

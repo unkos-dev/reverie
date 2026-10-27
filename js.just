@@ -115,14 +115,14 @@ lint: oxlint stylelint markdownlint
 a11y:
     vp run a11y
 
-# Frontend unit tests.
+# Frontend Node and browser tests, then production navigation journeys.
 [group('js')]
 [working-directory('frontend')]
 test:
     vp test run
     just js::library-journeys
 
-# Library navigation and native filter journeys in an owned browser server.
+# Application navigation and native interaction journeys in an owned browser server.
 [group('js')]
 [working-directory('frontend')]
 library-journeys:

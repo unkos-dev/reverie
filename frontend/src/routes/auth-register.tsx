@@ -15,24 +15,23 @@
  * Forms are uncontrolled (`FormData`).
  */
 import { useMutation } from "@tanstack/react-query";
-import { useState, type ReactElement, type SyntheticEvent } from "react";
+import { useActionState, type ReactElement } from "react";
 import { Form } from "react-aria-components";
 import { Link, useNavigate } from "react-router";
+import { z } from "zod";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
-import { register } from "@/api/auth";
 import {
-  displayNameField,
-  emailField,
-  validateDisplayName,
-  validateEmail,
-} from "@/api/auth.schemas";
+  AccountCreationFields,
+  type AccountCreationState,
+} from "@/components/AccountCreationFields";
+import { register } from "@/api/auth";
+import { AccountCreationValuesSchema, RegisterSchema } from "@/api/auth.schemas";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
-import { FieldError, TextInputField } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
 import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
-import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
 
@@ -40,7 +39,6 @@ import { AuthShell } from "./auth-shell";
 export function Component(): ReactElement {
   const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
   const navigate = useNavigate();
-  const [error, setError] = useState<string | null>(null);
 
   const registerMutation = useMutation({
     mutationFn: ({
@@ -56,29 +54,34 @@ export function Component(): ReactElement {
       toast.success("Account created. Sign in to continue.");
       void navigate("/login");
     },
-    onError: (err) => {
-      const message =
-        err instanceof ApiError && err.detail !== "" ? err.detail : "Could not create the account.";
-      setError(message);
-      toast.error(message);
-    },
   });
 
-  function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    if (!ready) return;
-    setError(null);
-    const data = new FormData(e.currentTarget);
-    const displayName = displayNameField.safeParse(formString(data, "display_name"));
-    const email = emailField.safeParse(formString(data, "email"));
-    const password = formString(data, "password");
-    if (!displayName.success || !email.success || validate(password) !== undefined) return;
-    registerMutation.mutate({
-      email: email.data,
-      displayName: displayName.data,
-      password: password,
-    });
-  }
+  const [state, action, pending] = useActionState<AccountCreationState, FormData>(
+    async (_previous, data) => {
+      const values = AccountCreationValuesSchema.parse(Object.fromEntries(data));
+      if (!ready) return { values };
+      const passwordError = validate(values.password);
+      if (passwordError !== undefined) return { values, errors: { password: passwordError } };
+      const parsed = RegisterSchema.safeParse(values);
+      if (!parsed.success) return { values, errors: z.flattenError(parsed.error).fieldErrors };
+      try {
+        await registerMutation.mutateAsync({
+          email: parsed.data.email,
+          displayName: parsed.data.display_name,
+          password: parsed.data.password,
+        });
+        return {};
+      } catch (err) {
+        const message =
+          err instanceof ApiError && err.detail !== ""
+            ? err.detail
+            : "Could not create the account.";
+        toast.error(message);
+        return { values, error: message };
+      }
+    },
+    {},
+  );
 
   return (
     <AuthShell
@@ -90,35 +93,15 @@ export function Component(): ReactElement {
         </Link>
       }
     >
-      <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <TextInputField
-          name="display_name"
-          type="text"
-          autoComplete="name"
-          isRequired
-          validate={validateDisplayName}
-          label="Display name"
-        />
-        <TextInputField
-          name="email"
-          type="email"
-          autoComplete="email"
-          isRequired
-          validate={validateEmail}
-          label="Email"
-        />
-        <TextInputField
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          isRequired
-          validate={(value) => (ready ? (validate(value) ?? null) : null)}
-          label="Password"
+      <Form action={action} validationErrors={state.errors} className="flex flex-col gap-4">
+        <AccountCreationFields
+          values={state.values}
+          validatePassword={(value) => (ready ? (validate(value) ?? null) : null)}
         >
           <PasswordPolicyHint policy={policy} failed={policyError} />
-        </TextInputField>
-        {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" isPending={registerMutation.isPending} isDisabled={!ready}>
+        </AccountCreationFields>
+        {!pending && state.error !== undefined ? <FieldError>{state.error}</FieldError> : null}
+        <Button type="submit" isPending={pending} isDisabled={!ready}>
           Create account
         </Button>
       </Form>
