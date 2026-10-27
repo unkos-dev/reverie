@@ -9,9 +9,10 @@ for Reverie, with approval governed by the root rules. Existing code follows the
 does not justify keeping it when the chosen tool meets the requirement.
 
 - **Vendor docs first:** Before proposing a React Aria composition, prop or workaround, read the relevant component page
-  at `https://react-aria.adobe.com/` and quote the guidance that supports it. For forms, also read
-  `https://react-aria.adobe.com/forms`. Types show what exists; docs show intended use. Read Vite+ guidance at
-  `https://viteplus.dev/guide/`. Prefer vendor Markdown pages when available.
+  at `https://react-aria.adobe.com/` and quote the guidance that supports it. Append `.md` to a page URL for Markdown
+  (for example, `https://react-aria.adobe.com/Button.md`); the page's Copy for LLM action provides the same format. For
+  forms, also read `https://react-aria.adobe.com/forms.md`. Types show what exists; docs show intended use. Read Vite+
+  guidance at `https://viteplus.dev/guide/`. Prefer vendor Markdown pages when available.
 - **Recipes, not tools:** Use `just js::test`, `just js::check`, `just js::a11y` and `just js::detect`. `vp test`,
   `vp build` and `vp lint` are Vite+ built-ins and ignore a `package.json` script of the same name; `vp run <script>`
   runs the script.

@@ -66,10 +66,11 @@ Chosen option: **adopt `impeccable`**, because the empirical comparison showed i
 anti-patterns the existing skills miss, at negligible wall-time cost, while respecting Reverie's locked brand rather
 than imposing its own taste.
 
-This decision governs the dependency itself; the skill side (the full impeccable command surface) is a separate
-decision, to be made once the detector has earned its keep.
+The `impeccable` skill is also adopted for frontend UI work. Its critique and refinement guidance complements the
+detector's static findings. Reverie's design artifacts and root design-authority rules bound its use; the skill does not
+authorise changes outside the approved design scope.
 
-Only static source scanning is in scope; URL scanning and the skill command surface are separate choices.
+The detector covers static source scanning. URL scanning remains outside this decision.
 
 The detector is initially advisory in both the local hook and CI until the three deferred `bg-black` findings are
 addressed. This exposes the existing violations without blocking unrelated work during adoption.
@@ -86,7 +87,9 @@ installs exposed; bundling Chromium would pay for an unused feature and introduc
 - Negative: one more devDependency plus its transitive packages.
 - Negative: detector rules are upstream-controlled, so rule churn could surface false positives mid-development.
 - Negative: the LLM critique surface is opinionated and could conflict with the locked brand if invoked
-  indiscriminately; mitigated by deferring the skill-side install to a separate decision.
+  indiscriminately; Reverie's design artifacts and design-authority rules take precedence over its suggestions.
+- Negative: the skill requires a separate user-level installation for each coding tool; the repository's dependency
+  install does not provision it.
 
 ## Pros and cons of the options
 
@@ -96,12 +99,11 @@ installs exposed; bundling Chromium would pay for an unused feature and introduc
 - Positive: a full scan runs in about one second and a single-file scan in about 400ms, well inside the pre-commit
   budget.
 - Positive: ships as a standalone npm package, installable as a devDependency and Renovate-trackable.
-- Neutral: the skill side (the full command surface) remains available later, as incremental adoption.
+- Positive: the skill complements deterministic scanning with critique and refinement guidance.
 - Negative: one more devDependency plus its transitive packages.
 - Negative: the optional puppeteer dependency pulls a Chromium download by default, mitigated by the install-script
   default-deny.
-- Negative: the LLM critique surface is opinionated and could conflict with the locked brand if invoked
-  indiscriminately; out of scope for this decision, which covers the detector only.
+- Negative: the LLM critique surface needs the project's design constraints to avoid conflicting with the locked brand.
 
 ### Keep the existing skills (`design-system`, `ui-ux-pro-max`, `frontend-patterns`)
 

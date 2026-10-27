@@ -2,6 +2,11 @@
 
 This directory contains the Vite React frontend.
 
+For UI work, install the Impeccable skill at user scope for Claude Code and Codex using the
+[upstream setup instructions](https://impeccable.style/tutorials/getting-started/), then reload the coding tool. The
+skill is a separate prerequisite: `just install` installs the detector dependency, not the skill. Reverie's design
+artifacts and design-authority rules govern its use.
+
 ## Testing
 
 Run `just js::test` from the repository root to execute all frontend test projects, running Vitest first and then the
