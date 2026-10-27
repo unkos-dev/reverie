@@ -46,6 +46,12 @@ export function newPasswordField(policy: PasswordLengthPolicy): z.ZodString {
 /** Login takes an existing credential, so no new-password policy applies. */
 export const currentPasswordField = z.string().min(1);
 
+export const AccountCreationValuesSchema = z.object({
+  display_name: z.string(),
+  email: z.string(),
+  password: z.string(),
+});
+
 /** Body for `POST /auth/local/login`. */
 export const LoginLocalSchema = z.object({ email: emailField, password: currentPasswordField });
 /** Body for `POST /auth/setup`. */

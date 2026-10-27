@@ -6,7 +6,7 @@ import { Form, Label as AriaLabel } from "react-aria-components";
  * re-enable an account, and reset a password. Non-admin callers are redirected
  * to `/library`.
  */
-import { type ReactElement, useActionState, useCallback, useState } from "react";
+import { type ReactElement, useCallback, useState } from "react";
 import { Navigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import { z } from "zod";
 
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
+import { useFormAction } from "@/hooks/use-form-action";
 import {
   listUsers,
   updateUserRole,
@@ -576,19 +577,7 @@ function CreateUserForm({
   submit: (data: FormData) => Promise<string | null>;
   pending: boolean;
 }>): ReactElement {
-  const [state, action, actionPending] = useActionState<
-    { values: Partial<Record<string, string>>; error: string | null },
-    FormData
-  >(
-    async (
-      _previous: { values: Partial<Record<string, string>>; error: string | null },
-      data: FormData,
-    ) => {
-      const values = z.record(z.string(), z.string()).parse(Object.fromEntries(data));
-      return { values, error: await submit(data) };
-    },
-    { values: {}, error: null },
-  );
+  const [state, action, actionPending] = useFormAction(submit);
   const error = actionPending ? null : (state.error ?? serverError);
   return (
     <Form action={action} validationErrors={{}} className="flex flex-col gap-4">

@@ -12,22 +12,25 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActionState, type ReactElement } from "react";
-import { Form, type FormProps } from "react-aria-components";
+import { Form } from "react-aria-components";
 import { Navigate, useNavigate } from "react-router";
 import { z } from "zod";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
+import {
+  AccountCreationFields,
+  type AccountCreationState,
+} from "@/components/AccountCreationFields";
 import { fetchSetupStatus, setupAdmin, type SetupStatus } from "@/api/auth";
 import {
   SetupAdminSchema,
   newPasswordField,
-  validateDisplayName,
-  validateEmail,
+  AccountCreationValuesSchema,
 } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
-import { FieldError, TextInputField } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
 import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
@@ -66,37 +69,34 @@ export function Component(): ReactElement {
     },
   });
 
-  const [state, action, pending] = useActionState<
-    {
-      values?: { display_name: string; email: string; password: string };
-      errors?: FormProps["validationErrors"];
-      error?: string;
+  const [state, action, pending] = useActionState<AccountCreationState, FormData>(
+    async (_previous, data) => {
+      const values = AccountCreationValuesSchema.parse(Object.fromEntries(data));
+      if (status === undefined) return { values };
+      const password = newPasswordField(status).safeParse(values.password);
+      if (!password.success)
+        return {
+          values,
+          errors: { password: password.error.issues.map((issue) => issue.message) },
+        };
+      const parsed = SetupAdminSchema.safeParse(values);
+      if (!parsed.success) return { values, errors: z.flattenError(parsed.error).fieldErrors };
+      try {
+        await setupMutation.mutateAsync({
+          email: parsed.data.email,
+          displayName: parsed.data.display_name,
+          password: parsed.data.password,
+        });
+        return {};
+      } catch (err) {
+        const message =
+          err instanceof ApiError && err.detail !== "" ? err.detail : "Could not complete setup.";
+        toast.error(message);
+        return { values, error: message };
+      }
     },
-    FormData
-  >(async (_previous, data) => {
-    const values = z
-      .object({ display_name: z.string(), email: z.string(), password: z.string() })
-      .parse(Object.fromEntries(data));
-    if (status === undefined) return { values };
-    const password = newPasswordField(status).safeParse(values.password);
-    if (!password.success)
-      return { values, errors: { password: password.error.issues.map((issue) => issue.message) } };
-    const parsed = SetupAdminSchema.safeParse(values);
-    if (!parsed.success) return { values, errors: z.flattenError(parsed.error).fieldErrors };
-    try {
-      await setupMutation.mutateAsync({
-        email: parsed.data.email,
-        displayName: parsed.data.display_name,
-        password: parsed.data.password,
-      });
-      return {};
-    } catch (err) {
-      const message =
-        err instanceof ApiError && err.detail !== "" ? err.detail : "Could not complete setup.";
-      toast.error(message);
-      return { values, error: message };
-    }
-  }, {});
+    {},
+  );
 
   if (isPending) {
     return (
@@ -135,35 +135,9 @@ export function Component(): ReactElement {
       description="Create the first administrator account for this instance."
     >
       <Form action={action} validationErrors={state.errors} className="flex flex-col gap-4">
-        <TextInputField
-          name="display_name"
-          defaultValue={state.values?.display_name}
-          type="text"
-          autoComplete="name"
-          isRequired
-          validate={validateDisplayName}
-          label="Display name"
-        />
-        <TextInputField
-          name="email"
-          defaultValue={state.values?.email}
-          type="email"
-          autoComplete="email"
-          isRequired
-          validate={validateEmail}
-          label="Email"
-        />
-        <TextInputField
-          name="password"
-          defaultValue={state.values?.password}
-          type="password"
-          autoComplete="new-password"
-          isRequired
-          validate={validatePassword}
-          label="Password"
-        >
+        <AccountCreationFields values={state.values} validatePassword={validatePassword}>
           <PasswordPolicyHint policy={status} failed={false} />
-        </TextInputField>
+        </AccountCreationFields>
         {!pending && state.error !== undefined ? <FieldError>{state.error}</FieldError> : null}
         <Button type="submit" isPending={pending}>
           Create administrator

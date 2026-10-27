@@ -84,6 +84,36 @@ test("keeps an empty name local and cancels without a write", async () => {
   expect(createShelf).not.toHaveBeenCalled();
 });
 
+test.each(["Cancel", "Escape"])(
+  "starts a fresh creation after dismissing a failed attempt with %s",
+  async (dismiss) => {
+    vi.mocked(createShelf).mockRejectedValueOnce(
+      new ApiError(422, null, "Unprocessable", "Name already exists."),
+    );
+    await renderShelves();
+    await userEvent.click(page.getByRole("button", { name: "New shelf" }));
+    await userEvent.type(page.getByRole("textbox", { name: "Name" }), "To read");
+    await userEvent.click(page.getByRole("button", { name: "Save" }));
+    await expect.element(page.getByRole("alert")).toHaveTextContent("Name already exists.");
+    if (dismiss === "Cancel") {
+      await userEvent.click(page.getByRole("button", { name: "Cancel" }));
+    } else {
+      await userEvent.keyboard("{Escape}");
+    }
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: "New shelf" }));
+    await expect.element(page.getByRole("textbox", { name: "Name" })).toHaveValue("");
+    await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
+    expect(createShelf).toHaveBeenCalledTimes(1);
+    vi.mocked(createShelf).mockResolvedValueOnce({ ...shelf, name: "Favourites" });
+    await userEvent.type(page.getByRole("textbox", { name: "Name" }), "Favourites");
+    await userEvent.click(page.getByRole("button", { name: "Save" }));
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+    expect(createShelf).toHaveBeenLastCalledWith("Favourites");
+    expect(createShelf).toHaveBeenCalledTimes(2);
+  },
+);
+
 test("seeds rename from its target, retains a failed edit and sends the shelf identifier", async () => {
   vi.mocked(renameShelf).mockRejectedValueOnce(new Error("offline"));
   await renderShelves();

@@ -16,17 +16,21 @@
  */
 import { useMutation } from "@tanstack/react-query";
 import { useActionState, type ReactElement } from "react";
-import { Form, type FormProps } from "react-aria-components";
+import { Form } from "react-aria-components";
 import { Link, useNavigate } from "react-router";
 import { z } from "zod";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
+import {
+  AccountCreationFields,
+  type AccountCreationState,
+} from "@/components/AccountCreationFields";
 import { register } from "@/api/auth";
-import { RegisterSchema, validateDisplayName, validateEmail } from "@/api/auth.schemas";
+import { AccountCreationValuesSchema, RegisterSchema } from "@/api/auth.schemas";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
-import { FieldError, TextInputField } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
 import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 
 import { AuthShell } from "./auth-shell";
@@ -52,36 +56,32 @@ export function Component(): ReactElement {
     },
   });
 
-  const [state, action, pending] = useActionState<
-    {
-      values?: { display_name: string; email: string; password: string };
-      errors?: FormProps["validationErrors"];
-      error?: string;
+  const [state, action, pending] = useActionState<AccountCreationState, FormData>(
+    async (_previous, data) => {
+      const values = AccountCreationValuesSchema.parse(Object.fromEntries(data));
+      if (!ready) return { values };
+      const passwordError = validate(values.password);
+      if (passwordError !== undefined) return { values, errors: { password: passwordError } };
+      const parsed = RegisterSchema.safeParse(values);
+      if (!parsed.success) return { values, errors: z.flattenError(parsed.error).fieldErrors };
+      try {
+        await registerMutation.mutateAsync({
+          email: parsed.data.email,
+          displayName: parsed.data.display_name,
+          password: parsed.data.password,
+        });
+        return {};
+      } catch (err) {
+        const message =
+          err instanceof ApiError && err.detail !== ""
+            ? err.detail
+            : "Could not create the account.";
+        toast.error(message);
+        return { values, error: message };
+      }
     },
-    FormData
-  >(async (_previous, data) => {
-    const values = z
-      .object({ display_name: z.string(), email: z.string(), password: z.string() })
-      .parse(Object.fromEntries(data));
-    if (!ready) return { values };
-    const passwordError = validate(values.password);
-    if (passwordError !== undefined) return { values, errors: { password: passwordError } };
-    const parsed = RegisterSchema.safeParse(values);
-    if (!parsed.success) return { values, errors: z.flattenError(parsed.error).fieldErrors };
-    try {
-      await registerMutation.mutateAsync({
-        email: parsed.data.email,
-        displayName: parsed.data.display_name,
-        password: parsed.data.password,
-      });
-      return {};
-    } catch (err) {
-      const message =
-        err instanceof ApiError && err.detail !== "" ? err.detail : "Could not create the account.";
-      toast.error(message);
-      return { values, error: message };
-    }
-  }, {});
+    {},
+  );
 
   return (
     <AuthShell
@@ -94,35 +94,12 @@ export function Component(): ReactElement {
       }
     >
       <Form action={action} validationErrors={state.errors} className="flex flex-col gap-4">
-        <TextInputField
-          name="display_name"
-          defaultValue={state.values?.display_name}
-          type="text"
-          autoComplete="name"
-          isRequired
-          validate={validateDisplayName}
-          label="Display name"
-        />
-        <TextInputField
-          name="email"
-          defaultValue={state.values?.email}
-          type="email"
-          autoComplete="email"
-          isRequired
-          validate={validateEmail}
-          label="Email"
-        />
-        <TextInputField
-          name="password"
-          defaultValue={state.values?.password}
-          type="password"
-          autoComplete="new-password"
-          isRequired
-          validate={(value) => (ready ? (validate(value) ?? null) : null)}
-          label="Password"
+        <AccountCreationFields
+          values={state.values}
+          validatePassword={(value) => (ready ? (validate(value) ?? null) : null)}
         >
           <PasswordPolicyHint policy={policy} failed={policyError} />
-        </TextInputField>
+        </AccountCreationFields>
         {!pending && state.error !== undefined ? <FieldError>{state.error}</FieldError> : null}
         <Button type="submit" isPending={pending} isDisabled={!ready}>
           Create account

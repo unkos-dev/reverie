@@ -148,6 +148,7 @@ function ShelvesContent(): ReactElement {
       </ul>
 
       <NameDialog
+        key={createOpen ? "create-open" : "create-closed"}
         open={createOpen}
         title="New shelf"
         onClose={() => {

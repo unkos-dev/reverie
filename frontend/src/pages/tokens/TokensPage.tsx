@@ -11,7 +11,7 @@ import { Form, Input as AriaInput, Label as AriaLabel, TextField } from "react-a
  * higher level subsumes the lower ones, so the dialog offers a single level
  * rather than independent scope toggles.
  */
-import { type ReactElement, useActionState, useCallback, useState } from "react";
+import { type ReactElement, useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import { z } from "zod";
 
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
+import { useFormAction } from "@/hooks/use-form-action";
 import { listTokens, createToken, revokeToken } from "@/api/tokens";
 import type { Token, Scope, CreateTokenResponse } from "@/api/tokens";
 import { ApiError } from "@/api";
@@ -327,19 +328,7 @@ function CreateTokenForm({
   setLevel: (level: Scope) => void;
   availableLevels: readonly (typeof ACCESS_LEVELS)[number][];
 }>): ReactElement {
-  const [state, action, actionPending] = useActionState<
-    { values: Partial<Record<string, string>>; error: string | null },
-    FormData
-  >(
-    async (
-      _previous: { values: Partial<Record<string, string>>; error: string | null },
-      data: FormData,
-    ) => {
-      const values = z.record(z.string(), z.string()).parse(Object.fromEntries(data));
-      return { values, error: await submit(data) };
-    },
-    { values: {}, error: null },
-  );
+  const [state, action, actionPending] = useFormAction(submit);
   const error = actionPending ? null : (state.error ?? serverError);
   return (
     <Form action={action} validationErrors={{}} className="flex flex-col gap-4">

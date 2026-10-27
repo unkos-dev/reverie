@@ -52,6 +52,9 @@ Create-user role and token expiry are named, uncontrolled Selects. Failed reques
 closed dialog restores defaults. Settings owns drafts, dirty patches and concurrency handling. Its actions are disabled
 when pristine, and Save remains in the tab order while pending.
 
+Shelf creation starts a fresh form on each dialog visit. Dismissing a failed attempt discards its submitted name and
+error; retrying within the open dialog retains both.
+
 ## Runtime behaviour
 
 Actions stay pending until the awaited mutation and its completion work settle. Expected refusals retain entered values
