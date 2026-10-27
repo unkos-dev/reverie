@@ -314,5 +314,3 @@ stale.
 
 - [API reference](../../../../website/src/content/docs/reference/index.md): the generated-reference landing page
   rendered from `backend/openapi.json`.
-- [Backend README](../../../../backend/README.md): orientation, including the error module's place in the directory
-  tree.
