@@ -13,8 +13,8 @@ vp exec node ./node_modules/playwright/cli.js install chromium
 vp exec node ./node_modules/@playwright/test/cli.js install chromium firefox
 ```
 
-Repeat this command after updating Playwright. It uses the directly declared `playwright` package consumed by the
-Browser Mode provider; the second command uses the journey runner's installed version. Chromium also needs the system
+Repeat these commands after updating Playwright. The first uses the directly declared `playwright` package consumed by
+the Browser Mode provider; the second uses the journey runner's installed version. Chromium also needs the system
 libraries listed in [Playwright's browser setup](https://playwright.dev/docs/browsers). If launch reports missing
 libraries, stop and arrange their installation; the test gate does not install browsers or system packages. CI
 provisions component Chromium plus journey Chromium/Firefox with their system dependencies. Its browser cache key
@@ -29,15 +29,16 @@ Choose the environment by the assertion:
   setup or fabricate geometry and focus.
 - Browser-independent logic belongs in a Node project. The existing `vite-plugins`, `radix-gen` and `a11y` projects
   demonstrate Node configuration; classify source tests before moving them.
-- Actual document navigation belongs in standalone browser journeys. Component tests run inside an embedded Vitest
-  frame; navigation can destroy that frame. They do not establish the final logout destination or session invalidation.
+- Actual document navigation belongs in standalone browser journeys under `tests/journeys/`. Component tests run inside
+  an embedded Vitest frame; navigation can destroy that frame. They do not establish the final logout destination or
+  session invalidation.
 
-The `frontend` jsdom project is temporary migration coverage. Keep its required assertions until each has an equivalent
-home: browser-dependent outcomes in Browser Mode, pure logic in Node, and actual navigation in standalone journeys.
-Remove superseded jsdom cases as those outcomes are verified, then remove jsdom and its geometry, focus and browser API
-stubs once no required assertion depends on them. Dialog coverage lives in Browser Mode. UserMenu retains logout
-navigation intent in jsdom, and LibraryTableView retains grid outcomes without browser replacements. Complete suite
-conversion is separate work.
+The `frontend` jsdom project is temporary migration coverage. Add no new tests to it. Keep its required assertions until
+each has an equivalent home: browser-dependent outcomes in Browser Mode, pure logic in Node, and actual navigation in
+standalone journeys. Remove superseded jsdom cases as those outcomes are verified, then remove jsdom and its geometry,
+focus and browser API stubs once no required assertion depends on them. Dialog coverage lives in Browser Mode. UserMenu
+retains logout navigation intent in jsdom, and LibraryTableView retains grid outcomes without browser replacements.
+Complete suite conversion is separate work.
 
 From `frontend/`, run `vp test run --project components-chromium` for focused browser work or
 `vp test --project components-chromium --browser.headless=false` for interactive debugging. Browser matcher types live
@@ -61,27 +62,22 @@ credentials. It proves navigation and client request/result integration, not act
 predicates. The WCAG config and allowlist remain separate. Missing browser system libraries stop local verification;
 local gates never install them.
 
-Library requires recent browsers with the Navigation API. Its one page-level React owner persists published filter
-intent and an optional view override on the current entry. Reload and Back/Forward recover that visit; fresh entries
-start clean. Filter edits add no Back steps and have no browser-query compatibility path. Added dates are local calendar
-days projected into inclusive lower and exclusive next-midnight API instants. Sort remains an account preference.
+For Library visit persistence and local-day projection, see the
+[Library state Design](../docs/specs/library/design/0001-library-filter-and-sort-state.md) and
+[Navigation-entry decision](../docs/adr/0066-library-visit-state-and-local-day-filter-boundaries.md).
 
 ## Interactive components
 
-React Aria Components owns buttons, selection controls, disclosures, tabs, progress, overlays, the command palette and
-vocabulary pickers. Wrappers in `src/components/ui/` use Reverie's Tailwind classes and theme tokens. Prefer native
-interaction defaults and keep API queries and domain state in their owning components.
+Follow the React Aria composition rules in [AGENTS.md](AGENTS.md). Visual and interaction specifications live in
+[DESIGN.md](DESIGN.md#layout); the
+[Library state Design](../docs/specs/library/design/0001-library-filter-and-sort-state.md) records ownership and runtime
+behaviour.
 
 Vocabulary pickers supply server suggestions to the `ComboBox` collection and render hydrated selections inside
 `ComboBoxValue` separately. Selection order follows the selected keys, not server ranking. Multiple selection keeps the
 native popup lifecycle. The command palette uses `MenuItem` links with native routing and closure. Arrow navigation
 retains input focus through `Autocomplete`; Tab traverses result links. Scrolling belongs to the `Menu`. Dialog and
 select labels belong to their native parent composition.
-
-Active Library filters use `TagGroup` and `TagList` for removal and focus recovery. The collection stays mounted when
-empty and shows `No active filters.`; Clear all stays mounted and disabled. View and density use nonempty single
-selection in native `ToggleButtonGroup` controls, with changes dispatched to the page visit and account preference
-owners.
 
 Table-load failures stay inside the results region. Reload page starts a fresh application load and restores the Library
 visit; Switch to grid view keeps browsing available without reloading or changing the account's view preference.
@@ -90,16 +86,14 @@ Create-user role and token expiry use named, uncontrolled Selects. Submission re
 failed requests retain the choices, and reopening a closed dialog restores the defaults.
 
 Selection controls compose native fields and buttons with labelled content. Use `isSelected`, `isReadOnly`, `isDisabled`
-and `isPending` for their native states. Disclosure retains native filter editors while collapsed; ingestion mounts
-query children only while expanded. Book tabs activate from arrow keys and mount only the selected panel. Buttons styled
-as navigation links use React Router Link with `buttonVariants`.
+and `isPending` for their native states. Ingestion mounts query children only while expanded. Book tabs activate from
+arrow keys and mount only the selected panel. Buttons styled as navigation links use React Router Link with
+`buttonVariants`.
 
 Token receipt fields use native `TextField`, `Label` and `Input` composition for their read-only values and label
 associations. The supported `render` prop retains the shared field styling.
 
-Refine dismissal retains valid filter edits for Escape, close and outside clicks. Columns Reset closes the popover and
-returns focus through native dismissal. Settings actions are disabled when pristine; Save stays in the tab order while
-pending.
+Settings actions are disabled when pristine; Save stays in the tab order while pending.
 
 Radix Colors and `src/styles/themes/primitives.generated.css` supply the colour foundation independently of the
 interaction library. The Radix UI runtime is not installed. The grid engine and its editing, sorting and loading state
@@ -123,26 +117,3 @@ hostnames without schemes, paths, whitespace, or semicolons.
 
 **REVERIE_DEV_HMR_CLIENT_PORT** The HMR websocket client defaults to port 5173. Set `REVERIE_DEV_HMR_CLIENT_PORT` to 443
 when a reverse proxy fronts the dev server. The `vite-plugins/hmr-config.ts` script reads this value.
-
-## Project Structure
-
-```text
-frontend/
-├── public/              # Static assets
-├── src/
-│   ├── api/             # API client functions
-│   ├── components/      # Reusable UI components
-│   │   └── ui/          # Token-styled interaction primitives
-│   ├── fouc/            # Pre-paint script hashed into HTML CSP at build
-│   ├── hooks/           # Custom React hooks
-│   ├── pages/           # Route-level page components
-│   ├── routes/          # Lazy route modules (incl. pre-auth /login, /setup, /forgot-password)
-│   ├── lib/             # Utilities
-│   ├── App.tsx          # Root component
-│   └── main.tsx         # Entrypoint
-├── vite-plugins/        # Custom Vite plugins
-├── tests/               # Vitest setup
-├── index.html
-├── tsconfig.json
-└── vite.config.ts       # Tailwind v4 and Vitest configuration
-```
