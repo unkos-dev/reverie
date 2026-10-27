@@ -257,8 +257,3 @@ inputs list names retained originals by ingestion-relative path to administrator
 closed classes. Operators manage retained originals on disk and request another scan after correction. An outage can
 strand eligible inputs until probes succeed; a blocked read can delay process shutdown. Abrupt termination can leave
 temporary directories, and no scavenging is supplied. Local tests do not establish NAS server durability.
-
-## More information
-
-[Ingestion readiness and retries](../../../../backend/README.md#ingestion-readiness-and-retries) documents the operator
-contract.
