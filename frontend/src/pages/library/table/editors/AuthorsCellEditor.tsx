@@ -11,6 +11,7 @@
  * click detector, which walks the React tree rather than the DOM tree,
  * still reads clicks inside the popover as "inside" the editor.
  */
+import { Input as AriaInput, TextField } from "react-aria-components";
 import { Plus, Trash2 } from "lucide-react";
 import { useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 
@@ -101,14 +102,16 @@ export function AuthorsCellEditor({
         <ol className="flex flex-col gap-1.5">
           {names.map((entry, index) => (
             <li key={entry.id} className="flex items-center gap-1.5">
-              <Input
+              <TextField
                 aria-label={`Author ${String(index + 1)}`}
                 value={entry.value}
-                onChange={(event) => {
-                  updateName(entry.id, event.target.value);
+                onChange={(value) => {
+                  updateName(entry.id, value);
                 }}
-                onKeyDown={handleNameKeyDown}
-              />
+                className="min-w-0 flex-1"
+              >
+                <AriaInput onKeyDown={handleNameKeyDown} render={(props) => <Input {...props} />} />
+              </TextField>
               <Button
                 type="button"
                 variant="ghost"
@@ -124,15 +127,18 @@ export function AuthorsCellEditor({
           ))}
         </ol>
         <div className="mt-2 flex items-center gap-1.5">
-          <Input
+          <TextField
             aria-label="Add author"
-            placeholder="Add author…"
             value={draftName}
-            onChange={(event) => {
-              setDraftName(event.target.value);
-            }}
-            onKeyDown={handleAddKeyDown}
-          />
+            onChange={setDraftName}
+            className="min-w-0 flex-1"
+          >
+            <AriaInput
+              placeholder="Add author…"
+              onKeyDown={handleAddKeyDown}
+              render={(props) => <Input {...props} />}
+            />
+          </TextField>
           <Button type="button" variant="ghost" size="icon-xs" aria-label="Add" onPress={addName}>
             <Plus aria-hidden="true" />
           </Button>

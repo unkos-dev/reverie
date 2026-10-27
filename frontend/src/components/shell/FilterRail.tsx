@@ -293,14 +293,16 @@ function RailSection({
             ) : null}
           </AriaButton>
           {active ? (
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="xs"
               aria-label={clearAriaLabel ?? `Clear ${title} filters`}
-              onClick={onClear}
+              onPress={onClear}
               className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 items-center rounded-sm px-2 font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2"
             >
               {clearLabel}
-            </button>
+            </Button>
           ) : null}
         </div>
         <DisclosurePanel className="group-data-expanded/section:mt-2">{children}</DisclosurePanel>

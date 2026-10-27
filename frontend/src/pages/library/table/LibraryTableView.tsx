@@ -470,16 +470,19 @@ function composeColumns(
     width: 44,
     accessor: () => "",
     renderCell: (row) => (
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-xs"
         aria-label={`Open details for ${row.title}`}
-        onClick={() => {
+        onPress={(event) => {
+          event.continuePropagation();
           onRowActivate(row);
         }}
         className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 min-w-6 items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2"
       >
         <PanelRight className="size-4" aria-hidden="true" />
-      </button>
+      </Button>
     ),
   };
   return [detailsColumn, ...withTitleCell];
@@ -688,9 +691,15 @@ function PagingFooter({
     return (
       <span role="alert">
         Couldn&apos;t load more books.{" "}
-        <button type="button" className="hover:text-accent underline" onClick={onLoadMore}>
+        <Button
+          type="button"
+          variant="link"
+          size="xs"
+          className="h-auto p-0 hover:text-accent underline"
+          onPress={onLoadMore}
+        >
           Retry
-        </button>
+        </Button>
       </span>
     );
   }

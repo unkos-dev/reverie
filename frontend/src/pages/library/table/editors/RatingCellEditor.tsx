@@ -10,6 +10,8 @@
 import { Star, X } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { cn } from "@/lib/utils";
 
 type RatingCellEditorProps = {
@@ -92,13 +94,15 @@ export function RatingCellEditor({
       {STAR_VALUES.map((star) => {
         const filled = draft !== null && star <= draft;
         return (
-          <button
+          <Button
             key={star}
             type="button"
-            tabIndex={-1}
+            variant="ghost"
+            size="icon-xs"
+            excludeFromTabOrder
             aria-label={`Rate ${String(star)} of 5`}
             aria-pressed={filled}
-            onClick={() => {
+            onPress={() => {
               setAndCommit(star);
             }}
             className={cn(
@@ -107,20 +111,22 @@ export function RatingCellEditor({
             )}
           >
             <Star className="size-4" fill={filled ? "currentColor" : "none"} aria-hidden="true" />
-          </button>
+          </Button>
         );
       })}
-      <button
+      <Button
         type="button"
-        tabIndex={-1}
+        variant="ghost"
+        size="icon-xs"
+        excludeFromTabOrder
         aria-label="Clear rating"
-        onClick={() => {
+        onPress={() => {
           setAndCommit(null);
         }}
         className="text-fg-muted flex size-6 items-center justify-center rounded-[min(var(--radius-md),10px)] outline-none"
       >
         <X className="size-4" aria-hidden="true" />
-      </button>
+      </Button>
     </div>
   );
 }
