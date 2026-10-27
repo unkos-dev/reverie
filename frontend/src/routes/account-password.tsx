@@ -8,19 +8,19 @@
  * Forms are uncontrolled (`FormData`).
  */
 import { useMutation } from "@tanstack/react-query";
-import { useState, type ReactElement, type SyntheticEvent } from "react";
-import { Form } from "react-aria-components";
+import { useActionState, type ReactElement } from "react";
+import { Form, type FormProps } from "react-aria-components";
 import { Link, useNavigate } from "react-router";
+import { z } from "zod";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { changeOwnPassword } from "@/api/auth";
-import { currentPasswordField } from "@/api/auth.schemas";
+import { ChangePasswordSchema, currentPasswordField } from "@/api/auth.schemas";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
 import { FieldError, TextInputField } from "@/components/ui/field";
 import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
-import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
 
@@ -32,7 +32,6 @@ function validateCurrentPassword(value: string): string | null {
 export function Component(): ReactElement {
   const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
   const navigate = useNavigate();
-  const [error, setError] = useState<string | null>(null);
 
   const changeMutation = useMutation({
     mutationFn: ({
@@ -46,29 +45,40 @@ export function Component(): ReactElement {
       toast.success("Password changed. Sign in with your new password.");
       void navigate("/login");
     },
-    onError: (err) => {
+  });
+
+  const [state, action, pending] = useActionState<
+    {
+      values?: { current_password: string; new_password: string };
+      errors?: FormProps["validationErrors"];
+      error?: string;
+    },
+    FormData
+  >(async (_previous, data) => {
+    const values = z
+      .object({ current_password: z.string(), new_password: z.string() })
+      .parse(Object.fromEntries(data));
+    const newPasswordError = validate(values.new_password);
+    if (!ready) return { values };
+    if (newPasswordError !== undefined)
+      return { values, errors: { new_password: newPasswordError } };
+    const parsed = ChangePasswordSchema.safeParse(values);
+    if (!parsed.success) return { values, errors: z.flattenError(parsed.error).fieldErrors };
+    try {
+      await changeMutation.mutateAsync({
+        currentPassword: parsed.data.current_password,
+        newPassword: parsed.data.new_password,
+      });
+      return {};
+    } catch (err) {
       const message =
         err instanceof ApiError && err.detail !== ""
           ? err.detail
           : "Could not change the password.";
-      setError(message);
       toast.error(message);
-    },
-  });
-
-  function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    if (!ready) return;
-    setError(null);
-    const data = new FormData(e.currentTarget);
-    const currentPassword = currentPasswordField.safeParse(formString(data, "current_password"));
-    const newPassword = formString(data, "new_password");
-    if (!currentPassword.success || validate(newPassword) !== undefined) return;
-    changeMutation.mutate({
-      currentPassword: currentPassword.data,
-      newPassword: newPassword,
-    });
-  }
+      return { values, error: message };
+    }
+  }, {});
 
   return (
     <AuthShell
@@ -80,9 +90,10 @@ export function Component(): ReactElement {
         </Link>
       }
     >
-      <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <Form action={action} validationErrors={state.errors} className="flex flex-col gap-4">
         <TextInputField
           name="current_password"
+          defaultValue={state.values?.current_password}
           type="password"
           autoComplete="current-password"
           isRequired
@@ -91,6 +102,7 @@ export function Component(): ReactElement {
         />
         <TextInputField
           name="new_password"
+          defaultValue={state.values?.new_password}
           type="password"
           autoComplete="new-password"
           isRequired
@@ -99,8 +111,8 @@ export function Component(): ReactElement {
         >
           <PasswordPolicyHint policy={policy} failed={policyError} />
         </TextInputField>
-        {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" isPending={changeMutation.isPending} isDisabled={!ready}>
+        {!pending && state.error !== undefined ? <FieldError>{state.error}</FieldError> : null}
+        <Button type="submit" isPending={pending} isDisabled={!ready}>
           Change password
         </Button>
       </Form>

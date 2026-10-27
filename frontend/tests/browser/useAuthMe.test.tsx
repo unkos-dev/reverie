@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import { STUB_ME } from "@/__fixtures__/auth";
 import { activeUserId, forgetActiveUser } from "@/lib/active-user";
 
-import { useAuthMe } from "./useAuthMe";
+import { useAuthMe } from "@/hooks/useAuthMe";
 
 function makeWrapper() {
   const client = new QueryClient({
@@ -33,9 +33,9 @@ describe("useAuthMe", () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = await renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
     expect(result.current.data).toMatchObject({ display_name: "Alice", role: "admin" });
@@ -44,9 +44,9 @@ describe("useAuthMe", () => {
   test("returns undefined on 401 (not authenticated)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 }));
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = await renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
     expect(result.current.data).toBeUndefined();
@@ -55,9 +55,9 @@ describe("useAuthMe", () => {
   test("returns undefined on 403 (forbidden)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 403 }));
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = await renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
     expect(result.current.data).toBeUndefined();
@@ -68,9 +68,9 @@ describe("useAuthMe", () => {
       new Response(null, { status: 500, statusText: "Internal Server Error" }),
     );
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = await renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
     expect(result.current.data).toBeUndefined();
@@ -85,9 +85,9 @@ describe("useAuthMe", () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = await renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
     expect(result.current.isError).toBe(false);
@@ -96,18 +96,15 @@ describe("useAuthMe", () => {
   test("isError is false on 401 (not an operational failure)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 }));
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = await renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
     expect(result.current.isError).toBe(false);
   });
 
   test("a confirmed identity is recorded as the browser's active user", async () => {
-    // This is the one convergence point for every auth mode, so per-user
-    // client caches (the library's first-paint mirror) learn whose they
-    // are here rather than in each login flow.
     forgetActiveUser();
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify(STUB_ME), {
@@ -116,9 +113,9 @@ describe("useAuthMe", () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = await renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.data).toBeDefined();
     });
     expect(activeUserId()).toBe(STUB_ME.id);
@@ -129,9 +126,9 @@ describe("useAuthMe", () => {
     forgetActiveUser();
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 }));
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = await renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
     expect(activeUserId()).toBeNull();

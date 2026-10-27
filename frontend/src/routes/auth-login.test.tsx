@@ -1,13 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
-import { toast } from "sonner";
 import type { ReactElement } from "react";
 
-import { ApiError } from "@/api";
-import { fetchSetupStatus, loginLocal } from "@/api/auth";
+import { loginLocal } from "@/api/auth";
 import { queryKeys } from "@/lib/query/keys";
 
 import { Component as AuthLogin } from "./auth-login";
@@ -56,15 +54,6 @@ function renderLogin(status: Status | null, initialUrl = "/login") {
   return { client, router };
 }
 
-const localStatus: Status = {
-  setup_required: false,
-  local_auth_enabled: true,
-  password_min_length: 15,
-  password_max_length: 256,
-  oidc_enabled: false,
-  email_recovery_enabled: false,
-};
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -78,7 +67,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("auth-login", () => {
+describe("auth-login document navigation", () => {
   test.each(["pointer", "Enter"])(
     "submitting credentials with %s calls loginLocal once then navigates to /library",
     async (activation) => {
@@ -106,103 +95,6 @@ describe("auth-login", () => {
     },
   );
 
-  test("surfaces an inline error and toast when login fails", async () => {
-    vi.mocked(loginLocal).mockRejectedValue(
-      new ApiError(422, null, "Unprocessable", "Incorrect email or password."),
-    );
-    renderLogin({
-      setup_required: false,
-      local_auth_enabled: true,
-      password_min_length: 15,
-      password_max_length: 256,
-      oidc_enabled: false,
-      email_recovery_enabled: false,
-    });
-    const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "wrong");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Incorrect email or password.");
-    expect(vi.mocked(toast.error)).toHaveBeenCalled();
-  });
-
-  test("native validation owns auth errors", async () => {
-    mockLocation();
-    renderLogin(localStatus);
-    const user = userEvent.setup();
-    const email = screen.getByLabelText("Email");
-    const password = screen.getByLabelText("Password");
-
-    await user.type(email, "not-an-email");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-
-    expect(loginLocal).not.toHaveBeenCalled();
-    expect(email).toHaveAccessibleDescription("Enter a valid email address.");
-    expect(email).toBeInvalid();
-    expect(password).toHaveAccessibleDescription("Enter your password.");
-    expect(password).toBeInvalid();
-    expect(email).toHaveFocus();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-
-    vi.mocked(loginLocal).mockRejectedValue(
-      new ApiError(422, null, "Unprocessable", "Incorrect email or password."),
-    );
-    await user.clear(email);
-    await user.type(email, "ada@example.com");
-    await user.type(password, "wrong");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Incorrect email or password.");
-    expect(email).not.toHaveAttribute("aria-invalid");
-    expect(password).not.toHaveAttribute("aria-invalid");
-    expect(email).toHaveValue("ada@example.com");
-    expect(password).toHaveValue("wrong");
-  });
-
-  test("a missing password blocks submission and focuses the password field", async () => {
-    renderLogin(localStatus);
-    const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-
-    expect(loginLocal).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Password")).toHaveFocus();
-    expect(screen.getByLabelText("Password")).toHaveAccessibleDescription("Enter your password.");
-    expect(screen.getByLabelText("Email")).not.toHaveAttribute("aria-invalid");
-  });
-
-  test("repeated click and Enter while a sign-in is pending send one request", async () => {
-    vi.mocked(loginLocal).mockReturnValue(new Promise(() => {}));
-    mockLocation();
-    renderLogin(localStatus);
-    const user = userEvent.setup();
-
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-    await user.keyboard("{Enter}");
-    await user.click(screen.getByLabelText("Password"));
-    await user.keyboard("{Enter}");
-
-    expect(loginLocal).toHaveBeenCalledTimes(1);
-  });
-
-  test("hides the OIDC action when oidc is disabled", () => {
-    renderLogin({
-      setup_required: false,
-      local_auth_enabled: true,
-      password_min_length: 15,
-      password_max_length: 256,
-      oidc_enabled: false,
-      email_recovery_enabled: false,
-    });
-    expect(screen.queryByRole("button", { name: /OIDC/ })).not.toBeInTheDocument();
-  });
-
   test("shows the OIDC action and initiates OIDC when enabled", async () => {
     const loc = mockLocation();
     renderLogin({
@@ -218,18 +110,6 @@ describe("auth-login", () => {
     await user.click(screen.getByRole("button", { name: /OIDC/ }));
 
     expect(loc.assign).toHaveBeenCalledWith("/auth/oidc/login");
-  });
-
-  test("bounces to /setup on a fresh instance", async () => {
-    renderLogin({
-      setup_required: true,
-      local_auth_enabled: true,
-      password_min_length: 15,
-      password_max_length: 256,
-      oidc_enabled: false,
-      email_recovery_enabled: false,
-    });
-    expect(await screen.findByTestId("setup-page")).toBeInTheDocument();
   });
 });
 
@@ -263,7 +143,7 @@ const outcomeCases = [
   ["throttled", "Too many sign-in attempts", "Wait a moment, then try again."],
 ];
 
-describe("login outcomes", () => {
+describe("outcome document navigation", () => {
   test.each(outcomeCases)(
     "renders and focuses %s without starting a sign-in",
     async (outcome, title, body) => {
@@ -285,98 +165,4 @@ describe("login outcomes", () => {
       expect(loc.assign).toHaveBeenCalledExactlyOnceWith("/auth/oidc/login");
     },
   );
-
-  test.each([
-    "/login",
-    "/login?outcome=",
-    "/login?outcome=private-text",
-    "/login?outcome=denied&outcome=keys",
-  ])("ignores unsupported outcome at %s", (url) => {
-    const loc = mockLocation();
-    renderLogin(outcomeStatus, url);
-    expect(screen.queryByRole("region")).not.toBeInTheDocument();
-    expect(screen.queryByText("private-text")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
-    expect(loc.assign).not.toHaveBeenCalled();
-  });
-
-  test("keeps the outcome and the provider action on an OIDC-only instance", async () => {
-    const loc = mockLocation();
-    renderLogin({ ...outcomeStatus, local_auth_enabled: false }, "/login?outcome=keys");
-    const heading = screen.getByRole("heading", { name: "Sign-in could not be verified" });
-    expect(heading).toHaveFocus();
-    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
-    const user = userEvent.setup();
-    await user.tab();
-    expect(screen.getByRole("button", { name: "Sign in with OIDC" })).toHaveFocus();
-    expect(loc.assign).not.toHaveBeenCalled();
-  });
-
-  test("keeps local sign-in when an outcome is entered on a local-only instance", () => {
-    renderLogin({ ...outcomeStatus, oidc_enabled: false }, "/login?outcome=account");
-    expect(screen.getByRole("heading", { name: "Unable to sign in" })).toHaveFocus();
-    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Sign in with OIDC" })).not.toBeInTheDocument();
-  });
-
-  test("setup redirect takes precedence over an outcome", async () => {
-    renderLogin({ ...outcomeStatus, setup_required: true }, "/login?outcome=denied");
-    await waitFor(() => expect(screen.getByTestId("setup-page")).toBeInTheDocument());
-    expect(screen.queryByRole("region")).not.toBeInTheDocument();
-  });
-});
-
-describe("outcome navigation and sign-in options", () => {
-  test("retains outcome focus when loading options resolve", async () => {
-    let complete: ((value: Status) => void) | undefined;
-    const pending = new Promise<Status>((resolve) => {
-      complete = resolve;
-    });
-    vi.mocked(fetchSetupStatus).mockReturnValue(pending);
-    const loc = mockLocation();
-    renderLogin(null, "/login?outcome=expired");
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Sign-in expired" })).toHaveFocus();
-    await act(async () => {
-      complete?.(outcomeStatus);
-      await pending;
-    });
-    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Sign-in expired" })).toHaveFocus();
-    expect(loc.assign).not.toHaveBeenCalled();
-  });
-
-  test("shows the fixed outcome alongside an options error", async () => {
-    vi.mocked(fetchSetupStatus).mockRejectedValue(new Error("unavailable"));
-    const loc = mockLocation();
-    renderLogin(null, "/login?outcome=unavailable");
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "We couldn't load the sign-in options. Try reloading the page.",
-    );
-    expect(screen.getByRole("heading", { name: "Sign-in unavailable" })).toHaveFocus();
-    expect(loc.assign).not.toHaveBeenCalled();
-  });
-
-  test("browser history restores the outcome without provider navigation", async () => {
-    const loc = mockLocation();
-    const { router } = renderLogin(outcomeStatus, "/login?outcome=denied");
-    await act(async () => {
-      await router.navigate("/login?outcome=keys");
-    });
-    expect(screen.getByRole("heading", { name: "Sign-in could not be verified" })).toHaveFocus();
-    await act(async () => {
-      await router.navigate(-1);
-    });
-    expect(screen.getByRole("heading", { name: "Sign-in cancelled" })).toHaveFocus();
-    expect(router.state.location.search).toBe("?outcome=denied");
-    expect(loc.assign).not.toHaveBeenCalled();
-  });
-
-  test("ignores provider descriptions beside a recognised outcome", () => {
-    renderLogin(outcomeStatus, "/login?outcome=keys&error_description=private-provider-text");
-    expect(screen.queryByText(/private-provider-text/)).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Sign-in could not be verified" }),
-    ).toBeInTheDocument();
-  });
 });

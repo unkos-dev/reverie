@@ -1,12 +1,12 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { STUB_ME } from "@/__fixtures__/auth";
 
-import { useAuthMe } from "./useAuthMe";
-import { useSessionRecovery } from "./useSessionRecovery";
+import { useAuthMe } from "@/hooks/useAuthMe";
+import { useSessionRecovery } from "@/hooks/useSessionRecovery";
 
 const mockInvoke = vi.fn();
 
@@ -24,11 +24,8 @@ function makeWrapper() {
     createElement(QueryClientProvider, { client }, children);
 }
 
-// Drive the hook under test and expose the shared `/auth/me` state (same cached
-// query) so negative tests can wait for a SETTLED state before asserting the
-// recovery never fired, rather than racing a bare event-loop tick.
-function renderRecovery() {
-  return renderHook(
+async function renderRecovery() {
+  return await renderHook(
     () => {
       useSessionRecovery();
       return useAuthMe();
@@ -50,9 +47,9 @@ describe("useSessionRecovery", () => {
   test("fires recovery when /auth/me settles 401", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 }));
 
-    renderRecovery();
+    await renderRecovery();
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledTimes(1);
     });
   });
@@ -60,9 +57,9 @@ describe("useSessionRecovery", () => {
   test("fires recovery when /auth/me settles 403", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 403 }));
 
-    renderRecovery();
+    await renderRecovery();
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledTimes(1);
     });
   });
@@ -75,9 +72,9 @@ describe("useSessionRecovery", () => {
       }),
     );
 
-    const { result } = renderRecovery();
+    const { result } = await renderRecovery();
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.data).toBeDefined();
     });
     expect(mockInvoke).not.toHaveBeenCalled();
@@ -88,18 +85,18 @@ describe("useSessionRecovery", () => {
       new Response(null, { status: 500, statusText: "Internal Server Error" }),
     );
 
-    const { result } = renderRecovery();
+    const { result } = await renderRecovery();
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(result.current.isError).toBe(true);
     });
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
-  test("does NOT fire while query is loading", () => {
+  test("does NOT fire while query is loading", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(() => {}));
 
-    renderRecovery();
+    await renderRecovery();
 
     expect(mockInvoke).not.toHaveBeenCalled();
   });
