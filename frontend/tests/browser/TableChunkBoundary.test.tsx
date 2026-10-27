@@ -46,7 +46,7 @@ describe("TableChunkBoundary", () => {
     await render(<Harness />);
     await expect
       .element(page.getByRole("alert"))
-      .toHaveTextContent("Couldn't load the table view.");
+      .toMatchTextContent("Couldn't load the table view.");
     await expect.element(page.getByRole("button", { name: "defuse" })).toBeInTheDocument();
     expect(spy.mock.calls.some((call) => String(call[0]).includes("[TableChunkBoundary]"))).toBe(
       true,
@@ -60,7 +60,7 @@ describe("TableChunkBoundary", () => {
     await user.click(page.getByRole("button", { name: "defuse" }));
     await expect
       .element(page.getByRole("alert"))
-      .toHaveTextContent("Couldn't load the table view.");
+      .toMatchTextContent("Couldn't load the table view.");
     await expect.element(page.getByRole("button", { name: "Reload page" })).toBeEnabled();
     await expect.element(page.getByTestId("table-content")).not.toBeInTheDocument();
   });

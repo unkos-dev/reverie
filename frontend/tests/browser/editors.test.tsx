@@ -104,7 +104,7 @@ test("date segments and calendars map optional independent endpoints", async () 
   const before = page.getByRole("group", { name: "Added on or before" });
   await userEvent.click(before.getByRole("button"));
   const calendar = page.getByRole("grid");
-  await userEvent.click(calendar.getByRole("button", { name: /October 20, 2026/ }));
+  await userEvent.click(calendar.getByRole("button", { name: /20 October 2026/ }));
   await expect
     .poll((): unknown => JSON.parse(page.getByRole("status").element().textContent))
     .toEqual({
@@ -164,9 +164,13 @@ test("native impossible-date correction remains usable and calendar dismissal re
   await render(<DateHarness />);
   const after = page.getByRole("group", { name: "Added on or after" });
   await userEvent.click(after.getByRole("spinbutton", { name: /month/i }));
-  await userEvent.keyboard("2");
+  await userEvent.keyboard("1");
   await userEvent.click(after.getByRole("spinbutton", { name: /day/i }));
   await userEvent.keyboard("31");
+  await userEvent.tab();
+  await expect.element(page.getByRole("status")).toHaveTextContent('{"after":"2026-01-31"}');
+  await userEvent.click(after.getByRole("spinbutton", { name: /month/i }));
+  await userEvent.keyboard("2");
   await userEvent.tab();
   await expect.element(page.getByRole("status")).toHaveTextContent('{"after":"2026-02-28"}');
   const trigger = after.getByRole("button");
@@ -246,7 +250,7 @@ describe("StatusEditor", () => {
     await render(<StatusEditor value={[]} onChange={onChange} />);
     const user = userEvent;
 
-    await user.click(page.getByLabelText("Unread"));
+    await user.click(page.getByText("Unread", { exact: true }));
 
     expect(onChange).toHaveBeenLastCalledWith(["unread"]);
   });
@@ -256,7 +260,7 @@ describe("StatusEditor", () => {
     await render(<StatusEditor value={["unread", "reading"]} onChange={onChange} />);
     const user = userEvent;
 
-    await user.click(page.getByLabelText("Unread"));
+    await user.click(page.getByText("Unread", { exact: true }));
 
     expect(onChange).toHaveBeenLastCalledWith(["reading"]);
   });

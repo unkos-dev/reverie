@@ -183,7 +183,7 @@ describe("FilterRail series facet", () => {
     await openSection("Series");
     await page.screenshot({ path: "test-results/browser/library-filters.png" });
     const user = userEvent;
-    await user.click(page.getByRole("checkbox", { name: "Discworld" }));
+    await user.click(page.getByText("Discworld", { exact: true }));
     await vi.waitFor(() => {
       expect(currentSearch().get("series")).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     });
@@ -194,7 +194,7 @@ describe("FilterRail series facet", () => {
     const user = userEvent;
     const box = page.getByRole("checkbox", { name: "Discworld" });
     await expect.element(box).toBeChecked();
-    await user.click(box);
+    await user.click(page.getByText("Discworld", { exact: true }));
     await vi.waitFor(() => {
       expect(currentSearch().get("series")).toBeNull();
     });
@@ -217,7 +217,7 @@ describe("FilterRail shelf facet", () => {
     await renderRail({});
     await openSection("Shelf");
     const user = userEvent;
-    await user.click(page.getByRole("checkbox", { name: "Wishlist" }));
+    await user.click(page.getByText("Wishlist", { exact: true }));
     await vi.waitFor(() => {
       const search = currentSearch();
       expect(search.get("shelf")).toBe("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
@@ -254,7 +254,7 @@ describe("FilterRail status section", () => {
     await renderRail();
     await openSection("Status");
     const user = userEvent;
-    await user.click(page.getByRole("checkbox", { name: "Reading" }));
+    await user.click(page.getByText("Reading", { exact: true }));
     await vi.waitFor(() => {
       expect(currentSearch().getAll("status_any")).toEqual(["reading"]);
     });
@@ -290,8 +290,10 @@ describe("FilterRail typed sections", () => {
   test("a multi-word title filter survives typing", async () => {
     await renderRail();
     const user = userEvent;
-    const title = await openSection("Title");
-    const input = page.elementLocator(title).getByRole("textbox", { name: "Filter value" });
+    await openSection("Title");
+    const input = page
+      .getByRole("group", { name: /^Title(?:\s*\d+)?$/ })
+      .getByRole("textbox", { name: "Filter value" });
     await user.type(input, "the sea");
     await expect.element(input).toHaveValue("the sea");
 

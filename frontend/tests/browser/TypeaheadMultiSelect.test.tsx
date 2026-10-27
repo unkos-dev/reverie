@@ -48,6 +48,7 @@ function Harness({
   const [selected, setSelected] = useState<TypeaheadOption[]>(initial);
   return (
     <QueryClientProvider client={client}>
+      <button type="button">Outside picker</button>
       <TypeaheadMultiSelect
         kind={kind}
         disabled={disabled}
@@ -195,7 +196,7 @@ describe("TypeaheadMultiSelect", () => {
       if (action === "add") {
         await user.click(page.getByRole("option", { name: "Octavia Butler" }));
       } else {
-        await user.click(page.getByTestId("selection"));
+        await user.click(page.getByText("Outside picker", { exact: true }));
       }
 
       const expected = action === "add" ? [...initial, added] : initial;
@@ -457,8 +458,8 @@ test("disabled controls cannot change a hydrated selection", async () => {
     .toBeDisabled();
   await expect.element(page.getByRole("button", { name: /Remove Ursula/ })).toBeDisabled();
   const user = userEvent;
-  await user.click(page.getByRole("button", { name: /Remove Ursula/ }));
-  await user.click(page.getByRole("button", { name: /Show author suggestions/ }));
+  await user.click(page.getByRole("button", { name: /Remove Ursula/ }), { force: true });
+  await user.click(page.getByRole("button", { name: /Show author suggestions/ }), { force: true });
   expect(JSON.parse(page.getByTestId("selection").element().textContent)).toEqual([
     { id: LE_GUIN, value: "Ursula" },
   ]);

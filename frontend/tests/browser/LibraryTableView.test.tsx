@@ -746,7 +746,7 @@ describe("LibraryTableView", () => {
 
       await expect.element(grid).toHaveAttribute("aria-colcount", "3");
       await expect
-        .element(page.getByRole("columnheader", { name: "Subtitle" }))
+        .element(page.getByRole("columnheader", { name: "Subtitle (all editions)" }))
         .not.toBeInTheDocument();
       const user = userEvent;
       await user.click(page.getByRole("button", { name: `Open details for ${ROWS[0].title}` }));
@@ -776,7 +776,7 @@ describe("LibraryTableView", () => {
           .element(page.getByRole("columnheader", { name: "Authors (all editions)" }))
           .not.toBeInTheDocument();
         await expect
-          .element(page.getByRole("columnheader", { name: "Subtitle" }))
+          .element(page.getByRole("columnheader", { name: "Subtitle (all editions)" }))
           .not.toBeInTheDocument();
 
         await expect.element(page.getByRole("grid").getByText("Author 1")).toBeInTheDocument();

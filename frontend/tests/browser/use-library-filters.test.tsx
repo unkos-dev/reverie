@@ -8,7 +8,7 @@ import { useLibraryFilters } from "@/lib/hooks/use-library-filters";
 
 const initialState: unknown = navigation.currentEntry?.getState();
 afterEach(() => {
-  navigation.updateCurrentEntry({ state: initialState });
+  navigation.updateCurrentEntry({ state: initialState ?? null });
 });
 
 function Probe(): ReactElement {
@@ -68,7 +68,7 @@ test("same-turn sibling edits compose and preserve unrelated native entry data",
       },
     },
   });
-  await expect.element(page.getByRole("status")).toHaveTextContent("the sea ");
+  await expect.element(page.getByRole("status")).toMatchTextContent("the sea ");
 });
 test("blur, Clear and subsequent typing use the current intent without resurrection", async () => {
   await mount();
@@ -89,7 +89,7 @@ test.each([
   await mount({ keep: 1, reverieLibrary: payload });
   await expect
     .element(page.getByRole("status"))
-    .toHaveTextContent(JSON.stringify({ filters: emptyFilterState() }));
+    .toMatchTextContent(JSON.stringify({ filters: emptyFilterState() }));
   expect(entry()).toEqual({ keep: 1, reverieLibrary: payload });
   await userEvent.click(page.getByText("view-clear"));
   expect(entry()).toEqual({

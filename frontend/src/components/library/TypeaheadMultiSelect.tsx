@@ -117,7 +117,7 @@ export function TypeaheadMultiSelect({
       </div>
       <ComboBoxValue<TypeaheadOption>>
         <TagGroup
-          aria-label={`Selected ${label}`}
+          aria-label={`Selected ${label}${selected.length === 0 ? "" : `: ${selected.map((item) => item.value).join(", ")}`}`}
           disabledKeys={disabled ? selected.map(keyFor) : []}
           onRemove={(keys) => {
             onChange(selected.filter((item) => !keys.has(keyFor(item))));

@@ -55,6 +55,7 @@ vi.mock("@/lib/theme/ThemeProvider", () => ({
 }));
 
 const originalEntryState: unknown = navigation.currentEntry?.getState();
+const originalURL = window.location.href;
 beforeEach(() => {
   __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
 });
@@ -62,7 +63,7 @@ afterEach(async () => {
   localStorage.clear();
 
   await cleanup();
-  navigation.updateCurrentEntry({ state: originalEntryState });
+  history.replaceState(originalEntryState ?? null, "", originalURL);
   vi.mocked(toast.success).mockClear();
   vi.mocked(toast.error).mockClear();
 });
@@ -228,6 +229,7 @@ async function renderLibrary({
     client.setQueryData(queryKeys.books.detail(detail.id), detail);
   }
 
+  history.replaceState(navigation.currentEntry?.getState() ?? null, "", "/library");
   navigation.updateCurrentEntry({
     state: {
       reverieLibrary: { filters: { ...emptyFilterState(), ...visit?.filters }, view: visit?.view },
@@ -480,7 +482,7 @@ describe("LibraryPage", () => {
     await expect.element(view.getByRole("radio", { name: "Table" })).toBeChecked();
     await expect.element(view.getByRole("radio", { name: "Grid" })).not.toBeChecked();
     await vi.waitFor(async () => {
-      await expect.element(page.getByTestId("visit-params")).toHaveTextContent("view=table");
+      await expect.element(page.getByTestId("visit-params")).toMatchTextContent("view=table");
     });
     await user.keyboard(" ");
     await expect.element(view.getByRole("radio", { name: "Table" })).toBeChecked();
@@ -558,7 +560,7 @@ describe("LibraryPage", () => {
     });
     await expect.element(findLibraryTable()).toBeInTheDocument();
     const user = userEvent;
-    await user.click(page.getByRole("columnheader", { name: "Title" }));
+    await user.click(page.getByRole("columnheader", { name: /^Title(?:\s|$)/ }));
     await vi.waitFor(() => {
       expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
     });
@@ -585,7 +587,7 @@ describe("LibraryPage", () => {
     await expect.element(findLibraryTable()).toBeInTheDocument();
     const user = userEvent;
     await user.type(searchBox(), "war");
-    await user.click(page.getByRole("columnheader", { name: "Title" }));
+    await user.click(page.getByRole("columnheader", { name: /^Title(?:\s|$)/ }));
     await vi.waitFor(() => {
       expect(page.getByTestId("visit-params").element().textContent).toContain("q=war");
       expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
@@ -611,7 +613,7 @@ describe("LibraryPage", () => {
     });
     await expect.element(findLibraryTable()).toBeInTheDocument();
     const user = userEvent;
-    await user.click(page.getByRole("columnheader", { name: "Title" }));
+    await user.click(page.getByRole("columnheader", { name: /^Title(?:\s|$)/ }));
     await user.type(searchBox(), "war");
     await vi.waitFor(() => {
       expect(page.getByTestId("visit-params").element().textContent).toContain("q=war");
@@ -658,7 +660,7 @@ describe("LibraryPage", () => {
     });
     await expect.element(page.getByText("No books match these filters")).toBeInTheDocument();
 
-    await expect.element(page.getByRole("button", { name: "Filters1" })).toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: "Filters 1" })).toBeInTheDocument();
   });
 
   test("renders the empty state when items is empty", async () => {
@@ -673,7 +675,7 @@ describe("LibraryPage", () => {
       nextCursor: null,
     });
     const link = page.getByRole("link", { name: /stoner/i });
-    expect(link.element().getAttribute("href")).toBe("/b/abc-123");
+    await expect.element(link).toHaveAttribute("href", "/b/abc-123");
   });
 
   test("true-empty state shows no clear-filters action", async () => {
@@ -687,7 +689,7 @@ describe("LibraryPage", () => {
   test("true-empty offers an ingestion link to admins", async () => {
     await renderLibrary({ items: [], nextCursor: null, me: meFixture({ role: "admin" }) });
     const link = page.getByRole("link", { name: /ingestion/i });
-    expect(link.element().getAttribute("href")).toBe("/admin/dashboard");
+    await expect.element(link).toHaveAttribute("href", "/admin/dashboard");
   });
 
   test("true-empty hides the ingestion link from non-admin readers", async () => {
@@ -1025,7 +1027,7 @@ describe("LibraryPage", () => {
       const drawer = page.getByRole("dialog");
       await expect.element(drawer.getByText("Farrar, Straus and Giroux")).toBeInTheDocument();
       const fullRecord = drawer.getByRole("link", { name: /View full record/ });
-      expect(fullRecord.element().getAttribute("href")).toBe(`/b/${book.id}`);
+      await expect.element(fullRecord).toHaveAttribute("href", `/b/${book.id}`);
       await expect
         .element(drawer.getByRole("button", { name: /Add to shelf/ }))
         .toBeInTheDocument();
@@ -1262,7 +1264,9 @@ describe("LibraryPage", () => {
       await user.click(page.getByRole("button", { name: /Columns/ }));
       const title = page.getByRole("checkbox", { name: "Title" });
       await expect.element(title).toBeDisabled();
-      await user.click(page.getByRole("checkbox", { name: "Subtitle" }));
+      await user.click(
+        page.getByRole("dialog", { name: "Columns" }).getByText("Subtitle", { exact: true }),
+      );
       await vi.waitFor(async () => {
         await expect
           .element(page.getByRole("columnheader", { name: /^Subtitle/ }))
@@ -1300,8 +1304,12 @@ describe("LibraryPage", () => {
       await expect.element(page.getByTestId("library-table")).toBeInTheDocument();
       const user = userEvent;
       await user.click(page.getByRole("button", { name: /Columns/ }));
-      await user.click(page.getByRole("checkbox", { name: "Subtitle" }));
-      await user.click(page.getByRole("checkbox", { name: "Pages" }));
+      await user.click(
+        page.getByRole("dialog", { name: "Columns" }).getByText("Subtitle", { exact: true }),
+      );
+      await user.click(
+        page.getByRole("dialog", { name: "Columns" }).getByText("Pages", { exact: true }),
+      );
       await vi.waitFor(() => {
         expect(preferenceWrites(fetchSpy)).toEqual([{ hidden_columns: ["subtitle", "pages"] }]);
       });
@@ -1426,8 +1434,12 @@ describe("LibraryPage", () => {
       await expect.element(page.getByTestId("library-table")).toBeInTheDocument();
       const user = userEvent;
       await user.click(page.getByRole("button", { name: /Columns/ }));
-      await user.click(page.getByRole("checkbox", { name: "Subtitle" }));
-      await user.click(page.getByRole("checkbox", { name: "Subtitle" }));
+      await user.click(
+        page.getByRole("dialog", { name: "Columns" }).getByText("Subtitle", { exact: true }),
+      );
+      await user.click(
+        page.getByRole("dialog", { name: "Columns" }).getByText("Subtitle", { exact: true }),
+      );
 
       await expect.element(page.getByRole("button", { name: "Reset to default" })).toBeEnabled();
       fetchSpy.mockRestore();
@@ -1571,7 +1583,7 @@ describe("LibraryPage", () => {
       });
       await expect.element(findLibraryTable()).toBeInTheDocument();
       const user = userEvent;
-      await user.click(page.getByRole("columnheader", { name: "Title" }));
+      await user.click(page.getByRole("columnheader", { name: /^Title(?:\s|$)/ }));
       await vi.waitFor(() => {
         expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
       });
@@ -1592,7 +1604,7 @@ describe("LibraryPage", () => {
       });
       await expect.element(findLibraryTable()).toBeInTheDocument();
       const user = userEvent;
-      await user.click(page.getByRole("columnheader", { name: "Title" }));
+      await user.click(page.getByRole("columnheader", { name: /^Title(?:\s|$)/ }));
       await vi.waitFor(() => {
         expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
       });
@@ -1730,7 +1742,7 @@ test("selection made on retained rows clears when a disjoint result replaces the
   await user.click(page.getByRole("checkbox", { name: "Select" }));
   await expect
     .element(page.getByRole("toolbar", { name: "Batch actions" }))
-    .toHaveTextContent("1 selected");
+    .toMatchTextContent("1 selected");
   pending.resolve(booksResponse([destination]));
   await expect.element(page.getByText("Beta")).toBeInTheDocument();
   await expect
@@ -1816,7 +1828,7 @@ test.each(["grid", "table"] as const)(
     await expect
       .element(searchBox())
       .toHaveAccessibleDescription("Use 200 characters or fewer, excluding surrounding spaces.");
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Results are paused.");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Results are paused.");
     await expect.element(page.getByRole("button", { name: /Load more/i })).not.toBeInTheDocument();
     await expect.element(page.getByText("No books match these filters")).not.toBeInTheDocument();
     await act(async () => {
@@ -1824,7 +1836,7 @@ test.each(["grid", "table"] as const)(
       await client.refetchQueries({ queryKey: queryKeys.books.all });
     });
     expect(fetchSpy).not.toHaveBeenCalled();
-    await expect.element(page.getByTestId("visit-params")).toHaveTextContent("pages_gte=100");
+    await expect.element(page.getByTestId("visit-params")).toMatchTextContent("pages_gte=100");
     await userEvent.fill(searchBox(), "The Sea");
     await expect.element(page.getByText("Corrected")).toBeInTheDocument();
     const requested = fetchSpy.mock.calls.map(([input]) => {
@@ -1852,7 +1864,7 @@ test("an uncached restored overlong filter stays editable and Clear recovers the
     visit: { filters: { title: { op: "ne", text: "😀".repeat(201) }, q: "Sea" } },
   });
   await expect.element(page.getByRole("searchbox")).toHaveValue("Sea");
-  await expect.element(page.getByRole("alert")).toHaveTextContent("Results are paused.");
+  await expect.element(page.getByRole("alert")).toMatchTextContent("Results are paused.");
   const user = userEvent;
   await user.click(page.getByRole("button", { name: /^Filters/ }));
   const title = await drawerSection(page.getByRole("dialog"), "Title");
@@ -1908,7 +1920,7 @@ test.each([false, true])(
     if (!uncached) await userEvent.fill(page.getByRole("searchbox"), "rejected");
     await expect
       .element(page.getByRole("alert"))
-      .toHaveTextContent("These filters could not be used.");
+      .toMatchTextContent("These filters could not be used.");
     await expect.element(searchBox()).toBeInTheDocument();
     await expect.element(page.getByRole("button", { name: /^Filters/ })).toBeInTheDocument();
     await expect.element(page.getByText("No books match these filters")).not.toBeInTheDocument();
@@ -1996,7 +2008,7 @@ test("loading another page retains selected books", async () => {
   await expect.element(page.getByText("Second page")).toBeInTheDocument();
   await expect
     .element(page.getByRole("toolbar", { name: "Batch actions" }))
-    .toHaveTextContent("1 selected");
+    .toMatchTextContent("1 selected");
   await expect.element(page.getByRole("checkbox", { name: "Select" }).elements()[0]).toBeChecked();
   await expect
     .element(page.getByRole("checkbox", { name: "Select" }).elements()[1])
@@ -2025,7 +2037,9 @@ function toastAction(kind: "success" | "error", label: string): () => void {
 async function editTitle(title: string, next: string): Promise<void> {
   const cell = page.getByText(title).element().closest('[role="gridcell"]');
   if (cell === null) throw new Error("Missing title cell");
-  await userEvent.dblClick(cell);
+  const mark = cell.querySelector<HTMLElement>("img, span[aria-hidden='true']");
+  if (mark === null) throw new Error("Missing title-cell cover mark");
+  await userEvent.dblClick(mark);
   const input = page.getByRole("textbox");
   await userEvent.fill(input, next);
   await userEvent.keyboard("{Enter}");
