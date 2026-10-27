@@ -1,5 +1,5 @@
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, cleanup } from "vitest-browser-react";
+import { render, renderHook, cleanup } from "vitest-browser-react";
 import { page, userEvent, type Locator } from "vite-plus/test/browser";
 import type { ReactElement } from "react";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
@@ -7,6 +7,8 @@ import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { ApiError } from "@/api/errors";
+import { getSettings } from "@/api/settings";
+import { useSettingsEditor } from "@/pages/admin/settings/use-settings-editor";
 import { __resetEtagCacheForTesting } from "@/api/etags";
 import {
   invokeUnauthenticatedHandler,
@@ -328,62 +330,70 @@ describe("production settings navigation", () => {
     appQueryClient.clear();
   });
 
-  test("a previous area's pending reconciliation cannot rebase the current dirty draft", async () => {
-    const user = userEvent;
-    await renderSettings("acquisition", appQueryClient, adminSettingsRoute);
-    await expect
-      .element(page.getByRole("form", { name: "Acquisition settings" }))
-      .toBeInTheDocument();
-    await user.click(
-      page.elementLocator(
-        (
-          await rendered(
-            page.getByRole("switch", { name: "Remove the source file after a successful import" }),
-          )
-        ).closest("label") ??
-          (await rendered(
-            page.getByRole("switch", { name: "Remove the source file after a successful import" }),
-          )),
-      ),
-    );
-    const release = holdPut();
-    await user.click(save());
-    await user.click(
-      page.getByRole("navigation", { name: "Settings areas" }).getByRole("link", {
-        name: /^Enrichment/,
-      }),
-    );
-    await user.click(page.getByRole("button", { name: "Leave and discard changes" }));
-    await expect
-      .element(page.getByRole("form", { name: "Enrichment settings" }))
-      .toBeInTheDocument();
-    await type(user, "Concurrent lookups", "6");
-    server.values.enrichment_concurrency = 5;
-    server.revision += 1;
-
-    release();
-    await vi.waitFor(() => {
-      expect(server.values.cleanup_imported).toBe(false);
-    });
-    expect(server.puts).toHaveLength(2);
-    await expect.element(page.getByText("Saved value: 4 lookups")).toBeInTheDocument();
-    await user.click(save());
-
-    await expect
-      .element(page.getByText("Settings changed while you were editing"))
-      .toBeInTheDocument();
-    expect(server.puts).toHaveLength(3);
-    expect(server.puts[2]?.ifMatch).toBe('"rev-1"');
-    expect(server.values.enrichment_concurrency).toBe(5);
-    await expect
-      .element(page.getByRole("textbox", { name: "Concurrent lookups" }))
-      .toHaveValue("6");
-    await user.click(page.getByRole("button", { name: "Save my choices" }));
-    await expect.element(page.getByText("Settings saved")).toBeInTheDocument();
-    expect(server.puts).toHaveLength(4);
-    expect(server.puts[3]?.ifMatch).toBe('"rev-3"');
-    expect(server.values.enrichment_concurrency).toBe(6);
-  });
+  test.each(["ok", "500"] as const)(
+    "navigation attempted during a pending %s save waits for completion and protects edits",
+    async (mode) => {
+      const user = userEvent;
+      const { router } = await renderSettings("enrichment", appQueryClient, adminSettingsRoute);
+      await expect
+        .element(page.getByRole("form", { name: "Enrichment settings" }))
+        .toBeInTheDocument();
+      await type(user, "Concurrent lookups", "6");
+      server.putMode = mode;
+      const release = holdPut();
+      try {
+        await user.click(save());
+        await expect.element(page.getByRole("button", { name: "Saving" })).toBeDisabled();
+        await user.click(
+          page.getByRole("navigation", { name: "Settings areas" }).getByRole("link", {
+            name: /^Covers/,
+          }),
+        );
+        await expect
+          .element(page.getByRole("form", { name: "Enrichment settings" }))
+          .toBeInTheDocument();
+        await expect.element(page.getByRole("alertdialog")).not.toBeInTheDocument();
+        await expect
+          .element(page.getByRole("textbox", { name: "Concurrent lookups" }))
+          .toHaveValue("6");
+        expect(router.state.location.pathname).toBe("/admin/settings/enrichment");
+        expect(
+          vi.mocked(globalThis.fetch).mock.calls.filter(([, init]) => init?.method === "PUT"),
+        ).toHaveLength(1);
+      } finally {
+        release();
+      }
+      if (mode === "ok") {
+        await expect
+          .element(page.getByRole("form", { name: "Covers settings" }))
+          .toBeInTheDocument();
+        expect(server.values.enrichment_concurrency).toBe(6);
+        expect(router.state.location.pathname).toBe("/admin/settings/covers");
+        await expect.element(page.getByRole("alertdialog")).not.toBeInTheDocument();
+        expect(server.puts).toHaveLength(1);
+        return;
+      }
+      await expect.element(page.getByRole("alertdialog")).toBeInTheDocument();
+      expect(server.values.enrichment_concurrency).toBe(4);
+      await user.click(page.getByRole("button", { name: "Stay on this page" }));
+      await expect.element(page.getByRole("alertdialog")).not.toBeInTheDocument();
+      await expect
+        .element(page.getByRole("textbox", { name: "Concurrent lookups" }))
+        .toHaveValue("6");
+      await expect.element(page.getByText("Settings were not saved")).toBeInTheDocument();
+      await expect.element(save()).toBeEnabled();
+      await user.click(
+        page.getByRole("navigation", { name: "Settings areas" }).getByRole("link", {
+          name: /^Covers/,
+        }),
+      );
+      await expect.element(page.getByRole("alertdialog")).toBeInTheDocument();
+      await user.click(page.getByRole("button", { name: "Leave and discard changes" }));
+      await expect.element(page.getByRole("form", { name: "Covers settings" })).toBeInTheDocument();
+      expect(router.state.location.pathname).toBe("/admin/settings/covers");
+      expect(server.puts).toHaveLength(1);
+    },
+  );
 
   test("a fresh visit refused with 403 hides a previously cached settings snapshot", async () => {
     const { router } = await renderSettings("enrichment", appQueryClient, adminSettingsRoute);
@@ -2369,3 +2379,71 @@ async function rendered(locator: Locator): Promise<HTMLElement | SVGElement> {
   await expect.element(locator).toBeInTheDocument();
   return locator.element();
 }
+
+test.each(["ok", "500"] as const)(
+  "save completion awaits the classified %s result and retains failed drafts",
+  async (mode) => {
+    const snapshot = await getSettings();
+    const client = newClient();
+    const { result, act } = await renderHook(() => useSettingsEditor("enrichment", snapshot), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await act(() => {
+      result.current.editText("enrichment_concurrency", "6");
+    });
+    server.putMode = mode;
+    const release = holdPut();
+    let completed = false;
+    const completion = (async () => {
+      await result.current.save();
+      completed = true;
+    })();
+    await expect.poll(() => result.current.phase).toBe("saving");
+    const completedBeforeResponse = completed;
+    release();
+    await completion;
+    expect(completedBeforeResponse).toBe(false);
+    await expect.poll(() => result.current.notice.kind).toBe(mode === "ok" ? "saved" : "failed");
+    expect(completed).toBe(true);
+    expect(server.puts).toHaveLength(1);
+    expect(result.current.dirty).toEqual(mode === "ok" ? [] : ["enrichment_concurrency"]);
+    if (mode === "500") expect(result.current.draft.numbers.enrichment_concurrency).toBe("6");
+  },
+);
+
+test("conflict completion awaits Save my choices and its updated revision", async () => {
+  const snapshot = await getSettings();
+  const client = newClient();
+  const { result, act } = await renderHook(() => useSettingsEditor("enrichment", snapshot), {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+  await act(() => {
+    result.current.editText("enrichment_concurrency", "6");
+  });
+  server.stale.set(1, () => {
+    server.values.enrichment_concurrency = 8;
+    server.revision += 1;
+  });
+  await result.current.save();
+  await expect.poll(() => result.current.notice.kind).toBe("conflict");
+  const release = holdPut();
+  let completed = false;
+  const completion = (async () => {
+    await result.current.saveChoices();
+    completed = true;
+  })();
+  await expect.poll(() => result.current.phase).toBe("saving");
+  const completedBeforeResponse = completed;
+  release();
+  await completion;
+  expect(completedBeforeResponse).toBe(false);
+  await expect.poll(() => result.current.notice.kind).toBe("saved");
+  expect(completed).toBe(true);
+  expect(server.puts).toHaveLength(2);
+  expect(server.puts[1]).toEqual({ patch: { enrichment_concurrency: 6 }, ifMatch: '"rev-2"' });
+  expect(result.current.dirty).toEqual([]);
+});
