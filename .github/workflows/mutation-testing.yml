@@ -39,7 +39,7 @@ jobs:
 
       # Pins to backend/rust-toolchain.toml, keeping this workflow on the same
       # compiler as ci.yml and a developer's machine.
-      - uses: ./.github/actions/rust-toolchain
+      - uses: $/.github/actions/rust-toolchain
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:

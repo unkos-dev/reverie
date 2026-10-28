@@ -123,16 +123,12 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
   mirror failover and browser provisioning succeeds with its unmodified mirror list.
 - [crypto-bigint timing risk in OIDC signature verification](2026-10-25-crypto-bigint-verification-only.md): lifts when
   the resolved dependency graph contains no version affected by RUSTSEC-2026-0387.
-- [Ubuntu 26.04 ARM runner label exception](2026-10-22-actionlint-ubuntu-26-runner.md): lifts when the pinned
-  `actionlint` recognises the label and workflow lint passes without the exception.
 - [Vacuum request bounds](2026-10-13-vacuum-request-bounds.md): lifts when all temporary bound exceptions are resolved.
 - [CodeQL Rust extraction ignores the declared Rust version](2026-10-09-codeql-rust-ignore-rust-version.md): lifts when
   a supported upstream mechanism handles a declared minimum newer than the extractor's toolchain and extraction without
   the workaround preserves macro coverage.
 - [SQL lint exclusions preserve the initial schema rollup](2026-09-17-sqruff-schema-rollup-exclusions.md): lifts when
   the next schema rollup passes SQL lint without the RF03 and ST09 exclusions.
-- [Zizmor self-repository audit disabled](2026-09-16-zizmor-self-repository.md): lifts when the pinned `actionlint`
-  accepts `$/` and both workflow linters pass after migrating every executable self-reference.
 - [Explicit header alignment enables table compaction](2026-09-10-rumdl-table-compaction.md): lifts when rumdl checks
   the width of already aligned tables without explicit header alignment.
 - [pnpm updates stay on v11](2026-09-10-pnpm-update-lockfile.md): lifts when a stable newer release passes both targeted

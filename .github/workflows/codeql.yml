@@ -178,7 +178,7 @@ jobs:
           persist-credentials: false
 
       - id: rust
-        uses: ./.github/actions/rust-toolchain
+        uses: $/.github/actions/rust-toolchain
         with:
           components: rust-src
 

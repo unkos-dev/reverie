@@ -123,7 +123,7 @@ Git hooks are managed by lefthook and installed through the `prepare` script, so
 Install the repository-pinned hook and local-check tools with [mise](https://mise.jdx.dev/):
 
 ```sh
-mise install actionlint gitleaks hadolint just rumdl shellcheck typos vale \
+mise install jactionlint gitleaks hadolint just rumdl shellcheck typos vale \
   pnpm github:nextest-rs/nextest \
   uv github:unkos-dev/specful github:owenlamont/ryl
 ```

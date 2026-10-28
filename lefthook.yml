@@ -58,9 +58,9 @@ pre-commit:
           - name: markdownlint
             glob: "**/*.md"
             run: rumdl check {staged_files}
-          - name: actionlint
+          - name: jactionlint
             glob: ".github/workflows/**/*.{yml,yaml}"
-            run: actionlint -color {staged_files}
+            run: jactionlint --color=always {staged_files}
           - name: shellcheck
             glob: "**/*.sh"
             run: shellcheck -x {staged_files}
