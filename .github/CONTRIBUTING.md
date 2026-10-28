@@ -152,7 +152,8 @@ cargo's workspace discovery; set `WORKTREE_ROOT` to choose where those live.
 For a linked worktree created by another tool, run `just worktree-provision /path/to/worktree` from the source checkout.
 This is the same provisioning that `just worktree` uses: isolated Cargo output, inherited tool trust, selected policy
 overlays and dependencies installed with the destination's pnpm version. The install uses the lockfile and skips
-lifecycle scripts so it does not rewrite shared Git hooks.
+lifecycle scripts so it does not rewrite shared Git hooks. Provisioning requires `mise`, `jq` and a pnpm version in the
+destination's `package.json` `packageManager` field.
 
 The `post-checkout`, `post-merge` and `post-rewrite` hooks run `just refresh-deps`. It installs dependencies again when
 `node_modules` exists and its installed lockfile is missing or differs from `pnpm-lock.yaml`. Fresh worktrees leave

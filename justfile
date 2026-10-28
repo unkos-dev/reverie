@@ -505,20 +505,20 @@ _worktree-install path:
     # version has to be explicit: a branch old enough to declare a different
     # pnpm also predates the `pnpm` entry in mise.toml, so a bare `mise exec`
     # there resolves nothing.
-    pnpm_pin=""
-    if [ -f "$dest/package.json" ] && command -v jq > /dev/null; then
-        pnpm_pin="$(jq -r '.packageManager // empty' "$dest/package.json" 2> /dev/null | sed -n 's/^pnpm@//p' || true)"
+    for tool in mise jq; do
+        if ! command -v "$tool" > /dev/null; then
+            echo "$tool is required to install worktree dependencies" >&2
+            exit 1
+        fi
+    done
+    if ! pnpm_pin="$(jq -er '.packageManager | select(type == "string") | select(startswith("pnpm@")) | ltrimstr("pnpm@") | select(length > 0)' "$dest/package.json")"; then
+        echo "$dest/package.json must declare a pnpm version in packageManager" >&2
+        exit 1
     fi
-    if [ -n "$pnpm_pin" ] && command -v mise > /dev/null; then
-        echo "installing node dependencies in $dest (pnpm ${pnpm_pin} via mise)"
-        install_cmd=(mise exec "pnpm@${pnpm_pin}" -- pnpm install --frozen-lockfile --ignore-scripts)
-    else
-        echo "installing node dependencies in $dest (pnpm install)"
-        install_cmd=(pnpm install --frozen-lockfile --ignore-scripts)
-    fi
+    echo "installing node dependencies in $dest (pnpm ${pnpm_pin} via mise)"
     # Not `&&`, for the reason given above the mise trust call: the recipe
     # would report a ready worktree that no JS lane can run in.
-    if ! (cd "$dest" && "${install_cmd[@]}"); then
+    if ! (cd "$dest" && mise exec "pnpm@${pnpm_pin}" -- pnpm install --frozen-lockfile --ignore-scripts); then
         echo "failed to install node dependencies in $dest" >&2
         echo "run 'just install' inside $dest to finish" >&2
         exit 1

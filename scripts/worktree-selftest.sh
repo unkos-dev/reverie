@@ -10,6 +10,10 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
+if ! real_mise="$(command -v mise)"; then
+  echo "mise is required to run the worktree self-test" >&2
+  exit 1
+fi
 
 # A sibling of the checkout, not $TMPDIR: the recipe itself refuses to
 # create a worktree on a tmpfs, and a sandboxed dev environment's default
@@ -44,10 +48,8 @@ chmod +x "${stub_bin}/pnpm"
 # and then runs the command after `--`, which lands on the pnpm stub. Every
 # other subcommand delegates to the real mise, so the trust the recipe inherits
 # a few lines earlier is still granted for real.
-real_mise="$(command -v mise || true)"
 export WORKTREE_SELFTEST_REAL_MISE="${real_mise}"
-if [ -n "${real_mise}" ]; then
-  cat >"${stub_bin}/mise" <<'STUB'
+cat >"${stub_bin}/mise" <<'STUB'
 #!/usr/bin/env bash
 if [ "${1:-}" = "exec" ]; then
   shift
@@ -58,8 +60,7 @@ if [ "${1:-}" = "exec" ]; then
 fi
 exec "${WORKTREE_SELFTEST_REAL_MISE}" "$@"
 STUB
-  chmod +x "${stub_bin}/mise"
-fi
+chmod +x "${stub_bin}/mise"
 export PATH="${stub_bin}:${PATH}"
 
 # The pin the recipe must resolve out of a destination created from HEAD.
@@ -255,16 +256,12 @@ else
     "want: ${want_pnpm_invocation@Q}" "got:  ${got_pnpm_invocation@Q}"
 fi
 
-if [ -n "${real_mise}" ]; then
-  got_mise_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
-  if [ "${got_mise_tool}" = "pnpm@${head_pnpm_pin}" ]; then
-    ok "the install runs under the pnpm the destination declares"
-  else
-    bad "the install runs under the pnpm the destination declares" \
-      "want: pnpm@${head_pnpm_pin}" "got:  ${got_mise_tool@Q}"
-  fi
+got_mise_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
+if [ "${got_mise_tool}" = "pnpm@${head_pnpm_pin}" ]; then
+  ok "the install runs under the pnpm the destination declares"
 else
-  echo "skip the install runs under the pnpm the destination declares: no mise on PATH"
+  bad "the install runs under the pnpm the destination declares" \
+    "want: pnpm@${head_pnpm_pin}" "got:  ${got_mise_tool@Q}"
 fi
 
 remove_out=""
@@ -656,51 +653,47 @@ git -C "${repo_root}" worktree remove --force "${dest_install_fail}" >/dev/null 
 # configuration, representing a branch without this task automation, which proves
 # the recipe never reaches for the destination's own recipes. ---
 
-if [ -n "${real_mise}" ]; then
-  fixture_pin="11.18.0"
-  if [ "${fixture_pin}" = "${head_pnpm_pin}" ]; then
-    bad "the pnpm pin fixture declares a pin unlike HEAD's" \
-      "both are ${fixture_pin}; choose another fixture pin"
-  fi
-  pin_index="${scratch_root}/pnpm-pin.index"
-  pin_blob="$(git -C "${repo_root}" show HEAD:package.json \
-    | jq --arg v "pnpm@${fixture_pin}" '.packageManager = $v' \
-    | git -C "${repo_root}" hash-object -w --stdin)"
-  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" read-tree HEAD
-  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index \
-    --cacheinfo "100644,${pin_blob},package.json"
-  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index --force-remove justfile lefthook.yml
-  pin_tree="$(GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" write-tree)"
-  # An explicit identity: a CI checkout configures none, and commit-tree
-  # refuses to run without one.
-  pin_commit="$(GIT_AUTHOR_NAME=selftest GIT_AUTHOR_EMAIL=selftest@invalid \
-    GIT_COMMITTER_NAME=selftest GIT_COMMITTER_EMAIL=selftest@invalid \
-    git -C "${repo_root}" commit-tree "${pin_tree}" -p HEAD -m "worktree selftest pnpm pin fixture")"
-  git -C "${repo_root}" branch "${branch_pnpm_pin}" "${pin_commit}" >/dev/null
-
-  : >"${WORKTREE_SELFTEST_MISE_LOG}"
-  : >"${WORKTREE_SELFTEST_PNPM_LOG}"
-  pnpm_pin_rc=0
-  git -C "${repo_root}" worktree add "${dest_pnpm_pin}" "${branch_pnpm_pin}" >/dev/null
-  pnpm_pin_out="$(cd "${repo_root}" && just worktree-provision "${dest_pnpm_pin}" 2>&1)" || pnpm_pin_rc=$?
-  if [ "${pnpm_pin_rc}" -eq 0 ]; then
-    ok "provisioning an existing differently pinned worktree exits zero"
-  else
-    bad "provisioning an existing differently pinned worktree exits zero" \
-      "exit ${pnpm_pin_rc}" "${pnpm_pin_out}"
-  fi
-
-  got_pin_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
-  if [ "${got_pin_tool}" = "pnpm@${fixture_pin}" ]; then
-    ok "the install honours the destination's pnpm pin, not the running one"
-  else
-    bad "the install honours the destination's pnpm pin, not the running one" \
-      "want: pnpm@${fixture_pin}" "got:  ${got_pin_tool@Q}"
-  fi
-  git -C "${repo_root}" worktree remove "${dest_pnpm_pin}" >/dev/null 2>&1 || true
-else
-  echo "skip the destination pnpm pin fixture: no mise on PATH"
+fixture_pin="11.18.0"
+if [ "${fixture_pin}" = "${head_pnpm_pin}" ]; then
+  bad "the pnpm pin fixture declares a pin unlike HEAD's" \
+    "both are ${fixture_pin}; choose another fixture pin"
 fi
+pin_index="${scratch_root}/pnpm-pin.index"
+pin_blob="$(git -C "${repo_root}" show HEAD:package.json \
+  | jq --arg v "pnpm@${fixture_pin}" '.packageManager = $v' \
+  | git -C "${repo_root}" hash-object -w --stdin)"
+GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" read-tree HEAD
+GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index \
+  --cacheinfo "100644,${pin_blob},package.json"
+GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index --force-remove justfile lefthook.yml
+pin_tree="$(GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" write-tree)"
+# An explicit identity: a CI checkout configures none, and commit-tree
+# refuses to run without one.
+pin_commit="$(GIT_AUTHOR_NAME=selftest GIT_AUTHOR_EMAIL=selftest@invalid \
+  GIT_COMMITTER_NAME=selftest GIT_COMMITTER_EMAIL=selftest@invalid \
+  git -C "${repo_root}" commit-tree "${pin_tree}" -p HEAD -m "worktree selftest pnpm pin fixture")"
+git -C "${repo_root}" branch "${branch_pnpm_pin}" "${pin_commit}" >/dev/null
+
+: >"${WORKTREE_SELFTEST_MISE_LOG}"
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+pnpm_pin_rc=0
+git -C "${repo_root}" worktree add "${dest_pnpm_pin}" "${branch_pnpm_pin}" >/dev/null
+pnpm_pin_out="$(cd "${repo_root}" && just worktree-provision "${dest_pnpm_pin}" 2>&1)" || pnpm_pin_rc=$?
+if [ "${pnpm_pin_rc}" -eq 0 ]; then
+  ok "provisioning an existing differently pinned worktree exits zero"
+else
+  bad "provisioning an existing differently pinned worktree exits zero" \
+    "exit ${pnpm_pin_rc}" "${pnpm_pin_out}"
+fi
+
+got_pin_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
+if [ "${got_pin_tool}" = "pnpm@${fixture_pin}" ]; then
+  ok "the install honours the destination's pnpm pin, not the running one"
+else
+  bad "the install honours the destination's pnpm pin, not the running one" \
+    "want: pnpm@${fixture_pin}" "got:  ${got_pin_tool@Q}"
+fi
+git -C "${repo_root}" worktree remove "${dest_pnpm_pin}" >/dev/null 2>&1 || true
 
 invalid_rc=0
 invalid_out="$(cd "${repo_root}" && just worktree-provision "${scratch_root}" 2>&1)" || invalid_rc=$?
@@ -733,16 +726,12 @@ else
 fi
 
 printf 'stale\n' >"${dest_codex_source}/node_modules/.pnpm/lock.yaml"
-expected_mise_tool=""
-if [ -n "${real_mise}" ]; then
-  expected_mise_tool="pnpm@${head_pnpm_pin}"
-fi
 for hook in post-checkout post-merge post-rewrite; do
   : >"${WORKTREE_SELFTEST_PNPM_LOG}"
   : >"${WORKTREE_SELFTEST_MISE_LOG}"
   (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" --no-auto-install) >/dev/null
   if [ "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")" = "${dest_codex_source}"$'\t'"install --frozen-lockfile --ignore-scripts" ] &&
-    [ "$(cat "${WORKTREE_SELFTEST_MISE_LOG}")" = "${expected_mise_tool}" ]; then
+    [ "$(cat "${WORKTREE_SELFTEST_MISE_LOG}")" = "pnpm@${head_pnpm_pin}" ]; then
     ok "$hook refreshes stale dependencies with the expected pnpm selection and locked install flags"
   else
     bad "$hook refreshes stale dependencies with the expected pnpm selection and locked install flags" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
