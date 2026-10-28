@@ -145,4 +145,4 @@ post-merge:
 post-rewrite:
   jobs:
     - name: refresh-deps
-      run: just refresh-deps
+      run: 'if [ "{1}" = "rebase" ]; then just refresh-deps; fi'

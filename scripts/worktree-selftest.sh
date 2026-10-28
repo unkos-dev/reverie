@@ -743,8 +743,12 @@ fi
 cp "${repo_root}/lefthook.yml" "${dest_codex_source}/lefthook.yml"
 lefthook_bin="${repo_root}/node_modules/.bin/lefthook"
 for hook in post-merge post-rewrite; do
+  hook_args=()
+  if [ "$hook" = post-rewrite ]; then
+    hook_args=(rebase)
+  fi
   : >"${WORKTREE_SELFTEST_PNPM_LOG}"
-  (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" --no-auto-install) >/dev/null
+  (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" "${hook_args[@]}" --no-auto-install) >/dev/null
   if [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
     ok "$hook leaves initial installation to the provisioner"
   else
@@ -765,11 +769,24 @@ else
 fi
 
 printf 'stale\n' >"${dest_codex_source}/node_modules/.pnpm/lock.yaml"
+: >"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+(cd "${dest_codex_source}" && "${lefthook_bin}" run post-rewrite amend --no-auto-install) >/dev/null
+if [ ! -s "${WORKTREE_SELFTEST_MISE_INSTALL_LOG}" ] && [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
+  ok "amend skips tool and node dependency refresh"
+else
+  bad "amend skips tool and node dependency refresh" "unexpected install during amend"
+fi
+
 for hook in post-merge post-rewrite; do
+  hook_args=()
+  if [ "$hook" = post-rewrite ]; then
+    hook_args=(rebase)
+  fi
   : >"${WORKTREE_SELFTEST_PNPM_LOG}"
   : >"${WORKTREE_SELFTEST_MISE_LOG}"
   : >"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
-  (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" --no-auto-install) >/dev/null
+  (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" "${hook_args[@]}" --no-auto-install) >/dev/null
   if [ "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")" = "${dest_codex_source}"$'\t'"install --frozen-lockfile --ignore-scripts" ] &&
     [ "$(cat "${WORKTREE_SELFTEST_MISE_LOG}")" = "pnpm@${head_pnpm_pin}" ] &&
     [ "$(cat "${WORKTREE_SELFTEST_MISE_INSTALL_LOG}")" = "${dest_codex_source}"$'\t'"install" ]; then
@@ -789,7 +806,7 @@ else
 fi
 
 refresh_rc=0
-refresh_out="$(cd "${dest_codex_source}" && WORKTREE_SELFTEST_PNPM_EXIT=1 "${lefthook_bin}" run post-rewrite --no-auto-install 2>&1)" || refresh_rc=$?
+refresh_out="$(cd "${dest_codex_source}" && WORKTREE_SELFTEST_PNPM_EXIT=1 "${lefthook_bin}" run post-rewrite rebase --no-auto-install 2>&1)" || refresh_rc=$?
 if [ "${refresh_rc}" -ne 0 ] && printf '%s\n' "${refresh_out}" | grep -qF "just install"; then
   ok "a failed hook install fails loudly and names the repair command"
 else
