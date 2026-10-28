@@ -47,7 +47,7 @@ docker-compose.override.yml
 .github/skills
 
 # Private design, planning, and evaluation artifacts.
-/plans/
+/plans
 
 # Dev library seed target (populated by scripts/seed-library.sh when
 # REVERIE_LIBRARY_PATH is unset)
