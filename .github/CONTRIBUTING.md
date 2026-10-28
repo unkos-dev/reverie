@@ -120,12 +120,10 @@ standard). Compatibility shims may import those files, but they do not define se
 Git hooks are managed by lefthook and installed through the `prepare` script, so a fresh clone wires them on
 `pnpm install`. Four of those hooks invoke vite-plus directly, so install it before your first commit.
 
-Install the repository-pinned hook and local-check tools with [mise](https://mise.jdx.dev/):
+Install the repository-pinned development and verification tools with [mise](https://mise.jdx.dev/):
 
 ```sh
-mise install jactionlint gitleaks hadolint just rumdl shellcheck typos vale \
-  pnpm github:nextest-rs/nextest \
-  uv github:unkos-dev/specful github:owenlamont/ryl
+mise install
 ```
 
 SQL lint runs through `just infra::sqlfluff`, using a pinned `sqlfluff` release in an isolated `uv` tool environment.
@@ -149,19 +147,35 @@ justfiles rather than inline in the workflows. Run `just --list` for the recipe 
 `just worktree <branch>` creates a worktree outside the checkout, where it cannot enter the Docker build context or
 cargo's workspace discovery; set `WORKTREE_ROOT` to choose where those live.
 
-[`mise.toml`](../mise.toml) pins those contributor tools and the additional CI-only Rust tools to the versions enforced
-in CI. The scoped command avoids installing cargo-machete, cargo-deny, and cargo-mutants for contributors because local
-recipes do not use them. pnpm is pinned there too, for the bootstraps that need it before any `node_modules` exists for
-vp to resolve one from: `just install` and `just worktree`. The image build used to be a third; it now runs on pnpm's
-own published image and provisions nothing through mise. It is a convenience rather than a correctness constraint,
-because `packageManager` in [`package.json`](../package.json) is authoritative and a pnpm whose version disagrees
-downloads and re-executes the declared one. Node is not pinned in `mise.toml`: `devEngines.runtime` in
-[`package.json`](../package.json) is the single place its version is written, and vp, pnpm and the image build all read
-it from there. vite-plus is two things at once: the global binary installed above, which every `just js::` recipe and
-four git hooks invoke, and a `vite-plus` devDependency that supplies the toolchain the binary runs and that CI's
-`setup-vp` reads the version from. If a declared project dependency is missing, restore it through the documented
-lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check and report the missing
-command; do not bypass the check or install system packages implicitly.
+For a linked worktree created by another tool, run `just worktree-provision /path/to/worktree` from the source checkout.
+This is the same provisioning that `just worktree` uses: isolated Cargo output, inherited tool trust, selected policy
+overlays and dependencies installed with the destination's pnpm version. The install uses the lockfile and skips
+lifecycle scripts so it does not rewrite shared Git hooks. Provisioning requires `mise`, `jq` and a pnpm version in the
+destination's `package.json` `packageManager` field.
+
+Provisioning links the private planning directory to the main checkout so its documents survive worktree removal. Edits
+through that link are shared across worktrees. An existing local planning directory is retained and reported;
+provisioning does not move or replace its contents. A repository-local Git exclude keeps the link ignored on older
+branches too.
+
+The `post-merge` hook and the `rebase` event of `post-rewrite` run `just refresh-deps`. It runs `mise install` for the
+declared tool versions, then installs node dependencies again when `node_modules` exists and its installed lockfile is
+missing or differs from `pnpm-lock.yaml`. Fresh worktrees leave initial installation to worktree setup. After pulling
+hook configuration changes, run `vp exec lefthook install` from the main checkout to register new hooks. A node install
+failure is reported with `just install` as the repair command; it does not undo the merge or `git rebase`.
+
+[`mise.toml`](../mise.toml) pins the development and verification tools used locally and in CI. Local preflight uses
+cargo-machete, cargo-deny and sqlx-cli alongside the linters and test runners. pnpm is pinned there too, for the
+bootstraps that need it before any `node_modules` exists for vp to resolve one from: `just install` and `just worktree`.
+The image build used to be a third; it now runs on pnpm's own published image and provisions nothing through mise. It is
+a convenience rather than a correctness constraint, because `packageManager` in [`package.json`](../package.json) is
+authoritative and a pnpm whose version disagrees downloads and re-executes the declared one. Node is not pinned in
+`mise.toml`: `devEngines.runtime` in [`package.json`](../package.json) is the single place its version is written, and
+vp, pnpm and the image build all read it from there. vite-plus is two things at once: the global binary installed above,
+which every `just js::` recipe and four git hooks invoke, and a `vite-plus` devDependency that supplies the toolchain
+the binary runs and that CI's `setup-vp` reads the version from. If a declared project dependency is missing, restore it
+through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check
+and report the missing command; do not bypass the check or install system packages implicitly.
 
 Workflow and infrastructure files are additionally scanned in CI by zizmor, Checkov, Trivy, CodeQL, cargo-audit,
 cargo-deny, and dependency-review. These are intentionally CI-only scanners. Local installation is not part of

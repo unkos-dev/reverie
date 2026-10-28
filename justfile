@@ -281,18 +281,43 @@ worktree branch base="":
         echo "worktree base: ${base_mode} (${base_ref})"
         git worktree add -b "$branch" "$dest" "$base_ref"
     fi
+    just --justfile {{ quote(justfile()) }} worktree-provision "$dest"
+
+# Provision an existing linked worktree with isolated Cargo output, trusted tool configuration, policy overlays and locked node dependencies.
+[group('git')]
+[positional-arguments]
+worktree-provision path:
+    #!/usr/bin/env bash
+    set -ueo pipefail
     # Trust is keyed to Codex's canonical absolute project path, so use the
     # physical paths Codex will resolve instead of preserving a symlinked
     # spelling from the invoking shell.
     source_root="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
-    dest="$(cd "$dest" && pwd -P)"
+    dest="$(cd -- "$1" && pwd -P)"
+    if [ ! -f "$dest/.git" ] || [ "$(git -C "$dest" rev-parse --show-toplevel)" != "$dest" ] || [ "$(git -C "$dest" rev-parse --path-format=absolute --git-common-dir)" != "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+        echo "expected a linked worktree of this repository: $dest" >&2
+        exit 1
+    fi
+    IFS= read -r -d '' main_worktree < <(git worktree list --porcelain -z)
+    shared_plans="${main_worktree#worktree }/plans"
+    exclude_file="$(git -C "$dest" rev-parse --path-format=absolute --git-path info/exclude)"
+    if ! grep -qxF '/plans' "$exclude_file"; then
+        mkdir -p "$(dirname "$exclude_file")"
+        printf '\n/plans\n' >> "$exclude_file"
+    fi
+    if [ ! -e "$dest/plans" ] && [ ! -L "$dest/plans" ]; then
+        mkdir -p "$shared_plans"
+        ln -s "$shared_plans" "$dest/plans"
+        echo "linked worktree planning directory to $shared_plans"
+    elif [ ! -L "$dest/plans" ] || [ ! "$dest/plans" -ef "$shared_plans" ]; then
+        echo "retained existing $dest/plans; shared planning link not created"
+    fi
     # A user-level `[build] target-dir` override (a known cargo pattern for
     # warm cross-checkout builds) makes concurrent worktree builds thrash a
     # shared target dir: each branch's rebuild invalidates the other's freshly
     # built binaries. Cargo resolves config by nearest-file-wins, so a
     # worktree-local override pins this worktree to its own `target/`
-    # regardless of what the user level sets. On a machine with no such
-    # override this restates cargo's own default, so it is a no-op there.
+    # regardless of what the user level sets.
     # `target/` lives inside the worktree, so `git worktree remove` deletes it
     # with no separate cleanup step.
     mkdir -p "$dest/.cargo"
@@ -360,8 +385,8 @@ worktree branch base="":
         echo "copied .codex/config.toml into the worktree"
     fi
     if [ -d .codex/rules ]; then
-        mkdir -p "$dest/.codex"
-        cp -R .codex/rules "$dest/.codex/rules"
+        mkdir -p "$dest/.codex/rules"
+        cp -R .codex/rules/. "$dest/.codex/rules/"
         echo "copied .codex/rules into the worktree"
     fi
     # Codex keys project trust to the checkout's exact absolute path and skips
@@ -462,11 +487,24 @@ worktree branch base="":
                 ;;
         esac
     fi
-    # Node dependencies, and the one step in this recipe that touches the
-    # network. Without them the worktree is a checkout where every JS lane
-    # fails on a third-party message naming neither the condition nor the fix,
-    # so the recipe pays for the install rather than leaving it to be found.
-    #
+    just --justfile {{ quote(justfile()) }} _worktree-install "$dest"
+    echo "worktree ready: $dest"
+
+# Install declared mise tools and refresh stale node dependencies; leave initial node setup to the worktree provisioner.
+[group('git')]
+refresh-deps:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    mise install
+    if [ -d node_modules ] && ! cmp -s pnpm-lock.yaml node_modules/.pnpm/lock.yaml; then
+        just --justfile {{ quote(justfile()) }} _worktree-install "$PWD"
+    fi
+
+[positional-arguments]
+_worktree-install path:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    dest="$1"
     # --ignore-scripts, because the root `prepare` script runs `lefthook
     # install` and a worktree already shares $GIT_COMMON_DIR/hooks: it can
     # provision nothing here, and only rewrites which absolute lefthook path
@@ -482,25 +520,24 @@ worktree branch base="":
     # version has to be explicit: a branch old enough to declare a different
     # pnpm also predates the `pnpm` entry in mise.toml, so a bare `mise exec`
     # there resolves nothing.
-    pnpm_pin=""
-    if [ -f "$dest/package.json" ] && command -v jq > /dev/null; then
-        pnpm_pin="$(jq -r '.packageManager // empty' "$dest/package.json" 2> /dev/null | sed -n 's/^pnpm@//p' || true)"
-    fi
-    if [ -n "$pnpm_pin" ] && command -v mise > /dev/null; then
-        echo "installing node dependencies in $dest (pnpm ${pnpm_pin} via mise)"
-        install_cmd=(mise exec "pnpm@${pnpm_pin}" -- pnpm install --frozen-lockfile --ignore-scripts)
-    else
-        echo "installing node dependencies in $dest (pnpm install)"
-        install_cmd=(pnpm install --frozen-lockfile --ignore-scripts)
-    fi
-    # Not `&&`, for the reason given above the mise trust call: the recipe
-    # would report a ready worktree that no JS lane can run in.
-    if ! (cd "$dest" && "${install_cmd[@]}"); then
-        echo "failed to install node dependencies in $dest" >&2
-        echo "the branch and the worktree are correct; run 'just install' inside it to finish" >&2
+    for tool in mise jq; do
+        if ! command -v "$tool" > /dev/null; then
+            echo "$tool is required to install worktree dependencies" >&2
+            exit 1
+        fi
+    done
+    if ! pnpm_pin="$(jq -er '.packageManager | select(type == "string") | select(startswith("pnpm@")) | ltrimstr("pnpm@") | select(length > 0)' "$dest/package.json")"; then
+        echo "$dest/package.json must declare a pnpm version in packageManager" >&2
         exit 1
     fi
-    echo "worktree ready: $dest"
+    echo "installing node dependencies in $dest (pnpm ${pnpm_pin} via mise)"
+    # Not `&&`, for the reason given above the mise trust call: the recipe
+    # would report a ready worktree that no JS lane can run in.
+    if ! (cd "$dest" && mise exec "pnpm@${pnpm_pin}" -- pnpm install --frozen-lockfile --ignore-scripts); then
+        echo "failed to install node dependencies in $dest" >&2
+        echo "run 'just install' inside $dest to finish" >&2
+        exit 1
+    fi
 
 # Remove a worktree by branch name, then prune the administrative state that
 # a plain `rm -rf` would strand in .git/worktrees. Same "$@" handling as

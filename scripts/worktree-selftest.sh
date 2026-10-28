@@ -10,6 +10,10 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
+if ! real_mise="$(command -v mise)"; then
+  echo "mise is required to run the worktree self-test" >&2
+  exit 1
+fi
 
 # A sibling of the checkout, not $TMPDIR: the recipe itself refuses to
 # create a worktree on a tmpfs, and a sandboxed dev environment's default
@@ -29,8 +33,10 @@ stub_bin="${scratch_root}/stub-bin"
 mkdir -p "${stub_bin}"
 export WORKTREE_SELFTEST_PNPM_LOG="${scratch_root}/pnpm-invocations"
 export WORKTREE_SELFTEST_MISE_LOG="${scratch_root}/mise-exec-tools"
+export WORKTREE_SELFTEST_MISE_INSTALL_LOG="${scratch_root}/mise-installs"
 : >"${WORKTREE_SELFTEST_PNPM_LOG}"
 : >"${WORKTREE_SELFTEST_MISE_LOG}"
+: >"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
 
 cat >"${stub_bin}/pnpm" <<'STUB'
 #!/usr/bin/env bash
@@ -39,16 +45,13 @@ exit "${WORKTREE_SELFTEST_PNPM_EXIT:-0}"
 STUB
 chmod +x "${stub_bin}/pnpm"
 
-# `mise exec` resolves its own pnpm and would run straight past the stub above,
-# so mise is shadowed too. Only `exec` is intercepted: it records the tool spec
-# and then runs the command after `--`, which lands on the pnpm stub. Every
-# other subcommand delegates to the real mise, so the trust the recipe inherits
-# a few lines earlier is still granted for real.
-real_mise="$(command -v mise || true)"
 export WORKTREE_SELFTEST_REAL_MISE="${real_mise}"
-if [ -n "${real_mise}" ]; then
-  cat >"${stub_bin}/mise" <<'STUB'
+cat >"${stub_bin}/mise" <<'STUB'
 #!/usr/bin/env bash
+if [ "${1:-}" = "install" ]; then
+  printf '%s\t%s\n' "${PWD}" "$*" >>"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
+  exit "${WORKTREE_SELFTEST_MISE_INSTALL_EXIT:-0}"
+fi
 if [ "${1:-}" = "exec" ]; then
   shift
   printf '%s\n' "${1:-}" >>"${WORKTREE_SELFTEST_MISE_LOG}"
@@ -58,8 +61,7 @@ if [ "${1:-}" = "exec" ]; then
 fi
 exec "${WORKTREE_SELFTEST_REAL_MISE}" "$@"
 STUB
-  chmod +x "${stub_bin}/mise"
-fi
+chmod +x "${stub_bin}/mise"
 export PATH="${stub_bin}:${PATH}"
 
 # The pin the recipe must resolve out of a destination created from HEAD.
@@ -183,6 +185,14 @@ else
   bad "worktree creation exits zero" "exit ${create_rc}" "${create_out}"
 fi
 
+shared_plans="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/plans"
+if [ -L "${dest_ok}/plans" ] && [ "${dest_ok}/plans" -ef "${shared_plans}" ] &&
+  git -C "${dest_ok}" check-ignore -q plans; then
+  ok "worktree planning link targets the main checkout and remains ignored"
+else
+  bad "worktree planning link targets the main checkout and remains ignored" "${create_out}"
+fi
+
 if [ -f "${dest_ok}/.cargo/config.toml" ]; then
   ok "worktree creation writes .cargo/config.toml"
 else
@@ -255,16 +265,21 @@ else
     "want: ${want_pnpm_invocation@Q}" "got:  ${got_pnpm_invocation@Q}"
 fi
 
-if [ -n "${real_mise}" ]; then
-  got_mise_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
-  if [ "${got_mise_tool}" = "pnpm@${head_pnpm_pin}" ]; then
-    ok "the install runs under the pnpm the destination declares"
-  else
-    bad "the install runs under the pnpm the destination declares" \
-      "want: pnpm@${head_pnpm_pin}" "got:  ${got_mise_tool@Q}"
-  fi
+got_mise_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
+if [ "${got_mise_tool}" = "pnpm@${head_pnpm_pin}" ]; then
+  ok "the install runs under the pnpm the destination declares"
 else
-  echo "skip the install runs under the pnpm the destination declares: no mise on PATH"
+  bad "the install runs under the pnpm the destination declares" \
+    "want: pnpm@${head_pnpm_pin}" "got:  ${got_mise_tool@Q}"
+fi
+
+plans_repeat_rc=0
+plans_repeat_out="$(just worktree-provision "${dest_ok}" 2>&1)" || plans_repeat_rc=$?
+if [ "${plans_repeat_rc}" -eq 0 ] && [ -L "${dest_ok}/plans" ] &&
+  [ "${dest_ok}/plans" -ef "${shared_plans}" ]; then
+  ok "repeated provisioning preserves the shared planning link"
+else
+  bad "repeated provisioning preserves the shared planning link" "${plans_repeat_out}"
 fi
 
 remove_out=""
@@ -409,6 +424,32 @@ if cmp -s \
 else
   bad "nested Codex rules are copied byte-for-byte" \
     "missing or differing: ${dest_codex_overlay}/.codex/rules/nested/workflow.rules"
+fi
+
+printf 'allow_command(prefix=["just", "preflight"])\n' \
+  >"${dest_codex_source}/.codex/rules/nested/workflow.rules"
+local_plans="${dest_codex_overlay}/plans"
+if [ -L "${local_plans}" ]; then
+  rm "${local_plans}"
+fi
+mkdir -p "${local_plans}"
+printf 'existing local plan\n' >"${local_plans}/keep.md"
+reprovision_rc=0
+reprovision_out="$(cd "${dest_codex_source}" && just worktree-provision "${dest_codex_overlay}" 2>&1)" || reprovision_rc=$?
+if [ "${reprovision_rc}" -eq 0 ] &&
+  cmp -s "${dest_codex_source}/.codex/rules/nested/workflow.rules" \
+    "${dest_codex_overlay}/.codex/rules/nested/workflow.rules" &&
+  [ ! -e "${dest_codex_overlay}/.codex/rules/rules" ]; then
+  ok "repeated provisioning updates rules at their original paths"
+else
+  bad "repeated provisioning updates rules at their original paths" "${reprovision_out}"
+fi
+
+if [ ! -L "${local_plans}" ] && [ "$(cat "${local_plans}/keep.md")" = "existing local plan" ] &&
+  printf '%s\n' "${reprovision_out}" | grep -qF 'retained existing'; then
+  ok "provisioning preserves and reports existing local planning files"
+else
+  bad "provisioning preserves and reports existing local planning files" "${reprovision_out}"
 fi
 
 if git -C "${dest_codex_overlay}" check-ignore -q .codex/config.toml \
@@ -639,53 +680,158 @@ git -C "${repo_root}" worktree remove --force "${dest_install_fail}" >/dev/null 
 # that ignores the destination's declaration.
 #
 # The fixture commit is built with plumbing against a scratch index rather than
-# by checking anything out. It rewrites the pin and drops the justfile
-# altogether, the shape of any branch predating this change, which also proves
+# by checking anything out. It rewrites the pin and drops the justfile and hook
+# configuration, representing a branch without this task automation, which proves
 # the recipe never reaches for the destination's own recipes. ---
 
-if [ -n "${real_mise}" ]; then
-  fixture_pin="11.18.0"
-  if [ "${fixture_pin}" = "${head_pnpm_pin}" ]; then
-    bad "the pnpm pin fixture declares a pin unlike HEAD's" \
-      "both are ${fixture_pin}; choose another fixture pin"
-  fi
-  pin_index="${scratch_root}/pnpm-pin.index"
-  pin_blob="$(git -C "${repo_root}" show HEAD:package.json \
-    | jq --arg v "pnpm@${fixture_pin}" '.packageManager = $v' \
-    | git -C "${repo_root}" hash-object -w --stdin)"
-  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" read-tree HEAD
-  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index \
-    --cacheinfo "100644,${pin_blob},package.json"
-  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index --force-remove justfile
-  pin_tree="$(GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" write-tree)"
-  # An explicit identity: a CI checkout configures none, and commit-tree
-  # refuses to run without one.
-  pin_commit="$(GIT_AUTHOR_NAME=selftest GIT_AUTHOR_EMAIL=selftest@invalid \
-    GIT_COMMITTER_NAME=selftest GIT_COMMITTER_EMAIL=selftest@invalid \
-    git -C "${repo_root}" commit-tree "${pin_tree}" -p HEAD -m "worktree selftest pnpm pin fixture")"
-  git -C "${repo_root}" branch "${branch_pnpm_pin}" "${pin_commit}" >/dev/null
+fixture_pin="11.18.0"
+if [ "${fixture_pin}" = "${head_pnpm_pin}" ]; then
+  bad "the pnpm pin fixture declares a pin unlike HEAD's" \
+    "both are ${fixture_pin}; choose another fixture pin"
+fi
+pin_index="${scratch_root}/pnpm-pin.index"
+pin_blob="$(git -C "${repo_root}" show HEAD:package.json \
+  | jq --arg v "pnpm@${fixture_pin}" '.packageManager = $v' \
+  | git -C "${repo_root}" hash-object -w --stdin)"
+GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" read-tree HEAD
+GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index \
+  --cacheinfo "100644,${pin_blob},package.json"
+ignore_blob="$(git -C "${repo_root}" show HEAD:.gitignore \
+  | sed 's|^/plans$|/plans/|' \
+  | git -C "${repo_root}" hash-object -w --stdin)"
+GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index \
+  --cacheinfo "100644,${ignore_blob},.gitignore"
+GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index --force-remove justfile lefthook.yml
+pin_tree="$(GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" write-tree)"
+# An explicit identity: a CI checkout configures none, and commit-tree
+# refuses to run without one.
+pin_commit="$(GIT_AUTHOR_NAME=selftest GIT_AUTHOR_EMAIL=selftest@invalid \
+  GIT_COMMITTER_NAME=selftest GIT_COMMITTER_EMAIL=selftest@invalid \
+  git -C "${repo_root}" commit-tree "${pin_tree}" -p HEAD -m "worktree selftest pnpm pin fixture")"
+git -C "${repo_root}" branch "${branch_pnpm_pin}" "${pin_commit}" >/dev/null
 
-  : >"${WORKTREE_SELFTEST_MISE_LOG}"
-  : >"${WORKTREE_SELFTEST_PNPM_LOG}"
-  pnpm_pin_rc=0
-  pnpm_pin_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_pnpm_pin}" 2>&1)" || pnpm_pin_rc=$?
-  if [ "${pnpm_pin_rc}" -eq 0 ]; then
-    ok "worktree creation on a differently pinned branch exits zero"
-  else
-    bad "worktree creation on a differently pinned branch exits zero" \
-      "exit ${pnpm_pin_rc}" "${pnpm_pin_out}"
-  fi
-
-  got_pin_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
-  if [ "${got_pin_tool}" = "pnpm@${fixture_pin}" ]; then
-    ok "the install honours the destination's pnpm pin, not the running one"
-  else
-    bad "the install honours the destination's pnpm pin, not the running one" \
-      "want: pnpm@${fixture_pin}" "got:  ${got_pin_tool@Q}"
-  fi
-  git -C "${repo_root}" worktree remove "${dest_pnpm_pin}" >/dev/null 2>&1 || true
+: >"${WORKTREE_SELFTEST_MISE_LOG}"
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+pnpm_pin_rc=0
+git -C "${repo_root}" worktree add "${dest_pnpm_pin}" "${branch_pnpm_pin}" >/dev/null
+pnpm_pin_out="$(cd "${repo_root}" && just worktree-provision "${dest_pnpm_pin}" 2>&1)" || pnpm_pin_rc=$?
+if [ "${pnpm_pin_rc}" -eq 0 ]; then
+  ok "provisioning an existing differently pinned worktree exits zero"
 else
-  echo "skip the destination pnpm pin fixture: no mise on PATH"
+  bad "provisioning an existing differently pinned worktree exits zero" \
+    "exit ${pnpm_pin_rc}" "${pnpm_pin_out}"
+fi
+
+got_pin_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
+if [ "${got_pin_tool}" = "pnpm@${fixture_pin}" ]; then
+  ok "the install honours the destination's pnpm pin, not the running one"
+else
+  bad "the install honours the destination's pnpm pin, not the running one" \
+    "want: pnpm@${fixture_pin}" "got:  ${got_pin_tool@Q}"
+fi
+if grep -qxF '/plans/' "${dest_pnpm_pin}/.gitignore" &&
+  [ -L "${dest_pnpm_pin}/plans" ] &&
+  git -C "${dest_pnpm_pin}" check-ignore -q plans &&
+  [ -z "$(git -C "${dest_pnpm_pin}" status --porcelain)" ]; then
+  ok "older destination ignore rules leave the planning link ignored and checkout clean"
+else
+  bad "older destination ignore rules leave the planning link ignored and checkout clean" \
+    "$(git -C "${dest_pnpm_pin}" status --porcelain)"
+fi
+if git -C "${repo_root}" worktree remove "${dest_pnpm_pin}"; then
+  ok "older destination worktree removal succeeds without --force"
+else
+  bad "older destination worktree removal succeeds without --force" "worktree removal failed"
+fi
+
+invalid_rc=0
+invalid_out="$(cd "${repo_root}" && just worktree-provision "${scratch_root}" 2>&1)" || invalid_rc=$?
+if [ "${invalid_rc}" -ne 0 ] && [ ! -d "${scratch_root}/.cargo" ]; then
+  ok "provisioning rejects a directory that is not a linked worktree before writing"
+else
+  bad "provisioning rejects a directory that is not a linked worktree before writing" "${invalid_out}"
+fi
+
+cp "${repo_root}/lefthook.yml" "${dest_codex_source}/lefthook.yml"
+lefthook_bin="${repo_root}/node_modules/.bin/lefthook"
+for hook in post-merge post-rewrite; do
+  hook_args=()
+  if [ "$hook" = post-rewrite ]; then
+    hook_args=(rebase)
+  fi
+  : >"${WORKTREE_SELFTEST_PNPM_LOG}"
+  (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" "${hook_args[@]}" --no-auto-install) >/dev/null
+  if [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
+    ok "$hook leaves initial installation to the provisioner"
+  else
+    bad "$hook leaves initial installation to the provisioner" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
+  fi
+done
+
+mkdir -p "${dest_codex_source}/node_modules/.pnpm"
+cp "${dest_codex_source}/pnpm-lock.yaml" "${dest_codex_source}/node_modules/.pnpm/lock.yaml"
+: >"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+(cd "${dest_codex_source}" && "${lefthook_bin}" run post-merge --no-auto-install) >/dev/null
+if [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ] &&
+  [ "$(cat "${WORKTREE_SELFTEST_MISE_INSTALL_LOG}")" = "${dest_codex_source}"$'\t'"install" ]; then
+  ok "a matching node lockfile still installs declared mise tools"
+else
+  bad "a matching node lockfile still installs declared mise tools" "$(cat "${WORKTREE_SELFTEST_MISE_INSTALL_LOG}")"
+fi
+
+printf 'stale\n' >"${dest_codex_source}/node_modules/.pnpm/lock.yaml"
+: >"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+(cd "${dest_codex_source}" && "${lefthook_bin}" run post-rewrite amend --no-auto-install) >/dev/null
+if [ ! -s "${WORKTREE_SELFTEST_MISE_INSTALL_LOG}" ] && [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
+  ok "amend skips tool and node dependency refresh"
+else
+  bad "amend skips tool and node dependency refresh" "unexpected install during amend"
+fi
+
+for hook in post-merge post-rewrite; do
+  hook_args=()
+  if [ "$hook" = post-rewrite ]; then
+    hook_args=(rebase)
+  fi
+  : >"${WORKTREE_SELFTEST_PNPM_LOG}"
+  : >"${WORKTREE_SELFTEST_MISE_LOG}"
+  : >"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
+  (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" "${hook_args[@]}" --no-auto-install) >/dev/null
+  if [ "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")" = "${dest_codex_source}"$'\t'"install --frozen-lockfile --ignore-scripts" ] &&
+    [ "$(cat "${WORKTREE_SELFTEST_MISE_LOG}")" = "pnpm@${head_pnpm_pin}" ] &&
+    [ "$(cat "${WORKTREE_SELFTEST_MISE_INSTALL_LOG}")" = "${dest_codex_source}"$'\t'"install" ]; then
+    ok "$hook refreshes stale dependencies with the expected pnpm selection and locked install flags"
+  else
+    bad "$hook refreshes stale dependencies with the expected pnpm selection and locked install flags" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
+  fi
+done
+
+rm "${dest_codex_source}/node_modules/.pnpm/lock.yaml"
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+(cd "${dest_codex_source}" && "${lefthook_bin}" run post-merge --no-auto-install) >/dev/null
+if [ -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
+  ok "a missing installed lockfile triggers refresh"
+else
+  bad "a missing installed lockfile triggers refresh" "no install recorded"
+fi
+
+refresh_rc=0
+refresh_out="$(cd "${dest_codex_source}" && WORKTREE_SELFTEST_PNPM_EXIT=1 "${lefthook_bin}" run post-rewrite rebase --no-auto-install 2>&1)" || refresh_rc=$?
+if [ "${refresh_rc}" -ne 0 ] && printf '%s\n' "${refresh_out}" | grep -qF "just install"; then
+  ok "a failed hook install fails loudly and names the repair command"
+else
+  bad "a failed hook install fails loudly and names the repair command" "${refresh_out}"
+fi
+
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+mise_fail_rc=0
+mise_fail_out="$(cd "${dest_codex_source}" && WORKTREE_SELFTEST_MISE_INSTALL_EXIT=1 "${lefthook_bin}" run post-merge --no-auto-install 2>&1)" || mise_fail_rc=$?
+if [ "${mise_fail_rc}" -ne 0 ] && [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
+  ok "a failed mise install stops refresh before node installation"
+else
+  bad "a failed mise install stops refresh before node installation" "${mise_fail_out}"
 fi
 
 exit "${fail}"
