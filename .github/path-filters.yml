@@ -54,6 +54,7 @@ workflows:
   # A suppression edit must re-run the scan without a workflow change.
   - ".github/workflows/**"
   - ".github/actions/**"
+  - ".github/jactionlint.yaml"
   - ".github/zizmor.yml"
   - "mise.toml"
   - "mise.lock"
