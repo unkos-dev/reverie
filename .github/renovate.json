@@ -98,6 +98,12 @@
       "automerge": true
     },
     {
+      "description": "Look up mise aqua tools by GitHub release rather than by tag. Renovate resolves the aqua backend through git tags, but mise installs these tools from release assets, so a tag published without a release becomes an update whose lockfile entry has no download URL and `mise install --locked` fails.",
+      "matchManagers": ["mise"],
+      "matchDatasources": ["github-tags"],
+      "overrideDatasource": "github-releases"
+    },
+    {
       "description": "Automerge stable cargo and npm patch updates; keep pre-1.0 updates manual.",
       "matchManagers": ["cargo", "npm"],
       "matchUpdateTypes": ["patch"],
