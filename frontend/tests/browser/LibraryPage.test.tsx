@@ -1,6 +1,6 @@
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import { QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
-import { cleanup, render } from "vitest-browser-react";
+import { cleanup, render, renderHook } from "vitest-browser-react";
 import { page, userEvent, type Locator } from "vite-plus/test/browser";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -35,6 +35,7 @@ import { rememberActiveUser } from "@/lib/active-user";
 
 import { displayStorageKey } from "@/pages/library/display-storage";
 import { LibraryPage } from "@/pages/library/LibraryPage";
+import { useLibraryPreferences } from "@/pages/library/use-library-preferences";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -1292,28 +1293,48 @@ describe("LibraryPage", () => {
       await expect.element(page.getByRole("columnheader", { name: /^Title/ })).toBeInTheDocument();
     });
 
-    test("several column toggles inside the debounce window send one merged patch", async () => {
+    test("preference changes restart the debounce and send one patch with the latest fields", async () => {
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
         .mockImplementation(() => Promise.resolve(preferencesResponse(preferencesFixture())));
-      await renderLibrary({
-        items: [bookFixture()],
-        nextCursor: null,
-        visit: { view: "table" },
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, staleTime: Infinity } },
       });
-      await expect.element(page.getByTestId("library-table")).toBeInTheDocument();
-      const user = userEvent;
-      await user.click(page.getByRole("button", { name: /Columns/ }));
-      await user.click(
-        page.getByRole("dialog", { name: "Columns" }).getByText("Subtitle", { exact: true }),
-      );
-      await user.click(
-        page.getByRole("dialog", { name: "Columns" }).getByText("Pages", { exact: true }),
-      );
-      await vi.waitFor(() => {
-        expect(preferenceWrites(fetchSpy)).toEqual([{ hidden_columns: ["subtitle", "pages"] }]);
+      client.setQueryData(queryKeys.auth.preferences(), preferencesFixture());
+      const {
+        result,
+        act: update,
+        unmount,
+      } = await renderHook(() => useLibraryPreferences(), {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
       });
-      fetchSpy.mockRestore();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        await update(() => {
+          result.current.setHiddenColumns(new Set(["subtitle"]));
+        });
+        await update(() => vi.advanceTimersByTimeAsync(200));
+        await update(() => {
+          result.current.setHiddenColumns(new Set(["subtitle", "pages"]));
+          result.current.setDensity("compact");
+        });
+        await update(() => vi.advanceTimersByTimeAsync(399));
+        expect(preferenceWrites(fetchSpy)).toEqual([]);
+
+        await update(() => vi.advanceTimersByTimeAsync(1));
+        const expected = [{ hidden_columns: ["subtitle", "pages"], density: "compact" }];
+        expect(preferenceWrites(fetchSpy)).toEqual(expected);
+
+        await update(() => vi.advanceTimersByTimeAsync(400));
+        expect(preferenceWrites(fetchSpy)).toEqual(expected);
+      } finally {
+        await unmount();
+        client.clear();
+        vi.useRealTimers();
+        fetchSpy.mockRestore();
+      }
     });
   });
 
