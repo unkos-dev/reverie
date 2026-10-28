@@ -639,8 +639,8 @@ git -C "${repo_root}" worktree remove --force "${dest_install_fail}" >/dev/null 
 # that ignores the destination's declaration.
 #
 # The fixture commit is built with plumbing against a scratch index rather than
-# by checking anything out. It rewrites the pin and drops the justfile
-# altogether, the shape of any branch predating this change, which also proves
+# by checking anything out. It rewrites the pin and drops the justfile and hook
+# configuration, representing a branch without this task automation, which proves
 # the recipe never reaches for the destination's own recipes. ---
 
 if [ -n "${real_mise}" ]; then
@@ -656,7 +656,7 @@ if [ -n "${real_mise}" ]; then
   GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" read-tree HEAD
   GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index \
     --cacheinfo "100644,${pin_blob},package.json"
-  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index --force-remove justfile
+  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index --force-remove justfile lefthook.yml
   pin_tree="$(GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" write-tree)"
   # An explicit identity: a CI checkout configures none, and commit-tree
   # refuses to run without one.
@@ -668,7 +668,7 @@ if [ -n "${real_mise}" ]; then
   : >"${WORKTREE_SELFTEST_MISE_LOG}"
   : >"${WORKTREE_SELFTEST_PNPM_LOG}"
   pnpm_pin_rc=0
-  git -C "${repo_root}" worktree add "${dest_pnpm_pin}" "${branch_pnpm_pin}" >/dev/null 2>&1
+  git -C "${repo_root}" worktree add "${dest_pnpm_pin}" "${branch_pnpm_pin}" >/dev/null
   pnpm_pin_out="$(cd "${repo_root}" && just worktree-provision "${dest_pnpm_pin}" 2>&1)" || pnpm_pin_rc=$?
   if [ "${pnpm_pin_rc}" -eq 0 ]; then
     ok "provisioning an existing differently pinned worktree exits zero"
