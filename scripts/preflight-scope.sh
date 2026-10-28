@@ -146,7 +146,7 @@ LANE_ORDER=(
 )
 
 # infra::check mirrors CI's repo-lint job, which carries no path filter: it
-# lints the whole tree (shellcheck, ryl, actionlint, prose, and the guards
+# lints the whole tree (shellcheck, ryl, jactionlint, prose, and the guards
 # whose subject is committed configuration), so any change at all can break it.
 ALWAYS_LANES=(infra::check)
 
