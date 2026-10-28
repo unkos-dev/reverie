@@ -298,6 +298,15 @@ worktree-provision path:
         echo "expected a linked worktree of this repository: $dest" >&2
         exit 1
     fi
+    IFS= read -r -d '' main_worktree < <(git worktree list --porcelain -z)
+    shared_plans="${main_worktree#worktree }/plans"
+    if [ ! -e "$dest/plans" ] && [ ! -L "$dest/plans" ]; then
+        mkdir -p "$shared_plans"
+        ln -s "$shared_plans" "$dest/plans"
+        echo "linked worktree planning directory to $shared_plans"
+    elif [ ! -L "$dest/plans" ] || [ ! "$dest/plans" -ef "$shared_plans" ]; then
+        echo "retained existing $dest/plans; shared planning link not created"
+    fi
     # A user-level `[build] target-dir` override (a known cargo pattern for
     # warm cross-checkout builds) makes concurrent worktree builds thrash a
     # shared target dir: each branch's rebuild invalidates the other's freshly

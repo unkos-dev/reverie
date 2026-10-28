@@ -155,6 +155,10 @@ overlays and dependencies installed with the destination's pnpm version. The ins
 lifecycle scripts so it does not rewrite shared Git hooks. Provisioning requires `mise`, `jq` and a pnpm version in the
 destination's `package.json` `packageManager` field.
 
+Provisioning links the private planning directory to the main checkout so its documents survive worktree removal. Edits
+through that link are shared across worktrees. An existing local planning directory is retained and reported;
+provisioning does not move or replace its contents.
+
 The `post-checkout`, `post-merge` and `post-rewrite` hooks run `just refresh-deps`. It installs dependencies again when
 `node_modules` exists and its installed lockfile is missing or differs from `pnpm-lock.yaml`. Fresh worktrees leave
 initial installation to worktree setup. After pulling hook configuration changes, run `vp exec lefthook install` from

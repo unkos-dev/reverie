@@ -11,6 +11,8 @@ target/
 node_modules/
 dist/
 .vite/
+.rumdl_cache/
+.ryl_cache/
 
 # Environment
 .env

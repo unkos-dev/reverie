@@ -184,6 +184,14 @@ else
   bad "worktree creation exits zero" "exit ${create_rc}" "${create_out}"
 fi
 
+shared_plans="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/plans"
+if [ -L "${dest_ok}/plans" ] && [ "${dest_ok}/plans" -ef "${shared_plans}" ] &&
+  git -C "${dest_ok}" check-ignore -q plans; then
+  ok "worktree planning link targets the main checkout and remains ignored"
+else
+  bad "worktree planning link targets the main checkout and remains ignored" "${create_out}"
+fi
+
 if [ -f "${dest_ok}/.cargo/config.toml" ]; then
   ok "worktree creation writes .cargo/config.toml"
 else
@@ -264,6 +272,15 @@ else
     "want: pnpm@${head_pnpm_pin}" "got:  ${got_mise_tool@Q}"
 fi
 
+plans_repeat_rc=0
+plans_repeat_out="$(just worktree-provision "${dest_ok}" 2>&1)" || plans_repeat_rc=$?
+if [ "${plans_repeat_rc}" -eq 0 ] && [ -L "${dest_ok}/plans" ] &&
+  [ "${dest_ok}/plans" -ef "${shared_plans}" ]; then
+  ok "repeated provisioning preserves the shared planning link"
+else
+  bad "repeated provisioning preserves the shared planning link" "${plans_repeat_out}"
+fi
+
 remove_out=""
 remove_rc=0
 remove_out="$(git -C "${repo_root}" worktree remove "${dest_ok}" 2>&1)" || remove_rc=$?
@@ -271,6 +288,12 @@ if [ "${remove_rc}" -eq 0 ]; then
   ok "git worktree remove succeeds without --force"
 else
   bad "git worktree remove succeeds without --force" "exit ${remove_rc}" "${remove_out}"
+fi
+
+if [ -d "${shared_plans}" ]; then
+  ok "worktree removal preserves the shared planning directory"
+else
+  bad "worktree removal preserves the shared planning directory" "shared directory is missing"
 fi
 
 # --- overlay copy path, hermetic: on a checkout with no real overlay (CI),
@@ -410,6 +433,12 @@ fi
 
 printf 'allow_command(prefix=["just", "preflight"])\n' \
   >"${dest_codex_source}/.codex/rules/nested/workflow.rules"
+local_plans="${dest_codex_overlay}/plans"
+if [ -L "${local_plans}" ]; then
+  rm "${local_plans}"
+fi
+mkdir -p "${local_plans}"
+printf 'existing local plan\n' >"${local_plans}/keep.md"
 reprovision_rc=0
 reprovision_out="$(cd "${dest_codex_source}" && just worktree-provision "${dest_codex_overlay}" 2>&1)" || reprovision_rc=$?
 if [ "${reprovision_rc}" -eq 0 ] &&
@@ -419,6 +448,13 @@ if [ "${reprovision_rc}" -eq 0 ] &&
   ok "repeated provisioning updates rules at their original paths"
 else
   bad "repeated provisioning updates rules at their original paths" "${reprovision_out}"
+fi
+
+if [ ! -L "${local_plans}" ] && [ "$(cat "${local_plans}/keep.md")" = "existing local plan" ] &&
+  printf '%s\n' "${reprovision_out}" | grep -qF 'retained existing'; then
+  ok "provisioning preserves and reports existing local planning files"
+else
+  bad "provisioning preserves and reports existing local planning files" "${reprovision_out}"
 fi
 
 if git -C "${dest_codex_overlay}" check-ignore -q .codex/config.toml \
