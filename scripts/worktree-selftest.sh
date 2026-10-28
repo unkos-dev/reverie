@@ -33,8 +33,10 @@ stub_bin="${scratch_root}/stub-bin"
 mkdir -p "${stub_bin}"
 export WORKTREE_SELFTEST_PNPM_LOG="${scratch_root}/pnpm-invocations"
 export WORKTREE_SELFTEST_MISE_LOG="${scratch_root}/mise-exec-tools"
+export WORKTREE_SELFTEST_MISE_INSTALL_LOG="${scratch_root}/mise-installs"
 : >"${WORKTREE_SELFTEST_PNPM_LOG}"
 : >"${WORKTREE_SELFTEST_MISE_LOG}"
+: >"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
 
 cat >"${stub_bin}/pnpm" <<'STUB'
 #!/usr/bin/env bash
@@ -43,14 +45,13 @@ exit "${WORKTREE_SELFTEST_PNPM_EXIT:-0}"
 STUB
 chmod +x "${stub_bin}/pnpm"
 
-# `mise exec` resolves its own pnpm and would run straight past the stub above,
-# so mise is shadowed too. Only `exec` is intercepted: it records the tool spec
-# and then runs the command after `--`, which lands on the pnpm stub. Every
-# other subcommand delegates to the real mise, so the trust the recipe inherits
-# a few lines earlier is still granted for real.
 export WORKTREE_SELFTEST_REAL_MISE="${real_mise}"
 cat >"${stub_bin}/mise" <<'STUB'
 #!/usr/bin/env bash
+if [ "${1:-}" = "install" ]; then
+  printf '%s\t%s\n' "${PWD}" "$*" >>"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
+  exit "${WORKTREE_SELFTEST_MISE_INSTALL_EXIT:-0}"
+fi
 if [ "${1:-}" = "exec" ]; then
   shift
   printf '%s\n' "${1:-}" >>"${WORKTREE_SELFTEST_MISE_LOG}"
@@ -741,7 +742,7 @@ fi
 
 cp "${repo_root}/lefthook.yml" "${dest_codex_source}/lefthook.yml"
 lefthook_bin="${repo_root}/node_modules/.bin/lefthook"
-for hook in post-checkout post-merge post-rewrite; do
+for hook in post-merge post-rewrite; do
   : >"${WORKTREE_SELFTEST_PNPM_LOG}"
   (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" --no-auto-install) >/dev/null
   if [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
@@ -753,21 +754,25 @@ done
 
 mkdir -p "${dest_codex_source}/node_modules/.pnpm"
 cp "${dest_codex_source}/pnpm-lock.yaml" "${dest_codex_source}/node_modules/.pnpm/lock.yaml"
+: >"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
 : >"${WORKTREE_SELFTEST_PNPM_LOG}"
-(cd "${dest_codex_source}" && "${lefthook_bin}" run post-checkout --no-auto-install) >/dev/null
-if [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
-  ok "a matching installed lockfile skips the refresh"
+(cd "${dest_codex_source}" && "${lefthook_bin}" run post-merge --no-auto-install) >/dev/null
+if [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ] &&
+  [ "$(cat "${WORKTREE_SELFTEST_MISE_INSTALL_LOG}")" = "${dest_codex_source}"$'\t'"install" ]; then
+  ok "a matching node lockfile still installs declared mise tools"
 else
-  bad "a matching installed lockfile skips the refresh" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
+  bad "a matching node lockfile still installs declared mise tools" "$(cat "${WORKTREE_SELFTEST_MISE_INSTALL_LOG}")"
 fi
 
 printf 'stale\n' >"${dest_codex_source}/node_modules/.pnpm/lock.yaml"
-for hook in post-checkout post-merge post-rewrite; do
+for hook in post-merge post-rewrite; do
   : >"${WORKTREE_SELFTEST_PNPM_LOG}"
   : >"${WORKTREE_SELFTEST_MISE_LOG}"
+  : >"${WORKTREE_SELFTEST_MISE_INSTALL_LOG}"
   (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" --no-auto-install) >/dev/null
   if [ "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")" = "${dest_codex_source}"$'\t'"install --frozen-lockfile --ignore-scripts" ] &&
-    [ "$(cat "${WORKTREE_SELFTEST_MISE_LOG}")" = "pnpm@${head_pnpm_pin}" ]; then
+    [ "$(cat "${WORKTREE_SELFTEST_MISE_LOG}")" = "pnpm@${head_pnpm_pin}" ] &&
+    [ "$(cat "${WORKTREE_SELFTEST_MISE_INSTALL_LOG}")" = "${dest_codex_source}"$'\t'"install" ]; then
     ok "$hook refreshes stale dependencies with the expected pnpm selection and locked install flags"
   else
     bad "$hook refreshes stale dependencies with the expected pnpm selection and locked install flags" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
@@ -789,6 +794,15 @@ if [ "${refresh_rc}" -ne 0 ] && printf '%s\n' "${refresh_out}" | grep -qF "just 
   ok "a failed hook install fails loudly and names the repair command"
 else
   bad "a failed hook install fails loudly and names the repair command" "${refresh_out}"
+fi
+
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+mise_fail_rc=0
+mise_fail_out="$(cd "${dest_codex_source}" && WORKTREE_SELFTEST_MISE_INSTALL_EXIT=1 "${lefthook_bin}" run post-merge --no-auto-install 2>&1)" || mise_fail_rc=$?
+if [ "${mise_fail_rc}" -ne 0 ] && [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
+  ok "a failed mise install stops refresh before node installation"
+else
+  bad "a failed mise install stops refresh before node installation" "${mise_fail_out}"
 fi
 
 exit "${fail}"

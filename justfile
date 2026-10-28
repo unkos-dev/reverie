@@ -485,11 +485,12 @@ worktree-provision path:
     just --justfile {{ quote(justfile()) }} _worktree-install "$dest"
     echo "worktree ready: $dest"
 
-# Refresh an existing node installation when its installed lockfile is missing or stale; leave initial setup to the worktree provisioner.
+# Install declared mise tools and refresh stale node dependencies; leave initial node setup to the worktree provisioner.
 [group('git')]
 refresh-deps:
     #!/usr/bin/env bash
     set -ueo pipefail
+    mise install
     if [ -d node_modules ] && ! cmp -s pnpm-lock.yaml node_modules/.pnpm/lock.yaml; then
         just --justfile {{ quote(justfile()) }} _worktree-install "$PWD"
     fi

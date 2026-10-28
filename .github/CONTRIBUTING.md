@@ -159,11 +159,11 @@ Provisioning links the private planning directory to the main checkout so its do
 through that link are shared across worktrees. An existing local planning directory is retained and reported;
 provisioning does not move or replace its contents.
 
-The `post-checkout`, `post-merge` and `post-rewrite` hooks run `just refresh-deps`. It installs dependencies again when
-`node_modules` exists and its installed lockfile is missing or differs from `pnpm-lock.yaml`. Fresh worktrees leave
-initial installation to worktree setup. After pulling hook configuration changes, run `vp exec lefthook install` from
-the main checkout to register new hooks. An install failure is reported with `just install` as the repair command; it
-does not undo the checkout, merge or `git rebase`.
+The `post-merge` and `post-rewrite` hooks run `just refresh-deps`. It runs `mise install` for the declared tool
+versions, then installs node dependencies again when `node_modules` exists and its installed lockfile is missing or
+differs from `pnpm-lock.yaml`. Fresh worktrees leave initial installation to worktree setup. After pulling hook
+configuration changes, run `vp exec lefthook install` from the main checkout to register new hooks. A node install
+failure is reported with `just install` as the repair command; it does not undo the merge or `git rebase`.
 
 [`mise.toml`](../mise.toml) pins those contributor tools and the additional CI-only Rust tools to the versions enforced
 in CI. The scoped command avoids installing cargo-machete, cargo-deny, and cargo-mutants for contributors because local
