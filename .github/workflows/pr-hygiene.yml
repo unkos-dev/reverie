@@ -42,7 +42,7 @@ jobs:
           persist-credentials: false
 
       # Root lockfile carries the same pinned commitlint the local hook runs.
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           vp: "true"
 

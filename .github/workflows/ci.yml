@@ -30,7 +30,7 @@ jobs:
   # never report and leave every pull request pending. Filtering lives inside
   # each called workflow.
   backend:
-    uses: ./.github/workflows/backend.yml
+    uses: $/.github/workflows/backend.yml
     secrets:
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID_RW: ${{ secrets.R2_ACCESS_KEY_ID_RW }}
@@ -39,32 +39,32 @@ jobs:
       R2_SECRET_ACCESS_KEY_RO: ${{ secrets.R2_SECRET_ACCESS_KEY_RO }}
 
   lint:
-    uses: ./.github/workflows/lint.yml
+    uses: $/.github/workflows/lint.yml
 
   security:
-    uses: ./.github/workflows/security.yml
+    uses: $/.github/workflows/security.yml
 
   deps:
-    uses: ./.github/workflows/deps.yml
+    uses: $/.github/workflows/deps.yml
 
   frontend:
-    uses: ./.github/workflows/frontend.yml
+    uses: $/.github/workflows/frontend.yml
 
   # The only caller granting more than the top-level default: a called workflow
   # can downgrade its caller's token but never elevate it, so the deploy job's
   # needs are declared here and narrowed again inside website.yml.
   website:
-    uses: ./.github/workflows/website.yml
+    uses: $/.github/workflows/website.yml
     permissions:
       contents: read
       pages: write
       id-token: write
 
   docker:
-    uses: ./.github/workflows/docker.yml
+    uses: $/.github/workflows/docker.yml
 
   codeql:
-    uses: ./.github/workflows/codeql.yml
+    uses: $/.github/workflows/codeql.yml
     secrets:
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID_RW: ${{ secrets.R2_ACCESS_KEY_ID_RW }}
@@ -80,7 +80,7 @@ jobs:
   # Absent from ci-gate.needs on purpose: every job here is advisory and never
   # fails, so a detector hiccup must not block a merge.
   snyk:
-    uses: ./.github/workflows/snyk.yml
+    uses: $/.github/workflows/snyk.yml
     permissions:
       contents: read
       security-events: write

@@ -91,7 +91,7 @@ jobs:
       # Shims stay off for the whole job: rustc links a registry dependency from
       # ~/.cargo/registry, which has no mise.toml above it for a shim to resolve
       # against. Steps needing a mise tool run under `mise exec` instead.
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           mise-install-args: just
           add-shims-to-path: "false"
@@ -102,7 +102,7 @@ jobs:
 
       # Components are scoped per job; this one installs clippy and rustfmt for linting.
       - id: rust
-        uses: ./.github/actions/rust-toolchain
+        uses: $/.github/actions/rust-toolchain
         with:
           components: clippy, rustfmt
 
@@ -159,7 +159,7 @@ jobs:
 
       # Must land before the first linking cargo invocation (sqlx-cli below), since
       # job-level RUSTFLAGS routes every link through mold.
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           mise-install-args: mold github:bnjbvr/cargo-machete
           add-shims-to-path: "false"
@@ -225,7 +225,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/rust-toolchain
+      - uses: $/.github/actions/rust-toolchain
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -234,7 +234,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Shims stay off here for the same reason as the checks job.
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           mise-install-args: mold github:nextest-rs/nextest
           add-shims-to-path: "false"

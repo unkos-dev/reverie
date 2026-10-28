@@ -42,7 +42,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           mise-install-args: github:EmbarkStudios/cargo-deny
 
@@ -62,7 +62,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           mise-install-args: github:EmbarkStudios/cargo-deny
 
@@ -101,7 +101,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           vp: "true"
 

@@ -13,7 +13,7 @@ see; everything structural lives here.
 ```yaml
 jobs:
   lint:
-    uses: ./.github/workflows/lint.yml
+    uses: $/.github/workflows/lint.yml
 ```
 
 Each concern file is `workflow_call`-only and filters itself internally, using its own `changes` job over the shared

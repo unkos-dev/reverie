@@ -129,8 +129,6 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
   the workaround preserves macro coverage.
 - [SQL lint exclusions preserve the initial schema rollup](2026-09-17-sqruff-schema-rollup-exclusions.md): lifts when
   the next schema rollup passes SQL lint without the RF03 and ST09 exclusions.
-- [Zizmor self-repository audit disabled](2026-09-16-zizmor-self-repository.md): lifts when the pinned workflow linter
-  accepts `$/` and both workflow linters pass after migrating every executable self-reference.
 - [Explicit header alignment enables table compaction](2026-09-10-rumdl-table-compaction.md): lifts when rumdl checks
   the width of already aligned tables without explicit header alignment.
 - [pnpm updates stay on v11](2026-09-10-pnpm-update-lockfile.md): lifts when a stable newer release passes both targeted
