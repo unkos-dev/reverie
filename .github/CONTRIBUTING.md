@@ -149,6 +149,17 @@ justfiles rather than inline in the workflows. Run `just --list` for the recipe 
 `just worktree <branch>` creates a worktree outside the checkout, where it cannot enter the Docker build context or
 cargo's workspace discovery; set `WORKTREE_ROOT` to choose where those live.
 
+For a linked worktree created by another tool, run `just worktree-provision /path/to/worktree` from the source checkout.
+This is the same provisioning that `just worktree` uses: isolated Cargo output, inherited tool trust, selected policy
+overlays and dependencies installed with the destination's pnpm version. The install uses the lockfile and skips
+lifecycle scripts so it does not rewrite shared Git hooks.
+
+The `post-checkout`, `post-merge` and `post-rewrite` hooks run `just refresh-deps`. It installs dependencies again when
+`node_modules` exists and its installed lockfile is missing or differs from `pnpm-lock.yaml`. Fresh worktrees leave
+initial installation to worktree setup. After pulling hook configuration changes, run `vp exec lefthook install` from
+the main checkout to register new hooks. An install failure is reported with `just install` as the repair command; it
+does not undo the checkout, merge or `git rebase`.
+
 [`mise.toml`](../mise.toml) pins those contributor tools and the additional CI-only Rust tools to the versions enforced
 in CI. The scoped command avoids installing cargo-machete, cargo-deny, and cargo-mutants for contributors because local
 recipes do not use them. pnpm is pinned there too, for the bootstraps that need it before any `node_modules` exists for

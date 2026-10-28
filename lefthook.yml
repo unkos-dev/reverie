@@ -136,3 +136,18 @@ commit-msg:
     - name: dco
       run: 'head -n1 {1} | grep -q "^Merge " || grep -Eq "^Signed-off-by: .+ <.+@.+>" {1}'
       fail_text: "Missing Signed-off-by trailer. Commit with git commit -s (see CONTRIBUTING.md, Developer Certificate of Origin)."
+
+post-checkout:
+  jobs:
+    - name: refresh-deps
+      run: just refresh-deps
+
+post-merge:
+  jobs:
+    - name: refresh-deps
+      run: just refresh-deps
+
+post-rewrite:
+  jobs:
+    - name: refresh-deps
+      run: just refresh-deps

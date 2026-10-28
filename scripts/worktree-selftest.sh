@@ -668,11 +668,12 @@ if [ -n "${real_mise}" ]; then
   : >"${WORKTREE_SELFTEST_MISE_LOG}"
   : >"${WORKTREE_SELFTEST_PNPM_LOG}"
   pnpm_pin_rc=0
-  pnpm_pin_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_pnpm_pin}" 2>&1)" || pnpm_pin_rc=$?
+  git -C "${repo_root}" worktree add "${dest_pnpm_pin}" "${branch_pnpm_pin}" >/dev/null 2>&1
+  pnpm_pin_out="$(cd "${repo_root}" && just worktree-provision "${dest_pnpm_pin}" 2>&1)" || pnpm_pin_rc=$?
   if [ "${pnpm_pin_rc}" -eq 0 ]; then
-    ok "worktree creation on a differently pinned branch exits zero"
+    ok "provisioning an existing differently pinned worktree exits zero"
   else
-    bad "worktree creation on a differently pinned branch exits zero" \
+    bad "provisioning an existing differently pinned worktree exits zero" \
       "exit ${pnpm_pin_rc}" "${pnpm_pin_out}"
   fi
 
@@ -686,6 +687,66 @@ if [ -n "${real_mise}" ]; then
   git -C "${repo_root}" worktree remove "${dest_pnpm_pin}" >/dev/null 2>&1 || true
 else
   echo "skip the destination pnpm pin fixture: no mise on PATH"
+fi
+
+invalid_rc=0
+invalid_out="$(cd "${repo_root}" && just worktree-provision "${scratch_root}" 2>&1)" || invalid_rc=$?
+if [ "${invalid_rc}" -ne 0 ] && [ ! -d "${scratch_root}/.cargo" ]; then
+  ok "provisioning rejects a directory that is not a linked worktree before writing"
+else
+  bad "provisioning rejects a directory that is not a linked worktree before writing" "${invalid_out}"
+fi
+
+cp "${repo_root}/lefthook.yml" "${dest_codex_source}/lefthook.yml"
+lefthook_bin="${repo_root}/node_modules/.bin/lefthook"
+for hook in post-checkout post-merge post-rewrite; do
+  : >"${WORKTREE_SELFTEST_PNPM_LOG}"
+  (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" --no-auto-install) >/dev/null
+  if [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
+    ok "$hook leaves initial installation to the provisioner"
+  else
+    bad "$hook leaves initial installation to the provisioner" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
+  fi
+done
+
+mkdir -p "${dest_codex_source}/node_modules/.pnpm"
+cp "${dest_codex_source}/pnpm-lock.yaml" "${dest_codex_source}/node_modules/.pnpm/lock.yaml"
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+(cd "${dest_codex_source}" && "${lefthook_bin}" run post-checkout --no-auto-install) >/dev/null
+if [ ! -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
+  ok "a matching installed lockfile skips the refresh"
+else
+  bad "a matching installed lockfile skips the refresh" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
+fi
+
+printf 'stale\n' >"${dest_codex_source}/node_modules/.pnpm/lock.yaml"
+for hook in post-checkout post-merge post-rewrite; do
+  : >"${WORKTREE_SELFTEST_PNPM_LOG}"
+  : >"${WORKTREE_SELFTEST_MISE_LOG}"
+  (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" --no-auto-install) >/dev/null
+  if [ "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")" = "${dest_codex_source}"$'\t'"install --frozen-lockfile --ignore-scripts" ] &&
+    [ "$(cat "${WORKTREE_SELFTEST_MISE_LOG}")" = "pnpm@${head_pnpm_pin}" ]; then
+    ok "$hook refreshes stale dependencies with the declared pnpm and locked install flags"
+  else
+    bad "$hook refreshes stale dependencies with the declared pnpm and locked install flags" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
+  fi
+done
+
+rm "${dest_codex_source}/node_modules/.pnpm/lock.yaml"
+: >"${WORKTREE_SELFTEST_PNPM_LOG}"
+(cd "${dest_codex_source}" && "${lefthook_bin}" run post-merge --no-auto-install) >/dev/null
+if [ -s "${WORKTREE_SELFTEST_PNPM_LOG}" ]; then
+  ok "a missing installed lockfile triggers refresh"
+else
+  bad "a missing installed lockfile triggers refresh" "no install recorded"
+fi
+
+refresh_rc=0
+refresh_out="$(cd "${dest_codex_source}" && WORKTREE_SELFTEST_PNPM_EXIT=1 "${lefthook_bin}" run post-rewrite --no-auto-install 2>&1)" || refresh_rc=$?
+if [ "${refresh_rc}" -ne 0 ] && printf '%s\n' "${refresh_out}" | grep -qF "just install"; then
+  ok "a failed hook install fails loudly and names the repair command"
+else
+  bad "a failed hook install fails loudly and names the repair command" "${refresh_out}"
 fi
 
 exit "${fail}"
