@@ -10,7 +10,7 @@
 # `:main` images with `GLIBC_2.38 not found` against a bookworm runner. Both
 # stages share the same codename so the dynamic linker can resolve every
 # symbol the release binary requests.
-FROM rust:1-slim-trixie@sha256:1a939748a7cbab172de91a014e3804a97af1394a8c844faa67fce9401c4e40fb AS chef
+FROM rust:1-slim-trixie@sha256:45afd9478205dcdf7f98b099019fee773a33644cf69ac0a3b862eb31d2a1ccef AS chef
 # cargo-auditable embeds the resolved dependency list into the release
 # binary. Without it the published SBOM is silent about every crate,
 # because the runtime image holds a compiled binary rather than
@@ -128,7 +128,7 @@ RUN node /usr/local/lib/verify-frontend-sbom.mjs /sbom-tree /build/frontend.cdx.
 
 # Stage 3: Runtime
 # Codename MUST match the builder stage above. See note on `chef`.
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
+FROM debian:trixie-slim@sha256:89c1ea91e897f0fe0a3731595330bc45b8bdef4047464a07116f891a94054b31 AS runtime
 # curl is the HTTP client used by the HEALTHCHECK below; readiness
 # probe needs a working HTTP client baked in so docker / compose / Incus can
 # detect when the server is up and the schema check has passed before

@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 env:
-  MISE_TOOLS: just rumdl shellcheck hadolint typos vale github:owenlamont/ryl uv actionlint zizmor github:unkos-dev/specful
+  MISE_TOOLS: just rumdl shellcheck hadolint typos vale github:owenlamont/ryl uv jactionlint zizmor github:unkos-dev/specful
 
 jobs:
   changes:
@@ -50,12 +50,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           mise-install-args: ${{ env.MISE_TOOLS }}
 
       - name: Lint workflow files
-        run: actionlint -color
+        run: just infra::jactionlint
 
       - name: Workflow security audit (zizmor)
         run: just infra::zizmor
@@ -68,7 +68,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           mise-install-args: ${{ env.MISE_TOOLS }}
 
@@ -129,7 +129,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           mise-install-args: ${{ env.MISE_TOOLS }}
           vp: "true"
@@ -155,7 +155,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           mise-install-args: ${{ env.MISE_TOOLS }}
           vp: "true"

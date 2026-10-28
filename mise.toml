@@ -1,5 +1,5 @@
 [tools]
-actionlint = "1.7.12"
+jactionlint = "2.3.0"
 gitleaks = "8.30.1"
 hadolint = "2.15.1"
 just = "1.59.0"
@@ -52,7 +52,7 @@ locked = false
 
 # YAML linter; reads .yamllint.yaml. Run by `just infra::ryl`.
 [tools."github:owenlamont/ryl"]
-version = "v0.26.0"
+version = "v0.26.1"
 
 # Prebuilt Rust tools used by local recipes. The GitHub backend enables
 # checksum and provenance verification when upstream publishes them.

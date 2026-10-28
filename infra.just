@@ -35,8 +35,8 @@ sqlfluff:
 
 # Lint GitHub Actions workflow files.
 [group('infra')]
-actionlint:
-    actionlint -color
+jactionlint:
+    jactionlint --color=always
 
 # `.` matches the zizmor-action default input. --config is passed explicitly
 # rather than relying on discovery: from a linked worktree zizmor does not find
@@ -176,7 +176,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (the non-JS half of CI's lint concern).
 [group('infra')]
-lint: shellcheck hadolint typos ryl sqlfluff actionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard backend-dev-env-selftest
+lint: shellcheck hadolint typos ryl sqlfluff jactionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard backend-dev-env-selftest
 
 # The env-loader status cases also gate lint and CI; the other tests cover local tooling.
 # Everything else here covers local-only developer tooling, and that is now the
