@@ -411,6 +411,19 @@ else
     "missing or differing: ${dest_codex_overlay}/.codex/rules/nested/workflow.rules"
 fi
 
+printf 'allow_command(prefix=["just", "preflight"])\n' \
+  >"${dest_codex_source}/.codex/rules/nested/workflow.rules"
+reprovision_rc=0
+reprovision_out="$(cd "${dest_codex_source}" && just worktree-provision "${dest_codex_overlay}" 2>&1)" || reprovision_rc=$?
+if [ "${reprovision_rc}" -eq 0 ] &&
+  cmp -s "${dest_codex_source}/.codex/rules/nested/workflow.rules" \
+    "${dest_codex_overlay}/.codex/rules/nested/workflow.rules" &&
+  [ ! -e "${dest_codex_overlay}/.codex/rules/rules" ]; then
+  ok "repeated provisioning updates rules at their original paths"
+else
+  bad "repeated provisioning updates rules at their original paths" "${reprovision_out}"
+fi
+
 if git -C "${dest_codex_overlay}" check-ignore -q .codex/config.toml \
   && git -C "${dest_codex_overlay}" check-ignore -q .codex/rules/nested/workflow.rules; then
   ok "copied Codex policy files remain ignored"
@@ -720,15 +733,19 @@ else
 fi
 
 printf 'stale\n' >"${dest_codex_source}/node_modules/.pnpm/lock.yaml"
+expected_mise_tool=""
+if [ -n "${real_mise}" ]; then
+  expected_mise_tool="pnpm@${head_pnpm_pin}"
+fi
 for hook in post-checkout post-merge post-rewrite; do
   : >"${WORKTREE_SELFTEST_PNPM_LOG}"
   : >"${WORKTREE_SELFTEST_MISE_LOG}"
   (cd "${dest_codex_source}" && "${lefthook_bin}" run "$hook" --no-auto-install) >/dev/null
   if [ "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")" = "${dest_codex_source}"$'\t'"install --frozen-lockfile --ignore-scripts" ] &&
-    [ "$(cat "${WORKTREE_SELFTEST_MISE_LOG}")" = "pnpm@${head_pnpm_pin}" ]; then
-    ok "$hook refreshes stale dependencies with the declared pnpm and locked install flags"
+    [ "$(cat "${WORKTREE_SELFTEST_MISE_LOG}")" = "${expected_mise_tool}" ]; then
+    ok "$hook refreshes stale dependencies with the expected pnpm selection and locked install flags"
   else
-    bad "$hook refreshes stale dependencies with the declared pnpm and locked install flags" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
+    bad "$hook refreshes stale dependencies with the expected pnpm selection and locked install flags" "$(cat "${WORKTREE_SELFTEST_PNPM_LOG}")"
   fi
 done
 

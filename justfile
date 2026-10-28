@@ -371,8 +371,8 @@ worktree-provision path:
         echo "copied .codex/config.toml into the worktree"
     fi
     if [ -d .codex/rules ]; then
-        mkdir -p "$dest/.codex"
-        cp -R .codex/rules "$dest/.codex/rules"
+        mkdir -p "$dest/.codex/rules"
+        cp -R .codex/rules/. "$dest/.codex/rules/"
         echo "copied .codex/rules into the worktree"
     fi
     # Codex keys project trust to the checkout's exact absolute path and skips
