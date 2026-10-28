@@ -291,12 +291,6 @@ else
   bad "git worktree remove succeeds without --force" "exit ${remove_rc}" "${remove_out}"
 fi
 
-if [ -d "${shared_plans}" ]; then
-  ok "worktree removal preserves the shared planning directory"
-else
-  bad "worktree removal preserves the shared planning directory" "shared directory is missing"
-fi
-
 # --- overlay copy path, hermetic: on a checkout with no real overlay (CI),
 # plant a sentinel one, prove the recipe carries it byte-for-byte, and
 # remove exactly what was planted. Skipped when a real overlay exists,
@@ -702,6 +696,11 @@ pin_blob="$(git -C "${repo_root}" show HEAD:package.json \
 GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" read-tree HEAD
 GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index \
   --cacheinfo "100644,${pin_blob},package.json"
+ignore_blob="$(git -C "${repo_root}" show HEAD:.gitignore \
+  | sed 's|^/plans$|/plans/|' \
+  | git -C "${repo_root}" hash-object -w --stdin)"
+GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index \
+  --cacheinfo "100644,${ignore_blob},.gitignore"
 GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index --force-remove justfile lefthook.yml
 pin_tree="$(GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" write-tree)"
 # An explicit identity: a CI checkout configures none, and commit-tree
@@ -730,7 +729,20 @@ else
   bad "the install honours the destination's pnpm pin, not the running one" \
     "want: pnpm@${fixture_pin}" "got:  ${got_pin_tool@Q}"
 fi
-git -C "${repo_root}" worktree remove "${dest_pnpm_pin}" >/dev/null 2>&1 || true
+if grep -qxF '/plans/' "${dest_pnpm_pin}/.gitignore" &&
+  [ -L "${dest_pnpm_pin}/plans" ] &&
+  git -C "${dest_pnpm_pin}" check-ignore -q plans &&
+  [ -z "$(git -C "${dest_pnpm_pin}" status --porcelain)" ]; then
+  ok "older destination ignore rules leave the planning link ignored and checkout clean"
+else
+  bad "older destination ignore rules leave the planning link ignored and checkout clean" \
+    "$(git -C "${dest_pnpm_pin}" status --porcelain)"
+fi
+if git -C "${repo_root}" worktree remove "${dest_pnpm_pin}"; then
+  ok "older destination worktree removal succeeds without --force"
+else
+  bad "older destination worktree removal succeeds without --force" "worktree removal failed"
+fi
 
 invalid_rc=0
 invalid_out="$(cd "${repo_root}" && just worktree-provision "${scratch_root}" 2>&1)" || invalid_rc=$?

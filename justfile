@@ -300,6 +300,11 @@ worktree-provision path:
     fi
     IFS= read -r -d '' main_worktree < <(git worktree list --porcelain -z)
     shared_plans="${main_worktree#worktree }/plans"
+    exclude_file="$(git -C "$dest" rev-parse --path-format=absolute --git-path info/exclude)"
+    if ! grep -qxF '/plans' "$exclude_file"; then
+        mkdir -p "$(dirname "$exclude_file")"
+        printf '\n/plans\n' >> "$exclude_file"
+    fi
     if [ ! -e "$dest/plans" ] && [ ! -L "$dest/plans" ]; then
         mkdir -p "$shared_plans"
         ln -s "$shared_plans" "$dest/plans"

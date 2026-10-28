@@ -32,7 +32,7 @@ set -euo pipefail
 # all-caps `Phase N` rollout labels are matched separately; lowercase
 # `phase N` is left alone so a genuine runtime-phase description does not
 # trip the guard.
-pattern='\(S[0-9]+\)|\b(decisions?|invariants?) [0-9]+\b|\bplans/[^[:space:]]'
+pattern="\(S[0-9]+\)|\b(decisions?|invariants?) [0-9]+\b|\bplans/[^[:space:]\"'|]"
 phase_pattern='\b(Phase|PHASE) [0-9]+\b'
 
 # Decide whether a path is gated by this guard. `case` globs treat '*' as
@@ -62,9 +62,15 @@ self_check() {
   grep -qiE "$pattern" <<<'decision 10' || return 1
   grep -qiE "$pattern" <<<'invariant 2' || return 1
   grep -qiE "$pattern" <<<'plans/x.md' || return 1
+  grep -qiE "$pattern" <<<"'/plans/file.md'" || return 1
+  grep -qiE "$pattern" <<<'"/plans/file.md"' || return 1
+  grep -qiE "$pattern" <<<'s|^/plans$|/plans/file.md|' || return 1
   # The bare directory name, as .gitignore writes it, is deliberately left
   # alone; assert that it still is.
   grep -qiE "$pattern" <<<'/plans/' && return 1
+  grep -qiE "$pattern" <<<"'/plans/'" && return 1
+  grep -qiE "$pattern" <<<'"/plans/"' && return 1
+  grep -qiE "$pattern" <<<'s|^/plans$|/plans/|' && return 1
   grep -qE "$phase_pattern" <<<'Phase 2 enforces the check' || return 1
   # Lowercase `phase 2` is deliberately left alone; assert that it still is.
   grep -qE "$phase_pattern" <<<'phase 2 of the request lifecycle' && return 1
