@@ -127,6 +127,7 @@ does not justify keeping it when the chosen tool meets the requirement.
     hand.
   - Open a named session (`-s=<name>`) and close only that session; never `close-all` or `kill-all`.
   - Keep sessions in memory. State that must be saved goes only under the ignored `.playwright-cli/`.
+  - Never print cookie, token or storage-state values; check for presence only.
 
 ## Testing standards
 
