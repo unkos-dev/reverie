@@ -305,12 +305,20 @@ worktree-provision path:
         mkdir -p "$(dirname "$exclude_file")"
         printf '\n/plans\n' >> "$exclude_file"
     fi
+    mkdir -p "$shared_plans"
+    if [ -d "$dest/plans" ] && [ ! -L "$dest/plans" ]; then
+        if ! cp -a --update=none-fail -- "$dest/plans/." "$shared_plans/"; then
+            echo "planning migration failed; local files remain in $dest/plans; resolve destination conflicts before provisioning again" >&2
+            exit 1
+        fi
+        rm -r -- "$dest/plans"
+    fi
     if [ ! -e "$dest/plans" ] && [ ! -L "$dest/plans" ]; then
-        mkdir -p "$shared_plans"
         ln -s "$shared_plans" "$dest/plans"
         echo "linked worktree planning directory to $shared_plans"
     elif [ ! -L "$dest/plans" ] || [ ! "$dest/plans" -ef "$shared_plans" ]; then
-        echo "retained existing $dest/plans; shared planning link not created"
+        echo "expected $dest/plans to link to $shared_plans; provisioning stopped" >&2
+        exit 1
     fi
     # A user-level `[build] target-dir` override (a known cargo pattern for
     # warm cross-checkout builds) makes concurrent worktree builds thrash a
