@@ -5,10 +5,7 @@
  * field names match the wire shape; the Zod schema is the boundary
  * guard.
  *
- * The frontend computes the "completeness" indicator (`own / total`)
- * from the response — `total = works.length`, `own = works.filter(w =>
- * w.manifestations.length > 0).length`. Works the user has no copy of
- * surface with an empty `manifestations` array.
+ * Adult work entries can have no RLS-visible manifestations.
  */
 import { z } from "zod";
 
@@ -34,7 +31,7 @@ const SeriesWorkSchema = z.object({
   position: z.number().nullable(),
   manifestations: z.array(WorkManifestationSchema),
 });
-/** One work in a series. Empty `manifestations` array = the user owns no copy ("gap"). */
+/** Recorded work metadata with RLS-visible manifestations; adult entries can have an empty list. */
 export type SeriesWork = z.infer<typeof SeriesWorkSchema>;
 
 const SeriesDetailSchema = z.object({

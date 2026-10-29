@@ -1,9 +1,7 @@
 /**
  * Production `/series/:id` page.
  *
- * Lists the works in a series in ordered position, surfacing a
- * completeness indicator (`own / total`) and a "gap" badge on works
- * the caller owns no manifestation of.
+ * Lists recorded work metadata in series order.
  */
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Suspense, type ReactElement } from "react";
@@ -34,9 +32,6 @@ function SeriesContent(): ReactElement {
     queryFn: ({ signal }) => getSeries(id, signal),
   });
 
-  const total = data.works.length;
-  const owned = data.works.filter((w) => w.manifestations.length > 0).length;
-
   return (
     <div className="mx-auto max-w-5xl px-6 py-10 sm:px-10">
       <header className="mb-8">
@@ -44,9 +39,6 @@ function SeriesContent(): ReactElement {
         <h1 className="font-display mt-1 text-3xl font-semibold tracking-tight text-fg">
           {data.name}
         </h1>
-        <p className="text-fg-muted mt-2 text-sm">
-          {owned} of {total} owned
-        </p>
       </header>
       <ol className="space-y-3">
         {data.works.map((work) => {
@@ -98,7 +90,6 @@ function SeriesSkeleton(): ReactElement {
   return (
     <div className="mx-auto max-w-5xl px-6 py-10 sm:px-10">
       <Skeleton className="h-8 w-1/3" />
-      <Skeleton className="mt-3 h-4 w-1/4" />
       <div className="mt-8 space-y-3">
         {[0, 1, 2].map((i) => (
           <Skeleton key={i} className="h-20 w-full" />

@@ -38,7 +38,7 @@ export const bookRoute: RouteObject = {
   },
 };
 
-/** `/series/:id` — series detail with ordered works + completeness indicator. */
+/** `/series/:id` — series detail with ordered works. */
 export const seriesRoute: RouteObject = {
   path: "series/:id",
   // Breadcrumb `Library › <series name>` from the loader's `{ title } | null`.

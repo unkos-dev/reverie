@@ -1,15 +1,11 @@
 //! `/api/v1/series/{id}` JSON route.
 //!
-//! Returns the series identity plus an ordered list of its works,
-//! each with the manifestations the caller can see. Mirrors the
-//! existence-not-leaked invariant of [`crate::routes::library`]:
-//! `series` and `series_works` are catalog data (no RLS), but the
-//! gate `at-least-one-manifestation-in-series-visible-to-caller`
-//! short-circuits to 404 to avoid leaking series existence to child
-//! accounts or across adult isolation boundaries.
+//! Returns recorded series metadata with RLS-visible manifestations.
+//! Child callers receive only works with a visible manifestation;
+//! a series with no visible manifestations returns 404.
 
 use axum::extract::State;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -50,7 +46,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     path = "/api/v1/series/{id}",
     operation_id = "series_detail",
     summary = "Get a series",
-    description = "Returns the series identity plus its works in order, each with the manifestations visible to the caller.",
+    description = "Returns the series identity and recorded work metadata in series order, with RLS-visible manifestations. Child callers receive only works with a visible manifestation.",
     tag = "series",
     params(("id" = Uuid, Path, max_length = 45, description = "Series id")),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -69,7 +65,7 @@ async fn detail(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let work_rows = sqlx::query!(
+    let mut work_rows = sqlx::query!(
         r#"
         SELECT w.id                  AS "id!",
                w.title               AS "title!",
@@ -115,6 +111,13 @@ async fn detail(
     if manifestation_rows.is_empty() {
         return Err(AppError::NotFound);
     }
+
+    if current_user.is_child() {
+        // THREAT: Unprotected catalogue rows can disclose works outside the child's visible manifestations.
+        let visible_ids: HashSet<Uuid> = manifestation_rows.iter().map(|r| r.work_id).collect();
+        work_rows.retain(|work| visible_ids.contains(&work.id));
+    }
+    let work_ids: Vec<Uuid> = work_rows.iter().map(|r| r.id).collect();
 
     let series_row = sqlx::query!(
         r#"SELECT id   AS "id!",
