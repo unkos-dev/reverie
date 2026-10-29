@@ -114,9 +114,8 @@ async fn detail(
 
     if current_user.is_child() {
         // THREAT: Unprotected catalogue rows can disclose works outside the child's visible manifestations.
-        let visible_work_ids: HashSet<Uuid> =
-            manifestation_rows.iter().map(|r| r.work_id).collect();
-        work_rows.retain(|work| visible_work_ids.contains(&work.id));
+        let visible_ids: HashSet<Uuid> = manifestation_rows.iter().map(|r| r.work_id).collect();
+        work_rows.retain(|work| visible_ids.contains(&work.id));
     }
     let work_ids: Vec<Uuid> = work_rows.iter().map(|r| r.id).collect();
 
