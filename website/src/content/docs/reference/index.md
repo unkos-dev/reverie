@@ -23,4 +23,4 @@ REGEN=1 cargo test --test gen_openapi --test gen_config_ref
 ```
 
 Then commit the updated `configuration.mdx` and `openapi.json`. This is the docs-as-done mechanism; reference docs ship
-with the change that alters them, the same way the TDD mandate keeps code tested.
+with the change that alters them.

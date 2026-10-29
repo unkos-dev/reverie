@@ -9,9 +9,20 @@ These are absolute invariants for the Reverie repository.
 3. **Redact secrets in output:** Never surface a decrypted secret value. Describe its presence (length, format) only. Do
    not read the redaction log.
 4. **Versioning:** Versions are release-please-managed; never hand-edit version in `Cargo.toml`/`package.json`.
-5. **Tests are mandatory for the shipped product:**
-   - Every feature or fix in `backend/` or `frontend/` ships with happy-path and edge-case tests in the same PR.
-   - Do not submit product code without tests.
+5. **Product tests:**
+   - A product test in `backend/` or `frontend/` is admitted only when it traces to one of:
+     - **An incident:** a defect in committed code, shown by the test failing against that code before the fix.
+     - **A Requirement:** an acceptance criterion of a Specful Requirement. Designs, plans and issue descriptions are
+       not anchors.
+     - **A listed boundary:** authentication and authorisation, disclosure of private data or credentials, data loss or
+       corruption.
+   - A test with no anchor is not written, however plausible the failure it describes.
+   - At most one test per incident or acceptance criterion, at the cheapest layer that proves it: a unit test before
+     Browser Mode or `#[sqlx::test]`. Criteria are a ceiling, not a quota.
+   - Removing a feature, element or code path earns no test of its absence unless that absence is a listed boundary. The
+     removed behaviour's tests are deleted with it.
+   - When a restructure retires a mechanism, its tests are deleted, never rewritten into weaker proxies.
+   - A plan lists each proposed test with its anchor. Approving the plan approves that list and nothing beyond it.
    - A change made only to satisfy a static-analysis rule, with behaviour unchanged, needs no new tests. The existing
      suite must pass, and the pull request must show why behaviour is unchanged.
    - Executable tooling anywhere else in the tree (`scripts/`, the justfiles, `.github/`, `docker/`, the root configs)
@@ -53,6 +64,8 @@ These are absolute invariants for the Reverie repository.
 
 - Leave commit sign-off enforcement to the commit-msg hook and required DCO check. Do not report missing `Signed-off-by`
   trailers in code review. Review changes to DCO enforcement itself when included in the diff.
+- A request for a new test or assertion must cite a Rule 5 anchor; otherwise it is not a finding. Flag any test the diff
+  adds or changes that has no anchor, for deletion. Tests outside the diff belong to the test audit, not the review.
 
 <security_reference>
 
