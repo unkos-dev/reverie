@@ -51,7 +51,7 @@
       },
       {
         "path": "AGENTS.md",
-        "description": "Project-wide conventions: GitHub Flow, Conventional Commits, SemVer, hard rules (TDD mandatory, security scrutiny, no merge without human approval)."
+        "description": "Project-wide conventions: GitHub Flow, Conventional Commits, SemVer, hard rules (product tests need an anchor, security scrutiny, no merge without human approval)."
       },
       {
         "path": "backend/AGENTS.md",
