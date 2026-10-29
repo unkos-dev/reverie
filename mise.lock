@@ -107,14 +107,13 @@ provenance = "github-attestations"
 
 [[tools.jactionlint]]
 version = "2.3.0"
-backend = "github:jdx/jactionlint"
+backend = "packslip:github.com/jdx/jactionlint"
 specifiers = ["2.3.0"]
 
 [tools.jactionlint."platforms.linux-x64"]
 checksum = "sha256:907e6f6a59e181879f7e6936e19ee2eca1cbc51de134fb85460cfa8d65a71f28"
 url = "https://github.com/jdx/jactionlint/releases/download/v2.3.0/jactionlint_2.3.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/662210498"
-provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/jactionlint/.github/workflows/release.yaml"
 
 [[tools.just]]
 version = "1.59.0"
