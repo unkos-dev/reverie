@@ -74,14 +74,14 @@ url = "https://github.com/sourcefrog/cargo-mutants/releases/download/v27.1.0/car
 url_api = "https://api.github.com/repos/sourcefrog/cargo-mutants/releases/assets/436335520"
 
 [[tools."github:unkos-dev/specful"]]
-version = "0.5.5"
+version = "0.5.6"
 backend = "github:unkos-dev/specful"
-specifiers = ["v0.5.5"]
+specifiers = ["v0.5.6"]
 
 [tools."github:unkos-dev/specful"."platforms.linux-x64"]
-checksum = "sha256:870b7fd5ec5c4c48e74e58f0d74163adffe4766be8bfd0ee3a2ae24c4a26d75d"
-url = "https://github.com/unkos-dev/specful/releases/download/v0.5.5/specful-x86_64-unknown-linux-musl.tar.xz"
-url_api = "https://api.github.com/repos/unkos-dev/specful/releases/assets/684430324"
+checksum = "sha256:16644886cf078028010faa50d736ea11e2d91def5af45a3a7c17e8abb258f630"
+url = "https://github.com/unkos-dev/specful/releases/download/v0.5.6/specful-x86_64-unknown-linux-musl.tar.xz"
+url_api = "https://api.github.com/repos/unkos-dev/specful/releases/assets/687641035"
 provenance = "github-attestations"
 
 [[tools.gitleaks]]
