@@ -307,6 +307,19 @@ worktree-provision path:
     fi
     mkdir -p "$shared_plans"
     if [ -d "$dest/plans" ] && [ ! -L "$dest/plans" ]; then
+        (
+            shopt -s dotglob globstar nullglob
+            conflicts=0
+            for local_plan in "$dest/plans"/**/*; do
+                shared_plan="$shared_plans/${local_plan#"$dest/plans/"}"
+                if { [ -e "$shared_plan" ] || [ -L "$shared_plan" ]; } &&
+                    { [ ! -d "$local_plan" ] || [ -L "$local_plan" ] || [ ! -d "$shared_plan" ] || [ -L "$shared_plan" ]; }; then
+                    printf 'planning migration stopped; destination path exists: %s\n' "$shared_plan" >&2
+                    conflicts=1
+                fi
+            done
+            exit "$conflicts"
+        )
         if ! cp -a --update=none-fail -- "$dest/plans/." "$shared_plans/"; then
             echo "planning migration failed; local files remain in $dest/plans; resolve destination conflicts before provisioning again" >&2
             exit 1

@@ -155,9 +155,8 @@ destination's `package.json` `packageManager` field.
 
 Provisioning links the private planning directory to the main checkout so its documents survive worktree removal. Edits
 through that link are shared across worktrees. Provisioning copies an existing local planning directory into the shared
-directory before replacing it with the link. An existing destination path stops migration without overwriting either
-copy; resolve those paths before provisioning again. A repository-local Git exclude keeps the link ignored on older
-branches too.
+directory before replacing it with the link. File and directory conflicts are reported before copying anything; resolve
+those paths before provisioning again. A repository-local Git exclude keeps the link ignored on older branches too.
 
 The `post-merge` hook and the `rebase` event of `post-rewrite` run `just refresh-deps`. It runs `mise install` for the
 declared tool versions, then installs node dependencies again when `node_modules` exists and its installed lockfile is
