@@ -23,7 +23,7 @@
     "react": "^19.2.6",
     "react-aria": "3.53.1",
     "react-aria-components": "1.22.1",
-    "react-data-grid": "7.0.0-beta.62",
+    "react-data-grid": "7.0.0-beta.63",
     "react-dom": "^19.2.6",
     "react-error-boundary": "6.1.6",
     "react-router": "^8.2.0",

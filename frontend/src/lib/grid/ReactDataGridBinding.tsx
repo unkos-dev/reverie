@@ -5,8 +5,8 @@
  * everything else in the app depends on `./types`, never on RDG's own types.
  * RDG ships native ARIA grid semantics and CSS-variable theming; the theme
  * half of the bridge is `grid-theme.css`, imported here alongside RDG's own
- * stylesheet. `RenderEditCellProps` types the editor-props translation below
- * but, like every other RDG type, never appears in this module's exports.
+ * stylesheet. `RenderEditCellContentProps` types the editor-props translation
+ * below but, like every other RDG type, never appears in this module's exports.
  */
 import { Info } from "lucide-react";
 import {
@@ -23,16 +23,16 @@ import {
   SelectColumn,
   renderHeaderCell,
   renderSortIcon,
-  type CellRendererProps,
   type CellKeyboardEvent,
   type CellKeyDownArgs,
   type CellMouseArgs,
   type CellMouseEvent,
   type Column,
   type RenderCheckboxProps,
+  type RenderCellContentProps,
   type RenderCellProps,
-  type RenderEditCellProps,
-  type RenderHeaderCellProps,
+  type RenderEditCellContentProps,
+  type RenderHeaderCellContentProps,
   type RenderSortStatusProps,
   type SortColumn,
 } from "react-data-grid";
@@ -100,7 +100,7 @@ export type ReactDataGridBindingProps<R> = GridBindingProps<R> & {
  * column's accessible name stays the header text alone.
  */
 function HeaderCellWithTooltip<R>(
-  props: RenderHeaderCellProps<R> & { tooltip: { label: string; content: string } },
+  props: RenderHeaderCellContentProps<R> & { tooltip: { label: string; content: string } },
 ): ReactElement {
   const { tooltip, ...headerProps } = props;
   const descriptionId = useId();
@@ -152,7 +152,11 @@ function toRdgColumns<R>(columns: GridBindingProps<R>["columns"]): readonly Colu
         : {
             editable: col.editable,
             editorOptions: col.editorOptions,
-            renderEditCell: ({ row, onRowChange, onClose }: RenderEditCellProps<R>): ReactNode =>
+            renderEditCell: ({
+              row,
+              onRowChange,
+              onClose,
+            }: RenderEditCellContentProps<R>): ReactNode =>
               renderEditCell({
                 row,
                 update: (next: R) => {
@@ -171,7 +175,7 @@ function toRdgColumns<R>(columns: GridBindingProps<R>["columns"]): readonly Colu
       tooltip === undefined
         ? {}
         : {
-            renderHeaderCell: (props: RenderHeaderCellProps<R>): ReactNode => (
+            renderHeaderCell: (props: RenderHeaderCellContentProps<R>): ReactNode => (
               <HeaderCellWithTooltip {...props} tooltip={tooltip} />
             ),
           };
@@ -180,7 +184,7 @@ function toRdgColumns<R>(columns: GridBindingProps<R>["columns"]): readonly Colu
       name: col.name,
       sortable: col.sortable,
       width: col.width,
-      renderCell: ({ row, tabIndex }: RenderCellProps<R>): ReactNode =>
+      renderCell: ({ row, tabIndex }: RenderCellContentProps<R>): ReactNode =>
         col.renderCell === undefined ? col.accessor(row) : col.renderCell(row, tabIndex),
       ...headerFields,
       ...editFields,
@@ -220,7 +224,7 @@ function makeRenderCheckbox(selectAllLabel: string) {
   };
 }
 
-function renderCell<R>(key: Key, props: CellRendererProps<R, unknown>): ReactNode {
+function renderCell<R>(key: Key, props: RenderCellProps<R, unknown>): ReactNode {
   return (
     <Cell
       key={key}

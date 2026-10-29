@@ -77,8 +77,8 @@ importers:
         specifier: 1.22.1
         version: 1.22.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react-data-grid:
-        specifier: 7.0.0-beta.62
-        version: 7.0.0-beta.62(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: 7.0.0-beta.63
+        version: 7.0.0-beta.63(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react-dom:
         specifier: ^19.2.6
         version: 19.3.1(react@19.3.1)
@@ -3877,8 +3877,8 @@ packages:
       react: ^16.8.0 || ^17.0.0-rc.1 || ^18.0.0 || ^19.0.0-rc.1
       react-dom: ^16.8.0 || ^17.0.0-rc.1 || ^18.0.0 || ^19.0.0-rc.1
 
-  react-data-grid@7.0.0-beta.62:
-    resolution: {integrity: sha512-PL9JTsO58t4eIDSdYiYuQxdtU1VasstRXgxDqf76Q5dVGk1Ji+eowMCrZGjZF7wtdn7KmM3eU0W8A09G/yX0Vg==}
+  react-data-grid@7.0.0-beta.63:
+    resolution: {integrity: sha512-AJh9ow+rvey+Wu3yAjIZ2gzfCImWYYw/AbndSTQ4I5aV4UDkQLYKiEZcJ60tRQWN6HthiK6a8xCkHgu0hOsaTQ==}
     peerDependencies:
       react: ^19.2
       react-dom: ^19.2
@@ -8152,7 +8152,7 @@ snapshots:
       react-stately: 3.51.0(react@19.3.1)
       use-sync-external-store: 1.7.0(react@19.3.1)
 
-  react-data-grid@7.0.0-beta.62(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+  react-data-grid@7.0.0-beta.63(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
