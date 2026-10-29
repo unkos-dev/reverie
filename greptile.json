@@ -208,9 +208,9 @@
         "scope": ["backend/**/*.rs"]
       },
       {
-        "id": "tests-in-same-pr",
+        "id": "tests-need-an-anchor",
         "severity": "high",
-        "rule": "TDD is mandatory. A code change without a corresponding test (happy path, negative, edge case where non-obvious) should be flagged as incomplete."
+        "rule": "Product tests follow AGENTS.md hard rule 5. Flag a test the diff adds or changes that does not trace to an incident (shown failing against committed code before the fix), an acceptance criterion of a Specful Requirement, or a listed boundary: authentication and authorisation, disclosure of private data or credentials, data loss or corruption. Flag a test asserting that removed behaviour stays absent unless that absence is a listed boundary. Never flag a change for lacking a test without citing one of those anchors."
       },
       {
         "id": "no-raw-hex",
