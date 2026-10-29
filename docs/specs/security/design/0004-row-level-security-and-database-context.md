@@ -104,11 +104,13 @@ query.
 
 ### Catalogue visibility
 
-`works`, `authors`, `work_authors`, `series` and `series_works` have no row-level security policy. Series detail returns
-a work to a child caller only when that work has a visible manifestation. The handler derives child work membership from
-manifestations read inside the caller-scoped transaction, before loading authors for the returned works. Returned
-manifestations remain scoped by RLS, and recorded work metadata is unchanged. A series with no visible manifestations
-returns a generic 404.
+`works`, `authors`, `work_authors`, `series` and `series_works` have no row-level security policy.
+
+Series detail returns a work to a child caller only when that work has a visible manifestation.
+
+The handler derives child work membership from manifestations read inside the caller-scoped transaction, before loading
+authors for the returned works. Returned manifestations remain scoped by RLS, and recorded work metadata is unchanged. A
+series with no visible manifestations returns a generic 404.
 
 ### Policy census
 
