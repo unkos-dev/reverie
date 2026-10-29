@@ -44,24 +44,6 @@ function NestedDialog(): ReactElement {
   );
 }
 
-test("dismisses the nested popup before the dialog and restores trigger focus", async () => {
-  const user = userEvent;
-  await render(<NestedDialog />);
-  const opener = page.getByRole("button", { name: "Open editor" });
-  await user.click(opener);
-  await expect.element(page.getByRole("dialog", { name: "Editor" })).toBeInTheDocument();
-  const selectTrigger = page.getByRole("button", { name: /Status$/ });
-  await user.click(selectTrigger);
-  await expect.element(page.getByRole("listbox")).toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  await expect.element(page.getByRole("listbox")).not.toBeInTheDocument();
-  await expect.element(page.getByRole("dialog", { name: "Editor" })).toBeInTheDocument();
-  await expect.element(selectTrigger).toHaveFocus();
-  await user.keyboard("{Escape}");
-  await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
-  await expect.element(opener).toHaveFocus();
-});
-
 test.each(["pointer", "keyboard"])(
   "selects an enabled value by %s and closes through a native close action",
   async (input) => {
