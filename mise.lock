@@ -36,17 +36,17 @@ url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.9.2/cargo-ma
 url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/397131172"
 
 [[tools."github:nextest-rs/nextest"]]
-version = "0.9.149"
+version = "0.9.150"
 backend = "github:nextest-rs/nextest"
-specifiers = ["0.9.149"]
+specifiers = ["0.9.150"]
 
 [tools."github:nextest-rs/nextest".options]
 version_prefix = "cargo-nextest-"
 
 [tools."github:nextest-rs/nextest"."platforms.linux-x64"]
-checksum = "sha256:32d1d8c0567b7a80bee2bad8bb09125c846da96bc009b2de11ec08557290c770"
-url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.149/cargo-nextest-0.9.149-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/660814555"
+checksum = "sha256:b0959bc64232974224cf9fb22c915845398c0e8668fa7831eb5b43fb1eef781f"
+url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/679066447"
 provenance = "github-attestations"
 
 [[tools."github:owenlamont/ryl"]]
