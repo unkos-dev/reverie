@@ -6,13 +6,8 @@
 //!
 //! # RLS posture
 //!
-//! `series` and `series_works` carry no RLS policies (catalog data,
-//! not user-scoped). RLS lives on `manifestations`, so per-work
-//! `manifestations` slots come back empty for works the caller has no
-//! visibility into. The route handler treats "every work in the
-//! series has zero visible manifestations" as 404 to keep the
-//! existence-not-leaked invariant intact for child accounts and
-//! cross-user adult isolation.
+//! Catalogue tables have no RLS policies. The handler derives child work
+//! membership from visible manifestations and returns 404 when none are visible.
 
 use serde::Serialize;
 use uuid::Uuid;
@@ -21,11 +16,8 @@ use crate::models::library::WorkManifestation;
 
 /// `/api/v1/series/{id}` response.
 ///
-/// Carries the series identity plus an
-/// ordered list of works; each work surfaces only the manifestations
-/// the caller can see, so the frontend can render a completeness
-/// indicator (`own = works with len(manifestations) > 0`, `total =
-/// works.len()`).
+/// Carries series identity and recorded work metadata in series order.
+/// Manifestations are scoped by RLS; child entries require a visible manifestation.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct SeriesDetail {
@@ -41,9 +33,8 @@ pub struct SeriesDetail {
     pub works: Vec<SeriesWork>,
 }
 
-/// One work within a series. Includes every manifestation of the work
-/// the caller can see; an empty `manifestations` list means the user
-/// does not yet own a copy ("gap" in the series).
+/// Recorded work metadata with the manifestations visible to the caller.
+/// Adult callers can receive an empty manifestation list.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct SeriesWork {
@@ -56,7 +47,6 @@ pub struct SeriesWork {
     /// `series_works.position`; `None` when the membership row has a
     /// null position.
     pub position: Option<f64>,
-    /// Manifestations of this work visible to the caller. Empty when
-    /// the user owns no copy.
+    /// Manifestations of this work visible to the caller under RLS.
     pub manifestations: Vec<WorkManifestation>,
 }

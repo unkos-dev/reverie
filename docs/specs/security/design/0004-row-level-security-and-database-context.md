@@ -102,6 +102,14 @@ inputs list, `library/mod.rs`, `library/search.rs`, `metadata.rs`, the `opds` ha
 `series`, `shelves` and `suggest`) each call `db::acquire_with_rls` with `CurrentUser::user_id` before their first
 query.
 
+### Catalogue visibility
+
+`works`, `authors`, `work_authors`, `series` and `series_works` have no row-level security policy. Series detail returns
+a work to a child caller only when that work has a visible manifestation. The handler derives child work membership from
+manifestations read inside the caller-scoped transaction, before loading authors for the returned works. Returned
+manifestations remain scoped by RLS, and recorded work metadata is unchanged. A series with no visible manifestations
+returns a generic 404.
+
 ### Policy census
 
 Thirteen tables enable row-level security. They fall into five groups.

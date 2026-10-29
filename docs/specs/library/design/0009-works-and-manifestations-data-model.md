@@ -303,10 +303,12 @@ counterexample to the statement above, which is scoped to this model's own table
 catalogue data proper (a work's title, its authors, its series membership, the vocabulary terms that exist as rows) is
 global and shared across every account once at least one visible manifestation links to it; only which manifestations an
 account can see is per-user or per-role, through the mechanism the Design "Row-level security and database context"
-owns. The three vocabulary junctions are the one place vocabulary data becomes visibility-scoped: their `SELECT`
-policies inherit the linked `manifestations` row's own visibility with no further predicate, while their `INSERT`,
-`UPDATE` and `DELETE` policies add an independent check that the caller holds the `admin` or `adult` role, regardless of
-the manifestation's visibility.
+owns. Shared storage does not authorise returning every linked work to children: series detail excludes works with no
+visible manifestation for child callers. This filtering leaves returned books' recorded titles, author order and series
+positions unchanged. Adult callers retain the linked catalogue work set. The three vocabulary junctions are the one
+place vocabulary data becomes visibility-scoped: their `SELECT` policies inherit the linked `manifestations` row's own
+visibility with no further predicate, while their `INSERT`, `UPDATE` and `DELETE` policies add an independent check that
+the caller holds the `admin` or `adult` role, regardless of the manifestation's visibility.
 
 Because the shared catalogue tables carry no row-level security, the only defence against an under-privileged write is
 the handler that reaches them. Every route handler in `backend/src/routes/metadata.rs` that writes to this model
