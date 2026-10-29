@@ -1,14 +1,10 @@
 # Attaching Screenshots and Videos to Pull Requests
 
-`gh` 2.99+ uploads local images and videos with the repeatable `--attach` flag on `gh pr create`, `gh pr comment`,
-`gh pr edit`, `gh issue create`, `gh issue comment` and `gh issue edit`. PNG, JPEG, GIF, WebP, SVG, MP4, MOV and WebM
-are accepted, so `playwright-cli screenshot` and `video-start` output can be attached as is.
+`gh` 2.99+ uploads local images and videos with the repeatable `--attach` flag on `gh pr create`, `gh pr comment`, `gh pr edit`, `gh issue create`, `gh issue comment` and `gh issue edit`. PNG, JPEG, GIF, WebP, SVG, MP4, MOV and WebM are accepted, so `playwright-cli screenshot` and `video-start` output can be attached as is.
 
 ## When to attach
 
-Attach visual evidence when it saves the reviewer a checkout: a screenshot of a UI fix, a before/after pair, a short
-video of a new user-facing flow, or the failure state when filing a bug. Skip it for refactors, backend-only changes and
-anything the diff already shows.
+Attach visual evidence when it saves the reviewer a checkout: a screenshot of a UI fix, a before/after pair, a short video of a new user-facing flow, or the failure state when filing a bug. Skip it for refactors, backend-only changes and anything the diff already shows.
 
 ## From a local session
 
@@ -30,8 +26,7 @@ gh pr comment 123 --body "Recorded the new flow end to end." --attach ./settings
 gh issue comment 456 --body "Failure state after submitting the form." --attach ./failure.png
 ```
 
-Reference the file in the body as `![alt](./settings-after.png)` to place it inline and `gh` rewrites the path to the
-uploaded URL. Unreferenced attachments are appended at the end in flag order.
+Reference the file in the body as `![alt](./settings-after.png)` to place it inline and `gh` rewrites the path to the uploaded URL. Unreferenced attachments are appended at the end in flag order.
 
 ## Limits
 
@@ -42,8 +37,7 @@ uploaded URL. Unreferenced attachments are appended at the end in flag order.
 
 ## From CI
 
-Attach the screenshots and videos Playwright Test already saves under `test-results` (`screenshot: 'only-on-failure'`,
-`video: 'retain-on-failure'`) with the same command:
+Attach the screenshots and videos Playwright Test already saves under `test-results` (`screenshot: 'only-on-failure'`, `video: 'retain-on-failure'`) with the same command:
 
 ```yaml
 permissions:
@@ -63,5 +57,4 @@ steps:
       fi
 ```
 
-For a polished walkthrough of a new feature, record a hero script as described in
-[video-recording.md](video-recording.md) and attach the resulting WebM the same way.
+For a polished walkthrough of a new feature, record a hero script as described in [video-recording.md](video-recording.md) and attach the resulting WebM the same way.

@@ -6,6 +6,7 @@ exclude = [
   "CHANGELOG.md",
   ".claude/**",
   "docs/security/codeguard/**",
+  ".agents/skills/playwright-cli/**",
   "CLAUDE.md",
   "**/CLAUDE.md",
   "docs/specs/**/index.md",

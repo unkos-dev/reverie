@@ -1,7 +1,6 @@
 # Tracing
 
-Capture detailed execution traces for debugging and analysis. Traces include DOM snapshots, screenshots, network
-activity, and console logs.
+Capture detailed execution traces for debugging and analysis. Traces include DOM snapshots, screenshots, network activity, and console logs.
 
 ## Basic Usage
 
@@ -25,7 +24,6 @@ When you start tracing, Playwright creates a `.playwright-cli/traces/` directory
 ### `trace-{timestamp}.trace`
 
 **Action log** - The main trace file containing:
-
 - Every action performed (clicks, fills, navigations)
 - DOM snapshots before and after each action
 - Screenshots at each step
@@ -36,7 +34,6 @@ When you start tracing, Playwright creates a `.playwright-cli/traces/` directory
 ### `trace-{timestamp}.network`
 
 **Network log** - Complete network activity:
-
 - All HTTP requests and responses
 - Request headers and bodies
 - Response headers and bodies
@@ -47,21 +44,20 @@ When you start tracing, Playwright creates a `.playwright-cli/traces/` directory
 ### `resources/`
 
 **Resources directory** - Cached resources:
-
 - Images, fonts, stylesheets, scripts
 - Response bodies for replay
 - Assets needed to reconstruct page state
 
 ## What Traces Capture
 
-| Category        | Details                                            |
-| --------------- | -------------------------------------------------- |
-| **Actions**     | Clicks, fills, hovers, keyboard input, navigations |
-| **DOM**         | Full DOM snapshot before/after each action         |
-| **Screenshots** | Visual state at each step                          |
-| **Network**     | All requests, responses, headers, bodies, timing   |
-| **Console**     | All console.log, warn, error messages              |
-| **Timing**      | Precise timing for each operation                  |
+| Category | Details |
+|----------|---------|
+| **Actions** | Clicks, fills, hovers, keyboard input, navigations |
+| **DOM** | Full DOM snapshot before/after each action |
+| **Screenshots** | Visual state at each step |
+| **Network** | All requests, responses, headers, bodies, timing |
+| **Console** | All console.log, warn, error messages |
+| **Timing** | Precise timing for each operation |
 
 ## Use Cases
 
@@ -106,14 +102,14 @@ playwright-cli tracing-stop
 
 ## Trace vs Video vs Screenshot
 
-| Feature                 | Trace       | Video       | Screenshot       |
-| ----------------------- | ----------- | ----------- | ---------------- |
-| **Format**              | .trace file | .webm video | .png/.jpeg image |
-| **DOM inspection**      | Yes         | No          | No               |
-| **Network details**     | Yes         | No          | No               |
-| **Step-by-step replay** | Yes         | Continuous  | Single frame     |
-| **File size**           | Medium      | Large       | Small            |
-| **Best for**            | Debugging   | Demos       | Quick capture    |
+| Feature | Trace | Video | Screenshot |
+|---------|-------|-------|------------|
+| **Format** | .trace file | .webm video | .png/.jpeg image |
+| **DOM inspection** | Yes | No | No |
+| **Network details** | Yes | No | No |
+| **Step-by-step replay** | Yes | Continuous | Single frame |
+| **File size** | Medium | Large | Small |
+| **Best for** | Debugging | Demos | Quick capture |
 
 ## Best Practices
 

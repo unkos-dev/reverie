@@ -21,7 +21,6 @@ playwright-cli -s=public snapshot
 ## Browser Session Isolation Properties
 
 Each browser session has independent:
-
 - Cookies
 - LocalStorage / SessionStorage
 - IndexedDB
@@ -50,9 +49,7 @@ playwright-cli delete-data                # delete default browser data
 playwright-cli -s=mysession delete-data   # delete named browser data
 ```
 
-A headless session shuts down on its own after an hour without commands; the next command then reports that the browser
-is not open, so run `open` again. Headed browsers stay open. Use `open --idle-timeout=<ms>` to change the timeout, or
-`0` to disable it.
+A headless session shuts down on its own after an hour without commands; the next command then reports that the browser is not open, so run `open` again. Headed browsers stay open. Use `open --idle-timeout=<ms>` to change the timeout, or `0` to disable it.
 
 ## Environment Variable
 
@@ -100,8 +97,7 @@ playwright-cli -s=variant-b screenshot
 
 ### Persistent Profile
 
-By default, browser profile is kept in memory only. Use `--persistent` flag on `open` to persist the browser profile to
-disk:
+By default, browser profile is kept in memory only. Use `--persistent` flag on `open` to persist the browser profile to disk:
 
 ```bash
 # Use persistent profile (auto-generated location)
@@ -117,9 +113,7 @@ Use `attach` to connect to a browser that is already running, instead of launchi
 
 ### Attach by channel name
 
-Connect to a running Chrome or Edge instance by its channel name. The browser must have remote debugging enabled —
-navigate to `chrome://inspect/#remote-debugging` in the target browser and check "Allow remote debugging for this
-browser instance".
+Connect to a running Chrome or Edge instance by its channel name. The browser must have remote debugging enabled — navigate to `chrome://inspect/#remote-debugging` in the target browser and check "Allow remote debugging for this browser instance".
 
 ```bash
 # Attach to Chrome
@@ -135,11 +129,9 @@ playwright-cli attach --cdp=msedge
 playwright-cli attach --cdp=msedge-dev
 ```
 
-Supported channels: `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `msedge`, `msedge-beta`, `msedge-dev`,
-`msedge-canary`.
+Supported channels: `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `msedge`, `msedge-beta`, `msedge-dev`, `msedge-canary`.
 
-When `--session` is not provided, the session is named after the channel (e.g. `--cdp=msedge` creates a session called
-`msedge`), so parallel attaches to Chrome and Edge don't collide on `default`. Pass `--session=<name>` to override.
+When `--session` is not provided, the session is named after the channel (e.g. `--cdp=msedge` creates a session called `msedge`), so parallel attaches to Chrome and Edge don't collide on `default`. Pass `--session=<name>` to override.
 
 ### Attach via CDP endpoint
 

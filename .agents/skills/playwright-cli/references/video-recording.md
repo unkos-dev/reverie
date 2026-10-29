@@ -1,7 +1,6 @@
 # Video Recording
 
-Capture browser automation sessions as video for debugging, documentation, or verification. Produces WebM (VP8/VP9
-codec).
+Capture browser automation sessions as video for debugging, documentation, or verification. Produces WebM (VP8/VP9 codec).
 
 ## Basic Recording
 
@@ -31,10 +30,10 @@ playwright-cli video-stop
 
 ## Cursor, Target Highlight and Click Point
 
-Three decorations can be drawn for each action: the mouse **cursor**, a **highlight** box around the target element and
-a **point** marker at the click point. A **title** callout naming the action comes with `video-show-actions`. The cursor
-is the only one `video-start --cursor` turns on; the rest are opt-in and styled with plain CSS declarations, so they
-look exactly the way you want.
+Three decorations can be drawn for each action: the mouse **cursor**, a **highlight** box around the
+target element and a **point** marker at the click point. A **title** callout naming the action comes
+with `video-show-actions`. The cursor is the only one `video-start --cursor` turns on; the rest are
+opt-in and styled with plain CSS declarations, so they look exactly the way you want.
 
 ```bash
 # Cursor only, nothing else on screen
@@ -74,10 +73,9 @@ await page.screencast.showActions({
 ```
 
 Notes:
-
 - All decorations fade out over `duration`. Override `animation` in a style to do something else.
-- The cursor stays on screen at the last action point between actions and across navigations, and travels along a
-  slightly curved path, so it reads as a hand moving a mouse.
+- The cursor stays on screen at the last action point between actions and across navigations,
+  and travels along a slightly curved path, so it reads as a hand moving a mouse.
 - Call `page.screencast.hideActions()` to stop annotating and hide the cursor.
 
 ## Best Practices
@@ -90,20 +88,16 @@ playwright-cli video-start recordings/login-flow-2024-01-15.webm
 playwright-cli video-start recordings/checkout-test-run-42.webm
 ```
 
-### 2. Record entire hero scripts
+### 2. Record entire hero scripts.
 
-When recording a video for the user or as a proof of work, it is best to create a code snippet and execute it with
-run-code. It allows inserting appropriate pauses between the actions and annotating the video. There are new Playwright
-APIs for that.
+When recording a video for the user or as a proof of work, it is best to create a code snippet and execute it with run-code.
+It allows inserting appropriate pauses between the actions and annotating the video. There are new Playwright APIs for that.
 
-1) Perform scenario using CLI and take note of all locators and actions. You'll need those locators to request their
-   bounding boxes for highlight.
-2) Create a file with the intended script for video (below). Use pressSequentially w/ delay for nice typing, make
-   reasonable pauses.
+1) Perform scenario using CLI and take note of all locators and actions. You'll need those locators to request their bounding boxes for highlight.
+2) Create a file with the intended script for video (below). Use pressSequentially w/ delay for nice typing, make reasonable pauses.
 3) Use playwright-cli run-code --filename your-script.js
 
-**Important**: Overlays are `pointer-events: none` — they do not interfere with page interactions. You can safely keep
-sticky overlays visible while clicking, filling, or performing any actions on the page.
+**Important**: Overlays are `pointer-events: none` — they do not interfere with page interactions. You can safely keep sticky overlays visible while clicking, filling, or performing any actions on the page.
 
 ```js
 async page => {
@@ -187,7 +181,7 @@ Embrace creativity, overlays are powerful.
 ### Overlay API Summary
 
 | Method | Use Case |
-| ------ | -------- |
+|--------|----------|
 | `page.screencast.showChapter(title, { description?, duration?, styleSheet? })` | Full-screen chapter card with blurred backdrop — ideal for section transitions |
 | `page.screencast.showOverlay(html, { duration? })` | Custom HTML overlay — use for callouts, labels, highlights |
 | `disposable.dispose()` | Remove a sticky overlay added without duration |
@@ -197,8 +191,7 @@ Embrace creativity, overlays are powerful.
 
 ### 3. Attach the recording to the pull request
 
-A hero script recording is the best proof of work for a user-facing change. GitHub accepts WebM as is, so once the
-recording looks right, attach it with `gh` 2.99+ instead of describing the flow in words:
+A hero script recording is the best proof of work for a user-facing change. GitHub accepts WebM as is, so once the recording looks right, attach it with `gh` 2.99+ instead of describing the flow in words:
 
 ```bash
 gh pr create --title "feat(todo): add items inline" --body-file body.md --attach ./demo.webm
@@ -206,19 +199,16 @@ gh pr comment 123 --body "Walkthrough of the new flow." --attach ./demo.webm
 gh issue comment 456 --body "Recording of the repro steps." --attach ./repro.webm
 ```
 
-`gh` appends unreferenced attachments to the end of the body, which is the right place for a walkthrough. Videos are
-limited to 10 MB on free plans and 100 MB on paid plans, so keep the script focused, record at a modest size such as
-1280x800 and drop chapters that do not add to the story. See [pr-attachments.md](pr-attachments.md) for the full set of
-commands, including attaching test artifacts from CI.
+`gh` appends unreferenced attachments to the end of the body, which is the right place for a walkthrough. Videos are limited to 10 MB on free plans and 100 MB on paid plans, so keep the script focused, record at a modest size such as 1280x800 and drop chapters that do not add to the story. See [pr-attachments.md](pr-attachments.md) for the full set of commands, including attaching test artifacts from CI.
 
 ## Tracing vs Video
 
-| Feature  | Video                | Tracing                                  |
-| -------- | -------------------- | ---------------------------------------- |
-| Output   | WebM file            | Trace file (viewable in Trace Viewer)    |
-| Shows    | Visual recording     | DOM snapshots, network, console, actions |
-| Use case | Demos, documentation | Debugging, analysis                      |
-| Size     | Larger               | Smaller                                  |
+| Feature | Video | Tracing |
+|---------|-------|---------|
+| Output | WebM file | Trace file (viewable in Trace Viewer) |
+| Shows | Visual recording | DOM snapshots, network, console, actions |
+| Use case | Demos, documentation | Debugging, analysis |
+| Size | Larger | Smaller |
 
 ## Limitations
 

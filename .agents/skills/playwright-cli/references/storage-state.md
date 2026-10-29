@@ -180,19 +180,19 @@ playwright-cli run-code "async page => {
 playwright-cli sessionstorage-list
 ```
 
-### Get Single sessionStorage Value
+### Get Single Value
 
 ```bash
 playwright-cli sessionstorage-get form_data
 ```
 
-### Set sessionStorage Value
+### Set Value
 
 ```bash
 playwright-cli sessionstorage-set step 3
 ```
 
-### Delete Single sessionStorage Item
+### Delete Single Item
 
 ```bash
 playwright-cli sessionstorage-delete step

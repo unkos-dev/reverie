@@ -27,7 +27,6 @@ allowlisted
 allowlisting
 allowlists
 analyzes
-analyzing
 ansible
 Anthropic
 api
@@ -72,7 +71,6 @@ buildkit
 buildx
 cacheable
 Caddy
-callout
 callouts
 canonicalises
 canonicality
@@ -122,7 +120,6 @@ crossfade
 crossfades
 cryptographic
 cryptographically
-css
 cssMinify
 CTAs
 curation
@@ -215,7 +212,6 @@ frontend
 frontmatter
 fsync
 fullwidth
-geolocation
 gha
 GHSAs
 gilt
@@ -247,11 +243,9 @@ hostnames
 hotfix
 hotfixes
 href
-html
 idempotency
 idempotently
 iff
-iframes
 ignorePatterns
 Immich
 impeccable
@@ -311,7 +305,6 @@ maintainer
 maintainership
 markdownlint
 matcher
-matchers
 math
 maxcountryman
 MDN
@@ -395,9 +388,7 @@ preflight
 prefs
 preinstalls
 preload
-pressSequentially
 Prettier
-programmatically
 proxied
 PRs
 pub_date
@@ -490,7 +481,6 @@ serde_with
 serialises
 serialization
 serialized
-sessionStorage
 set_config
 Sexualisation
 shadcn
@@ -520,7 +510,6 @@ struct
 structs
 Stylelint
 stylesheet
-stylesheets
 subagent
 subagents
 subcommand
@@ -587,7 +576,6 @@ unmoderated
 unpatched
 unprefixed
 Unprocessable
-unreferenced
 unrepresentable
 unresolvable
 unreviewed
@@ -596,7 +584,6 @@ unscanned
 unscoped
 unstaged
 untick
-untrusted
 untyped
 unversioned
 unwhitelisted
@@ -606,7 +593,6 @@ upsert
 Upstream
 upstreams
 URIs
-url
 urql
 useEffect
 userinfo
