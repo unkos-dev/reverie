@@ -13,12 +13,23 @@ screen that are approved but not yet implemented are marked as target design ins
 The wider design rules live in [Design Philosophy](../philosophy.md), [Visual Identity](../visual-identity.md) and
 [Color Tokens](../color-tokens.md).
 
-| Screen                                        | Route                              |
-| --------------------------------------------- | ---------------------------------- |
-| [Settings](./settings.md)                     | `/admin/settings/{area}`           |
-| [Admin ingestion](./admin-ingestion.md)       | `/admin/dashboard`                 |
-| [Login](./login.md)                           | `/login`                           |
-| [Users](./users.md)                           | `/admin/users`                     |
-| [Set password](./set-password.md)             | `/set-password`, `/reset-password` |
-| [Forgot password](./forgot-password.md)       | `/forgot-password`                 |
-| [Email verification](./email-verification.md) | `/account/email`, `/verify-email`  |
+The table lists every page the application routes to. A screen without a linked spec is shipped without an approved
+design.
+
+| Screen | Route | Reached from |
+| ------ | ----- | ------------ |
+| Library | `/library` | Left rail; `/` redirects here |
+| Book | `/b/{id}` | Library, command palette, ingestion |
+| Series | `/series/{id}` | Series label on a book page |
+| Shelves | `/shelves` | Left rail |
+| Shelf | `/shelves/{id}` | Left rail, shelves list |
+| API tokens | `/tokens` | User menu |
+| Change password | `/account/password` | User menu, local-password accounts |
+| First-run setup | `/setup` | Redirect before the first administrator |
+| [Settings](./settings.md) | `/admin/settings/{area}` | User menu, administrators |
+| [Admin ingestion](./admin-ingestion.md) | `/admin/dashboard` | Left rail, administrators |
+| [Users](./users.md) | `/admin/users` | Left rail, administrators |
+| [Login](./login.md) | `/login` | Redirect when signed out |
+| [Set password](./set-password.md) | `/set-password`, `/reset-password` | Single-use link |
+| [Forgot password](./forgot-password.md) | `/forgot-password` | Login |
+| [Email verification](./email-verification.md) | `/account/email`, `/verify-email` | User menu; verification link |
