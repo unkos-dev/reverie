@@ -48,7 +48,7 @@ When you start tracing, Playwright creates a `.playwright-cli/traces/` directory
 
 **Resources directory** - Cached resources:
 
-- Images, fonts, style sheets, scripts
+- Images, fonts, stylesheets, scripts
 - Response bodies for replay
 - Assets needed to reconstruct page state
 
@@ -78,7 +78,7 @@ playwright-cli tracing-stop
 # Open trace to see DOM state when click was attempted
 ```
 
-### Analysing performance
+### Analyzing Performance
 
 ```bash
 playwright-cli tracing-start
@@ -117,7 +117,7 @@ playwright-cli tracing-stop
 
 ## Best Practices
 
-### 1. Start tracing before the problem
+### 1. Start Tracing Before the Problem
 
 ```bash
 # Trace the entire flow, not just the failing step
@@ -127,9 +127,14 @@ playwright-cli open https://example.com
 playwright-cli tracing-stop
 ```
 
-### 2. Clean up old traces
+### 2. Clean Up Old Traces
 
-Traces can consume significant disk space. Confirm the exact session files and obtain approval before deleting them.
+Traces can consume significant disk space:
+
+```bash
+# Remove traces older than 7 days
+find .playwright-cli/traces -mtime +7 -delete
+```
 
 ## Limitations
 

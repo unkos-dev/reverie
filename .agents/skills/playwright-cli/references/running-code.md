@@ -20,10 +20,14 @@ playwright-cli run-code --filename=./my-script.js
 The code must be a single function expression, it is wrapped in `(...)` and evaluated. import/export/require syntax is
 not supported.
 
-## Browser location
+The code runs in an isolated context, not in a full Node.js environment. `require`, `process` and Node modules are not
+available. Timers (`setTimeout`, `setInterval`), `fetch`, `URL`, `Buffer`, `crypto`, `AbortController`, `TextEncoder`
+and `TextDecoder` are available.
+
+## Geolocation
 
 ```bash
-# Grant location permission and set the coordinates
+# Grant geolocation permission and set location
 playwright-cli run-code "async page => {
   await page.context().grantPermissions(['geolocation']);
   await page.context().setGeolocation({ latitude: 37.7749, longitude: -122.4194 });
@@ -110,10 +114,10 @@ playwright-cli run-code "async page => {
 }"
 ```
 
-## Document frames
+## Frames and Iframes
 
 ```bash
-# Work with a frame
+# Work with iframe
 playwright-cli run-code "async page => {
   const frame = page.locator('iframe#my-iframe').contentFrame();
   await frame.locator('button').click();
@@ -199,7 +203,7 @@ playwright-cli run-code "async page => {
 }"
 ```
 
-## Error handling
+## Error Handling
 
 ```bash
 # Try-catch in run-code
@@ -213,9 +217,20 @@ playwright-cli run-code "async page => {
 }"
 ```
 
-## Complex workflows
+## Complex Workflows
 
 ```bash
+# Login and save state
+playwright-cli run-code "async page => {
+  await page.goto('https://example.com/login');
+  await page.getByRole('textbox', { name: 'Email' }).fill('user@example.com');
+  await page.getByRole('textbox', { name: 'Password' }).fill('secret');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL('**/dashboard');
+  await page.context().storageState({ path: 'auth.json' });
+  return 'Login successful';
+}"
+
 # Scrape data from multiple pages
 playwright-cli run-code "async page => {
   const results = [];
