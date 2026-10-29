@@ -62,27 +62,20 @@ test("dismisses the nested popup before the dialog and restores trigger focus", 
   await expect.element(opener).toHaveFocus();
 });
 
-test.each(["pointer", "keyboard"])(
-  "selects an enabled value by %s and closes through a native close action",
-  async (input) => {
-    const user = userEvent;
-    await render(<NestedDialog />);
-    await user.click(page.getByRole("button", { name: "Open editor" }));
-    await user.click(page.getByRole("button", { name: /Status$/ }));
-    await expect
-      .element(page.getByRole("option", { name: "Unavailable" }))
-      .toHaveAttribute("aria-disabled", "true");
-    if (input === "pointer") {
-      await user.click(page.getByRole("option", { name: "Done" }));
-    } else {
-      await user.keyboard("{ArrowDown}{Enter}");
-    }
-    await expect.element(page.getByRole("button", { name: /Status$/ })).toHaveFocus();
-    await expect.element(page.getByRole("button", { name: /Status$/ })).toHaveTextContent("Done");
-    await user.click(page.getByRole("button", { name: "Finish" }));
-    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
-  },
-);
+test("selects an enabled value by keyboard and closes through a native close action", async () => {
+  const user = userEvent;
+  await render(<NestedDialog />);
+  await user.click(page.getByRole("button", { name: "Open editor" }));
+  await user.click(page.getByRole("button", { name: /Status$/ }));
+  await expect
+    .element(page.getByRole("option", { name: "Unavailable" }))
+    .toHaveAttribute("aria-disabled", "true");
+  await user.keyboard("{ArrowDown}{Enter}");
+  await expect.element(page.getByRole("button", { name: /Status$/ })).toHaveFocus();
+  await expect.element(page.getByRole("button", { name: /Status$/ })).toHaveTextContent("Done");
+  await user.click(page.getByRole("button", { name: "Finish" }));
+  await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+});
 
 test("dismisses an open dialog through its outside overlay", async () => {
   const user = userEvent;

@@ -3989,7 +3989,7 @@
           "series"
         ],
         "summary": "Get a series",
-        "description": "Returns the series identity plus its works in order, each with the manifestations visible to the caller.",
+        "description": "Returns the series identity and recorded work metadata in series order, with RLS-visible manifestations. Child callers receive only works with a visible manifestation.",
         "operationId": "series_detail",
         "parameters": [
           {
@@ -11857,7 +11857,7 @@
       },
       "SeriesDetail": {
         "type": "object",
-        "description": "`/api/v1/series/{id}` response.\n\nCarries the series identity plus an\nordered list of works; each work surfaces only the manifestations\nthe caller can see, so the frontend can render a completeness\nindicator (`own = works with len(manifestations) > 0`, `total =\nworks.len()`).",
+        "description": "`/api/v1/series/{id}` response.\n\nCarries series identity and recorded work metadata in series order.\nManifestations are scoped by RLS; child entries require a visible manifestation.",
         "required": [
           "id",
           "name",
@@ -11916,7 +11916,7 @@
       },
       "SeriesWork": {
         "type": "object",
-        "description": "One work within a series. Includes every manifestation of the work\nthe caller can see; an empty `manifestations` list means the user\ndoes not yet own a copy (\"gap\" in the series).",
+        "description": "Recorded work metadata with the manifestations visible to the caller.\nAdult callers can receive an empty manifestation list.",
         "required": [
           "id",
           "title",
@@ -11941,7 +11941,7 @@
             "items": {
               "$ref": "#/components/schemas/WorkManifestation"
             },
-            "description": "Manifestations of this work visible to the caller. Empty when\nthe user owns no copy."
+            "description": "Manifestations of this work visible to the caller under RLS."
           },
           "position": {
             "type": [
