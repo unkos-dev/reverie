@@ -27,9 +27,10 @@ These are absolute invariants for the Reverie repository.
    - At most one test per incident. Each test sits at the cheapest layer that proves it: a unit test before Browser Mode
      or `#[sqlx::test]`.
    - A test that proves nothing the other tests don't already prove is redundant and is deleted. When two tests prove
-     exactly the same thing, the cheaper one stays. For a listed boundary, a different input through the same code
-     proves nothing new. A "Checked by" citation in a Requirement neither admits nor protects a test; if the cited test
-     is deleted, the citation is updated to name the test that stays.
+     exactly the same thing, the cheaper one stays. For a listed boundary, a different input earns coverage only when it
+     detects a consequential failure that the existing tests would miss. A "Checked by" citation in a Requirement
+     neither admits nor protects a test; if the cited test is deleted, the citation is updated to name the test that
+     stays.
    - A test that cannot fail, because its setup never delivers the input or its assertion never checks the result,
      proves nothing. If it backs an anchor it is fixed; otherwise it is deleted.
    - A Requirement or acceptance criterion that protects or asserts nothing is reported to the maintainer, with the
