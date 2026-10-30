@@ -12,16 +12,35 @@ These are absolute invariants for the Reverie repository.
 5. **Product tests:**
    - A product test in `backend/` or `frontend/` is admitted only when it traces to one of:
      - **An incident:** a defect in committed code, shown by the test failing against that code before the fix.
-     - **A Requirement:** an acceptance criterion of a Specful Requirement. Designs, plans and issue descriptions are
-       not anchors.
+     - **A Requirement:** an obligation the system MUST conform to, recorded as a Specful Requirement. Its acceptance
+       criteria are the yes or no checks that show whether the system conforms. Designs, plans and issue descriptions
+       are not anchors.
      - **A listed boundary:** authentication and authorisation, disclosure of private data or credentials, data loss or
        corruption.
    - A test with no anchor is not written, however plausible the failure it describes.
-   - At most one test per incident or acceptance criterion, at the cheapest layer that proves it: a unit test before
-     Browser Mode or `#[sqlx::test]`. Criteria are a ceiling, not a quota.
+   - A change adds or repairs tests only for the incident it fixes, the Requirements whose implementing code it changes,
+     and the boundaries its own code affects. Wider coverage waits for a test audit the maintainer authorises; it is not
+     added in passing.
+   - Every check a Requirement's acceptance criteria state is covered, by the fewest tests that cover them. One test may
+     cover several checks. Each test points to the criteria it covers. A condition the criteria do not state earns no
+     test of its own.
+   - At most one test per incident. Each test sits at the cheapest layer that proves it: a unit test before Browser Mode
+     or `#[sqlx::test]`.
+   - A test that proves nothing the other tests don't already prove is redundant and is deleted. When two tests prove
+     exactly the same thing, the cheaper one stays. For a listed boundary, a different input earns coverage only when it
+     detects a consequential failure that the existing tests would miss. A "Checked by" citation in a Requirement
+     neither admits nor protects a test; if the cited test is deleted, the citation is updated to name the test that
+     stays.
+   - A test that cannot fail, because its setup never delivers the input or its assertion never checks the result,
+     proves nothing. If it backs an anchor it is fixed; otherwise it is deleted.
+   - A Requirement or acceptance criterion that protects or asserts nothing is reported to the maintainer, with the
+     reasoning, as a possible defect in the Requirement. Until the maintainer rules, its coverage is not reduced on that
+     basis. It never gets an invented scenario.
    - Removing a feature, element or code path earns no test of its absence unless that absence is a listed boundary. The
      removed behaviour's tests are deleted with it.
-   - When a restructure retires a mechanism, its tests are deleted, never rewritten into weaker proxies.
+   - When a restructure retires a mechanism, tests that prove only that mechanism are deleted, never rewritten into
+     weaker proxies. A surviving Requirement or boundary keeps its coverage under the new mechanism, and an adapted test
+     must still prove what it proved before.
    - A plan lists each proposed test with its anchor. Approving the plan approves that list and nothing beyond it.
    - A change made only to satisfy a static-analysis rule, with behaviour unchanged, needs no new tests. The existing
      suite must pass, and the pull request must show why behaviour is unchanged.

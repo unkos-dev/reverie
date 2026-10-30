@@ -47,7 +47,7 @@ Reminders (see CONTRIBUTING.md for the full conventions):
 - Title MUST follow Conventional Commits: <type>(<scope>): <description>
   Types: feat, fix, refactor, docs, chore, test, perf
 - Product tests in backend/ and frontend/ need an anchor: an incident,
-  a Requirement acceptance criterion, or a listed boundary. Tooling
+  a Specful Requirement, or a listed boundary. Tooling
   elsewhere is judged on whether it can fail quietly (AGENTS.md hard
   rule 5).
 - Maintainer review and approval gate every merge.

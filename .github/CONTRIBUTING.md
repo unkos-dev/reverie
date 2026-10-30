@@ -222,11 +222,10 @@ trigger recorded in
 
 ## Testing requirements
 
-**Product tests in `backend/` and `frontend/` need an anchor.** A test is added only when it reproduces an incident
-(failing against committed code before the fix), covers an acceptance criterion of a Specful Requirement, or protects a
-listed boundary: authentication and authorisation, disclosure of private data or credentials, data loss or corruption.
-Each incident or criterion gets at most one test, at the cheapest layer that proves it. A removal earns no test of its
-absence, and a retired mechanism's tests are deleted with it.
+**Product tests in `backend/` and `frontend/` need an anchor:** an incident (failing against committed code before the
+fix), a Specful Requirement, or a listed boundary: authentication and authorisation, disclosure of private data or
+credentials, data loss or corruption. `AGENTS.md` hard rule 5 sets which tests a change may add, how much testing a
+Requirement gets, and when a test is redundant.
 
 Executable tooling elsewhere in the tree (`scripts/`, the justfiles, `.github/`, `docker/`, the root configs) is judged
 on whether it can fail quietly rather than on a fixed test requirement: a guard a pull request exercises and that fails
