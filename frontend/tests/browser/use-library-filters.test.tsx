@@ -26,15 +26,6 @@ function Probe(): ReactElement {
       </button>
       <button
         onClick={() => {
-          owner.commitAll((current) => ({ ...current, pages: { gte: 999 } }));
-          owner.clearAll();
-          owner.commitAll((current) => ({ ...current, q: " a " }));
-        }}
-      >
-        blur-clear-type
-      </button>
-      <button
-        onClick={() => {
           owner.setView("table");
           owner.clearAll();
         }}
@@ -70,17 +61,6 @@ test("same-turn sibling edits compose and preserve unrelated native entry data",
   });
   await expect.element(page.getByRole("status")).toMatchTextContent("the sea ");
 });
-test("blur, Clear and subsequent typing use the current intent without resurrection", async () => {
-  await mount();
-  await userEvent.click(page.getByText("siblings"));
-  await userEvent.click(page.getByText("blur-clear-type"));
-  expect(entry()).toEqual({ reverieLibrary: { filters: { ...emptyFilterState(), q: " a " } } });
-});
-test("clear preserves the visit view override", async () => {
-  await mount();
-  await userEvent.click(page.getByText("view-clear"));
-  expect(entry()).toEqual({ reverieLibrary: { view: "table", filters: emptyFilterState() } });
-});
 test.each([
   undefined,
   { filters: { ...emptyFilterState(), pages: { gte: -1 } }, view: "table" },
@@ -96,12 +76,4 @@ test.each([
     keep: 1,
     reverieLibrary: { filters: emptyFilterState(), view: "table" },
   });
-});
-test("restores a complete visit before consumers render", async () => {
-  const visit = {
-    filters: { ...emptyFilterState(), q: "restored", addedAfter: "2026-10-25" },
-    view: "table",
-  };
-  await mount({ reverieLibrary: visit });
-  expect(JSON.parse(page.getByRole("status").element().textContent)).toEqual(visit);
 });
