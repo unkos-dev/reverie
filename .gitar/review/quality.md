@@ -10,7 +10,18 @@ without demonstrated applicability. Consolidate findings with the same root caus
 
 Assess migrations and changed state interpretation against existing data as well as empty databases. Check whether data
 migrations preserve the required behaviour for existing records. Evaluate whether tests demonstrate the claimed
-behaviour and meaningful failure cases; passing CI alone does not establish correctness.
+behaviour; passing CI alone does not establish correctness. Requests for further tests follow the product tests section
+below.
+
+## Product tests
+
+Product tests in `backend/` and `frontend/` follow `AGENTS.md` hard rule 5. Flag a test the diff adds or changes that
+does not trace to an incident (shown failing against committed code before the fix), a Specful Requirement, or a listed
+boundary: authentication and authorisation, disclosure of private data or credentials, data loss or corruption. Flag a
+test asserting that removed behaviour stays absent unless that absence is a listed boundary. Flag a deleted test when no
+remaining test covers a check stated in a surviving Requirement that the deleted test proved. Never flag a change for
+lacking a test without citing one of those anchors. Never ask for coverage of a Requirement whose implementing code the
+change does not touch, except to keep coverage the diff removes or weakens.
 
 ## Standards and best practice
 
