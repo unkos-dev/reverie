@@ -44,5 +44,6 @@ the next action without exposing provider text or distinguishing an email collis
   fresh provider attempt. Mounting, refreshing and browser back do not retry an authorization response.
 - An unknown, absent, empty or repeated outcome renders ordinary login without displaying the supplied value.
 - Callback route tests named `oidc_outcome_`, the existing callback/key-refresh/account-refusal tests in
-  `backend/src/routes/auth.rs`, and the per-outcome tests in `frontend/tests/browser/auth-login.test.tsx` exercise the
-  condition-to-destination and recovery contracts. Rendered acceptance uses the login screen specification.
+  `backend/src/routes/auth.rs`, and `renders and focuses %s without starting a sign-in` in
+  `frontend/tests/browser/auth-login.test.tsx` exercise the condition-to-destination and recovery contracts. Rendered
+  acceptance uses the login screen specification.
