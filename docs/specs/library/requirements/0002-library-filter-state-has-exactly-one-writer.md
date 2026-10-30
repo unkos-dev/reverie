@@ -27,12 +27,14 @@ from a book depends on recovering the context they left, while a fresh visit nee
 - Same-turn sibling edits both survive.
 - Blur followed by Clear cannot resurrect the cleared condition.
 - Reload after rapid edits restores their final published state before the first list request.
-- Library to book to Back restores filters, chips and results. Forward restores its destination.
+- Library to book to Back restores filters, chips and results.
+- Forward restores its destination.
 - Back past Library leaves the route without stepping through filter edits.
-- A fresh same-route entry and a fresh direct visit start without filters. Traversing to an earlier entry restores that
-  entry, including when the page component is reused.
+- A fresh same-route entry and a fresh direct visit start without filters.
+- Traversing to an earlier entry restores that entry, including when the page component is reused.
 - An absent or malformed owned entry payload starts a clean visit as a unit, preserving unrelated entry data without
   adding recovery UI or a separate recovery write.
-- Clear removes every filter condition while preserving view and sort. Clearing one section preserves sibling sections.
-- Raw text and the selected operator remain editable when they contribute no effective predicate. Native unfinished
-  input remains with its control until that control publishes a value.
+- Clear removes every filter condition while preserving view and sort.
+- Clearing one section preserves sibling sections.
+- Raw text and the selected operator remain editable when they contribute no effective predicate.
+- Native unfinished input remains with its control until that control publishes a value.
