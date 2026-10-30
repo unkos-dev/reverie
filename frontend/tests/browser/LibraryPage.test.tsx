@@ -10,7 +10,7 @@ import {
   type FilterState,
   type LibraryVisit,
 } from "@/routes/library-params";
-import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
+import { RouterProvider, createMemoryRouter, useLocation, type RouteObject } from "react-router";
 import { useSyncExternalStore, type ReactElement } from "react";
 
 import type { BookListItem, BookListResponse, ListBooksParams, Preferences } from "@/api";
@@ -109,6 +109,8 @@ type RenderOpts = {
   cacheParams?: ListBooksParams;
 
   extraCacheParams?: ListBooksParams[];
+
+  url?: string;
 };
 
 function findLibraryTable(): Locator {
@@ -122,6 +124,7 @@ async function renderLibrary({
   preferences,
   cacheParams,
   extraCacheParams = [],
+  url = "/library",
 }: RenderOpts): Promise<{
   client: QueryClient;
 }> {
@@ -141,13 +144,14 @@ async function renderLibrary({
     client.setQueryData(queryKeys.auth.preferences(), preferences ?? preferencesFixture());
   }
 
-  history.replaceState(navigation.currentEntry?.getState() ?? null, "", "/library");
+  history.replaceState(navigation.currentEntry?.getState() ?? null, "", url);
   navigation.updateCurrentEntry({
     state: {
       reverieLibrary: { filters: { ...emptyFilterState(), ...visit?.filters }, view: visit?.view },
     },
   });
   function LocationProbe(): ReactElement {
+    const location = useLocation();
     const state = useSyncExternalStore(
       (onChange) => {
         navigation.addEventListener("currententrychange", onChange);
@@ -167,7 +171,12 @@ async function renderLibrary({
       else params.set(key, String(value));
     }
     if (restored.view !== undefined) params.set("view", restored.view);
-    return <div data-testid="visit-params">{params.toString()}</div>;
+    return (
+      <>
+        <div data-testid="visit-params">{params.toString()}</div>
+        <div data-testid="router-search">{location.search}</div>
+      </>
+    );
   }
 
   function Wrapper(): ReactElement {
@@ -182,7 +191,7 @@ async function renderLibrary({
         ),
       },
     ];
-    const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
+    const router = createMemoryRouter(routes, { initialEntries: [url] });
     return (
       <QueryClientProvider client={client}>
         <RouterProvider router={router} />
@@ -211,7 +220,8 @@ describe("LibraryPage", () => {
     await vi.waitFor(() => {
       expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
     });
-    expect(page.getByTestId("visit-params").element().textContent).not.toContain("sort=");
+    expect(page.getByTestId("router-search").element().textContent).not.toContain("sort=");
+    expect(window.location.search).not.toContain("sort=");
     fetchSpy.mockRestore();
   });
 
@@ -287,6 +297,37 @@ describe("LibraryPage", () => {
   });
 
   describe("per-user sort", () => {
+    test.each([
+      {
+        resolved: "the stored sort",
+        preferences: preferencesFixture({ sort_stack: "-pages" }),
+        cacheParams: { sort: "-pages" },
+        announced: "Sorted by Pages descending",
+      },
+      {
+        resolved: "the installation order",
+        preferences: preferencesFixture(),
+        cacheParams: {},
+        announced: "Sorted by Added descending",
+      },
+    ])(
+      "a stale URL ?sort= is inert: $resolved still applies",
+      async ({ preferences, cacheParams, announced }) => {
+        const fetchSpy = vi.spyOn(globalThis, "fetch");
+        await renderLibrary({
+          items: [bookFixture()],
+          nextCursor: null,
+          preferences,
+          cacheParams,
+          url: "/library?sort=title",
+        });
+        await expect.element(page.getByText(announced)).toBeInTheDocument();
+        await expect.element(page.getByText("The Brothers Karamazov").first()).toBeInTheDocument();
+        expect(fetchSpy).not.toHaveBeenCalled();
+        fetchSpy.mockRestore();
+      },
+    );
+
     test("the rail's reset drops the override and returns to the installation order", async () => {
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
