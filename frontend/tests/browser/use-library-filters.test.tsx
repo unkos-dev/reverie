@@ -26,6 +26,15 @@ function Probe(): ReactElement {
       </button>
       <button
         onClick={() => {
+          owner.commitAll((current) => ({ ...current, pages: { gte: 999 } }));
+          owner.clearAll();
+          owner.commitAll((current) => ({ ...current, q: " a " }));
+        }}
+      >
+        blur-clear-type
+      </button>
+      <button
+        onClick={() => {
           owner.setView("table");
           owner.clearAll();
         }}
@@ -60,6 +69,12 @@ test("same-turn sibling edits compose and preserve unrelated native entry data",
     },
   });
   await expect.element(page.getByRole("status")).toMatchTextContent("the sea ");
+});
+test("blur, Clear and subsequent typing use the current intent without resurrection", async () => {
+  await mount();
+  await userEvent.click(page.getByText("siblings"));
+  await userEvent.click(page.getByText("blur-clear-type"));
+  expect(entry()).toEqual({ reverieLibrary: { filters: { ...emptyFilterState(), q: " a " } } });
 });
 test.each([
   undefined,

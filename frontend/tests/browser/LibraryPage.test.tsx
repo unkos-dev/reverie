@@ -1,5 +1,5 @@
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
 import { cleanup, render } from "vitest-browser-react";
 import { page, userEvent, type Locator } from "vite-plus/test/browser";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -122,7 +122,9 @@ async function renderLibrary({
   preferences,
   cacheParams,
   extraCacheParams = [],
-}: RenderOpts): Promise<void> {
+}: RenderOpts): Promise<{
+  client: QueryClient;
+}> {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -189,6 +191,7 @@ async function renderLibrary({
   }
 
   await render(<Wrapper />);
+  return { client };
 }
 
 describe("LibraryPage", () => {
@@ -235,6 +238,54 @@ describe("LibraryPage", () => {
       .toBeInTheDocument();
   });
 
+  describe("filter chips", () => {
+    test("a chip's remove control drops exactly that filter param", async () => {
+      await renderLibrary({
+        items: [
+          bookFixture({
+            id: "a",
+            series: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Discworld", position: 1 },
+          }),
+        ],
+        nextCursor: null,
+        visit: {
+          filters: {
+            series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            status: { any: ["unread"], none: [] },
+          },
+        },
+        cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", status_any: ["unread"] },
+        extraCacheParams: [{ status_any: ["unread"] }],
+      });
+      const chips = page.getByTestId("filter-chips");
+      const user = userEvent;
+      await user.click(chips.getByRole("button", { name: /Remove.*Series: Discworld/ }));
+      await vi.waitFor(() => {
+        const search = page.getByTestId("visit-params").element().textContent;
+        expect(search).not.toContain("series=");
+        expect(search).toContain("status_any=unread");
+      });
+    });
+
+    test("the chip row's clear-all drops every filter param", async () => {
+      await renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        visit: { filters: { status: { any: ["unread"], none: [] }, pages: { gte: 500 } } },
+        cacheParams: { status_any: ["unread"], pages_gte: 500 },
+        extraCacheParams: [{}],
+      });
+      const chips = page.getByTestId("filter-chips");
+      const user = userEvent;
+      await user.click(chips.getByRole("button", { name: "Clear all" }));
+      await vi.waitFor(() => {
+        const search = page.getByTestId("visit-params").element().textContent;
+        expect(search).not.toContain("status_any");
+        expect(search).not.toContain("pages_gte");
+      });
+    });
+  });
+
   describe("per-user sort", () => {
     test("the rail's reset drops the override and returns to the installation order", async () => {
       const fetchSpy = vi
@@ -259,5 +310,97 @@ describe("LibraryPage", () => {
       await expect.element(page.getByText("Sorted by Added descending")).toBeInTheDocument();
       fetchSpy.mockRestore();
     });
+
+    test("a late preferences response re-sorts the initial list once", async () => {
+      let resolveRead: ((value: Response) => void) | undefined;
+      const listCalls: string[] = [];
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+        let url: string;
+        if (typeof input === "string") {
+          url = input;
+        } else if (input instanceof URL) {
+          url = input.href;
+        } else {
+          url = input.url;
+        }
+        if (url.includes(PREFERENCES_PATH) && init?.method !== "PATCH") {
+          return new Promise<Response>((resolve) => {
+            resolveRead = resolve;
+          });
+        }
+        if (url.includes("/api/v1/books")) {
+          listCalls.push(url);
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                items: [bookFixture({ id: "sorted", title: "A Sorted Row" })],
+                next_cursor: null,
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
+        return Promise.reject(new Error(`unexpected fetch: ${url}`));
+      });
+
+      await renderLibrary({
+        items: [bookFixture({ title: "The Seeded Row" })],
+        nextCursor: null,
+        preferences: null,
+        cacheParams: {},
+      });
+      await expect.element(page.getByText("The Seeded Row")).toBeInTheDocument();
+      await vi.waitFor(() => {
+        expect(resolveRead).toBeDefined();
+      });
+      resolveRead?.(preferencesResponse(preferencesFixture({ sort_stack: "-pages" })));
+
+      await expect.element(page.getByText("A Sorted Row")).toBeInTheDocument();
+      expect(listCalls).toHaveLength(1);
+      expect(listCalls[0]).toContain("sort=-pages");
+      fetchSpy.mockRestore();
+    });
   });
+});
+
+function deferredResponse(): {
+  promise: Promise<Response>;
+  resolve: (response: Response) => void;
+  reject: (error: Error) => void;
+} {
+  let resolve: (response: Response) => void = () => {
+    throw new Error("promise not initialised");
+  };
+  let reject: (error: Error) => void = () => {
+    throw new Error("promise not initialised");
+  };
+  const promise = new Promise<Response>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+function booksResponse(items: BookListItem[], next_cursor: string | null = null): Response {
+  return new Response(JSON.stringify({ items, next_cursor }), {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+test("a successful empty response replaces placeholders", async () => {
+  const pending = deferredResponse();
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+  const { client } = await renderLibrary({
+    items: [bookFixture({ title: "Origin" })],
+    nextCursor: null,
+  });
+  await userEvent.fill(page.getByRole("searchbox"), "missing");
+  await expect.element(page.getByText("Origin")).toBeInTheDocument();
+  pending.resolve(booksResponse([]));
+  await expect.element(page.getByText("No books match these filters")).toBeInTheDocument();
+  await expect.element(page.getByText("Origin")).not.toBeInTheDocument();
+  expect(
+    client.getQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({ q: "missing" }))
+      ?.pages[0].items,
+  ).toEqual([]);
+  fetchSpy.mockRestore();
 });
