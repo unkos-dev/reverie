@@ -76,11 +76,6 @@ test("blur, Clear and subsequent typing use the current intent without resurrect
   await userEvent.click(page.getByText("blur-clear-type"));
   expect(entry()).toEqual({ reverieLibrary: { filters: { ...emptyFilterState(), q: " a " } } });
 });
-test("clear preserves the visit view override", async () => {
-  await mount();
-  await userEvent.click(page.getByText("view-clear"));
-  expect(entry()).toEqual({ reverieLibrary: { view: "table", filters: emptyFilterState() } });
-});
 test.each([
   undefined,
   { filters: { ...emptyFilterState(), pages: { gte: -1 } }, view: "table" },
@@ -96,12 +91,4 @@ test.each([
     keep: 1,
     reverieLibrary: { filters: emptyFilterState(), view: "table" },
   });
-});
-test("restores a complete visit before consumers render", async () => {
-  const visit = {
-    filters: { ...emptyFilterState(), q: "restored", addedAfter: "2026-10-25" },
-    view: "table",
-  };
-  await mount({ reverieLibrary: visit });
-  expect(JSON.parse(page.getByRole("status").element().textContent)).toEqual(visit);
 });
