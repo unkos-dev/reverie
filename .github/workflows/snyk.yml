@@ -101,10 +101,13 @@ jobs:
       - name: Snyk Open Source scan
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           set -euo pipefail
           rc=0
           snyk test --org=reverie --all-projects --dev \
+            --target-reference=main \
+            --remote-repo-url="$REPO_URL" \
             --sarif-file-output=snyk-oss.sarif || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
