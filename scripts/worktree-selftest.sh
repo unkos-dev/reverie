@@ -110,6 +110,9 @@ dest_codex_missing="${scratch_root}/reverie/${slug_codex_missing}"
 dest_codex_overlay="${scratch_root}/reverie/${slug_codex_overlay}"
 dest_codex_untrusted="${scratch_root}/reverie/${slug_codex_untrusted}"
 dest_codex_dest_untrusted="${scratch_root}/reverie/${slug_codex_dest_untrusted}"
+shared_plans="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/plans"
+local_plan_name="worktree-selftest-plans-${pids}.md"
+unique_plan_name="worktree-selftest-plans-unique-${pids}.md"
 
 # Sentinel-overlay bookkeeping: the sentinel section only ever creates
 # these when the checkout has no real overlay, and cleanup must remove
@@ -148,6 +151,7 @@ cleanup() {
   git -C "${repo_root}" branch -D "${branch_codex_untrusted}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_codex_dest_untrusted}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_codex_source}" >/dev/null 2>&1 || true
+  rm -f -- "${shared_plans}/${local_plan_name}" "${shared_plans}/${unique_plan_name}"
   if [ "${sentinel_overlay_created}" = "1" ]; then
     rm -f "${repo_root}/.claude/settings.local.json"
   fi
@@ -185,7 +189,6 @@ else
   bad "worktree creation exits zero" "exit ${create_rc}" "${create_out}"
 fi
 
-shared_plans="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/plans"
 if [ -L "${dest_ok}/plans" ] && [ "${dest_ok}/plans" -ef "${shared_plans}" ] &&
   git -C "${dest_ok}" check-ignore -q plans; then
   ok "worktree planning link targets the main checkout and remains ignored"
@@ -433,7 +436,21 @@ if [ -L "${local_plans}" ]; then
   rm "${local_plans}"
 fi
 mkdir -p "${local_plans}"
-printf 'existing local plan\n' >"${local_plans}/keep.md"
+printf 'existing local plan\n' >"${local_plans}/${local_plan_name}"
+printf 'unique local plan\n' >"${local_plans}/${unique_plan_name}"
+printf 'existing shared plan\n' >"${shared_plans}/${local_plan_name}"
+plans_conflict_rc=0
+plans_conflict_out="$(cd "${dest_codex_source}" && just worktree-provision "${dest_codex_overlay}" 2>&1)" || plans_conflict_rc=$?
+if [ "${plans_conflict_rc}" -ne 0 ] && [ ! -L "${local_plans}" ] &&
+  [ "$(cat "${local_plans}/${local_plan_name}")" = "existing local plan" ] &&
+  [ "$(cat "${local_plans}/${unique_plan_name}")" = "unique local plan" ] &&
+  [ "$(cat "${shared_plans}/${local_plan_name}")" = "existing shared plan" ] &&
+  [ ! -e "${shared_plans}/${unique_plan_name}" ] && [ ! -L "${shared_plans}/${unique_plan_name}" ]; then
+  ok "a planning-file collision fails provisioning before copying any files"
+else
+  bad "a planning-file collision fails provisioning before copying any files" "${plans_conflict_out}"
+fi
+rm -- "${shared_plans}/${local_plan_name}"
 reprovision_rc=0
 reprovision_out="$(cd "${dest_codex_source}" && just worktree-provision "${dest_codex_overlay}" 2>&1)" || reprovision_rc=$?
 if [ "${reprovision_rc}" -eq 0 ] &&
@@ -445,11 +462,12 @@ else
   bad "repeated provisioning updates rules at their original paths" "${reprovision_out}"
 fi
 
-if [ ! -L "${local_plans}" ] && [ "$(cat "${local_plans}/keep.md")" = "existing local plan" ] &&
-  printf '%s\n' "${reprovision_out}" | grep -qF 'retained existing'; then
-  ok "provisioning preserves and reports existing local planning files"
+if [ -L "${local_plans}" ] && [ "${local_plans}" -ef "${shared_plans}" ] &&
+  [ "$(cat "${shared_plans}/${local_plan_name}")" = "existing local plan" ] &&
+  [ "$(cat "${shared_plans}/${unique_plan_name}")" = "unique local plan" ]; then
+  ok "provisioning migrates existing local planning files and establishes the shared link"
 else
-  bad "provisioning preserves and reports existing local planning files" "${reprovision_out}"
+  bad "provisioning migrates existing local planning files and establishes the shared link" "${reprovision_out}"
 fi
 
 if git -C "${dest_codex_overlay}" check-ignore -q .codex/config.toml \
@@ -541,6 +559,12 @@ if [ "${codex_overlay_remove_rc}" -eq 0 ]; then
   ok "Codex-policy worktree removes without --force"
 else
   bad "Codex-policy worktree removes without --force" "exit ${codex_overlay_remove_rc}"
+fi
+if [ -f "${shared_plans}/${local_plan_name}" ] &&
+  [ "$(cat "${shared_plans}/${local_plan_name}")" = "existing local plan" ]; then
+  ok "migrated planning files survive worktree removal"
+else
+  bad "migrated planning files survive worktree removal"
 fi
 
 codex_untrusted_remove_rc=0
