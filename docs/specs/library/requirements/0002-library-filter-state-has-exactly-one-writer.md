@@ -24,7 +24,8 @@ from a book depends on recovering the context they left, while a fresh visit nee
 ## Acceptance criteria
 
 - Quick search, rail sections, chip removal and all clear affordances dispatch to the same page-level owner.
-- Same-turn sibling edits both survive. Blur followed by Clear cannot resurrect the cleared condition.
+- Same-turn sibling edits both survive.
+- Blur followed by Clear cannot resurrect the cleared condition.
 - Reload after rapid edits restores their final published state before the first list request.
 - Library to book to Back restores filters, chips and results. Forward restores its destination.
 - Back past Library leaves the route without stepping through filter edits.
