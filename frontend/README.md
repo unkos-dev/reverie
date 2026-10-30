@@ -50,7 +50,7 @@ output and automatic screenshots under `frontend/test-results/browser/` when cap
 directory alongside `test-results/library/` journey traces as `browser-failures`. A browser launch failure may have no
 screenshot.
 
-The `frontend-node` project includes pure Library projection and summary tests. Native numeric/date bindings live in
+The `frontend-node` project includes pure Library projection and summary tests. Native date input binding lives in
 `tests/browser/editors.test.tsx`; the Library browser suites cover query, cache and selection behaviour.
 `just js::library-journeys` runs `tests/journeys/*.spec.ts` through `playwright.library.config.ts` in Chromium and
 patched Firefox. Each invocation builds through `just js::build`, then serves the production output with `vp preview` to
