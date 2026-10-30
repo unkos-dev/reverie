@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, cleanup } from "vitest-browser-react";
-import { page as screen } from "vite-plus/test/browser";
+import { page as screen, userEvent } from "vite-plus/test/browser";
 import { beforeEach, afterEach, expect, test, vi } from "vite-plus/test";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
-import { fetchSetupStatus, lookupCredentialLink } from "@/api/auth";
+import { ApiError } from "@/api";
+import { fetchSetupStatus, lookupCredentialLink, redeemCredentialLink } from "@/api/auth";
 
 import { Component } from "@/routes/set-password";
 import { credentialLinkLoader as loader } from "@/route-table";
@@ -50,4 +51,34 @@ test("checks the link and clears the fragment", async () => {
   await vi.waitFor(() => {
     expect(lookupCredentialLink).toHaveBeenCalledWith("test-link", expect.any(AbortSignal));
   });
+});
+
+test.each([
+  new TypeError("Failed to fetch"),
+  new ApiError(503, null, "Busy", "Try later"),
+  new ApiError(429, null, "Limited", "Try later"),
+])("retries a temporary lookup failure without restoring the fragment: %s", async (error) => {
+  vi.mocked(lookupCredentialLink).mockRejectedValueOnce(error);
+  await renderPage();
+  const user = userEvent;
+  const retry = screen.getByRole("button", { name: "Try again" });
+  let complete: ((account: { email: string; has_password: boolean }) => void) | undefined;
+  vi.mocked(lookupCredentialLink).mockReturnValueOnce(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  await user.click(retry);
+  await expect.element(retry).toBeDisabled();
+  expect(window.location.hash).toBe("");
+  expect(redeemCredentialLink).not.toHaveBeenCalled();
+
+  complete?.({ email: "bob@example.com", has_password: false });
+  await Promise.resolve();
+
+  await expect.element(screen.getByLabelText("New password")).toBeInTheDocument();
+  await vi.waitFor(() => {
+    expect(lookupCredentialLink).toHaveBeenCalledTimes(2);
+  });
+  expect(lookupCredentialLink).toHaveBeenLastCalledWith("test-link", expect.any(AbortSignal));
 });

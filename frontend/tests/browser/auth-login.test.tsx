@@ -115,4 +115,27 @@ describe("login outcomes", () => {
     await expect.element(screen.getByText("private-text")).not.toBeInTheDocument();
     await expect.element(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
+
+  test("browser history restores the outcome without provider navigation", async () => {
+    const { router } = await renderLogin(outcomeStatus, "/login?outcome=denied");
+
+    await router.navigate("/login?outcome=keys");
+
+    await expect
+      .element(screen.getByRole("heading", { name: "Sign-in could not be verified" }))
+      .toHaveFocus();
+
+    await router.navigate(-1);
+
+    await expect.element(screen.getByRole("heading", { name: "Sign-in cancelled" })).toHaveFocus();
+    expect(router.state.location.search).toBe("?outcome=denied");
+  });
+
+  test("ignores provider descriptions beside a recognised outcome", async () => {
+    await renderLogin(outcomeStatus, "/login?outcome=keys&error_description=private-provider-text");
+    await expect.element(screen.getByText(/private-provider-text/)).not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("heading", { name: "Sign-in could not be verified" }))
+      .toBeInTheDocument();
+  });
 });
