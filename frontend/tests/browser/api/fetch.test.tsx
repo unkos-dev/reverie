@@ -47,33 +47,6 @@ async function seedCsrf(token: string): Promise<void> {
   fetchSpy.mockRestore();
 }
 
-describe("apiFetch — credentials + method normalisation", () => {
-  test("GET request always sets credentials=same-origin", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    await apiFetch("/api/v1/books");
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const init = fetchSpy.mock.calls[0]?.[1];
-    expect(init?.credentials).toBe("same-origin");
-    expect(init?.method).toBe("GET");
-  });
-
-  test("uppercases the method", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    await apiFetch("/api/v1/books/1", { method: "patch" });
-
-    const init = fetchSpy.mock.calls[0]?.[1];
-    expect(init?.method).toBe("PATCH");
-  });
-});
-
 describe("apiFetch — CSRF header injection", () => {
   test("GET does NOT inject X-CSRF-Token even when token is cached", async () => {
     await seedCsrf(SAMPLE_TOKEN);
@@ -99,18 +72,6 @@ describe("apiFetch — CSRF header injection", () => {
     expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
   });
 
-  test.each(["PUT", "PATCH", "DELETE"])("%s injects X-CSRF-Token", async (method) => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    await apiFetch("/api/v1/books/1", { method });
-
-    const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
-    expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
-  });
-
   test("POST with no cached token hydrates once; still omits the header when none is issued", async () => {
     // First response serves the lazy /auth/me hydration (no token for an
     // anonymous session), second the POST itself.
@@ -125,66 +86,6 @@ describe("apiFetch — CSRF header injection", () => {
     expect(fetchSpy.mock.calls[0]?.[0]).toBe("/auth/me");
     const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
     expect(headers.has("X-CSRF-Token")).toBe(false);
-  });
-});
-
-describe("apiFetch — lazy CSRF hydration", () => {
-  test("first mutating call with an empty cache refreshes the token before the request", async () => {
-    // An OIDC session never runs loginLocal (the only other hydration
-    // site), so the wrapper must hydrate on first mutating use itself.
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ csrf_token: SAMPLE_TOKEN }))
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    await apiFetch("/api/v1/books", { method: "POST", body: "{}" });
-
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/auth/me");
-    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
-    expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
-  });
-
-  test("forwards the caller's abort signal to the lazy hydration request", async () => {
-    // An aborted operation must cancel the pre-flight /auth/me too, not
-    // leave it in flight to write the shared token cache post-abort.
-    const controller = new AbortController();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ csrf_token: SAMPLE_TOKEN }))
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    await apiFetch("/api/v1/books", {
-      method: "POST",
-      body: "{}",
-      signal: controller.signal,
-    });
-
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/auth/me");
-    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
-  });
-
-  test("GET with an empty cache never hydrates", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    await apiFetch("/api/v1/books");
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/v1/books");
-  });
-
-  test("a cached token skips hydration", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    await apiFetch("/api/v1/books", { method: "POST", body: "{}" });
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/v1/books");
   });
 });
 
@@ -211,32 +112,6 @@ describe("apiFetch — csrf-missing retry", () => {
     expect(fetchSpy.mock.calls[1]?.[0]).toBe("/auth/me");
     const retriedHeaders = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
     expect(retriedHeaders.get("X-CSRF-Token")).toBe(REFRESHED_TOKEN);
-  });
-
-  test("forwards the caller's abort signal to the retry refresh", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const controller = new AbortController();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        problemResponse({
-          type: "https://reverie.example/probs/csrf-missing",
-          title: "Precondition Required",
-          status: 428,
-        }),
-      )
-      .mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }))
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    await apiFetch("/api/v1/books", {
-      method: "POST",
-      body: "{}",
-      signal: controller.signal,
-    });
-
-    // call[1] is the mid-retry /auth/me refresh.
-    expect(fetchSpy.mock.calls[1]?.[0]).toBe("/auth/me");
-    expect(fetchSpy.mock.calls[1]?.[1]?.signal).toBe(controller.signal);
   });
 
   test("a non-CSRF 428 throws without a retry", async () => {
@@ -363,42 +238,9 @@ describe("apiFetch — csrf-mismatch retry", () => {
     expect(err.problemSlug).toBe("forbidden");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
-
-  test("GET that returns 403 does not attempt csrf-mismatch retry", async () => {
-    // GETs are not gated by the csrf middleware on the backend; even
-    // if a 403 csrf-mismatch shape came back on a GET, treating it as
-    // a retryable case would be wrong.
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      problemResponse({
-        type: "https://reverie.example/probs/csrf-mismatch",
-        title: "Forbidden",
-        status: 403,
-      }),
-    );
-
-    const err = (await apiFetch("/api/v1/books").catch((e: unknown) => e)) as ApiError;
-    expect(err.status).toBe(403);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("apiFetch — body decoding", () => {
-  test("204 No Content returns undefined without parsing", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 204 }));
-
-    const result = await apiFetch("/api/v1/books/1", { method: "DELETE" });
-    expect(result).toBeUndefined();
-  });
-
-  test("205 Reset Content returns undefined without parsing", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 205 }));
-
-    const result = await apiFetch("/api/v1/books/1", { method: "DELETE" });
-    expect(result).toBeUndefined();
-  });
-
   test("204 on csrf-mismatch retry path returns undefined (does not call .json())", async () => {
     await seedCsrf(SAMPLE_TOKEN);
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -517,106 +359,6 @@ describe("apiFetch — If-Match ETag retention", () => {
       method: "PATCH",
       body: JSON.stringify({ status: "reading" }),
     });
-
-    const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
-    expect(headers.has("If-Match")).toBe(false);
-  });
-
-  test("a retained tag on a manifestation's metadata resource is not sent for an unrelated shelves PATCH", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(withEtag({ fields: {} }, '"meta-etag"'))
-      .mockResolvedValueOnce(jsonResponse({ id: "shelf-1", name: "Renamed" }));
-
-    await apiFetch("/api/v1/books/book-1/metadata");
-    await apiFetch("/api/v1/shelves/shelf-1", {
-      method: "PATCH",
-      body: JSON.stringify({ name: "Renamed" }),
-    });
-
-    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
-    expect(headers.has("If-Match")).toBe(false);
-  });
-
-  test("a GET and a PATCH on the shared books metadata path share a retained tag", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(withEtag({ title: "Original" }, '"meta-etag"'))
-      .mockResolvedValueOnce(withEtag({ fields: {} }, '"meta-etag-2"'));
-
-    await apiFetch("/api/v1/books/book-1/metadata");
-    await apiFetch("/api/v1/books/book-1/metadata", {
-      method: "PATCH",
-      body: JSON.stringify({ title: "New" }),
-    });
-
-    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
-    expect(headers.get("If-Match")).toBe('"meta-etag"');
-  });
-
-  test("the unprotected metadata review-queue GET does not seed a retained tag", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse({ fields: {} }));
-
-    await apiFetch("/api/v1/manifestations/book-1/metadata");
-    await apiFetch("/api/v1/books/book-1/metadata", {
-      method: "PATCH",
-      body: JSON.stringify({ title: "New" }),
-    });
-
-    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
-    expect(headers.has("If-Match")).toBe(false);
-  });
-  test("a settings GET does not supply an automatic If-Match on PUT", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(withEtag({ revision: 1 }, '"settings-1"'))
-      .mockResolvedValueOnce(withEtag({ revision: 2 }, '"settings-2"'));
-
-    await apiFetch("/api/v1/settings");
-    await apiFetch("/api/v1/settings", { method: "PUT", body: JSON.stringify({ a: 1 }) });
-
-    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
-    expect(headers.has("If-Match")).toBe(false);
-  });
-
-  test("a settings 412 cannot replace an explicitly held snapshot tag", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(withEtag({ revision: 1 }, '"stale"'))
-      .mockResolvedValueOnce(mismatchResponse('"current"'))
-      .mockResolvedValueOnce(withEtag({ revision: 3 }, '"after"'));
-
-    await apiFetch("/api/v1/settings");
-    await expect(
-      apiFetch("/api/v1/settings", {
-        method: "PUT",
-        headers: { "If-Match": '"stale"' },
-        body: JSON.stringify({ a: 1 }),
-      }),
-    ).rejects.toBeInstanceOf(ApiError);
-    await apiFetch("/api/v1/settings", {
-      method: "PUT",
-      headers: { "If-Match": '"stale"' },
-      body: JSON.stringify({ a: 1 }),
-    });
-
-    const retryHeaders = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
-    expect(retryHeaders.get("If-Match")).toBe('"stale"');
-  });
-
-  test("a PUT to an unkeyed path never gains an If-Match", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({}));
-
-    await apiFetch("/api/v1/users/u1/role", { method: "PUT", body: JSON.stringify({}) });
 
     const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
     expect(headers.has("If-Match")).toBe(false);

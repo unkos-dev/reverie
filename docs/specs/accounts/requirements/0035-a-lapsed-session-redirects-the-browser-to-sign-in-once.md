@@ -27,8 +27,8 @@ on handling session expiration client-side. See
 ## Acceptance criteria
 
 - Several requests that fail together for the same lapsed session produce exactly one navigation to sign-in, not one per
-  failing request. Checked by `` `is guarded — repeated calls navigate once` `` in
-  `frontend/tests/browser/lib/query/client.test.tsx`.
+  failing request. Checked by `concurrent identity and account-query 401s produce one document navigation` in
+  `frontend/tests/journeys/auth-session.spec.ts`.
 - A freshly wired client is able to navigate again on a subsequent, independent lapse; the once-guard from a prior lapse
   does not suppress it permanently. Checked by `` `setUnauthenticatedHandler resets the once-guard` `` in
   `frontend/tests/browser/lib/query/client.test.tsx`.

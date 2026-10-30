@@ -35,4 +35,4 @@ server access logs. See the
   `"POST with no cached token hydrates once; still omits the header when none is issued"` in
   `frontend/tests/browser/api/fetch.test.tsx`.
 - A token consisting of an empty string is treated as no token: the cache clears rather than holding the empty value.
-  Checked by `"clears cache when csrf_token is empty string"` in `frontend/src/api/csrf.test.ts`.
+  Not checked by any automated test.
