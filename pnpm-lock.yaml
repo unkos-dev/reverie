@@ -139,7 +139,7 @@ importers:
         version: 0.7.1
       impeccable:
         specifier: ^4.0.0
-        version: 4.7.0
+        version: 4.8.0
       playwright:
         specifier: 1.64.1
         version: 1.64.1
@@ -777,32 +777,32 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@impeccable/cli-darwin-arm64@0.1.16':
-    resolution: {integrity: sha512-tqiZypHCtRhwJ0G5SI1G/3t1e8NpdiXpw2cA7QxfUX7pgJmYgPa268PzF5/WX2j/Xw6/R8pR/aG880CsklHJrg==}
+  '@impeccable/cli-darwin-arm64@0.1.18':
+    resolution: {integrity: sha512-Uhs8Vu8lNnwanaPnAY1TeIqQP0h+qPApAAyZozG5JZOgF++U6tFPpA0X1hsXwbwS1ldiZ8zCbkeWp1TgHhQoDw==}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
 
-  '@impeccable/cli-darwin-x64@0.1.16':
-    resolution: {integrity: sha512-leE7ZHgvscIX9dxMw+DwDzFsH63CF9bwlbE+69LevSp28wLF5jnEkrNVJN5tcxiV0HXOBErw1WAnkNMxg32hcg==}
+  '@impeccable/cli-darwin-x64@0.1.18':
+    resolution: {integrity: sha512-oEdi45ONAkBsWdAAv5V/vzUJJ+aw4qDZlvjWFaVy1QIsSY0tgGK7VUz4aXzCYctdojBL9naEkmA7geNnRHWnAQ==}
     cpu: [x64]
     os: [darwin]
     hasBin: true
 
-  '@impeccable/cli-linux-arm64@0.1.16':
-    resolution: {integrity: sha512-LIMp/DzDqdYY7s9vSJyV5kwe0XbSBkHW1I+90LMHXMedD/ydzpooN9foi1jLHizX6sPycBkYNLOvwfWrDxJvjw==}
+  '@impeccable/cli-linux-arm64@0.1.18':
+    resolution: {integrity: sha512-LHqLzy8YWy8U+xOJm5hGgAZrr5YRoZ0ic3eixSx32XT3OYhkwf6ubJgIFT6L2M/qg/dXaucskGVBG4KV9RQGRw==}
     cpu: [arm64]
     os: [linux]
     hasBin: true
 
-  '@impeccable/cli-linux-x64@0.1.16':
-    resolution: {integrity: sha512-JyjC2nd73d0tDvUVBNEXs5dXjqxFcTZtvkktbht2z4D6uLSrD0lOYoQViije6cmIsQn7zt/kCGKkeou+QPuHvw==}
+  '@impeccable/cli-linux-x64@0.1.18':
+    resolution: {integrity: sha512-cksllv5f/VryElehX8CcKCIOSpTHCKX9iLRxCre4A8cqtjmNsDKc8jtVO87hvfmCKISXKzHXfZGEIpJyGEiiBA==}
     cpu: [x64]
     os: [linux]
     hasBin: true
 
-  '@impeccable/cli-windows-x64@0.1.16':
-    resolution: {integrity: sha512-i/VwZh3tMgnX6GIB+XP33WUBydSZXK+OVR8I/PXp8cqo38KIENYvecqB/WqqpKudh23ejptdvsL9nVBTJzNWXg==}
+  '@impeccable/cli-windows-x64@0.1.18':
+    resolution: {integrity: sha512-gQa/hDCMeJPdanY8/F6dm+HX8CRUWw0qZemcmS7RnZoI1NFgPi8iYZ+PSA5m+KG/vf/fmkQrVEUJaZRIeHu9Pg==}
     cpu: [x64]
     os: [win32]
     hasBin: true
@@ -2874,8 +2874,8 @@ packages:
     resolution: {integrity: sha512-wCBiZ77u1tuWde6G/nfOtLaCTYcFDU5yCzARzK10y+rLhzYoL7a7yEemcopcc2Mzow7gZOIjnV2ym1NYmdiJOQ==}
     engines: {node: '>= 4'}
 
-  impeccable@4.7.0:
-    resolution: {integrity: sha512-Xxiw8MukndrmkU+ueCzrjNO3Q2fO0Hr84oxOYfShugVbET2pdPgZEJiqWLuNp1YyBAGKODBQL2QTEqTXulHSdQ==}
+  impeccable@4.8.0:
+    resolution: {integrity: sha512-e0+wbJppJMiQN8npKmIkBbKetfSlarak7OIGlsRhc8folekz4PgStjuprhYi+imjqBb6OCMJLV9II2hHGmcCyg==}
     engines: {node: '>=18.19.0'}
     hasBin: true
 
@@ -5252,19 +5252,19 @@ snapshots:
   '@img/sharp-win32-x64@0.35.5':
     optional: true
 
-  '@impeccable/cli-darwin-arm64@0.1.16':
+  '@impeccable/cli-darwin-arm64@0.1.18':
     optional: true
 
-  '@impeccable/cli-darwin-x64@0.1.16':
+  '@impeccable/cli-darwin-x64@0.1.18':
     optional: true
 
-  '@impeccable/cli-linux-arm64@0.1.16':
+  '@impeccable/cli-linux-arm64@0.1.18':
     optional: true
 
-  '@impeccable/cli-linux-x64@0.1.16':
+  '@impeccable/cli-linux-x64@0.1.18':
     optional: true
 
-  '@impeccable/cli-windows-x64@0.1.16':
+  '@impeccable/cli-windows-x64@0.1.18':
     optional: true
 
   '@internationalized/date@3.12.4':
@@ -7175,13 +7175,13 @@ snapshots:
 
   ignore@7.0.14: {}
 
-  impeccable@4.7.0:
+  impeccable@4.8.0:
     optionalDependencies:
-      '@impeccable/cli-darwin-arm64': 0.1.16
-      '@impeccable/cli-darwin-x64': 0.1.16
-      '@impeccable/cli-linux-arm64': 0.1.16
-      '@impeccable/cli-linux-x64': 0.1.16
-      '@impeccable/cli-windows-x64': 0.1.16
+      '@impeccable/cli-darwin-arm64': 0.1.18
+      '@impeccable/cli-darwin-x64': 0.1.18
+      '@impeccable/cli-linux-arm64': 0.1.18
+      '@impeccable/cli-linux-x64': 0.1.18
+      '@impeccable/cli-windows-x64': 0.1.18
 
   import-fresh@3.3.1:
     dependencies:
