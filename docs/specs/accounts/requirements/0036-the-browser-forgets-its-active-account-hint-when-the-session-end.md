@@ -24,7 +24,8 @@ another account's first-paint presentation from the previous account's cached va
 
 ## Acceptance criteria
 
-- A dead session clears the active-account hint before the client's redirect fires. Not checked by any automated test.
+- A dead session clears the active-account hint before the client's redirect fires. Checked by
+  `` `a dead session forgets the browser's active user` `` in `frontend/tests/browser/lib/query/client.test.tsx`.
 - An explicit sign-out clears the active-account hint before navigation. Checked by the successful sign-out journey in
   `frontend/tests/journeys/shell-logout.spec.ts`.
 - The hint is cleared even when the sign-out request fails. The failed-logout journey in the same file checks hint

@@ -363,4 +363,45 @@ describe("apiFetch — If-Match ETag retention", () => {
     const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
     expect(headers.has("If-Match")).toBe(false);
   });
+
+  test("a retained tag for one resource is never sent on another resource's PATCH", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(withEtag({ fields: {} }, '"meta-book-1"'))
+      .mockResolvedValueOnce(withEtag({ status: null }, '"reading-book-2"'))
+      .mockResolvedValueOnce(jsonResponse({ fields: {} }))
+      .mockResolvedValueOnce(jsonResponse({ status: "reading" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "shelf-1", name: "Renamed" }));
+
+    await apiFetch("/api/v1/books/book-1/metadata");
+    await apiFetch("/api/v1/books/book-2/reading");
+    await Promise.all([
+      apiFetch("/api/v1/books/book-2/metadata", { method: "PATCH", body: "{}" }),
+      apiFetch("/api/v1/books/book-1/reading", { method: "PATCH", body: "{}" }),
+      apiFetch("/api/v1/shelves/shelf-1", { method: "PATCH", body: "{}" }),
+    ]);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    for (const [, init] of fetchSpy.mock.calls.slice(2)) {
+      expect(new Headers(init?.headers).has("If-Match")).toBe(false);
+    }
+  });
+
+  test("a GET and a PATCH on the shared books metadata path share a retained tag", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(withEtag({ title: "Original" }, '"meta-etag"'))
+      .mockResolvedValueOnce(withEtag({ fields: {} }, '"meta-etag-2"'));
+
+    await apiFetch("/api/v1/books/book-1/metadata");
+    await apiFetch("/api/v1/books/book-1/metadata", {
+      method: "PATCH",
+      body: JSON.stringify({ title: "New" }),
+    });
+
+    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
+    expect(headers.get("If-Match")).toBe('"meta-etag"');
+  });
 });
