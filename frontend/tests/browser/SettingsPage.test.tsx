@@ -60,12 +60,20 @@ type Server = {
   /** Revisions at which a PUT is answered 412 (the PUT count, 1-based), with a hook to move the data first. */
   stale: Map<number, () => void>;
   puts: PutRecord[];
+  getGate: Promise<void> | null;
 };
 
 let server: Server;
 
 function newServer(): Server {
-  return { values: { ...BASE_VALUES }, revision: 1, getStatus: 200, stale: new Map(), puts: [] };
+  return {
+    values: { ...BASE_VALUES },
+    revision: 1,
+    getStatus: 200,
+    stale: new Map(),
+    puts: [],
+    getGate: null,
+  };
 }
 
 const etag = (): string => `"rev-${String(server.revision)}"`;
@@ -138,9 +146,9 @@ function installFetch(): void {
           reply({ title: "Error", status: server.getStatus }, server.getStatus),
         );
       }
-      return Promise.resolve(
-        reply({ ...row(), restart_required_fields: [] }, 200, { ETag: etag() }),
-      );
+      const answer = (): Response =>
+        reply({ ...row(), restart_required_fields: [] }, 200, { ETag: etag() });
+      return server.getGate === null ? Promise.resolve(answer()) : server.getGate.then(answer);
     }
     if (url.pathname === "/api/v1/settings" && method === "PUT") {
       return Promise.resolve(handlePut(init));
@@ -207,6 +215,34 @@ describe("production settings navigation", () => {
     appQueryClient.clear();
   });
 
+  test("revisiting the active area preserves the draft revision and detects a concurrent edit", async () => {
+    const user = userEvent;
+    const { router } = await renderSettings("enrichment", appQueryClient, adminSettingsRoute);
+    await expect.element(page.getByRole("form", { name: /settings$/ })).toBeInTheDocument();
+    await type(user, "Concurrent lookups", "6");
+    server.values.enrichment_concurrency = 5;
+    server.revision += 1;
+
+    const nav = page.getByRole("navigation", { name: "Settings areas" });
+    await user.click(nav.getByRole("link", { name: /^Enrichment/ }));
+    await vi.waitFor(() => {
+      expect(router.state.navigation.state).toBe("idle");
+    });
+    await expect
+      .element(page.getByRole("textbox", { name: "Concurrent lookups" }))
+      .toHaveValue("6");
+    await user.click(save());
+    await vi.waitFor(() => {
+      expect(server.puts).toHaveLength(1);
+    });
+    expect(server.puts[0]?.ifMatch).toBe('"rev-1"');
+    await expect
+      .element(page.getByText("Settings changed while you were editing"))
+      .toBeInTheDocument();
+    expect(server.values.enrichment_concurrency).toBe(5);
+    expect(server.puts).toHaveLength(1);
+  });
+
   test.each(["invalid JSON", "invalid schema"])(
     "a failed re-entry read with %s cannot authorise a stale save",
     async (failure) => {
@@ -243,6 +279,32 @@ describe("production settings navigation", () => {
         .toBeInTheDocument();
     },
   );
+});
+
+describe("saving", () => {
+  test("a read slow enough to land after another admin's save never rebases an active draft", async () => {
+    const user = userEvent;
+    await loaded();
+    let release = (): void => {};
+    server.getGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await type(user, "Concurrent lookups", "6");
+    await user.click(save());
+    await expect.element(page.getByText("Settings saved")).toBeInTheDocument();
+    await type(user, "Concurrent lookups", "7");
+    server.values.enrichment_concurrency = 8;
+    server.revision += 1;
+    server.getGate = null;
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await user.click(save());
+    await expect
+      .element(page.getByText("Settings changed while you were editing"))
+      .toBeInTheDocument();
+    expect(server.puts[1]?.ifMatch).toBe('"rev-2"');
+    expect(server.values.enrichment_concurrency).toBe(8);
+  });
 });
 
 describe("source-file deletion switches", () => {
@@ -396,6 +458,39 @@ describe("a stale write", () => {
       .element(page.getByRole("textbox", { name: "Concurrent lookups" }))
       .toHaveValue("8");
   });
+
+  test.each(["invalid JSON", "invalid schema"])(
+    "a write response with %s leaves the held values and tag together",
+    async (failure) => {
+      const user = userEvent;
+      await loaded();
+      await type(user, "Concurrent lookups", "6");
+      const realFetch = vi.mocked(globalThis.fetch).getMockImplementation();
+      vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+        const response = realFetch === undefined ? new Response() : await realFetch(input, init);
+        if (urlOf(input).pathname === "/api/v1/settings" && init?.method === "PUT") {
+          return new Response(failure === "invalid JSON" ? "{" : "{}", {
+            headers: { "Content-Type": "application/json", ETag: etag() },
+          });
+        }
+        return response;
+      });
+      await user.click(save());
+      await expect
+        .element(page.getByText("The server returned an error. Your edits are still here."))
+        .toBeInTheDocument();
+      await expect
+        .element(page.getByRole("textbox", { name: "Concurrent lookups" }))
+        .toHaveValue("6");
+      installFetch();
+      await user.click(save());
+      await expect.element(page.getByText("Settings saved")).toBeInTheDocument();
+      expect(server.puts).toHaveLength(2);
+      expect(server.puts[1]?.ifMatch).toBe('"rev-1"');
+      expect(server.values.enrichment_concurrency).toBe(6);
+      expect(server.revision).toBe(2);
+    },
+  );
 
   test("a failed reload after a stale answer cannot carry the newer tag over the old values", async () => {
     server.stale.set(1, () => {
