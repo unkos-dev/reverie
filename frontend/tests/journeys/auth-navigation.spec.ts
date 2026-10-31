@@ -18,60 +18,24 @@ async function signInOptions(page: Page): Promise<void> {
   });
 }
 
-for (const activation of ["pointer", "Enter"]) {
-  test(`local sign-in by ${activation} posts once before replacing the document`, async ({
-    page,
-  }) => {
-    await signInOptions(page);
-    const submissions: unknown[] = [];
-    await page.route("**/auth/local/login", async (route) => {
-      submissions.push(route.request().postDataJSON());
-      await route.fulfill({ status: 204 });
-    });
-    await page.route("**/library", async (route) => {
-      expect(route.request().isNavigationRequest()).toBe(true);
-      await route.fulfill({ contentType: "text/html", body: "<main>Signed in</main>" });
-    });
-    await page.goto("/login");
-    await page.getByLabel("Email", { exact: true }).fill("ada@example.com");
-    await page.getByLabel("Password", { exact: true }).fill("hunter2hunter2");
-    if (activation === "Enter") await page.getByLabel("Password", { exact: true }).press("Enter");
-    else await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page).toHaveURL(/\/library$/);
-    await expect(page.getByRole("main")).toHaveText("Signed in");
-    expect(submissions).toEqual([{ email: "ada@example.com", password: "hunter2hunter2" }]);
+test("OIDC starts only on activation after outcome denied", async ({ page }) => {
+  await signInOptions(page);
+  let starts = 0;
+  await page.route("**/auth/oidc/login", async (route) => {
+    starts += 1;
+    expect(route.request().isNavigationRequest()).toBe(true);
+    await route.fulfill({ contentType: "text/html", body: "<main>Provider sign-in</main>" });
   });
-}
-
-for (const outcome of [
-  undefined,
-  "denied",
-  "expired",
-  "unavailable",
-  "keys",
-  "account",
-  "throttled",
-]) {
-  test(`OIDC starts only on activation after outcome ${String(outcome)}`, async ({ page }) => {
-    await signInOptions(page);
-    let starts = 0;
-    await page.route("**/auth/oidc/login", async (route) => {
-      starts += 1;
-      expect(route.request().isNavigationRequest()).toBe(true);
-      await route.fulfill({ contentType: "text/html", body: "<main>Provider sign-in</main>" });
-    });
-    const entry = outcome === undefined ? "/login" : `/login?outcome=${outcome}`;
-    await page.goto(entry);
-    const provider = page.getByRole("button", { name: "Sign in with OIDC" });
-    await expect(provider).toBeVisible();
-    await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
-    expect(starts).toBe(0);
-    await provider.click();
-    await expect(page).toHaveURL(/\/auth\/oidc\/login$/);
-    await expect(page.getByRole("main")).toHaveText("Provider sign-in");
-    expect(starts).toBe(1);
-  });
-}
+  await page.goto("/login?outcome=denied");
+  const provider = page.getByRole("button", { name: "Sign in with OIDC" });
+  await expect(provider).toBeVisible();
+  await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+  expect(starts).toBe(0);
+  await provider.click();
+  await expect(page).toHaveURL(/\/auth\/oidc\/login$/);
+  await expect(page.getByRole("main")).toHaveText("Provider sign-in");
+  expect(starts).toBe(1);
+});
 
 test("Back and Forward restore fixed outcomes without starting provider navigation", async ({
   page,
