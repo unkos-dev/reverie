@@ -256,7 +256,6 @@ function EditMetadataFields({
         toast.error("This book's metadata changed elsewhere.", {
           action: { label: "Reload latest", onClick: onDone },
         });
-        return;
       }
     },
   });

@@ -1734,8 +1734,8 @@ struct UpdateMetadataFields {
     #[serde(default, with = "::serde_with::rust::double_option")]
     #[schema(value_type = Option<String>)]
     publisher: Option<Option<String>>,
-    /// New publication date (`YYYY-MM-DD`). Absent = unchanged; `null`
-    /// clears.
+    /// New publication text at its supplied precision. Absent = unchanged;
+    /// `null` clears.
     #[serde(default, with = "::serde_with::rust::double_option")]
     #[schema(value_type = Option<String>)]
     pub_date: Option<Option<String>>,
@@ -2004,7 +2004,7 @@ struct BookMetadata {
     language: Option<String>,
     /// Publisher; `null` when unset.
     publisher: Option<String>,
-    /// Publication date (`YYYY-MM-DD`); `null` when unset.
+    /// Publication text at its supplied precision; `null` when unset.
     pub_date: Option<String>,
     /// ISBN-10; `null` when unset.
     isbn_10: Option<String>,

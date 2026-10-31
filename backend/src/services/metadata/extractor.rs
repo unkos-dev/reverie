@@ -42,8 +42,8 @@ pub struct ExtractedMetadata {
     pub pages: Option<i32>,
     /// Sanitised publisher name.
     pub publisher: Option<String>,
-    /// Publication date parsed from `OPF` `<dc:date>` in `YYYY`, `YYYY-MM`,
-    /// or `YYYY-MM-DD` format. Partial dates default to the first of month/year.
+    /// Non-empty publication text selected from `OPF` `<dc:date>`, retained
+    /// before validation and canonical promotion.
     pub pub_date: Option<String>,
     /// First valid `ISBN` found among the `OPF` identifiers. `None` when no
     /// recognisable valid `ISBN` was present (the extractor selects the first
@@ -145,7 +145,6 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         parsed
     });
 
-    // Parse date: try YYYY-MM-DD, YYYY-MM, YYYY
     let pub_date = opf
         .date
         .as_ref()

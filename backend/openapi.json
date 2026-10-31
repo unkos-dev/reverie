@@ -9907,7 +9907,7 @@
               "string",
               "null"
             ],
-            "description": "Publication date (`YYYY-MM-DD`); `null` when unset."
+            "description": "Publication text at its supplied precision; `null` when unset."
           },
           "publisher": {
             "type": [
@@ -12663,7 +12663,7 @@
               "string",
               "null"
             ],
-            "description": "New publication date (`YYYY-MM-DD`). Absent = unchanged; `null`\nclears."
+            "description": "New publication text at its supplied precision. Absent = unchanged;\n`null` clears."
           },
           "publisher": {
             "type": [

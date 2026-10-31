@@ -117,7 +117,7 @@ pub struct CanonicalState {
     pub language: Option<String>,
     /// Manifestation-level publisher string.
     pub publisher: Option<String>,
-    /// Manifestation-level publication date (`YYYY-MM-DD` string after normalisation).
+    /// Manifestation-level publication text at its supplied precision.
     pub pub_date: Option<String>,
     /// Manifestation-level `ISBN-10`.
     pub isbn_10: Option<String>,
