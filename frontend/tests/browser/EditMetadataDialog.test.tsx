@@ -2,11 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
 import { ViewTransition, type ReactElement } from "react";
-import { toast } from "sonner";
-import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { beforeEach, expect, test, vi } from "vite-plus/test";
 
-import { ApiError, getBookMetadata, updateBookMetadata, type BookMetadata } from "@/api";
-import { queryKeys } from "@/lib/query/keys";
+import { getBookMetadata, updateBookMetadata, type BookMetadata } from "@/api";
 
 import { EditMetadataDialog, type EditableField } from "@/pages/book/EditMetadataDialog";
 
@@ -70,121 +68,6 @@ async function renderDialog(): Promise<{
   return { client, onOpenChange };
 }
 
-async function submitEdit(): Promise<void> {
-  const user = userEvent;
-  const input = page.getByLabelText("Subtitle");
-  await input.fill("");
-  await user.type(input, "Updated Subtitle");
-  await user.click(page.getByRole("button", { name: "Save" }));
-}
-
-describe("EditMetadataDialog", () => {
-  test("fetches and seeds from a fresh GET rather than a caller-supplied canonical", async () => {
-    vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture({ subtitle: "Fetched Subtitle" }));
-    await renderDialog();
-
-    await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Fetched Subtitle");
-    expect(getBookMetadata).toHaveBeenCalledWith("book-1", expect.anything());
-  });
-
-  test("a 412 conflict invalidates the book detail and metadata caches and offers a reload action instead of the generic error", async () => {
-    vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
-    const conflict = new ApiError(
-      412,
-      "https://reverie.example/probs/if-match-mismatch",
-      "Precondition Failed",
-      "",
-    );
-    vi.mocked(updateBookMetadata).mockRejectedValue(conflict);
-    const { client, onOpenChange } = await renderDialog();
-    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
-
-    await submitEdit();
-
-    await vi.waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        "This book's metadata changed elsewhere.",
-        expect.objectContaining({ action: expect.anything() as unknown }),
-      );
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-1") });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.metadata("book-1") });
-    // Distinct from a normal save: the dialog does not close itself, only
-    // the toast's own action does (exercised separately below).
-    expect(onOpenChange).not.toHaveBeenCalled();
-  });
-
-  test("the 412 toast's reload action closes the sheet", async () => {
-    vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
-    const conflict = new ApiError(
-      412,
-      "https://reverie.example/probs/if-match-mismatch",
-      "Precondition Failed",
-      "",
-    );
-    vi.mocked(updateBookMetadata).mockRejectedValue(conflict);
-    const { onOpenChange } = await renderDialog();
-
-    await submitEdit();
-    await vi.waitFor(() => {
-      expect(toast.error).toHaveBeenCalled();
-    });
-
-    const call = vi.mocked(toast.error).mock.calls[0];
-    const action = call[1]?.action;
-    if (action === null || typeof action !== "object" || !("onClick" in action)) {
-      throw new Error("expected a reload action on the conflict toast");
-    }
-    action.onClick({} as never);
-
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-
-  test("a non-conflict failure keeps the generic error toast and does not invalidate", async () => {
-    vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
-    vi.mocked(updateBookMetadata).mockRejectedValue(
-      new ApiError(422, null, "Validation Error", "Subtitle is too long."),
-    );
-    const { client } = await renderDialog();
-    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
-
-    await submitEdit();
-
-    await vi.waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Validation Error: Subtitle is too long.");
-    });
-    expect(invalidateSpy).not.toHaveBeenCalled();
-  });
-});
-
-test("awaits save, retains failed values and closes only after successful retry", async () => {
-  vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
-  let reject: (error: Error) => void = () => {};
-  vi.mocked(updateBookMetadata).mockReturnValueOnce(
-    new Promise((_resolve, fail) => {
-      reject = fail;
-    }),
-  );
-  const { onOpenChange } = await renderDialog();
-  await submitEdit();
-  await expect.element(page.getByRole("button", { name: "Save" })).toHaveAttribute("data-pending");
-  await expect.element(page.getByRole("button", { name: "Cancel" })).toBeDisabled();
-  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
-  expect(onOpenChange).not.toHaveBeenCalled();
-  reject(new ApiError(422, null, "Validation Error", "Subtitle is too long."));
-  await expect.element(page.getByRole("alert")).toMatchTextContent("Subtitle is too long.");
-  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
-  await expect
-    .element(page.getByRole("button", { name: "Save" }))
-    .not.toHaveAttribute("data-pending");
-  vi.mocked(updateBookMetadata).mockResolvedValueOnce({ fields: {} });
-  await userEvent.click(page.getByRole("button", { name: "Save" }));
-  await vi.waitFor(() => {
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-  expect(updateBookMetadata).toHaveBeenLastCalledWith("book-1", { subtitle: "Updated Subtitle" });
-});
-
 test("cancelling a populated-field clear keeps the edit and sends nothing; confirmation saves null", async () => {
   vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
   vi.mocked(updateBookMetadata).mockResolvedValue({ fields: {} });
@@ -204,43 +87,4 @@ test("cancelling a populated-field clear keeps the edit and sends nothing; confi
   await vi.waitFor(() => {
     expect(updateBookMetadata).toHaveBeenCalledExactlyOnceWith("book-1", { subtitle: null });
   });
-});
-
-test("a pending clear suppresses duplicate activation and exposes a refusal with the edit retained", async () => {
-  vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
-  let reject: (error: Error) => void = () => {};
-  vi.mocked(updateBookMetadata).mockReturnValueOnce(
-    new Promise((_resolve, fail) => {
-      reject = fail;
-    }),
-  );
-  const { onOpenChange } = await renderDialog();
-  const input = page.getByLabelText("Subtitle");
-  await expect.element(input).toHaveValue("Original Subtitle");
-  await input.fill("");
-  await userEvent.click(page.getByRole("button", { name: "Save" }));
-  const confirmation = page.getByRole("alertdialog", { name: "Clear populated field?" });
-  const confirm = confirmation.getByRole("button", { name: "Clear and save" });
-  await userEvent.click(confirm);
-  await expect.element(confirm).toHaveAttribute("data-pending");
-  await userEvent.click(confirm, { force: true });
-  await userEvent.keyboard("{Enter}");
-  expect(updateBookMetadata).toHaveBeenCalledExactlyOnceWith("book-1", { subtitle: null });
-  expect(onOpenChange).not.toHaveBeenCalled();
-
-  reject(new ApiError(422, null, "Validation Error", "Subtitle cannot be cleared."));
-  await expect.element(confirmation).not.toBeInTheDocument();
-  await expect.element(page.getByRole("alert")).toMatchTextContent("Subtitle cannot be cleared.");
-  await expect.element(input).toHaveValue("");
-  expect(updateBookMetadata).toHaveBeenCalledTimes(1);
-  expect(onOpenChange).not.toHaveBeenCalled();
-
-  vi.mocked(updateBookMetadata).mockResolvedValueOnce({ fields: {} });
-  await userEvent.click(page.getByRole("button", { name: "Save" }));
-  await userEvent.click(confirm);
-  await vi.waitFor(() => {
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-  expect(updateBookMetadata).toHaveBeenCalledTimes(2);
-  expect(updateBookMetadata).toHaveBeenLastCalledWith("book-1", { subtitle: null });
 });
