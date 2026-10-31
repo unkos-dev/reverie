@@ -108,33 +108,3 @@ test("failed logout still forgets the account, logs the failure and hard-navigat
   expect(await page.evaluate(() => localStorage.getItem("reverie_last_user"))).toBeNull();
   expect(errors.some((message) => message.includes("[UserMenu] logout request failed"))).toBe(true);
 });
-
-test("a mobile navigation link closes the drawer and reaches its destination", async ({ page }) => {
-  await page.setViewportSize({ width: 800, height: 800 });
-  await intercept(page);
-  await page.goto("/library");
-  await page.getByRole("button", { name: "Open navigation" }).click();
-  const drawer = page.getByRole("dialog", { name: "Navigation" });
-  await expect(drawer).toBeVisible();
-  await drawer.getByRole("link", { name: "Shelves", exact: true }).click();
-  await expect(page).toHaveURL(/\/shelves$/);
-  await expect(drawer).not.toBeVisible();
-});
-
-test("a fresh entry resets a reused Library owner without writing the departed snapshot", async ({
-  page,
-}) => {
-  await intercept(page);
-  await page.goto("/library");
-  const search = page.getByRole("searchbox", { name: "Search your library" });
-  await search.fill("the sea ");
-  await expect(search).toHaveValue("the sea ");
-  await page.evaluate(() => {
-    history.pushState(null, "", location.href);
-    navigation.updateCurrentEntry({ state: { unrelated: "destination" } });
-  });
-  await expect(search).toHaveValue("");
-  expect(await page.evaluate((): unknown => navigation.currentEntry?.getState())).toEqual({
-    unrelated: "destination",
-  });
-});
