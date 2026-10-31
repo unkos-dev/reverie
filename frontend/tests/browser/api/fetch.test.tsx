@@ -17,7 +17,13 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
 }
 
 function problemResponse(
-  problem: { type: string; title: string; status: number; detail?: string },
+  problem: {
+    type: string;
+    title: string;
+    status: number;
+    detail?: string;
+    errors?: Record<string, string>;
+  },
   init?: ResponseInit,
 ): Response {
   return new Response(JSON.stringify(problem), {
@@ -150,6 +156,26 @@ describe("apiFetch — RFC 9457 error parsing", () => {
     expect(apiErr.title).toBe("Unauthorized");
     expect(apiErr.detail).toBe("Authentication required.");
     expect(apiErr.problemSlug).toBe("unauthorized");
+    expect(apiErr.errors).toBeUndefined();
+  });
+
+  test("422 validation preserves field errors", async () => {
+    const problem = {
+      type: "https://reverie.example/probs/validation",
+      title: "Unprocessable Entity",
+      status: 422,
+      detail: "Invalid publication date.",
+      errors: { pub_date: "Use YYYY-MM-DD or YYYY. Leave empty if unknown." },
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(problemResponse(problem));
+    const error = await apiFetch("/api/v1/books").catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ApiError);
+    if (!(error instanceof ApiError)) throw new Error("Expected ApiError");
+    expect(error.status).toBe(problem.status);
+    expect(error.type).toBe(problem.type);
+    expect(error.title).toBe(problem.title);
+    expect(error.detail).toBe(problem.detail);
+    expect(error.errors).toEqual(problem.errors);
   });
 
   test("500 internal → ApiError with title='Internal Server Error'", async () => {

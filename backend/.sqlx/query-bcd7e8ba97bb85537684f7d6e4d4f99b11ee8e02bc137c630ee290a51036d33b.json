@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT current_file_hash, file_size_bytes FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "current_file_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "current_file_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "file_size_bytes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "bcd7e8ba97bb85537684f7d6e4d4f99b11ee8e02bc137c630ee290a51036d33b"
+}

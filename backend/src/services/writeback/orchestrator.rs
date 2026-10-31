@@ -133,6 +133,7 @@ struct RewriteResult {
 struct JobSnapshot {
     manifestation_id: Uuid,
     reason: JobReason,
+    field_name: Option<String>,
     file_path: RelativeFilePath,
     library_id: LibraryId,
     current_file_hash: String,
@@ -272,6 +273,21 @@ pub(super) async fn blocking_phase<T: Send + 'static>(
     .await?
 }
 
+fn metadata_target(snap: &JobSnapshot) -> Target<'_> {
+    Target {
+        title: snap.title.as_deref(),
+        subtitle: snap.subtitle.as_deref(),
+        description: snap.description.as_deref(),
+        language: snap.language.as_deref(),
+        publisher: snap.publisher.as_deref(),
+        pub_date: (snap.field_name.as_deref() == Some("pub_date"))
+            .then_some(snap.pub_date.as_deref()),
+        isbn_10: snap.isbn_10.as_deref(),
+        isbn_13: snap.isbn_13.as_deref(),
+        series: None,
+    }
+}
+
 fn rewrite(
     snap: &JobSnapshot,
     files: &LibraryFiles,
@@ -309,17 +325,7 @@ fn rewrite(
             zip_layer::read_entry(&handle, opf_path).ok_or(zip::result::ZipError::FileNotFound)?
         }
     };
-    let target = Target {
-        title: snap.title.as_deref(),
-        subtitle: snap.subtitle.as_deref(),
-        description: snap.description.as_deref(),
-        language: snap.language.as_deref(),
-        publisher: snap.publisher.as_deref(),
-        pub_date: snap.pub_date.as_deref(),
-        isbn_10: snap.isbn_10.as_deref(),
-        isbn_13: snap.isbn_13.as_deref(),
-        series: None,
-    };
+    let target = metadata_target(snap);
     let new_opf = opf_rewrite::transform(&opf_bytes, &target)?;
     let (pending_cover, cover_plan) = if snap.reason == JobReason::Cover
         && let Some(path) = snap.cover_path.as_ref()
@@ -724,7 +730,7 @@ fn render_target_path(
 
 async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, WritebackError> {
     let row = sqlx::query!(
-        r#"SELECT wj.manifestation_id, wj.reason AS "reason: JobReason",
+        r#"SELECT wj.manifestation_id, wj.reason AS "reason: JobReason", wj.field_name,
                   m.work_id, m.library_id, m.file_path, m.current_file_hash, m.file_size_bytes,
                   m.relocation_source_path, m.relocation_destination_path,
                   m.format AS "format: ManifestationFormat",
@@ -756,6 +762,7 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
     Ok(JobSnapshot {
         manifestation_id: row.manifestation_id,
         reason: row.reason,
+        field_name: row.field_name,
         file_path: row.file_path.parse()?,
         library_id: LibraryId::from_uuid(row.library_id),
         current_file_hash: row.current_file_hash,
@@ -775,11 +782,7 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
         description: row.description,
         language: row.language,
         publisher: row.publisher,
-        // `query!` validates pub_date as Option<Date> at compile time; a
-        // decode error here is an infrastructure fault, so propagate it
-        // rather than masking it with a `None` fallback that would let the
-        // writeback report success with `<dc:date>` left stale.
-        pub_date: row.pub_date.map(|d| d.to_string()),
+        pub_date: row.pub_date,
         isbn_10: row.isbn_10,
         isbn_13: row.isbn_13,
         primary_author,
@@ -988,6 +991,13 @@ mod tests {
     /// the on-disk path as an owned string; the [`tempfile::TempDir`] is
     /// held in the tuple so the file persists for the test lifetime.
     fn make_fixture_epub(title: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        make_fixture_epub_with_metadata(title, "")
+    }
+
+    fn make_fixture_epub_with_metadata(
+        title: &str,
+        metadata: &str,
+    ) -> (tempfile::TempDir, std::path::PathBuf) {
         let container_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
@@ -1001,6 +1011,7 @@ mod tests {
     <dc:identifier id="pub-id">urn:uuid:fixture</dc:identifier>
     <dc:title>{title}</dc:title>
     <dc:language>en</dc:language>
+    {metadata}
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
@@ -2526,6 +2537,117 @@ mod tests {
     /// - `current_file_hash` changes after writeback
     /// - `ingestion_file_hash` is immutable across the writeback
     #[sqlx::test(migrations = "./migrations")]
+    async fn publication_date_writeback_job_replays_field_intent(pool: PgPool) {
+        use axum::http::{
+            StatusCode,
+            header::{AUTHORIZATION, IF_MATCH},
+        };
+        let ing = ingestion_pool_for(&pool).await;
+        let app = crate::test_support::db::app_pool_for(&pool).await;
+        let wb = writeback_pool_for(&pool).await;
+        let metadata = "<dc:date opf:event=\"creation\">1900</dc:date><dc:date>2000</dc:date><meta property=\"dcterms:modified\">2020-01-01T00:00:00Z</meta>";
+        let (dir, path) = make_fixture_epub_with_metadata("Original", metadata);
+        let original = std::fs::read(&path).unwrap();
+        let (_, id) = insert_fixture(
+            &ing,
+            "publication-intent",
+            path.to_str().unwrap(),
+            &initial_hex_sha256(&original),
+        )
+        .await;
+        let (_, basic) = crate::test_support::db::create_admin_and_basic_auth(&app).await;
+        let server = crate::test_support::db::server_with_real_pools(&app, &ing);
+        let resource = format!("/api/v1/books/{id}/metadata");
+        for (index, (patch, expected, field)) in [
+            (
+                serde_json::json!({"pub_date": "2024-06"}),
+                Some("2024-06"),
+                "pub_date",
+            ),
+            (
+                serde_json::json!({"publisher": "Precision Press"}),
+                Some("2024-06"),
+                "publisher",
+            ),
+            (serde_json::json!({"pub_date": null}), None, "pub_date"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let current = server
+                .get(&resource)
+                .add_header(AUTHORIZATION, basic.clone())
+                .await;
+            let etag = current.headers().get("etag").unwrap().clone();
+            let response = server
+                .patch(&resource)
+                .add_header(AUTHORIZATION, basic.clone())
+                .add_header(IF_MATCH, etag)
+                .json(&patch)
+                .await;
+            assert_eq!(
+                response.status_code(),
+                StatusCode::OK,
+                "{}",
+                response.text()
+            );
+            let jobs = sqlx::query!("SELECT id, field_name FROM writeback_jobs WHERE manifestation_id = $1 ORDER BY created_at, id", id).fetch_all(&ing).await.unwrap();
+            assert_eq!(jobs.len(), index + 1);
+            let job = jobs.last().unwrap();
+            assert_eq!(job.field_name.as_deref(), Some(field));
+            let canonical = sqlx::query!(
+                "SELECT pub_date, pub_date_version_id FROM manifestations WHERE id = $1",
+                id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap();
+            assert_eq!(canonical.pub_date.as_deref(), expected);
+            assert_eq!(canonical.pub_date_version_id.is_some(), expected.is_some());
+            if let Some(pointer) = canonical.pub_date_version_id {
+                let value = sqlx::query_scalar!(
+                    "SELECT new_value FROM metadata_versions WHERE id = $1",
+                    pointer
+                )
+                .fetch_one(&ing)
+                .await
+                .unwrap();
+                assert_eq!(value, serde_json::json!(expected.unwrap()));
+            }
+            assert!(matches!(
+                run_fixture(&wb, &test_config(dir.path()).0, job.id, dir.path())
+                    .await
+                    .unwrap(),
+                RunOutcome::Success { .. }
+            ));
+            let bytes = std::fs::read(persisted_path(&ing, id, dir.path()).await).unwrap();
+            let opf = String::from_utf8(
+                zip_layer::read_entry_from_bytes(&bytes, "OEBPS/package.opf").unwrap(),
+            )
+            .unwrap();
+            assert!(opf.contains("opf:event=\"creation\">1900</dc:date>"));
+            assert!(opf.contains("property=\"dcterms:modified\">2020-01-01T00:00:00Z</meta>"));
+            if let Some(value) = expected {
+                assert!(opf.contains(&format!("<dc:date>{value}</dc:date>")));
+            } else {
+                assert!(!opf.contains("<dc:date>"));
+            }
+            let identity = sqlx::query!(
+                "SELECT current_file_hash, file_size_bytes FROM manifestations WHERE id = $1",
+                id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap();
+            assert_eq!(identity.current_file_hash, initial_hex_sha256(&bytes));
+            assert_eq!(
+                identity.file_size_bytes,
+                i64::try_from(bytes.len()).unwrap()
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn run_once_finds_non_default_opf_and_updates_hash(pool: PgPool) {
         let app_pool = writeback_pool_for(&pool).await;
         let ing_pool = ingestion_pool_for(&pool).await;
@@ -3198,6 +3320,7 @@ mod tests {
         JobSnapshot {
             manifestation_id: Uuid::nil(),
             reason: JobReason::Metadata,
+            field_name: None,
             file_path: "fixture.epub".parse().unwrap(),
             library_id: LibraryId::from_uuid(Uuid::nil()),
             current_file_hash: String::new(),

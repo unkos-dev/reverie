@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, field_name FROM writeback_jobs WHERE manifestation_id = $1 ORDER BY created_at, id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "writeback_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "field_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "writeback_jobs",
+            "name": "field_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "0d0165e85da70ef47b95857f226eab99c4e5502f22026b4ce15fbd4b4fde1d27"
+}

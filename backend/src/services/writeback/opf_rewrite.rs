@@ -13,7 +13,7 @@
 use quick_xml::Reader;
 use quick_xml::Writer;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 
 use super::error::WritebackError;
@@ -41,8 +41,9 @@ pub struct Target<'a> {
     pub language: Option<&'a str>,
     /// `dc:publisher` text.
     pub publisher: Option<&'a str>,
-    /// ISO 8601 date string (`YYYY-MM-DD` or full timestamp).
-    pub pub_date: Option<&'a str>,
+    /// `None` leaves publication metadata unchanged; `Some(None)` clears it;
+    /// `Some(Some(value))` writes text at its supplied precision.
+    pub pub_date: Option<Option<&'a str>>,
     /// `ISBN`-10 string; used as fallback when `isbn_13` is absent.
     pub isbn_10: Option<&'a str>,
     /// `ISBN`-13 string; preferred over `isbn_10` when both are set.
@@ -117,6 +118,22 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                 }
 
                 if in_metadata_depth.is_some() {
+                    if meta.publication_dates.contains(&i) {
+                        match target.pub_date {
+                            Some(None) => {
+                                i = skip_to_matching_end(&events, i) + 1;
+                                depth -= 1;
+                                continue;
+                            }
+                            Some(Some(value)) if meta.selected_publication_date == Some(i) => {
+                                write_replaced_element(&mut writer, e, value)?;
+                                i = skip_to_matching_end(&events, i) + 1;
+                                depth -= 1;
+                                continue;
+                            }
+                            _ => {}
+                        }
+                    }
                     // Targeted DC elements: replace text.
                     if let Some(new_text) = target_text_for_dc(&local, e, target, &meta.title_types)
                     {
@@ -159,8 +176,30 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
             }
             Event::Empty(e) => {
                 let local = local_name(e.name().as_ref()).to_owned();
-
+                if local == "metadata"
+                    && let Some(Some(value)) = target.pub_date
+                {
+                    writer.write_event(Event::Start(e.clone()))?;
+                    write_publication_date(&mut writer, value)?;
+                    writer.write_event(Event::End(BytesEnd::new(e.name().as_ref())))?;
+                    i += 1;
+                    continue;
+                }
                 if in_metadata_depth.is_some() {
+                    if meta.publication_dates.contains(&i) {
+                        match target.pub_date {
+                            Some(None) => {
+                                i += 1;
+                                continue;
+                            }
+                            Some(Some(value)) if meta.selected_publication_date == Some(i) => {
+                                write_replaced_element_from_empty(&mut writer, e, value)?;
+                                i += 1;
+                                continue;
+                            }
+                            _ => {}
+                        }
+                    }
                     if let Some(new_text) = target_text_for_dc(&local, e, target, &meta.title_types)
                     {
                         // Rare: <dc:title/> as empty element — expand to paired.
@@ -207,6 +246,11 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
 
                 // Before closing <metadata>, insert any fresh elements we need.
                 if in_metadata_depth == Some(depth + 1) && local == "metadata" {
+                    if meta.selected_publication_date.is_none()
+                        && let Some(Some(value)) = target.pub_date
+                    {
+                        write_publication_date(&mut writer, value)?;
+                    }
                     // ISBN insertion when absent.
                     if !isbn_identifier_written
                         && let Some(new_isbn) = target.isbn_13.or(target.isbn_10)
@@ -246,6 +290,15 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
     Ok(writer.into_inner().into_inner())
 }
 
+fn write_publication_date(
+    writer: &mut Writer<Cursor<Vec<u8>>>,
+    value: &str,
+) -> Result<(), WritebackError> {
+    let mut element = BytesStart::new("dc:date");
+    element.push_attribute(("xmlns:dc", "http://purl.org/dc/elements/1.1/"));
+    write_replaced_element_from_empty(writer, &element, value)
+}
+
 // ── Scan pass metadata ────────────────────────────────────────────────────
 
 struct ScanResult {
@@ -255,6 +308,8 @@ struct ScanResult {
     /// Declared `title-type` per refined element `id` (the `refines`
     /// attribute with its leading `#` stripped), lowercased.
     title_types: HashMap<String, String>,
+    publication_dates: HashSet<usize>,
+    selected_publication_date: Option<usize>,
 }
 
 fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
@@ -262,11 +317,29 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
     let mut had_belongs = false;
     let mut had_calibre = false;
     let mut title_types: HashMap<String, String> = HashMap::new();
+    let mut publication_dates = Vec::new();
+    let mut labelled_dates = Vec::new();
+    let mut in_metadata = false;
     for (i, ev) in events.iter().enumerate() {
         match ev {
+            Event::Start(e) | Event::Empty(e)
+                if local_name(e.name().as_ref()) == "date" && in_metadata =>
+            {
+                let event = attr_value(e, "event");
+                if event.as_deref().is_none_or(|value| value == "publication") {
+                    publication_dates.push(i);
+                    if event.as_deref() == Some("publication") {
+                        labelled_dates.push(i);
+                    }
+                }
+            }
+            Event::End(e) if local_name(e.name().as_ref()) == "metadata" => in_metadata = false,
             Event::Start(e) => {
                 let name = e.name();
                 let local = local_name(name.as_ref());
+                if local == "metadata" {
+                    in_metadata = true;
+                }
                 if local == "package"
                     && let Some(v) = attr_value_as_string(e, "version")
                 {
@@ -305,7 +378,17 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
             _ => {}
         }
     }
+    let selected_publication_date = if epub_version.starts_with('3') {
+        publication_dates.first().copied()
+    } else {
+        labelled_dates
+            .first()
+            .or_else(|| publication_dates.first())
+            .copied()
+    };
     ScanResult {
+        publication_dates: publication_dates.into_iter().collect(),
+        selected_publication_date,
         epub_version,
         had_belongs_to_collection: had_belongs,
         had_calibre_series: had_calibre,
@@ -472,7 +555,6 @@ fn target_text_for_dc<'t>(
         "description" => target.description,
         "language" => target.language,
         "publisher" => target.publisher,
-        "date" => target.pub_date,
         _ => None,
     }
 }
@@ -887,15 +969,73 @@ mod tests {
     }
 
     #[test]
-    fn transform_replaces_dc_date() {
-        let input = sample_epub3(r"<dc:date>1990-01-01</dc:date>");
-        let target = Target {
-            pub_date: Some("2026-04-19"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(out.contains("<dc:date>2026-04-19</dc:date>"), "got: {out}");
-        assert!(!out.contains("1990-01-01"), "old date leaked: {out}");
+    fn publication_date_writeback_preserves_intent() {
+        for epub2 in [false, true] {
+            for value in ["2024-06", "2024-06-15T12:30:59.123456789123+05:30"] {
+                let metadata = "<dc:date opf:event=\"creation\">1900</dc:date><dc:date>2000</dc:date><dc:date opf:event=\"publication\">2001</dc:date><dc:date opf:event=\"modification\">2002</dc:date><meta property=\"dcterms:modified\">2020-01-01T00:00:00Z</meta>";
+                let input = if epub2 {
+                    sample_epub2(metadata)
+                } else {
+                    sample_epub3(metadata)
+                };
+                let unchanged = transform_str(&input, &Target::default());
+                assert!(unchanged.contains(metadata));
+                let set = transform_str(
+                    &input,
+                    &Target {
+                        pub_date: Some(Some(value)),
+                        ..Default::default()
+                    },
+                );
+                if epub2 {
+                    assert!(set.contains(&format!("opf:event=\"publication\">{value}</dc:date>")));
+                    assert!(set.contains("<dc:date>2000</dc:date>"));
+                } else {
+                    assert!(set.contains(&format!("<dc:date>{value}</dc:date>")));
+                }
+                let clear = transform_str(
+                    &input,
+                    &Target {
+                        pub_date: Some(None),
+                        ..Default::default()
+                    },
+                );
+                for output in [&set, &clear] {
+                    assert!(output.contains("opf:event=\"creation\">1900</dc:date>"));
+                    assert!(output.contains("opf:event=\"modification\">2002</dc:date>"));
+                    assert!(
+                        output
+                            .contains("property=\"dcterms:modified\">2020-01-01T00:00:00Z</meta>")
+                    );
+                }
+                assert!(!clear.contains("<dc:date>2000</dc:date>"));
+                assert!(!clear.contains("opf:event=\"publication\""));
+                let absent = if epub2 {
+                    sample_epub2("")
+                } else {
+                    sample_epub3("")
+                };
+                let inserted = transform_str(
+                    &absent,
+                    &Target {
+                        pub_date: Some(Some(value)),
+                        ..Default::default()
+                    },
+                );
+                assert!(inserted.contains(&format!(">{value}</dc:date>")));
+                let empty = absent
+                    .replace("<metadata>", "<metadata/><!--")
+                    .replace("</metadata>", "-->");
+                let inserted = transform_str(
+                    &empty,
+                    &Target {
+                        pub_date: Some(Some(value)),
+                        ..Default::default()
+                    },
+                );
+                assert!(inserted.contains(&format!(">{value}</dc:date>")));
+            }
+        }
     }
 
     #[test]

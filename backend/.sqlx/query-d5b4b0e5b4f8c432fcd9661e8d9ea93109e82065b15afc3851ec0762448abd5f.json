@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT field_name FROM writeback_jobs WHERE manifestation_id = $1 LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "writeback_jobs",
+            "name": "field_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "d5b4b0e5b4f8c432fcd9661e8d9ea93109e82065b15afc3851ec0762448abd5f"
+}

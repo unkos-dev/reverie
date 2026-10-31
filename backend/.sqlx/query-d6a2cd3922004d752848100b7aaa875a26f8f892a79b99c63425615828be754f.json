@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, m.pub_date, m.pub_date_version_id, mv.new_value, mv.status::text AS status FROM manifestations m JOIN works w ON w.id = m.work_id LEFT JOIN metadata_versions mv ON mv.manifestation_id = m.id AND mv.field_name = 'pub_date' AND mv.source = 'opf' WHERE w.title = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pub_date",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pub_date"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "pub_date_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pub_date_version_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "new_value",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "new_value"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "d6a2cd3922004d752848100b7aaa875a26f8f892a79b99c63425615828be754f"
+}

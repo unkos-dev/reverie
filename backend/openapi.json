@@ -9576,7 +9576,7 @@
               "string",
               "null"
             ],
-            "description": "`manifestations.pub_date` formatted as an ISO 8601 calendar date.\nSurfaced for the manual-edit dialog's clear-confirmation flow."
+            "description": "Publication text at its supplied bibliographic precision.\nSurfaced for the manual-edit dialog's clear-confirmation flow."
           },
           "publisher": {
             "type": [
@@ -11314,7 +11314,7 @@
             "description": "Match-type tag from the enrichment pipeline (`isbn`, `title`, …)."
           },
           "new_value": {
-            "description": "Proposed value, untyped JSON; field-specific shape (string for\ntitle/description, ISO date for `pub_date`, …)."
+            "description": "Proposed value, untyped JSON; field-specific shape (string for\ntitle/description, publication text for `pub_date`, …)."
           },
           "observation_count": {
             "type": "integer",
@@ -11463,6 +11463,19 @@
           "detail": {
             "type": "string",
             "description": "Human-readable explanation specific to this occurrence."
+          },
+          "errors": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Validation messages associated with named request fields.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "instance": {
             "type": [

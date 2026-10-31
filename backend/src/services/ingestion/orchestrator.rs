@@ -2992,7 +2992,16 @@ async fn commit_ingest_outcome(
         .and_then(|m| m.isbn.as_ref())
         .map_or((None, None), |i| (i.isbn_10.clone(), i.isbn_13.clone()));
     let publisher = extracted.as_ref().and_then(|m| m.publisher.clone());
-    let pub_date = extracted.as_ref().and_then(|m| m.pub_date);
+    let observed_date = extracted.and_then(|metadata| metadata.pub_date.as_deref());
+    let pub_date = observed_date.and_then(|value| {
+        match crate::services::metadata::publication_date::normalise(value) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::debug!(%error, "publication observation refused for canonical promotion");
+                None
+            }
+        }
+    });
     let pages = extracted.as_ref().and_then(|m| m.pages);
 
     sqlx::query!(
@@ -3004,12 +3013,14 @@ async fn commit_ingest_outcome(
         isbn_10.as_deref(),
         isbn_13.as_deref(),
         publisher.as_deref(),
-        pub_date,
+        pub_date.as_deref(),
         pages,
         draft_ids.get("isbn_10").copied(),
         draft_ids.get("isbn_13").copied(),
         draft_ids.get("publisher").copied(),
-        draft_ids.get("pub_date").copied(),
+        pub_date
+            .as_ref()
+            .and_then(|_| draft_ids.get("pub_date").copied()),
         draft_ids.get("pages").copied(),
         manifestation_id,
     )
@@ -8110,6 +8121,51 @@ mod tests {
     /// `*_version_id` pointer referencing a real `metadata_versions` row with
     /// `source='opf'`.  Without this invariant, `metadata_versions` is optional
     /// instead of authoritative.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn publication_date_ingestion_retains_unusable_observations(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        for (index, observation, canonical) in [
+            (0, Some("unknown"), None),
+            (1, Some("2024-06"), Some("2024-06")),
+            (2, None, None),
+        ] {
+            let (inbox, _library, config) = scan_env();
+            let title = format!("Publication Case {index}");
+            let date =
+                observation.map_or_else(String::new, |value| format!("<dc:date>{value}</dc:date>"));
+            let xml = format!(
+                "<package xmlns=\"http://www.idpf.org/2007/opf\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" version=\"3.0\"><metadata><dc:title>{title}</dc:title>{date}</metadata><manifest/><spine/></package>"
+            );
+            std::fs::write(
+                inbox.path().join("publication.epub"),
+                build_epub(xml.as_bytes(), Some(CONTAINER_XML)),
+            )
+            .unwrap();
+            assert_eq!(drive_owner(&config, &ing).await.unwrap().processed, 1);
+            let row = sqlx::query!(
+                "SELECT m.id, m.pub_date, m.pub_date_version_id, mv.new_value, mv.status::text AS status FROM manifestations m JOIN works w ON w.id = m.work_id LEFT JOIN metadata_versions mv ON mv.manifestation_id = m.id AND mv.field_name = 'pub_date' AND mv.source = 'opf' WHERE w.title = $1",
+                title,
+            ).fetch_one(&ing).await.unwrap();
+            assert_eq!(row.pub_date.as_deref(), canonical);
+            assert_eq!(row.pub_date_version_id.is_some(), canonical.is_some());
+            assert_eq!(
+                row.new_value,
+                observation.map(|value| serde_json::json!(value))
+            );
+            assert_eq!(row.status.as_deref(), observation.map(|_| "pending"));
+            assert_eq!(
+                sqlx::query_scalar!(
+                    "SELECT count(*) FROM writeback_jobs WHERE manifestation_id = $1",
+                    row.id
+                )
+                .fetch_one(&ing)
+                .await
+                .unwrap(),
+                Some(0)
+            );
+        }
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_sets_version_pointers_for_all_canonical_fields(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;

@@ -131,6 +131,13 @@ cause. A shared failure that retains only stored text publishes `unspecified` un
 
 ## Runtime behaviour
 
+Selected non-empty EPUB publication text reaches the existing `opf` journal observation before conversion. In
+`commit_ingest_outcome`, the shared pure publication-date validator runs locally before the initial manifestation
+canonical UPDATE. Only accepted text receives a canonical value and version pointer. Refused observations stay pending
+and reviewable, with no canonical pointer; missing or blank input creates no date observation. This initial population
+shares the fresh manifestation transaction, requires no provider request and enqueues no writeback. Subsequent automatic
+or manual changes retain their existing atomic enqueue contract.
+
 `Coordinator::start_attempt` reads `ingestion_enabled` from the live cache before removing a ready entry or beginning a
 database attempt. A successful enabled check admits that attempt; the settings lock is released before I/O. An attempt
 admitted before a concurrent disable may begin after the save. Disabling preserves ready entries, deadlines, input

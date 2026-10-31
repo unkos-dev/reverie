@@ -844,8 +844,15 @@ async fn apply_version(
         .await
         .map_err(|e| AppError::Internal(e.into()))?,
         "pub_date" => {
-            let date = parse_iso_date(&str_val)
-                .map_err(|e| AppError::Validation(format!("invalid pub_date: {e}")))?;
+            let date = crate::services::metadata::publication_date::normalise(&str_val)
+                .and_then(|value| value.ok_or(crate::services::metadata::publication_date::PublicationDateError::Malformed))
+                .map_err(|error| {
+                    let message = format!("invalid publication date: {error}");
+                    AppError::FieldValidation {
+                        detail: message.clone(),
+                        errors: std::collections::BTreeMap::from([("pub_date".into(), message)]),
+                    }
+                })?;
             sqlx::query_scalar!(
                 "WITH old AS (SELECT pub_date_version_id FROM manifestations WHERE id = $3) \
                  UPDATE manifestations \
@@ -1012,9 +1019,10 @@ async fn enqueue_writeback(
         "metadata"
     };
     sqlx::query!(
-        "INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, $2)",
+        "INSERT INTO writeback_jobs (manifestation_id, reason, field_name) VALUES ($1, $2, $3)",
         manifestation_id,
         reason,
+        field,
     )
     .execute(&mut **tx)
     .await
@@ -2097,7 +2105,7 @@ async fn load_book_metadata(
         description: core.description,
         language: core.language,
         publisher: core.publisher,
-        pub_date: core.pub_date.map(|d| d.format("%Y-%m-%d").to_string()),
+        pub_date: core.pub_date,
         isbn_10: core.isbn_10,
         isbn_13: core.isbn_13,
         pages: core.pages,
@@ -2735,152 +2743,13 @@ async fn insert_manual_version(
     Ok(id)
 }
 
-/// Why a submitted `pub_date` was rejected.
-///
-/// The two cases mean different things to the caller: a malformed value is a
-/// spelling mistake, while an out-of-range year is a well-formed date the
-/// column will not hold. Both surface as a 400, and the distinction is what
-/// makes the message actionable.
-#[derive(Debug, thiserror::Error)]
-enum PubDateError {
-    /// Not a `YYYY-MM-DD` calendar date, or not a date at all.
-    #[error("expected an ISO 8601 calendar date (YYYY-MM-DD)")]
-    Malformed,
-    /// A real date, outside the years Reverie accepts.
-    #[error("year must be between {MIN_PUB_YEAR} and {MAX_PUB_YEAR}")]
-    YearOutOfRange,
-}
-
-/// Accepted `pub_date` year bounds.
-///
-/// These mirror the common-era convention the `timestamptz` decode-range
-/// checks set, for the same reason: no Reverie date legitimately predates the
-/// common era, and Postgres accepts years that `DateTime<Utc>` cannot
-/// represent. The bound lives here rather than in the schema because
-/// `manifestations.pub_date` carries no CHECK constraint, so it holds only as
-/// far as every writer routes through this function.
-const MIN_PUB_YEAR: i32 = 1;
-const MAX_PUB_YEAR: i32 = 9999;
-
-/// The one accepted spelling, used to parse and to re-render for the
-/// canonical-form check below.
-const ISO_DATE_FMT: &str = "%Y-%m-%d";
-
-/// Normalise `s` to the `YYYY-MM-DD` candidate this parser will accept,
-/// widening a bare `YYYY` or `YYYY-MM` and truncating a full timestamp.
-fn iso_candidate(s: &str) -> String {
-    // `s.len()` is in bytes; user-submitted strings can contain multi-byte
-    // UTF-8 codepoints. `is_char_boundary` keeps the slice valid.
-    if s.len() >= 10 && s.is_char_boundary(10) {
-        s[..10].to_owned()
-    } else {
-        match s.len() {
-            4 => format!("{s}-01-01"),
-            7 => format!("{s}-01"),
-            _ => s.to_owned(),
-        }
-    }
-}
-
-fn parse_iso_date(s: &str) -> Result<chrono::NaiveDate, PubDateError> {
-    let candidate = iso_candidate(s);
-    let date = chrono::NaiveDate::parse_from_str(&candidate, ISO_DATE_FMT)
-        .map_err(|_| PubDateError::Malformed)?;
-    // Two independent widenings have to be closed, and a range check alone
-    // closes only one. chrono's numeric fields accept fewer digits than the
-    // format spells, so `26-05-01` parses as year 26, which is inside any
-    // sane range. Requiring the parse to round-trip to the same string
-    // rejects every non-canonical spelling; the range check then rejects
-    // canonical years the column cannot hold, such as `0000-01-01`.
-    if date.format(ISO_DATE_FMT).to_string() != candidate {
-        return Err(PubDateError::Malformed);
-    }
-    if !(MIN_PUB_YEAR..=MAX_PUB_YEAR).contains(&chrono::Datelike::year(&date)) {
-        return Err(PubDateError::YearOutOfRange);
-    }
-    Ok(date)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::parse_iso_date;
     use crate::error::problems;
     use crate::models::content_rating::ContentRating;
     use crate::test_support;
     use axum::http::StatusCode;
     use uuid::Uuid;
-
-    #[test]
-    fn parse_iso_date_rejects_multibyte_garbage_without_panicking() {
-        // 3-byte codepoint pushes byte-10 mid-character; pre-fix this panicked.
-        let s = "2024-01-€€€garbage";
-        assert!(parse_iso_date(s).is_err());
-    }
-
-    #[test]
-    fn parse_iso_date_rejects_a_short_year() {
-        // chrono's `%Y` consumes one to four digits, so this parses cleanly
-        // as year 26 and lands inside any sane year range. Only the
-        // round-trip check catches it, and storing it would silently record a
-        // date two millennia off the one submitted.
-        let err = parse_iso_date("26-05-01").expect_err("short year must not be accepted");
-        assert!(
-            matches!(err, super::PubDateError::Malformed),
-            "expected a spelling rejection, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn parse_iso_date_rejects_unpadded_fields() {
-        for input in ["2024-1-15", "2024-01-5", "-9999-1-1"] {
-            assert!(
-                parse_iso_date(input).is_err(),
-                "{input} is not canonical and must be rejected"
-            );
-        }
-    }
-
-    #[test]
-    fn parse_iso_date_rejects_year_zero_as_out_of_range() {
-        // Ten characters and canonically spelled, so the round-trip passes it
-        // and the range check is the only thing between it and a bind
-        // Postgres rejects: there is no year 0 in a date column.
-        let err = parse_iso_date("0000-01-01").expect_err("year 0 must not be accepted");
-        assert!(
-            matches!(err, super::PubDateError::YearOutOfRange),
-            "expected a range rejection, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn parse_iso_date_rejects_a_signed_year() {
-        // A leading sign makes the date eleven characters, so it never
-        // survives the ten-byte narrowing, whichever variant reports it. The
-        // property under test is rejection, not which check fired.
-        assert!(parse_iso_date("-9999-01-01").is_err());
-    }
-
-    #[test]
-    fn parse_iso_date_accepts_the_range_boundaries() {
-        assert!(parse_iso_date("0001-01-01").is_ok());
-        assert!(parse_iso_date("9999-12-31").is_ok());
-    }
-
-    #[test]
-    fn parse_iso_date_distinguishes_malformed_from_out_of_range() {
-        // The two map to different operator-facing messages, so the variant
-        // has to survive the parse rather than collapsing to one error.
-        assert!(matches!(
-            parse_iso_date("nonsense").expect_err("not a date"),
-            super::PubDateError::Malformed
-        ));
-    }
-
-    #[test]
-    fn parse_iso_date_accepts_well_formed_iso() {
-        assert!(parse_iso_date("2024-01-15").is_ok());
-        assert!(parse_iso_date("2024-01-15T00:00:00Z").is_ok());
-    }
 
     #[tokio::test]
     async fn get_manifestation_metadata_requires_auth() {
@@ -5115,26 +4984,32 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn patch_pub_date_iso_variants_dedup(pool: sqlx::PgPool) {
+    async fn publication_date_roundtrip_preserves_precision(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
         let marker = Uuid::new_v4().simple().to_string();
         let (_work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
-
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let path = format!("/api/v1/books/{m_id}/metadata");
         let initial = server
-            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .get(&path)
             .add_header(AUTHORIZATION, basic.clone())
             .await;
         let mut etag = etag_value(initial.headers());
-        // Same calendar date — one bare ISO date, one with a time suffix. The
-        // canonical normaliser coerces both to the YYYY-MM-DD prefix, so the
-        // second save must dedup rather than open a parallel journal row.
-        for pub_date in ["2024-01-15", "2024-01-15T00:00:00Z"] {
+        let values = [
+            "2024",
+            "2024-06",
+            "2024-01-15",
+            "2024-01-15T00:00Z",
+            "2024-01-15T00:00:00Z",
+            "2024-01-15T00:00:00.123456789123+05:30",
+            "2024-01-15T00:00:00Z",
+        ];
+        for pub_date in values {
             let response = server
-                .patch(&format!("/api/v1/books/{m_id}/metadata"))
+                .patch(&path)
                 .add_header(AUTHORIZATION, basic.clone())
                 .add_header(
                     axum::http::header::IF_MATCH,
@@ -5142,10 +5017,21 @@ mod tests {
                 )
                 .json(&serde_json::json!({"pub_date": pub_date}))
                 .await;
-            assert_eq!(response.status_code(), StatusCode::OK);
-            etag = etag_value(response.headers());
+            assert_eq!(
+                response.status_code(),
+                StatusCode::OK,
+                "{}",
+                response.text()
+            );
+            let current = server
+                .get(&path)
+                .add_header(AUTHORIZATION, basic.clone())
+                .await;
+            assert_eq!(current.status_code(), StatusCode::OK);
+            let body: serde_json::Value = current.json();
+            assert_eq!(body["pub_date"], pub_date);
+            etag = etag_value(current.headers());
         }
-
         let rows = sqlx::query!(
             "SELECT observation_count FROM metadata_versions \
              WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'pub_date'",
@@ -5154,16 +5040,90 @@ mod tests {
         .fetch_all(&app_pool)
         .await
         .expect("fetch manual pub_date rows");
-
+        assert_eq!(rows.len(), 6);
         assert_eq!(
-            rows.len(),
-            1,
-            "ISO-variant pub_dates must collapse to one journal row; got {}",
-            rows.len()
+            rows.iter().filter(|row| row.observation_count == 2).count(),
+            1
         );
+        for (patch, expected) in [
+            (
+                serde_json::json!({"publisher": "Precision Press"}),
+                serde_json::json!(values[6]),
+            ),
+            (
+                serde_json::json!({"pub_date": null}),
+                serde_json::Value::Null,
+            ),
+        ] {
+            let response = server
+                .patch(&path)
+                .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag).unwrap(),
+                )
+                .json(&patch)
+                .await;
+            assert_eq!(
+                response.status_code(),
+                StatusCode::OK,
+                "{}",
+                response.text()
+            );
+            let current = server
+                .get(&path)
+                .add_header(AUTHORIZATION, basic.clone())
+                .await;
+            let body: serde_json::Value = current.json();
+            assert_eq!(body["pub_date"], expected);
+            etag = etag_value(current.headers());
+        }
+        let before = server
+            .get(&path)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let before_body: serde_json::Value = before.json();
+        let snapshot = || async {
+            sqlx::query!(
+                "SELECT (SELECT count(*) FROM metadata_versions WHERE manifestation_id = $1) AS journal_count, (SELECT sum(observation_count)::bigint FROM metadata_versions WHERE manifestation_id = $1) AS observations, (SELECT count(*) FROM writeback_jobs WHERE manifestation_id = $1) AS job_count",
+                m_id,
+            ).fetch_one(&app_pool).await.unwrap()
+        };
+        let before_state = snapshot().await;
+        let refused = server
+            .patch(&path)
+            .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
+            .json(&serde_json::json!({"publisher": "Refused Press", "pub_date": "unknown"}))
+            .await;
+        assert_eq!(refused.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let problem: serde_json::Value = refused.json();
+        assert!(
+            problem["errors"]["pub_date"]
+                .as_str()
+                .is_some_and(|message| !message.is_empty())
+        );
+        let after = server
+            .get(&path)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(after.json::<serde_json::Value>(), before_body);
+        assert_eq!(etag_value(after.headers()), etag);
+        let after_state = snapshot().await;
         assert_eq!(
-            rows[0].observation_count, 2,
-            "second save must bump observation_count via ON CONFLICT, not insert a new row"
+            (
+                after_state.journal_count,
+                after_state.observations,
+                after_state.job_count
+            ),
+            (
+                before_state.journal_count,
+                before_state.observations,
+                before_state.job_count
+            ),
         );
     }
 
