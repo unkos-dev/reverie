@@ -37,5 +37,5 @@ explicitly sets its own `If-Match` is never overridden.
   `a resource with no retained tag PATCHes without If-Match` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A last-seen `ETag` for one resource is never sent as `If-Match` on a `PATCH` to a different resource, even when both
   are in flight in the same session. Checked by
-  `a retained tag on a manifestation's metadata resource is not sent for an unrelated shelves PATCH` in
+  `a retained tag for one resource is never sent on another resource's PATCH` in
   `frontend/tests/browser/api/fetch.test.tsx`.

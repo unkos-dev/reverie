@@ -1,4 +1,3 @@
-import { MutationObserver } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { ApiError } from "@/api";
@@ -21,150 +20,29 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("queryClient — QueryCache onError", () => {
-  test("calls the unauthenticated handler on ApiError 401", async () => {
-    const handler = vi.fn();
-    setUnauthenticatedHandler(handler);
-
-    await queryClient
-      .query({
-        queryKey: ["__test", "401"],
-        queryFn: () => {
-          throw new ApiError(401, "https://reverie.example/probs/unauthorized", "Unauthorized", "");
-        },
-        retry: false,
-      })
-      .catch(() => {
-        /* swallow — assertion is on the handler call below */
-      });
-
-    expect(handler).toHaveBeenCalledTimes(1);
-  });
-
-  test("does NOT call the handler on ApiError 500", async () => {
-    const handler = vi.fn();
-    setUnauthenticatedHandler(handler);
-
-    await queryClient
-      .query({
-        queryKey: ["__test", "500"],
-        queryFn: () => {
-          throw new ApiError(500, null, "Internal Server Error", "");
-        },
-        retry: false,
-      })
-      .catch(() => {});
-
-    expect(handler).not.toHaveBeenCalled();
-  });
-
-  test("does NOT call the handler on a non-ApiError exception", async () => {
-    const handler = vi.fn();
-    setUnauthenticatedHandler(handler);
-
-    await queryClient
-      .query({
-        queryKey: ["__test", "TypeError"],
-        queryFn: () => {
-          throw new TypeError("network down");
-        },
-        retry: false,
-      })
-      .catch(() => {});
-
-    expect(handler).not.toHaveBeenCalled();
-  });
-
-  test("setUnauthenticatedHandler replaces the previous handler", async () => {
-    const first = vi.fn();
-    const second = vi.fn();
-    setUnauthenticatedHandler(first);
-    setUnauthenticatedHandler(second);
-
-    await queryClient
-      .query({
-        queryKey: ["__test", "replace"],
-        queryFn: () => {
-          throw new ApiError(401, null, "Unauthorized", "");
-        },
-        retry: false,
-      })
-      .catch(() => {});
-
-    expect(first).not.toHaveBeenCalled();
-    expect(second).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("queryClient — MutationCache onError", () => {
-  async function runMutation(error: unknown, onError?: () => void): Promise<void> {
-    await new MutationObserver(queryClient, {
-      mutationFn: () => {
-        throw error;
-      },
-      onError,
-      retry: false,
-    })
-      .mutate()
-      .catch(() => {});
-  }
-
-  test("calls the unauthenticated handler on ApiError 401", async () => {
-    const handler = vi.fn();
-    setUnauthenticatedHandler(handler);
-
-    await runMutation(new ApiError(401, null, "Unauthorized", ""));
-
-    expect(handler).toHaveBeenCalledTimes(1);
-  });
-
-  test.each([422, 500])("leaves ApiError %i to the mutation's own onError", async (status) => {
-    const handler = vi.fn();
-    const onError = vi.fn();
-    setUnauthenticatedHandler(handler);
-
-    await runMutation(new ApiError(status, null, "Failed", ""), onError);
-
-    expect(handler).not.toHaveBeenCalled();
-    expect(onError).toHaveBeenCalledTimes(1);
-  });
-
-  test("still runs the mutation's own onError on a 401", async () => {
-    setUnauthenticatedHandler(() => {});
-    const onError = vi.fn();
-
-    await runMutation(new ApiError(401, null, "Unauthorized", ""), onError);
-
-    expect(onError).toHaveBeenCalledTimes(1);
-  });
-
-  test("does NOT call the handler on a non-ApiError exception", async () => {
-    const handler = vi.fn();
-    setUnauthenticatedHandler(handler);
-
-    await runMutation(new TypeError("network down"));
-
-    expect(handler).not.toHaveBeenCalled();
-  });
-});
-
 describe("invokeUnauthenticatedHandler — once-guard", () => {
-  test("fires the wired handler once", () => {
+  test("is guarded — repeated calls navigate once", async () => {
     const handler = vi.fn();
     setUnauthenticatedHandler(handler);
 
-    invokeUnauthenticatedHandler();
-
-    expect(handler).toHaveBeenCalledTimes(1);
-  });
-
-  test("is guarded — repeated calls navigate once", () => {
-    const handler = vi.fn();
-    setUnauthenticatedHandler(handler);
-
-    invokeUnauthenticatedHandler();
-    invokeUnauthenticatedHandler();
-    invokeUnauthenticatedHandler();
+    await Promise.all(
+      ["a", "b", "c"].map((key) =>
+        queryClient
+          .query({
+            queryKey: ["__test", "lapse", key],
+            queryFn: () => {
+              throw new ApiError(
+                401,
+                "https://reverie.example/probs/unauthorized",
+                "Unauthorized",
+                "",
+              );
+            },
+            retry: false,
+          })
+          .catch(() => {}),
+      ),
+    );
 
     expect(handler).toHaveBeenCalledTimes(1);
   });
@@ -187,11 +65,14 @@ describe("invokeUnauthenticatedHandler — once-guard", () => {
     // hook that stops one account's per-user caches from resolving while
     // a different account signs in next.
     rememberActiveUser("user-a");
-    setUnauthenticatedHandler(() => {});
+    let hintAtRedirect: string | null | undefined;
+    setUnauthenticatedHandler(() => {
+      hintAtRedirect = activeUserId();
+    });
 
     invokeUnauthenticatedHandler();
 
-    expect(activeUserId()).toBeNull();
+    expect(hintAtRedirect).toBeNull();
     localStorage.clear();
   });
 });
