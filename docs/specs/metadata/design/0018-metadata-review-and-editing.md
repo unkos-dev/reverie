@@ -217,8 +217,9 @@ null. It applies no client date parser. Structured `ApiError.errors` values pass
 `Form.validationErrors` and native `FieldError` associations. A refused date and every other submitted value remain in
 the mounted form for correction. Publication guidance recommends YYYY-MM-DD or YYYY and leaving unknown values empty. An
 Accepted formats button opens the native popover with the full supported list and a format-reference link. General
-failures appear inline; structured field refusals use native field feedback without a generic error toast. Pending,
-clear-confirmation, successful closure and ETag conflict handling retain their existing owners.
+failures appear inline; structured field refusals use native field feedback. Ordinary failures and successful saves
+produce no toast; the actionable ETag conflict notification retains its existing owner. Pending, clear-confirmation and
+successful closure retain their existing owners.
 
 **A manual `PATCH`: an operator edits publisher, clears pub_date, and sets a work identifier from the edit dialog.**
 
@@ -246,7 +247,7 @@ clear-confirmation, successful closure and ETag conflict handling retain their e
    header carries; the transaction commits; the response carries the applied value, new version id, and previous version
    id per touched field.
 8. The edit sheet invalidates the book detail and editable-metadata queries after a successful save. It awaits the
-   metadata refresh before reporting success and closing, so reopening seeds the fields from the saved representation.
+   metadata refresh before closing, so reopening seeds the fields from the saved representation.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 

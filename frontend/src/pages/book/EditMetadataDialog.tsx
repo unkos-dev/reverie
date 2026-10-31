@@ -238,7 +238,6 @@ function EditMetadataFields({
       await queryClient.invalidateQueries({
         queryKey: queryKeys.books.metadata(manifestationId),
       });
-      toast.success("Metadata updated.");
       onDone();
     },
     onError: (err: unknown) => {
@@ -478,7 +477,7 @@ function FieldRow({
       {field.name !== "pub_date" && !hasCanonicalValue && (
         <p className="text-fg-muted text-xs">No canonical value yet.</p>
       )}
-      <AriaFieldError className="text-fg text-sm font-normal" />
+      <AriaFieldError className="text-fg block text-sm font-normal" />
     </TextField>
   );
 }
