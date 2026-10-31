@@ -68,9 +68,9 @@ async function renderTokensPage(): Promise<void> {
   await expect.element(page.getByRole("heading", { name: "API tokens" })).toBeInTheDocument();
 }
 
-test("submits the default write level, name, and expiry", async () => {
+test("submits the chosen read-only level and 30-day expiry", async () => {
   const create = vi.spyOn(tokensApi, "createToken").mockResolvedValue({
-    ...makeToken({ name: "reader", scopes: ["write"] }),
+    ...makeToken({ name: "reader" }),
     token: "rvpat_11111111-1111-4111-8111-111111111111.secretvalue",
   });
   await renderTokensPage();
@@ -78,11 +78,15 @@ test("submits the default write level, name, and expiry", async () => {
 
   await user.click(page.getByRole("button", { name: "New token" }));
   await user.type(page.getByLabelText("Name"), "reader");
+  await user.click(page.getByRole("button", { name: /Access level/ }));
+  await user.click(page.getByRole("option", { name: /^Read-only/ }));
+  await user.click(page.getByRole("button", { name: /Expires/ }));
+  await user.click(page.getByRole("option", { name: "30 days" }));
   await user.click(page.getByRole("button", { name: "Create" }));
 
   expect(create).toHaveBeenCalledWith({
     name: "reader",
-    scopes: ["write"],
-    expiresInDays: 90,
+    scopes: ["read"],
+    expiresInDays: 30,
   });
 });
