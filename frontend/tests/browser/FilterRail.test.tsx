@@ -214,3 +214,22 @@ describe("FilterRail sort section", () => {
     await expect.element(page.elementLocator(sort).getByText("Added")).toBeInTheDocument();
   });
 });
+
+test("raw text and its operator stay editable while they contribute no predicate", async () => {
+  await renderRail();
+  await openSection("ISBN");
+  const user = userEvent;
+  await user.click(page.getByRole("button", { name: /Operator/ }));
+  await user.click(page.getByRole("option", { name: "equals" }));
+  await page.getByRole("textbox", { name: "Filter value" }).fill("  ");
+  await user.click(page.getByRole("button", { name: /Operator/ }));
+  await user.click(page.getByRole("option", { name: "is empty" }));
+  await user.click(page.getByRole("button", { name: /Operator/ }));
+  await user.click(page.getByRole("option", { name: "equals" }));
+
+  await expect.element(page.getByRole("button", { name: /Operator/ })).toHaveTextContent("equals");
+  await expect.element(page.getByRole("textbox", { name: "Filter value" })).toHaveValue("  ");
+  expect(JSON.parse(page.getByTestId("filter-state").element().textContent)).toMatchObject({
+    isbn13: { op: "eq", text: "  " },
+  });
+});
