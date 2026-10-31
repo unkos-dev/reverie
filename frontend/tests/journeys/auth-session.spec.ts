@@ -43,17 +43,22 @@ test("concurrent identity and account-query 401s produce one document navigation
     await together;
     await route.fulfill({ status: 401 });
   });
-  let navigations = 0;
+  await page.addInitScript(() => {
+    navigation.addEventListener("navigate", (event) => {
+      if (new URL(event.destination.url).pathname !== "/login") return;
+      const count = Number(sessionStorage.getItem("loginNavigations") ?? "0");
+      sessionStorage.setItem("loginNavigations", String(count + 1));
+    });
+  });
   await page.route("**/login", async (route) => {
     expect(route.request().isNavigationRequest()).toBe(true);
-    navigations += 1;
     await route.fulfill({ contentType: "text/html", body: "<main>Sign in again</main>" });
   });
   await page.goto("/account/email");
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("main")).toHaveText("Sign in again");
   expect(received.size).toBe(2);
-  expect(navigations).toBe(1);
+  expect(await page.evaluate(() => sessionStorage.getItem("loginNavigations"))).toBe("1");
 });
 
 test("verification clears the fragment before GET and confirms only on activation", async ({

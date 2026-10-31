@@ -4,7 +4,7 @@ surfaces: [end-user]
 adopted: 2026-10-27
 adopted-because: a confirmation opened from a React action becomes inert before its modal effect takes ownership
 lift-when-class: dep-unblocks
-lift-when: the installed React and React Aria versions pass the metadata confirmation browser and production journey cases with the local synchronous mount removed and ViewTransition enabled
+lift-when: the installed React and React Aria versions pass the metadata confirmation browser cases with the local synchronous mount removed and ViewTransition enabled
 ---
 
 # Metadata confirmation modal ordering
@@ -22,6 +22,6 @@ React documents
 last-resort integration mechanism. It can flush other pending work, so it stays local to this confirmed failure. No code
 removes `inert`, changes the portal container or disables router transitions.
 
-Remove the call when the installed dependencies pass all cases in `EditMetadataDialog.test.tsx` and the metadata clear
-case in `application-navigation.spec.ts` without it. Verify cancellation, pending suppression, refusal feedback,
-retained values and successful retry with the transition boundary enabled, then delete this entry and its README link.
+Remove the call when the installed dependencies pass all cases in `EditMetadataDialog.test.tsx` without it. Verify
+cancellation, pending suppression, refusal feedback, retained values and successful retry with the transition boundary
+enabled, then delete this entry and its README link.
