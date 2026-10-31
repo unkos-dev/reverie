@@ -388,7 +388,7 @@ async fn load_scalar_canonical_under_lock(
     .await?;
     let mut canonical = CanonicalState {
         publisher: row.publisher,
-        pub_date: row.pub_date.map(|date| date.to_string()),
+        pub_date: row.pub_date,
         pages: row.pages,
         isbn_10: row.isbn_10,
         isbn_13: row.isbn_13,
@@ -662,7 +662,7 @@ pub async fn load_snapshot(pool: &PgPool, manifestation_id: Uuid) -> anyhow::Res
         description: row.description,
         language: row.language,
         publisher: row.publisher,
-        pub_date: row.pub_date.map(|d| d.to_string()),
+        pub_date: row.pub_date,
         isbn_10: row.isbn_10,
         isbn_13: row.isbn_13,
         subtitle: row.subtitle,
@@ -1019,9 +1019,10 @@ async fn enqueue_writeback(
         "metadata"
     };
     sqlx::query!(
-        "INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, $2)",
+        "INSERT INTO writeback_jobs (manifestation_id, reason, field_name) VALUES ($1, $2, $3)",
         manifestation_id,
         reason,
+        field,
     )
     .execute(&mut **tx)
     .await?;
@@ -1160,10 +1161,10 @@ async fn apply_field(
             // pub_date comes from an external source; we keep the journal
             // row so a reviewer can still accept/reject it and skip the
             // canonical write.
-            let Some(date) = parse_iso_date(&v) else {
+            let Ok(Some(date)) = crate::services::metadata::publication_date::normalise(&v) else {
                 tracing::debug!(
                     value = %v,
-                    "pub_date value not a storable ISO date; skipping canonical apply"
+                    "publication text refused; skipping canonical apply"
                 );
                 return Ok(false);
             };
@@ -1270,51 +1271,6 @@ fn json_as_string(v: &serde_json::Value) -> Option<String> {
             None
         }
     }
-}
-
-/// Accepted `pub_date` year bounds for provider metadata.
-///
-/// These mirror the common-era convention the `timestamptz` decode-range
-/// checks set. `manifestations.pub_date` carries no CHECK constraint, so the
-/// bound holds only as far as every writer routes through this function.
-const MIN_PUB_YEAR: i32 = 1;
-const MAX_PUB_YEAR: i32 = 9999;
-
-/// The one accepted spelling, used to parse and to re-render for the
-/// canonical-form check below.
-const ISO_DATE_FMT: &str = "%Y-%m-%d";
-
-/// Parse a provider date, rejecting any spelling or year the column cannot
-/// hold.
-///
-/// Returns `None` rather than an error type because the sole caller discards
-/// the reason and skips the value, logging the raw input instead.
-///
-/// Two independent widenings have to be closed. chrono's numeric fields
-/// accept fewer digits than the format spells, so `26-05-01` parses as year
-/// 26; requiring the parse to round-trip rejects that and every other
-/// non-canonical spelling. An explicit sign then lifts the width cap
-/// entirely, so a hostile `-9999-01-01` round-trips cleanly and needs the
-/// range check. Left unfiltered, either would reach the bind and fail the
-/// whole canonical-apply batch rather than being skipped like any other
-/// unusable provider value.
-fn parse_iso_date(s: &str) -> Option<chrono::NaiveDate> {
-    // `s.len()` is in bytes; provider strings are adversarial and may contain
-    // multi-byte UTF-8 codepoints. `is_char_boundary` keeps the slice valid.
-    let candidate = if s.len() >= 10 && s.is_char_boundary(10) {
-        s[..10].to_owned()
-    } else {
-        // Fall back to `YYYY` or `YYYY-MM` by padding.
-        match s.len() {
-            4 => format!("{s}-01-01"),
-            7 => format!("{s}-01"),
-            _ => s.to_owned(),
-        }
-    };
-    let date = chrono::NaiveDate::parse_from_str(&candidate, ISO_DATE_FMT).ok()?;
-    (date.format(ISO_DATE_FMT).to_string() == candidate
-        && (MIN_PUB_YEAR..=MAX_PUB_YEAR).contains(&chrono::Datelike::year(&date)))
-    .then_some(date)
 }
 
 const fn failure_class(err: &SourceError) -> FailureClass {
@@ -2922,10 +2878,6 @@ mod tests {
         );
     }
 
-    /// `apply_field` returning `Ok(false)` for a malformed `pub_date`
-    /// (the `parse_iso_date` branch — distinct internal control flow
-    /// from the non-string skip) must also leave canonical unchanged
-    /// with no counter bump and no writeback.
     #[sqlx::test(migrations = "./migrations")]
     async fn apply_canonical_batch_skips_malformed_pub_date(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
@@ -2935,7 +2887,6 @@ mod tests {
 
         let bad = SourceResult {
             field_name: "pub_date".into(),
-            // String, but parse_iso_date will reject it.
             raw_value: serde_json::json!("not-an-iso-date"),
             match_type: "isbn".into(),
         };
@@ -3032,36 +2983,6 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(body))
             .mount(server)
             .await;
-    }
-
-    #[test]
-    fn parse_iso_date_accepts_the_storable_forms() {
-        assert!(parse_iso_date("2024-01-15").is_some());
-        assert!(parse_iso_date("2024-01").is_some());
-        assert!(parse_iso_date("2024").is_some());
-        assert!(parse_iso_date("2024-01-15T00:00:00Z").is_some());
-        assert!(parse_iso_date("0001-01-01").is_some());
-        assert!(parse_iso_date("9999-12-31").is_some());
-    }
-
-    #[test]
-    fn parse_iso_date_rejects_years_postgres_cannot_store() {
-        // Provider strings are adversarial. chrono's `%Y` takes one to four
-        // digits and an explicit sign lifts the cap, so each of these parses
-        // to a real NaiveDate that the `date` column rejects on bind. Left
-        // unfiltered they would fail the whole canonical-apply batch instead
-        // of being skipped like any other unusable value.
-        assert!(parse_iso_date("26-05-01").is_none());
-        assert!(parse_iso_date("-9999-1-1").is_none());
-        assert!(parse_iso_date("0000-01-01").is_none());
-    }
-
-    #[test]
-    fn parse_iso_date_rejects_non_dates() {
-        assert!(parse_iso_date("not-a-date").is_none());
-        assert!(parse_iso_date("").is_none());
-        // 3-byte codepoint pushes byte-10 mid-character.
-        assert!(parse_iso_date("2024-01-€€€garbage").is_none());
     }
 
     #[test]
@@ -4009,7 +3930,7 @@ mod tests {
                     ("description", json!("Provider description")),
                     ("language", json!("en")),
                     ("publisher", json!("Provider publisher")),
-                    ("pub_date", json!("2026-01-01")),
+                    ("pub_date", json!("2026-01")),
                     ("pages", json!(200)),
                     ("isbn_10", json!("0451524934")),
                     ("isbn_13", json!("9780451524935")),
@@ -4136,7 +4057,7 @@ mod tests {
         );
         assert_eq!(
             current.pub_date.as_deref(),
-            Some(if edit { "2025-01-01" } else { "2026-01-01" })
+            Some(if edit { "2025-01-01" } else { "2026-01" })
         );
         assert_eq!(current.pages, Some(if edit { 300 } else { 200 }));
         assert_eq!(

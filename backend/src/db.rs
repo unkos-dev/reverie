@@ -1164,6 +1164,98 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn publication_date_migration_refuses_loss_and_roundtrips(pool: PgPool) {
+        let down = include_str!("../migrations/20261030000000_publication_date_text.down.sql");
+        let up = include_str!("../migrations/20261030000000_publication_date_text.up.sql");
+        let (_, id) =
+            crate::test_support::db::insert_work_and_manifestation(&pool, "date-rollback").await;
+        let (_, empty) =
+            crate::test_support::db::insert_work_and_manifestation(&pool, "date-null").await;
+        sqlx::query!(
+            "UPDATE manifestations SET pub_date = '2024-01-15T12:30Z' WHERE id = $1",
+            id
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let error = sqlx::raw_sql(down).execute(&mut *tx).await.unwrap_err();
+        assert!(error.to_string().contains("complete dates"));
+        tx.rollback().await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar!("SELECT pub_date FROM manifestations WHERE id = $1", id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2024-01-15T12:30Z")
+        );
+        sqlx::query!(
+            "UPDATE manifestations SET pub_date = '2024-01-15' WHERE id = $1",
+            id
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        for status in ["pending", "in_progress"] {
+            let job = sqlx::query_scalar!(
+                "INSERT INTO writeback_jobs (manifestation_id, reason, field_name, status) VALUES ($1, 'metadata', 'pub_date', $2::text::writeback_status) RETURNING id",
+                id, status,
+            ).fetch_one(&pool).await.unwrap();
+            let mut tx = pool.begin().await.unwrap();
+            let error = sqlx::raw_sql(down).execute(&mut *tx).await.unwrap_err();
+            assert!(error.to_string().contains("jobs must drain"));
+            tx.rollback().await.unwrap();
+            assert_eq!(
+                sqlx::query_scalar!("SELECT field_name FROM writeback_jobs WHERE id = $1", job)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some("pub_date")
+            );
+            sqlx::query!(
+                "UPDATE writeback_jobs SET status = 'complete' WHERE id = $1",
+                job
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::raw_sql(down).execute(&pool).await.unwrap();
+        assert_eq!(sqlx::query_scalar!("SELECT data_type FROM information_schema.columns WHERE table_name = 'manifestations' AND column_name = 'pub_date'")
+            .fetch_one(&pool).await.unwrap().as_deref(), Some("date"));
+        sqlx::raw_sql(up).execute(&pool).await.unwrap();
+        assert_eq!(sqlx::query_scalar!("SELECT data_type FROM information_schema.columns WHERE table_name = 'manifestations' AND column_name = 'pub_date'")
+            .fetch_one(&pool).await.unwrap().as_deref(), Some("text"));
+        assert_eq!(
+            sqlx::query_scalar!("SELECT pub_date FROM manifestations WHERE id = $1", id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2024-01-15")
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT pub_date FROM manifestations WHERE id = $1", empty)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT field_name FROM writeback_jobs WHERE manifestation_id = $1 LIMIT 1",
+                id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            None
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn smtp_queue_migration_down_removes_new_state_and_up_restores_it(pool: PgPool) {
         let down = include_str!("../migrations/20261021000000_mail_recovery.down.sql");
         let up = include_str!("../migrations/20261021000000_mail_recovery.up.sql");

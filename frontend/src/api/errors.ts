@@ -37,6 +37,8 @@ export class ApiError extends Error {
   readonly title: string;
   /** RFC 9457 `detail` field; empty string when absent. */
   readonly detail: string;
+  /** Validation messages keyed by submitted field name, when supplied. */
+  readonly errors: Record<string, string> | undefined;
 
   /**
    * @param status - HTTP status code from the response.
@@ -51,13 +53,20 @@ export class ApiError extends Error {
    * Falls back to status-text / empty strings when the response body
    * was not a Problem Details document.
    */
-  constructor(status: number, type: string | null, title: string, detail: string) {
+  constructor(
+    status: number,
+    type: string | null,
+    title: string,
+    detail: string,
+    errors?: Record<string, string>,
+  ) {
     super(`${String(status)} ${title}: ${detail}`);
     this.name = "ApiError";
     this.status = status;
     this.type = type;
     this.title = title;
     this.detail = detail;
+    this.errors = errors;
   }
 
   /**

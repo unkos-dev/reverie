@@ -78,6 +78,10 @@ selected panel. Filter disclosures retain their mounted editors, as described by
 
 ## Failure and recovery
 
+Publication edits use one text field. Server `errors.pub_date` reaches `Form.validationErrors` through `useActionState`
+and the native `FieldError` identifies the refused field. The refused date and other submitted edits remain available;
+editing the field clears its native server error and permits correction without a competing client parser.
+
 Field-specific validation appears beside its field with native associations. General API failures remain standalone
 alerts rather than being assigned to an unrelated field. Pending controls suppress duplicate submission while keeping
 the entered values available when the request settles. Cancellation and successful completion retain the owning screen's

@@ -28,11 +28,14 @@ import { flushSync } from "react-dom";
 import { z } from "zod";
 import {
   Form,
+  FieldError as AriaFieldError,
   TextField,
+  Text as AriaText,
   Label as AriaLabel,
   Input as AriaInput,
   TextArea as AriaTextArea,
 } from "react-aria-components";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 import { FieldError } from "@/components/ui/field";
 import { toast } from "sonner";
 
@@ -228,9 +231,12 @@ function EditMetadataFields({
   const formId = useId();
   const mutation = useMutation({
     mutationFn: (body: UpdateBookMetadataFields) => updateBookMetadata(manifestationId, body),
-    onSuccess: () => {
+    onSuccess: async () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.books.detail(manifestationId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.books.metadata(manifestationId),
       });
       toast.success("Metadata updated.");
       onDone();
@@ -253,7 +259,6 @@ function EditMetadataFields({
         });
         return;
       }
-      toast.error(formatError(err));
     },
   });
 
@@ -282,7 +287,11 @@ function EditMetadataFields({
   }
 
   const [state, action, pending] = useActionState<
-    { values: Partial<Record<string, string>>; error: string | null },
+    {
+      values: Partial<Record<string, string>>;
+      error: string | null;
+      errors?: Record<string, string>;
+    },
     FormData
   >(
     async (_previous, data) => {
@@ -294,12 +303,10 @@ function EditMetadataFields({
       } catch (err) {
         console.error("[EditMetadataDialog.buildBody] schema parse failed", err);
         const error = "Form has an invalid value. Refresh and try again.";
-        toast.error(error);
         return { values, error };
       }
       if (Object.keys(body).length === 0) {
         const error = "No fields touched — nothing to save.";
-        toast.error(error);
         return { values, error };
       }
       if (clears.length > 0 && data.get("confirm_clear") !== "true") {
@@ -314,7 +321,15 @@ function EditMetadataFields({
         await mutation.mutateAsync(body);
         return { values, error: null };
       } catch (err) {
-        return { values, error: isIfMatchMismatch(err) ? null : formatError(err) };
+        const errors = err instanceof ApiError ? err.errors : undefined;
+        return {
+          values,
+          error:
+            isIfMatchMismatch(err) || Object.keys(errors ?? {}).length > 0
+              ? null
+              : formatError(err),
+          errors,
+        };
       }
     },
     { values: {}, error: null },
@@ -325,7 +340,7 @@ function EditMetadataFields({
       <Form
         id={formId}
         action={action}
-        validationErrors={{}}
+        validationErrors={state.errors ?? {}}
         className="flex flex-1 flex-col overflow-y-auto px-4"
       >
         <div className="space-y-4 py-2">
@@ -423,7 +438,47 @@ function FieldRow({
       ) : (
         <AriaInput render={(props) => <Input {...props} />} />
       )}
-      {hasCanonicalValue ? null : <p className="text-fg-muted text-xs">No canonical value yet.</p>}
+      {field.name === "pub_date" && (
+        <>
+          <AriaText slot="description" className="text-fg-muted block text-xs">
+            Use YYYY-MM-DD or YYYY. Leave empty if unknown.
+          </AriaText>
+          <Popover>
+            <Button type="button" variant="ghost" size="xs">
+              Accepted formats
+            </Button>
+            <PopoverContent
+              aria-label="Accepted publication date formats"
+              className="max-w-[calc(100vw-2rem)] space-y-3"
+            >
+              <ul className="space-y-1 break-all font-mono text-xs">
+                <li>YYYY</li>
+                <li>YYYY-MM</li>
+                <li>YYYY-MM-DD</li>
+                <li>YYYY-MM-DDThh:mmTZD</li>
+                <li>YYYY-MM-DDThh:mm:ssTZD</li>
+                <li>YYYY-MM-DDThh:mm:ss.sTZD</li>
+              </ul>
+              <p>
+                TZD is Z or an offset such as +01:00. Fractional seconds can contain one or more
+                digits.
+              </p>
+              <a
+                href="https://www.w3.org/TR/NOTE-datetime#Formats"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-4"
+              >
+                Format reference
+              </a>
+            </PopoverContent>
+          </Popover>
+        </>
+      )}
+      {field.name !== "pub_date" && !hasCanonicalValue && (
+        <p className="text-fg-muted text-xs">No canonical value yet.</p>
+      )}
+      <AriaFieldError className="text-fg text-sm font-normal" />
     </TextField>
   );
 }

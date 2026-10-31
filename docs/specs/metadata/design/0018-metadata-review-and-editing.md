@@ -7,6 +7,8 @@ satisfies:
   - "REV-REQ-0052"
   - "REV-REQ-0055"
   - "REV-REQ-0056"
+governed-by:
+  - "REV-ADR-0067"
 ---
 
 # Metadata review and editing
@@ -125,11 +127,11 @@ field-lock foreign-key write as an internal error.
   `get`/`update` pair at `/api/v1/books/{id}/metadata`.
 - `apply_version` and `clear_field` are the two field-dispatch cores every promotion or clear routes through: one
   `match` arm per supported canonical field, each doing the type-specific parse (ISBN checksum, `content_rating` enum,
-  `pub_date` via `parse_iso_date`), the `UPDATE ... RETURNING` that swaps the pointer and returns what it replaced, and,
-  for every field but an `identifiers.*` one, a call to `enqueue_writeback`. `is_work_scoped_field` decides whether a
-  version journaled under one manifestation is a legitimate revert target for a sibling manifestation of the same work
-  (`title`/`subtitle`/`description`/`language`, every `contributors.*` role, and `identifiers.work.*`); the
-  per-manifestation fields (`genres`/`moods`/`tags`, `identifiers.manifestation.*`) are not. `accept_manifestation`
+  `pub_date` via `publication_date::normalise`), the `UPDATE ... RETURNING` that swaps the pointer and returns what it
+  replaced, and, for every field but an `identifiers.*` one, a call to `enqueue_writeback`. `is_work_scoped_field`
+  decides whether a version journaled under one manifestation is a legitimate revert target for a sibling manifestation
+  of the same work (`title`/`subtitle`/`description`/`language`, every `contributors.*` role, and `identifiers.work.*`);
+  the per-manifestation fields (`genres`/`moods`/`tags`, `identifiers.manifestation.*`) are not. `accept_manifestation`
   never extends this sibling allowance: its row lookup matches only `mv.manifestation_id = $2`, so accepting a
   work-scoped draft is possible only from the exact manifestation that observed it, while reverting to the same version
   id from a sibling manifestation of the same work succeeds.
@@ -181,7 +183,8 @@ field-lock foreign-key write as an internal error.
   `BookMetadataSchema`) are the typed client boundary; both route through the shared `apiFetch`, so CSRF-token
   attachment and Problem Details parsing (owned elsewhere) apply uniformly.
 - `enqueue_writeback` is this subject's one call into the writeback pipeline's interface: an
-  `INSERT INTO writeback_jobs (manifestation_id, reason)`, `reason` being `"cover"` or `"metadata"`.
+  `INSERT INTO writeback_jobs (manifestation_id, reason, field_name)`, retaining the changed field and the `"cover"` or
+  `"metadata"` reason.
 
 ## Data and state
 
@@ -206,6 +209,16 @@ field-lock foreign-key write as an internal error.
   flag is set (see Runtime behaviour for why the row itself is left alone).
 
 ## Runtime behaviour
+
+`pub_date` is nullable bibliographic text. PATCH, accept and revert validate through the shared publication-date
+validator before canonical writes. Reads preserve the accepted precision and spelling. An omitted PATCH key retains its
+value; explicit null clears it. The edit sheet offers one plain Publication date text field; blank edited input sends
+null. It applies no client date parser. Structured `ApiError.errors` values pass through `useActionState` to React Aria
+`Form.validationErrors` and native `FieldError` associations. A refused date and every other submitted value remain in
+the mounted form for correction. Publication guidance recommends YYYY-MM-DD or YYYY and leaving unknown values empty. An
+Accepted formats button opens the native popover with the full supported list and a format-reference link. General
+failures appear inline; structured field refusals use native field feedback without a generic error toast. Pending,
+clear-confirmation, successful closure and ETag conflict handling retain their existing owners.
 
 **A manual `PATCH`: an operator edits publisher, clears pub_date, and sets a work identifier from the edit dialog.**
 
@@ -232,6 +245,8 @@ field-lock foreign-key write as an internal error.
 7. `load_book_metadata` + `hash_etag` run again, inside the same transaction, to compute the tag the response's `ETag`
    header carries; the transaction commits; the response carries the applied value, new version id, and previous version
    id per touched field.
+8. The edit sheet invalidates the book detail and editable-metadata queries after a successful save. It awaits the
+   metadata refresh before reporting success and closing, so reopening seeds the fields from the saved representation.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 
@@ -291,11 +306,12 @@ manifestation has no matching lock.
   policy-refused header (wildcard, weak tag, tag list, repeated header) is `AppError::MalformedHeader` (`400`); a
   non-matching tag is `AppError::IfMatchMismatch` (`412`, carrying the current tag). All three are evaluated before
   request-body validation.
-- `AppError::Validation` (`422`) covers: an entirely empty `PATCH` body; a malformed or out-of-range `pub_date`
-  (`PubDateError::Malformed`/`PubDateError::YearOutOfRange`, both wrapped with their message); an invalid ISBN checksum,
-  length, or non-numeric ISBN; an attempt to clear `title` or `contributors.author`; an author-role rewrite that would
-  leave a previously-authored work with zero authors; an over-cap or duplicate contributor/vocabulary/identifier list;
-  an unknown vocabulary/role/scheme, or an identifier whose scheme does not belong to its stated level; a malformed
+- Publication refusal uses `AppError::FieldValidation` (`422`) with the registered validation type and a string message
+  in `errors.pub_date`. The entire metadata transaction rolls back, including journal, pointer and job writes.
+- `AppError::Validation` (`422`) covers: an entirely empty `PATCH` body; an invalid ISBN checksum, length, or
+  non-numeric ISBN; an attempt to clear `title` or `contributors.author`; an author-role rewrite that would leave a
+  previously-authored work with zero authors; an over-cap or duplicate contributor/vocabulary/identifier list; an
+  unknown vocabulary/role/scheme, or an identifier whose scheme does not belong to its stated level; a malformed
   identifier value; and accepting a `null`-valued audit row directly.
 - The zero-authors guard is not one rule but two, with different comparisons. `apply_version`'s `contributors.author`
   arm (accept and revert-to-version) rejects whenever the role's post-write count is zero, with no reference to what it

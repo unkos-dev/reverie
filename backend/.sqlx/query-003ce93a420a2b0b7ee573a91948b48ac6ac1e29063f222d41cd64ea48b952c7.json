@@ -12,7 +12,7 @@
     ],
     "parameters": {
       "Left": [
-        "Date",
+        "Text",
         "Uuid",
         "Uuid"
       ]

@@ -11,7 +11,8 @@ title: "The browser client surfaces every non-2xx response as an error with its 
 
 WHEN the browser client receives, for an API call it made, a response whose status is outside the 200-299 range, it MUST
 surface an error carrying that status, regardless of whether the response body is a Problem Details document, some other
-JSON, non-JSON text, or absent.
+JSON, non-JSON text, or absent. For a well-formed Problem Details body, the error MUST preserve `type`, `title` and
+`detail`, together with an optional `errors` object mapping field names to strings, unchanged.
 
 ## Rationale
 
@@ -26,7 +27,9 @@ met. Surfacing the status unconditionally, independent of the body's shape, is w
 
 - A response with a well-formed Problem Details body surfaces an error carrying the response's status and the body's
   `type`, `title` and `detail`. Checked by `"401 unauthorized → ApiError with parsed type/title/detail"` in
-  `frontend/tests/browser/api/fetch.test.tsx`.
+  `frontend/tests/browser/api/fetch.test.tsx`. A body without `errors` produces no field map.
+- A structured 422 response preserves `errors.pub_date` alongside the response status and the body's `type`, `title` and
+  `detail`. Checked by `"422 validation preserves field errors"` in the same file.
 - A response with a Problem Details body reporting a server-side failure surfaces an error carrying that status and
   title. Checked by `"500 internal → ApiError with title='Internal Server Error'"` in the same file.
 - A response whose body is not JSON at all still surfaces an error carrying the response's real status, falling back to

@@ -5,7 +5,7 @@
 //! be deduplicated via the unique constraint on
 //! `(manifestation_id, source, field_name, value_hash)`.
 //!
-//! Per-field normalisation hooks (sort list items, trim strings, coerce dates)
+//! Per-field normalisation hooks (sort list items, trim strings, preserve publication precision)
 //! guarantee that equivalent values produce the same hash regardless of how the
 //! source serialised them.
 
@@ -19,7 +19,7 @@ use sha2::{Digest, Sha256};
 /// * insignificant whitespace,
 /// * list-field item order (creators, subjects, genres, moods, tags),
 /// * publisher leading/trailing whitespace,
-/// * `pub_date` alternate ISO representations.
+/// * `pub_date` surrounding whitespace for conforming values.
 #[must_use]
 pub fn value_hash(field_name: &str, value: &Value) -> Vec<u8> {
     let normalised = normalise(field_name, value);
@@ -40,14 +40,10 @@ fn normalise(field: &str, v: &Value) -> Value {
             other => other.clone(),
         },
         "pub_date" => match v {
-            Value::String(s) => {
-                // Best-effort ISO date coercion: keep the YYYY-MM-DD prefix if
-                // the string starts with one, otherwise leave as-is.
-                let t = s.trim();
-                if t.len() >= 10 && t.as_bytes()[4] == b'-' && t.as_bytes()[7] == b'-' {
-                    Value::String(t[..10].to_string())
-                } else {
-                    Value::String(t.to_string())
+            Value::String(value) => {
+                match crate::services::metadata::publication_date::normalise(value) {
+                    Ok(Some(value)) => Value::String(value),
+                    Ok(None) | Err(_) => v.clone(),
                 }
             }
             other => other.clone(),
@@ -175,10 +171,19 @@ mod tests {
     }
 
     #[test]
-    fn pub_date_normalised() {
-        let a = value_hash("pub_date", &json!("2024-01-15"));
-        let b = value_hash("pub_date", &json!("2024-01-15T00:00:00Z"));
-        assert_eq!(a, b);
+    fn publication_date_value_hash_preserves_precision() {
+        let values = ["2024", "2024-01", "2024-01-15", "2024-01-15T00:00:00Z"];
+        for (index, value) in values.iter().enumerate() {
+            let hash = value_hash("pub_date", &json!(value));
+            assert_eq!(hash, value_hash("pub_date", &json!(value)));
+            for other in &values[index + 1..] {
+                assert_ne!(
+                    hash,
+                    value_hash("pub_date", &json!(other)),
+                    "{value} vs {other}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -10,6 +10,7 @@ satisfies:
   - "REV-REQ-0028"
   - "REV-REQ-0065"
 governed-by:
+  - "REV-ADR-0067"
   - "REV-ADR-0051"
   - "REV-ADR-0052"
 ---
@@ -201,6 +202,13 @@ Design "Row-level security and database context" is the authority on that grant 
 further narrow `manifestations` and its three vocabulary junctions.
 
 ## Data and state
+
+`manifestations.pub_date` stores nullable bibliographic text at the supplied precision. Its canonical attribution stays
+in `pub_date_version_id`, referencing the existing metadata journal. The text migration renders existing date values as
+`YYYY-MM-DD` without reconstructing missing source precision or adding historical observations. Its down migration
+refuses richer-than-complete-date values and pending/in-progress `pub_date` jobs before changing either schema or data.
+Complete dates and nulls round-trip when publication work is drained. A retained library needs a snapshot before
+migration.
 
 [`backend/schema.sql`](../../../../backend/schema.sql), the `pg_dump --schema-only` of a freshly migrated database that
 CI rebuilds and diffs, is the authoritative column-by-column reference for this model; this section states only what

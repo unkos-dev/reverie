@@ -96,7 +96,7 @@ pub async fn write_drafts(
             conn,
             manifestation_id,
             "pub_date",
-            &json_string(&d.to_string()),
+            &json_string(d),
             confidence,
             "title",
         )

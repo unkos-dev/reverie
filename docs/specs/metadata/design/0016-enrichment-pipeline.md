@@ -7,6 +7,7 @@ satisfies:
   - "REV-REQ-0051"
   - "REV-REQ-0052"
 governed-by:
+  - "REV-ADR-0067"
   - "REV-ADR-0007"
   - "REV-ADR-0018"
   - "REV-ADR-0051"
@@ -139,7 +140,8 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
 - `confidence.rs`, `lookup_key.rs` and `value_hash.rs` are small pure helpers: a source/match-type/quorum scoring
   formula, ISBN and title/author key normalisation (so ISBN-10 and ISBN-13 of the same book, or title strings that
   differ only in case, whitespace or punctuation, converge on one cache key), and a canonical-JSON `SHA-256` hash that
-  ignores list-item order for the vocabulary and contributor fields and normalises `pub_date`/`publisher` whitespace.
+  ignores list-item order for the vocabulary and contributor fields and trims conforming `pub_date` and `publisher` text
+  without collapsing publication precision.
 - `cache.rs` is a thin `api_cache` read/write helper with a Rust-computed per-kind (`Hit`/`Miss`/`Error`) expiry.
 - `http.rs` builds two `SSRF`-guarded `reqwest::Client` factories through one shared constructor (`ssrf_client`):
   `api_client` (fixed 5-hop redirect limit, 10-second timeout; the one this subject's fan-out uses) and `cover_client`
@@ -249,6 +251,20 @@ sidecar within the same library. Neither has a live production input. Staging do
 
 ## Runtime behaviour
 
+Publication observations reach the existing journal before conversion. The pure `metadata::publication_date::normalise`
+function validates trimmed ASCII text using Chrono and the W3C Date and Time Formats profile: `YYYY`, `YYYY-MM`,
+`YYYY-MM-DD`, `YYYY-MM-DDThh:mmTZD`, `YYYY-MM-DDThh:mm:ssTZD` and `YYYY-MM-DDThh:mm:ss.sTZD`. Years range from 1 to
+9999; calendar components are valid; `TZD` is uppercase `Z` or an explicit `+hh:mm` or `-hh:mm`. Fractions contain one
+or more digits with no maximum precision. Accepted text retains its trimmed spelling, offset and every fractional digit.
+Blank source text supplies no candidate. Invalid non-empty text stays reviewable in the journal and cannot become
+canonical. No locale, named-month or missing-component inference runs.
+
+Full accepted text determines journal identity, so a date and a timestamp on that date remain distinct. Identical
+observations increment their existing row; refused observations use ordinary string identity. Ingestion validates
+locally before its initial canonical population, independently of provider requests. Provider apply uses the same
+validator and retains the transactional reread, field locks, emptiness and disagreement policy. Conversion creates no
+worker or queue.
+
 **Dormant cover staging**, exercised by its embedded tests, resolves the supplied library identity before any network
 work. It checks the initial URL, declared MIME type, streamed byte limit, magic-byte agreement and decoded dimensions
 before hashing or publication. Blocking work selects that library, creates and opens `_covers/pending`, then calls the
@@ -353,9 +369,9 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   Repeated process crashes therefore do not exhaust the attempt limit. The preserved last-attempt timestamp and counter
   bound retries through the claim query's backoff schedule, which reaches 24 hours and stays there.
 - `apply_field` rejects a journal value its target column cannot hold: a non-scalar JSON value for a text field, a
-  non-positive `pages` value, or a `pub_date` string that fails a round-trip parse against the accepted `YYYY-MM-DD`
-  spelling and a `[0001, 9999]` year bound, by returning `false` rather than applying. The journal row stays `pending`
-  for a human reviewer, and the run does not count the field as applied or enqueue a writeback for it.
+  non-positive `pages` value, or a `pub_date` string refused by the shared publication-date validator, by returning
+  `false` rather than applying. The journal row stays `pending` for a human reviewer, and the run does not count the
+  field as applied or enqueue a writeback for it.
 - `upsert_ratings` treats a `RatingSignal::Unusable` value (one that fails `RatingObservation::new`'s range check) as
   grounds to clear any previously cached rating for that `(manifestation, source)` rather than keep serving a stale one;
   a path that carries no rating information at all (`Unknown`) leaves the cache untouched.
