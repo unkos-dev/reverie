@@ -183,10 +183,11 @@ contributor setup. Documented zizmor suppressions and their justifications live 
 
 [Snyk](https://snyk.io) also scans every PR as an advisory (non-blocking) layer: Snyk Code runs static analysis over the
 Rust and TypeScript sources, and Snyk Open Source scans the npm lockfile for vulnerable or license-incompatible
-dependencies. Findings surface on the repository's code-scanning dashboard and as PR annotations; they never fail the
-check. Analysis runs on Snyk's managed SaaS (see their
-[privacy and data handling terms](https://snyk.io/policies/privacy/)); the code it receives is already public. Like the
-scanners above, Snyk is CI-only and not part of contributor setup.
+dependencies. Open Source tests use the monitored `main` target's approved issue decisions, including on pull requests.
+Decisions apply to named findings within each project; development dependencies remain scanned. Findings surface on the
+repository's code-scanning dashboard and as PR annotations; they never fail the check. Analysis runs on Snyk's managed
+SaaS (see their [privacy and data handling terms](https://snyk.io/policies/privacy/)); the code it receives is already
+public. Like the scanners above, Snyk is CI-only and not part of contributor setup.
 
 ### CI toolchain pins
 
