@@ -5,14 +5,14 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
-import type { BookDetail } from "@/api";
+import { revertField, type BookDetail } from "@/api";
 import { queryKeys } from "@/lib/query/keys";
 
 import { BookPage } from "@/pages/book/BookPage";
 
 vi.mock("@/api", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
-  return { ...original, acceptVersion: vi.fn(), getBook: vi.fn() };
+  return { ...original, acceptVersion: vi.fn(), getBook: vi.fn(), revertField: vi.fn() };
 });
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -69,7 +69,7 @@ async function renderBook(book: BookDetail): Promise<void> {
 }
 
 describe("BookPage", () => {
-  test("Clear button on a draft field opens the confirmation AlertDialog", async () => {
+  test("Clear on a draft field asks first and Cancel sends nothing", async () => {
     const user = userEvent;
     await renderBook(
       bookFixture({
@@ -95,8 +95,11 @@ describe("BookPage", () => {
     const clearButton = panel.getByRole("button", { name: /^clear$/i });
     await user.click(clearButton);
     // AlertDialog is portal-rendered outside the panel — search at screen scope.
-    await expect
-      .element(page.getByRole("alertdialog", { name: /clear description/i }))
-      .toBeInTheDocument();
+    const confirmation = page.getByRole("alertdialog", { name: /clear description/i });
+    await expect.element(confirmation).toBeInTheDocument();
+    expect(revertField).not.toHaveBeenCalled();
+    await user.click(confirmation.getByRole("button", { name: "Cancel" }));
+    await expect.element(confirmation).not.toBeInTheDocument();
+    expect(revertField).not.toHaveBeenCalled();
   });
 });
