@@ -82,8 +82,6 @@ export function readThemeCookie(): ThemePreference | null {
 //                       Secure cookies on http://localhost as a secure
 //                       context, so dev still works.
 //   HttpOnly          — intentionally absent on BOTH sides (JS reads for FOUC)
-// Drift is caught by the backend `set_theme_cookie_*` tests plus this
-// module's `cookie.test.ts` attribute assertions.
 export function writeThemeCookie(value: ThemePreference): void {
   document.cookie =
     `${THEME_COOKIE_NAME}=${value}; ` +
