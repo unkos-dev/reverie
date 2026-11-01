@@ -16,7 +16,7 @@ typos = "1.51.1"
 uv = "0.13.6"
 # OpenAPI linter for the generated spec, run by the openapi-policy CI job
 # against .vacuum.yaml.
-vacuum = "0.35.7"
+vacuum = "0.36.0"
 vale = "3.25.1"
 zizmor = "1.31.1"
 # The package manager, resolved through mise's aqua backend and so
