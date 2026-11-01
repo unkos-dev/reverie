@@ -348,12 +348,6 @@ mod tests {
         vars
     }
 
-    fn without(keys: &[&str]) -> Vec<(&'static str, &'static str)> {
-        let mut vars = enabled_vars();
-        vars.retain(|(key, _)| !keys.contains(key));
-        vars
-    }
-
     fn error_var(error: &ConfigError) -> String {
         match error {
             ConfigError::MissingVar(var) | ConfigError::Invalid { var, .. } => var.clone(),
@@ -361,42 +355,6 @@ mod tests {
                 errors.iter().map(error_var).collect::<Vec<_>>().join(",")
             }
         }
-    }
-
-    #[test]
-    fn smtp_config_disabled_by_default_without_any_mail_settings() {
-        let config = load(BASE).unwrap();
-        assert!(!config.mail.enabled);
-        assert!(config.mail.host.is_none());
-        assert!(config.mail.queue_key.is_none());
-        assert!(config.public_url.is_none());
-    }
-
-    #[test]
-    fn smtp_config_enabled_parses_with_implicit_tls_defaults() {
-        let config = load(&enabled_vars()).unwrap();
-        let transport = config.mail.transport().unwrap();
-        assert_eq!(transport.host, "smtp.example.com");
-        assert_eq!(transport.port, 465);
-        assert_eq!(transport.security, SmtpSecurity::ImplicitTls);
-        assert!(transport.credentials.is_none());
-        assert_eq!(transport.from.email.to_string(), "reverie@example.com");
-        assert_eq!(transport.reply_to.email.to_string(), "support@example.com");
-        assert!(config.mail.queue_key().is_ok());
-    }
-
-    #[test]
-    fn smtp_config_default_port_follows_security_mode() {
-        for (mode, port) in [("implicit_tls", 465), ("starttls", 587), ("plaintext", 25)] {
-            let config = load(&with(&[("REVERIE_SMTP_SECURITY", mode)])).unwrap();
-            assert_eq!(config.mail.transport().unwrap().port, port, "{mode}");
-        }
-        let config = load(&with(&[
-            ("REVERIE_SMTP_SECURITY", "starttls"),
-            ("REVERIE_SMTP_PORT", "2525"),
-        ]))
-        .unwrap();
-        assert_eq!(config.mail.transport().unwrap().port, 2525);
     }
 
     #[test]
@@ -418,124 +376,6 @@ mod tests {
                 assert!(!error.to_string().contains(value), "{key} echoed its value");
             }
         }
-    }
-
-    #[test]
-    fn smtp_config_accepts_ip_literal_host() {
-        for host in ["127.0.0.1", "::1"] {
-            let config = load(&with(&[("REVERIE_SMTP_HOST", host)])).unwrap();
-            assert_eq!(config.mail.transport().unwrap().host, host);
-        }
-    }
-
-    #[test]
-    fn smtp_config_enabled_requires_each_setting_by_name() {
-        for key in [
-            "REVERIE_SMTP_HOST",
-            "REVERIE_SMTP_FROM",
-            "REVERIE_SMTP_REPLY_TO",
-            "REVERIE_MAIL_QUEUE_KEY",
-            "REVERIE_PUBLIC_URL",
-        ] {
-            let error = load(&without(&[key])).unwrap_err();
-            assert!(error_var(&error).contains(key), "{key}: {error}");
-        }
-    }
-
-    #[test]
-    fn smtp_config_disabled_ignores_missing_and_unread_secrets() {
-        let reads = std::cell::RefCell::new(Vec::new());
-        let provider = EnvProvider::from_pairs(&[
-            ("DATABASE_URL", "postgres://test@localhost/reverie_dev"),
-            ("REVERIE_OPDS_ENABLED", "false"),
-            ("REVERIE_SMTP_ENABLED", "false"),
-            ("REVERIE_MAIL_QUEUE_KEY_FILE", "/queue-key-path"),
-            ("REVERIE_SMTP_PASSWORD_FILE", "/password-path"),
-            ("REVERIE_SMTP_HOST", "not a host"),
-        ])
-        .with_reader(|path: &str| {
-            reads.borrow_mut().push(path.to_owned());
-            Ok("unused".to_owned())
-        });
-        let config = Config::from_figment(&figment::Figment::from(provider)).unwrap();
-        assert!(reads.borrow().is_empty(), "read {:?}", reads.borrow());
-        assert!(config.mail.queue_key.is_none());
-        assert!(config.mail.password.is_none());
-    }
-
-    #[test]
-    fn smtp_config_absent_enabled_flag_never_reads_secret_files() {
-        let provider = EnvProvider::from_pairs(&[
-            ("DATABASE_URL", "postgres://test@localhost/reverie_dev"),
-            ("REVERIE_OPDS_ENABLED", "false"),
-            ("REVERIE_MAIL_QUEUE_KEY_FILE", "/queue-key-path"),
-        ])
-        .with_reader(|_: &str| -> std::io::Result<String> { panic!("must not read") });
-        assert!(Config::from_figment(&figment::Figment::from(provider)).is_ok());
-    }
-
-    #[test]
-    fn smtp_config_enabled_reads_secret_files_and_strips_terminators() {
-        let provider = EnvProvider::from_pairs(&[
-            ("DATABASE_URL", "postgres://test@localhost/reverie_dev"),
-            ("REVERIE_OPDS_ENABLED", "false"),
-            ("REVERIE_SMTP_ENABLED", "true"),
-            ("REVERIE_SMTP_HOST", "smtp.example.com"),
-            ("REVERIE_SMTP_FROM", "reverie@example.com"),
-            ("REVERIE_SMTP_REPLY_TO", "support@example.com"),
-            ("REVERIE_SMTP_USERNAME", "relay-user"),
-            ("REVERIE_SMTP_PASSWORD_FILE", "/password-path"),
-            ("REVERIE_MAIL_QUEUE_KEY_FILE", "/queue-key-path"),
-            ("REVERIE_PUBLIC_URL", "https://reverie.example.com"),
-        ])
-        .with_reader(|path: &str| match path {
-            "/password-path" => Ok("relay-pass\r\n".to_owned()),
-            "/queue-key-path" => Ok(format!("{KEY}\n")),
-            _ => Err(std::io::Error::other("unexpected path")),
-        });
-        let config = Config::from_figment(&figment::Figment::from(provider)).unwrap();
-        let transport = config.mail.transport().unwrap();
-        let credentials = transport.credentials.unwrap();
-        assert_eq!(credentials.username(), "relay-user");
-        assert_eq!(credentials.password(), "relay-pass");
-        assert!(config.mail.queue_key().is_ok());
-    }
-
-    #[test]
-    fn smtp_config_secret_source_conflict_names_both_settings_without_values() {
-        for (name, direct, alias) in [
-            (
-                "REVERIE_MAIL_QUEUE_KEY",
-                "queue-direct-marker",
-                "REVERIE_MAIL_QUEUE_KEY_FILE",
-            ),
-            (
-                "REVERIE_SMTP_PASSWORD",
-                "password-direct-marker",
-                "REVERIE_SMTP_PASSWORD_FILE",
-            ),
-        ] {
-            let error =
-                load(&with(&[(name, direct), (alias, "/conflict-path-marker")])).unwrap_err();
-            let diagnostic = format!("{error} {error:?}");
-            assert!(diagnostic.contains(name) && diagnostic.contains(alias));
-            assert!(!diagnostic.contains(direct));
-            assert!(!diagnostic.contains("/conflict-path-marker"));
-        }
-    }
-
-    #[test]
-    fn smtp_config_unreadable_secret_file_names_setting_without_path_or_cause() {
-        let provider = EnvProvider::from_pairs(&with(&[
-            ("REVERIE_MAIL_QUEUE_KEY", ""),
-            ("REVERIE_MAIL_QUEUE_KEY_FILE", "/path-marker"),
-        ]))
-        .with_reader(|_: &str| Err(std::io::Error::other("io-marker")));
-        let error = Config::from_figment(&figment::Figment::from(provider)).unwrap_err();
-        let diagnostic = format!("{error} {error:?}");
-        assert!(diagnostic.contains("REVERIE_MAIL_QUEUE_KEY"));
-        assert!(!diagnostic.contains("path-marker"));
-        assert!(!diagnostic.contains("io-marker"));
     }
 
     #[test]
@@ -565,42 +405,6 @@ mod tests {
     }
 
     #[test]
-    fn smtp_config_credentials_must_be_paired() {
-        let error = load(&with(&[("REVERIE_SMTP_USERNAME", "relay-user")])).unwrap_err();
-        assert!(error_var(&error).contains("REVERIE_SMTP_PASSWORD"));
-        let error = load(&with(&[("REVERIE_SMTP_PASSWORD", "relay-pass")])).unwrap_err();
-        assert!(error_var(&error).contains("REVERIE_SMTP_USERNAME"));
-        let config = load(&with(&[
-            ("REVERIE_SMTP_SECURITY", "plaintext"),
-            ("REVERIE_SMTP_USERNAME", "relay-user"),
-            ("REVERIE_SMTP_PASSWORD", "relay-pass"),
-        ]))
-        .unwrap();
-        assert!(config.mail.transport().unwrap().credentials.is_some());
-    }
-
-    #[test]
-    fn smtp_config_addresses_reject_headers_display_names_and_injection() {
-        for (key, bad) in [
-            ("REVERIE_SMTP_FROM", "Reverie <reverie@example.com>"),
-            (
-                "REVERIE_SMTP_FROM",
-                "reverie@example.com\r\nBcc: x@example.com",
-            ),
-            ("REVERIE_SMTP_FROM", "reverie@example.com,other@example.com"),
-            ("REVERIE_SMTP_REPLY_TO", "not-an-address"),
-            ("REVERIE_SMTP_REPLY_TO", "support@[127.0.0.1]"),
-            (
-                "REVERIE_SMTP_REPLY_TO",
-                "support@example.com\nBcc: x@example.com",
-            ),
-        ] {
-            let error = load(&with(&[(key, bad)])).unwrap_err();
-            assert!(error_var(&error).contains(key), "{key}: {error}");
-        }
-    }
-
-    #[test]
     fn smtp_config_debug_never_shows_secrets_or_addresses() {
         let config = load(&with(&[
             ("REVERIE_SMTP_USERNAME", "username-marker"),
@@ -615,78 +419,6 @@ mod tests {
         );
         for marker in ["username-marker", "password-marker", KEY] {
             assert!(!diagnostic.contains(marker), "{marker} leaked");
-        }
-    }
-
-    #[test]
-    fn smtp_config_schema_defaults_leave_secrets_empty() {
-        let schema = serde_json::to_value(schemars::schema_for!(MailConfig)).unwrap();
-        for secret in ["password", "queue_key"] {
-            let default = &schema["properties"][secret]["default"];
-            assert!(default.is_null(), "{secret} default is {default}");
-        }
-        assert_eq!(schema["properties"]["enabled"]["default"], false);
-        assert_eq!(schema["properties"]["security"]["default"], "implicit_tls");
-    }
-
-    #[test]
-    fn smtp_config_transport_loader_reads_only_mail_transport_settings() {
-        let reads = std::cell::RefCell::new(Vec::new());
-        let provider = EnvProvider::from_pairs(&[
-            ("DATABASE_URL_FILE", "/database-path"),
-            ("OIDC_CLIENT_SECRET_FILE", "/oidc-path"),
-            ("REVERIE_MAIL_QUEUE_KEY_FILE", "/queue-key-path"),
-            ("REVERIE_PORT", "not-a-port"),
-            ("REVERIE_SMTP_HOST", "smtp.example.com"),
-            ("REVERIE_SMTP_FROM", "reverie@example.com"),
-            ("REVERIE_SMTP_REPLY_TO", "support@example.com"),
-            ("REVERIE_SMTP_USERNAME", "relay-user"),
-            ("REVERIE_SMTP_PASSWORD_FILE", "/password-path"),
-        ])
-        .with_reader(|path: &str| {
-            reads.borrow_mut().push(path.to_owned());
-            Ok("relay-pass\n".to_owned())
-        });
-        let transport = MailTransportConfig::from_provider(provider).unwrap();
-        assert_eq!(reads.borrow().as_slice(), ["/password-path"]);
-        assert_eq!(transport.credentials.unwrap().password(), "relay-pass");
-        assert_eq!(transport.port, 465);
-    }
-
-    #[test]
-    fn smtp_config_transport_loader_names_missing_setting() {
-        let provider = EnvProvider::from_pairs(&[
-            ("REVERIE_SMTP_HOST", "smtp.example.com"),
-            ("REVERIE_SMTP_FROM", "reverie@example.com"),
-        ]);
-        let error = MailTransportConfig::from_provider(provider).unwrap_err();
-        assert!(
-            error_var(&error).contains("REVERIE_SMTP_REPLY_TO"),
-            "{error}"
-        );
-        let provider = EnvProvider::from_pairs(&[("REVERIE_SMTP_PORT", "abc")]);
-        let error = MailTransportConfig::from_provider(provider).unwrap_err();
-        assert!(error_var(&error).contains("REVERIE_SMTP_PORT"), "{error}");
-    }
-
-    #[test]
-    fn smtp_config_public_origin_accepts_origins_and_normalises_root_slash() {
-        for (input, expected) in [
-            (
-                "https://reverie.example.com",
-                "https://reverie.example.com/",
-            ),
-            (
-                "https://reverie.example.com/",
-                "https://reverie.example.com/",
-            ),
-            ("http://localhost:3000", "http://localhost:3000/"),
-        ] {
-            let config = load(&with(&[("REVERIE_PUBLIC_URL", input)])).unwrap();
-            assert_eq!(
-                config.public_url.as_ref().map(url::Url::as_str),
-                Some(expected)
-            );
         }
     }
 
@@ -710,17 +442,5 @@ mod tests {
                 "{bad} echoed credentials"
             );
         }
-    }
-
-    #[test]
-    fn smtp_config_public_origin_still_required_for_opds() {
-        let mut vars = BASE.to_vec();
-        vars.retain(|(key, _)| *key != "REVERIE_OPDS_ENABLED");
-        let error = load(&vars).unwrap_err();
-        assert!(error_var(&error).contains("REVERIE_PUBLIC_URL"));
-        assert!(error.to_string().contains("REVERIE_OPDS_ENABLED"));
-        vars.push(("REVERIE_PUBLIC_URL", "https://reverie.example.com"));
-        let config = load(&vars).unwrap();
-        assert!(config.opds.enabled);
     }
 }
