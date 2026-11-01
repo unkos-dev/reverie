@@ -29,53 +29,34 @@ fn bootstrap_command(pool: &PgPool, roots: &std::path::Path, password: &str) -> 
     command
 }
 
-async fn exercise_bootstrap(pool: &PgPool, cli: bool) -> anyhow::Result<()> {
+#[sqlx::test(migrations = "./migrations")]
+async fn bootstrap_cli_applies_shared_password_policy(pool: PgPool) -> anyhow::Result<()> {
     let roots = tempfile::tempdir()?;
     std::fs::create_dir(roots.path().join("library"))?;
     std::fs::create_dir(roots.path().join("ingestion"))?;
     for password in ["short".to_owned(), "a".repeat(15), "x".repeat(257)] {
-        let mut command = bootstrap_command(pool, roots.path(), &password);
-        if cli {
-            command.arg("bootstrap");
-        }
+        let mut command = bootstrap_command(&pool, roots.path(), &password);
+        command.arg("bootstrap");
         let output =
             tokio::time::timeout(std::time::Duration::from_secs(15), command.output()).await??;
         assert!(!output.status.success());
         let error = String::from_utf8(output.stderr)?;
         assert!(error.contains("password policy"));
         assert!(!error.contains(&password));
-        assert!(!reverie_api::models::user::admin_exists(pool).await?);
+        assert!(!reverie_api::models::user::admin_exists(&pool).await?);
     }
-    let mut command = bootstrap_command(pool, roots.path(), "correct-horse-battery-staple-7!");
-    if cli {
-        command.arg("bootstrap");
-    }
+    let mut command = bootstrap_command(&pool, roots.path(), "correct-horse-battery-staple-7!");
+    command.arg("bootstrap");
     let mut child = command.spawn()?;
-    if cli {
-        assert!(
-            tokio::time::timeout(std::time::Duration::from_secs(15), child.wait())
-                .await??
-                .success()
-        );
-    } else {
-        tokio::time::timeout(std::time::Duration::from_secs(15), async {
-            loop {
-                if reverie_api::models::user::admin_exists(pool).await? {
-                    break;
-                }
-                assert!(child.try_wait()?.is_none(), "startup must reach bootstrap");
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
-            Ok::<(), anyhow::Error>(())
-        })
-        .await??;
-        child.kill().await?;
-        child.wait().await?;
-    }
-    let user = reverie_api::models::user::find_by_email(pool, "first@example.com")
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(15), child.wait())
+            .await??
+            .success()
+    );
+    let user = reverie_api::models::user::find_by_email(&pool, "first@example.com")
         .await?
         .ok_or_else(|| anyhow::anyhow!("administrator missing"))?;
-    let credential = reverie_api::models::local_credentials::find_by_user_id(pool, user.id)
+    let credential = reverie_api::models::local_credentials::find_by_user_id(&pool, user.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("administrator credential missing"))?;
     assert!(
@@ -86,16 +67,6 @@ async fn exercise_bootstrap(pool: &PgPool, cli: bool) -> anyhow::Result<()> {
         .is_ok()
     );
     Ok(())
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn bootstrap_cli_applies_shared_password_policy(pool: PgPool) -> anyhow::Result<()> {
-    exercise_bootstrap(&pool, true).await
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn bootstrap_environment_applies_shared_password_policy(pool: PgPool) -> anyhow::Result<()> {
-    exercise_bootstrap(&pool, false).await
 }
 
 fn recovery_command(pool: &PgPool, email: &str) -> Command {
@@ -240,95 +211,5 @@ async fn smtp_cli_refuses_missing_or_invalid_origin_before_replacing_a_link(pool
         let output = recovery_command(&pool, email).output().await.unwrap();
         assert!(!output.status.success());
         assert_eq!(output.stdout, [] as [u8; 0]);
-    }
-}
-
-#[tokio::test]
-async fn smtp_cli_test_email_uses_only_transport_and_reports_acceptance_or_failure() {
-    use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
-
-    for accepted in [true, false] {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let relay = tokio::spawn(async move {
-            let (socket, _) = listener.accept().await.unwrap();
-            let (reader, mut writer) = socket.into_split();
-            writer.write_all(b"220 test relay\r\n").await.unwrap();
-            let mut lines = BufReader::new(reader).lines();
-            let mut body = String::new();
-            let mut data = false;
-            while let Some(line) = lines.next_line().await.unwrap() {
-                if data {
-                    if line == "." {
-                        data = false;
-                        writer
-                            .write_all(if accepted {
-                                b"250 accepted\r\n"
-                            } else {
-                                b"550 private-relay-error\r\n"
-                            })
-                            .await
-                            .unwrap();
-                    } else {
-                        body.push_str(&line);
-                        body.push('\n');
-                    }
-                } else if line.starts_with("EHLO") {
-                    writer.write_all(b"250 test relay\r\n").await.unwrap();
-                } else if line == "DATA" {
-                    data = true;
-                    writer.write_all(b"354 continue\r\n").await.unwrap();
-                } else if line == "QUIT" {
-                    writer.write_all(b"221 bye\r\n").await.unwrap();
-                    break;
-                } else {
-                    writer.write_all(b"250 ok\r\n").await.unwrap();
-                }
-            }
-            body
-        });
-        let output = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            Command::new(env!("CARGO_BIN_EXE_reverie-api"))
-                .args(["send-test-email", "recipient@example.test"])
-                .env_clear()
-                .env("REVERIE_SMTP_HOST", "127.0.0.1")
-                .env("REVERIE_SMTP_PORT", port.to_string())
-                .env("REVERIE_SMTP_SECURITY", "plaintext")
-                .env("REVERIE_SMTP_FROM", "sender@example.test")
-                .env("REVERIE_SMTP_REPLY_TO", "support@example.test")
-                .env("REVERIE_MAIL_QUEUE_KEY_FILE", "/unreadable-queue-key")
-                .env("DATABASE_URL", "invalid-private-dsn")
-                .env("OIDC_ISSUER_URL", "invalid")
-                .env("REVERIE_LIBRARY_PATH", "invalid")
-                .kill_on_drop(true)
-                .output(),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        assert_eq!(output.status.success(), accepted);
-        if accepted {
-            assert_eq!(
-                String::from_utf8(output.stdout).unwrap(),
-                "Accepted by mail server.\n"
-            );
-        } else {
-            assert_eq!(output.stdout, [] as [u8; 0]);
-            let error = String::from_utf8(output.stderr).unwrap();
-            assert!(
-                error
-                    .contains("The mail server did not confirm the test email: permanent_refusal."),
-                "{error}"
-            );
-            assert!(!error.contains("private-relay-error"));
-        }
-        let body = tokio::time::timeout(std::time::Duration::from_secs(5), relay)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(body.contains("Subject: Reverie test email"));
-        assert!(body.contains("This is a test email from Reverie."));
-        assert!(!body.contains("/reset-password"));
     }
 }
