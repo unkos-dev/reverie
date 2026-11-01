@@ -135,8 +135,7 @@ jobs:
         run: just js::build
 
   # WCAG 2.2 AA gate: axe-core against the routes in
-  # frontend/scripts/a11y/allowlist.mjs, failing on any violation outside that
-  # file's allowlist.
+  # frontend/scripts/a11y/allowlist.mjs, failing on any violation.
   a11y:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'

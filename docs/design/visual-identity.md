@@ -85,11 +85,8 @@ is carried by _how the accent is used_ rather than by the value:
   text on it is unreadable.
 
 axe-core flags 1.4.11 and 1.4.3 violations on any Light surface using a `gold-9` edge or `gold-9` text outside those
-mitigated cases. Used as above, the accent needs no accessibility exception: the design-system gate carries no contrast
-carve-out for gold. The one entry left in `frontend/scripts/a11y/allowlist.mjs` is unrelated to the accent: it covers
-cover-spine text whose paired background axe cannot attribute through the spine's absolutely-positioned stack, a
-measurement false positive rather than a tolerated shortfall. Introducing gold as a line, an icon stroke, or normal-size
-text on _new_ Light surfaces is a brand violation, not axe noise, and reviewers should reject it.
+mitigated cases. Used as above, the accent needs no accessibility exception. Introducing gold as a line, an icon stroke,
+or normal-size text on _new_ Light surfaces is a brand violation, not axe noise, and reviewers should reject it.
 
 ## Typography
 

@@ -1,41 +1,6 @@
 // @ts-check
 
 /**
- * @type {Array<{ ruleId: string, htmlIncludesAll: string[], rationale: string, issue: string | null }>}
- */
-export const ALLOWLIST = [];
-
-/**
- * @param {string} ruleId axe violation rule id (e.g. "color-contrast")
- * @param {{ html?: string }} node axe result node
- * @returns {boolean}
- */
-export function isNodeAllowed(ruleId, node) {
-  const html = node?.html;
-  if (typeof html !== "string" || html.length === 0) {
-    return false;
-  }
-  return ALLOWLIST.some(
-    (entry) => entry.ruleId === ruleId && entry.htmlIncludesAll.every((s) => html.includes(s)),
-  );
-}
-
-/**
- * @param {ReadonlyArray<{ id: string, nodes?: ReadonlyArray<{ html?: string }> }>} violations
- * @returns {Array<{ id: string, nodes: Array<{ html?: string }> }>}
- */
-export function filterAllowed(violations) {
-  const remaining = [];
-  for (const v of violations ?? []) {
-    const nodes = (v.nodes ?? []).filter((n) => !isNodeAllowed(v.id, n));
-    if (nodes.length > 0) {
-      remaining.push({ ...v, nodes });
-    }
-  }
-  return remaining;
-}
-
-/**
  * Scan targets when `A11Y_TARGETS` is unset, which is how CI runs.
  *
  * The setup-status fixture enables the recovery form on the Vite-only server.
@@ -100,13 +65,4 @@ export function urlMatches(url, target) {
   }
   const strip = (/** @type {string} */ s) => s.replace(/\/+$/, "") || "/";
   return strip(url) === strip(target);
-}
-
-/**
- * @param {{ violations?: ReadonlyArray<{ id: string, nodes?: ReadonlyArray<{ html?: string }> }>, scanOk?: boolean }} input
- * @returns {{ pass: boolean, remaining: Array<{ id: string, nodes: Array<{ html?: string }> }> }}
- */
-export function verdict({ violations = [], scanOk = false } = {}) {
-  const remaining = filterAllowed(violations);
-  return { pass: scanOk === true && remaining.length === 0, remaining };
 }
