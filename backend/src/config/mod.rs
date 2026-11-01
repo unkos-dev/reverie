@@ -1143,6 +1143,31 @@ mod tests {
     }
 
     #[test]
+    fn oidc_redirect_uri_requires_exact_callback_path() {
+        for uri in [
+            "https://example.com/auth/callback/",
+            "https://example.com/other",
+            "https://example.com/",
+            "not-a-url",
+        ] {
+            let vars = with_overrides(&[("OIDC_REDIRECT_URI", uri)]);
+            let error = cfg_from_owned(&vars).unwrap_err();
+            assert!(
+                matches!(&error, ConfigError::Invalid { var, .. } if var == "OIDC_REDIRECT_URI")
+            );
+            assert!(!error.to_string().contains(uri));
+        }
+        for uri in [
+            "https://example.com/auth/callback",
+            "http://localhost:3000/auth/callback",
+        ] {
+            let vars = with_overrides(&[("OIDC_REDIRECT_URI", uri)]);
+            let config = cfg_from_owned(&vars).expect("exact callback path accepted");
+            assert_eq!(config.oidc_redirect_uri, uri);
+        }
+    }
+
+    #[test]
     fn password_policy_default_and_configurable_floor() {
         assert_eq!(Config::default().password_min_length, 15);
         for minimum in ["0", "8", "14"] {
