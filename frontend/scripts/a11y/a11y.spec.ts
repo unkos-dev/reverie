@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { filterAllowed, parseTargets, urlMatches } from "./allowlist.mjs";
+import { parseTargets, urlMatches } from "./allowlist.mjs";
 
 // WCAG 2.2 AA target needs the full ladder. wcag22aa ALONE selects only the
 // rules new in 2.2 (e.g. target-size) and returns ZERO color-contrast findings,
@@ -56,8 +56,6 @@ for (const target of TARGETS) {
       "0 passes and 0 inapplicable rules: blank or error page",
     ).toBeGreaterThan(0);
 
-    const remaining = filterAllowed(results.violations);
-
     // Attach the raw result BEFORE asserting, so a red run always ships the
     // full evidence (rule id, impact, help, per-node html + contrast data).
     // Replaces the old a11y-results.json artifact.
@@ -72,7 +70,6 @@ for (const target of TARGETS) {
             passes: results.passes.length,
             inapplicable: results.inapplicable.length,
           },
-          remaining,
           violations: results.violations,
         },
         null,
@@ -81,11 +78,8 @@ for (const target of TARGETS) {
       contentType: "application/json",
     });
 
-    // toEqual prints the full remaining structure (id/impact/help/nodes) on
-    // failure; the attachment carries the contrast ratios. No console needed.
-    expect(
-      remaining,
-      "WCAG 2.2 AA violations outside the documented allowlist (see attached axe-results.json)",
-    ).toEqual([]);
+    expect(results.violations, "WCAG 2.2 AA violations (see attached axe-results.json)").toEqual(
+      [],
+    );
   });
 }
