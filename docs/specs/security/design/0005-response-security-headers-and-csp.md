@@ -214,11 +214,10 @@ these headers.
   non-empty session, its response is not already a `5xx`, and the save fails, the session layer discards the response
   and returns an empty `500` built from `Response::default()`. That response carries no `Content-Security-Policy` and
   none of the uniform headers.
-- **A reserved-prefix miss never becomes an application route.** The tests for `is_reserved_prefix`
-  (`is_reserved_prefix_matches_bare_and_subpaths`, `is_reserved_prefix_rejects_spa_paths`) pin both directions: `/api`,
-  `/api/v1/books`, `/auth/callback`, `/health/ready` and `/opds/library` are reserved, and `/`, `/library`, `/apiology`
-  and `/authed` are not. A change that widened or narrowed the list would put a Problem Details response on a real
-  application route, or `index.html` on a stale API client's request.
+- **A reserved-prefix miss never becomes an application route.** `is_reserved_prefix` treats `/api`, `/api/v1/books`,
+  `/auth/callback`, `/health/ready` and `/opds/library` as reserved, and `/`, `/library`, `/apiology` and `/authed` as
+  not. A change that widened or narrowed the list would put a Problem Details response on a real application route, or
+  `index.html` on a stale API client's request.
 - **Path traversal against file serving.** A percent-encoded traversal attempt such as `/%2e%2e%2f%2e%2e%2fetc%2fpasswd`
   does not escape the build root, because `ServeDir` resolves and rejects it before this subject's dispatch runs. The
   request is answered as an ordinary application route (`index.html`, `200`, HTML policy), which neither reads outside
