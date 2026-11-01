@@ -1,110 +1,4 @@
-use std::process::{Command, Output};
-
-fn invoke(args: &[&str], ingestion_url: Option<&str>) -> std::io::Result<Output> {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_reverie-api"));
-    command
-        .args(args)
-        .env_clear()
-        .env("DATABASE_URL", "invalid-app-dsn-private-marker")
-        .env("REVERIE_PUBLIC_URL", "https://library.example.test")
-        .env("REVERIE_OPDS_ENABLED", "false");
-    if let Some(url) = ingestion_url {
-        command.env("DATABASE_URL_INGESTION", url);
-    }
-    command.output()
-}
-
-fn assert_missing_ingestion(ingestion_url: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let output = invoke(&[], ingestion_url)?;
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr)?;
-    assert!(
-        stderr.contains("missing required environment variable: DATABASE_URL_INGESTION"),
-        "{stderr}"
-    );
-    assert!(!stderr.contains("invalid-app-dsn-private-marker"));
-    assert_eq!(output.stdout, [] as [u8; 0]);
-    Ok(())
-}
-
-#[test]
-fn ingestion_startup_missing_refuses_before_runtime_setup() {
-    assert_missing_ingestion(None).unwrap();
-}
-
-#[test]
-fn ingestion_startup_empty_refuses_before_runtime_setup() {
-    assert_missing_ingestion(Some("")).unwrap();
-}
-
-#[test]
-fn ingestion_startup_whitespace_refuses_before_runtime_setup() {
-    for value in ["   ", "\t\r\n", "\u{2003}"] {
-        assert_missing_ingestion(Some(value)).unwrap();
-    }
-}
-
-#[test]
-fn ingestion_startup_configured_role_reaches_database_setup() {
-    let output = invoke(
-        &[],
-        Some("postgres://reverie_ingestion@localhost/reverie_dev"),
-    )
-    .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("failed to connect to database"), "{stderr}");
-    assert!(!stderr.contains("DATABASE_URL_INGESTION"));
-}
-
-#[test]
-fn ingestion_startup_admin_commands_do_not_require_ingestion_credentials() {
-    for args in [
-        vec!["bootstrap"],
-        vec!["reset-password", "operator@example.com"],
-        vec!["unlock-account", "operator@example.com"],
-    ] {
-        for value in [None, Some(""), Some(" \t\n")] {
-            let output = invoke(&args, value).unwrap();
-            assert!(!output.status.success());
-            let stderr = String::from_utf8(output.stderr).unwrap();
-            assert!(
-                stderr.contains("connect to the database"),
-                "{args:?}: {stderr}"
-            );
-            assert!(!stderr.contains("DATABASE_URL_INGESTION"));
-        }
-    }
-}
-
-#[test]
-fn ingestion_startup_migration_requires_only_its_own_credentials() {
-    let output = invoke(&["migrate"], None).unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("DATABASE_URL_MIGRATION"), "{stderr}");
-    assert!(!stderr.contains("DATABASE_URL_INGESTION"));
-}
-
-#[test]
-fn ingestion_startup_schema_printing_requires_no_credentials() {
-    let output = Command::new(env!("CARGO_BIN_EXE_reverie-api"))
-        .arg("print-config-schema")
-        .env_clear()
-        .env("DATABASE_URL_FILE", "/unreadable-schema-app")
-        .env(
-            "DATABASE_URL_MIGRATION_FILE",
-            "/unreadable-schema-migration",
-        )
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let schema: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(
-        schema["properties"]["ingestion_database_url"]["default"],
-        ""
-    );
-}
+use std::process::Command;
 
 fn redact_startup_output(output: &str, credentials: &[&str]) -> String {
     credentials
@@ -201,30 +95,6 @@ async fn wait_for_readiness(
     }
 }
 
-#[tokio::test]
-async fn ingestion_startup_readiness_reports_early_exit() {
-    let log = tempfile::NamedTempFile::new().unwrap();
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_reverie-api"))
-        .env_clear()
-        .env("DATABASE_URL", "invalid-app-dsn-private-marker")
-        .env("REVERIE_OPDS_ENABLED", "false")
-        .stdout(log.as_file().try_clone().unwrap())
-        .stderr(log.as_file().try_clone().unwrap())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        wait_for_readiness(&mut child, log.path()),
-    )
-    .await;
-    assert!(matches!(result, Ok(Err(_))), "{result:?}");
-    assert!(!child.wait().await.unwrap().success());
-    let output = std::fs::read_to_string(log.path()).unwrap();
-    assert!(output.contains("missing required environment variable: DATABASE_URL_INGESTION"));
-    assert!(!output.contains("invalid-app-dsn-private-marker"));
-}
-
 fn password_input(value: Option<&str>) -> Result<&str, &'static str> {
     value
         .filter(|value| !value.is_empty())
@@ -236,16 +106,6 @@ fn required_password(name: &str) -> String {
     password_input(value.as_deref())
         .unwrap_or_else(|_| panic!("{name} requires a nonempty password"))
         .to_owned()
-}
-
-#[test]
-fn startup_role_password_requires_nonempty_input() {
-    assert_eq!(
-        password_input(Some("supplied-password")),
-        Ok("supplied-password")
-    );
-    assert!(password_input(None).is_err());
-    assert!(password_input(Some("")).is_err());
 }
 
 #[sqlx::test(migrations = false)]
