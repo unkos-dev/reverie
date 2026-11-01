@@ -17,6 +17,7 @@
 - [REV-REQ-0022](requirements/0022-the-browser-client-sends-its-csrf-token-on-mutating-requests.md): The browser client sends its CSRF token on every mutating request and never an empty one
 - [REV-REQ-0023](requirements/0023-the-browser-client-retries-a-csrf-rejected-mutation-once-with-a.md): The browser client retries a CSRF-rejected mutation once with a refreshed token
 - [REV-REQ-0024](requirements/0024-a-request-authenticated-without-a-browser-session-is-not-csrf-ga.md): A request authenticated without a browser session is not CSRF-gated
+- [REV-REQ-0071](requirements/0071-the-production-build-s-csp-hash-matches-its-pre-paint-theme-script.md): The production build's CSP hash matches its pre-paint theme script
 
 ## Designs
 
