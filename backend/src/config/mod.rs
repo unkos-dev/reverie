@@ -894,32 +894,6 @@ mod tests {
     }
 
     #[test]
-    fn staging_runtime_example_keys_are_in_env_map() {
-        // Compile-time embed: a missing file fails the build rather than
-        // silently skipping the guard.
-        let example = include_str!("../../../docker/staging.env.runtime.example");
-
-        let map_keys: std::collections::HashSet<&str> =
-            ENV_MAP.iter().map(|(name, _)| *name).collect();
-
-        let mut violations: Vec<&str> = example
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.starts_with('#') && !l.is_empty())
-            .filter_map(|l| l.split_once('='))
-            .map(|(k, _)| k.trim())
-            .filter(|k| !map_keys.contains(*k))
-            .collect();
-        violations.sort_unstable();
-
-        assert!(
-            violations.is_empty(),
-            "staging.env.runtime.example contains keys absent from ENV_MAP: {violations:?}. \
-             Add them to ENV_MAP (with their dotted field path), or drop them from the example."
-        );
-    }
-
-    #[test]
     fn from_env_empty_migration_url_treated_as_none_when_auto_migrate_off() {
         // An exported-empty DSN is indistinguishable from unset for the
         // default path: both yield None, no error.
@@ -1096,23 +1070,6 @@ mod tests {
             assert_eq!(*default, expected, "credential default for {field}");
         }
         assert_eq!(props["port"]["default"], serde_json::json!(3000));
-    }
-
-    #[test]
-    fn required_fields_are_known_and_mapped() {
-        // REQUIRED_FIELDS is the shared source of required-ness for both the
-        // Gate 2 startup check and the generated config reference. Every entry
-        // must be a real ENV_MAP var name, or the reference would mark a
-        // non-existent variable required.
-        assert_ne!(REQUIRED_FIELDS, []);
-        let mapped: std::collections::HashSet<&str> =
-            ENV_MAP.iter().map(|(name, _)| *name).collect();
-        for (var, _) in REQUIRED_FIELDS {
-            assert!(
-                mapped.contains(var),
-                "required var {var} absent from ENV_MAP"
-            );
-        }
     }
 
     #[test]

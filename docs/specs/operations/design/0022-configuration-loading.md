@@ -271,12 +271,10 @@ A required variable left unset is always `ConfigError::MissingVar`, never `Inval
 check this before any other gate can turn the same absence into a different error, so the operator-facing message says
 "set the variable" rather than "fix the value" for every field these gates cover.
 
-The `ENV_MAP`-to-schema completeness the module's doc comment describes is checked in two different ways with two
-different failure signatures, not by one shared assertion. `reference.rs`'s `every_schema_field_has_an_env_map_entry`
-test walks the leaf fields of the schema and asserts each has an `ENV_MAP` entry (schema ⊆ `ENV_MAP`); the reverse
-direction is not a dedicated assertion but a side effect of `node_for_path` returning `None` for an `ENV_MAP` entry
-whose dotted path resolves to nothing, which `reference_markdown` turns into an `anyhow` error that the
-`config_reference_matches_committed_artifact` drift test then panics on via `.expect(...)`.
+Only one direction of `ENV_MAP`-to-schema completeness is checked. An `ENV_MAP` entry whose dotted path resolves to
+nothing makes `node_for_path` return `None`, which `reference_markdown` turns into an `anyhow` error that the
+`config_reference_matches_committed_artifact` drift test then panics on via `.expect(...)`. A schema field with no
+`ENV_MAP` entry fails nothing: it renders no reference row and cannot be set from the environment.
 
 `REVERIE_AUTO_MIGRATE=true` with `DATABASE_URL_MIGRATION` unset, or set to a whitespace-only string, both fail Gate 1
 with `ConfigError::MissingVar("DATABASE_URL_MIGRATION")`; the value is trimmed before the blank check specifically so a
