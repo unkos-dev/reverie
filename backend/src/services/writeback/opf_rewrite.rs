@@ -317,29 +317,11 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
     let mut had_belongs = false;
     let mut had_calibre = false;
     let mut title_types: HashMap<String, String> = HashMap::new();
-    let mut publication_dates = Vec::new();
-    let mut labelled_dates = Vec::new();
-    let mut in_metadata = false;
     for (i, ev) in events.iter().enumerate() {
         match ev {
-            Event::Start(e) | Event::Empty(e)
-                if local_name(e.name().as_ref()) == "date" && in_metadata =>
-            {
-                let event = attr_value(e, "event");
-                if event.as_deref().is_none_or(|value| value == "publication") {
-                    publication_dates.push(i);
-                    if event.as_deref() == Some("publication") {
-                        labelled_dates.push(i);
-                    }
-                }
-            }
-            Event::End(e) if local_name(e.name().as_ref()) == "metadata" => in_metadata = false,
             Event::Start(e) => {
                 let name = e.name();
                 let local = local_name(name.as_ref());
-                if local == "metadata" {
-                    in_metadata = true;
-                }
                 if local == "package"
                     && let Some(v) = attr_value_as_string(e, "version")
                 {
@@ -378,6 +360,43 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
             _ => {}
         }
     }
+    let (publication_dates, selected_publication_date) =
+        scan_publication_dates(events, &epub_version);
+    ScanResult {
+        publication_dates,
+        selected_publication_date,
+        epub_version,
+        had_belongs_to_collection: had_belongs,
+        had_calibre_series: had_calibre,
+        title_types,
+    }
+}
+
+fn scan_publication_dates(
+    events: &[Event<'static>],
+    epub_version: &str,
+) -> (HashSet<usize>, Option<usize>) {
+    let mut publication_dates = Vec::new();
+    let mut labelled_dates = Vec::new();
+    let mut in_metadata = false;
+    for (i, ev) in events.iter().enumerate() {
+        match ev {
+            Event::Start(e) | Event::Empty(e)
+                if local_name(e.name().as_ref()) == "date" && in_metadata =>
+            {
+                let event = attr_value(e, "event");
+                if event.as_deref().is_none_or(|value| value == "publication") {
+                    publication_dates.push(i);
+                    if event.as_deref() == Some("publication") {
+                        labelled_dates.push(i);
+                    }
+                }
+            }
+            Event::Start(e) if local_name(e.name().as_ref()) == "metadata" => in_metadata = true,
+            Event::End(e) if local_name(e.name().as_ref()) == "metadata" => in_metadata = false,
+            _ => {}
+        }
+    }
     let selected_publication_date = if epub_version.starts_with('3') {
         publication_dates.first().copied()
     } else {
@@ -386,14 +405,10 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
             .or_else(|| publication_dates.first())
             .copied()
     };
-    ScanResult {
-        publication_dates: publication_dates.into_iter().collect(),
+    (
+        publication_dates.into_iter().collect(),
         selected_publication_date,
-        epub_version,
-        had_belongs_to_collection: had_belongs,
-        had_calibre_series: had_calibre,
-        title_types,
-    }
+    )
 }
 
 /// Text body of the element starting at `start_idx`, empty text discarded.
