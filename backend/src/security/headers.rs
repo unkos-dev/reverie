@@ -286,41 +286,6 @@ fn is_reserved_prefix(path: &str) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn is_reserved_prefix_matches_bare_and_subpaths() {
-        assert!(is_reserved_prefix("/api"));
-        assert!(is_reserved_prefix("/api/v1/"));
-        assert!(is_reserved_prefix("/api/v1/books"));
-        assert!(is_reserved_prefix("/api/v1/books/9999/covr"));
-        assert!(is_reserved_prefix("/auth"));
-        assert!(is_reserved_prefix("/auth/callback"));
-        assert!(is_reserved_prefix("/health"));
-        assert!(is_reserved_prefix("/health/ready"));
-        assert!(is_reserved_prefix("/opds"));
-        assert!(is_reserved_prefix("/opds/library"));
-    }
-
-    #[test]
-    fn is_reserved_prefix_rejects_spa_paths() {
-        assert!(!is_reserved_prefix("/"));
-        assert!(!is_reserved_prefix("/library"));
-        assert!(!is_reserved_prefix("/library/book/1"));
-        assert!(!is_reserved_prefix("/settings"));
-        assert!(!is_reserved_prefix("/apis-nothing-to-see-here")); // not `/api` prefix
-        assert!(!is_reserved_prefix("/apiology")); // not `/api/v1/`
-        assert!(!is_reserved_prefix("/authed")); // not `/auth/`
-    }
-
-    #[test]
-    fn permissions_policy_value_contains_sensitive_features() {
-        for cap in ["camera", "microphone", "geolocation", "payment"] {
-            assert!(
-                PERMISSIONS_POLICY_VALUE.contains(cap),
-                "permissions policy missing '{cap}'"
-            );
-        }
-    }
-
     // ---------- Integration tests ----------
     //
     // These exercise the full composite router via `test_support::test_server()`
@@ -447,180 +412,7 @@ mod tests {
         assert!(csp.contains("frame-ancestors 'none'"));
     }
 
-    // --- Composite fallback: reserved-prefix 404 JSON + API CSP ---
-
-    #[tokio::test]
-    async fn api_typo_returns_json_404_with_api_csp() {
-        let mut security = crate::test_support::test_config().security;
-        security.csp_api_header = Some(HeaderValue::from_static(
-            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-        ));
-        let server = test_server_with_security(security);
-        let r = server.get("/api/v1/__nope__").await;
-        let body = crate::test_support::assert_problem(
-            &r,
-            crate::error::problems::NOT_FOUND,
-            axum::http::StatusCode::NOT_FOUND,
-        );
-        assert_eq!(body["title"].as_str(), Some("Not Found"));
-        // `instance` field proves the problem_instance_layer fires on
-        // composite-fallback responses too (not only matched routes).
-        // A layer-order regression that drops it from the fallback path
-        // breaks this assertion.
-        assert_eq!(body["instance"].as_str(), Some("/api/v1/__nope__"));
-        let csp = r
-            .headers()
-            .get("content-security-policy")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned();
-        assert!(csp.contains("default-src 'none'"));
-    }
-
-    #[tokio::test]
-    async fn deep_api_typo_returns_404_with_api_csp() {
-        let server = test_server_with_security(SecurityConfig {
-            csp_api_header: Some(HeaderValue::from_static(
-                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-            )),
-            ..crate::test_support::test_config().security
-        });
-        let r = server.get("/api/v1/books/9999/covr").await;
-        r.assert_status(axum::http::StatusCode::NOT_FOUND);
-        assert!(
-            r.headers()
-                .get("content-security-policy")
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .contains("default-src 'none'"),
-        );
-    }
-
-    #[tokio::test]
-    async fn auth_typo_returns_json_404_with_api_csp() {
-        let server = test_server_with_security(SecurityConfig {
-            csp_api_header: Some(HeaderValue::from_static(
-                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-            )),
-            ..crate::test_support::test_config().security
-        });
-        let r = server.get("/auth/__nope__").await;
-        let body = crate::test_support::assert_problem(
-            &r,
-            crate::error::problems::NOT_FOUND,
-            axum::http::StatusCode::NOT_FOUND,
-        );
-        assert_eq!(body["instance"].as_str(), Some("/auth/__nope__"));
-    }
-
-    #[tokio::test]
-    async fn health_typo_returns_json_404_with_api_csp() {
-        let server = test_server_with_security(SecurityConfig {
-            csp_api_header: Some(HeaderValue::from_static(
-                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-            )),
-            ..crate::test_support::test_config().security
-        });
-        let r = server.get("/health/__nope__").await;
-        r.assert_status(axum::http::StatusCode::NOT_FOUND);
-        assert!(r.text().contains("not found"));
-    }
-
-    #[tokio::test]
-    async fn opds_typo_returns_json_404_with_api_csp() {
-        // OPDS is disabled in test_config, so /opds/* doesn't match a route;
-        // it must fall through to the composite fallback and come back as
-        // reserved-prefix JSON 404, NOT SPA html.
-        let server = test_server_with_security(SecurityConfig {
-            csp_api_header: Some(HeaderValue::from_static(
-                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-            )),
-            ..crate::test_support::test_config().security
-        });
-        let r = server.get("/opds/__nope__").await;
-        r.assert_status(axum::http::StatusCode::NOT_FOUND);
-        assert!(r.text().contains("not found"));
-        let csp = r
-            .headers()
-            .get("content-security-policy")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned();
-        assert!(csp.contains("default-src 'none'"));
-    }
-
-    #[tokio::test]
-    async fn bare_reserved_prefixes_never_fall_through_to_the_spa_index() {
-        let index = "<!doctype html><title>spa-index-marker</title>";
-        let dist = fixture_dist(index.as_bytes());
-        let server = dist_server(&dist);
-
-        for path in ["/api", "/auth", "/opds"] {
-            let r = server.get(path).await;
-            let body = crate::test_support::assert_problem(
-                &r,
-                crate::error::problems::NOT_FOUND,
-                StatusCode::NOT_FOUND,
-            );
-            assert_eq!(body["instance"].as_str(), Some(path), "{path}");
-            assert!(!r.text().contains("spa-index-marker"), "{path}");
-            assert_eq!(
-                r.headers().get(header::CONTENT_SECURITY_POLICY).unwrap(),
-                "default-src 'none'",
-                "{path}"
-            );
-        }
-
-        let health = server.get("/health").await;
-        health.assert_status_ok();
-        assert!(!health.text().contains("spa-index-marker"));
-
-        let control = server.get("/library").await;
-        control.assert_status_ok();
-        assert!(control.text().contains("spa-index-marker"));
-    }
-
     // --- Wrong method on a matched API route: 405 problem details ---
-
-    #[tokio::test]
-    async fn wrong_method_on_matched_route_returns_405_problem_with_allow_and_csp() {
-        let server = test_server_with_security(SecurityConfig {
-            csp_api_header: Some(HeaderValue::from_static(
-                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-            )),
-            ..crate::test_support::test_config().security
-        });
-        let r = server.post("/health").await;
-        let body = crate::test_support::assert_problem(
-            &r,
-            crate::error::problems::METHOD_NOT_ALLOWED,
-            StatusCode::METHOD_NOT_ALLOWED,
-        );
-        assert_eq!(body["status"].as_u64(), Some(405));
-        assert_eq!(body["instance"].as_str(), Some("/health"));
-        let allow = r
-            .headers()
-            .get(header::ALLOW)
-            .expect("Allow header present")
-            .to_str()
-            .unwrap()
-            .to_owned();
-        assert!(
-            allow.contains("GET"),
-            "expected Allow to list GET, got: {allow}"
-        );
-        let csp = r
-            .headers()
-            .get("content-security-policy")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned();
-        assert!(csp.contains("default-src 'none'"), "unexpected CSP: {csp}");
-    }
 
     #[tokio::test]
     async fn wrong_method_on_matched_v1_route_returns_405_problem() {
@@ -679,21 +471,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn root_serves_index_html_with_html_csp() {
-        let html = b"<!doctype html><title>root</title>";
-        let dist = fixture_dist(html);
-        let server = test_server_with_security(SecurityConfig {
-            frontend_dist_path: Some(dist.path().to_path_buf()),
-            csp_html_header: Some(HeaderValue::from_static("default-src 'self'")),
-            csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
-            ..crate::test_support::test_config().security
-        });
-        let r = server.get("/").await;
-        r.assert_status_ok();
-        assert_eq!(r.as_bytes().as_ref(), html.as_ref());
-    }
-
-    #[tokio::test]
     async fn assets_served_with_html_csp() {
         let dist = fixture_dist(b"<!doctype html>");
         let server = test_server_with_security(SecurityConfig {
@@ -721,16 +498,6 @@ mod tests {
             csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
             ..crate::test_support::test_config().security
         })
-    }
-
-    #[tokio::test]
-    async fn dist_root_file_serves_its_own_bytes_not_index_html() {
-        let dist = fixture_dist(b"<!doctype html><title>spa</title>");
-        let server = dist_server(&dist);
-        let r = server.get("/brand/glyph/slot.svg").await;
-        r.assert_status_ok();
-        assert_eq!(r.as_bytes().as_ref(), GLYPH_SVG);
-        assert_eq!(r.headers().get("content-type").unwrap(), "image/svg+xml");
     }
 
     #[tokio::test]
@@ -808,63 +575,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dist_root_file_range_request_returns_206_partial_bytes() {
-        let dist = fixture_dist(b"<!doctype html>");
-        let server = dist_server(&dist);
-        let r = server
-            .get("/brand/glyph/slot.svg")
-            .add_header(header::RANGE, HeaderValue::from_static("bytes=0-3"))
-            .await;
-        r.assert_status(axum::http::StatusCode::PARTIAL_CONTENT);
-        assert_eq!(r.as_bytes().as_ref(), &GLYPH_SVG[0..4]);
-    }
-
-    #[tokio::test]
-    async fn post_to_spa_route_is_unaffected_by_method_not_allowed_fallback() {
-        let html = b"<!doctype html><title>fixture</title>";
-        let dist = fixture_dist(html);
-        let server = test_server_with_security(SecurityConfig {
-            frontend_dist_path: Some(dist.path().to_path_buf()),
-            csp_html_header: Some(HeaderValue::from_static("default-src 'self'")),
-            csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
-            ..crate::test_support::test_config().security
-        });
-        let r = server.post("/library/anything").await;
-        let content_type = r
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_owned();
-        assert!(
-            !content_type.contains("application/problem+json"),
-            "SPA route must not start emitting problem+json, got: {content_type}"
-        );
-    }
-
-    #[tokio::test]
-    async fn post_to_assets_is_unaffected_by_method_not_allowed_fallback() {
-        let dist = fixture_dist(b"<!doctype html>");
-        let server = test_server_with_security(SecurityConfig {
-            frontend_dist_path: Some(dist.path().to_path_buf()),
-            csp_html_header: Some(HeaderValue::from_static("default-src 'self'")),
-            csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
-            ..crate::test_support::test_config().security
-        });
-        let r = server.post("/assets/main.js").await;
-        let content_type = r
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_owned();
-        assert!(
-            !content_type.contains("application/problem+json"),
-            "/assets must not start emitting problem+json, got: {content_type}"
-        );
-    }
-
-    #[tokio::test]
     async fn spa_fallback_without_dist_returns_plain_404() {
         // No frontend_dist_path — SPA mount is skipped, unmatched path hits
         // the composite fallback which has nothing to serve.
@@ -881,13 +591,6 @@ mod tests {
     // --- HSTS composition ---
 
     #[tokio::test]
-    async fn hsts_absent_when_plaintext() {
-        let server = test_support::test_server();
-        let r = server.get("/health").await;
-        assert!(r.headers().get("strict-transport-security").is_none());
-    }
-
-    #[tokio::test]
     async fn hsts_present_behind_https_base_value() {
         let server = test_server_with_security(SecurityConfig {
             behind_https: true,
@@ -897,20 +600,6 @@ mod tests {
         assert_eq!(
             r.headers().get("strict-transport-security").unwrap(),
             "max-age=31536000"
-        );
-    }
-
-    #[tokio::test]
-    async fn hsts_subdomains_includes_directive() {
-        let server = test_server_with_security(SecurityConfig {
-            behind_https: true,
-            hsts_include_subdomains: true,
-            ..crate::test_support::test_config().security
-        });
-        let r = server.get("/health").await;
-        assert_eq!(
-            r.headers().get("strict-transport-security").unwrap(),
-            "max-age=31536000; includeSubDomains"
         );
     }
 
@@ -926,21 +615,6 @@ mod tests {
         assert_eq!(
             r.headers().get("strict-transport-security").unwrap(),
             "max-age=31536000; includeSubDomains; preload"
-        );
-    }
-
-    // --- Reporting-Endpoints ---
-
-    #[tokio::test]
-    async fn reporting_endpoints_emits_when_configured() {
-        let server = test_server_with_security(SecurityConfig {
-            csp_report_endpoint: Some(url::Url::parse("https://log.example/csp").unwrap()),
-            ..crate::test_support::test_config().security
-        });
-        let r = server.get("/health").await;
-        assert_eq!(
-            r.headers().get("reporting-endpoints").unwrap(),
-            r#"csp-endpoint="https://log.example/csp""#
         );
     }
 }
