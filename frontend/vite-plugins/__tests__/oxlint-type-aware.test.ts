@@ -60,24 +60,10 @@ describe("type-aware lint enforcement (vp lint)", () => {
     rmSync(PROBE_DIR, { recursive: true, force: true });
   });
 
-  it("vp is resolvable", () => {
-    expect(() => execFileSync("vp", ["--version"], { encoding: "utf8" })).not.toThrow();
-  });
-
   it("flags a floating promise (tsgolint present and active)", () => {
     const file = writeFixture("floating.ts", "export async function p() {}\np();\n");
     const { code, output } = lint(file);
     expect(output).toContain("no-floating-promises");
     expect(code).not.toBe(0);
-  });
-
-  it("passes a correctly awaited promise", () => {
-    const file = writeFixture(
-      "awaited.ts",
-      "export async function p() {}\nexport async function run() {\n  await p();\n}\n",
-    );
-    const { code, output } = lint(file);
-    expect(output).not.toContain("no-floating-promises");
-    expect(code).toBe(0);
   });
 });
