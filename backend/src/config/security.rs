@@ -153,8 +153,7 @@ fn validate_security_config(sec: &SecurityConfig) -> Result<(), ValidationError>
 /// injection and surface the wrong error for CR/LF. The raw-string char guard
 /// therefore runs first, then the scheme allowlist — order mirrors the former
 /// imperative path exactly. See `docs/adr/0023-declarative-configuration-stack-figment-validator-schemars.md`
-/// (GOTCHA-CSPRAW) and the `security_report_endpoint_injection_chars_errors`
-/// test (3 forms).
+/// (GOTCHA-CSPRAW).
 fn de_csp_endpoint<'de, D>(de: D) -> Result<Option<url::Url>, D::Error>
 where
     D: serde::Deserializer<'de>,
