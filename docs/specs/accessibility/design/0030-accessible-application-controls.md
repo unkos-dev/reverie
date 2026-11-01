@@ -88,10 +88,9 @@ the entered values available when the request settles. Cancellation and successf
 existing state transitions.
 
 Metadata clear confirmations suppress repeated activation while the request is pending. Completion closes the
-confirmation; a refused save leaves the sheet open with the entered values and error feedback. Opening the confirmation
-commits synchronously so the parent modal's mutation observer cannot make the child inert before its isolation effect
-runs. The [compatibility entry](../../../../debt/2026-10-27-metadata-confirmation-modal-ordering.md) records the
-condition for removing this local ordering constraint.
+confirmation; a refused save leaves the sheet open with the entered values and error feedback. The form's submit event
+opens the confirmation before the action runs, including for implicit submission. The confirmation button allows the
+next submission through to the action.
 
 Table-load recovery belongs to the Library results region and is described in the Library state Design. Shared controls
 do not change query-cache ownership or the grid's edit transaction.

@@ -24,7 +24,6 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActionState, useId, useRef, useState, type ReactElement } from "react";
-import { flushSync } from "react-dom";
 import { z } from "zod";
 import {
   Form,
@@ -260,18 +259,13 @@ function EditMetadataFields({
     },
   });
 
-  function buildBody(values: Record<string, string>): {
-    body: UpdateBookMetadataFields;
-    clears: string[];
-  } {
+  function buildBody(values: Record<string, string>): UpdateBookMetadataFields {
     const raw: Record<string, string | null> = {};
-    const clears: string[] = [];
     for (const field of fields) {
       if (!touched.current.has(field.name)) continue;
       const trimmed = (values[field.name] ?? "").trim();
       if (trimmed.length === 0) {
         raw[field.name] = null;
-        if (canonicalValue(metadata, field.name) !== null) clears.push(field.label);
       } else {
         raw[field.name] = trimmed;
       }
@@ -281,7 +275,7 @@ function EditMetadataFields({
     // failure here is a programmer error (mismatch between the form
     // and `UpdateBookMetadataFieldsSchema`), not a user-input error.
     const body = UpdateBookMetadataFieldsSchema.parse(raw);
-    return { body, clears };
+    return body;
   }
 
   const [state, action, pending] = useActionState<
@@ -295,9 +289,8 @@ function EditMetadataFields({
     async (_previous, data) => {
       const values = z.record(z.string(), z.string()).parse(Object.fromEntries(data));
       let body: UpdateBookMetadataFields;
-      let clears: string[];
       try {
-        ({ body, clears } = buildBody(values));
+        body = buildBody(values);
       } catch (err) {
         console.error("[EditMetadataDialog.buildBody] schema parse failed", err);
         const error = "Form has an invalid value. Refresh and try again.";
@@ -306,13 +299,6 @@ function EditMetadataFields({
       if (Object.keys(body).length === 0) {
         const error = "No fields touched — nothing to save.";
         return { values, error };
-      }
-      if (clears.length > 0 && data.get("confirm_clear") !== "true") {
-        // Mount before the parent modal's observer can make the confirmation inert.
-        flushSync(() => {
-          setPendingClearConfirm(true);
-        });
-        return { values, error: null };
       }
       setPendingClearConfirm(false);
       try {
@@ -338,6 +324,25 @@ function EditMetadataFields({
       <Form
         id={formId}
         action={action}
+        onSubmit={(event) => {
+          const submitter =
+            event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
+          const data = new FormData(event.currentTarget, submitter);
+          if (data.get("confirm_clear") === "true") return;
+          const clears = fields.some((field) => {
+            const value = data.get(field.name);
+            return (
+              touched.current.has(field.name) &&
+              canonicalValue(metadata, field.name) !== null &&
+              typeof value === "string" &&
+              value.trim().length === 0
+            );
+          });
+          if (clears) {
+            event.preventDefault();
+            setPendingClearConfirm(true);
+          }
+        }}
         validationErrors={state.errors ?? {}}
         className="flex flex-1 flex-col overflow-y-auto px-4"
       >

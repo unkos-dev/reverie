@@ -19,7 +19,7 @@ governed-by:
 
 This Design covers how Reverie turns environment variables and selected credential files into a validated `Config`: the
 declarative figment pipeline in `backend/src/config/mod.rs`, the operator-facing variable registry (`ENV_MAP`) and its
-two completeness checks, the post-deserialise startup gates, the secret-scrubbing behaviour of `ConfigError`, and the
+completeness check, the post-deserialise startup gates, the secret-scrubbing behaviour of `ConfigError`, and the
 generator that renders the configuration reference and `backend/config.schema.json` from the same schema.
 
 ## Purpose and boundaries
@@ -94,11 +94,11 @@ provider retains the `RUST_LOG`/`REVERIE_LOG_LEVEL` precedence cascade and `ENV_
 Non-credential empty values retain their existing handling, including explicit empty roots and accepted-format sets.
 
 Five registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
-each has a distinct shape and a distinct completeness check:
+each has a distinct shape:
 
 - `ENV_MAP` (`provider.rs`): every operator-facing variable name paired with the dotted field path it feeds. This is the
-  widest registry; the reference generator and `EnvProvider::data` both iterate it, and it is the only registry checked
-  in both directions (see Failure and recovery).
+  widest registry; the reference generator and `EnvProvider::data` both iterate it. Failure and recovery describes its
+  one completeness check.
 - `REQUIRED_FIELDS` (`mod.rs`): variable name paired with a `RequiredFieldAccessor` function reading the resolved field
   back off a built `Config`, the single entry `("DATABASE_URL", |c| c.database_url.expose_secret())`. Pairing the name
   and its field reader in one tuple, rather than keeping two parallel lists, is what the module comment calls
@@ -271,12 +271,10 @@ A required variable left unset is always `ConfigError::MissingVar`, never `Inval
 check this before any other gate can turn the same absence into a different error, so the operator-facing message says
 "set the variable" rather than "fix the value" for every field these gates cover.
 
-The `ENV_MAP`-to-schema completeness the module's doc comment describes is checked in two different ways with two
-different failure signatures, not by one shared assertion. `reference.rs`'s `every_schema_field_has_an_env_map_entry`
-test walks the leaf fields of the schema and asserts each has an `ENV_MAP` entry (schema ⊆ `ENV_MAP`); the reverse
-direction is not a dedicated assertion but a side effect of `node_for_path` returning `None` for an `ENV_MAP` entry
-whose dotted path resolves to nothing, which `reference_markdown` turns into an `anyhow` error that the
-`config_reference_matches_committed_artifact` drift test then panics on via `.expect(...)`.
+Only one direction of `ENV_MAP`-to-schema completeness is checked. An `ENV_MAP` entry whose dotted path resolves to
+nothing makes `node_for_path` return `None`, which `reference_markdown` turns into an `anyhow` error that the
+`config_reference_matches_committed_artifact` drift test then panics on via `.expect(...)`. A schema field with no
+`ENV_MAP` entry fails nothing: it renders no reference row and cannot be set from the environment.
 
 `REVERIE_AUTO_MIGRATE=true` with `DATABASE_URL_MIGRATION` unset, or set to a whitespace-only string, both fail Gate 1
 with `ConfigError::MissingVar("DATABASE_URL_MIGRATION")`; the value is trimmed before the blank check specifically so a

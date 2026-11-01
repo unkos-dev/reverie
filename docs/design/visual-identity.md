@@ -27,8 +27,7 @@ in `frontend/src/styles/themes/index.css`; an `@theme inline` block in the same 
 so Tailwind emits the matching utility (`bg-canvas`, `text-fg`, `border-border-strong`). Write utilities in components;
 read the semantic name when tracing a value. The three-tier contract itself is documented in
 [Color Tokens](./color-tokens.md). The `@theme inline` block resets Tailwind's default color ramps to absent
-(`--color-*: initial;`) before re-declaring the tokens above, so a stock class such as `bg-red-500` cannot compile;
-`frontend/vite-plugins/__tests__/no-default-tailwind-ramps.guard.test.ts` enforces this.
+(`--color-*: initial;`) before re-declaring the tokens above, so a stock class such as `bg-red-500` cannot compile.
 
 Every value below is a step in a generated Radix ramp. The primitive column is the traceable source; the hex is what
 that step currently resolves to in `frontend/src/styles/themes/primitives.generated.css`. Regenerating the ramps changes
@@ -86,11 +85,8 @@ is carried by _how the accent is used_ rather than by the value:
   text on it is unreadable.
 
 axe-core flags 1.4.11 and 1.4.3 violations on any Light surface using a `gold-9` edge or `gold-9` text outside those
-mitigated cases. Used as above, the accent needs no accessibility exception: the design-system gate carries no contrast
-carve-out for gold. The one entry left in `frontend/scripts/a11y/allowlist.mjs` is unrelated to the accent: it covers
-cover-spine text whose paired background axe cannot attribute through the spine's absolutely-positioned stack, a
-measurement false positive rather than a tolerated shortfall. Introducing gold as a line, an icon stroke, or normal-size
-text on _new_ Light surfaces is a brand violation, not axe noise, and reviewers should reject it.
+mitigated cases. Used as above, the accent needs no accessibility exception. Introducing gold as a line, an icon stroke,
+or normal-size text on _new_ Light surfaces is a brand violation, not axe noise, and reviewers should reject it.
 
 ## Typography
 

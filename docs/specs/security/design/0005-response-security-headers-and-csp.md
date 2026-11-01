@@ -7,6 +7,7 @@ satisfies:
   - "REV-REQ-0011"
   - "REV-REQ-0012"
   - "REV-REQ-0013"
+  - "REV-REQ-0071"
 governed-by:
   - "REV-ADR-0003"
 ---
@@ -142,7 +143,8 @@ these headers.
   backend startup from `csp-hashes.json`. The running server's `csp_html_header` reflects the set that was valid when
   `run` built it, even if the `index.html` that `spa_fallback_response` re-reads on each request later changes on disk
   because a build was replaced without a restart. The hash set's validity and its match with the bytes being served are
-  separate properties; this subject enforces the first.
+  separate properties. Startup validation checks the first; the build plugin computes the theme script's hash from the
+  same text it injects into the HTML. Replacing build files beneath a running server has no correspondence check.
 - **`RESERVED_PREFIXES`** and **`PERMISSIONS_POLICY_VALUE`** are compile-time constants in `headers.rs`; changing either
   needs a code change.
 

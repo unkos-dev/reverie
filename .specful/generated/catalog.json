@@ -567,7 +567,8 @@
       "satisfies": [
         "REV-REQ-0011",
         "REV-REQ-0012",
-        "REV-REQ-0013"
+        "REV-REQ-0013",
+        "REV-REQ-0071"
       ],
       "title": "Response security headers and CSP"
     },
@@ -1526,6 +1527,15 @@
       "kind": "req",
       "path": "docs/specs/accounts/requirements/0070-an-unsuccessful-oidc-sign-in-resolves-to-a-fixed-local-outcome.md",
       "title": "An unsuccessful OIDC sign-in resolves to a fixed local outcome"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0003"
+      ],
+      "id": "REV-REQ-0071",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0071-the-production-build-s-csp-hash-matches-its-pre-paint-theme-script.md",
+      "title": "The production build's CSP hash matches its pre-paint theme script"
     }
   ]
 }

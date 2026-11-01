@@ -117,8 +117,6 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
-- [Metadata confirmation modal ordering](2026-10-27-metadata-confirmation-modal-ordering.md): lifts when native
-  confirmation checks pass with ViewTransition enabled and the local synchronous mount removed.
 - [Frontend CI Ubuntu mirror selection](2026-10-26-frontend-ci-ubuntu-mirror.md): lifts when the runner image fixes slow
   mirror failover and browser provisioning succeeds with its unmodified mirror list.
 - [crypto-bigint timing risk in OIDC signature verification](2026-10-25-crypto-bigint-verification-only.md): lifts when
