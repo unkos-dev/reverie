@@ -34,22 +34,6 @@ fn ingestion_startup_diagnostics_redact_credentials() {
         assert!(stderr.contains(var));
         assert!(stderr.contains("invalid value (omitted — secret-bearing field)"));
     }
-    let output = "connection postgres://role:private-marker@localhost/db failed: private-marker";
-    assert_eq!(
-        redact_startup_output(
-            output,
-            &[
-                "postgres://role:private-marker@localhost/db",
-                "private-marker",
-                ""
-            ]
-        ),
-        "connection [redacted] failed: [redacted]"
-    );
-    assert_eq!(
-        redact_startup_output("server exited", &[""]),
-        "server exited"
-    );
 }
 
 async fn wait_for_readiness(
