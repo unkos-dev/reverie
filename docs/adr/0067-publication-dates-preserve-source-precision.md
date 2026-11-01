@@ -3,8 +3,9 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0067"
 title: "Publication dates preserve source precision"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-10-31"
+decided-on: "2026-11-01"
 decision-makers:
   - "John Unkovich"
 ---

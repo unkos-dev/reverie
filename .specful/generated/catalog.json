@@ -496,7 +496,7 @@
       "id": "REV-ADR-0067",
       "kind": "adr",
       "path": "docs/adr/0067-publication-dates-preserve-source-precision.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Publication dates preserve source precision"
     },
     {
