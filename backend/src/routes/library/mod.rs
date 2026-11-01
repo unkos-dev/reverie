@@ -1141,7 +1141,7 @@ async fn detail(
         _ => None,
     };
 
-    let pub_date_str = row.pub_date.map(|d| d.format("%Y-%m-%d").to_string());
+    let pub_date_str = row.pub_date;
     Ok(axum::Json(BookDetail {
         id: row.id,
         work_id,
@@ -1191,7 +1191,7 @@ struct DetailRow {
     isbn_13: Option<String>,
     isbn_10: Option<String>,
     publisher: Option<String>,
-    pub_date: Option<chrono::NaiveDate>,
+    pub_date: Option<String>,
     pages: Option<i32>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,

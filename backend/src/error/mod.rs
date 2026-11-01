@@ -100,6 +100,14 @@ pub enum AppError {
     /// callers should keep it free of sensitive context.
     #[error("validation error: {0}")]
     Validation(String),
+    /// Validation details associated with named request fields.
+    #[error("validation error: {detail}")]
+    FieldValidation {
+        /// Safe explanation of the refused request.
+        detail: String,
+        /// Messages keyed by the submitted field name.
+        errors: std::collections::BTreeMap<String, String>,
+    },
     /// `X-CSRF-Token` header missing on a mutating-verb request
     /// under `/api/v1/*`. RFC 9457 `type` [`problems::CSRF_MISSING`].
     /// HTTP 428 Precondition Required.
@@ -247,6 +255,10 @@ impl IntoResponse for AppError {
             _ => None,
         };
 
+        let errors = match &self {
+            Self::FieldValidation { errors, .. } => Some(errors.clone()),
+            _ => None,
+        };
         let (status, slug, title, detail) = match self {
             Self::NotFound => (
                 StatusCode::NOT_FOUND,
@@ -275,7 +287,7 @@ impl IntoResponse for AppError {
                 "Forbidden",
                 "Access denied.".to_owned(),
             ),
-            Self::Validation(msg) => (
+            Self::Validation(msg) | Self::FieldValidation { detail: msg, .. } => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 problems::VALIDATION,
                 "Unprocessable Entity",
@@ -397,6 +409,7 @@ impl IntoResponse for AppError {
             status: status.as_u16(),
             detail,
             instance: None,
+            errors: errors.map(Box::new),
         }
         .into_response();
 

@@ -17,3 +17,6 @@ pub mod inversion;
 pub mod isbn;
 /// `HTML`-to-plaintext sanitisation pipeline for untrusted metadata text.
 pub mod sanitiser;
+
+/// Precision-preserving validation of bibliographic publication dates.
+pub mod publication_date;

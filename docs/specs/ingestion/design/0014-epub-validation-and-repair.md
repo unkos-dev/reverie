@@ -235,6 +235,12 @@ verification pass.
 
 ## Runtime behaviour
 
+The OPF layer selects publication text before downstream conversion. EPUB 2 prefers the first non-empty date explicitly
+labelled with `opf:event="publication"`, then the first ordinary unlabelled `dc:date`. EPUB 3 uses the first publication
+`dc:date` in document order. Creation and modification events, including `dcterms:modified`, never substitute for a
+publication date. The selected text remains source evidence; conversion and canonical promotion belong to ingestion and
+enrichment. Selection adds no conflict-resolution archive and does not upgrade EPUB 2 files to EPUB 3.
+
 **A structurally clean EPUB.** Every Layer 1 check passes, the `mimetype` entry meets all four OCF rules, Layer 2 finds
 and reads `container.xml`, Layer 3 parses the OPF with every manifest href safe and every spine reference resolved,
 Layer 4 finds no encoding or well-formedness problem within the spine cap, and Layer 5 finds a usable cover or none

@@ -206,7 +206,7 @@ pub struct BookDetail {
     /// on `BookDetail` so the manual-edit dialog can confirm clears
     /// (`EditMetadataDialog.canonicalEditableFields`).
     pub publisher: Option<String>,
-    /// `manifestations.pub_date` formatted as an ISO 8601 calendar date.
+    /// Publication text at its supplied bibliographic precision.
     /// Surfaced for the manual-edit dialog's clear-confirmation flow.
     pub pub_date: Option<String>,
     /// Cover thumbnail URL — relative path under
@@ -269,7 +269,7 @@ pub struct MetadataVersionRow {
     /// Source identifier — `openlibrary`, `google_books`, `manual`, etc.
     pub source: String,
     /// Proposed value, untyped JSON; field-specific shape (string for
-    /// title/description, ISO date for `pub_date`, …).
+    /// title/description, publication text for `pub_date`, …).
     pub new_value: Value,
     /// Always `pending` for rows surfaced here; promotion lives on
     /// canonical pointer columns, not this enum.

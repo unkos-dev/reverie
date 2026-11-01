@@ -17,7 +17,7 @@
       {
         "ordinal": 1,
         "name": "pub_date",
-        "type_info": "Date",
+        "type_info": "Text",
         "origin": {
           "Table": {
             "table": "manifestations",

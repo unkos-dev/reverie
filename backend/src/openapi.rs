@@ -185,6 +185,9 @@ pub struct ProblemDetails {
     /// Omitted (RFC 9457 §3.1 permits this) outside an HTTP request.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
+    /// Validation messages associated with named request fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub errors: Option<Box<std::collections::BTreeMap<String, String>>>,
 }
 
 struct ExtractorResponses;

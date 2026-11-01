@@ -259,7 +259,7 @@ const MetadataVersionRowSchema = z.object({
  * side so the same id never appears twice.
  *
  * `new_value` is untyped JSON because field-specific shape varies
- * (string for `title`, ISO date string for `pub_date`); the consumer
+ * (string for `title`, bibliographic publication text for `pub_date`); the consumer
  * narrows per `field_name` at the render site.
  */
 export type MetadataVersionRow = z.infer<typeof MetadataVersionRowSchema>;

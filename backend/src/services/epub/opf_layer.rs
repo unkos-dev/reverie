@@ -396,6 +396,8 @@ pub fn validate(
     let mut description: Option<String> = None;
     let mut publisher: Option<String> = None;
     let mut date: Option<String> = None;
+    let mut labelled_date: Option<String> = None;
+    let mut epub3 = false;
     let mut language: Option<String> = None;
     let mut identifiers: Vec<String> = Vec::new();
     let mut subjects: Vec<String> = Vec::new();
@@ -671,6 +673,11 @@ pub fn validate(
                     .find(|a| a.key.as_ref() == "id")
                     .map(|a| a.value.into_owned());
 
+                let publication_event = e
+                    .attributes()
+                    .flatten()
+                    .find(|attribute| local_name(attribute.key.as_ref()) == "event")
+                    .map(|attribute| attribute.value.into_owned());
                 let e = e.into_owned();
                 let text = read_element_text(&mut reader, e.name())
                     .map(|t| t.trim().to_string())
@@ -693,7 +700,13 @@ pub fn validate(
                         }),
                         "description" if description.is_none() => description = Some(text),
                         "publisher" if publisher.is_none() => publisher = Some(text),
-                        "date" if date.is_none() => date = Some(text),
+                        "date" => match publication_event.as_deref() {
+                            Some("publication") if !epub3 && labelled_date.is_none() => {
+                                labelled_date = Some(text);
+                            }
+                            None | Some("publication") if date.is_none() => date = Some(text),
+                            _ => {}
+                        },
                         "language" if language.is_none() => language = Some(text),
                         "identifier" => identifiers.push(text),
                         "subject" => subjects.push(text),
@@ -703,6 +716,11 @@ pub fn validate(
             }
             // General arm — meta and DC already handled by guarded arms above
             Event::Empty(e) | Event::Start(e) => match e.name().as_ref() {
+                "package" => {
+                    epub3 = e.attributes().flatten().any(|attribute| {
+                        attribute.key.as_ref() == "version" && attribute.value.starts_with('3')
+                    });
+                }
                 "item" => {
                     let attrs: HashMap<String, String> = e
                         .attributes()
@@ -864,7 +882,7 @@ pub fn validate(
         number_of_pages,
         description,
         publisher,
-        date,
+        date: labelled_date.or(date),
         language,
         identifiers,
         subjects,
@@ -887,6 +905,39 @@ mod tests {
         w.write_all(opf_content).unwrap();
         let bytes = w.finish().unwrap().into_inner();
         ZipHandle::from_bytes(&bytes)
+    }
+
+    #[test]
+    fn publication_date_selection_respects_epub_events() {
+        for (version, dates, expected) in [
+            (
+                "2.0",
+                "<dc:date opf:event=\"creation\">1900</dc:date><dc:date>2000</dc:date><dc:date opf:event=\"publication\">2024-06</dc:date><dc:date opf:event=\"publication\">2025</dc:date>",
+                Some("2024-06"),
+            ),
+            (
+                "2.0",
+                "<dc:date opf:event=\"modification\">1900</dc:date><dc:date>2024</dc:date><dc:date>2025</dc:date>",
+                Some("2024"),
+            ),
+            (
+                "3.0",
+                "<meta property=\"dcterms:modified\">2025-01-01T00:00:00Z</meta><dc:date opf:event=\"creation\">1900</dc:date><dc:date>2024-06</dc:date><dc:date>2025</dc:date>",
+                Some("2024-06"),
+            ),
+            (
+                "3.0",
+                "<dc:date opf:event=\"creation\">1900</dc:date><dc:date opf:event=\"modification\">2000</dc:date>",
+                None,
+            ),
+        ] {
+            let xml = format!(
+                "<package version=\"{version}\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:opf=\"http://www.idpf.org/2007/opf\"><metadata>{dates}</metadata><manifest/><spine/></package>"
+            );
+            let handle = make_handle(xml.as_bytes());
+            let data = validate(&handle, Some("OEBPS/content.opf"), &mut Vec::new()).unwrap();
+            assert_eq!(data.date.as_deref(), expected);
+        }
     }
 
     #[test]

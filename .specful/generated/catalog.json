@@ -493,6 +493,13 @@
       "title": "Library visit state and local-day filter boundaries"
     },
     {
+      "id": "REV-ADR-0067",
+      "kind": "adr",
+      "path": "docs/adr/0067-publication-dates-preserve-source-precision.md",
+      "status": "accepted",
+      "title": "Publication dates preserve source precision"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0062",
@@ -612,6 +619,7 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0067",
         "REV-ADR-0051",
         "REV-ADR-0052"
       ],
@@ -724,6 +732,7 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0067",
         "REV-ADR-0007",
         "REV-ADR-0018",
         "REV-ADR-0051"
@@ -739,6 +748,7 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0067",
         "REV-ADR-0018",
         "REV-ADR-0020",
         "REV-ADR-0051",
@@ -755,6 +765,9 @@
       "title": "Writeback pipeline"
     },
     {
+      "governed-by": [
+        "REV-ADR-0067"
+      ],
       "id": "REV-DESIGN-0018",
       "kind": "design",
       "path": "docs/specs/metadata/design/0018-metadata-review-and-editing.md",

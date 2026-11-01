@@ -51,6 +51,7 @@ const ProblemDetailsSchema = z.object({
   status: z.number().optional(),
   detail: z.string().optional(),
   instance: z.string().optional(),
+  errors: z.record(z.string(), z.string()).optional(),
 });
 type ProblemDetails = z.infer<typeof ProblemDetailsSchema>;
 
@@ -242,6 +243,7 @@ function problemToApiError(
     problem?.type ?? null,
     problem?.title ?? statusText,
     problem?.detail ?? "",
+    problem?.errors,
   );
 }
 

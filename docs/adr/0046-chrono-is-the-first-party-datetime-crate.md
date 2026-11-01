@@ -127,5 +127,5 @@ Reopen this decision if either of the following becomes true:
   than UTC. Named-zone support is a companion crate for the chosen option and native to `jiff`, so the comparison
   changes shape.
 
-A future requirement for calendar-only values beyond publication dates would not reopen this decision; the chosen crate
-already carries a distinct calendar-date type, which is what publication dates use.
+A future requirement for calendar-only values would not reopen this decision; the chosen crate carries a distinct
+calendar-date type. Publication values are bibliographic text validated using Chrono at their supplied precision.

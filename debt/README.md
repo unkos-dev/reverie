@@ -162,7 +162,5 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 - [Forwarded client-IP header trusted by name, not proxy identity](2026-06-27-forwarded-header-trust-unbound.md):
   adopted from PR #511 review; the login/recovery limiter honours trusted_client_ip_header without a peer-CIDR binding;
   lifts when forwarded-IP trust is bound to an allow-listed reverse-proxy CIDR
-- [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md): adopted from 11c;
-  BookDetail doesn't carry those columns yet; lifts when API + UI extended
 - [OIDC transport adapter pre-release pin](2026-08-14-oauth2-reqwest-prerelease-pin.md): one shared reqwest 0.13 pool
   requires the exact-pinned upstream adapter; lifts when a stable compatible adapter is available

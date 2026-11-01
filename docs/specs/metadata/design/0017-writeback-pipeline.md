@@ -8,6 +8,7 @@ satisfies:
   - "REV-REQ-0053"
   - "REV-REQ-0054"
 governed-by:
+  - "REV-ADR-0067"
   - "REV-ADR-0018"
   - "REV-ADR-0020"
   - "REV-ADR-0051"
@@ -168,17 +169,18 @@ writeback. There is no EXDEV fallback, replay or `cover_path` rewrite for this s
   paths call it unconditionally, but the field name they pass (`"contributors"`, or a vocabulary field key) is never an
   `identifiers.*` name, so no call site in either module ever enqueues a job for an identifier field, and external
   identifiers are never written back to the source file. Each insert commits or rolls back with the pointer move that
-  triggered it, in the same transaction. Both `enqueue_writeback` functions derive `reason` from the field name the same
-  way: `'cover'` when the field is `"cover"` or `"cover_url"`, `'metadata'` otherwise. Neither call site can produce a
-  `'cover'` reason in a running system today: `metadata.rs::apply_version`'s match has no arm for `"cover"` or
-  `"cover_url"`, so accepting or reverting either field returns the handler's `unsupported auto-apply field` validation
-  error before `enqueue_writeback` runs; and the enrichment orchestrator's policy engine
-  (`services::enrichment::policy`) defaults `"cover_url"`, the only cover-shaped field any source emits, to `Propose`,
-  which resolves to `Decision::Stage`, never `Decision::Apply`, and no source emits a field literally named `"cover"`,
-  the one name `default_policy` marks `AutoFill`. Every `writeback_jobs` row a running system creates today therefore
-  carries `reason = 'metadata'` when created by those canonical-edit call sites; the sweep also creates relocation
-  carriers. The cover-reason branch of this pipeline (`cover_embed::plan_embed`, `move_cover_sidecar`) is exercised only
-  by this module's own tests, which insert a `'cover'`-reason row and a `cover_path` value directly.
+  triggered it, in the same transaction, and retains the changed field in nullable `field_name`. Both
+  `enqueue_writeback` functions derive `reason` from the field name the same way: `'cover'` when the field is `"cover"`
+  or `"cover_url"`, `'metadata'` otherwise. Neither call site can produce a `'cover'` reason in a running system today:
+  `metadata.rs::apply_version`'s match has no arm for `"cover"` or `"cover_url"`, so accepting or reverting either field
+  returns the handler's `unsupported auto-apply field` validation error before `enqueue_writeback` runs; and the
+  enrichment orchestrator's policy engine (`services::enrichment::policy`) defaults `"cover_url"`, the only cover-shaped
+  field any source emits, to `Propose`, which resolves to `Decision::Stage`, never `Decision::Apply`, and no source
+  emits a field literally named `"cover"`, the one name `default_policy` marks `AutoFill`. Every `writeback_jobs` row a
+  running system creates today therefore carries `reason = 'metadata'` when created by those canonical-edit call sites;
+  the sweep also creates relocation carriers. The cover-reason branch of this pipeline (`cover_embed::plan_embed`,
+  `move_cover_sidecar`) is exercised only by this module's own tests, which insert a `'cover'`-reason row and a
+  `cover_path` value directly.
 - **Opened EPUB interfaces.** `epub::inspect(File)` returns the admitted source and pure baseline report. `RepairPlan`
   applies OPF repairs before `opf_rewrite::transform`. `with_modifications` writes repair, metadata and cover changes
   into one file-backed candidate. `repack::publish` validates final bytes, compares unresolved severity, and returns
@@ -234,6 +236,17 @@ writeback. There is no EXDEV fallback, replay or `cover_path` rewrite for this s
   for another attempt) and `skipped` (exhausted).
 
 ## Runtime behaviour
+
+A queued `pub_date` job derives Set(text) or Clear from the latest canonical value when it executes. Every other job,
+including a generic job without `field_name`, leaves publication metadata unchanged. The job carries field identity,
+never a captured publication value that could overwrite a later edit. The existing queue, claim owner and
+same-transaction enqueue remain authoritative.
+
+The publication target distinguishes Unchanged, Set and Clear. Set replaces the selected publication element or inserts
+one when absent, retaining supplied text precision. EPUB 2 selects an explicit publication event before an unlabelled
+date; EPUB 3 selects publication `dc:date`. Clear removes publication elements, including fallback dates, without
+removing creation/modification events or `dcterms:modified`. The transform preserves EPUB version, XML escaping,
+repair-before-transform and validated atomic publication with accepted hash and size.
 
 ### Library path ownership
 

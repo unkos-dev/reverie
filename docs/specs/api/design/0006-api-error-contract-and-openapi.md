@@ -75,7 +75,7 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   (`MalformedPath` for a decode failure, `Internal` for any other rejection kind — a routing or extractor-ordering bug,
   not a caller error), and `From<axum::extract::rejection::JsonRejection>` (`InvalidRequestBody`, matching the rejection
   subclass to a fixed status and a fixed, non-leaking detail sentence rather than axum's own message).
-- `backend/src/error/problems.rs` is a flat `const` registry, one per `AppError` variant, plus `PROBLEM_BASE` (the
+- `backend/src/error/problems.rs` is a flat `const` registry, one per problem class, plus `PROBLEM_BASE` (the
   placeholder host `https://reverie.example/probs`) and `problem_type(slug)`, which concatenates the two. The slugs are
   the load-bearing, stable part of the resulting URI; the host is a placeholder value.
 - `backend/src/error/instance.rs` holds a `tokio::task_local!` `CURRENT_URI: String` and two functions:
@@ -131,6 +131,12 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
 
 ## Interfaces and dependencies
 
+Problem Details carries optional `errors`, an object mapping field names to string messages. `AppError::FieldValidation`
+uses the existing validation type and 422 status, alongside the existing `type`, `title` and `detail` fields. The shared
+DTO omits `errors` when absent. `ProblemDetailsSchema` decodes supplied field messages and `ApiError.errors` retains
+them unchanged; responses without the object have no field map. Publication refusals use `errors.pub_date`. Publication
+values in generated API contracts are nullable strings without `date` or `date-time` coercion.
+
 - The wire contract: every error response is `application/problem+json` with `type` (`{PROBLEM_BASE}/{slug}`), `title`,
   `status`, `detail`, and an optional `instance`. `type` and `title` are stable per problem class; `detail` and
   `instance` vary per occurrence. Nullable/omitted-field conventions for success bodies follow the same wire conventions
@@ -179,8 +185,8 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
 - `openapi.rs::API_VERSION` is a fixed `"0.1.0"` constant surfaced as the document's `info.version`, independent of the
   crate's own release-managed version, so a release does not by itself force a spec regeneration.
 - On the client, `ApiError` instances are ephemeral: each is constructed and thrown per failed request and carries no
-  state beyond its four fields. `apiFetch` itself holds no module-level state; the CSRF token cache and the `ETag` map
-  live in their own modules, owned by their own Designs.
+  state beyond its status and decoded problem fields. `apiFetch` itself holds no module-level state; the CSRF token
+  cache and the `ETag` map live in their own modules, owned by their own Designs.
 
 ## Runtime behaviour
 
@@ -238,8 +244,8 @@ test `unmatched_api_route_returns_problem_with_instance` in `backend/src/lib.rs`
 1. `apiFetch`'s `decodeSuccess` sees `!response.ok` and calls `problemFromResponse`, which calls `peekProblem`.
 2. `peekProblem` clones the response (a `Response` body is single-shot), checks the `Content-Type` header includes
    `application/problem+json` or `application/json`, and parses the body through the tolerant `ProblemDetailsSchema`.
-3. `problemToApiError` builds `new ApiError(412, type, title, detail)`, falling back to `response.statusText` for
-   `title` and `""` for `detail` if any field was absent — the schema tolerates a partial body rather than throwing.
+3. `problemToApiError` builds `new ApiError(412, type, title, detail, errors)`, falling back to `response.statusText`
+   for `title` and `""` for `detail` if any field was absent — the schema tolerates a partial body rather than throwing.
 4. The caller sees a thrown `ApiError` with `status === 412` regardless of whether the body was well-formed Problem
    Details, and `isIfMatchMismatch` (owned by "Conditional requests and optimistic concurrency") can then test
    `problemSlug` on it.
