@@ -143,6 +143,6 @@ does not justify keeping it when the chosen tool meets the requirement.
   is a product defect, not an accepted exception. A verified axe false positive is a scanner defect; retain the finding
   and manual verification evidence for the affected success criterion. Manual assessment covers every surface, including
   scanned routes, at each release tag and before any net-new view ships. New scannable routes join `DEFAULT_TARGETS`;
-  `A11Y_TARGETS` is a per-run override that CI does not set. A route qualifies only when it renders a single top-level
-  `<main>` without an API, because the lane boots Vite alone: a mount-time query renders an error branch the scan would
-  certify as passing.
+  `A11Y_TARGETS` is a per-run override that CI does not set. A route qualifies only when it renders its intended scan
+  state inside a single top-level `<main>`. Required API responses may be supplied by gate fixtures; an unintended
+  request-error screen must not stand in for the intended scan state.
