@@ -83,6 +83,8 @@ For each target path in `parseTargets(process.env.A11Y_TARGETS)`, `a11y.spec.ts`
 - **An axe violation.** The test fails with the raw violations printed in the assertion message and attached as
   `axe-results.json`; CI additionally uploads the Playwright trace directory (`frontend/test-results/`) as a workflow
   artifact on failure.
+- **A verified axe false positive.** The finding and manual assessment evidence for the affected success criterion are
+  retained. This is a scanner defect; a genuine WCAG failure is a product defect.
 - **A crashed browser or blank/wrong page.** The liveness checks in step 4 fail closed: an empty `violations` array from
   a page that never rendered is indistinguishable from a genuinely clean scan unless the test also confirms axe ran
   (`testEngine` present), against the intended page (`urlMatches`), with a non-trivial rule set applied
@@ -105,10 +107,12 @@ point on a red run: the attached `axe-results.json` (rule id, impact, per-node c
 attachment plus the uploaded Playwright trace directory in CI.
 
 The manual audit is the operational control the automated gate does not replace: it runs at every release tag and before
-any net-new view ships, and any team member may perform and sign off the pass. It owns what axe cannot check: keyboard
-navigation order, screen-reader semantics, focus management in dialogs and overlays, and the motion budget under
-`prefers-reduced-motion`. The automated gate owns colour contrast, accessible names, roles, and structural rules within
-the routes it scans.
+any net-new view ships, and any team member may perform and sign off the pass. It covers every surface, including routes
+that the gate scans. On scanned routes, it assesses the applicable criteria and behaviours that automated checks cannot
+fully establish; on unscanned surfaces, it assesses the full applicable Level A and Level AA criteria. This includes
+keyboard navigation order, screen-reader semantics, focus management in dialogs and overlays, and the motion budget
+under `prefers-reduced-motion`. The automated gate supplies evidence for the colour contrast, accessible name, role, and
+structural rules it evaluates, rather than proof of complete conformance on those routes.
 
 ## More information
 

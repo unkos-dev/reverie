@@ -56,8 +56,9 @@ The `frontend-node` project includes pure Library projection and summary tests. 
 patched Firefox. Each invocation builds through `just js::build`, then serves the production output with `vp preview` to
 exclude development tooling. It owns a strict loopback server on port 5174 with reuse disabled and intercepts synthetic
 APIs through the real application bootstrap and Router. It needs no database or real login credentials. It proves
-navigation and client request/result integration, not actual authentication or database predicates. The WCAG config and
-allowlist remain separate. Missing browser system libraries stop local verification; local gates never install them.
+navigation and client request/result integration, not actual authentication or database predicates. The WCAG scan runs
+separately through `just js::a11y`. Missing browser system libraries stop local verification; local gates never install
+them.
 
 For Library visit persistence and local-day projection, see the
 [Library state Design](../docs/specs/library/design/0001-library-filter-and-sort-state.md) and
