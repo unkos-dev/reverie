@@ -26,7 +26,9 @@ restriction on where gold appears is a brand rule rather than an accessibility c
 
 ## Acceptance criteria
 
-- Every web surface Reverie ships satisfies all applicable Level A and Level AA success criteria in WCAG 2.2. Automated
-  scans and manual assessment establish conformance, including manual checks of scanned surfaces for criteria the
-  automated gate cannot establish. Assessment covers every surface at each release tag and before any net-new view
-  ships.
+- Every web surface Reverie ships satisfies all applicable Level A and Level AA success criteria in WCAG 2.2.
+- Every surface the automated gate scans is also manually assessed against the applicable criteria and behaviours that
+  the automated checks cannot fully establish.
+- Every surface the automated gate does not scan is manually assessed against all applicable Level A and Level AA
+  success criteria.
+- Manual assessment covers every surface at each release tag and before any net-new view ships.
