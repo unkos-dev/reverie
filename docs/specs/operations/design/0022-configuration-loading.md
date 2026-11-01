@@ -19,7 +19,7 @@ governed-by:
 
 This Design covers how Reverie turns environment variables and selected credential files into a validated `Config`: the
 declarative figment pipeline in `backend/src/config/mod.rs`, the operator-facing variable registry (`ENV_MAP`) and its
-two completeness checks, the post-deserialise startup gates, the secret-scrubbing behaviour of `ConfigError`, and the
+completeness check, the post-deserialise startup gates, the secret-scrubbing behaviour of `ConfigError`, and the
 generator that renders the configuration reference and `backend/config.schema.json` from the same schema.
 
 ## Purpose and boundaries
@@ -94,11 +94,11 @@ provider retains the `RUST_LOG`/`REVERIE_LOG_LEVEL` precedence cascade and `ENV_
 Non-credential empty values retain their existing handling, including explicit empty roots and accepted-format sets.
 
 Five registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
-each has a distinct shape and a distinct completeness check:
+each has a distinct shape:
 
 - `ENV_MAP` (`provider.rs`): every operator-facing variable name paired with the dotted field path it feeds. This is the
-  widest registry; the reference generator and `EnvProvider::data` both iterate it, and it is the only registry checked
-  in both directions (see Failure and recovery).
+  widest registry; the reference generator and `EnvProvider::data` both iterate it. Failure and recovery describes its
+  one completeness check.
 - `REQUIRED_FIELDS` (`mod.rs`): variable name paired with a `RequiredFieldAccessor` function reading the resolved field
   back off a built `Config`, the single entry `("DATABASE_URL", |c| c.database_url.expose_secret())`. Pairing the name
   and its field reader in one tuple, rather than keeping two parallel lists, is what the module comment calls
