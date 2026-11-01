@@ -12,16 +12,16 @@ governed-by:
 # Accessibility gate and manual audit
 
 This Design covers how Reverie checks its web surfaces against the WCAG 2.2 Level AA obligation: the automated
-Playwright and axe-core gate, the allowlist that would express an accepted exception or a technical exemption, and the
-manual audit that covers what the automated gate cannot.
+Playwright and axe-core gate, the currently empty finding allowlist, and the manual audit that covers what the automated
+gate cannot.
 
 ## Purpose and boundaries
 
 This subject owns verifying WCAG 2.2 Level AA conformance for Reverie's web surfaces: the automated scan that runs on
-every UI-touching pull request, the allowlist that would filter an accepted exception out of the scan's verdict, and the
-recurring manual audit. It does not own the design tokens, component markup, or colour system that make a surface
-conformant in the first place; those live in `frontend/DESIGN.md` and the component implementations themselves. It does
-not own the WCAG 2.2 standard's own rule definitions, which `@axe-core/playwright` evaluates against.
+every UI-touching pull request, the currently empty allowlist that filters scan findings, and the recurring manual
+audit. It does not own the design tokens, component markup, or colour system that make a surface conformant in the first
+place; those live in `frontend/DESIGN.md` and the component implementations themselves. It does not own the WCAG 2.2
+standard's own rule definitions, which `@axe-core/playwright` evaluates against.
 
 Depends on: `@playwright/test` and `@axe-core/playwright` as the browser-automation and axe-core integration; the
 frontend Vite dev server, whose lifecycle Playwright's `webServer` configuration owns for the gate run; the `changes`
@@ -35,7 +35,7 @@ net-new view, through the manual audit; a contributor running the gate locally b
 - `frontend/scripts/a11y/a11y.spec.ts` is the Playwright test file. It registers one test per scan target, drives
   `@axe-core/playwright`'s `AxeBuilder` against each, and asserts the gate's verdict.
 - `frontend/scripts/a11y/allowlist.mjs` is a pure, side-effect-free module with no Playwright dependency: it holds the
-  `ALLOWLIST` array of accepted exceptions, the `DEFAULT_TARGETS` scan-target list, and the functions the spec calls to
+  `ALLOWLIST` array of finding filters, the `DEFAULT_TARGETS` scan-target list, and the functions the spec calls to
   parse targets (`parseTargets`), match a violation node against the allowlist (`isNodeAllowed`, `filterAllowed`), check
   that a scanned URL matches its intended target (`urlMatches`), and compute the pass/fail verdict (`verdict`).
 - The `just js::a11y` recipe and the CI `a11y` job in `.github/workflows/frontend.yml` are the two run sites. Both
@@ -61,14 +61,9 @@ net-new view, through the manual audit; a contributor running the gate locally b
 
 ## Data and state
 
-- `ALLOWLIST` in `allowlist.mjs` is the set of accepted exceptions the gate's verdict subtracts from axe's raw
-  violations before failing. It is currently empty: the gold design tokens the components use already clear the relevant
-  contrast thresholds on their own, so no surface needs a documented exception. An entry, when one exists, is
-  `{ ruleId, htmlIncludesAll, rationale, issue }`: it matches a violation node by axe rule id and by every string in
-  `htmlIncludesAll` being contained within the node's `html`, matching on rendered markup (`node.html`) rather than on
-  background colour or CSS selector, because an incidental class or an identical background colour on a non-exempt
-  element cannot reliably separate an accepted case from a genuine one. Every entry carries an inline rationale in the
-  array itself, and adding one is an accessibility exception a reviewer must approve.
+- `ALLOWLIST` in `allowlist.mjs` is empty. Its entries match nodes by axe rule id and strings in the rendered HTML,
+  using `{ ruleId, htmlIncludesAll, rationale, issue }`. The filter subtracts matching nodes from the gate's verdict;
+  subtraction cannot establish that an affected WCAG success criterion is satisfied.
 - `DEFAULT_TARGETS` in `allowlist.mjs` is the current scan-target list, described above.
 - The `A11Y_TARGETS` environment variable, when set, overrides `DEFAULT_TARGETS` for that run; CI does not set it, so CI
   always scans `DEFAULT_TARGETS`.
@@ -105,7 +100,9 @@ For each target path in `parseTargets(process.env.A11Y_TARGETS)`, `a11y.spec.ts`
   `page.goto` would otherwise leave the configured base URL and scan an unrelated origin.
 - **A design change that introduces a contrast failure.** A colour or role change that pushes a previously conformant
   surface into a contrast failure is caught by the gate the same as any other regression: nothing is allowlisted, so the
-  change fails the gate and needs a design fix; an allowlist entry instead would need the Requirement rewritten first.
+  change fails the gate and needs a design fix. A genuine failure violates the Requirement; it does not make the
+  Requirement defective. A verified axe false positive is a scanner defect, with the finding and manual verification
+  evidence retained for the affected success criterion.
 
 ## Security and operations
 
@@ -117,10 +114,12 @@ point on a red run: the attached `axe-results.json` (rule id, impact, per-node c
 attachment plus the uploaded Playwright trace directory in CI.
 
 The manual audit is the operational control the automated gate does not replace: it runs at every release tag and before
-any net-new view ships, and any team member may perform and sign off the pass. It owns what axe cannot check: keyboard
-navigation order, screen-reader semantics, focus management in dialogs and overlays, and the motion budget under
-`prefers-reduced-motion`. The automated gate owns colour contrast, accessible names, roles, and structural rules within
-the routes it scans.
+any net-new view ships, and any team member may perform and sign off the pass. It covers every surface, including routes
+that the gate scans. On scanned routes, it checks behaviour the automated rules cannot establish; on unscanned surfaces,
+it assesses the full applicable Level A and Level AA criteria. This includes keyboard navigation order, screen-reader
+semantics, focus management in dialogs and overlays, and the motion budget under `prefers-reduced-motion`. The automated
+gate supplies evidence for the colour contrast, accessible name, role, and structural rules it evaluates, rather than
+proof of complete conformance on those routes.
 
 ## More information
 
