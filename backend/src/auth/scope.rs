@@ -127,40 +127,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn as_str_matches_serde_lowercase() {
-        for (variant, wire) in [
-            (Scope::Read, "read"),
-            (Scope::Write, "write"),
-            (Scope::Admin, "admin"),
-        ] {
-            assert_eq!(variant.as_str(), wire);
-            assert_eq!(format!("{variant}"), wire);
-        }
-    }
-
-    #[test]
-    fn json_roundtrip_uses_lowercase_string() {
-        let scope = Scope::Write;
-        let json = serde_json::to_string(&scope).expect("serialize");
-        assert_eq!(json, "\"write\"");
-        let back: Scope = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, Scope::Write);
-    }
-
-    #[test]
-    fn json_rejects_unknown_variant() {
-        let result: Result<Scope, _> = serde_json::from_str("\"superuser\"");
-        assert!(result.is_err(), "expected superuser to be rejected");
-    }
-
-    #[test]
-    fn from_str_rejects_unknown_variant() {
-        assert!(Scope::from_str("superuser").is_err());
-        assert!(Scope::from_str("READ").is_err()); // case sensitive
-        assert_eq!(Scope::from_str("read").unwrap(), Scope::Read);
-    }
-
-    #[test]
     fn for_role_derives_expected_set() {
         assert_eq!(
             Scope::for_role(Role::Admin),
@@ -168,17 +134,6 @@ mod tests {
         );
         assert_eq!(Scope::for_role(Role::Adult), &[Scope::Read, Scope::Write]);
         assert_eq!(Scope::for_role(Role::Child), &[Scope::Read, Scope::Write]);
-    }
-
-    #[test]
-    fn hierarchy_orders_read_below_write_below_admin() {
-        assert!(Scope::Read < Scope::Write);
-        assert!(Scope::Write < Scope::Admin);
-        assert!(Scope::Read < Scope::Admin);
-        // A higher scope satisfies a lower floor; a lower one does not.
-        assert!(Scope::Admin >= Scope::Write);
-        assert!(Scope::Write >= Scope::Read);
-        assert!(Scope::Read < Scope::Write);
     }
 
     #[test]

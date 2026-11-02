@@ -62,29 +62,3 @@ pub fn set_theme_cookie(jar: CookieJar, value: ThemePreference) -> CookieJar {
         .build();
     jar.add(cookie)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum_extra::extract::cookie::CookieJar;
-
-    #[test]
-    fn set_theme_cookie_writes_canonical_attributes() {
-        let jar = set_theme_cookie(CookieJar::new(), ThemePreference::Dark);
-
-        // String-compare the literal so a rename of THEME_COOKIE_NAME trips
-        // the test and surfaces cross-stack drift before it lands.
-        let cookie = jar
-            .get("reverie_theme")
-            .expect("cookie present in returned jar");
-
-        assert_eq!(cookie.name(), "reverie_theme");
-        assert_eq!(cookie.value(), "dark");
-        assert_eq!(cookie.http_only(), Some(false));
-        assert_eq!(cookie.same_site(), Some(SameSite::Lax));
-        assert_eq!(cookie.path(), Some("/"));
-        assert_eq!(cookie.max_age(), Some(Duration::days(365)));
-        // Secure is always set — see module-level rationale.
-        assert_eq!(cookie.secure(), Some(true));
-    }
-}

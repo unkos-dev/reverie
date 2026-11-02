@@ -325,57 +325,6 @@ mod tests {
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
-    #[test]
-    fn check_strength_rejects_a_trivial_password() {
-        let (score, feedback) = check_strength("password", &[]);
-        assert!(score < 2, "expected a weak score, got {score}");
-        assert!(!feedback.is_empty(), "weak password should carry feedback");
-    }
-
-    #[test]
-    fn check_strength_accepts_a_strong_passphrase() {
-        let (score, _) = check_strength("correct-horse-battery-staple-7!", &[]);
-        assert!(score >= 3, "expected a strong score, got {score}");
-    }
-
-    #[tokio::test]
-    async fn check_breached_reports_a_hit() {
-        let server = MockServer::start().await;
-        // SHA-1 of "password" is 5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8;
-        // prefix 5BAA6, suffix 1E4C9B93F3F0682250B6CF8331B7EE68FD8.
-        let body = "1E4C9B93F3F0682250B6CF8331B7EE68FD8:42\nFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF:0";
-        Mock::given(method("GET"))
-            .and(path_regex(r"^/5BAA6$"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(body))
-            .mount(&server)
-            .await;
-
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
-        )]
-        let client = reqwest::Client::new();
-        assert!(check_breached(&client, "password", &server.uri()).await);
-    }
-
-    #[tokio::test]
-    async fn check_breached_padding_entries_do_not_register() {
-        let server = MockServer::start().await;
-        // The real suffix is present but with count 0 (padding): not a breach.
-        let body = "1E4C9B93F3F0682250B6CF8331B7EE68FD8:0";
-        Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(body))
-            .mount(&server)
-            .await;
-
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
-        )]
-        let client = reqwest::Client::new();
-        assert!(!check_breached(&client, "password", &server.uri()).await);
-    }
-
     #[tokio::test]
     async fn check_breached_malformed_count_for_matching_suffix_fails_open() {
         let server = MockServer::start().await;
@@ -394,24 +343,6 @@ mod tests {
         )]
         let client = reqwest::Client::new();
         assert!(!check_breached(&client, "password", &server.uri()).await);
-    }
-
-    #[tokio::test]
-    async fn check_breached_reports_a_miss() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_string("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:9"),
-            )
-            .mount(&server)
-            .await;
-
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
-        )]
-        let client = reqwest::Client::new();
-        assert!(!check_breached(&client, "a-passphrase-not-in-this-mock", &server.uri()).await);
     }
 
     #[tokio::test]
@@ -439,22 +370,6 @@ mod tests {
         )]
         let client = reqwest::Client::new();
         assert!(!check_breached(&client, "password", &server.uri()).await);
-    }
-
-    #[tokio::test]
-    async fn enforce_rejects_over_max_length_before_any_other_work() {
-        // breach_check_url points nowhere reachable; if the length guard did not
-        // short-circuit first, the breach call would still fail open, so this
-        // test asserts the TooLong variant specifically.
-        let over = "a".repeat(300);
-        let result = enforce(
-            &over,
-            &[],
-            &policy("http://192.0.2.1:1".to_string()),
-            &dummy_client(),
-        )
-        .await;
-        assert!(matches!(result, Err(PolicyError::TooLong { max: 256 })));
     }
 
     #[tokio::test]

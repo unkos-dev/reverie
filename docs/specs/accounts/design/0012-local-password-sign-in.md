@@ -271,10 +271,8 @@ and `enforce_source_rate_limit`, `register` validates the email shape, then call
 with `[&body.email, &body.display_name]` as context words before hashing. `enforce` checks `max_length` first (a DoS
 guard: rejecting an oversized candidate before any zxcvbn or HIBP work runs), then `min_length`, then the zxcvbn score,
 then, only if the first three pass and the check is enabled, the HIBP query.
-`enforce_rejects_over_max_length_before_any_other_work` asserts the returned `TooLong` variant for a candidate over the
-configured maximum with a breach-check URL pointing nowhere reachable; that no breach request is actually sent for that
-candidate follows from `enforce`'s early return on the length check, confirmed by inspection of the function's check
-order rather than by the test itself, which observes only the returned variant.
+`password_ceiling_precedes_strength_and_breach_processing` asserts the returned `TooLong` variant for a candidate over
+the maximum, and that a recording breach-check server receives no request for it.
 
 ## Failure and recovery
 
