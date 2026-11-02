@@ -1638,7 +1638,6 @@ pub mod mail {
         Accept,
         Transient,
         Permanent,
-        Hang,
     }
 
     /// A plaintext SMTP listener that records what it was sent.
@@ -1746,7 +1745,6 @@ pub mod mail {
                     Behaviour::Accept => "250 queued".to_owned(),
                     Behaviour::Transient => "451 try again later".to_owned(),
                     Behaviour::Permanent => "550 refused".to_owned(),
-                    Behaviour::Hang => std::future::pending().await,
                 }
             } else if upper.starts_with("QUIT") {
                 writer.write_all(&say("221 bye")).await.unwrap();

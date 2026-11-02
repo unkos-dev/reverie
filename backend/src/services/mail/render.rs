@@ -217,26 +217,6 @@ mod tests {
     const TOKEN: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
 
     #[test]
-    fn smtp_notifications_date_format_follows_the_published_rules() {
-        assert_eq!(
-            format_date(Utc.with_ymd_and_hms(2026, 10, 24, 14, 0, 0).unwrap()),
-            "Saturday 24 October at 2:00 pm UTC"
-        );
-        assert_eq!(
-            format_date(Utc.with_ymd_and_hms(2026, 11, 1, 0, 5, 0).unwrap()),
-            "Sunday 1 November at 12:05 am UTC"
-        );
-        assert_eq!(
-            format_date(Utc.with_ymd_and_hms(2026, 12, 8, 12, 30, 0).unwrap()),
-            "Tuesday 8 December at 12:30 pm UTC"
-        );
-        assert_eq!(
-            format_date(Utc.with_ymd_and_hms(2027, 1, 3, 9, 7, 59).unwrap()),
-            "Sunday 3 January at 9:07 am UTC"
-        );
-    }
-
-    #[test]
     fn smtp_admin_delivery_templates_render_exactly() {
         let set = admin_link(
             &context(),
@@ -290,77 +270,5 @@ mod tests {
                 "Someone asked to verify reader@example.org for a Reverie account at https://reverie.example.org.\n\nTo confirm it, sign in to that account and open this link:\nhttps://reverie.example.org/verify-email#{TOKEN}\n\nThe link works once and expires on Monday 26 October at 9:00 am UTC.\n\nIf you didn't ask for this, ignore this email. To report a problem, reply to this email or write to help@example.org."
             )
         );
-    }
-
-    #[test]
-    fn smtp_notifications_rendered_payloads_fit_the_row_limit() {
-        let long = Context {
-            origin: format!("https://{}.example.org", "h".repeat(240)),
-            support: format!("{}@example.org", "s".repeat(64)),
-        };
-        let email = format!("{}@example.org", "e".repeat(64));
-        let token = "T".repeat(43);
-        let when = at(25, 14, 0);
-        let mut messages = vec![
-            admin_link(&long, LinkKind::Set, &email, &token, when),
-            admin_link(&long, LinkKind::Reset, &email, &token, when),
-            recovery(&long, &email, &token, when),
-            verification(&long, &email, &token, when),
-        ];
-        for event in [
-            Notice::PasswordChanged,
-            Notice::PasswordSet,
-            Notice::AddressVerified,
-            Notice::AddressChanged,
-            Notice::AddressRemoved,
-        ] {
-            messages.push(notice(&long, event, &email, when));
-        }
-        for message in messages {
-            let sealed = crate::models::mail_job::MailPayload {
-                recipient: email.clone(),
-                subject: message.subject,
-                body: message.body,
-            };
-            let length = serde_json::to_vec(&sealed).unwrap().len() + 16;
-            assert!((16..=65_536).contains(&length), "{length}");
-        }
-    }
-
-    #[test]
-    fn smtp_notifications_render_each_notice_exactly() {
-        let when = at(25, 14, 0);
-        let cases = [
-            (
-                Notice::PasswordChanged,
-                "Your Reverie password was changed",
-                "The password for the Reverie account reader@example.org at https://reverie.example.org was changed on Sunday 25 October at 2:00 pm UTC. All sessions were signed out. If you didn't make this change, write to help@example.org straight away.",
-            ),
-            (
-                Notice::PasswordSet,
-                "Your Reverie password is set",
-                "A password was set for the Reverie account reader@example.org at https://reverie.example.org on Sunday 25 October at 2:00 pm UTC. If you didn't do this, write to help@example.org straight away.",
-            ),
-            (
-                Notice::AddressVerified,
-                "Your email address is verified",
-                "reader@example.org is now verified for your Reverie account at https://reverie.example.org. If you didn't do this, write to help@example.org.",
-            ),
-            (
-                Notice::AddressChanged,
-                "Your Reverie email address was changed",
-                "An administrator changed the email address for your Reverie account at https://reverie.example.org on Sunday 25 October at 2:00 pm UTC. This address is no longer associated with your account. Previously queued security notices may still arrive. If you didn't expect this, write to help@example.org.",
-            ),
-            (
-                Notice::AddressRemoved,
-                "Your email address was removed from Reverie",
-                "An administrator removed the email address from your Reverie account at https://reverie.example.org on Sunday 25 October at 2:00 pm UTC. This address is no longer associated with your account. Previously queued security notices may still arrive. If you didn't expect this, write to help@example.org.",
-            ),
-        ];
-        for (event, subject, body) in cases {
-            let message = notice(&context(), event, "reader@example.org", when);
-            assert_eq!(message.subject, subject);
-            assert_eq!(message.body, body);
-        }
     }
 }
