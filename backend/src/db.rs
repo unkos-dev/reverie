@@ -1311,6 +1311,120 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_queue_migration_down_removes_new_state_and_up_restores_it(pool: PgPool) {
+        let down = include_str!("../migrations/20261021000000_mail_recovery.down.sql");
+        let up = include_str!("../migrations/20261021000000_mail_recovery.up.sql");
+        let user = sqlx::query_scalar!(
+            "INSERT INTO users (display_name, email) VALUES ('Round Trip', 'trip@example.org') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::raw_sql(down).execute(&pool).await.unwrap();
+        let present = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM pg_class
+                WHERE relname IN ('mail_jobs', 'account_email_proofs')"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let column = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM information_schema.columns
+                WHERE table_name = 'users' AND column_name = 'email_verified_at'"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((present, column), (0, 0));
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM users WHERE id = $1", user)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+        sqlx::raw_sql(up).execute(&pool).await.unwrap();
+        let restored = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM pg_class
+                WHERE relname IN ('mail_jobs', 'account_email_proofs')"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(restored, 2);
+        assert_eq!(
+            sqlx::query_scalar!("SELECT email_verified_at FROM users WHERE id = $1", user)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_backfill_deduplicates_retained_pair_and_conflict_rolls_back(pool: PgPool) {
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap()
+            .as_uuid();
+        let down = include_str!("../migrations/20261003000000_library_path_claims.down.sql");
+        let up = include_str!("../migrations/20261003000000_library_path_claims.up.sql");
+        sqlx::raw_sql(down).execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let (_, first) = claim_manifestation(&mut tx, library, "destination.epub").await;
+        sqlx::query!("UPDATE manifestations SET relocation_source_path = 'source.epub', relocation_destination_path = file_path WHERE id = $1", first).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(up).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM library_path_claims WHERE manifestation_id = $1",
+                first
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(2)
+        );
+        sqlx::raw_sql(down).execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let (_, second) = claim_manifestation(&mut tx, library, "other.epub").await;
+        sqlx::query!("UPDATE manifestations SET relocation_source_path = file_path, relocation_destination_path = 'destination.epub' WHERE id = $1", second).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        sqlx::query!("DELETE FROM _sqlx_migrations WHERE version = 20261003000000")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(run_migrations_inner(&pool).await.is_err());
+        assert!(
+            !sqlx::query_scalar!(
+                "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'library_path_claims')"
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+        );
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM _sqlx_migrations WHERE version = 20261003000000"
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM manifestations")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(2)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn readonly_role_is_refused_credential_tables(pool: PgPool) {
         let readonly = crate::test_support::db::readonly_pool_for(&pool).await;
 
