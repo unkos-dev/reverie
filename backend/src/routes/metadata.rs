@@ -701,6 +701,27 @@ fn parse_entity(s: &str) -> Result<EntityType, AppError> {
     }
 }
 
+fn normalise_isbn_field(field: &str, value: &Value) -> Result<String, AppError> {
+    let invalid = || AppError::FieldValidation {
+        detail: format!("invalid {field}"),
+        errors: BTreeMap::from([(field.into(), format!("invalid {field}"))]),
+    };
+    let raw = value.as_str().ok_or_else(invalid)?;
+    let parsed = if field == "isbn_10" {
+        raw.parse::<isbn::Isbn10>().map(|value| value.to_string())
+    } else {
+        raw.parse::<isbn::Isbn13>().and_then(|value| {
+            let compact = value.to_string();
+            if compact.starts_with("978") || compact.starts_with("979") {
+                Ok(compact)
+            } else {
+                Err(isbn::IsbnError::InvalidGroup)
+            }
+        })
+    };
+    parsed.map_err(|_| invalid())
+}
+
 /// Apply a specific version to its canonical column + pointer.
 /// Reused by `/accept` and `/revert`.
 ///
@@ -738,24 +759,7 @@ async fn apply_version(
         ));
     }
     let str_val = if matches!(field, "isbn_10" | "isbn_13") {
-        let invalid = || AppError::FieldValidation {
-            detail: format!("invalid {field}"),
-            errors: BTreeMap::from([(field.into(), format!("invalid {field}"))]),
-        };
-        let raw = value.as_str().ok_or_else(invalid)?;
-        let parsed = if field == "isbn_10" {
-            raw.parse::<isbn::Isbn10>().map(|value| value.to_string())
-        } else {
-            raw.parse::<isbn::Isbn13>().and_then(|value| {
-                let compact = value.to_string();
-                if compact.starts_with("978") || compact.starts_with("979") {
-                    Ok(compact)
-                } else {
-                    Err(isbn::IsbnError::InvalidGroup)
-                }
-            })
-        };
-        parsed.map_err(|_| invalid())?
+        normalise_isbn_field(field, value)?
     } else {
         value
             .as_str()
@@ -2536,26 +2540,7 @@ async fn apply_scalar_patch_field(
 ) -> Result<FieldVersionChange, AppError> {
     if let Some(value) = maybe_value {
         let json = match field {
-            "isbn_10" | "isbn_13" => {
-                let invalid = || AppError::FieldValidation {
-                    detail: format!("invalid {field}"),
-                    errors: BTreeMap::from([(field.into(), format!("invalid {field}"))]),
-                };
-                let raw = value.as_str().ok_or_else(invalid)?;
-                let parsed = if field == "isbn_10" {
-                    raw.parse::<isbn::Isbn10>().map(|value| value.to_string())
-                } else {
-                    raw.parse::<isbn::Isbn13>().and_then(|value| {
-                        let compact = value.to_string();
-                        if compact.starts_with("978") || compact.starts_with("979") {
-                            Ok(compact)
-                        } else {
-                            Err(isbn::IsbnError::InvalidGroup)
-                        }
-                    })
-                };
-                Value::String(parsed.map_err(|_| invalid())?)
-            }
+            "isbn_10" | "isbn_13" => Value::String(normalise_isbn_field(field, &value)?),
             _ => value,
         };
         let version_id = insert_manual_version(tx, manifestation_id, user_id, field, &json).await?;
