@@ -578,8 +578,8 @@ mod tests {
     use crate::models::credential_link;
     use crate::test_support::db::app_pool_for;
     use crate::test_support::mail::{
-        Behaviour, FakeRelay, account, enqueue_bearer, enqueue_notice, key,
-        payload_present, runtime, runtime_with, state_of,
+        Behaviour, FakeRelay, account, enqueue_bearer, enqueue_notice, key, payload_present,
+        runtime, runtime_with, state_of,
     };
 
     const ADDRESS: &str = "reader@example.org";
