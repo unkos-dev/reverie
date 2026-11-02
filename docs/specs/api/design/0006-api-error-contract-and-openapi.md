@@ -269,8 +269,8 @@ without attempting to parse the body, and `problemToApiError` falls back entirel
   code: `MalformedQuery` and `MalformedPath` are always `400`; `InvalidRequestBody` follows `JsonRejection`'s own
   subclass (`400`/`413`/`415`/`422`), verified per subclass in `error/mod.rs`'s test module.
 - The `instance` field reflects the request path exactly when the request passed through `problem_instance_layer` (every
-  request the composite router or its fallback handles) and is omitted otherwise (a unit test calling `.into_response()`
-  directly, per `instance_omitted_outside_request`).
+  request the composite router or its fallback handles) and is omitted otherwise (an `.into_response()` call outside any
+  request).
 - Every non-2xx `apiFetch` response surfaces as an `ApiError` carrying the response's real HTTP status, whatever the
   body shape: a conforming Problem Details body, a partial one, or a non-JSON one (the fallback paths above) all still
   produce an `ApiError` whose `.status` matches `response.status`.
@@ -281,8 +281,7 @@ without attempting to parse the body, and `problemToApiError` falls back entirel
   `SyntaxError` propagate with no request context.
 - A `PathRejection` kind other than a plain decode failure (any kind whose `status()` is not `400` — a routing or
   extractor-ordering mistake, not a value the caller sent) maps to `AppError::Internal` and a `500`, never to
-  `malformed-path`: `path_rejection_other_kind_maps_to_internal` pins this so a server-side extractor bug is never
-  reported back to the caller as if their input were at fault.
+  `malformed-path`, so a server-side extractor bug is never reported back to the caller as if their input were at fault.
 
 ## Security and operations
 

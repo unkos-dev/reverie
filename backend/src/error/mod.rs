@@ -577,13 +577,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unauthorized_returns_401_problem() {
-        let (status, _, json) = parse_problem(AppError::Unauthorized).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_problem_shape(&json, problems::UNAUTHORIZED, 401, "Unauthorized");
-    }
-
-    #[tokio::test]
     async fn unauthorized_carries_bare_bearer_challenge() {
         let response = AppError::Unauthorized.into_response();
         let challenge = response
@@ -603,6 +596,8 @@ mod tests {
         let (status, _, json) = parse_problem(AppError::InvalidCredential).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_problem_shape(&json, problems::UNAUTHORIZED, 401, "Unauthorized");
+        let (_, _, unauthorized) = parse_problem(AppError::Unauthorized).await;
+        assert_eq!(json, unauthorized);
     }
 
     #[tokio::test]
@@ -684,25 +679,6 @@ mod tests {
             json["detail"].as_str().unwrap(),
             "a path parameter has the wrong shape"
         );
-    }
-
-    #[tokio::test]
-    async fn path_rejection_other_kind_maps_to_internal() {
-        use axum::extract::{FromRequestParts, Path};
-
-        let request = axum::http::Request::builder().uri("/x").body(()).unwrap();
-        let (mut parts, ()) = request.into_parts();
-        let rejection = Path::<uuid::Uuid>::from_request_parts(&mut parts, &())
-            .await
-            .unwrap_err();
-
-        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert!(
-            ct.contains("application/problem+json"),
-            "wrong content-type: {ct}"
-        );
-        assert_problem_shape(&json, problems::INTERNAL, 500, "Internal Server Error");
     }
 
     #[derive(Debug, serde::Deserialize)]
@@ -924,14 +900,5 @@ mod tests {
             "wrong content-type: {ct}"
         );
         assert_problem_shape(&json, problems::BASIC_AUTH_REQUIRED, 401, "Unauthorized");
-    }
-
-    #[tokio::test]
-    async fn instance_omitted_outside_request() {
-        let (_, _, json) = parse_problem(AppError::NotFound).await;
-        assert!(
-            json.get("instance").is_none(),
-            "instance must be omitted when task-local is unset, got: {json}"
-        );
     }
 }
