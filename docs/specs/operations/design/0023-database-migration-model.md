@@ -144,10 +144,7 @@ applied-but-unembedded version is `MigrationError::SchemaAhead`, an embedded-but
   then calls the embedded `Migrator`'s own `run_direct` method on a fresh connection to that database. `run_direct` is
   sqlx's built-in migration applier: it does not call `db::run_migrations`, `run_locked`, or anything in this crate, so
   a test provisioned this way exercises none of the advisory lock, the batch-vs-no-tx split, or any `MigrationError`
-  variant. A handful of tests in `backend/src/db.rs` instead prove properties of the real `reverie_migrator` identity
-  directly: `reverie_migrator_can_apply_full_migration_set` grants a fresh per-test database's `CREATE` privileges to
-  `reverie_migrator` (since a `#[sqlx::test]` database starts with none of `init-roles.sql`'s grants) and then calls
-  `db::run_migrations` against a `reverie_migrator`-authenticated DSN built from the test pool's own connect options.
+  variant.
 - **`just db-migrate-raw`** applies pending migrations directly through sqlx-cli's `cargo sqlx migrate run` against the
   same `reverie_migrator`-authenticated DSN `db-migrate` uses, bypassing `db::run_migrations` entirely: sqlx-cli commits
   each migration individually rather than inside one batch transaction. The recipe exists so a branch authoring a new
@@ -260,15 +257,14 @@ authenticates inside the container and, when host `psql` is available, over the 
    `verify_schema_current` on that pool: the catalog probe finds `_sqlx_migrations`, the version-set diff is empty in
    both directions, and startup continues.
 
-**Concurrent runners racing the advisory lock**, as `concurrent_starts_serialize` exercises it: two calls to
-`run_migrations_inner` join on clones of the same pool against a fresh database. One acquires `pg_try_advisory_lock` on
-its first attempt and proceeds through `run_locked`; the other retries in the bounded loop and, once the lock frees,
-itself calls `run_locked` — but by then every embedded migration is already recorded as applied, so its
-`tx_pending`/`no_tx_pending` partitions are both empty and it commits nothing. The `CREATE TABLE IF NOT EXISTS` each one
-issues at the top of `run_locked` never races the other, because the advisory lock already serialises the two
-`run_locked` calls: by the time either reaches that statement, the other is not concurrently inside `run_locked` at all.
-Applied counts across both runs sum to the full embedded set, and `_sqlx_migrations` holds exactly that many rows — no
-duplicate, no partial batch from the loser.
+**Concurrent runners racing the advisory lock**: two calls to `run_migrations_inner` join on clones of the same pool
+against a fresh database. One acquires `pg_try_advisory_lock` on its first attempt and proceeds through `run_locked`;
+the other retries in the bounded loop and, once the lock frees, itself calls `run_locked` — but by then every embedded
+migration is already recorded as applied, so its `tx_pending`/`no_tx_pending` partitions are both empty and it commits
+nothing. The `CREATE TABLE IF NOT EXISTS` each one issues at the top of `run_locked` never races the other, because the
+advisory lock already serialises the two `run_locked` calls: by the time either reaches that statement, the other is not
+concurrently inside `run_locked` at all. Applied counts across both runs sum to the full embedded set, and
+`_sqlx_migrations` holds exactly that many rows — no duplicate, no partial batch from the loser.
 
 **Auto-migrate startup**, for an operator running bare `docker run` with `REVERIE_AUTO_MIGRATE=true`: `run()` builds the
 `reverie_app` pool exactly as above, then `apply_or_verify_schema` takes the `auto_migrate = true` branch, requires
@@ -359,14 +355,11 @@ whatever the flag says; what the flag decides is whether the process uses it. Se
 what makes it used: the long-lived process then holds the `reverie_migrator` credential for its entire run, the explicit
 trade-off for an operator with no orchestration to sequence a separate migrate step.
 
-`reverie_migrator`'s least-privilege posture is proved by two tests independent of each other:
-`migrator_role_is_least_privilege` reads `pg_roles` and asserts the role is not `rolsuper`, `rolcreaterole`, or
-`rolbypassrls`; `migration_set_has_no_superuser_only_operations` statically scans every embedded migration's SQL for
-`ALTER SYSTEM`, `CREATE ROLE`/`CREATE USER`, `CREATE EVENT TRIGGER`, or a `CREATE EXTENSION` naming anything other than
-the trusted `pg_trgm`, `pgcrypto`, or `unaccent`. Together they show the identity holds no cluster-wide authority and
-that nothing in the migration set would need more than it has. Being the table owner still exempts `reverie_migrator`
-from the RLS policies those tables carry, since none sets `FORCE ROW LEVEL SECURITY`; "Row-level security and database
-context" covers that consequence for the roles that matter at request time.
+`reverie_migrator`'s least-privilege posture is proved by `migrator_role_is_least_privilege`, which reads `pg_roles` and
+asserts the role is not `rolsuper`, `rolcreaterole`, or `rolbypassrls`, so the identity holds no cluster-wide authority.
+Being the table owner still exempts `reverie_migrator` from the RLS policies those tables carry, since none sets
+`FORCE ROW LEVEL SECURITY`; "Row-level security and database context" covers that consequence for the roles that matter
+at request time.
 
 Bypassing the `depends_on` ordering compose applies — for example, restarting only the `reverie` container without a
 preceding successful `reverie-migrate` run — opens a version-skew window that `verify_schema_current`'s fail-closed
