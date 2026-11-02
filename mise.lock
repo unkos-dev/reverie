@@ -50,14 +50,14 @@ url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/67906
 provenance = "github-attestations"
 
 [[tools."github:owenlamont/ryl"]]
-version = "0.26.1"
+version = "0.27.0"
 backend = "github:owenlamont/ryl"
-specifiers = ["v0.26.1"]
+specifiers = ["v0.27.0"]
 
 [tools."github:owenlamont/ryl"."platforms.linux-x64"]
-checksum = "sha256:17b6fe666c19828179c11e15943643c4d9a940dc5d7c1ae3ec0055f81aaa3023"
-url = "https://github.com/owenlamont/ryl/releases/download/v0.26.1/ryl-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/owenlamont/ryl/releases/assets/674247184"
+checksum = "sha256:8d494a2742d8f2d57a49bd7db38034650ca98200f08d0c733c4650cbf5ec026d"
+url = "https://github.com/owenlamont/ryl/releases/download/v0.27.0/ryl-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/owenlamont/ryl/releases/assets/692188528"
 provenance = "github-attestations"
 
 [[tools."github:sourcefrog/cargo-mutants"]]
