@@ -25,12 +25,13 @@ second account sharing the same browser, disclosing a cover its own permissions 
 ## Acceptance criteria
 
 - A successful cover response carries `Cache-Control: private, max-age=86400`, a strong, quoted `ETag`, and
-  `Vary: Authorization, Cookie`. Checked by `cover_cache_populates_and_serves` in `backend/src/routes/opds/tests.rs`.
+  `Vary: Authorization, Cookie`. Checked by `capability_cover_route_headers_authorisation_and_conditional_open` in
+  `backend/src/routes/opds/tests.rs`.
 - A `304 Not Modified` response to a matching `If-None-Match` carries `Vary: Authorization, Cookie` and an empty body.
-  Checked by `cover_cache_populates_and_serves` in `backend/src/routes/opds/tests.rs`, which asserts the `Vary` header
-  and the empty body on the `304`; the same test does not assert the `304`'s `Cache-Control` value.
+  Checked by `capability_cover_route_headers_authorisation_and_conditional_open` in `backend/src/routes/opds/tests.rs`,
+  which asserts the `Cache-Control` and `Vary` headers and the empty body on the `304`.
 - The `404` returned when a cover's backing file is absent from disk carries `Cache-Control: private, max-age=60` and
-  `Vary: Authorization, Cookie`. Checked by `cover_missing_file_returns_404_problem_json` in
+  `Vary: Authorization, Cookie`. Checked by `capability_cover_route_headers_authorisation_and_conditional_open` in
   `backend/src/routes/opds/tests.rs`.
 - The `404` returned when a manifestation declares no cover, is hidden by row-level security, or has its archive
   rejected carries neither a `Cache-Control` header nor a `Vary` header; that response shape is uncached by omission

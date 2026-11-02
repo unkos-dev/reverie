@@ -833,50 +833,6 @@ pub mod db {
         axum_test::TestServer::new(app)
     }
 
-    /// Same as [`server_with_opds_enabled`] but with a caller-chosen
-    /// `opds.page_size` for navigation-feed pagination-walk tests.
-    pub async fn server_with_opds_page_size(
-        app_pool: &PgPool,
-        ingestion_pool: &PgPool,
-        library_path: &std::path::Path,
-        page_size: u32,
-    ) -> axum_test::TestServer {
-        use crate::config::OpdsConfig;
-        use crate::state::AppState;
-
-        let (mut config, library_files) = super::test_storage_config(
-            Some(library_path),
-            crate::models::storage_library::default_library_id(app_pool)
-                .await
-                .unwrap(),
-        );
-        config.opds = OpdsConfig {
-            enabled: true,
-            page_size,
-            realm: "Reverie OPDS".into(),
-        };
-        config.public_url = Some(url::Url::parse("http://host.example/").unwrap());
-        let state = AppState {
-            pool: app_pool.clone(),
-            ingestion_pool: ingestion_pool.clone(),
-            ingestion: crate::services::ingestion::coordinator_channel().0,
-            library_files,
-            hash_limiter: crate::auth::password::HashLimiter::new(
-                usize::try_from(config.auth_hash_concurrency).unwrap(),
-            ),
-            config,
-            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
-            login_limiter: super::test_login_limiter(),
-            recovery_limiter: super::test_login_limiter(),
-            oidc_limiter: super::test_login_limiter(),
-            settings: super::test_settings(),
-            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            mail: None,
-        };
-        let app = crate::build_router(state);
-        axum_test::TestServer::new(app)
-    }
-
     /// Insert (work, manifestation) via `reverie_ingestion` for use as
     /// fixture data in route tests.  Returns `(work_id, manifestation_id)`.
     pub async fn insert_work_and_manifestation(
