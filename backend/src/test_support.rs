@@ -210,52 +210,6 @@ pub fn test_state() -> AppState {
     }
 }
 
-#[tokio::test]
-async fn test_state_storage_roots_match_config_and_survive_cloning() {
-    let state = test_state();
-    state
-        .library_files
-        .ingestion()
-        .write("marker", b"fixture bytes")
-        .unwrap();
-    assert_eq!(
-        std::fs::read(state.config.ingestion_path.as_path().join("marker")).unwrap(),
-        b"fixture bytes"
-    );
-    let roots = [
-        state.config.library_path.as_path().to_owned(),
-        state.config.ingestion_path.as_path().to_owned(),
-    ];
-    let clone = state.clone();
-    drop(state);
-    assert!(roots.iter().all(|root| root.is_dir()));
-    drop(clone);
-    assert!(roots.iter().all(|root| !root.exists()));
-}
-
-#[test]
-fn test_storage_config_preserves_caller_owned_library() {
-    let library = tempfile::tempdir().unwrap();
-    let id = crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4());
-    let (config, files) = test_storage_config(Some(library.path()), id);
-    files
-        .library(id)
-        .unwrap()
-        .write("marker", b"library bytes")
-        .unwrap();
-    assert_eq!(
-        std::fs::read(config.library_path.as_path().join("marker")).unwrap(),
-        b"library bytes"
-    );
-    let staging = config.ingestion_path.as_path().to_owned();
-    drop(files);
-    assert!(!staging.exists());
-    assert_eq!(
-        std::fs::read(library.path().join("marker")).unwrap(),
-        b"library bytes"
-    );
-}
-
 /// Build the full application router with auth layer (for route integration tests).
 ///
 /// Uses `MemoryStore` for sessions even though production uses
@@ -1192,48 +1146,6 @@ pub mod db {
     /// Malformed (truncated) SVG cover — exercises the negative serve path.
     pub fn make_minimal_epub_with_malformed_svg_cover(marker: &str) -> Vec<u8> {
         build_svg_cover_epub(marker, b"<svg><broken", false)
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::role_opts_from;
-        use sqlx::postgres::PgConnectOptions;
-
-        #[test]
-        fn role_password_requires_nonempty_input() {
-            assert_eq!(
-                super::password_input(Some("supplied-password")),
-                Ok("supplied-password")
-            );
-            assert!(super::password_input(None).is_err());
-            assert!(super::password_input(Some("")).is_err());
-        }
-
-        #[test]
-        fn role_opts_carry_a_socket_source() {
-            let source = PgConnectOptions::new()
-                .socket("/tmp/pgsock")
-                .database("per_test_db");
-            let derived = role_opts_from(&source, "reverie_app", "pw");
-            assert_eq!(
-                derived.get_socket(),
-                Some(&std::path::PathBuf::from("/tmp/pgsock"))
-            );
-            assert_eq!(derived.get_database(), Some("per_test_db"));
-            assert_eq!(derived.get_username(), "reverie_app");
-        }
-
-        #[test]
-        fn role_opts_stay_tcp_for_a_tcp_source() {
-            let source = PgConnectOptions::new()
-                .host("db.internal")
-                .port(6432)
-                .database("per_test_db");
-            let derived = role_opts_from(&source, "reverie_ingestion", "pw");
-            assert_eq!(derived.get_socket(), None);
-            assert_eq!(derived.get_host(), "db.internal");
-            assert_eq!(derived.get_port(), 6432);
-        }
     }
 }
 

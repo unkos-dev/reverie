@@ -32,9 +32,9 @@ string would defeat that: every consumer, including Reverie's own browser client
   `validation`, `csrf-missing`, `csrf-mismatch`, `if-match-required`, `if-match-mismatch`, `system-shelf-immutable`,
   `malformed-query`, `malformed-header`, `malformed-path`, `invalid-request-body`, `rate-limited`,
   `setup-already-complete`, `email-conflict`, `method-not-allowed`, `internal`). Checked per problem class in
-  `backend/src/error/mod.rs`'s test module, for example `not_found_returns_404_problem`,
-  `csrf_missing_returns_428_problem`, `method_not_allowed_returns_405_problem` and
-  `internal_returns_500_without_leaking_details`.
+  `backend/src/error/mod.rs`'s test module (`malformed-path` and `invalid-request-body` in
+  `backend/tests/extractors.rs`), for example `not_found_returns_404_problem`, `csrf_missing_returns_428_problem`,
+  `method_not_allowed_returns_405_problem` and `internal_returns_500_without_leaking_details`.
 - A request under `/api/v1` matching no registered operation answers the same way, not with a generic or
   framework-default not-found body. Checked by `unmatched_api_route_returns_problem_with_instance` in
   `backend/src/lib.rs`.

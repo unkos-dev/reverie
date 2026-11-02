@@ -267,7 +267,7 @@ without attempting to parse the body, and `problemToApiError` falls back entirel
   counterexample to it.
 - A query, path, or JSON-body decode failure maps to the status its rejection class implies rather than one flattened
   code: `MalformedQuery` and `MalformedPath` are always `400`; `InvalidRequestBody` follows `JsonRejection`'s own
-  subclass (`400`/`413`/`415`/`422`), verified per subclass in `error/mod.rs`'s test module.
+  subclass (`400`/`413`/`415`/`422`), verified per subclass in `tests/extractors.rs`.
 - The `instance` field reflects the request path exactly when the request passed through `problem_instance_layer` (every
   request the composite router or its fallback handles) and is omitted otherwise (an `.into_response()` call outside any
   request).
