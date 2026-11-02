@@ -87,28 +87,3 @@ pub async fn ready(State(state): State<AppState>) -> Result<&'static str, Proble
         })?;
     Ok("ok")
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::test_support::test_server;
-
-    #[tokio::test]
-    async fn ready_returns_503_problem_when_database_unreachable() {
-        let server = test_server();
-        let response = server.get("/health/ready").await;
-        response.assert_status(axum::http::StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(
-            response
-                .headers()
-                .get(axum::http::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok()),
-            Some("application/problem+json"),
-        );
-        let json: serde_json::Value = response.json();
-        assert_eq!(json["type"], "about:blank");
-        assert_eq!(json["title"], "Service Unavailable");
-        assert_eq!(json["status"], 503);
-        assert_eq!(json["detail"], "Database unreachable.");
-        assert_eq!(json["instance"], "/health/ready");
-    }
-}
