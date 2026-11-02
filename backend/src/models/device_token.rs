@@ -358,4 +358,34 @@ mod tests {
             "unknown id must not resolve"
         );
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_with_limit_roundtrips_scopes_and_expiry(pool: PgPool) {
+        let display_name = format!("mint-roundtrip-{}", Uuid::new_v4());
+        let user_id = sqlx::query_scalar!(
+            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
+            display_name,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("create user");
+
+        let expires_at = Utc::now() + TimeDelta::days(90);
+        let token = create_with_limit(
+            &pool,
+            user_id,
+            "roundtrip",
+            "h-roundtrip",
+            &[Scope::Read, Scope::Write],
+            Some(expires_at),
+        )
+        .await
+        .expect("create token");
+
+        assert_eq!(token.scopes, vec![Scope::Read, Scope::Write]);
+        assert_eq!(
+            token.expires_at.map(|d: DateTime<Utc>| d.timestamp()),
+            Some(expires_at.timestamp())
+        );
+    }
 }

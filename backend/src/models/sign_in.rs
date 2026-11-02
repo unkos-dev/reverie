@@ -196,4 +196,24 @@ mod tests {
         assert_ne!(first.unwrap(), second.unwrap());
         assert_eq!(join_pending(&pool, "one").await.unwrap(), CohortState::Won);
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn sign_in_attempt_start_replaces_previous(pool: PgPool) {
+        start(&pool, "one", "first").await;
+        start_oidc_attempt(&pool, "one", "second", "replacement", "new-nonce")
+            .await
+            .unwrap();
+        assert!(
+            claim_oidc_attempt(&pool, "one", "first")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let attempt = claim_oidc_attempt(&pool, "one", "second")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(attempt.pkce_verifier, "replacement");
+        assert_eq!(attempt.nonce, "new-nonce");
+    }
 }

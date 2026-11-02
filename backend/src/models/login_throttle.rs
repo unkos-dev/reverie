@@ -246,4 +246,26 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(snapshot(&pool, "user@example.com").await.0.len(), 1);
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn password_admission_drop_rolls_back_and_commit_survives_cancellation(pool: PgPool) {
+        seed(&pool, "cancel", &[], None).await;
+        let mut attempt = allowed(&pool, "cancel").await;
+        sqlx::query!("UPDATE local_login_throttle SET locked_until = clock_timestamp() + interval '15 minutes' WHERE email_lower = 'cancel'")
+            .execute(attempt.connection()).await.unwrap();
+        drop(attempt);
+        allowed(&pool, "cancel").await.fail().await.unwrap();
+        assert_eq!(snapshot(&pool, "cancel").await.0.len(), 1);
+        let task_pool = pool.clone();
+        let (committed, observed) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            allowed(&task_pool, "cancel").await.fail().await.unwrap();
+            committed.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        observed.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert_eq!(snapshot(&pool, "cancel").await.0.len(), 2);
+    }
 }

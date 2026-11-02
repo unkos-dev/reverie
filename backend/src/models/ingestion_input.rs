@@ -843,4 +843,32 @@ mod tests {
             InputStatus::Processing
         );
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_inputs_current_uniqueness_and_removed_replacement(pool: PgPool) {
+        let original = observed(&pool, 10).await;
+        assert!(
+            observe(
+                &pool,
+                &[InputPath::from_path(Path::new("book.epub")).unwrap()],
+                &[fingerprint(10)]
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
+        let same = observed(&pool, 10).await;
+        assert_eq!(same.id, original.id);
+        assert_eq!(same.generation, 1);
+        let changed = observed(&pool, 11).await;
+        assert_eq!(changed.id, original.id);
+        assert_eq!(changed.generation, 2);
+        remove(&pool, &changed, "external_disappearance")
+            .await
+            .unwrap();
+        let replacement = observed(&pool, 11).await;
+        assert_ne!(replacement.id, original.id);
+        assert_eq!(replacement.generation, 1);
+        assert_eq!(current_page(&pool, None).await.unwrap().len(), 1);
+    }
 }

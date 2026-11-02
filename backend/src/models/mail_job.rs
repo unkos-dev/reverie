@@ -660,11 +660,37 @@ mod tests {
     use crate::models::account_email_proof::{self, ProofPurpose, lock_account};
     use crate::test_support::db::{app_pool_for, readonly_pool_for};
     use crate::test_support::mail::{
-        account, digest, enqueue_bearer, enqueue_notice, key, other_key, payload, payload_present,
-        state_of,
+        account, backdate, digest, enqueue_bearer, enqueue_notice, key, other_key, payload,
+        payload_present, state_of,
     };
 
     const ADDRESS: &str = "reader@example.org";
+
+    async fn recovery_job(app: &PgPool, user: Uuid, seed: u8) -> Uuid {
+        enqueue_bearer(
+            app,
+            user,
+            MailPurpose::EmailRecovery,
+            &digest(seed),
+            TimeDelta::minutes(15),
+            ADDRESS,
+        )
+        .await
+    }
+
+    async fn admit(app: &PgPool, user: Uuid, now: DateTime<Utc>, seed: Option<u8>) -> Admission {
+        let mut conn = app.acquire().await.unwrap();
+        let digest = seed.map(digest);
+        admission_at(
+            &mut conn,
+            user,
+            MailPurpose::EmailRecovery,
+            digest.as_deref(),
+            now,
+        )
+        .await
+        .unwrap()
+    }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn smtp_queue_enqueue_seals_recipient_and_message_under_job_and_purpose(pool: PgPool) {
@@ -732,6 +758,364 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_allowance_interval_boundary_is_exactly_sixty_seconds(pool: PgPool) {
+        let app = app_pool_for(&pool).await;
+        let user = account(&pool, ADDRESS).await;
+        let job = recovery_job(&app, user, 1).await;
+        let queued = Utc::now() - TimeDelta::days(1);
+        backdate(&pool, job, queued).await;
+        sqlx::query!("UPDATE mail_jobs SET state = 'cancelled', terminal_at = now(), nonce = NULL, payload = NULL WHERE id = $1", job)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let micro = TimeDelta::microseconds(1);
+        assert_eq!(
+            admit(&app, user, queued + REQUEST_INTERVAL - micro, Some(9)).await,
+            Admission::TooSoon
+        );
+        assert_eq!(
+            admit(&app, user, queued + REQUEST_INTERVAL, Some(9)).await,
+            Admission::Allowed
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_allowance_daily_limit_boundary_is_exactly_twenty_four_hours(pool: PgPool) {
+        let app = app_pool_for(&pool).await;
+        let user = account(&pool, ADDRESS).await;
+        let base = Utc::now() - TimeDelta::days(3);
+        for index in 0..5_u8 {
+            let job = recovery_job(&app, user, index + 1).await;
+            backdate(&pool, job, base + TimeDelta::hours(i64::from(index))).await;
+            sqlx::query!("UPDATE mail_jobs SET state = 'failed', terminal_at = now(), failure_category = 'timeout', nonce = NULL, payload = NULL WHERE id = $1", job)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let micro = TimeDelta::microseconds(1);
+        let edge = base + ROLLING_WINDOW;
+        assert_eq!(
+            admit(&app, user, edge - micro, Some(9)).await,
+            Admission::DailyLimit
+        );
+        assert_eq!(admit(&app, user, edge, Some(9)).await, Admission::Allowed);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_allowance_proof_allows_the_first_send_and_two_repeats(pool: PgPool) {
+        let app = app_pool_for(&pool).await;
+        let user = account(&pool, ADDRESS).await;
+        let base = Utc::now() - TimeDelta::hours(2);
+        for sent in 0..3_i64 {
+            let now = base + TimeDelta::minutes(sent) + REQUEST_INTERVAL;
+            assert_eq!(
+                admit(&app, user, now, Some(7)).await,
+                Admission::Allowed,
+                "{sent}"
+            );
+            let job = recovery_job(&app, user, 7).await;
+            backdate(&pool, job, base + TimeDelta::minutes(sent)).await;
+            sqlx::query!(
+                "UPDATE mail_jobs SET state = 'accepted', terminal_at = now() WHERE id = $1",
+                job
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let later = base + TimeDelta::minutes(30);
+        assert_eq!(
+            admit(&app, user, later, Some(7)).await,
+            Admission::ProofLimit
+        );
+        assert_eq!(
+            admit(&app, user, later, Some(8)).await,
+            Admission::Allowed,
+            "a different proof starts its own count"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_allowance_pending_delivery_coalesces_before_any_limit(pool: PgPool) {
+        let app = app_pool_for(&pool).await;
+        let user = account(&pool, ADDRESS).await;
+        let job = recovery_job(&app, user, 7).await;
+        backdate(&pool, job, Utc::now() - TimeDelta::hours(2)).await;
+        assert_eq!(
+            admit(&app, user, Utc::now(), Some(7)).await,
+            Admission::Coalesce
+        );
+        sqlx::query!(
+            "UPDATE mail_jobs SET state = 'in_progress' WHERE id = $1",
+            job
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            admit(&app, user, Utc::now(), Some(7)).await,
+            Admission::Coalesce,
+            "a message in flight also absorbs the request"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_allowance_survives_proof_deletion_and_does_not_reset_for_a_new_proof(
+        pool: PgPool,
+    ) {
+        let app = app_pool_for(&pool).await;
+        let user = account(&pool, ADDRESS).await;
+        let base = Utc::now() - TimeDelta::hours(6);
+        for index in 0..5_u8 {
+            let job = recovery_job(&app, user, index + 1).await;
+            backdate(&pool, job, base + TimeDelta::minutes(i64::from(index))).await;
+        }
+        let mut tx = app.begin().await.unwrap();
+        lock_account(&mut tx, user).await.unwrap();
+        let proof = account_email_proof::issue(&mut tx, user, ProofPurpose::Recovery, ADDRESS)
+            .await
+            .unwrap();
+        account_email_proof::cancel(&mut tx, user, ProofPurpose::Recovery)
+            .await
+            .unwrap();
+        revoke_for_proofs(
+            &mut tx,
+            user,
+            &[digest(1), digest(2), digest(3), digest(4), digest(5)],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM mail_jobs WHERE state = 'cancelled' AND proof_digest IS NOT NULL"
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(5)
+        );
+        let now = base + TimeDelta::hours(1);
+        assert_eq!(admit(&app, user, now, Some(1)).await, Admission::DailyLimit);
+        assert_eq!(admit(&app, user, now, None).await, Admission::DailyLimit);
+        assert_eq!(proof.token.len(), 43);
+        assert_eq!(
+            admit(&app, user, base + TimeDelta::hours(25), None).await,
+            Admission::Allowed
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_allowance_only_recovery_and_verification_are_limited(pool: PgPool) {
+        let app = app_pool_for(&pool).await;
+        let user = account(&pool, ADDRESS).await;
+        let mut conn = app.acquire().await.unwrap();
+        let notice = enqueue_notice(&app, user, MailPurpose::NoticePasswordChanged, ADDRESS).await;
+        let admin = enqueue_bearer(
+            &app,
+            user,
+            MailPurpose::AdminLink,
+            &digest(3),
+            TimeDelta::hours(72),
+            ADDRESS,
+        )
+        .await;
+        assert_ne!(notice, admin);
+        let now = Utc::now();
+        for purpose in [
+            MailPurpose::AdminLink,
+            MailPurpose::NoticePasswordChanged,
+            MailPurpose::NoticePasswordSet,
+            MailPurpose::NoticeAddressVerified,
+            MailPurpose::NoticeAddressChanged,
+            MailPurpose::NoticeAddressRemoved,
+        ] {
+            assert_eq!(
+                admission_at(&mut conn, user, purpose, Some(&digest(3)), now)
+                    .await
+                    .unwrap(),
+                Admission::Allowed,
+                "{purpose:?}"
+            );
+        }
+        assert_eq!(
+            admit(&app, user, now, Some(8)).await,
+            Admission::Allowed,
+            "notices and administrator mail do not spend the recovery allowance"
+        );
+        let challenge = enqueue_bearer(
+            &app,
+            user,
+            MailPurpose::Verification,
+            &digest(4),
+            TimeDelta::hours(24),
+            ADDRESS,
+        )
+        .await;
+        backdate(&pool, challenge, now - TimeDelta::seconds(30)).await;
+        sqlx::query!("UPDATE mail_jobs SET state = 'accepted', terminal_at = now(), nonce = NULL, payload = NULL WHERE id = $1", challenge)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let verification = |at, seed| {
+            let app = app.clone();
+            async move {
+                let mut conn = app.acquire().await.unwrap();
+                admission_at(
+                    &mut conn,
+                    user,
+                    MailPurpose::Verification,
+                    Some(&digest(seed)),
+                    at,
+                )
+                .await
+                .unwrap()
+            }
+        };
+        assert_eq!(verification(now, 4).await, Admission::TooSoon);
+        assert_eq!(
+            verification(now + TimeDelta::seconds(31), 4).await,
+            Admission::Allowed
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_allowance_concurrent_admissions_queue_one_delivery(pool: PgPool) {
+        let app = app_pool_for(&pool).await;
+        let user = account(&pool, ADDRESS).await;
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let app = app.clone();
+            tasks.push(tokio::spawn(async move {
+                let mut tx = app.begin().await.unwrap();
+                lock_account(&mut tx, user).await.unwrap().unwrap();
+                let live = account_email_proof::live(&mut tx, user, ProofPurpose::Recovery)
+                    .await
+                    .unwrap();
+                let current = live.as_ref().map(|proof| proof.token_hash.clone());
+                let decision = admission(
+                    &mut tx,
+                    user,
+                    MailPurpose::EmailRecovery,
+                    current.as_deref(),
+                )
+                .await
+                .unwrap();
+                if decision == Admission::Allowed {
+                    let proof =
+                        account_email_proof::issue(&mut tx, user, ProofPurpose::Recovery, ADDRESS)
+                            .await
+                            .unwrap();
+                    enqueue(
+                        &mut tx,
+                        &key(),
+                        &NewJob {
+                            user_id: user,
+                            purpose: MailPurpose::EmailRecovery,
+                            proof_digest: Some(&proof.token_hash),
+                            expires_at: Some(proof.expires_at),
+                            payload: &payload(ADDRESS),
+                        },
+                    )
+                    .await
+                    .unwrap();
+                }
+                tx.commit().await.unwrap();
+                decision
+            }));
+        }
+        let mut decisions = Vec::new();
+        for task in tasks {
+            decisions.push(task.await.unwrap());
+        }
+        assert_eq!(
+            decisions
+                .iter()
+                .filter(|decision| **decision == Admission::Allowed)
+                .count(),
+            1,
+            "{decisions:?}"
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM mail_jobs")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_queue_resend_reseals_the_retained_message_under_a_new_job(pool: PgPool) {
+        let app = app_pool_for(&pool).await;
+        let user = account(&pool, ADDRESS).await;
+        let mut tx = app.begin().await.unwrap();
+        lock_account(&mut tx, user).await.unwrap();
+        let proof = account_email_proof::issue(&mut tx, user, ProofPurpose::Recovery, ADDRESS)
+            .await
+            .unwrap();
+        let first = enqueue(
+            &mut tx,
+            &key(),
+            &NewJob {
+                user_id: user,
+                purpose: MailPurpose::EmailRecovery,
+                proof_digest: Some(&proof.token_hash),
+                expires_at: Some(proof.expires_at),
+                payload: &payload(ADDRESS),
+            },
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        let mut conn = app.acquire().await.unwrap();
+        assert!(matches!(
+            resend(&mut conn, &key(), user, &proof.token_hash).await,
+            Err(EnqueueError::Database(_))
+        ));
+        sqlx::query!(
+            "UPDATE mail_jobs SET state = 'accepted', terminal_at = now() WHERE id = $1",
+            first
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut conn = app.acquire().await.unwrap();
+        let second = resend(&mut conn, &key(), user, &proof.token_hash)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(first, second);
+        let rows = sqlx::query!(
+            r#"SELECT id, purpose, nonce AS "nonce!", payload AS "payload!", expires_at
+                 FROM mail_jobs ORDER BY enqueued_at"#
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_ne!(rows[0].nonce, rows[1].nonce);
+        assert_eq!(rows[0].expires_at, rows[1].expires_at);
+        let plain: Vec<_> = rows
+            .iter()
+            .map(|row| {
+                crypto::open(&key(), row.id, &row.purpose, &row.nonce, &row.payload).unwrap()
+            })
+            .collect();
+        assert_eq!(plain[0], plain[1]);
+        revoke_for_proofs(&mut conn, user, std::slice::from_ref(&proof.token_hash))
+            .await
+            .unwrap();
+        assert!(
+            resend(&mut conn, &key(), user, &proof.token_hash)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(!payload_present(&pool, first).await);
     }
 
     async fn sweep_all(app: &PgPool) {
