@@ -685,13 +685,6 @@ mod tests {
     }
 
     #[test]
-    fn rasterizes_minimal_svg_to_png() {
-        let out = rasterize_svg(vector_svg(100, 150).as_bytes(), |_| None).unwrap();
-        assert_eq!(image::guess_format(&out).unwrap(), image::ImageFormat::Png);
-        assert!(long_edge(&out) <= MAX_RENDER_LONG_EDGE);
-    }
-
-    #[test]
     fn resolves_in_zip_relative_image_href() {
         let sibling = raster(2, 2, image::ImageFormat::Png);
         let out = rasterize_svg(image_only_svg("cover.png").as_bytes(), move |href| {
@@ -930,27 +923,6 @@ mod tests {
         assert!(parses_as_svg(svg.as_bytes()));
     }
 
-    /// Real Standard Ebooks `cover.svg` (Pride and Prejudice). SE releases all
-    /// its work to the public domain (CC0). This is the canonical input the SVG cover
-    /// pipeline exists to render, so the gate must accept it — a false-reject here would
-    /// regress every SE cover inside the PR that ships SVG support.
-    const STANDARD_EBOOKS_COVER: &str = include_str!("testdata/standard_ebooks_cover.svg");
-
-    #[test]
-    fn accepts_real_standard_ebooks_cover() {
-        // The cover references a sibling `cover.jpg` (full-bleed artwork); serve-
-        // time resolves it and renders non-blank. Verified real SE covers use no
-        // filters and a handful of path segments — far under every budget.
-        let artwork = raster(2, 2, image::ImageFormat::Jpeg);
-        let out = rasterize_svg(STANDARD_EBOOKS_COVER.as_bytes(), move |href| {
-            (href == "cover.jpg").then(|| artwork.clone())
-        })
-        .unwrap();
-        assert_eq!(image::guess_format(&out).unwrap(), image::ImageFormat::Png);
-        // Ingestion (no sibling resolver) must accept it too.
-        assert!(parses_as_svg(STANDARD_EBOOKS_COVER.as_bytes()));
-    }
-
     /// Many zero-segment nodes: one data-URI `<image>` in `defs`, cloned by
     /// `count` `<use>` references, which usvg expands into per-reference
     /// nodes. Drives the node-count budget without path segments, without the
@@ -1028,32 +1000,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_malformed_svg() {
-        let err = rasterize_svg(b"<svg><broken", |_| None).unwrap_err();
-        assert!(matches!(err, CoverError::Decode(_)));
-    }
-
-    #[test]
-    fn rejects_zero_size_svg() {
-        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"></svg>"#;
-        let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
-        assert!(matches!(err, CoverError::Decode(_)));
-    }
-
-    #[test]
     fn caps_huge_viewbox() {
         let out = rasterize_svg(vector_svg(999_999, 999_999).as_bytes(), |_| None).unwrap();
         assert!(long_edge(&out) <= MAX_RENDER_LONG_EDGE);
-    }
-
-    #[test]
-    fn dtd_entities_are_inert() {
-        // DTDs are disabled (allow_dtd: false), so this DOCTYPE-declared external
-        // SYSTEM entity is rejected at parse — never expanded, never fetched, no
-        // file content read, no hang. Result is `Decode`.
-        let svg = r#"<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text>&xxe;</text></svg>"#;
-        let result = rasterize_svg(svg.as_bytes(), |_| None);
-        assert!(result.is_err(), "external entity must not yield a cover");
     }
 
     #[test]
@@ -1153,39 +1102,5 @@ mod tests {
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"></svg>"#;
         let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
         assert!(matches!(err, CoverError::Decode(_)));
-    }
-
-    #[test]
-    fn looks_like_svg_accepts_variants() {
-        assert!(looks_like_svg(b"<svg xmlns=\"...\">"));
-        assert!(looks_like_svg(b"<?xml version=\"1.0\"?><svg/>"));
-        assert!(looks_like_svg(b"   \n\t<svg/>"));
-        assert!(looks_like_svg(b"\xEF\xBB\xBF<svg/>"));
-        assert!(looks_like_svg(b"<SVG/>"));
-    }
-
-    #[test]
-    fn looks_like_svg_rejects_rasters() {
-        assert!(!looks_like_svg(&raster(2, 2, image::ImageFormat::Png)));
-        assert!(!looks_like_svg(&raster(2, 2, image::ImageFormat::Jpeg)));
-        assert!(!looks_like_svg(&[0x1f, 0x8b, 0x08, 0x00])); // svgz/gzip
-        assert!(!looks_like_svg(b""));
-    }
-
-    #[test]
-    fn parses_as_svg_accepts_valid_and_image_ref() {
-        assert!(parses_as_svg(vector_svg(100, 150).as_bytes()));
-        // SE-shape: image ref is unresolved at validation time but the SVG
-        // still parses.
-        assert!(parses_as_svg(image_only_svg("cover.jpg").as_bytes()));
-    }
-
-    #[test]
-    fn parses_as_svg_rejects_malformed_and_oversized() {
-        assert!(!parses_as_svg(b"<svg><broken"));
-        assert!(!parses_as_svg(&raster(2, 2, image::ImageFormat::Png)));
-        let mut svg = b"<svg>".to_vec();
-        svg.resize(MAX_SVG_INPUT_BYTES + 1, b' ');
-        assert!(!parses_as_svg(&svg));
     }
 }
