@@ -29,13 +29,11 @@ the three-level cap this obligation enforces.
 ## Acceptance criteria
 
 - A `?sort=` value naming a column outside the published vocabulary answers `422`. Checked by
-  `list_filter_unknown_sort_field_returns_422` in `backend/src/routes/library/tests.rs` and `rejects_unknown_field` in
-  `backend/src/routes/sort_spec.rs`.
+  `list_filter_unknown_sort_field_returns_422` in `backend/src/routes/library/tests.rs`.
 - A `?sort=` value naming the same column twice, in either direction, answers `422`. Checked by
-  `list_filter_duplicate_sort_column_returns_422` in `backend/src/routes/library/tests.rs` and
-  `rejects_duplicate_column` in `backend/src/routes/sort_spec.rs`.
+  `list_filter_duplicate_sort_column_returns_422` in `backend/src/routes/library/tests.rs`.
 - A `?sort=` value naming four or more columns answers `422`. Checked by `list_filter_too_many_sort_levels_returns_422`
-  in `backend/src/routes/library/tests.rs` and `rejects_more_than_three_levels` in `backend/src/routes/sort_spec.rs`.
+  in `backend/src/routes/library/tests.rs`.
 - A column name is matched case-sensitively against the vocabulary, so a differently cased spelling of a published name
   answers `422`. Checked by `rejects_uppercase_field_case_sensitively` in `backend/src/routes/sort_spec.rs`.
 - The refusal happens before any query is built: the parse of the sort value completes, and fails, before the endpoint

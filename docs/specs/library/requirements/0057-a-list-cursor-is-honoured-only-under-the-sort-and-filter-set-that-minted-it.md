@@ -34,16 +34,13 @@ than skipping or repeating rows within it.
 - A books-list cursor presented with a `?sort=` stack whose columns, order or directions differ from the stack it was
   minted under answers `422`. Checked by `list_endpoint_cross_sort_cursor_rejected` and
   `list_endpoint_cursor_direction_mismatch_returns_422` in `backend/src/routes/library/tests.rs`, and by
-  `rejects_spec_direction_mismatch`, `rejects_spec_order_mismatch` and `rejects_spec_column_mismatch` in
-  `backend/src/routes/cursor.rs`.
+  `rejects_spec_order_mismatch` in `backend/src/routes/cursor.rs`.
 - A books-list cursor presented with a filter set that differs from the one it was minted under answers `422`, while a
   filter set that differs only in the order of a multi-valued parameter's values is the same set. Checked by
-  `filter_cursor_rejects_changed_filter_and_ignores_value_order` in `backend/src/routes/library/tests.rs` and
-  `rejects_filter_fingerprint_mismatch` in `backend/src/routes/cursor.rs`.
+  `filter_cursor_rejects_changed_filter_and_ignores_value_order` in `backend/src/routes/library/tests.rs`.
 - A cursor minted by one `/api/v1/` list endpoint and presented to another answers `422`, on each of the books list, the
   shelf list and the shelf item list. Checked by `list_endpoint_legacy_cursor_tag_returns_422` in
   `backend/src/routes/library/tests.rs`, `shelf_items_rejects_cross_endpoint_cursor_replay` in
-  `backend/src/routes/shelves/tests.rs`, and `rejects_unknown_tag`, `shelf_rejects_foreign_tags` and
-  `shelf_item_rejects_garbage` in `backend/src/routes/cursor.rs`.
+  `backend/src/routes/shelves/tests.rs`, and `shelf_rejects_foreign_tags` in `backend/src/routes/cursor.rs`.
 - A refused cursor never produces a page: the response carries no items. Checked by the same tests, each of which
   asserts the `422` status.
