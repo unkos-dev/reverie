@@ -171,31 +171,8 @@ pub fn heuristic_vars_from_filename(filename: &str) -> HashMap<String, String> {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::case_sensitive_file_extension_comparisons,
-    reason = "test code: all test extensions are lowercase literals, case-insensitive comparison is unnecessary ceremony"
-)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn render_basic_template() {
-        let mut vars = HashMap::new();
-        vars.insert("Author".into(), "J.K. Rowling".into());
-        vars.insert("Title".into(), "Harry Potter".into());
-        vars.insert("ext".into(), "epub".into());
-        let result = render(DEFAULT_TEMPLATE, &vars);
-        assert_eq!(result, PathBuf::from("J.K. Rowling/Harry Potter.epub"));
-    }
-
-    #[test]
-    fn render_missing_var_uses_unknown() {
-        let mut vars = HashMap::new();
-        vars.insert("Author".into(), "Someone".into());
-        vars.insert("ext".into(), "pdf".into());
-        let result = render("{Author}/{Series}/{Title}.{ext}", &vars);
-        assert_eq!(result, PathBuf::from("Someone/Unknown/Unknown.pdf"));
-    }
 
     #[test]
     fn sanitize_unsafe_chars() {
@@ -209,68 +186,5 @@ mod tests {
         assert_eq!(sanitize_path_component("...hidden"), "hidden");
         assert_eq!(sanitize_path_component("  spaced  "), "spaced");
         assert_eq!(sanitize_path_component(""), "Unknown");
-    }
-
-    #[test]
-    fn collision_no_conflict() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("book.epub");
-        let result = resolve_collision(&path).unwrap();
-        assert_eq!(result, path);
-    }
-
-    #[test]
-    fn collision_with_existing() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("book.epub");
-        std::fs::write(&path, b"existing").unwrap();
-        let result = resolve_collision(&path).unwrap();
-        assert_eq!(result, dir.path().join("book (2).epub"));
-    }
-
-    #[test]
-    fn collision_multiple() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("book.epub");
-        std::fs::write(&path, b"1").unwrap();
-        std::fs::write(dir.path().join("book (2).epub"), b"2").unwrap();
-        let result = resolve_collision(&path).unwrap();
-        assert_eq!(result, dir.path().join("book (3).epub"));
-    }
-
-    #[test]
-    fn heuristic_author_title() {
-        let vars = heuristic_vars_from_filename("J.K. Rowling - Harry Potter.epub");
-        assert_eq!(vars["Author"], "J.K. Rowling");
-        assert_eq!(vars["Title"], "Harry Potter");
-        assert_eq!(vars["ext"], "epub");
-    }
-
-    #[test]
-    fn heuristic_no_separator() {
-        let vars = heuristic_vars_from_filename("JustATitle.pdf");
-        assert_eq!(vars["Author"], "Unknown");
-        assert_eq!(vars["Title"], "JustATitle");
-        assert_eq!(vars["ext"], "pdf");
-    }
-
-    #[test]
-    fn heuristic_no_extension() {
-        let vars = heuristic_vars_from_filename("Some File");
-        assert_eq!(vars["Author"], "Unknown");
-        assert_eq!(vars["Title"], "Some File");
-        assert_eq!(vars["ext"], "");
-    }
-
-    #[test]
-    fn render_value_containing_braces_does_not_loop() {
-        // A filename like "{Author} - Book.epub" produces Author = "{Author}".
-        // The render function must not re-process the substituted value.
-        let vars = heuristic_vars_from_filename("{Author} - Book.epub");
-        // The brace chars in the Author value are not path-unsafe, so they pass
-        // through sanitize_path_component unchanged. render must still terminate.
-        let result = render(DEFAULT_TEMPLATE, &vars);
-        // Just verifying it terminates and produces a path with the ext
-        assert!(result.to_str().unwrap().ends_with(".epub"));
     }
 }

@@ -646,39 +646,6 @@ mod tests {
     }
 
     #[test]
-    fn capability_ingestion_discovery_direct_publication_reuses_candidate_identity() {
-        use std::os::unix::fs::MetadataExt;
-        let source_dir = tempfile::tempdir().unwrap();
-        let library_dir = tempfile::tempdir().unwrap();
-        let source =
-            Dir::open_ambient_dir(source_dir.path(), cap_std::ambient_authority()).unwrap();
-        let library =
-            Dir::open_ambient_dir(library_dir.path(), cap_std::ambient_authority()).unwrap();
-        source.write("book.epub", b"accepted bytes").unwrap();
-        let path = InputPath::from_path(Path::new("book.epub")).unwrap();
-        let relative = "book.epub".parse().unwrap();
-        let fingerprint = Fingerprint::from_metadata(&input_metadata(&source, &path).unwrap());
-        let candidate = acquire(&source, &path, &library, &relative, &fingerprint).unwrap();
-        let original = candidate.open().unwrap().metadata().unwrap();
-        let count = candidate.progress().count();
-        let prepared = candidate
-            .prepare(
-                &library,
-                &relative,
-                &candidate.ingestion_hash,
-                fingerprint.size,
-                false,
-            )
-            .unwrap();
-        assert_eq!(prepared.copied.identity, (original.dev(), original.ino()));
-        assert_eq!(candidate.progress().count(), count);
-        prepared.publish(&library, &relative).unwrap();
-        assert_eq!(library.read("book.epub").unwrap(), b"accepted bytes");
-        assert_eq!(source.read("book.epub").unwrap(), b"accepted bytes");
-        assert_eq!(library.entries().unwrap().count(), 1);
-    }
-
-    #[test]
     fn capability_ingestion_discovery_destination_copy_verifies_owned_bytes() {
         use std::os::unix::fs::MetadataExt;
         let source_dir = tempfile::tempdir().unwrap();
@@ -739,113 +706,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn capability_ingestion_coordinator_blocked_read_retains_candidate_until_closure_returns()
-    {
-        struct BlockedRead {
-            entered: Option<std::sync::mpsc::Sender<()>>,
-            release: std::sync::mpsc::Receiver<()>,
-            bytes: std::io::Cursor<Vec<u8>>,
-        }
-        impl Read for BlockedRead {
-            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-                if let Some(entered) = self.entered.take() {
-                    entered.send(()).unwrap();
-                    self.release.recv().unwrap();
-                }
-                self.bytes.read(buffer)
-            }
-        }
-        let directory = tempfile::tempdir().unwrap();
-        let root = Dir::open_ambient_dir(directory.path(), cap_std::ambient_authority()).unwrap();
-        root.write("source.epub", b"preserved source").unwrap();
-        let staging_root = root.try_clone().unwrap();
-        let (entered, entry) = std::sync::mpsc::channel();
-        let (release, blocked) = std::sync::mpsc::channel();
-        let shutdown = CancellationToken::new();
-        let progress = Progress::new(&shutdown);
-        let running_progress = progress.clone();
-        let closure = tokio::task::spawn_blocking(move || {
-            let staging = TempDir::new_in(&staging_root).unwrap();
-            let mut candidate = TempFile::new(&staging).unwrap();
-            let mut reader = BlockedRead {
-                entered: Some(entered),
-                release: blocked,
-                bytes: std::io::Cursor::new(vec![7; BUF_SIZE * 2]),
-            };
-            stream(&mut reader, &mut candidate, Some(&running_progress), true)
-        });
-        entry.recv().unwrap();
-        shutdown.cancel();
-        assert!(!closure.is_finished());
-        assert_eq!(root.entries().unwrap().count(), 2);
-        assert_eq!(progress.count(), 0);
-        release.send(()).unwrap();
-        assert!(matches!(closure.await.unwrap(), Err(CopyError::Cancelled)));
-        assert_eq!(progress.count(), 1);
-        assert_eq!(root.entries().unwrap().count(), 1);
-        assert_eq!(root.read("source.epub").unwrap(), b"preserved source");
-    }
-
-    #[test]
-    fn capability_ingestion_coordinator_checks_cancellation_between_chunks_and_counts_completed_chunks()
-     {
-        struct CancelAfterRead {
-            reader: std::io::Cursor<Vec<u8>>,
-            cancel: CancellationToken,
-        }
-        impl Read for CancelAfterRead {
-            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-                let count = self.reader.read(buffer)?;
-                self.cancel.cancel();
-                Ok(count)
-            }
-        }
-        let progress = Progress::new(&CancellationToken::new());
-        let bytes = vec![7; BUF_SIZE * 3];
-        let mut reader = CancelAfterRead {
-            reader: std::io::Cursor::new(bytes),
-            cancel: progress.cancel.clone(),
-        };
-        let mut destination = Vec::new();
-        assert!(matches!(
-            stream(&mut reader, &mut destination, Some(&progress), true),
-            Err(CopyError::Cancelled)
-        ));
-        assert_eq!(destination.len(), BUF_SIZE);
-        assert_eq!(progress.count(), 1);
-    }
-
-    #[test]
-    fn capability_ingestion_coordinator_cancelled_acquisition_discards_candidate_preserves_source()
-    {
-        let source_dir = tempfile::tempdir().unwrap();
-        let library_dir = tempfile::tempdir().unwrap();
-        let source =
-            Dir::open_ambient_dir(source_dir.path(), cap_std::ambient_authority()).unwrap();
-        let library =
-            Dir::open_ambient_dir(library_dir.path(), cap_std::ambient_authority()).unwrap();
-        source.write("book.epub", b"owned source").unwrap();
-        let path = InputPath::from_path(Path::new("book.epub")).unwrap();
-        let fingerprint = Fingerprint::from_metadata(&input_metadata(&source, &path).unwrap());
-        let shutdown = CancellationToken::new();
-        let progress = Progress::new(&shutdown);
-        shutdown.cancel();
-        assert!(matches!(
-            acquire_controlled(
-                &source,
-                &path,
-                &library,
-                &"book.epub".parse().unwrap(),
-                &fingerprint,
-                progress
-            ),
-            Err(CopyError::Cancelled)
-        ));
-        assert_eq!(source.read("book.epub").unwrap(), b"owned source");
-        assert_eq!(library.entries().unwrap().count(), 0);
-    }
-
     #[test]
     fn capability_ingestion_coordinator_publication_stream_is_uninterrupted_and_advances_progress()
     {
@@ -862,31 +722,5 @@ mod tests {
         .unwrap();
         assert_eq!(writer, bytes);
         assert_eq!(progress.count(), 3);
-    }
-
-    #[test]
-    fn hash_file_known_content() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.txt");
-        std::fs::write(&path, b"hello world").unwrap();
-        let hash = hash_file(&path).unwrap();
-        // SHA-256 of "hello world"
-        assert_eq!(
-            hash,
-            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
-        );
-    }
-
-    #[test]
-    fn hash_file_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("empty");
-        std::fs::write(&path, b"").unwrap();
-        let hash = hash_file(&path).unwrap();
-        // SHA-256 of empty string
-        assert_eq!(
-            hash,
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
     }
 }

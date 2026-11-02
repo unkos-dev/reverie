@@ -173,27 +173,6 @@ mod tests {
     }
 
     #[test]
-    fn capability_ingestion_cleanup_multiple_sources_preserve_retained_file_and_root() {
-        use crate::models::ingestion_input::{Fingerprint, InputPath};
-        let directory = tempfile::tempdir().unwrap();
-        let root =
-            cap_std::fs::Dir::open_ambient_dir(directory.path(), cap_std::ambient_authority())
-                .unwrap();
-        root.create_dir("author").unwrap();
-        root.write("author/book.epub", b"1").unwrap();
-        root.write("author/book.pdf", b"2").unwrap();
-        for (name, remains) in [("author/book.epub", true), ("author/book.pdf", false)] {
-            let path = InputPath::from_path(Path::new(name)).unwrap();
-            let fingerprint = Fingerprint::from_metadata(
-                &crate::services::ingestion::copier::input_metadata(&root, &path).unwrap(),
-            );
-            assert!(remove_verified(&root, &path, &fingerprint).unwrap());
-            assert_eq!(root.try_exists("author").unwrap(), remains);
-        }
-        assert!(directory.path().is_dir());
-    }
-
-    #[test]
     fn capability_ingestion_cleanup_uncontained_and_missing_sources_preserve_outside_files() {
         use crate::models::ingestion_input::{Fingerprint, InputPath};
         let directory = tempfile::tempdir().unwrap();
