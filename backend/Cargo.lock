@@ -554,6 +554,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
+name = "codegen"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "573800db6c3319bc125ddbf9b9cb001ad1602957f53642ba8d09ff3ddd4da7f1"
+dependencies = [
+ "indexmap 2.14.2",
+]
+
+[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2222,6 +2231,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "isbn"
+version = "0.8.20261101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c1bcdd5280cd929dc44f4b1fcdd2eceba8eacb561ee32486a0d630682b82128"
+dependencies = [
+ "arrayvec",
+ "codegen",
+ "roxmltree",
+]
+
+[[package]]
 name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3633,6 +3653,7 @@ dependencies = [
  "governor",
  "hickory-resolver",
  "image",
+ "isbn",
  "lettre",
  "notify",
  "oauth2-reqwest",

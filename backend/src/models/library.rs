@@ -200,6 +200,8 @@ pub struct BookDetail {
     pub isbn_13: Option<String>,
     /// `manifestations.isbn_10`.
     pub isbn_10: Option<String>,
+    /// Whether the saved ISBN pair contains valid, non-equivalent numbers.
+    pub isbn_mismatch: bool,
     /// `manifestations.pages`, when known.
     pub pages: Option<i32>,
     /// `manifestations.publisher` — canonical publisher string. Surfaced

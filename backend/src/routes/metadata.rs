@@ -34,7 +34,7 @@ use crate::routes::library::{
 };
 use crate::services::enrichment::field_lock::{self, EntityType};
 use crate::services::enrichment::value_hash;
-use crate::services::metadata::{external_id, isbn};
+use crate::services::metadata::external_id;
 use crate::state::AppState;
 
 /// Build the metadata-review router.
@@ -274,7 +274,7 @@ fn lock_entity_type_schema() -> utoipa::openapi::schema::Object {
     params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
-        (status = 200, description = "Version promoted to canonical; accepted ISBN changes may re-match the work"),
+        (status = 200, description = "Version promoted to canonical; accepted ISBN changes refresh the possible-duplicate pointer"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Version not found for this manifestation, already rejected, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -331,7 +331,6 @@ async fn accept_manifestation(
     )
     .await?;
 
-    // Accepted ISBN changes can trigger auto-merge; match orchestrator behaviour.
     if field_name == "isbn_10" || field_name == "isbn_13" {
         work::rematch_on_isbn_change(&mut tx, manifestation_id)
             .await
@@ -513,6 +512,12 @@ async fn revert_manifestation(
         None => {
             let _ = clear_field(&mut tx, &payload.field_name, manifestation_id, work_id).await?;
         }
+    }
+
+    if matches!(payload.field_name.as_str(), "isbn_10" | "isbn_13") {
+        work::rematch_on_isbn_change(&mut tx, manifestation_id)
+            .await
+            .map_err(|error| AppError::Internal(error.into()))?;
     }
 
     tx.commit()
@@ -732,9 +737,30 @@ async fn apply_version(
             "cannot accept a null-value audit row; use revert/clear instead".into(),
         ));
     }
-    let str_val = value
-        .as_str()
-        .map_or_else(|| value.to_string(), str::to_owned);
+    let str_val = if matches!(field, "isbn_10" | "isbn_13") {
+        let invalid = || AppError::FieldValidation {
+            detail: format!("invalid {field}"),
+            errors: BTreeMap::from([(field.into(), format!("invalid {field}"))]),
+        };
+        let raw = value.as_str().ok_or_else(invalid)?;
+        let parsed = if field == "isbn_10" {
+            raw.parse::<isbn::Isbn10>().map(|value| value.to_string())
+        } else {
+            raw.parse::<isbn::Isbn13>().and_then(|value| {
+                let compact = value.to_string();
+                if compact.starts_with("978") || compact.starts_with("979") {
+                    Ok(compact)
+                } else {
+                    Err(isbn::IsbnError::InvalidGroup)
+                }
+            })
+        };
+        parsed.map_err(|_| invalid())?
+    } else {
+        value
+            .as_str()
+            .map_or_else(|| value.to_string(), str::to_owned)
+    };
     let previous_version_id: Option<Uuid> = match field {
         "title" => sqlx::query_scalar!(
             "WITH old AS (SELECT title_version_id FROM works WHERE id = $3) \
@@ -2010,6 +2036,8 @@ struct BookMetadata {
     isbn_10: Option<String>,
     /// ISBN-13; `null` when unset.
     isbn_13: Option<String>,
+    /// Whether the saved ISBN pair contains valid, non-equivalent numbers.
+    isbn_mismatch: bool,
     /// Page count; `null` when unset.
     pages: Option<i32>,
     /// Content rating tier; `null` when unset.
@@ -2106,6 +2134,20 @@ async fn load_book_metadata(
         language: core.language,
         publisher: core.publisher,
         pub_date: core.pub_date,
+        isbn_mismatch: match (core.isbn_10.as_deref(), core.isbn_13.as_deref()) {
+            (Some(ten), Some(thirteen)) => match (
+                ten.parse::<isbn::Isbn10>(),
+                thirteen.parse::<isbn::Isbn13>(),
+            ) {
+                (Ok(ten), Ok(thirteen)) => {
+                    let compact = thirteen.to_string();
+                    (compact.starts_with("978") || compact.starts_with("979"))
+                        && isbn::Isbn13::from(ten) != thirteen
+                }
+                _ => false,
+            },
+            _ => false,
+        },
         isbn_10: core.isbn_10,
         isbn_13: core.isbn_13,
         pages: core.pages,
@@ -2493,24 +2535,26 @@ async fn apply_scalar_patch_field(
     maybe_value: Option<serde_json::Value>,
 ) -> Result<FieldVersionChange, AppError> {
     if let Some(value) = maybe_value {
-        // Reject malformed ISBNs (wrong length, bad check digit,
-        // non-numeric) and normalise valid ones to digits-only so the
-        // stored value matches the ingestion surface and rematch's
-        // exact-equality join can find ingested twins. Guard lives here,
-        // not in `apply_version`, so accept/revert paths keep accepting
-        // historical pre-validation/pre-normalisation values.
         let json = match field {
             "isbn_10" | "isbn_13" => {
-                let raw = value
-                    .as_str()
-                    .ok_or_else(|| AppError::Validation(format!("{field} must be a string")))?;
-                let normalised = if field == "isbn_10" {
-                    isbn::checked_isbn10(raw)
+                let invalid = || AppError::FieldValidation {
+                    detail: format!("invalid {field}"),
+                    errors: BTreeMap::from([(field.into(), format!("invalid {field}"))]),
+                };
+                let raw = value.as_str().ok_or_else(invalid)?;
+                let parsed = if field == "isbn_10" {
+                    raw.parse::<isbn::Isbn10>().map(|value| value.to_string())
                 } else {
-                    isbn::checked_isbn13(raw)
-                }
-                .ok_or_else(|| AppError::Validation(format!("invalid {field}")))?;
-                serde_json::Value::String(normalised)
+                    raw.parse::<isbn::Isbn13>().and_then(|value| {
+                        let compact = value.to_string();
+                        if compact.starts_with("978") || compact.starts_with("979") {
+                            Ok(compact)
+                        } else {
+                            Err(isbn::IsbnError::InvalidGroup)
+                        }
+                    })
+                };
+                Value::String(parsed.map_err(|_| invalid())?)
             }
             _ => value,
         };
@@ -2767,6 +2811,100 @@ mod tests {
         let id = Uuid::new_v4();
         let response = server.get(&format!("/api/v1/books/{id}/metadata")).await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    // REV-REQ-0072 AC1-4; REV-REQ-0073 AC2-4.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn isbn_contract_invalid_review(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &pool);
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = test_support::db::insert_work_and_manifestation(&pool, &marker).await;
+        for (field, raw) in [
+            ("isbn_13", "4006381333931"),
+            ("isbn_10", "0306406153"),
+            ("isbn_13", "9780306406150"),
+        ] {
+            let raw = serde_json::json!(raw);
+            let version = insert_version(&pool, m_id, field, raw.clone()).await;
+            let response = server
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&serde_json::json!({"version_id": version}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            let problem: serde_json::Value = response.json();
+            assert!(problem["errors"][field].is_string());
+            let journal = sqlx::query_scalar!(
+                "SELECT new_value FROM metadata_versions WHERE id = $1",
+                version
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(journal, raw);
+            let row = sqlx::query!(
+                "SELECT isbn_10, isbn_10_version_id, isbn_13, isbn_13_version_id FROM manifestations WHERE id = $1", m_id
+            ).fetch_one(&pool).await.unwrap();
+            assert!(row.isbn_10.is_none() && row.isbn_10_version_id.is_none());
+            assert!(row.isbn_13.is_none() && row.isbn_13_version_id.is_none());
+            let jobs = sqlx::query_scalar!(
+                "SELECT COUNT(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+                m_id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(jobs, 0);
+        }
+        for (field, raw, ten, thirteen) in [
+            ("isbn_10", Some("0 8044-2957-X"), Some("080442957X"), None),
+            (
+                "isbn_13",
+                Some("979 10-90636-07-1"),
+                Some("080442957X"),
+                Some("9791090636071"),
+            ),
+            ("isbn_10", None, None, Some("9791090636071")),
+            ("isbn_13", None, None, None),
+        ] {
+            let version = if let Some(raw) = raw {
+                Some(insert_version(&pool, m_id, field, serde_json::json!(raw)).await)
+            } else {
+                None
+            };
+            let mut tx = pool.begin().await.unwrap();
+            if let Some(version) = version {
+                super::apply_version(
+                    &mut tx,
+                    field,
+                    &serde_json::json!(raw.unwrap()),
+                    version,
+                    m_id,
+                    work_id,
+                )
+                .await
+                .unwrap();
+            } else {
+                super::clear_field(&mut tx, field, m_id, work_id)
+                    .await
+                    .unwrap();
+            }
+            tx.commit().await.unwrap();
+            let row = sqlx::query!(
+                "SELECT isbn_10, isbn_13 FROM manifestations WHERE id = $1",
+                m_id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                (row.isbn_10.as_deref(), row.isbn_13.as_deref()),
+                (ten, thirteen)
+            );
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -4263,9 +4401,6 @@ mod tests {
     async fn patch_isbn_set_triggers_rematch(pool: sqlx::PgPool) {
         // Two manifestations sharing an ISBN — patching the second
         // with that ISBN must wire `suspected_duplicate_work_id` on it.
-        // Auto-merge is skipped because the PATCH inserts a manual
-        // metadata draft on the current work (the orchestrator guards
-        // against merging works that already carry manual drafts).
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -4327,6 +4462,7 @@ mod tests {
         );
     }
 
+    // REV-REQ-0072 AC2-4.
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_isbn13_bad_check_digit_returns_422(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -4342,24 +4478,34 @@ mod tests {
             .await;
         let etag = etag_value(initial.headers());
 
-        // 13 digits, correct length, wrong check digit (valid form ends 7).
-        let response = server
-            .patch(&format!("/api/v1/books/{m}/metadata"))
-            .add_header(AUTHORIZATION, basic)
-            .add_header(
-                axum::http::header::IF_MATCH,
-                axum::http::HeaderValue::from_str(&etag).unwrap(),
+        for raw in ["9780306406150", "4006381333931"] {
+            let response = server
+                .patch(&format!("/api/v1/books/{m}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag).unwrap(),
+                )
+                .json(&serde_json::json!({"isbn_13": raw}))
+                .await;
+            assert_eq!(
+                response.status_code(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "body = {}",
+                response.text()
+            );
+            let row = sqlx::query!(
+                "SELECT isbn_10, isbn_13 FROM manifestations WHERE id = $1",
+                m
             )
-            .json(&serde_json::json!({"isbn_13": "9780306406150"}))
-            .await;
-        assert_eq!(
-            response.status_code(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "body = {}",
-            response.text()
-        );
+            .fetch_one(&ing_pool)
+            .await
+            .unwrap();
+            assert!(row.isbn_10.is_none() && row.isbn_13.is_none());
+        }
     }
 
+    // REV-REQ-0072 AC2,4.
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_isbn10_wrong_length_returns_422(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -4392,6 +4538,7 @@ mod tests {
         );
     }
 
+    // REV-REQ-0072 AC2,4.
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_isbn13_non_numeric_returns_422(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -4425,6 +4572,7 @@ mod tests {
         );
     }
 
+    // REV-REQ-0072 AC1,4; REV-REQ-0073 AC3-4.
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_valid_isbn10_accepted(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -4434,7 +4582,6 @@ mod tests {
         let marker = Uuid::new_v4().simple().to_string();
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
-        // Valid ISBN-10 (check digit 2) must pass the new guard.
         let initial = server
             .get(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
@@ -4447,7 +4594,7 @@ mod tests {
                 axum::http::header::IF_MATCH,
                 axum::http::HeaderValue::from_str(&etag).unwrap(),
             )
-            .json(&serde_json::json!({"isbn_10": "0306406152"}))
+            .json(&serde_json::json!({"isbn_10": "0 8044-2957-X"}))
             .await;
         assert_eq!(
             response.status_code(),
@@ -4455,8 +4602,18 @@ mod tests {
             "body = {}",
             response.text()
         );
+        let row = sqlx::query!(
+            "SELECT isbn_10, isbn_13 FROM manifestations WHERE id = $1",
+            m
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .unwrap();
+        assert_eq!(row.isbn_10.as_deref(), Some("080442957X"));
+        assert!(row.isbn_13.is_none());
     }
 
+    // REV-REQ-0072 AC1,4; REV-REQ-0073 AC3-4.
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_hyphenated_isbn13_stored_normalized(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -4495,12 +4652,15 @@ mod tests {
 
         // Stored canonical value is digits-only, matching the ingestion
         // surface so rematch exact-equality can find ingested twins.
-        let stored: Option<String> =
-            sqlx::query_scalar!("SELECT isbn_13 FROM manifestations WHERE id = $1", m)
-                .fetch_one(&ing_pool)
-                .await
-                .expect("fetch isbn_13");
-        assert_eq!(stored.as_deref(), Some("9780306406157"));
+        let stored = sqlx::query!(
+            "SELECT isbn_10, isbn_13 FROM manifestations WHERE id = $1",
+            m
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch isbn_13");
+        assert!(stored.isbn_10.is_none());
+        assert_eq!(stored.isbn_13.as_deref(), Some("9780306406157"));
     }
 
     #[sqlx::test(migrations = "./migrations")]

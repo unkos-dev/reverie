@@ -10,6 +10,8 @@
 - [REV-REQ-0054](requirements/0054-a-writeback-leaves-the-file-rewritten-and-validating-no-worse-or-untouched.md): A writeback leaves the file rewritten and validating no worse, or untouched
 - [REV-REQ-0055](requirements/0055-a-metadata-patch-never-removes-a-work-s-last-author.md): A metadata patch never removes a work's last author
 - [REV-REQ-0056](requirements/0056-a-child-account-cannot-change-catalogue-metadata.md): A child account cannot change catalogue metadata
+- [REV-REQ-0072](requirements/0072-canonical-isbn-values-are-structurally-valid.md): Canonical ISBN values are structurally valid
+- [REV-REQ-0073](requirements/0073-canonical-isbn-formats-remain-independent.md): Canonical ISBN formats remain independent
 
 ## Designs
 
