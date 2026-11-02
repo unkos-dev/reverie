@@ -619,22 +619,6 @@ pub mod db {
         server_with_reload_state(app_pool, ingestion_pool, config, None, Some(mail))
     }
 
-    /// Same as [`server_with_real_pools`] with the live-reload task's last
-    /// successful reload already recorded as `at`.
-    pub fn server_with_last_reload(
-        app_pool: &PgPool,
-        ingestion_pool: &PgPool,
-        at: chrono::DateTime<chrono::Utc>,
-    ) -> axum_test::TestServer {
-        server_with_reload_state(
-            app_pool,
-            ingestion_pool,
-            super::test_config(),
-            Some(at),
-            None,
-        )
-    }
-
     fn server_with_reload_state(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
