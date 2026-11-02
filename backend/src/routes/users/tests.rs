@@ -2012,6 +2012,140 @@ mod mail_flow {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_notifications_address_removal_notifies_the_old_verified_address(pool: PgPool) {
+        let e = env(&pool).await;
+        let (id, csrf) = change_address_fixture(&e, &pool).await;
+        let response = patch(&e.server, &csrf, id, json!({"email": null})).await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let notices = notice_messages(&pool, id).await;
+        let [notice] = notices.as_slice() else {
+            panic!("expected one notice: {notices:?}");
+        };
+        assert_eq!(notice.purpose, "notice_address_removed");
+        assert_notice(
+            notice,
+            Notice::AddressRemoved,
+            "holder@example.test",
+            "holder@example.test",
+        );
+        assert_ne!(
+            notice.subject,
+            render::notice(
+                &context(),
+                Notice::AddressChanged,
+                "holder@example.test",
+                Utc::now()
+            )
+            .subject
+        );
+        let again = patch(&e.server, &csrf, id, json!({"email": null})).await;
+        assert_eq!(again.status_code(), StatusCode::OK);
+        assert_eq!(
+            notice_messages(&pool, id).await.len(),
+            1,
+            "removing nothing notifies nobody"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_notifications_queued_notices_keep_their_recipient_through_changes(pool: PgPool) {
+        let relay = FakeRelay::start(Behaviour::Accept).await;
+        let e = env_on(&pool, relay.port).await;
+        let (id, csrf) = change_address_fixture(&e, &pool).await;
+        let session = another(&e);
+        let session_csrf = mail::login(&session, "holder@example.test", PASSWORD).await;
+        let changed = post(
+            &session,
+            &session_csrf,
+            "/api/v1/account/password",
+            json!({"current_password": PASSWORD, "new_password": "amber thistle vault ridge"}),
+        )
+        .await;
+        assert_eq!(changed.status_code(), StatusCode::OK);
+
+        let moved = patch(
+            &e.server,
+            &csrf,
+            id,
+            json!({"email": "new-home@example.test"}),
+        )
+        .await;
+        assert_eq!(moved.status_code(), StatusCode::OK);
+        let disabled = e
+            .server
+            .put(&format!("/api/v1/users/{id}/account-status"))
+            .add_header(mail::csrf(&csrf).0, mail::csrf(&csrf).1)
+            .json(&json!({"disabled": true}))
+            .await;
+        assert_eq!(disabled.status_code(), StatusCode::OK);
+
+        let notices = notice_messages(&pool, id).await;
+        assert_eq!(notices.len(), 2);
+        assert!(
+            notices
+                .iter()
+                .all(|n| n.state == "pending" && n.recipient == "holder@example.test")
+        );
+        while deliver_next(&e).await {}
+        let recipients = relay.recipients();
+        assert_eq!(recipients.len(), 2, "{recipients:?}");
+        assert!(
+            recipients.iter().all(|r| r.contains("holder@example.test")),
+            "{recipients:?}"
+        );
+        assert!(!recipients.iter().any(|r| r.contains("new-home")));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn smtp_notifications_roll_back_the_account_change_when_enqueue_fails(pool: PgPool) {
+        let e = env(&pool).await;
+        let (id, csrf) = change_address_fixture(&e, &pool).await;
+        mail::break_enqueue(&pool).await;
+
+        let moved = patch(
+            &e.server,
+            &csrf,
+            id,
+            json!({"email": "new-home@example.test"}),
+        )
+        .await;
+        assert_eq!(moved.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let row = sqlx::query!(
+            "SELECT email, email_verified_at FROM users WHERE id = $1",
+            id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.email.as_deref(), Some("holder@example.test"));
+        assert!(row.email_verified_at.is_some());
+
+        let session = another(&e);
+        let session_csrf = mail::login(&session, "holder@example.test", PASSWORD).await;
+        let changed = post(
+            &session,
+            &session_csrf,
+            "/api/v1/account/password",
+            json!({"current_password": PASSWORD, "new_password": "amber thistle vault ridge"}),
+        )
+        .await;
+        assert_eq!(changed.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let credential = crate::models::local_credentials::find_by_user_id(&e.app, id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            crate::auth::password::verify_password(PASSWORD.as_bytes(), &credential.password_hash)
+                .is_ok()
+        );
+        assert_eq!(
+            session.get("/auth/me").await.status_code(),
+            StatusCode::OK,
+            "the session survives a rolled-back change"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn smtp_notifications_raw_logs_carry_no_secrets(pool: PgPool) {
         let logs = test_support::CapturedLogs::default();
         let _guard = tracing::subscriber::set_default(logs.trace_subscriber());

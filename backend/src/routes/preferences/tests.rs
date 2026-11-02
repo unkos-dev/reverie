@@ -26,7 +26,30 @@ async fn rls_tx(app_pool: &PgPool, user_id: Uuid) -> sqlx::Transaction<'_, sqlx:
         .expect("rls transaction")
 }
 
-// --- write: lazy upsert, partial semantics ---
+// --- authentication ---
+
+#[sqlx::test(migrations = "./migrations")]
+async fn get_preferences_requires_auth(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server.get(PATH).await;
+    assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn patch_preferences_requires_auth(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .patch(PATH)
+        .json(&json!({"density": "compact"}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+}
 
 // One reset test per group: collapsing absent and null in serde is the
 // single failure that would silently disable the whole reset affordance,

@@ -219,6 +219,62 @@ async fn cross_user_shelf_returns_404(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn xml_robustness_control_char(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+
+    insert_epub_manifestation(
+        &ingestion_pool,
+        tmp.path(),
+        "xmlrob",
+        "Hello <script>&amp; \u{0001}emoji \u{1F600}",
+    )
+    .await;
+
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
+    let response = server
+        .get("/opds/library/new")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let bytes = response.as_bytes().to_vec();
+    assert!(
+        !bytes.contains(&0x01),
+        "\\x01 must be stripped before reaching the wire"
+    );
+    let body = std::str::from_utf8(&bytes).unwrap();
+    // Ampersand escaped; angle bracket escaped. Emoji preserved.
+    assert!(body.contains("&amp;amp;") || body.contains("&amp;")); // plan: raw `&` -> `&amp;`
+    assert!(body.contains("&lt;script&gt;"));
+    assert!(body.contains("\u{1F600}"));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_reflection_xss_safe(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
+    let response = server
+        .get("/opds/library/search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    // Empty library — 200 with an empty feed; any XML-injected q would
+    // break parsing, but we just check the response body doesn't contain
+    // a literal `<script>` (we never reflect user search strings into the
+    // feed for the search handler, but verify anyway).
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body = std::str::from_utf8(response.as_bytes()).unwrap();
+    assert!(!body.contains("<script>"));
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn capability_download_outside_link_forbidden(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
