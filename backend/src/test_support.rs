@@ -2053,17 +2053,6 @@ pub mod mail {
         .unwrap();
     }
 
-    /// Wait until `user` has at least `count` jobs of `purpose`.
-    pub async fn wait_for_count(pool: &PgPool, user: Uuid, purpose: &str, count: i64) {
-        for _ in 0..500 {
-            if job_count(pool, user, Some(purpose)).await >= count {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-        panic!("fewer than {count} {purpose} jobs appeared");
-    }
-
     /// Fail every later insert into `mail_jobs`.
     pub async fn break_enqueue(pool: &PgPool) {
         sqlx::raw_sql(
