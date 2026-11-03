@@ -408,6 +408,10 @@ mod tests {
                 <dc:identifier id="package-id">urn:uuid:example</dc:identifier>
                 <dc:identifier>9780306406157</dc:identifier>
                 <dc:identifier opf:scheme="AMAZON">0306406152</dc:identifier>
+                <dc:identifier id="other-ten">0306406152</dc:identifier>
+                <meta refines="#other-ten" property="identifier-type" scheme="onix:codelist1">02</meta>
+                <dc:identifier id="other-thirteen">9780306406157</dc:identifier>
+                <meta refines="#other-thirteen" property="identifier-type" scheme="onix:codelist1" content="15"/>
                 <dc:identifier opf:scheme="ISBN">9791090636071</dc:identifier>
                 <dc:identifier id="isbn-ten">080442957X</dc:identifier>
                 <meta refines="#isbn-ten" property="identifier-type" scheme="onix:codelist5" content="02"/>

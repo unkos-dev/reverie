@@ -519,12 +519,18 @@ pub fn validate(
                         continue;
                     }
                     if prop == "identifier-type" {
+                        let scheme = e
+                            .attributes()
+                            .flatten()
+                            .find(|a| a.key.as_ref() == "scheme")
+                            .map(|a| attr_text(&a));
                         let value =
                             content_attr.or_else(|| read_element_text(&mut reader, e.name()));
                         if let Some(refines) = refines_attr
                             && value.as_deref().is_some_and(|v| {
-                                matches!(v.trim(), "02" | "15")
-                                    || v.trim().eq_ignore_ascii_case("isbn")
+                                v.trim().eq_ignore_ascii_case("isbn")
+                                    || (scheme.as_deref() == Some("onix:codelist5")
+                                        && matches!(v.trim(), "02" | "15"))
                             })
                         {
                             isbn_refines.insert(refines);
@@ -606,9 +612,16 @@ pub fn validate(
                     .map(|a| a.value.into_owned());
 
                 if prop.as_deref() == Some("identifier-type") {
+                    let scheme = e
+                        .attributes()
+                        .flatten()
+                        .find(|a| a.key.as_ref() == "scheme")
+                        .map(|a| attr_text(&a));
                     if let Some(refines) = refines_attr.clone()
                         && content.as_deref().is_some_and(|v| {
-                            matches!(v.trim(), "02" | "15") || v.trim().eq_ignore_ascii_case("isbn")
+                            v.trim().eq_ignore_ascii_case("isbn")
+                                || (scheme.as_deref() == Some("onix:codelist5")
+                                    && matches!(v.trim(), "02" | "15"))
                         })
                     {
                         isbn_refines.insert(refines);

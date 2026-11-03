@@ -36,11 +36,12 @@ shared path exclusion; final registration reserves the manifestation's path clai
 
 OPF parsing retains the package-identity role of each identifier and ISBN declarations from EPUB 2 schemes, EPUB 3
 identifier-type refinements and ISBN URN forms. Extraction admits only identifiers explicitly declared as ISBNs by a
-scheme, identifier-type refinement (`02`, `15` or `isbn`), or `urn:isbn:` prefix. Unlabelled and other-system
-identifiers do not supply canonical ISBNs merely because their numbers pass ISBN validation. Extraction selects ISBN-10
-and ISBN-13 independently, preferring bibliographic entries over the package identifier and preserving document order
-within each class. The `isbn` crate parses and normalises each value; ISBN-13 also requires a `978` or `979` prefix.
-Missing formats stay absent. Drafts and initial canonical pointers refer only to the valid supplied values.
+scheme, identifier-type refinement, or `urn:isbn:` prefix. Numeric refinement values `02` and `15` require the
+`onix:codelist5` scheme; the literal `isbn` also declares an ISBN. Unlabelled and other-system identifiers do not supply
+canonical ISBNs merely because their numbers pass ISBN validation. Extraction selects ISBN-10 and ISBN-13 independently,
+preferring bibliographic entries over the package identifier and preserving document order within each class. The `isbn`
+crate parses and normalises each value; ISBN-13 also requires a `978` or `979` prefix. Missing formats stay absent.
+Drafts and initial canonical pointers refer only to the valid supplied values.
 
 Before title/author matching, ingestion checks both formats and their comparison-only equivalents for an ISBN candidate.
 A candidate causes a separate work to be created and records `suspected_duplicate_work_id`; the same call skips fuzzy
