@@ -4140,6 +4140,85 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_acquisition_import_commits_attempt_and_input_atomically(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, Fingerprint, InputPath, InputStatus};
+        let ing = ingestion_pool_for(&pool).await;
+        let (dir, _files, location, copied) = claim_copy_fixture(&pool, "atomic.epub").await;
+        let fingerprint =
+            Fingerprint::from_metadata(&std::fs::metadata(dir.path().join("input.pdf")).unwrap());
+        let input = ingestion_input::observe(
+            &ing,
+            &[InputPath::from_path(Path::new("input.epub")).unwrap()],
+            &[fingerprint],
+        )
+        .await
+        .unwrap()
+        .remove(0);
+        let job = ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+            .await
+            .unwrap();
+        let vars = path_template::heuristic_vars_from_filename("Atomic.epub");
+        let meta = || ManifestationMeta {
+            format: ManifestationFormat::Epub,
+            validation_status: ValidationStatus::Clean,
+            accessibility_metadata: &None,
+            has_embedded_cover: Some(false),
+            current_hash: &copied.sha256,
+            current_size: copied.file_size,
+        };
+        assert!(
+            commit_ingest_outcome(
+                &ing,
+                None,
+                &vars,
+                &location,
+                &copied,
+                meta(),
+                Some((&input, Uuid::new_v4()))
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(
+            ingestion_input::current_page(&ing, None).await.unwrap()[0].status,
+            InputStatus::Processing
+        );
+        let mut tx = ing.begin().await.unwrap();
+        assert!(
+            library_path_claim::owner(&mut tx, &location)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        tx.rollback().await.unwrap();
+        let (work, manifestation) = commit_ingest_outcome(
+            &ing,
+            None,
+            &vars,
+            &location,
+            &copied,
+            meta(),
+            Some((&input, job)),
+        )
+        .await
+        .unwrap();
+        let imported = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(imported.status, InputStatus::Imported);
+        assert_eq!(imported.work_id, Some(work));
+        let mut tx = ing.begin().await.unwrap();
+        assert_eq!(
+            library_path_claim::owner(&mut tx, &location).await.unwrap(),
+            Some(manifestation)
+        );
+        tx.rollback().await.unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn path_claim_ingestion_manifestation_commit_and_competing_owner(pool: PgPool) {
         let ing = ingestion_pool_for(&pool).await;
         let (_dir, files, location, copied) = claim_copy_fixture(&pool, "atomic.pdf").await;
