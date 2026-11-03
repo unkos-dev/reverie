@@ -210,10 +210,13 @@ fn extract_isbns(opf: &opf_layer::OpfData) -> (Option<String>, Option<String>) {
                 continue;
             }
             let raw = identifier.value.trim();
-            let value = raw
+            let urn_prefix = raw
                 .get(..9)
-                .filter(|prefix| prefix.eq_ignore_ascii_case("urn:isbn:"))
-                .map_or(raw, |_| &raw[9..]);
+                .filter(|prefix| prefix.eq_ignore_ascii_case("urn:isbn:"));
+            if !identifier.declared_isbn && urn_prefix.is_none() {
+                continue;
+            }
+            let value = urn_prefix.map_or(raw, |_| &raw[9..]);
             match value.parse::<isbn::Isbn>() {
                 Ok(isbn::Isbn::_10(value)) if isbn_10.is_none() => {
                     isbn_10 = Some(value.to_string());
@@ -370,9 +373,11 @@ mod tests {
         }
     }
 
-    // REV-REQ-0072 AC2-4; REV-REQ-0073 AC1.
+    // REV-REQ-0072 AC2-4; REV-REQ-0073 AC1; incident: non-ISBN identifiers promoted as ISBNs.
     #[test]
     fn isbn_contract_extraction() {
+        use std::io::Write;
+
         let single = extract(&OpfData {
             identifiers: vec!["urn:isbn:0306406152".into()],
             ..empty_opf()
@@ -380,7 +385,7 @@ mod tests {
         assert_eq!(single.isbn_10.as_deref(), Some("0306406152"));
         assert_eq!(single.isbn_13, None);
         let invalid = extract(&OpfData {
-            identifiers: vec!["0306406153".into()],
+            identifiers: vec!["urn:isbn:0306406153".into()],
             ..empty_opf()
         });
         assert!(invalid.isbn_10.is_none() && invalid.isbn_13.is_none());
@@ -389,5 +394,33 @@ mod tests {
             ..empty_opf()
         });
         assert!(ean.isbn_10.is_none() && ean.isbn_13.is_none());
+
+        let xml = br##"<package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="package-id">
+            <metadata>
+                <dc:identifier id="package-id">urn:uuid:example</dc:identifier>
+                <dc:identifier>9780306406157</dc:identifier>
+                <dc:identifier opf:scheme="AMAZON">0306406152</dc:identifier>
+                <dc:identifier id="other-ten">0306406152</dc:identifier>
+                <meta refines="#other-ten" property="identifier-type" scheme="onix:codelist1">02</meta>
+                <dc:identifier id="other-thirteen">9780306406157</dc:identifier>
+                <meta refines="#other-thirteen" property="identifier-type" scheme="onix:codelist1" content="15"/>
+                <dc:identifier opf:scheme="ISBN">9791090636071</dc:identifier>
+                <dc:identifier id="isbn-ten">080442957X</dc:identifier>
+                <meta refines="#isbn-ten" property="identifier-type" scheme="onix:codelist5" content="02"/>
+            </metadata><manifest/><spine/>
+        </package>"##;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        zip.start_file("content.opf", options).unwrap();
+        zip.write_all(xml).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        let handle = crate::services::epub::zip_layer::ZipHandle::from_bytes(&bytes);
+        let opf = opf_layer::validate(&handle, Some("content.opf"), &mut Vec::new()).unwrap();
+        let recognised = extract(&opf);
+        assert_eq!(
+            (recognised.isbn_10.as_deref(), recognised.isbn_13.as_deref()),
+            (Some("080442957X"), Some("9791090636071"))
+        );
     }
 }
