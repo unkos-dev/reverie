@@ -3251,80 +3251,81 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn accept_rejects_rejected_version_without_side_effects(pool: sqlx::PgPool) {
+    async fn accept_waits_for_concurrent_rejection(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
-        let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let version_id =
+            insert_version(&ing_pool, m_id, "title", serde_json::json!("Rejected")).await;
         let before = sqlx::query!(
             "SELECT title, title_version_id FROM works WHERE id = $1",
-            work_id,
+            work_id
         )
         .fetch_one(&app_pool)
         .await
-        .expect("fetch initial canonical title");
-        let version_id = insert_version(
-            &ing_pool,
-            m_id,
-            "title",
-            serde_json::json!(format!("Rejected Title {marker}")),
-        )
-        .await;
-
-        sqlx::query!(
-            "UPDATE metadata_versions \
-             SET status = 'rejected', resolved_by = $1, resolved_at = now() \
-             WHERE id = $2",
-            admin_id,
-            version_id,
-        )
-        .execute(&ing_pool)
-        .await
-        .expect("reject version");
-
+        .unwrap();
+        let mut barrier = pool.begin().await.unwrap();
+        sqlx::query!("LOCK TABLE metadata_versions IN SHARE MODE")
+            .execute(&mut *barrier)
+            .await
+            .unwrap();
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
-        let accept = server
-            .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
-            .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"version_id": version_id}))
-            .await;
-        test_support::assert_problem(&accept, problems::NOT_FOUND, StatusCode::NOT_FOUND);
-
+        let reject_basic = basic.clone();
+        let mut rejection = tokio::spawn(async move {
+            server
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/reject"))
+                .add_header(AUTHORIZATION, reject_basic)
+                .json(&serde_json::json!({"version_id": version_id}))
+                .await
+        });
+        tokio::select! {
+            response = &mut rejection => panic!("reject bypassed barrier: {:?}", response.unwrap().status_code()),
+            () = test_support::wait_for_blocked_query(&pool, "UPDATE metadata_versions SET status = 'rejected'%", 1) => {}
+        }
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let mut acceptance = tokio::spawn(async move {
+            server
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+                .add_header(AUTHORIZATION, basic)
+                .json(&serde_json::json!({"version_id": version_id}))
+                .await
+        });
+        tokio::select! {
+            response = &mut acceptance => panic!("accept finished before rejection committed: {:?}", response.unwrap().status_code()),
+            () = test_support::wait_for_blocked_query(&pool, "SELECT pg_advisory_xact_lock%", 1) => {}
+        }
+        barrier.commit().await.unwrap();
+        assert_eq!(rejection.await.unwrap().status_code(), StatusCode::OK);
+        let response = acceptance.await.unwrap();
+        test_support::assert_problem(&response, problems::NOT_FOUND, StatusCode::NOT_FOUND);
         let after = sqlx::query!(
             "SELECT title, title_version_id FROM works WHERE id = $1",
-            work_id,
+            work_id
         )
         .fetch_one(&app_pool)
         .await
-        .expect("fetch canonical title after rejected accept");
-        assert_eq!(
-            after.title, before.title,
-            "rejected version changed the title"
-        );
-        assert_eq!(
-            after.title_version_id, before.title_version_id,
-            "rejected version changed the title pointer"
-        );
-
-        let status: String = sqlx::query_scalar!(
+        .unwrap();
+        assert_eq!(after.title, before.title);
+        assert_eq!(after.title_version_id, before.title_version_id);
+        let status = sqlx::query_scalar!(
             "SELECT status::text AS \"status!\" FROM metadata_versions WHERE id = $1",
             version_id,
         )
         .fetch_one(&app_pool)
         .await
-        .expect("fetch rejected version status");
+        .unwrap();
         assert_eq!(status, "rejected");
-
-        let job_count: i64 = sqlx::query_scalar!(
+        let jobs = sqlx::query_scalar!(
             "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
             m_id,
         )
         .fetch_one(&app_pool)
         .await
-        .expect("fetch writeback job count");
-        assert_eq!(job_count, 0, "rejected accept must not enqueue writeback");
+        .unwrap();
+        assert_eq!(jobs, 0);
     }
 
     #[sqlx::test(migrations = "./migrations")]
