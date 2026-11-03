@@ -39,8 +39,8 @@ entry point: one path that skips it is enough for a weak password to reach the d
   `setup_refuses_a_password_the_policy_rejects` in `backend/src/routes/auth.rs`.
 - Self-registration answers `422` for a refused candidate and creates no account. Checked by
   `register_refuses_a_password_the_policy_rejects` in `backend/src/routes/auth.rs`.
-- Credential-link redemption answers `422` for a refused candidate, leaves the account without a password and leaves the
-  link redeemable. Checked by `credential_link_policy_rejection_and_concurrent_redemption` in
+- Credential-link redemption answers `422` for a refused candidate, leaves an account that had no password still without
+  one and leaves the link redeemable. Checked by `credential_link_policy_rejection_and_concurrent_redemption` in
   `backend/src/routes/users/tests.rs`.
 - An own-password change answers `422` for a refused candidate and the existing password still signs in. Checked by
   `change_own_password_weak_new_returns_422` in `backend/src/routes/users/tests.rs`.
