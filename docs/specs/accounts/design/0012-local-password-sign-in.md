@@ -256,24 +256,22 @@ until Argon2 finishes, and its late result cannot write accounting.
 
 Twelve hash and verification sites span the seven hashing endpoints. Administrator creation and link issuance do not
 hash; redemption performs one computation. While login holds the only permit and four other logins queue, the
-pool-backed `GET /health/ready` still completes on a two-connection application pool. The `auth_hash_` unit tests cover
-the active bound, wait expiry, cancellation, panic and kernel-equivalent results.
+pool-backed `GET /health/ready` still completes on a two-connection application pool. `auth_hash_results_match_kernels`
+checks that the limiter's hash and verification results match the direct kernels.
 
 `password_admission_route_two_pools_ninth_failure_race` checks that nine failures plus two simultaneous requests from
 separate application pools and sources yield one verification/`422` and one account `429`.
 `password_admission_route_parity_blocked_correct_and_no_verification` checks equivalent admitted and blocked states for
-known, unknown, disabled and passwordless accounts. The other `password_admission_` tests cover reset ordering,
-cancellation, lost commit acknowledgement, cohort loss, storage failure and the verified version snapshot.
+known, unknown, disabled and passwordless accounts. The other `password_admission_` tests cover the window and block
+boundaries, threshold rejection and reset, cancellation and the verified version snapshot.
 
 **Self-registration reaching the shared policy:** after the `self_registration_enabled` and `local_auth_enabled` gates
 and `enforce_source_rate_limit`, `register` validates the email shape, then calls `password_policy::enforce_from_config`
 with `[&body.email, &body.display_name]` as context words before hashing. `enforce` checks `max_length` first (a DoS
 guard: rejecting an oversized candidate before any zxcvbn or HIBP work runs), then `min_length`, then the zxcvbn score,
 then, only if the first three pass and the check is enabled, the HIBP query.
-`enforce_rejects_over_max_length_before_any_other_work` asserts the returned `TooLong` variant for a candidate over the
-configured maximum with a breach-check URL pointing nowhere reachable; that no breach request is actually sent for that
-candidate follows from `enforce`'s early return on the length check, confirmed by inspection of the function's check
-order rather than by the test itself, which observes only the returned variant.
+`password_ceiling_precedes_strength_and_breach_processing` asserts the returned `TooLong` variant for a candidate over
+the maximum, and that a recording breach-check server receives no request for it.
 
 ## Failure and recovery
 

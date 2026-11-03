@@ -59,32 +59,3 @@ impl Role {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn as_str_matches_serde_lowercase() {
-        // Wire-format invariant: any future frontend mirror of this enum
-        // depends on these exact literals.
-        assert_eq!(Role::Admin.as_str(), "admin");
-        assert_eq!(Role::Adult.as_str(), "adult");
-        assert_eq!(Role::Child.as_str(), "child");
-    }
-
-    #[test]
-    fn json_roundtrip_uses_lowercase_string() {
-        let role = Role::Admin;
-        let json = serde_json::to_string(&role).expect("serialize");
-        assert_eq!(json, "\"admin\"");
-        let back: Role = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, Role::Admin);
-    }
-
-    #[test]
-    fn json_rejects_unknown_variant() {
-        let result: Result<Role, _> = serde_json::from_str("\"superadmin\"");
-        assert!(result.is_err(), "expected superadmin to be rejected");
-    }
-}

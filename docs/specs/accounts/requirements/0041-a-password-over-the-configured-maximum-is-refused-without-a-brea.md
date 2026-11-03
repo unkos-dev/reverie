@@ -31,7 +31,7 @@ the length cap first, ahead of any other policy work.
 ## Acceptance criteria
 
 - A candidate password longer than the configured maximum is refused as too long. Checked by
-  `enforce_rejects_over_max_length_before_any_other_work` in `backend/src/auth/password_policy.rs`, which asserts the
+  `password_ceiling_precedes_strength_and_breach_processing` in `backend/src/auth/password_policy.rs`, which asserts the
   returned variant.
 - A 256-code-point password is accepted by the size check, including supplementary Unicode characters; 257 code points
   are refused. A deployment maximum of 64 accepts 64 and refuses 65. Checked by

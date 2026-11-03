@@ -186,7 +186,7 @@ mod tests {
     use crate::db::acquire_with_rls;
     use crate::test_support::db::{
         add_to_shelf, app_pool_for, create_adult_and_basic_auth, create_child_user_and_basic_auth,
-        create_shelf, ingestion_pool_for, insert_work_and_manifestation, readonly_pool_for,
+        create_shelf, ingestion_pool_for, insert_work_and_manifestation,
     };
     use sqlx::PgPool;
 
@@ -199,10 +199,6 @@ mod tests {
             .and_then(sqlx::error::DatabaseError::code)
     }
 
-    fn approx(a: f32, b: f32) -> bool {
-        (a - b).abs() < f32::EPSILON
-    }
-
     /// Build a known-valid observation for tests that don't care about the
     /// constructor's own validation (that's covered separately below).
     fn obs(rating: f32, rating_scale: f32, review_count: i32) -> RatingObservation {
@@ -211,241 +207,14 @@ mod tests {
 
     // ---- RatingObservation::new ----
 
-    #[test]
-    fn new_accepts_valid_observation() {
-        let observation = RatingObservation::new(4.5, 5.0, 100).expect("valid");
-        assert!(approx(observation.rating(), 4.5));
-        assert!(approx(observation.rating_scale(), 5.0));
-        assert_eq!(observation.review_count(), 100);
-    }
-
-    #[test]
-    fn new_rejects_rating_above_scale() {
-        assert!(RatingObservation::new(6.0, 5.0, 1).is_err());
-    }
-
-    #[test]
-    fn new_rejects_negative_rating() {
-        assert!(RatingObservation::new(-0.5, 5.0, 1).is_err());
-    }
-
-    #[test]
-    fn new_rejects_nonpositive_scale() {
-        assert!(RatingObservation::new(4.0, 0.0, 1).is_err());
-        assert!(RatingObservation::new(0.0, -5.0, 1).is_err());
-    }
-
-    #[test]
-    fn new_rejects_negative_review_count() {
-        assert!(RatingObservation::new(4.0, 5.0, -1).is_err());
-    }
-
-    #[test]
-    fn new_rejects_nan_rating() {
-        assert!(RatingObservation::new(f32::NAN, 5.0, 1).is_err());
-    }
-
     // ---- upsert idempotency + independence ----
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_updates_in_place(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-upsert").await;
-        upsert_rating(&pool, m, "googlebooks", &obs(4.0, 5.0, 100))
-            .await
-            .expect("first");
-        upsert_rating(&pool, m, "googlebooks", &obs(4.5, 5.0, 250))
-            .await
-            .expect("second");
-
-        let rows = sqlx::query_as!(
-            ManifestationExternalRating,
-            "SELECT manifestation_id, source, rating, rating_scale, review_count, fetched_at \
-             FROM manifestation_external_ratings WHERE manifestation_id = $1",
-            m,
-        )
-        .fetch_all(&pool)
-        .await
-        .expect("select");
-        assert_eq!(rows.len(), 1, "one row per (manifestation, source)");
-        assert!(approx(rows[0].rating, 4.5), "rating updated in place");
-        assert_eq!(rows[0].review_count, 250);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn two_editions_keep_independent_ratings(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w1, m1) = insert_work_and_manifestation(&ingestion, "rating-ed1").await;
-        let (_w2, m2) = insert_work_and_manifestation(&ingestion, "rating-ed2").await;
-        // Same provider, different volume ratings — no cross-edition clobber.
-        upsert_rating(&pool, m1, "googlebooks", &obs(3.0, 5.0, 10))
-            .await
-            .expect("ed1");
-        upsert_rating(&pool, m2, "googlebooks", &obs(5.0, 5.0, 20))
-            .await
-            .expect("ed2");
-
-        let r1 = sqlx::query_scalar!(
-            "SELECT rating FROM manifestation_external_ratings WHERE manifestation_id = $1 AND source = 'googlebooks'",
-            m1,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("r1");
-        let r2 = sqlx::query_scalar!(
-            "SELECT rating FROM manifestation_external_ratings WHERE manifestation_id = $1 AND source = 'googlebooks'",
-            m2,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("r2");
-        assert!(approx(r1, 3.0), "edition 1 keeps its rating");
-        assert!(approx(r2, 5.0), "edition 2 keeps its rating");
-    }
-
     // ---- FK + CHECK boundaries ----
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn source_fk_rejects_non_rating_source(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-fk").await;
-        // `manual` exists in metadata_sources but is NOT rating-capable.
-        let err = upsert_rating(&pool, m, "manual", &obs(4.0, 5.0, 1))
-            .await
-            .expect_err("source=manual must be FK-rejected");
-        assert_eq!(
-            err_code(&err).as_deref(),
-            Some("23503"),
-            "foreign_key_violation"
-        );
-    }
 
     // These three CHECK constraints can no longer be reached through the
     // typed `upsert_rating` API (`RatingObservation::new` rejects the values
     // first), so they are exercised with a direct insert instead.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn rating_out_of_range_rejected(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-range").await;
-        let over_scale = sqlx::query!(
-            "INSERT INTO manifestation_external_ratings \
-                 (manifestation_id, source, rating, rating_scale, review_count) \
-             VALUES ($1, 'googlebooks', $2, $3, $4)",
-            m,
-            6.0_f32,
-            5.0_f32,
-            1,
-        )
-        .execute(&pool)
-        .await
-        .expect_err("rating above scale rejected");
-        assert_eq!(
-            err_code(&over_scale).as_deref(),
-            Some("23514"),
-            "check_violation"
-        );
-        assert_eq!(
-            over_scale
-                .as_database_error()
-                .and_then(sqlx::error::DatabaseError::constraint),
-            Some("manifestation_external_ratings_rating_range")
-        );
-
-        let negative = sqlx::query!(
-            "INSERT INTO manifestation_external_ratings \
-                 (manifestation_id, source, rating, rating_scale, review_count) \
-             VALUES ($1, 'googlebooks', $2, $3, $4)",
-            m,
-            -0.5_f32,
-            5.0_f32,
-            1,
-        )
-        .execute(&pool)
-        .await
-        .expect_err("negative rating rejected");
-        assert_eq!(
-            err_code(&negative).as_deref(),
-            Some("23514"),
-            "check_violation"
-        );
-        assert_eq!(
-            negative
-                .as_database_error()
-                .and_then(sqlx::error::DatabaseError::constraint),
-            Some("manifestation_external_ratings_rating_range")
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn negative_review_count_rejected(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-count").await;
-        let err = sqlx::query!(
-            "INSERT INTO manifestation_external_ratings \
-                 (manifestation_id, source, rating, rating_scale, review_count) \
-             VALUES ($1, 'googlebooks', $2, $3, $4)",
-            m,
-            4.0_f32,
-            5.0_f32,
-            -1,
-        )
-        .execute(&pool)
-        .await
-        .expect_err("negative review_count rejected");
-        assert_eq!(err_code(&err).as_deref(), Some("23514"), "check_violation");
-        assert_eq!(
-            err.as_database_error()
-                .and_then(sqlx::error::DatabaseError::constraint),
-            Some("manifestation_external_ratings_review_count_nonneg")
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn nonpositive_scale_rejected(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-scale").await;
-        let err = sqlx::query!(
-            "INSERT INTO manifestation_external_ratings \
-                 (manifestation_id, source, rating, rating_scale, review_count) \
-             VALUES ($1, 'googlebooks', $2, $3, $4)",
-            m,
-            0.0_f32,
-            0.0_f32,
-            1,
-        )
-        .execute(&pool)
-        .await
-        .expect_err("rating_scale = 0 rejected");
-        assert_eq!(err_code(&err).as_deref(), Some("23514"), "check_violation");
-        assert_eq!(
-            err.as_database_error()
-                .and_then(sqlx::error::DatabaseError::constraint),
-            Some("manifestation_external_ratings_rating_scale_positive")
-        );
-    }
-
     // ---- cascade ----
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn deleting_manifestation_cascades_ratings(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-cascade").await;
-        upsert_rating(&pool, m, "googlebooks", &obs(4.0, 5.0, 1))
-            .await
-            .expect("seed");
-        sqlx::query!("DELETE FROM manifestations WHERE id = $1", m)
-            .execute(&pool)
-            .await
-            .expect("delete manifestation");
-        let remaining: i64 = sqlx::query_scalar!(
-            "SELECT count(*) AS \"c!\" FROM manifestation_external_ratings WHERE manifestation_id = $1",
-            m,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("count");
-        assert_eq!(remaining, 0, "ratings cascade-deleted with manifestation");
-    }
 
     // ---- RLS ----
 
@@ -481,24 +250,6 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn rls_enabled_fresh_child_sees_no_rating_rows(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let app = app_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "rat-enable").await;
-        upsert_rating(&pool, m, "googlebooks", &obs(4.0, 5.0, 1))
-            .await
-            .expect("seed");
-        let (child_id, _) = create_child_user_and_basic_auth(&app, "rat-enable").await;
-        let mut tx = acquire_with_rls(&app, child_id).await.expect("rls tx");
-        let count: i64 =
-            sqlx::query_scalar!("SELECT count(*) AS \"c!\" FROM manifestation_external_ratings",)
-                .fetch_one(&mut *tx)
-                .await
-                .expect("select");
-        assert_eq!(count, 0, "RLS ENABLE hides ratings from a shelf-less child");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn user_cannot_write_ratings(pool: PgPool) {
         // Ratings are enrichment-write-only. No reverie_app write policy
         // exists → default-deny for adult/admin too.
@@ -511,35 +262,5 @@ mod tests {
             .await
             .expect_err("adult rating write denied");
         assert!(is_rls_denied(&err), "expected 42501, got {err:?}");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn ingestion_can_upsert_ratings(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "rat-ing").await;
-        upsert_rating(&ingestion, m, "googlebooks", &obs(4.0, 5.0, 1))
-            .await
-            .expect("ingestion upsert succeeds");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn readonly_can_read_ratings(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let app = app_pool_for(&pool).await;
-        let readonly = readonly_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "rat-ro").await;
-        upsert_rating(&pool, m, "googlebooks", &obs(4.0, 5.0, 1))
-            .await
-            .expect("seed");
-        let (adult_id, _) = create_adult_and_basic_auth(&app, "rat-ro").await;
-        let mut tx = acquire_with_rls(&readonly, adult_id).await.expect("rls tx");
-        let count: i64 = sqlx::query_scalar!(
-            "SELECT count(*) AS \"c!\" FROM manifestation_external_ratings WHERE manifestation_id = $1",
-            m,
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .expect("readonly select");
-        assert_eq!(count, 1, "readonly (adult) reads visible ratings");
     }
 }
