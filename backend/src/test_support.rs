@@ -555,6 +555,20 @@ pub mod db {
         server_with_config(app_pool, ingestion_pool, super::test_config())
     }
 
+    pub struct AdminEnv {
+        pub ing: PgPool,
+        pub server: axum_test::TestServer,
+        pub auth: String,
+    }
+
+    pub async fn admin_env(pool: &PgPool) -> AdminEnv {
+        let app = app_pool_for(pool).await;
+        let ing = ingestion_pool_for(pool).await;
+        let (_, auth) = create_admin_and_basic_auth(&app).await;
+        let server = server_with_real_pools(&app, &ing);
+        AdminEnv { ing, server, auth }
+    }
+
     pub fn server_with_config(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
@@ -571,22 +585,6 @@ pub mod db {
         mail: std::sync::Arc<crate::services::mail::queue::MailRuntime>,
     ) -> axum_test::TestServer {
         server_with_reload_state(app_pool, ingestion_pool, config, None, Some(mail))
-    }
-
-    /// Same as [`server_with_real_pools`] with the live-reload task's last
-    /// successful reload already recorded as `at`.
-    pub fn server_with_last_reload(
-        app_pool: &PgPool,
-        ingestion_pool: &PgPool,
-        at: chrono::DateTime<chrono::Utc>,
-    ) -> axum_test::TestServer {
-        server_with_reload_state(
-            app_pool,
-            ingestion_pool,
-            super::test_config(),
-            Some(at),
-            None,
-        )
     }
 
     fn server_with_reload_state(
@@ -727,50 +725,6 @@ pub mod db {
         config.opds = OpdsConfig {
             enabled: true,
             page_size: 50,
-            realm: "Reverie OPDS".into(),
-        };
-        config.public_url = Some(url::Url::parse("http://host.example/").unwrap());
-        let state = AppState {
-            pool: app_pool.clone(),
-            ingestion_pool: ingestion_pool.clone(),
-            ingestion: crate::services::ingestion::coordinator_channel().0,
-            library_files,
-            hash_limiter: crate::auth::password::HashLimiter::new(
-                usize::try_from(config.auth_hash_concurrency).unwrap(),
-            ),
-            config,
-            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
-            login_limiter: super::test_login_limiter(),
-            recovery_limiter: super::test_login_limiter(),
-            oidc_limiter: super::test_login_limiter(),
-            settings: super::test_settings(),
-            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            mail: None,
-        };
-        let app = crate::build_router(state);
-        axum_test::TestServer::new(app)
-    }
-
-    /// Same as [`server_with_opds_enabled`] but with a caller-chosen
-    /// `opds.page_size` for navigation-feed pagination-walk tests.
-    pub async fn server_with_opds_page_size(
-        app_pool: &PgPool,
-        ingestion_pool: &PgPool,
-        library_path: &std::path::Path,
-        page_size: u32,
-    ) -> axum_test::TestServer {
-        use crate::config::OpdsConfig;
-        use crate::state::AppState;
-
-        let (mut config, library_files) = super::test_storage_config(
-            Some(library_path),
-            crate::models::storage_library::default_library_id(app_pool)
-                .await
-                .unwrap(),
-        );
-        config.opds = OpdsConfig {
-            enabled: true,
-            page_size,
             realm: "Reverie OPDS".into(),
         };
         config.public_url = Some(url::Url::parse("http://host.example/").unwrap());
@@ -1877,19 +1831,6 @@ pub mod mail {
         .fetch_one(pool)
         .await
         .unwrap()
-    }
-
-    /// Mark a delivery accepted and old enough that the 60-second interval has passed.
-    pub async fn settle_delivery(pool: &PgPool, id: Uuid) {
-        sqlx::query!(
-            "UPDATE mail_jobs SET state = 'accepted', terminal_at = clock_timestamp(), \
-                    enqueued_at = clock_timestamp() - interval '2 minutes', \
-                    next_attempt_at = clock_timestamp() - interval '2 minutes' WHERE id = $1",
-            id
-        )
-        .execute(pool)
-        .await
-        .unwrap();
     }
 
     /// Fail every later insert into `mail_jobs`.
