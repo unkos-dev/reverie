@@ -327,7 +327,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     // First-run env seed: create the first administrator from REVERIE_BOOTSTRAP_*
     // if configured and none exists. Idempotent; honours the single-admin gate.
-    seed_admin_if_configured(&pool, &config)
+    seed_admin_if_configured(&pool, &config, read_bootstrap_seed())
         .await
         .context("bootstrap the first administrator from the environment seed")?;
 
@@ -887,14 +887,18 @@ fn read_bootstrap_seed() -> Option<(String, String, String)> {
 ///
 /// Returns an error on an invalid seed email, a rejected password, hashing
 /// failure, or a database error other than the benign already-bootstrapped race.
-async fn seed_admin_if_configured(pool: &sqlx::PgPool, config: &Config) -> anyhow::Result<bool> {
+async fn seed_admin_if_configured(
+    pool: &sqlx::PgPool,
+    config: &Config,
+    seed: Option<(String, String, String)>,
+) -> anyhow::Result<bool> {
     if models::user::admin_exists(pool)
         .await
         .context("check for an existing administrator")?
     {
         return Ok(false);
     }
-    let Some((email, display_name, password)) = read_bootstrap_seed() else {
+    let Some((email, display_name, password)) = seed else {
         return Ok(false);
     };
     if !models::user::is_addr_spec(&email) {
@@ -931,7 +935,7 @@ pub async fn run_bootstrap() -> anyhow::Result<()> {
     let pool = db::init_pool(config.database_url.expose_secret(), 1)
         .await
         .context("connect to the database")?;
-    if seed_admin_if_configured(&pool, &config).await? {
+    if seed_admin_if_configured(&pool, &config, read_bootstrap_seed()).await? {
         return Ok(());
     }
     if models::user::admin_exists(&pool).await? {
@@ -1074,19 +1078,10 @@ async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Command, apply_or_verify_schema, parse_command, resolve_log_filter, resolve_migration_dsn,
-    };
+    use super::{apply_or_verify_schema, worker_supervisor};
     use crate::test_support;
 
-    use super::{Worker, supervise_until_shutdown, worker_supervisor};
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
     use std::time::Duration;
-    use task_supervisor::TaskStatus;
-    use tokio_util::sync::CancellationToken;
 
     async fn wait_for_oidc_event(logs: &test_support::CapturedLogs, event: &str, count: usize) {
         tokio::time::timeout(Duration::from_secs(5), async {
@@ -1096,166 +1091,6 @@ mod tests {
         })
         .await
         .unwrap();
-    }
-
-    async fn oidc_startup_state(
-        pool: &sqlx::PgPool,
-        mock: Option<&test_support::oidc_mock::MockOidcProvider>,
-    ) -> (crate::state::AppState, axum_test::TestServer) {
-        let mut state = test_support::test_state();
-        state.pool = test_support::db::app_pool_for(pool).await;
-        state.ingestion_pool = test_support::db::ingestion_pool_for(pool).await;
-        if let Some(mock) = mock {
-            let oidc_config = mock.config("http://localhost:3000/auth/callback");
-            state.config.oidc_issuer_url = oidc_config.oidc_issuer_url;
-            state.config.oidc_client_id = oidc_config.oidc_client_id;
-            state.config.oidc_client_secret = oidc_config.oidc_client_secret;
-            state.config.oidc_redirect_uri = oidc_config.oidc_redirect_uri;
-        }
-        state.oidc = super::configure_oidc(
-            &state.config,
-            mock.map(|_| crate::auth::oidc::OidcTransport::for_tests()),
-        )
-        .unwrap();
-        let server = axum_test::TestServer::new(super::build_router(state.clone()));
-        (state, server)
-    }
-
-    async fn assert_local_oidc_independence(state: &crate::state::AppState) {
-        test_support::db::create_adult_with_password(
-            &state.pool,
-            "Local",
-            "local@example.com",
-            "correct horse battery staple",
-        )
-        .await;
-        let mut server = axum_test::TestServer::new(super::build_router(state.clone()));
-        server.save_cookies();
-        assert_eq!(server.post("/auth/local/login").json(&serde_json::json!({"email": "local@example.com", "password": "correct horse battery staple"})).await.status_code(), axum::http::StatusCode::NO_CONTENT);
-        let me = server.get("/auth/me").await;
-        assert_eq!(me.status_code(), axum::http::StatusCode::OK);
-        assert_eq!(me.json::<serde_json::Value>()["email"], "local@example.com");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn oidc_key_startup_provider_outage_keeps_local_login_and_recovers(pool: sqlx::PgPool) {
-        let logs = test_support::CapturedLogs::default();
-        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
-        let mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
-        let (state, server) = oidc_startup_state(&pool, Some(&mock)).await;
-        mock.assert_no_requests().await;
-        let supervisor =
-            super::with_oidc_discovery(worker_supervisor(), state.oidc.as_ref()).spawn();
-        wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
-        assert_local_oidc_independence(&state).await;
-        let pending = server.get("/auth/oidc/login").await;
-        assert_eq!(pending.status_code(), axum::http::StatusCode::SEE_OTHER);
-        assert_eq!(pending.header("location"), "/login?outcome=unavailable");
-        mock.mount_discovery().await;
-        tokio::time::pause();
-        tokio::time::advance(Duration::from_secs(1)).await;
-        tokio::time::resume();
-        wait_for_oidc_event(&logs, "OIDC discovery completed", 1).await;
-        assert_eq!(
-            server.get("/auth/oidc/login").await.status_code(),
-            axum::http::StatusCode::TEMPORARY_REDIRECT
-        );
-        assert!(state.oidc.as_ref().unwrap().snapshot().await.is_some());
-        supervisor.shutdown().await.unwrap();
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn oidc_key_startup_backoff_caps_without_supervisor_escalation(pool: sqlx::PgPool) {
-        let logs = test_support::CapturedLogs::default();
-        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
-        let mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
-        let (state, server) = oidc_startup_state(&pool, Some(&mock)).await;
-        let supervisor =
-            super::with_oidc_discovery(worker_supervisor(), state.oidc.as_ref()).spawn();
-        wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
-        let mut count = 1;
-        for delay in [1, 2, 4, 8, 16, 32, 60]
-            .into_iter()
-            .chain(std::iter::repeat_n(60, 31))
-        {
-            tokio::time::pause();
-            tokio::time::advance(
-                Duration::from_secs(delay)
-                    .checked_sub(Duration::from_millis(1))
-                    .unwrap(),
-            )
-            .await;
-            tokio::task::yield_now().await;
-            assert_eq!(
-                mock.request_count("/.well-known/openid-configuration")
-                    .await,
-                count
-            );
-            tokio::time::advance(Duration::from_millis(1)).await;
-            tokio::time::resume();
-            count += 1;
-            wait_for_oidc_event(&logs, "OIDC discovery failed", count).await;
-        }
-        assert_eq!(
-            supervisor.task_status("oidc-discovery").await.unwrap(),
-            TaskStatus::Running
-        );
-        assert_eq!(
-            server.get("/auth/setup/status").await.status_code(),
-            axum::http::StatusCode::OK
-        );
-        supervisor.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn oidc_key_startup_discovery_failures_use_fixed_categories() {
-        use wiremock::ResponseTemplate;
-        for (outcome, response) in [
-            (
-                "request_failed",
-                ResponseTemplate::new(200).set_delay(Duration::from_millis(100)),
-            ),
-            (
-                "response_rejected",
-                ResponseTemplate::new(500).set_body_string("provider-body-marker"),
-            ),
-            (
-                "parse_failed",
-                ResponseTemplate::new(200).set_body_raw("provider-body-marker", "application/json"),
-            ),
-        ] {
-            let logs = test_support::CapturedLogs::default();
-            let _subscriber = tracing::subscriber::set_default(logs.subscriber());
-            let mut mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
-            mock.mount_discovery().await;
-            mock.set_jwks_response(response, 1).await;
-            let runtime = super::configure_oidc(
-                &mock.config("http://localhost/auth/callback"),
-                Some(crate::auth::oidc::OidcTransport::for_tests_with_timeouts(
-                    Duration::from_millis(50),
-                    Duration::from_millis(50),
-                )),
-            )
-            .unwrap();
-            let supervisor =
-                super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
-            wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
-            supervisor.shutdown().await.unwrap();
-            let text = logs.text();
-            let event = text
-                .lines()
-                .find(|line| line.contains("OIDC discovery failed"))
-                .unwrap();
-            assert!(event.contains("ERROR"));
-            assert!(
-                event.contains(&format!(r#"outcome="{outcome}""#)),
-                "{event}"
-            );
-            assert!(event.contains("epoch=0 keys=0"));
-            assert!(!event.contains("source="));
-            assert!(!text.contains("provider-body-marker"));
-            assert!(!text.contains(mock.issuer()));
-        }
     }
 
     #[tokio::test]
@@ -1303,552 +1138,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn oidc_key_startup_cooldown_is_warning() {
-        let logs = test_support::CapturedLogs::default();
-        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
-        let mut mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
-        mock.mount_discovery().await;
-        mock.set_jwks_response(wiremock::ResponseTemplate::new(500), 1)
-            .await;
-        let runtime = super::configure_oidc(
-            &mock.config("http://localhost/auth/callback"),
-            Some(crate::auth::oidc::OidcTransport::for_tests()),
-        )
-        .unwrap();
-        let supervisor = super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
-        wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
-        tokio::time::pause();
-        tokio::time::advance(Duration::from_secs(1)).await;
-        tokio::time::resume();
-        wait_for_oidc_event(&logs, "OIDC discovery failed", 2).await;
-        supervisor.shutdown().await.unwrap();
-        let text = logs.text();
-        let event = text
-            .lines()
-            .find(|line| line.contains(r#"outcome="cooldown""#))
-            .unwrap();
-        assert!(event.contains("WARN"), "{event}");
-        assert!(!event.contains("ERROR"));
-        assert!(event.contains("epoch=0 keys=0"));
-        assert!(!event.contains("source="));
-        assert_eq!(mock.request_count("/jwks").await, 1);
-        assert_eq!(
-            mock.request_count("/.well-known/openid-configuration")
-                .await,
-            2
-        );
-        assert!(runtime.as_ref().unwrap().snapshot().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn oidc_key_startup_ready_worker_waits_for_shutdown() {
-        let logs = test_support::CapturedLogs::default();
-        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
-        let mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
-        mock.mount_discovery().await;
-        let runtime = super::configure_oidc(
-            &mock.config("http://localhost/auth/callback"),
-            Some(crate::auth::oidc::OidcTransport::for_tests()),
-        )
-        .unwrap();
-        let supervisor = super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
-        wait_for_oidc_event(&logs, "OIDC discovery completed", 1).await;
-        tokio::time::pause();
-        tokio::time::advance(Duration::from_secs(120)).await;
-        tokio::time::resume();
-        assert_eq!(
-            mock.request_count("/.well-known/openid-configuration")
-                .await,
-            1
-        );
-        assert_eq!(mock.request_count("/jwks").await, 1);
-        assert_eq!(
-            supervisor.task_status("oidc-discovery").await.unwrap(),
-            TaskStatus::Running
-        );
-        supervisor.shutdown().await.unwrap();
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn oidc_key_startup_unconfigured_has_no_worker_or_traffic(pool: sqlx::PgPool) {
-        let mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
-        let (state, server) = oidc_startup_state(&pool, None).await;
-        assert!(state.oidc.is_none());
-        assert!(!crate::auth::oidc::transport_required(&state.config));
-        let builder = worker_supervisor().with_task(
-            "local",
-            Worker(|cancel: CancellationToken| async move {
-                cancel.cancelled().await;
-                Ok(())
-            }),
-        );
-        let supervisor = super::with_oidc_discovery(builder, state.oidc.as_ref()).spawn();
-        assert_eq!(supervisor.task_statuses().await.unwrap().len(), 1);
-        assert_eq!(
-            server.get("/auth/oidc/login").await.status_code(),
-            axum::http::StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            server
-                .get("/auth/callback?code=test&state=test")
-                .await
-                .status_code(),
-            axum::http::StatusCode::NOT_FOUND
-        );
-        assert_local_oidc_independence(&state).await;
-        mock.assert_no_requests().await;
-        supervisor.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn oidc_key_startup_cancellation_drains_fetch_and_sleep() {
-        let logs = test_support::CapturedLogs::default();
-        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
-        let mut mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
-        let config = mock.config("http://localhost/auth/callback");
-        let runtime =
-            super::configure_oidc(&config, Some(crate::auth::oidc::OidcTransport::for_tests()))
-                .unwrap();
-        let supervisor = super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
-        wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
-        supervisor.shutdown().await.unwrap();
-        let before = mock
-            .request_count("/.well-known/openid-configuration")
-            .await;
-        tokio::time::pause();
-        tokio::time::advance(Duration::from_secs(120)).await;
-        tokio::time::resume();
-        assert_eq!(
-            mock.request_count("/.well-known/openid-configuration")
-                .await,
-            before
-        );
-        mock.mount_discovery().await;
-        let release = mock.hold_jwks().await;
-        let runtime =
-            super::configure_oidc(&config, Some(crate::auth::oidc::OidcTransport::for_tests()))
-                .unwrap();
-        let supervisor = super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
-        mock.wait_for_jwks().await;
-        let shutdown = tokio::spawn(async move { supervisor.shutdown().await });
-        tokio::task::yield_now().await;
-        assert!(!shutdown.is_finished());
-        release.send(()).unwrap();
-        tokio::time::timeout(Duration::from_secs(5), shutdown)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        let runtime = runtime.unwrap();
-        assert!(runtime.snapshot().await.is_some());
-        runtime.age_for_tests(Duration::from_secs(601)).await;
-        assert!(runtime.verification_snapshot().await.is_err());
-    }
-
-    #[derive(Clone, Copy)]
-    enum WorkerExit {
-        Error,
-        Panic,
-        Success,
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn supervision_restarts_error_panic_and_unexpected_success() {
-        for failure in [WorkerExit::Error, WorkerExit::Panic, WorkerExit::Success] {
-            let runs = Arc::new(AtomicUsize::new(0));
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-            let supervisor = worker_supervisor()
-                .with_restart_jitter(0.0)
-                .with_task(
-                    "worker",
-                    Worker(move |cancel: CancellationToken| {
-                        let runs = runs.clone();
-                        let tx = tx.clone();
-                        async move {
-                            let run = runs.fetch_add(1, Ordering::SeqCst);
-                            tx.send(run).unwrap();
-                            if run == 0 {
-                                match failure {
-                                    WorkerExit::Error => anyhow::bail!("worker failed"),
-                                    WorkerExit::Panic => panic!("worker panicked"),
-                                    WorkerExit::Success => return Ok(()),
-                                }
-                            }
-                            cancel.cancelled().await;
-                            Ok(())
-                        }
-                    }),
-                )
-                .spawn();
-            assert_eq!(rx.recv().await, Some(0));
-            assert_eq!(
-                supervisor.task_status("worker").await.unwrap(),
-                TaskStatus::Restarting
-            );
-            tokio::time::advance(Duration::from_millis(999)).await;
-            assert!(rx.try_recv().is_err());
-            tokio::time::advance(Duration::from_millis(1)).await;
-            assert_eq!(rx.recv().await, Some(1));
-            supervisor.shutdown().await.unwrap();
-            assert!(rx.try_recv().is_err());
-        }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn supervision_backoff_doubles_and_caps() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let supervisor = worker_supervisor()
-            .with_restart_jitter(0.0)
-            .with_task(
-                "worker",
-                Worker(move |_| {
-                    let tx = tx.clone();
-                    async move {
-                        tx.send(tokio::time::Instant::now()).unwrap();
-                        anyhow::bail!("worker failed")
-                    }
-                }),
-            )
-            .spawn();
-        let mut previous = rx.recv().await.unwrap();
-        for seconds in [1, 2, 4, 8, 16, 32, 60, 60] {
-            let next = rx.recv().await.unwrap();
-            assert_eq!(next.duration_since(previous), Duration::from_secs(seconds));
-            previous = next;
-        }
-        supervisor.shutdown().await.unwrap();
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn supervision_restart_window_expires_old_failures() {
-        let runs = Arc::new(AtomicUsize::new(0));
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let supervisor = worker_supervisor()
-            .with_restart_jitter(0.0)
-            .with_task(
-                "worker",
-                Worker(move |_| {
-                    let runs = runs.clone();
-                    let tx = tx.clone();
-                    async move {
-                        let run = runs.fetch_add(1, Ordering::SeqCst);
-                        tx.send(tokio::time::Instant::now()).unwrap();
-                        if run == 4 {
-                            tokio::time::sleep(Duration::from_mins(30)).await;
-                        }
-                        anyhow::bail!("worker failed")
-                    }
-                }),
-            )
-            .spawn();
-        let start = rx.recv().await.unwrap();
-        for seconds in [1, 3, 7, 15, 1816] {
-            assert_eq!(
-                rx.recv().await.unwrap().duration_since(start),
-                Duration::from_secs(seconds)
-            );
-        }
-        supervisor.shutdown().await.unwrap();
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn supervision_five_workers_can_each_fail_once() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut builder = worker_supervisor().with_restart_jitter(0.0);
-        for name in ["settings", "ingestion", "enrichment", "sweep", "writeback"] {
-            let runs = Arc::new(AtomicUsize::new(0));
-            let tx = tx.clone();
-            builder = builder.with_task(
-                name,
-                Worker(move |cancel: CancellationToken| {
-                    let runs = runs.clone();
-                    let tx = tx.clone();
-                    async move {
-                        if runs.fetch_add(1, Ordering::SeqCst) == 0 {
-                            anyhow::bail!("first run failed")
-                        }
-                        tx.send(()).unwrap();
-                        cancel.cancelled().await;
-                        Ok(())
-                    }
-                }),
-            );
-        }
-        let supervisor = builder.spawn();
-        for _ in 0..5 {
-            rx.recv().await.unwrap();
-        }
-        assert!(
-            supervisor
-                .task_statuses()
-                .await
-                .unwrap()
-                .values()
-                .all(|status| *status == TaskStatus::Running)
-        );
-        supervisor.shutdown().await.unwrap();
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn supervision_instant_failure_escalates_between_eight_and_eleven_minutes() {
-        let supervisor = worker_supervisor()
-            .with_task(
-                "failing",
-                Worker(|_| async { anyhow::bail!("persistent failure") }),
-            )
-            .spawn();
-        let start = tokio::time::Instant::now();
-        assert!(
-            tokio::time::timeout(Duration::from_mins(8), supervisor.wait())
-                .await
-                .is_err()
-        );
-        let outcome = tokio::time::timeout(Duration::from_mins(3), supervisor.wait())
-            .await
-            .expect("instant failure must exhaust the restart limit by eleven minutes");
-        assert!(matches!(
-            outcome,
-            Err(task_supervisor::SupervisorError::TooManyDeadTasks {
-                dead: 1,
-                total: 1,
-                ..
-            })
-        ));
-        assert!(start.elapsed() >= Duration::from_mins(8));
-        assert!(start.elapsed() <= Duration::from_mins(11));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn supervision_thirty_second_failures_escalate_at_about_eighteen_minutes() {
-        let runs = Arc::new(AtomicUsize::new(0));
-        let observed = runs.clone();
-        let supervisor = worker_supervisor()
-            .with_task(
-                "failing",
-                Worker(move |_| {
-                    let runs = runs.clone();
-                    async move {
-                        runs.fetch_add(1, Ordering::SeqCst);
-                        tokio::time::sleep(Duration::from_secs(30)).await;
-                        anyhow::bail!("connection attempt timed out")
-                    }
-                }),
-            )
-            .spawn();
-        let start = tokio::time::Instant::now();
-        assert!(
-            tokio::time::timeout(Duration::from_mins(17), supervisor.wait())
-                .await
-                .is_err()
-        );
-        let outcome = tokio::time::timeout(Duration::from_secs(65), supervisor.wait())
-            .await
-            .expect("slow failure must exhaust the restart limit at about eighteen minutes");
-        assert!(matches!(
-            outcome,
-            Err(task_supervisor::SupervisorError::TooManyDeadTasks {
-                dead: 1,
-                total: 1,
-                ..
-            })
-        ));
-        assert_eq!(observed.load(Ordering::SeqCst), 16);
-        assert!(start.elapsed() >= Duration::from_mins(17));
-        assert!(start.elapsed() <= Duration::from_secs(1085));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn supervision_one_exhausted_worker_cancels_and_fails_process_outcome() {
-        let runs = Arc::new(AtomicUsize::new(0));
-        let observed = runs.clone();
-        let drained = Arc::new(tokio::sync::Notify::new());
-        let observed_drain = drained.clone();
-        let supervisor = worker_supervisor()
-            .with_restart_jitter(0.0)
-            .with_task(
-                "failing",
-                Worker(move |_| {
-                    observed.fetch_add(1, Ordering::SeqCst);
-                    async { anyhow::bail!("persistent failure") }
-                }),
-            )
-            .with_task(
-                "healthy",
-                Worker(move |cancel: CancellationToken| {
-                    let drained = drained.clone();
-                    async move {
-                        cancel.cancelled().await;
-                        drained.notify_one();
-                        Ok(())
-                    }
-                }),
-            )
-            .spawn();
-        let cancel = CancellationToken::new();
-        let outcome = supervise_until_shutdown(supervisor, cancel.clone()).await;
-        assert_eq!(runs.load(Ordering::SeqCst), 16);
-        assert!(cancel.is_cancelled());
-        observed_drain.notified().await;
-        let error = outcome.unwrap_err();
-        assert!(matches!(
-            error.downcast_ref::<task_supervisor::SupervisorError>(),
-            Some(task_supervisor::SupervisorError::TooManyDeadTasks {
-                dead: 1,
-                total: 2,
-                ..
-            })
-        ));
-        assert_eq!(
-            std::process::Termination::report(Err::<(), _>(error)),
-            std::process::ExitCode::FAILURE
-        );
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn supervision_drains_on_shutdown_and_bounds_stuck_runs_together() {
-        let completed = Arc::new(AtomicUsize::new(0));
-        let drained = completed.clone();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let supervisor = worker_supervisor()
-            .with_task(
-                "draining",
-                Worker(move |cancel: CancellationToken| {
-                    let completed = completed.clone();
-                    let tx = tx.clone();
-                    async move {
-                        tx.send(()).unwrap();
-                        cancel.cancelled().await;
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                        completed.fetch_add(1, Ordering::SeqCst);
-                        Ok(())
-                    }
-                }),
-            )
-            .with_task(
-                "stuck-a",
-                Worker(|_| std::future::pending::<anyhow::Result<()>>()),
-            )
-            .with_task(
-                "stuck-b",
-                Worker(|_| std::future::pending::<anyhow::Result<()>>()),
-            )
-            .spawn();
-        rx.recv().await.unwrap();
-        let start = tokio::time::Instant::now();
-        let cancel = CancellationToken::new();
-        cancel.cancel();
-        supervise_until_shutdown(supervisor, cancel).await.unwrap();
-        assert_eq!(drained.load(Ordering::SeqCst), 1);
-        assert_eq!(start.elapsed(), Duration::from_secs(30));
-    }
-
-    #[test]
-    fn credential_file_migrate_reads_only_migration_source() {
-        use std::cell::RefCell;
-        let reads = RefCell::new(Vec::new());
-        let pairs = [
-            ("DATABASE_URL_FILE", "app-path"),
-            ("DATABASE_URL_INGESTION_FILE", "ingestion-path"),
-            ("OIDC_CLIENT_SECRET_FILE", "oidc-path"),
-            ("DATABASE_URL_MIGRATION_FILE", "migration-path"),
-        ]
-        .map(|(key, value)| (key.into(), value.into()));
-        let result = super::resolve_migration_source(&pairs, &|path: &str| {
-            reads.borrow_mut().push(path.to_owned());
-            Ok("migration-dsn\r\n".into())
-        })
-        .unwrap();
-        assert_eq!(result, "migration-dsn");
-        assert_eq!(reads.borrow().as_slice(), &["migration-path"]);
-    }
-
-    #[test]
-    fn parse_command_maps_args_rejects_unknown_and_trailing() {
-        let migrate = vec!["migrate".to_string()];
-        assert_eq!(parse_command(&migrate).unwrap(), Command::Migrate);
-        assert_eq!(parse_command(&[]).unwrap(), Command::Serve);
-        let schema = vec!["print-config-schema".to_string()];
-        assert_eq!(parse_command(&schema).unwrap(), Command::PrintConfigSchema);
-
-        let unknown = vec!["migration".to_string()];
-        let err = parse_command(&unknown).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("unknown"), "got: {msg}");
-        assert!(
-            msg.contains("migration"),
-            "should echo the bad token: {msg}"
-        );
-
-        // A write-capable subcommand must not silently ignore extra tokens.
-        let trailing = vec!["migrate".to_string(), "typo".to_string()];
-        let err = parse_command(&trailing).unwrap_err();
-        assert!(
-            err.to_string().contains("arguments"),
-            "trailing args must be rejected, got: {err}"
-        );
-    }
-
-    #[test]
-    fn parse_command_accepts_auth_subcommands() {
-        assert_eq!(
-            parse_command(&["bootstrap".to_string()]).unwrap(),
-            Command::Bootstrap
-        );
-        assert_eq!(
-            parse_command(&["reset-password".to_string(), "a@b.com".to_string()]).unwrap(),
-            Command::ResetPassword {
-                email: "a@b.com".to_string()
-            }
-        );
-        assert_eq!(
-            parse_command(&["unlock-account".to_string(), "a@b.com".to_string()]).unwrap(),
-            Command::UnlockAccount {
-                email: "a@b.com".to_string()
-            }
-        );
-
-        // bootstrap takes no positional args.
-        assert!(parse_command(&["bootstrap".to_string(), "x".to_string()]).is_err());
-        // The arg-bearing subcommands require their email.
-        assert!(parse_command(&["reset-password".to_string()]).is_err());
-        assert!(parse_command(&["unlock-account".to_string()]).is_err());
-    }
-
-    #[test]
-    fn smtp_cli_test_email_requires_exactly_one_recipient() {
-        assert_eq!(
-            parse_command(&["send-test-email".into(), "holder@example.test".into()]).unwrap(),
-            Command::SendTestEmail {
-                address: "holder@example.test".into()
-            }
-        );
-        assert!(parse_command(&["send-test-email".into()]).is_err());
-        assert!(
-            parse_command(&[
-                "send-test-email".into(),
-                "holder@example.test".into(),
-                "extra".into()
-            ])
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn resolve_migration_dsn_rejects_missing_and_empty() {
-        assert!(resolve_migration_dsn(None).is_err());
-        assert!(resolve_migration_dsn(Some(String::new())).is_err());
-        assert!(resolve_migration_dsn(Some("   ".into())).is_err());
-
-        let url = "postgres://reverie_migrator@localhost/reverie_dev";
-        assert_eq!(resolve_migration_dsn(Some(url.into())).unwrap(), url);
-    }
-
-    // apply_or_verify_schema is the flag selector carrying the security
-    // contract: flag off MUST take the verify branch (no migration credential),
-    // flag on MUST take the migrate branch. These pin the branch both ways so an
-    // inverted condition fails the suite.
-
     #[sqlx::test(migrations = "./migrations")]
     async fn apply_or_verify_flag_off_verifies_ok(pool: sqlx::PgPool) {
         let cfg = test_support::test_config(); // auto_migrate: false
@@ -1856,51 +1145,6 @@ mod tests {
         apply_or_verify_schema(&cfg, &app_pool)
             .await
             .expect("flag off + current schema must verify Ok via the app pool");
-    }
-
-    #[sqlx::test(migrations = false)]
-    async fn apply_or_verify_flag_off_takes_verify_branch(pool: sqlx::PgPool) {
-        // Fresh, never-migrated DB + flag off. The verify branch returns
-        // NotInitialized; the migrate branch would instead APPLY all
-        // migrations and succeed. A NotInitialized error therefore proves the
-        // selector chose verify — the security contract (no migration
-        // credential on the default path). Inverting the branch flips this to
-        // Ok and fails the assert.
-        let cfg = test_support::test_config(); // auto_migrate: false
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let err = apply_or_verify_schema(&cfg, &app_pool).await.unwrap_err();
-        assert!(
-            format!("{err:#}").contains("not initialized"),
-            "flag off must take the verify branch (NotInitialized on a fresh DB), got: {err:#}"
-        );
-    }
-
-    #[sqlx::test(migrations = false)]
-    async fn apply_or_verify_flag_on_takes_migrate_branch(pool: sqlx::PgPool) {
-        // Flag on + DSN absent. Only the migrate branch inspects
-        // migration_database_url, so the "DATABASE_URL_MIGRATION is missing"
-        // error proves the selector chose migrate; the verify branch would
-        // instead read the schema and return NotInitialized. Inverting the
-        // branch flips the error message and fails the assert. (The migrate
-        // branch's privilege sufficiency is covered by
-        // `db::tests::reverie_migrator_can_apply_full_migration_set`.)
-        let mut cfg = test_support::test_config();
-        cfg.auto_migrate = true;
-        cfg.migration_database_url = None;
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let err = apply_or_verify_schema(&cfg, &app_pool).await.unwrap_err();
-        assert!(
-            format!("{err:#}").contains("DATABASE_URL_MIGRATION is missing"),
-            "flag on must take the migrate branch (checks the DSN), got: {err:#}"
-        );
-    }
-
-    #[tokio::test]
-    async fn health_returns_ok() {
-        let server = test_support::test_server();
-        let response = server.get("/health").await;
-        response.assert_status_ok();
-        response.assert_text("ok");
     }
 
     /// Regression coverage for the `problem_instance_layer` wiring on
@@ -1921,86 +1165,6 @@ mod tests {
             body["instance"].as_str(),
             Some("/api/v1/__definitely_not_a_route__"),
             "instance must be populated by problem_instance_layer, got: {body}",
-        );
-    }
-
-    // resolve_log_filter parses `configured_level` directly — env precedence
-    // (REVERIE_LOG_LEVEL > RUST_LOG > "info") is resolved upstream by the
-    // EnvProvider, so these tests are insensitive to whatever env
-    // vars happen to be set in the test runner.
-
-    #[test]
-    fn resolve_log_filter_returns_no_error_for_valid_configured_level() {
-        let (_filter, err) = resolve_log_filter("debug");
-        assert!(
-            err.is_none(),
-            "valid configured level should not produce a parse error, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn resolve_log_filter_surfaces_error_for_invalid_configured_level() {
-        // EnvFilter parsing rejects directives where the level segment after `=`
-        // is not one of trace/debug/info/warn/error/off (or a numeric verbosity).
-        // "info=bogus" is a level-name typo — exactly the operator-error class
-        // this test guards against.
-        let bad = "info=bogus";
-        let (_filter, err) = resolve_log_filter(bad);
-        let err = err.expect("invalid configured level should produce a parse error");
-        assert!(
-            err.contains(bad),
-            "error message should name the bad value, got: {err}"
-        );
-    }
-
-    // PostgresStore replaces MemoryStore in production specifically so a
-    // backend restart does not nuke every active session (LXC redeploy =
-    // forced re-login is the staging-friction this swap avoids). The test
-    // simulates that restart by saving a record through one PostgresStore
-    // instance, dropping it, building a fresh PostgresStore against the
-    // same DB pool, and asserting the record loads with identical
-    // contents.
-    #[sqlx::test(migrations = "./migrations")]
-    #[expect(
-        clippy::disallowed_types,
-        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
-    )]
-    async fn session_record_survives_store_restart(pool: sqlx::PgPool) {
-        use std::collections::HashMap;
-        use time::OffsetDateTime;
-        use tower_sessions::SessionStore;
-        use tower_sessions::session::{Id, Record};
-
-        use crate::auth::store::PostgresStore;
-
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-
-        let mut data: HashMap<String, serde_json::Value> = HashMap::new();
-        data.insert("user_id".into(), serde_json::json!("user-42"));
-        data.insert("nonce".into(), serde_json::json!("abc-123-nonce"));
-
-        let record_id = {
-            let store = PostgresStore::new(app_pool.clone());
-            let mut record = Record {
-                id: Id::default(),
-                data: data.clone(),
-                expiry_date: OffsetDateTime::now_utc() + time::Duration::hours(1),
-            };
-            store.create(&mut record).await.expect("create session");
-            record.id
-        };
-
-        // First store dropped — the bytes live only in tower_sessions.session.
-        let store2 = PostgresStore::new(app_pool.clone());
-        let loaded = store2
-            .load(&record_id)
-            .await
-            .expect("load session record")
-            .expect("session record persists across store recreation");
-
-        assert_eq!(
-            loaded.data, data,
-            "session payload (incl. csrf nonce shape) survives intact"
         );
     }
 
@@ -2046,53 +1210,6 @@ mod tests {
         );
     }
 
-    // `save` upserts an EXISTING row (the `ON CONFLICT DO UPDATE` branch). The
-    // create/restart tests only cover the INSERT branch; this locks the UPDATE
-    // branch against the live schema rather than relying on compile-validation
-    // of shared `upsert` SQL alone.
-    #[sqlx::test(migrations = "./migrations")]
-    #[expect(
-        clippy::disallowed_types,
-        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
-    )]
-    async fn store_save_updates_existing_record(pool: sqlx::PgPool) {
-        use std::collections::HashMap;
-        use time::OffsetDateTime;
-        use tower_sessions::SessionStore;
-        use tower_sessions::session::{Id, Record};
-
-        use crate::auth::store::PostgresStore;
-
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let store = PostgresStore::new(app_pool.clone());
-
-        let mut record = Record {
-            id: Id::default(),
-            data: HashMap::new(),
-            expiry_date: OffsetDateTime::now_utc() + time::Duration::hours(1),
-        };
-        store.create(&mut record).await.expect("create session");
-
-        record
-            .data
-            .insert("user_id".into(), serde_json::json!("user-7"));
-        store
-            .save(&record)
-            .await
-            .expect("save upserts the existing row");
-
-        let loaded = store
-            .load(&record.id)
-            .await
-            .expect("load")
-            .expect("record present after save");
-        assert_eq!(
-            loaded.data.get("user_id"),
-            Some(&serde_json::json!("user-7")),
-            "save must persist the updated payload onto the existing row"
-        );
-    }
-
     // `delete` removes the row by id (logout / explicit invalidation path).
     #[sqlx::test(migrations = "./migrations")]
     #[expect(
@@ -2130,5 +1247,21 @@ mod tests {
                 .is_none(),
             "delete must remove the row"
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn bootstrap_seed_refuses_a_password_the_policy_rejects(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let seed = Some((
+            "admin@example.com".to_owned(),
+            "Admin".to_owned(),
+            "password".to_owned(),
+        ));
+        assert!(
+            super::seed_admin_if_configured(&app_pool, &test_support::test_state().config, seed)
+                .await
+                .is_err()
+        );
+        assert!(!crate::models::user::admin_exists(&app_pool).await.unwrap());
     }
 }

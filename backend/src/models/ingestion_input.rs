@@ -432,7 +432,7 @@ pub async fn reset_class(pool: &PgPool, reason: RetryReason) -> sqlx::Result<(Ve
         r#"WITH selected AS (
              SELECT i.id, i.generation FROM ingestion_inputs i
              JOIN ingestion_input_classes c ON c.id = i.id
-             WHERE c.reason_class = $1 ORDER BY i.id LIMIT $2
+             WHERE c.reason_class = $1 AND i.status = c.status ORDER BY i.id LIMIT $2
              FOR UPDATE OF i SKIP LOCKED
            )
            UPDATE ingestion_inputs i SET status = 'pending', reason = NULL, completed_at = NULL,

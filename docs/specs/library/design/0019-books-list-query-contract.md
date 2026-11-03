@@ -26,17 +26,17 @@ client half — how the browser represents, writes and round-trips this same sta
 
 ## Purpose and boundaries
 
-This subject owns three cooperating modules and the list handler that ties them together, and is the server side of one
-obligation this subject shares with a neighbour: REV-REQ-0003 is satisfied jointly with the Design "Library filter and
-sort state", which owns the client's tolerance of a rejected value; this Design owns the server's rejection of it.
-`backend/src/routes/library/filters.rs` owns the flat suffix-operator filter grammar, its semantic validation, and the
-canonical string and fingerprint that bind a cursor to the active filter set. `backend/src/routes/sort_spec.rs` owns the
-closed `SortColumn` whitelist and the `?sort=` grammar that resolves a client string against it.
-`backend/src/routes/cursor.rs` owns the tagged, base64url opaque cursor family: `SortCursor` (tag `m`) for this
-endpoint, and the two fixed-shape cursors that share its wire encoding and error type, `ShelfCursor` (tag `sh`) and
-`ShelfItemCursor` (tag `si`). `list` in `backend/src/routes/library/mod.rs` owns the query assembly that spans all
-three: decoding and validating the request, building the `WHERE`/`ORDER BY`/keyset-predicate clauses of one dynamic
-`QueryBuilder`, and minting the following page's cursor from the result.
+This subject owns three cooperating modules and the list handler that ties them together, and is the server side of
+REV-REQ-0003, which it satisfies jointly with the Design "Library filter and sort state": that Design converts the
+client's chosen days into instants, and this Design applies the bounds. `backend/src/routes/library/filters.rs` owns the
+flat suffix-operator filter grammar, its semantic validation, and the canonical string and fingerprint that bind a
+cursor to the active filter set. `backend/src/routes/sort_spec.rs` owns the closed `SortColumn` whitelist and the
+`?sort=` grammar that resolves a client string against it. `backend/src/routes/cursor.rs` owns the tagged, base64url
+opaque cursor family: `SortCursor` (tag `m`) for this endpoint, and the two fixed-shape cursors that share its wire
+encoding and error type, `ShelfCursor` (tag `sh`) and `ShelfItemCursor` (tag `si`). `list` in
+`backend/src/routes/library/mod.rs` owns the query assembly that spans all three: decoding and validating the request,
+building the `WHERE`/`ORDER BY`/keyset-predicate clauses of one dynamic `QueryBuilder`, and minting the following page's
+cursor from the result.
 
 It does not own how those decoded values become response rows. Once `list` has its page of `manifestations` rows, the
 batch loads that hydrate authors, contributors, tags, genres, moods, reading state, external identifiers and ratings,

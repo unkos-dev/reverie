@@ -26,11 +26,13 @@ cover image has no way to tell a legitimate cover from an attack payload.
 ## Acceptance criteria
 
 - A request for a manifestation whose declared cover is an SVG returns `image/png` at full size and `image/jpeg` at
-  thumbnail size, on both mounts. Checked by `svg_cover_rasterizes_and_serves` in `backend/src/routes/opds/tests.rs`.
+  thumbnail size, on both mounts. Checked by `capability_cover_route_svg_and_uncached_failures` in
+  `backend/src/routes/opds/tests.rs`.
 - No cover response, on either mount or at either size, carries a `Content-Type` of `image/svg+xml`. Not checked by any
   automated test: no test asserts the absence of the header across all response shapes.
 - An SVG cover that the cover service refuses (a malformed document, or one that fails a hardening check) yields no
   image body: the request returns `500 Internal Server Error` with a `problem+json` body, not the SVG bytes and not a
-  `200`. Checked by `malformed_svg_cover_does_not_serve` in `backend/src/routes/opds/tests.rs`.
-- A rejected SVG cover is never written to the on-disk cover cache. Checked by `malformed_svg_cover_does_not_serve` in
-  `backend/src/routes/opds/tests.rs`, which asserts the cache directory holds no entries afterwards.
+  `200`. Checked by `capability_cover_route_svg_and_uncached_failures` in `backend/src/routes/opds/tests.rs`.
+- A rejected SVG cover is never written to the on-disk cover cache. Checked by
+  `capability_cover_route_svg_and_uncached_failures` in `backend/src/routes/opds/tests.rs`, which asserts the cache
+  directory holds only entries for the valid SVG cover afterwards.

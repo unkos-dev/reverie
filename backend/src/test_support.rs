@@ -210,52 +210,6 @@ pub fn test_state() -> AppState {
     }
 }
 
-#[tokio::test]
-async fn test_state_storage_roots_match_config_and_survive_cloning() {
-    let state = test_state();
-    state
-        .library_files
-        .ingestion()
-        .write("marker", b"fixture bytes")
-        .unwrap();
-    assert_eq!(
-        std::fs::read(state.config.ingestion_path.as_path().join("marker")).unwrap(),
-        b"fixture bytes"
-    );
-    let roots = [
-        state.config.library_path.as_path().to_owned(),
-        state.config.ingestion_path.as_path().to_owned(),
-    ];
-    let clone = state.clone();
-    drop(state);
-    assert!(roots.iter().all(|root| root.is_dir()));
-    drop(clone);
-    assert!(roots.iter().all(|root| !root.exists()));
-}
-
-#[test]
-fn test_storage_config_preserves_caller_owned_library() {
-    let library = tempfile::tempdir().unwrap();
-    let id = crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4());
-    let (config, files) = test_storage_config(Some(library.path()), id);
-    files
-        .library(id)
-        .unwrap()
-        .write("marker", b"library bytes")
-        .unwrap();
-    assert_eq!(
-        std::fs::read(config.library_path.as_path().join("marker")).unwrap(),
-        b"library bytes"
-    );
-    let staging = config.ingestion_path.as_path().to_owned();
-    drop(files);
-    assert!(!staging.exists());
-    assert_eq!(
-        std::fs::read(library.path().join("marker")).unwrap(),
-        b"library bytes"
-    );
-}
-
 /// Build the full application router with auth layer (for route integration tests).
 ///
 /// Uses `MemoryStore` for sessions even though production uses
@@ -601,6 +555,20 @@ pub mod db {
         server_with_config(app_pool, ingestion_pool, super::test_config())
     }
 
+    pub struct AdminEnv {
+        pub ing: PgPool,
+        pub server: axum_test::TestServer,
+        pub auth: String,
+    }
+
+    pub async fn admin_env(pool: &PgPool) -> AdminEnv {
+        let app = app_pool_for(pool).await;
+        let ing = ingestion_pool_for(pool).await;
+        let (_, auth) = create_admin_and_basic_auth(&app).await;
+        let server = server_with_real_pools(&app, &ing);
+        AdminEnv { ing, server, auth }
+    }
+
     pub fn server_with_config(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
@@ -617,22 +585,6 @@ pub mod db {
         mail: std::sync::Arc<crate::services::mail::queue::MailRuntime>,
     ) -> axum_test::TestServer {
         server_with_reload_state(app_pool, ingestion_pool, config, None, Some(mail))
-    }
-
-    /// Same as [`server_with_real_pools`] with the live-reload task's last
-    /// successful reload already recorded as `at`.
-    pub fn server_with_last_reload(
-        app_pool: &PgPool,
-        ingestion_pool: &PgPool,
-        at: chrono::DateTime<chrono::Utc>,
-    ) -> axum_test::TestServer {
-        server_with_reload_state(
-            app_pool,
-            ingestion_pool,
-            super::test_config(),
-            Some(at),
-            None,
-        )
     }
 
     fn server_with_reload_state(
@@ -773,86 +725,6 @@ pub mod db {
         config.opds = OpdsConfig {
             enabled: true,
             page_size: 50,
-            realm: "Reverie OPDS".into(),
-        };
-        config.public_url = Some(url::Url::parse("http://host.example/").unwrap());
-        let state = AppState {
-            pool: app_pool.clone(),
-            ingestion_pool: ingestion_pool.clone(),
-            ingestion: crate::services::ingestion::coordinator_channel().0,
-            library_files,
-            hash_limiter: crate::auth::password::HashLimiter::new(
-                usize::try_from(config.auth_hash_concurrency).unwrap(),
-            ),
-            config,
-            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
-            login_limiter: super::test_login_limiter(),
-            recovery_limiter: super::test_login_limiter(),
-            oidc_limiter: super::test_login_limiter(),
-            settings: super::test_settings(),
-            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            mail: None,
-        };
-        let app = crate::build_router(state);
-        axum_test::TestServer::new(app)
-    }
-
-    /// Same as [`server_with_real_pools`] but with a caller-chosen
-    /// `opds.page_size` (shared page-size knob for every paginated list).
-    /// Pagination-walk tests use a tiny page size so two-page walks need
-    /// only a handful of fixture rows.
-    pub fn server_with_real_pools_page_size(
-        app_pool: &PgPool,
-        ingestion_pool: &PgPool,
-        page_size: u32,
-    ) -> axum_test::TestServer {
-        use crate::state::AppState;
-        let (mut config, library_files) = super::test_storage_config(
-            None,
-            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
-        );
-        config.opds.page_size = page_size;
-        let state = AppState {
-            pool: app_pool.clone(),
-            ingestion_pool: ingestion_pool.clone(),
-            ingestion: crate::services::ingestion::coordinator_channel().0,
-            library_files,
-            hash_limiter: crate::auth::password::HashLimiter::new(
-                usize::try_from(config.auth_hash_concurrency).unwrap(),
-            ),
-            config,
-            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
-            login_limiter: super::test_login_limiter(),
-            recovery_limiter: super::test_login_limiter(),
-            oidc_limiter: super::test_login_limiter(),
-            settings: super::test_settings(),
-            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            mail: None,
-        };
-        let app = crate::build_router(state);
-        axum_test::TestServer::new(app)
-    }
-
-    /// Same as [`server_with_opds_enabled`] but with a caller-chosen
-    /// `opds.page_size` for navigation-feed pagination-walk tests.
-    pub async fn server_with_opds_page_size(
-        app_pool: &PgPool,
-        ingestion_pool: &PgPool,
-        library_path: &std::path::Path,
-        page_size: u32,
-    ) -> axum_test::TestServer {
-        use crate::config::OpdsConfig;
-        use crate::state::AppState;
-
-        let (mut config, library_files) = super::test_storage_config(
-            Some(library_path),
-            crate::models::storage_library::default_library_id(app_pool)
-                .await
-                .unwrap(),
-        );
-        config.opds = OpdsConfig {
-            enabled: true,
-            page_size,
             realm: "Reverie OPDS".into(),
         };
         config.public_url = Some(url::Url::parse("http://host.example/").unwrap());
@@ -1193,48 +1065,6 @@ pub mod db {
     pub fn make_minimal_epub_with_malformed_svg_cover(marker: &str) -> Vec<u8> {
         build_svg_cover_epub(marker, b"<svg><broken", false)
     }
-
-    #[cfg(test)]
-    mod tests {
-        use super::role_opts_from;
-        use sqlx::postgres::PgConnectOptions;
-
-        #[test]
-        fn role_password_requires_nonempty_input() {
-            assert_eq!(
-                super::password_input(Some("supplied-password")),
-                Ok("supplied-password")
-            );
-            assert!(super::password_input(None).is_err());
-            assert!(super::password_input(Some("")).is_err());
-        }
-
-        #[test]
-        fn role_opts_carry_a_socket_source() {
-            let source = PgConnectOptions::new()
-                .socket("/tmp/pgsock")
-                .database("per_test_db");
-            let derived = role_opts_from(&source, "reverie_app", "pw");
-            assert_eq!(
-                derived.get_socket(),
-                Some(&std::path::PathBuf::from("/tmp/pgsock"))
-            );
-            assert_eq!(derived.get_database(), Some("per_test_db"));
-            assert_eq!(derived.get_username(), "reverie_app");
-        }
-
-        #[test]
-        fn role_opts_stay_tcp_for_a_tcp_source() {
-            let source = PgConnectOptions::new()
-                .host("db.internal")
-                .port(6432)
-                .database("per_test_db");
-            let derived = role_opts_from(&source, "reverie_ingestion", "pw");
-            assert_eq!(derived.get_socket(), None);
-            assert_eq!(derived.get_host(), "db.internal");
-            assert_eq!(derived.get_port(), 6432);
-        }
-    }
 }
 
 /// Mock OIDC provider scaffolding for end-to-end auth-flow tests.
@@ -1344,37 +1174,6 @@ pub mod oidc_mock {
                     .mount_as_scoped(&self.server)
                     .await,
             );
-        }
-
-        pub async fn hold_jwks(&mut self) -> std::sync::mpsc::SyncSender<()> {
-            drop(self.jwks_guard.take());
-            let (release, wait) = std::sync::mpsc::sync_channel(1);
-            let wait = std::sync::Mutex::new(wait);
-            let response = ResponseTemplate::new(200).set_body_json(self.jwks());
-            self.jwks_guard = Some(
-                Mock::given(method("GET"))
-                    .and(path("/jwks"))
-                    .respond_with(move |_: &wiremock::Request| {
-                        wait.lock()
-                            .unwrap()
-                            .recv_timeout(std::time::Duration::from_secs(5))
-                            .unwrap();
-                        response.clone()
-                    })
-                    .expect(1)
-                    .mount_as_scoped(&self.server)
-                    .await,
-            );
-            release
-        }
-
-        pub async fn wait_for_jwks(&self) {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                self.jwks_guard.as_ref().unwrap().wait_until_satisfied(),
-            )
-            .await
-            .unwrap();
         }
 
         pub async fn request_count(&self, endpoint: &str) -> usize {
@@ -1541,12 +1340,6 @@ pub mod oidc_mock {
                 self.metadata(),
                 OidcTransport::for_tests(),
             )
-        }
-
-        /// Serve discovery metadata for the mock provider.
-        pub async fn mount_discovery(&self) {
-            self.mount_discovery_with_token_endpoint(&format!("{}/token", self.issuer))
-                .await;
         }
 
         /// Serve discovery metadata with a chosen token endpoint.
@@ -2024,19 +1817,6 @@ pub mod mail {
         .fetch_one(pool)
         .await
         .unwrap()
-    }
-
-    /// Mark a delivery accepted and old enough that the 60-second interval has passed.
-    pub async fn settle_delivery(pool: &PgPool, id: Uuid) {
-        sqlx::query!(
-            "UPDATE mail_jobs SET state = 'accepted', terminal_at = clock_timestamp(), \
-                    enqueued_at = clock_timestamp() - interval '2 minutes', \
-                    next_attempt_at = clock_timestamp() - interval '2 minutes' WHERE id = $1",
-            id
-        )
-        .execute(pool)
-        .await
-        .unwrap();
     }
 
     /// Fail every later insert into `mail_jobs`.

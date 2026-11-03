@@ -979,7 +979,7 @@
       "id": "REV-REQ-0003",
       "kind": "req",
       "path": "docs/specs/library/requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md",
-      "title": "Library list filter values that fail to decode are rejected"
+      "title": "Library list range filters apply their bounds as declared"
     },
     {
       "governed-by": [
@@ -1554,6 +1554,15 @@
       "kind": "req",
       "path": "docs/specs/metadata/requirements/0073-canonical-isbn-formats-remain-independent.md",
       "title": "Canonical ISBN formats remain independent"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0034"
+      ],
+      "id": "REV-REQ-0074",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0074-every-path-that-sets-a-password-refuses-one-the-password-policy-rejects.md",
+      "title": "Every path that sets a password refuses one the password policy rejects"
     }
   ]
 }

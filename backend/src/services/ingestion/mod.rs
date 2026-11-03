@@ -21,6 +21,3 @@ pub use orchestrator::{
     CoordinatorCommands, CoordinatorHandle, DependencyReason, DiscoveryResult, coordinator_channel,
     run_watcher,
 };
-
-#[cfg(test)]
-pub(crate) use orchestrator::Command;

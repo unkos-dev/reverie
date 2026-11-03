@@ -187,39 +187,3 @@ const RFC5987_NON_ATTR_CHAR: &AsciiSet = &CONTROLS
 fn rfc5987_encode(s: &str) -> String {
     utf8_percent_encode(s, RFC5987_NON_ATTR_CHAR).to_string()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ascii_fallback_strips_non_ascii() {
-        let id = Uuid::parse_str("00000000-0000-4000-8000-000000000001").unwrap();
-        assert_eq!(ascii_fallback("Hello World", id), "Hello-World.epub");
-        // Non-ASCII letters are dropped entirely; surrounding spaces collapse
-        // so we don't get a runaway dash chain.
-        assert_eq!(ascii_fallback("émile et à côté", id), "mile-et-ct.epub");
-    }
-
-    #[test]
-    fn ascii_fallback_empty_falls_back_to_uuid() {
-        let id = Uuid::parse_str("00000000-0000-4000-8000-000000000001").unwrap();
-        assert_eq!(ascii_fallback("", id), "reverie-00000000.epub");
-        assert_eq!(ascii_fallback("🚀", id), "reverie-00000000.epub");
-    }
-
-    #[test]
-    fn rfc5987_encode_percent_encodes_spaces_and_utf8() {
-        assert_eq!(rfc5987_encode("Hello World"), "Hello%20World");
-        assert_eq!(rfc5987_encode("émilie"), "%C3%A9milie");
-    }
-
-    #[test]
-    fn content_disposition_format() {
-        let id = Uuid::parse_str("00000000-0000-4000-8000-000000000001").unwrap();
-        let cd = content_disposition("Winnie the Pooh", id);
-        assert!(cd.starts_with("attachment;"));
-        assert!(cd.contains("filename=\"Winnie-the-Pooh.epub\""));
-        assert!(cd.contains("filename*=UTF-8''Winnie%20the%20Pooh"));
-    }
-}

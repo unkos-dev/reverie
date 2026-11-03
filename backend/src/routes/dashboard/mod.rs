@@ -38,8 +38,6 @@ use crate::state::AppState;
 mod enrichment_failures;
 #[cfg(test)]
 mod enrichment_failures_tests;
-#[cfg(test)]
-mod tests;
 
 /// Default number of recent ingestion batches returned by `/activity`.
 const DEFAULT_ACTIVITY_LIMIT: i64 = 20;

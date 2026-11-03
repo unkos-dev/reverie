@@ -22,6 +22,7 @@
 - [REV-REQ-0068](requirements/0068-a-first-oidc-sign-in-whose-email-another-account-holds-is-refused-and-writes-nothing.md): A first OIDC sign-in whose email another account holds is refused and writes nothing
 - [REV-REQ-0069](requirements/0069-a-returning-oidc-identity-keeps-its-stored-email.md): A returning OIDC identity keeps its stored email
 - [REV-REQ-0070](requirements/0070-an-unsuccessful-oidc-sign-in-resolves-to-a-fixed-local-outcome.md): An unsuccessful OIDC sign-in resolves to a fixed local outcome
+- [REV-REQ-0074](requirements/0074-every-path-that-sets-a-password-refuses-one-the-password-policy-rejects.md): Every path that sets a password refuses one the password policy rejects
 
 ## Designs
 
