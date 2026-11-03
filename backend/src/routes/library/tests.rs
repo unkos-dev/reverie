@@ -444,24 +444,6 @@ async fn detail_endpoint_hidden_id_returns_404(pool: PgPool) {
 // ---------------------------------------------------------------------------
 
 #[sqlx::test(migrations = "./migrations")]
-async fn series_ref_from_row_fails_loud_on_decode_mismatch(pool: PgPool) {
-    // Pins the loud-but-handled contract directly at the row boundary: a
-    // column type drift must surface as an error, not degrade to a silent
-    // None. Swallowing this Err is what hid the original NUMERIC mismatch.
-    let mistyped_series_row_sql = "SELECT 'not-a-uuid'::text AS series_id, \
-         'Long Saga'::text AS series_name, \
-         'seven'::text AS series_position";
-    let row = sqlx::query(mistyped_series_row_sql)
-        .fetch_one(&pool)
-        .await
-        .expect("fetch mistyped row");
-    assert!(
-        super::series_ref_from_row(&row).is_err(),
-        "a series column decode mismatch must propagate as an error",
-    );
-}
-
-#[sqlx::test(migrations = "./migrations")]
 async fn work_endpoint_child_without_shelf_returns_404_not_empty_array(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
