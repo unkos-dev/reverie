@@ -1475,10 +1475,6 @@ pub mod mail {
             self.messages.lock().unwrap().clone()
         }
 
-        pub fn message_count(&self) -> usize {
-            self.messages.lock().unwrap().len()
-        }
-
         /// Every envelope recipient the relay was offered.
         pub fn recipients(&self) -> Vec<String> {
             self.recipients.lock().unwrap().clone()
