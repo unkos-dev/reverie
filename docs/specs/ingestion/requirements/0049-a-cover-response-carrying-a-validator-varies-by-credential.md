@@ -35,4 +35,6 @@ second account sharing the same browser, disclosing a cover its own permissions 
   `backend/src/routes/opds/tests.rs`.
 - The `404` returned when a manifestation declares no cover, is hidden by row-level security, or has its archive
   rejected carries neither a `Cache-Control` header nor a `Vary` header; that response shape is uncached by omission
-  rather than partitioned by `Vary`. Not checked by any automated test.
+  rather than partitioned by `Vary`. Checked by `capability_cover_route_headers_authorisation_and_conditional_open` for
+  the hidden cover and by `capability_cover_route_svg_and_uncached_failures` for the missing cover and the rejected
+  archive, both in `backend/src/routes/opds/tests.rs`.
