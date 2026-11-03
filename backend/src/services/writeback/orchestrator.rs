@@ -2067,10 +2067,6 @@ mod tests {
         );
     }
 
-    // ── Path-rename target rendering ────────────────────────────────────
-
-    // ── resolve_opf_relative ────────────────────────────────────────────
-
     #[sqlx::test(migrations = "./migrations")]
     async fn capability_cover_sidecar_invalid_missing_and_outside_sources_preserve_epub(
         pool: PgPool,

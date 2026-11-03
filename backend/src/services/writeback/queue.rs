@@ -1112,14 +1112,6 @@ mod tests {
         assert_eq!(in_progress_count, 1_i64);
     }
 
-    // ── finish() terminal-state coverage ────────────────────────────────
-    //
-    // These exercise the S3 adversarial finding: every terminal transition
-    // must both mark the job row AND emit a webhook event.  We assert the
-    // DB-side of the transition here; event emission is a thin
-    // tracing-stub wrapper (see events.rs) so structural coverage of the
-    // DB write is the load-bearing test.
-
     /// A `reverie_app` connection without `app.system_context` set
     /// AND without `app.current_user_id` set matches zero policies and is
     /// denied.  This is the failure mode this guard prevents: a future Axum
