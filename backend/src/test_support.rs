@@ -1618,7 +1618,7 @@ impl CapturedLogs {
 pub mod mail {
     use std::sync::{Arc, Mutex};
 
-    use chrono::{DateTime, TimeDelta, Utc};
+    use chrono::{TimeDelta, Utc};
     use lettre::message::Mailbox;
     use sqlx::PgPool;
     use tokio::{
@@ -1845,18 +1845,6 @@ pub mod mail {
         .fetch_one(pool)
         .await
         .unwrap()
-    }
-
-    pub async fn backdate(pool: &PgPool, id: Uuid, enqueued_at: DateTime<Utc>) {
-        sqlx::query!(
-            "UPDATE mail_jobs SET enqueued_at = $2::timestamptz, next_attempt_at = $2::timestamptz, \
-                    expires_at = $2::timestamptz + interval '30 days' WHERE id = $1",
-            id,
-            enqueued_at
-        )
-        .execute(pool)
-        .await
-        .unwrap();
     }
 
     pub fn key() -> QueueKey {
