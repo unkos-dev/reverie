@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT w.title AS \"title?\", w.title_version_id, w.subtitle, w.subtitle_version_id, w.language, w.language_version_id, m.publisher, m.publisher_version_id, m.pub_date_version_id, m.isbn_13, m.isbn_13_version_id, m.pages, m.pages_version_id FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.file_path = $1",
+  "query": "SELECT w.title AS \"title?\", w.title_version_id, w.subtitle, w.subtitle_version_id, w.language, w.language_version_id, m.publisher, m.publisher_version_id, m.pub_date_version_id, m.isbn_10, m.isbn_10_version_id, m.isbn_13, m.isbn_13_version_id, m.pages, m.pages_version_id FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.file_path = $1",
   "describe": {
     "columns": [
       {
@@ -104,6 +104,28 @@
       },
       {
         "ordinal": 9,
+        "name": "isbn_10",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_10"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "isbn_10_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_10_version_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "isbn_13",
         "type_info": "Text",
         "origin": {
@@ -114,7 +136,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "isbn_13_version_id",
         "type_info": "Uuid",
         "origin": {
@@ -125,7 +147,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "pages",
         "type_info": "Int4",
         "origin": {
@@ -136,7 +158,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "pages_version_id",
         "type_info": "Uuid",
         "origin": {
@@ -165,8 +187,10 @@
       true,
       true,
       true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "a6a1f722771cdbbe536086ca1b81840e1e662293fd5badadd74a51bcd2d92816"
+  "hash": "f4c29ac2db2068da7601cc7c149f3692ff907c53e87b4917cd20488fe9ea9fe0"
 }
