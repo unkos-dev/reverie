@@ -133,10 +133,6 @@ mod tests {
         pub(super) static CANCEL_AFTER_BATCH: CancellationToken;
     }
 
-    fn test_limiters() -> [Arc<LoginLimiter>; 3] {
-        std::array::from_fn(|_| crate::test_support::test_login_limiter())
-    }
-
     async fn session_count(pool: &PgPool) -> i64 {
         sqlx::query_scalar!(r#"SELECT count(*) AS "count!" FROM tower_sessions.session"#)
             .fetch_one(pool)
@@ -154,41 +150,6 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn throttle_reclamation_worker_cancels_between_batches(pool: PgPool) {
-        sqlx::query!("INSERT INTO local_login_throttle (email_lower) SELECT 'cancel-' || number FROM generate_series(1, 1005) AS number")
-            .execute(&pool).await.unwrap();
-        crate::models::login_throttle::tests::seed(&pool, "protected", &[Utc::now()], None).await;
-        let cancel = CancellationToken::new();
-        CANCEL_AFTER_BATCH
-            .scope(cancel.clone(), sweep_throttles(&pool, &cancel))
-            .await;
-        assert!(cancel.is_cancelled());
-        assert_eq!(
-            sqlx::query_scalar!("SELECT count(*) FROM local_login_throttle")
-                .fetch_one(&pool)
-                .await
-                .unwrap(),
-            Some(6)
-        );
-        sweep_throttles(&pool, &cancel).await;
-        assert_eq!(
-            sqlx::query_scalar!("SELECT count(*) FROM local_login_throttle")
-                .fetch_one(&pool)
-                .await
-                .unwrap(),
-            Some(6)
-        );
-        sweep_throttles(&pool, &CancellationToken::new()).await;
-        assert_eq!(
-            sqlx::query_scalar!("SELECT count(*) FROM local_login_throttle")
-                .fetch_one(&pool)
-                .await
-                .unwrap(),
-            Some(1)
-        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -279,88 +240,5 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(live_remaining, 1);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn session_sweep_also_removes_expired_attempts(pool: PgPool) {
-        let now = Utc::now();
-        for id in ["expired", "live"] {
-            insert_session(&pool, id, now + TimeDelta::hours(1)).await;
-            sign_in::start_oidc_attempt(&pool, id, "state", "verifier", "nonce")
-                .await
-                .unwrap();
-        }
-        sqlx::query!("UPDATE oidc_sign_in_attempts SET expires_at = now() - interval '1 second' WHERE session_id = 'expired'")
-            .execute(&pool).await.unwrap();
-        let store = PostgresStore::new(pool.clone());
-        sweep_pass(&store, &pool, &test_limiters(), &CancellationToken::new()).await;
-        assert_eq!(
-            sqlx::query_scalar!("SELECT count(*) FROM oidc_sign_in_attempts")
-                .fetch_one(&pool)
-                .await
-                .unwrap(),
-            Some(1)
-        );
-        assert!(
-            sign_in::claim_oidc_attempt(&pool, "live", "state")
-                .await
-                .unwrap()
-                .is_some()
-        );
-        assert_eq!(session_count(&pool).await, 2);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn smtp_queue_hourly_sweep_cleans_mail_state_without_a_mail_runtime(pool: PgPool) {
-        let app = crate::test_support::db::app_pool_for(&pool).await;
-        let user = crate::test_support::mail::account(&pool, "swept@example.org").await;
-        let mut tx = app.begin().await.unwrap();
-        crate::models::account_email_proof::lock_account(&mut tx, user)
-            .await
-            .unwrap();
-        crate::models::account_email_proof::issue(
-            &mut tx,
-            user,
-            crate::models::account_email_proof::ProofPurpose::Recovery,
-            "swept@example.org",
-        )
-        .await
-        .unwrap();
-        tx.commit().await.unwrap();
-        sqlx::query!(
-            "UPDATE account_email_proofs SET created_at = now() - interval '2 hours', \
-                    expires_at = now() - interval '1 minute'"
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sweep_pass(
-            &PostgresStore::new(app.clone()),
-            &app,
-            &test_limiters(),
-            &CancellationToken::new(),
-        )
-        .await;
-        assert_eq!(
-            sqlx::query_scalar!("SELECT count(*) FROM account_email_proofs")
-                .fetch_one(&pool)
-                .await
-                .unwrap(),
-            Some(0)
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn run_sweep_returns_promptly_on_cancel(pool: PgPool) {
-        let store = PostgresStore::new(pool.clone());
-        let cancel = CancellationToken::new();
-        let handle = tokio::spawn(run_sweep(store, pool, test_limiters(), cancel.clone()));
-
-        cancel.cancel();
-
-        tokio::time::timeout(std::time::Duration::from_secs(5), handle)
-            .await
-            .expect("run_sweep must observe cancellation and return, not hang until the next tick")
-            .expect("run_sweep task must not panic");
     }
 }

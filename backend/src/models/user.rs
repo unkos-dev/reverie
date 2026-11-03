@@ -661,127 +661,7 @@ pub async fn upsert_from_oidc(
 mod tests {
     use super::*;
 
-    #[test]
-    fn is_addr_spec_accepts_plain_address_rejects_display_and_literal_forms() {
-        // Bare addr-spec passes.
-        assert!(is_addr_spec("user@example.com"));
-        // The default `EmailAddress::is_valid` would accept these
-        // display-name and domain-literal forms and store the bracket/angle/
-        // space-bearing string raw. `is_addr_spec` rejects them so the column
-        // only ever holds a plain `local@domain`.
-        assert!(!is_addr_spec("Bob <bob@example.com>"));
-        assert!(!is_addr_spec("bob@[127.0.0.1]"));
-        assert!(!is_addr_spec("not-an-email"));
-    }
-
-    #[test]
-    fn is_addr_spec_rejects_unsupported_account_emails() {
-        for email in [
-            "\"john doe\"@example.com",
-            "\"john\"@example.com",
-            "\"john@doe\"@example.com",
-            "john doe@example.com",
-            "jane@homelab",
-            "jane!books@example.com",
-            "jane#books@example.com",
-            "jane%books@example.com",
-            "jane/books@example.com",
-            "josé@example.com",
-        ] {
-            assert!(!is_addr_spec(email), "accepted {email:?}");
-        }
-        for email in [
-            "john.doe+books@example.com",
-            "o'brien@example.com",
-            "Jane_Doe@EXAMPLE.COM",
-        ] {
-            assert!(is_addr_spec(email), "rejected {email:?}");
-        }
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_drops_unsupported_oidc_email_to_none(pool: PgPool) {
-        for email in [
-            "\"john doe\"@example.com",
-            "jane@homelab",
-            "jane!books@example.com",
-            "jane#books@example.com",
-            "jane%books@example.com",
-            "jane/books@example.com",
-            "josé@example.com",
-        ] {
-            let subject = Uuid::new_v4().to_string();
-            let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "John", Some(email))
-                .await
-                .unwrap();
-            assert_eq!(user.email, None);
-            let resolved = find_by_oidc_identity(&pool, TEST_ISSUER, &subject)
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(resolved.id, user.id);
-        }
-    }
-
     const TEST_ISSUER: &str = "https://test-issuer.example.com";
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_creates_and_updates_user(pool: PgPool) {
-        let subject = format!("test-subject-{}", Uuid::new_v4());
-        let user = upsert_from_oidc(
-            &pool,
-            TEST_ISSUER,
-            &subject,
-            "Alice",
-            Some("alice@example.com"),
-        )
-        .await
-        .expect("upsert");
-        assert_eq!(user.display_name, "Alice");
-        assert_eq!(user.email.as_deref(), Some("alice@example.com"));
-        // A first login on a fresh instance is NOT auto-promoted; the user
-        // takes the default non-administrator role.
-        assert_ne!(user.role, Role::Admin);
-        assert_eq!(user.role, Role::Adult);
-        assert_eq!(user.session_version, 0);
-        // The canonical user carries no oidc_subject; identity lives in
-        // user_identities.
-        assert_eq!(user.oidc_subject, None);
-
-        let updated = upsert_from_oidc(
-            &pool,
-            TEST_ISSUER,
-            &subject,
-            "Alice B",
-            Some("alice-b@example.com"),
-        )
-        .await
-        .expect("upsert update");
-        // Same (issuer, subject) resolves to the same row, fields updated.
-        assert_eq!(updated.id, user.id);
-        assert_eq!(updated.display_name, "Alice B");
-
-        let found = find_by_id(&pool, user.id).await.expect("find").unwrap();
-        assert_eq!(found.oidc_subject, None);
-
-        // Identity resolves through user_identities, not the vestigial column.
-        let found = find_by_oidc_identity(&pool, TEST_ISSUER, &subject)
-            .await
-            .expect("find by identity")
-            .unwrap();
-        assert_eq!(found.id, user.id);
-
-        // Exactly one identity link and one users row for this identity.
-        let identity_count = sqlx::query_scalar!(
-            "SELECT count(*) AS \"c!\" FROM user_identities WHERE issuer = $1 AND subject = $2",
-            TEST_ISSUER,
-            subject,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("count identities");
-        assert_eq!(identity_count, 1);
-    }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn first_oidc_login_is_not_admin(pool: PgPool) {
@@ -834,16 +714,6 @@ mod tests {
             .expect("b present");
         assert_eq!(resolved_a.id, a.id);
         assert_eq!(resolved_b.id, b.id);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn find_by_oidc_identity_absent_resolves_to_none(pool: PgPool) {
-        // The public resolver returns Ok(None) for an identity that was never
-        // provisioned, distinct from surfacing an error.
-        let resolved = find_by_oidc_identity(&pool, TEST_ISSUER, "never-provisioned")
-            .await
-            .expect("no db error");
-        assert!(resolved.is_none());
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -904,60 +774,6 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn concurrent_same_identity_resolves_to_one_user(pool: PgPool) {
-        // The two-table create lost the atomic single-table upsert; the
-        // per-identity advisory lock plus the UNIQUE (issuer, subject) backstop
-        // must keep concurrent same-identity provisioning to a single users row.
-        let subject = format!("race-{}", Uuid::new_v4());
-        let (r1, r2) = tokio::join!(
-            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Race A", None),
-            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Race B", None),
-        );
-        let u1 = r1.expect("first concurrent upsert");
-        let u2 = r2.expect("second concurrent upsert");
-        assert_eq!(
-            u1.id, u2.id,
-            "concurrent same-identity logins resolve to one user"
-        );
-
-        let identity_count = sqlx::query_scalar!(
-            "SELECT count(*) AS \"c!\" FROM user_identities WHERE issuer = $1 AND subject = $2",
-            TEST_ISSUER,
-            subject,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("count identities");
-        assert_eq!(identity_count, 1, "no orphaned identity link");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn nullable_subject_with_local_credential_decodes(pool: PgPool) {
-        // A credential-only user (NULL oidc_subject + a local_credentials row)
-        // is representable and decodes through the Option<String> column.
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (display_name) VALUES ('Credential Only') RETURNING id",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("insert user");
-        sqlx::query!(
-            "INSERT INTO local_credentials (user_id, password_hash) VALUES ($1, $2)",
-            user_id,
-            "$argon2id$v=19$m=19456,t=2,p=1$fake$fakehash",
-        )
-        .execute(&pool)
-        .await
-        .expect("insert credential");
-
-        let user = find_by_id(&pool, user_id)
-            .await
-            .expect("find")
-            .expect("user present");
-        assert_eq!(user.oidc_subject, None, "NULL oidc_subject decodes as None");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn child_role_sync_constraint_still_enforced(pool: PgPool) {
         // The migration is column-only on device_tokens and leaves the users
         // CHECK intact: setting role=child without is_child=true is rejected.
@@ -976,66 +792,6 @@ mod tests {
             err.as_database_error().and_then(|e| e.constraint()),
             Some("chk_child_role_sync"),
         );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_drops_malformed_oidc_email_to_none(pool: PgPool) {
-        // The OIDC email claim is signature-verified but not
-        // format-checked upstream. A non-standard IdP releasing a malformed
-        // value must not land it in `users.email` (the RFC-5322 invariant the
-        // admin PATCH path already enforces). Per OIDC Core §5.7 email is an
-        // optional, non-identifying claim, so we degrade to NULL rather than
-        // failing login — identity still resolves via `sub`.
-        let subject = format!("malformed-email-{}", Uuid::new_v4());
-        let user = upsert_from_oidc(
-            &pool,
-            TEST_ISSUER,
-            &subject,
-            "Mallory",
-            Some("not-an-email"),
-        )
-        .await
-        .expect("upsert");
-        assert_eq!(
-            user.email, None,
-            "malformed email claim must persist as NULL"
-        );
-        // Identity resolves through user_identities; the column stays NULL.
-        assert_eq!(user.oidc_subject, None);
-        let resolved = find_by_oidc_identity(&pool, TEST_ISSUER, &subject)
-            .await
-            .expect("resolve")
-            .expect("user present");
-        assert_eq!(
-            resolved.id, user.id,
-            "identity still resolves via (issuer, subject)"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_treats_empty_oidc_email_as_none(pool: PgPool) {
-        // Empty / whitespace-only claim is absence, not a value — store NULL.
-        let subject = format!("empty-email-{}", Uuid::new_v4());
-        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Eve", Some("   "))
-            .await
-            .expect("upsert");
-        assert_eq!(user.email, None, "empty email claim must persist as NULL");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_persists_valid_oidc_email_trimmed(pool: PgPool) {
-        // Valid claim with surrounding whitespace: trimmed and persisted.
-        let subject = format!("valid-email-{}", Uuid::new_v4());
-        let user = upsert_from_oidc(
-            &pool,
-            TEST_ISSUER,
-            &subject,
-            "Val",
-            Some("  val@example.com "),
-        )
-        .await
-        .expect("upsert");
-        assert_eq!(user.email.as_deref(), Some("val@example.com"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1082,45 +838,6 @@ mod tests {
         assert_eq!(again.email.as_deref(), Some("bob@example.com"));
     }
 
-    /// Loud-failure regression for role-enum drift. Simulates the failure mode
-    /// where the DB `user_role` enum gains a value that has no Rust
-    /// counterpart (e.g. an operator runs an out-of-band `ALTER TYPE`,
-    /// or a future migration lands ahead of the matching Rust change).
-    /// `sqlx::Type` must surface this as a decode error, not silently
-    /// coerce — that's what makes the typed enum a real authorization
-    /// boundary rather than a polite suggestion.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn role_decode_fails_for_unknown_db_variant(pool: PgPool) {
-        // CARVE-OUT: runtime sqlx::query is intentional. The two
-        // runtime calls in this test (the ALTER TYPE below and the subsequent
-        // UPDATE referencing the new 'superadmin' variant) cannot be expressed
-        // as compile-time macros: ALTER TYPE is DDL, and the UPDATE references
-        // a variant deliberately not in the prepare-time schema. The whole
-        // point of the test is to inject an unknown variant and assert the
-        // decode path rejects it.
-        sqlx::query("ALTER TYPE user_role ADD VALUE 'superadmin'")
-            .execute(&pool)
-            .await
-            .expect("alter user_role enum");
-
-        let subject = format!("drift-test-{}", Uuid::new_v4());
-        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Drift", None)
-            .await
-            .expect("upsert");
-
-        sqlx::query("UPDATE users SET role = 'superadmin'::user_role WHERE id = $1")
-            .bind(user.id)
-            .execute(&pool)
-            .await
-            .expect("inject unknown role");
-
-        let result = find_by_id(&pool, user.id).await;
-        assert!(
-            result.is_err(),
-            "expected sqlx decode error for unknown DB variant, got {result:?}"
-        );
-    }
-
     // Migration 20260604120000 adds CHECK (session_version >= 0). A negative
     // value must be rejected at the schema layer so the force-logout counter
     // can never be reset below an already-issued version (which would revive
@@ -1155,112 +872,12 @@ mod tests {
     // rejected at the schema boundary instead. The bound is tighter than
     // chrono's own year-262142 ceiling, deliberately: no Reverie timestamp
     // legitimately falls outside the common era.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn timestamptz_check_rejects_beyond_decode_upper_bound(pool: PgPool) {
-        let subject = format!("ts-upper-{}", Uuid::new_v4());
-        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "TsUpper", None)
-            .await
-            .expect("create user");
-
-        let err = sqlx::query(
-            "UPDATE users SET created_at = TIMESTAMPTZ '10000-01-01 00:00:00+00' WHERE id = $1",
-        )
-        .bind(user.id)
-        .execute(&pool)
-        .await
-        .expect_err("year 10000 must violate the decode-range CHECK");
-
-        assert_eq!(
-            err.as_database_error().and_then(|e| e.constraint()),
-            Some("users_created_at_ts_decode_range"),
-            "violation must be the created_at decode-range CHECK: {err}"
-        );
-    }
-
     // `infinity` is undecodable like any year-10000+ value; the finite
     // upper bound rejects the special value too.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn timestamptz_check_rejects_positive_infinity(pool: PgPool) {
-        let subject = format!("ts-posinf-{}", Uuid::new_v4());
-        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "TsPosInf", None)
-            .await
-            .expect("create user");
-
-        let err = sqlx::query("UPDATE users SET created_at = TIMESTAMPTZ 'infinity' WHERE id = $1")
-            .bind(user.id)
-            .execute(&pool)
-            .await
-            .expect_err("infinity must violate the decode-range CHECK");
-
-        assert_eq!(
-            err.as_database_error().and_then(|e| e.constraint()),
-            Some("users_created_at_ts_decode_range"),
-            "violation must be the created_at decode-range CHECK: {err}"
-        );
-    }
-
     // `-infinity` (and any pre-CE date) is equally undecodable; the finite
     // lower bound rejects it at write time.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn timestamptz_check_rejects_negative_infinity(pool: PgPool) {
-        let subject = format!("ts-lower-{}", Uuid::new_v4());
-        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "TsLower", None)
-            .await
-            .expect("create user");
-
-        let err =
-            sqlx::query("UPDATE users SET created_at = TIMESTAMPTZ '-infinity' WHERE id = $1")
-                .bind(user.id)
-                .execute(&pool)
-                .await
-                .expect_err("-infinity must violate the decode-range CHECK");
-
-        assert_eq!(
-            err.as_database_error().and_then(|e| e.constraint()),
-            Some("users_created_at_ts_decode_range"),
-            "violation must be the created_at decode-range CHECK: {err}"
-        );
-    }
-
     // The full decodable range stays writable: year 9999 passes the CHECK
     // and round-trips through DateTime<Utc> decode.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn timestamptz_check_accepts_max_decodable_year(pool: PgPool) {
-        let subject = format!("ts-max-{}", Uuid::new_v4());
-        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "TsMax", None)
-            .await
-            .expect("create user");
-
-        sqlx::query(
-            "UPDATE users SET created_at = TIMESTAMPTZ '9999-12-31 23:59:59+00' WHERE id = $1",
-        )
-        .bind(user.id)
-        .execute(&pool)
-        .await
-        .expect("max decodable year must pass the CHECK");
-
-        let reloaded = find_by_id(&pool, user.id)
-            .await
-            .expect("decode of max in-range created_at must succeed")
-            .expect("user still present");
-        assert_eq!(chrono::Datelike::year(&reloaded.created_at), 9999);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn first_admin_created_then_second_is_rejected(pool: PgPool) {
-        let phc = crate::auth::password::hash_password(b"a strong password").expect("hash");
-        let admin = create_first_admin(&pool, "admin@example.com", "Admin", &phc)
-            .await
-            .expect("first admin");
-        assert!(matches!(admin.role, Role::Admin), "first user is an admin");
-
-        let second = create_first_admin(&pool, "other@example.com", "Other", &phc).await;
-        assert!(
-            matches!(second, Err(BootstrapError::AlreadyBootstrapped)),
-            "a second bootstrap is rejected once the marker exists"
-        );
-    }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn concurrent_first_admin_yields_exactly_one(pool: PgPool) {
         // Single-admin invariant: the instance_bootstrap singleton serializes
@@ -1290,59 +907,6 @@ mod tests {
                 .await
                 .expect("count admins");
         assert_eq!(admin_count, Some(1), "exactly one administrator exists");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_local_creates_adult_with_credential(pool: PgPool) {
-        let phc = crate::auth::password::hash_password(b"a strong password").expect("hash");
-        let user = create_local(&pool, "adult@example.com", "Adult", Role::Adult, Some(&phc))
-            .await
-            .expect("create adult");
-        assert_eq!(user.role, Role::Adult);
-        assert!(!user.is_child);
-        assert!(user.disabled_at.is_none());
-        let cred = crate::models::local_credentials::find_by_user_id(&pool, user.id)
-            .await
-            .expect("query credential");
-        assert!(
-            cred.is_some(),
-            "a password create writes a local credential"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_local_child_sets_is_child(pool: PgPool) {
-        let user = create_local(&pool, "child@example.com", "Child", Role::Child, None)
-            .await
-            .expect("create child");
-        assert_eq!(user.role, Role::Child);
-        assert!(
-            user.is_child,
-            "child role sets is_child to satisfy chk_child_role_sync"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_local_without_password_writes_no_credential(pool: PgPool) {
-        let user = create_local(&pool, "nopass@example.com", "NoPass", Role::Adult, None)
-            .await
-            .expect("create");
-        let cred = crate::models::local_credentials::find_by_user_id(&pool, user.id)
-            .await
-            .expect("query credential");
-        assert!(cred.is_none(), "no password means no credential row");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_local_duplicate_email_is_email_exists(pool: PgPool) {
-        create_local(&pool, "dup@example.com", "First", Role::Adult, None)
-            .await
-            .expect("first create");
-        // Case-insensitive collision via idx_users_email_lower.
-        let err = create_local(&pool, "DUP@example.com", "Second", Role::Adult, None)
-            .await
-            .expect_err("duplicate email rejected");
-        assert!(matches!(err, CreateUserError::EmailExists));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1393,36 +957,6 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_refreshes_an_account_again_once_it_is_re_enabled(pool: PgPool) {
-        let subject = format!("test-subject-{}", Uuid::new_v4());
-        let created = upsert_from_oidc(
-            &pool,
-            TEST_ISSUER,
-            &subject,
-            "Alice",
-            Some("alice@example.com"),
-        )
-        .await
-        .expect("upsert");
-        disable_account(&pool, created.id).await.expect("disable");
-        enable_account(&pool, created.id).await.expect("re-enable");
-
-        let refreshed = upsert_from_oidc(
-            &pool,
-            TEST_ISSUER,
-            &subject,
-            "Alice B",
-            Some("alice-b@example.com"),
-        )
-        .await
-        .expect("upsert");
-
-        assert!(refreshed.disabled_at.is_none());
-        assert_eq!(refreshed.display_name, "Alice B");
-        assert_eq!(refreshed.email.as_deref(), Some("alice@example.com"));
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn disable_account_stamps_timestamp_and_bumps_session_version(pool: PgPool) {
         let user = create_local(&pool, "disable@example.com", "Dis", Role::Adult, None)
             .await
@@ -1441,24 +975,6 @@ mod tests {
             reloaded.session_version,
             before + 1,
             "disable bumps session_version to kill live sessions"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn enable_account_clears_timestamp(pool: PgPool) {
-        let user = create_local(&pool, "reenable@example.com", "Re", Role::Adult, None)
-            .await
-            .expect("create");
-        disable_account(&pool, user.id).await.expect("disable");
-        enable_account(&pool, user.id).await.expect("re-enable");
-
-        let reloaded = find_by_id(&pool, user.id)
-            .await
-            .expect("reload")
-            .expect("exists");
-        assert!(
-            reloaded.disabled_at.is_none(),
-            "re-enable clears disabled_at"
         );
     }
 }

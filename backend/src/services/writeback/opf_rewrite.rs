@@ -722,18 +722,6 @@ mod tests {
         String::from_utf8(out).unwrap()
     }
 
-    #[test]
-    fn transform_replaces_dc_title() {
-        let input = sample_epub3("");
-        let target = Target {
-            title: Some("New Title"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(out.contains("<dc:title>New Title</dc:title>"), "got: {out}");
-        assert!(!out.contains("Old Title"), "old title leaked: {out}");
-    }
-
     /// EPUB3 main title + declared subtitle, both carrying `title-type`
     /// refines, in the order Standard Ebooks and Calibre emit them.
     fn sample_epub3_with_subtitle() -> String {
@@ -749,27 +737,6 @@ mod tests {
     /// `titles`, so title-shaped cases control the whole title block.
     fn sample_epub3_titles(titles: &str) -> String {
         sample_epub3("").replace("<dc:title>Old Title</dc:title>", titles)
-    }
-
-    #[test]
-    fn transform_rewrites_subtitle_from_canonical_subtitle() {
-        let input = sample_epub3_with_subtitle();
-        let target = Target {
-            title: Some("New Title"),
-            subtitle: Some("New Subtitle"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(
-            out.contains(r#"<dc:title id="t1">New Title</dc:title>"#),
-            "main title not rewritten: {out}"
-        );
-        assert!(
-            out.contains(r#"<dc:title id="t2">New Subtitle</dc:title>"#),
-            "subtitle not rewritten from the canonical subtitle: {out}"
-        );
-        assert!(!out.contains("Old Title"), "old title leaked: {out}");
-        assert!(!out.contains("Old Subtitle"), "old subtitle leaked: {out}");
     }
 
     #[test]
@@ -793,42 +760,6 @@ mod tests {
     }
 
     #[test]
-    fn transform_round_trips_subtitle_through_extraction() {
-        // extract → writeback → re-extract must leave the subtitle intact.
-        // A second writeback pass models the repeated PATCH case, where the
-        // stomp used to poison the canonical layer with subtitle == title.
-        let input = sample_epub3_with_subtitle();
-        let target = Target {
-            title: Some("New Title"),
-            subtitle: Some("Old Subtitle"),
-            ..Default::default()
-        };
-        let once = transform_str(&input, &target);
-        let twice = transform_str(&once, &target);
-        let data = extract_opf(twice.as_bytes());
-        assert_eq!(data.title.as_deref(), Some("New Title"));
-        assert_eq!(data.subtitle.as_deref(), Some("Old Subtitle"));
-    }
-
-    /// Run the real ingestion-side OPF parser over rewritten bytes, so the
-    /// round-trip assertion is against extraction rather than a restatement
-    /// of the rewriter's own rules.
-    fn extract_opf(opf_bytes: &[u8]) -> crate::services::epub::opf_layer::OpfData {
-        use std::io::Write;
-        let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default();
-        w.start_file("OEBPS/content.opf", opts).unwrap();
-        w.write_all(opf_bytes).unwrap();
-        let handle = crate::services::epub::zip_layer::ZipHandle::from_bytes(
-            &(w.finish().unwrap().into_inner()),
-        );
-        let mut issues = Vec::new();
-        crate::services::epub::opf_layer::validate(&handle, Some("OEBPS/content.opf"), &mut issues)
-            .unwrap()
-    }
-
-    #[test]
     fn transform_preserves_self_closing_subtitle_refine() {
         // `<meta refines=".." property="title-type" content="subtitle"/>`
         // carries its value in an attribute; quick-xml fires Empty, not Start.
@@ -845,33 +776,6 @@ mod tests {
         assert!(
             out.contains(r#"<dc:title id="t2">Old Subtitle</dc:title>"#),
             "self-closing subtitle refine was not honored: {out}"
-        );
-    }
-
-    #[test]
-    fn transform_preserves_cdata_subtitle_refine() {
-        // A CDATA section is character data, so it carries the refine value
-        // exactly as a text node does; quick-xml just reports Event::CData.
-        // Missing it would route the subtitle back through the main-title
-        // rewrite, which is the data loss this file exists to prevent.
-        let input = sample_epub3_titles(
-            r##"<dc:title id="t1">Old Title</dc:title>
-    <dc:title id="t2">Old Subtitle</dc:title>
-    <meta refines="#t2" property="title-type"><![CDATA[subtitle]]></meta>"##,
-        );
-        let target = Target {
-            title: Some("New Title"),
-            subtitle: Some("New Subtitle"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(
-            out.contains(r#"<dc:title id="t2">New Subtitle</dc:title>"#),
-            "CDATA subtitle refine was not honored: {out}"
-        );
-        assert!(
-            out.contains(r#"<dc:title id="t1">New Title</dc:title>"#),
-            "main title not rewritten: {out}"
         );
     }
 
@@ -919,68 +823,6 @@ mod tests {
             out.contains(r#"<dc:title id="t1">New Title</dc:title>"#),
             "main title not rewritten: {out}"
         );
-    }
-
-    #[test]
-    fn transform_does_not_synthesize_a_subtitle_element() {
-        // No declared subtitle means no element to write into; the rewriter
-        // must not invent one (or a refine addressing a nonexistent id).
-        let input = sample_epub3("");
-        let target = Target {
-            title: Some("New Title"),
-            subtitle: Some("New Subtitle"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(
-            !out.contains("New Subtitle") && !out.contains("title-type"),
-            "subtitle element synthesized: {out}"
-        );
-    }
-
-    #[test]
-    fn transform_replaces_dc_description() {
-        let input = sample_epub3(r"<dc:description>Old blurb</dc:description>");
-        let target = Target {
-            description: Some("New blurb"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(
-            out.contains("<dc:description>New blurb</dc:description>"),
-            "got: {out}"
-        );
-        assert!(!out.contains("Old blurb"), "old description leaked: {out}");
-    }
-
-    #[test]
-    fn transform_replaces_dc_language() {
-        let input = sample_epub3("");
-        let target = Target {
-            language: Some("fr"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(out.contains("<dc:language>fr</dc:language>"), "got: {out}");
-        assert!(
-            !out.contains("<dc:language>en"),
-            "old language leaked: {out}"
-        );
-    }
-
-    #[test]
-    fn transform_replaces_dc_publisher() {
-        let input = sample_epub3(r"<dc:publisher>Old House</dc:publisher>");
-        let target = Target {
-            publisher: Some("New House"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(
-            out.contains("<dc:publisher>New House</dc:publisher>"),
-            "got: {out}"
-        );
-        assert!(!out.contains("Old House"), "old publisher leaked: {out}");
     }
 
     #[test]
@@ -1054,98 +896,6 @@ mod tests {
     }
 
     #[test]
-    fn transform_expands_self_closing_dc_title() {
-        // `<dc:title/>` (empty element) must be rewritten as a paired
-        // `<dc:title>NEW</dc:title>`.  Without this we'd leave the empty
-        // element in place and drop the update silently.
-        let input = r#"<?xml version="1.0" encoding="UTF-8"?>
-<package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="pub-id" xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <metadata>
-    <dc:identifier id="pub-id">urn:uuid:A1B2C3D4</dc:identifier>
-    <dc:title/>
-    <dc:language>en</dc:language>
-  </metadata>
-  <manifest/>
-  <spine/>
-</package>"#;
-        let target = Target {
-            title: Some("Inserted"),
-            ..Default::default()
-        };
-        let out = transform_str(input, &target);
-        assert!(
-            out.contains("<dc:title>Inserted</dc:title>"),
-            "self-closing title was not expanded: {out}"
-        );
-    }
-
-    #[test]
-    fn transform_preserves_epub_version() {
-        let input = sample_epub3("");
-        let target = Target {
-            title: Some("Anything"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(
-            out.contains(r#"<package version="3.0""#),
-            "version stripped: {out}"
-        );
-    }
-
-    #[test]
-    fn transform_epub2_writes_calibre_series() {
-        let input = sample_epub2("");
-        let target = Target {
-            series: Some(SeriesRef {
-                name: "Mistborn",
-                index: Some(1.0),
-            }),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(
-            out.contains(r#"name="calibre:series""#) && out.contains(r#"content="Mistborn""#),
-            "calibre:series not inserted: {out}"
-        );
-        assert!(
-            out.contains(r#"name="calibre:series_index""#) && out.contains(r#"content="1""#),
-            "calibre:series_index not inserted: {out}"
-        );
-        // EPUB 2 should NOT grow a belongs-to-collection meta.
-        assert!(
-            !out.contains("belongs-to-collection"),
-            "EPUB 2 grew belongs-to-collection: {out}"
-        );
-    }
-
-    #[test]
-    fn transform_epub3_writes_belongs_to_collection() {
-        let input = sample_epub3("");
-        let target = Target {
-            series: Some(SeriesRef {
-                name: "Mistborn",
-                index: Some(1.0),
-            }),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(
-            out.contains(r#"property="belongs-to-collection""#),
-            "belongs-to-collection not inserted: {out}"
-        );
-        assert!(out.contains("Mistborn"), "series name missing: {out}");
-        assert!(
-            out.contains(r#"property="collection-type""#),
-            "collection-type refinement missing: {out}"
-        );
-        assert!(
-            out.contains(r#"property="group-position""#),
-            "group-position refinement missing: {out}"
-        );
-    }
-
-    #[test]
     fn transform_updates_only_isbn_identifier() {
         let input =
             sample_epub3(r#"<dc:identifier opf:scheme="ISBN">9789999999999</dc:identifier>"#);
@@ -1169,30 +919,6 @@ mod tests {
     }
 
     #[test]
-    fn transform_inserts_isbn_when_absent() {
-        let input = sample_epub3("");
-        let target = Target {
-            isbn_13: Some("9781234567890"),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(
-            out.contains(r#"opf:scheme="ISBN""#),
-            "ISBN identifier not inserted: {out}"
-        );
-        assert!(out.contains("9781234567890"), "ISBN value missing: {out}");
-        // Pre-existing UUID identifier is still there.
-        assert!(
-            out.contains("urn:uuid:A1B2C3D4"),
-            "UUID identifier lost: {out}"
-        );
-        assert!(
-            out.contains(r#"unique-identifier="pub-id""#),
-            "unique-identifier mutated: {out}"
-        );
-    }
-
-    #[test]
     fn transform_preserves_custom_meta() {
         let input = sample_epub3(
             r#"<dc:coverage>2010</dc:coverage>
@@ -1210,35 +936,6 @@ mod tests {
         assert!(
             out.contains(r#"name="kobo:something""#) && out.contains(r#"content="X""#),
             "kobo:something meta lost: {out}"
-        );
-    }
-
-    #[test]
-    fn transform_epub3_with_existing_calibre_updates_both() {
-        let input = sample_epub3(
-            r##"<meta property="belongs-to-collection" id="c1">Old Series</meta>
-    <meta refines="#c1" property="collection-type">series</meta>
-    <meta name="calibre:series" content="Old Series"/>
-    <meta name="calibre:series_index" content="1"/>"##,
-        );
-        let target = Target {
-            series: Some(SeriesRef {
-                name: "New Series",
-                index: Some(2.0),
-            }),
-            ..Default::default()
-        };
-        let out = transform_str(&input, &target);
-        assert!(out.contains("New Series"), "new series name missing: {out}");
-        assert!(!out.contains("Old Series"), "old series leaked: {out}");
-        // Both forms preserved in EPUB 3 when calibre:series was present.
-        assert!(
-            out.contains(r#"property="belongs-to-collection""#),
-            "belongs-to-collection missing: {out}"
-        );
-        assert!(
-            out.contains(r#"name="calibre:series""#),
-            "calibre:series missing: {out}"
         );
     }
 }

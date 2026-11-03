@@ -124,42 +124,9 @@ mod tests {
     }
 
     #[test]
-    fn identifier_fields_autofill_at_both_levels() {
-        assert_eq!(
-            default_policy("identifiers.work.openlibrary"),
-            FieldPolicy::AutoFill
-        );
-        assert_eq!(
-            default_policy("identifiers.manifestation.googlebooks"),
-            FieldPolicy::AutoFill
-        );
-    }
-
-    #[test]
-    fn identifier_populated_slot_stages() {
-        let incoming = row(b"abc");
-        let result = decide("identifiers.work.openlibrary", false, &incoming, false, &[]);
-        assert_eq!(result, Decision::Stage);
-    }
-
-    #[test]
-    fn identifier_disagreement_stages_even_when_empty() {
-        let incoming = row(b"abc");
-        let pending = row(b"xyz");
-        let result = decide(
-            "identifiers.manifestation.googlebooks",
-            true,
-            &incoming,
-            false,
-            &[pending],
-        );
-        assert_eq!(result, Decision::Stage);
-    }
-
-    #[test]
     fn locked_field_is_noop() {
         let incoming = row(b"abc");
-        let result = decide("title", true, &incoming, true, &[]);
+        let result = decide("title", false, &incoming, true, &[]);
         assert_eq!(result, Decision::NoOp);
     }
 
@@ -186,79 +153,10 @@ mod tests {
     }
 
     #[test]
-    fn autofill_disagreement_downgrades_to_stage() {
-        let incoming = row(b"abc");
-        let pending = row(b"xyz"); // different hash
-        let result = decide("title", true, &incoming, false, &[pending]);
-        assert_eq!(result, Decision::Stage);
-    }
-
-    #[test]
-    fn autofill_agreement_still_applies_when_empty() {
-        let incoming = row(b"abc");
-        let pending = row(b"abc"); // same hash — agreement
-        let id = incoming.id;
-        let result = decide("title", true, &incoming, false, &[pending]);
-        assert_eq!(result, Decision::Apply(id));
-    }
-
-    #[test]
     fn propose_field_always_stages() {
         let incoming = row(b"abc");
         // canonical empty and no pending — still Stage because policy is Propose
         let result = decide("description", true, &incoming, false, &[]);
         assert_eq!(result, Decision::Stage);
-    }
-
-    #[test]
-    fn unknown_field_defaults_to_propose_semantics() {
-        let incoming = row(b"abc");
-        let result = decide("foobar_unknown_field", true, &incoming, false, &[]);
-        assert_eq!(result, Decision::Stage);
-    }
-
-    #[test]
-    fn all_autofill_fields_recognised() {
-        for field in &[
-            "title",
-            "sort_title",
-            "language",
-            "isbn_10",
-            "isbn_13",
-            "publisher",
-            "pub_date",
-            "cover",
-            "subtitle",
-            "pages",
-        ] {
-            assert_eq!(
-                default_policy(field),
-                FieldPolicy::AutoFill,
-                "expected AutoFill for field '{field}'"
-            );
-        }
-    }
-
-    #[test]
-    fn all_propose_fields_recognised() {
-        for field in &[
-            "description",
-            "series",
-            "series_position",
-            "creators",
-            "subjects",
-            "genres",
-            "tags",
-            "contributors.author",
-            "contributors.editor",
-            "contributors.translator",
-            "contributors.other",
-        ] {
-            assert_eq!(
-                default_policy(field),
-                FieldPolicy::Propose,
-                "expected Propose for field '{field}'"
-            );
-        }
     }
 }

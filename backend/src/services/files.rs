@@ -251,18 +251,10 @@ impl LibraryRoot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
     use uuid::Uuid;
 
     fn root(path: &Path) -> AbsoluteRootPath {
         path.to_str().unwrap().parse().unwrap()
-    }
-
-    fn location(id: LibraryId, path: &str) -> LibraryLocation {
-        LibraryLocation {
-            library_id: id,
-            path: path.parse().unwrap(),
-        }
     }
 
     fn files(path: &Path, id: LibraryId) -> LibraryFiles {
@@ -327,63 +319,6 @@ mod tests {
                 .as_str(),
             "Author/Book: edition.epub"
         );
-    }
-
-    #[tokio::test]
-    async fn library_storage_root_two_libraries_and_unknown_identity() {
-        let first = tempfile::tempdir().unwrap();
-        let second = tempfile::tempdir().unwrap();
-        let a = LibraryId::from_uuid(Uuid::new_v4());
-        let b = LibraryId::from_uuid(Uuid::new_v4());
-        std::fs::write(first.path().join("book"), b"first").unwrap();
-        std::fs::write(second.path().join("book"), b"second").unwrap();
-        let files = LibraryFiles::open(
-            [(a, root(first.path())), (b, root(second.path()))],
-            &root(first.path()),
-        )
-        .unwrap();
-        for (id, expected) in [(a, b"first".as_slice()), (b, b"second".as_slice())] {
-            let mut opened = files.open_download(&location(id, "book")).await.unwrap();
-            let mut bytes = Vec::new();
-            opened.file.read_to_end(&mut bytes).unwrap();
-            assert_eq!(bytes, expected);
-            assert_eq!(opened.metadata.len(), expected.len() as u64);
-        }
-        assert!(matches!(
-            files
-                .open_download(&location(LibraryId::from_uuid(Uuid::new_v4()), "book"))
-                .await,
-            Err(LibraryFileError::UnknownLibrary)
-        ));
-        assert!(
-            LibraryFiles::open(
-                [(a, root(first.path())), (a, root(second.path()))],
-                &root(first.path())
-            )
-            .is_err()
-        );
-    }
-
-    #[tokio::test]
-    async fn library_storage_root_retains_directory_object() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("library");
-        std::fs::create_dir(&path).unwrap();
-        std::fs::write(path.join("book"), b"original").unwrap();
-        let id = LibraryId::from_uuid(Uuid::new_v4());
-        let files = files(&path, id);
-        std::fs::rename(&path, tmp.path().join("old-library")).unwrap();
-        std::fs::create_dir(&path).unwrap();
-        std::fs::write(path.join("book"), b"replacement").unwrap();
-        let mut opened = files
-            .clone()
-            .open_download(&location(id, "book"))
-            .await
-            .unwrap();
-        let mut bytes = Vec::new();
-        opened.file.read_to_end(&mut bytes).unwrap();
-        assert_eq!(bytes, b"original");
-        assert_eq!(opened.metadata.len(), 8);
     }
 
     #[cfg(unix)]

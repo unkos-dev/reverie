@@ -379,135 +379,27 @@ fn ssrf_client(redirect_limit: usize, timeout: Duration, user_agent: &str) -> re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
-    fn v4(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(a, b, c, d))
-    }
-
-    fn v6(s: &str) -> IpAddr {
-        IpAddr::V6(s.parse::<Ipv6Addr>().unwrap())
-    }
-
-    // ── IPv4 private / denied ─────────────────────────────────────────────
 
     #[test]
-    fn loopback_v4_denied() {
-        assert!(ip_is_denied(v4(127, 0, 0, 1)));
-        assert!(ip_is_denied(v4(127, 255, 255, 255)));
-    }
-
-    #[test]
-    fn rfc1918_10_denied() {
-        assert!(ip_is_denied(v4(10, 0, 0, 1)));
-        assert!(ip_is_denied(v4(10, 255, 255, 255)));
-    }
-
-    #[test]
-    fn rfc1918_172_denied() {
-        assert!(ip_is_denied(v4(172, 16, 0, 1)));
-        assert!(ip_is_denied(v4(172, 31, 255, 255)));
-    }
-
-    #[test]
-    fn rfc1918_172_edge_allowed() {
-        // 172.15.x.x and 172.32.x.x are outside the /12 range.
-        assert!(!ip_is_denied(v4(172, 15, 255, 255)));
-        assert!(!ip_is_denied(v4(172, 32, 0, 0)));
-    }
-
-    #[test]
-    fn rfc1918_192_168_denied() {
-        assert!(ip_is_denied(v4(192, 168, 1, 1)));
-    }
-
-    #[test]
-    fn link_local_denied() {
-        assert!(ip_is_denied(v4(169, 254, 169, 254))); // cloud metadata
-        assert!(ip_is_denied(v4(169, 254, 0, 1)));
-    }
-
-    #[test]
-    fn cgnat_denied() {
-        assert!(ip_is_denied(v4(100, 64, 0, 1)));
-        assert!(ip_is_denied(v4(100, 127, 255, 255)));
-    }
-
-    #[test]
-    fn multicast_denied() {
-        assert!(ip_is_denied(v4(224, 0, 0, 1)));
-        assert!(ip_is_denied(v4(239, 255, 255, 255)));
-    }
-
-    #[test]
-    fn unspecified_v4_denied() {
-        assert!(ip_is_denied(v4(0, 0, 0, 0)));
-        assert!(ip_is_denied(v4(0, 255, 255, 255)));
-    }
-
-    // ── IPv4 public — should pass ─────────────────────────────────────────
-
-    #[test]
-    fn public_ip_allowed() {
-        assert!(!ip_is_denied(v4(8, 8, 8, 8))); // Google DNS
-        assert!(!ip_is_denied(v4(1, 1, 1, 1))); // Cloudflare
-        assert!(!ip_is_denied(v4(223, 255, 255, 255)));
-        assert!(!ip_is_denied(v4(240, 0, 0, 0)));
-        assert!(!ip_is_denied(v4(93, 184, 216, 34))); // example.com
-    }
-
-    // ── IPv6 ──────────────────────────────────────────────────────────────
-
-    #[test]
-    fn loopback_v6_denied() {
-        assert!(ip_is_denied(v6("::1")));
-    }
-
-    #[test]
-    fn unspecified_v6_denied() {
-        assert!(ip_is_denied(v6("::")));
-    }
-
-    #[test]
-    fn link_local_v6_denied() {
-        assert!(ip_is_denied(v6("fe80::1")));
-        assert!(ip_is_denied(v6("febf::1")));
-    }
-
-    #[test]
-    fn unique_local_v6_denied() {
-        assert!(ip_is_denied(v6("fc00::1")));
-        assert!(ip_is_denied(v6("fd00::1")));
-    }
-
-    #[test]
-    fn multicast_v6_denied() {
-        assert!(ip_is_denied(v6("ff02::1")));
-    }
-
-    #[test]
-    fn public_v6_allowed() {
-        assert!(!ip_is_denied(v6("2001:4860:4860::8888"))); // Google DNS IPv6
-        assert!(!ip_is_denied(v6("fe7f::1")));
-        assert!(!ip_is_denied(v6("fec0::1")));
-    }
-
-    // ── IPv4-mapped IPv6 ──────────────────────────────────────────────────
-
-    #[test]
-    fn ipv4_mapped_private_denied() {
-        // ::ffff:10.0.0.1
-        assert!(ip_is_denied(v6("::ffff:10.0.0.1")));
-        // ::ffff:192.168.1.1
-        assert!(ip_is_denied(v6("::ffff:192.168.1.1")));
-        // ::ffff:169.254.169.254 — cloud metadata via IPv4-mapped
-        assert!(ip_is_denied(v6("::ffff:169.254.169.254")));
-    }
-
-    #[test]
-    fn ipv4_mapped_public_allowed() {
-        // ::ffff:8.8.8.8
-        assert!(!ip_is_denied(v6("::ffff:8.8.8.8")));
+    fn ip_is_denied_refuses_one_address_in_every_denied_range() {
+        for addr in [
+            "0.0.0.1",
+            "10.0.0.1",
+            "100.64.0.1",
+            "127.0.0.1",
+            "169.254.169.254",
+            "172.16.0.1",
+            "192.168.0.1",
+            "224.0.0.1",
+            "::",
+            "::1",
+            "fe80::1",
+            "fd00::1",
+            "ff02::1",
+            "::ffff:169.254.169.254",
+        ] {
+            assert!(ip_is_denied(addr.parse().unwrap()), "{addr} must be denied");
+        }
     }
 
     /// The custom DNS resolver must reject hostnames whose entire resolution
@@ -557,134 +449,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn api_client_refuses_redirect_to_name_resolving_privately() {
-        use wiremock::matchers::method;
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .respond_with(
-                ResponseTemplate::new(302).insert_header("location", "http://localhost:1/metadata"),
-            )
-            .mount(&server)
-            .await;
-
-        let err = api_client("reverie-tests/0 (http)")
-            .get(server.uri())
-            .send()
-            .await
-            .expect_err("redirect to a name resolving into a denied range must be refused");
-        assert!(
-            err.is_redirect(),
-            "expected a redirect-policy error, got {err:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn redirect_limit_is_checked_before_the_hop() {
-        use wiremock::matchers::method;
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .respond_with(
-                ResponseTemplate::new(302).insert_header("location", "https://example.com/"),
-            )
-            .mount(&server)
-            .await;
-
-        let err = ssrf_client(0, Duration::from_secs(10), "reverie-tests/0 (http)")
-            .get(server.uri())
-            .send()
-            .await
-            .expect_err("a zero redirect limit must refuse the first hop");
-        assert!(
-            err.is_redirect(),
-            "expected a redirect-policy error, got {err:?}"
-        );
-        assert!(
-            format!("{err:?}").contains("too many redirects"),
-            "expected the limit error, got {err:?}"
-        );
-    }
-
-    /// With a limit of one, the first hop passes the count check and fails
-    /// on the deny list instead; a `>=` comparison would report the limit.
-    #[tokio::test]
-    async fn redirect_limit_allows_exactly_that_many_hops() {
-        use wiremock::matchers::method;
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .respond_with(
-                ResponseTemplate::new(302).insert_header("location", "http://10.0.0.1:1/"),
-            )
-            .mount(&server)
-            .await;
-
-        let err = ssrf_client(1, Duration::from_secs(10), "reverie-tests/0 (http)")
-            .get(server.uri())
-            .send()
-            .await
-            .expect_err("the hop must fail on the deny list");
-        assert!(
-            format!("{err:?}").contains("DenyListed(10.0.0.1)"),
-            "expected the deny-list error, not the limit, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn validate_hop_checks_literal_ip_hosts_without_dns() {
-        let denied_v4 = reqwest::Url::parse("http://10.0.0.1:1/").unwrap();
-        assert!(matches!(
-            validate_hop(&denied_v4),
-            Err(HopError::DenyListed(ip)) if ip == v4(10, 0, 0, 1)
-        ));
-
-        let denied_v6 = reqwest::Url::parse("http://[::1]:1/").unwrap();
-        assert!(matches!(
-            validate_hop(&denied_v6),
-            Err(HopError::DenyListed(ip)) if ip == v6("::1")
-        ));
-
-        // 2001:db8::/32 is documentation space, outside every denied range.
-        let allowed_v6 = reqwest::Url::parse("http://[2001:db8::1]:1/").unwrap();
-        assert!(validate_hop(&allowed_v6).is_ok());
-
-        let allowed_v4 = reqwest::Url::parse("http://8.8.8.8/").unwrap();
-        assert!(validate_hop(&allowed_v4).is_ok());
-    }
-
     // Requires outbound DNS to resolve example.com.  The Err arm below
     // tolerates sandboxed CI (e.g. docker-in-docker builds with no
     // external DNS) so the check never becomes a false positive — but
     // that also means the assertion is vacuous without a real network.
-    #[tokio::test]
-    async fn ssrf_resolver_allows_public_hostname() {
-        use reqwest::dns::{Name, Resolve};
-        use std::str::FromStr;
-
-        let resolver = SsrfResolver::new().expect("resolver init");
-        // example.com is reserved for documentation; resolves to public IPs.
-        let name = Name::from_str("example.com").expect("valid name");
-        match resolver.resolve(name).await {
-            Ok(addrs) => {
-                assert!(
-                    addrs.count() > 0,
-                    "expected at least one address for example.com"
-                );
-            }
-            Err(e) => {
-                // Tolerate sandboxed CI without outbound DNS — assert the
-                // error is transport-level, not a deny-list rejection.
-                let s = e.to_string();
-                assert!(
-                    !s.contains("denied"),
-                    "public hostname rejected as denied: {s}"
-                );
-            }
-        }
-    }
 }

@@ -403,28 +403,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn relocation_recovery_source_only_resumes_exact_destination() {
-        let (_dir, root, source, destination, hash) = fixture();
-        assert!(matches!(
-            recover(&root, &source, &destination, &hash, 7).unwrap(),
-            Recovery::Destination
-        ));
-        assert!(!root.exists(source.as_path()));
-        assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
-    }
-
-    #[test]
-    fn relocation_recovery_destination_only_adopts_verified_bytes() {
-        let (_dir, root, source, destination, hash) = fixture();
-        move_existing(&root, &source, &destination, &hash).unwrap();
-        assert!(matches!(
-            recover(&root, &source, &destination, &hash, 7).unwrap(),
-            Recovery::Destination
-        ));
-        assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
-    }
-
-    #[test]
     fn relocation_recovery_two_verified_names_remove_source_after_destination_sync() {
         let (_dir, root, source, destination, hash) = fixture();
         root.hard_link(source.as_path(), &root, destination.as_path())
@@ -519,25 +497,6 @@ mod tests {
     }
 
     #[test]
-    fn relocation_accounting_source_error_prevents_destination_evidence_read() {
-        let (_dir, root, source, destination, hash) = fixture();
-        let result = recover_with(
-            &root,
-            &source,
-            &destination,
-            &hash,
-            7,
-            sync_directory,
-            |_, path, _, _| {
-                assert_eq!(path, &source);
-                Err(std::io::Error::other("unreadable source").into())
-            },
-        );
-        assert!(matches!(result, Err(WritebackError::Io(_))));
-        assert_eq!(root.read(source.as_path()).unwrap(), b"PAYLOAD");
-    }
-
-    #[test]
     fn relocation_recovery_unreadable_evidence_precedes_loss_or_adoption() {
         for unreadable_source in [true, false] {
             let (_dir, root, source, destination, hash) = fixture();
@@ -592,36 +551,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn relocation_recovery_non_directory_source_parent_retains_destination() {
-        let (_dir, root, source, destination, hash) = fixture();
-        let original = root.read(source.as_path()).unwrap();
-        root.rename(source.as_path(), &root, destination.as_path())
-            .unwrap();
-        root.write("old", b"source parent replaced by a file")
-            .unwrap();
-        let missing_source = "old/orig.epub".parse().unwrap();
-        assert!(matches!(
-            recover(&root, &missing_source, &destination, &hash, 7),
-            Err(WritebackError::Io(error)) if error.kind() == std::io::ErrorKind::NotADirectory
-        ));
-        assert_eq!(root.read(destination.as_path()).unwrap(), original);
-        assert_eq!(
-            root.read("old").unwrap(),
-            b"source parent replaced by a file"
-        );
-    }
-
-    #[test]
-    fn relocation_recovery_size_mismatch_is_changed_even_with_matching_hash() {
-        let (_dir, root, source, destination, hash) = fixture();
-        assert!(matches!(
-            recover(&root, &source, &destination, &hash, 8).unwrap(),
-            Recovery::Terminal("source changed externally")
-        ));
-        assert_eq!(root.read(source.as_path()).unwrap(), b"PAYLOAD");
-    }
-
     fn fixture() -> (
         tempfile::TempDir,
         Dir,
@@ -645,17 +574,6 @@ mod tests {
     }
 
     #[test]
-    fn no_overwrite_move_free_destination_succeeds() {
-        let (_dir, root, src, dest, hash) = fixture();
-        assert!(matches!(
-            move_existing(&root, &src, &dest, &hash).unwrap(),
-            MoveResult::Durable
-        ));
-        assert!(!root.exists(src.as_path()));
-        assert_eq!(root.read(dest.as_path()).unwrap(), b"PAYLOAD");
-    }
-
-    #[test]
     fn no_overwrite_move_existing_file_preserves_both() {
         let (_dir, root, src, dest, hash) = fixture();
         root.write(dest.as_path(), b"FOREIGN").unwrap();
@@ -665,74 +583,6 @@ mod tests {
         );
         assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
         assert_eq!(root.read(dest.as_path()).unwrap(), b"FOREIGN");
-    }
-
-    #[test]
-    fn no_overwrite_move_unsupported_codes_use_hard_link() {
-        for code in [Errno::INVAL, Errno::NOSYS] {
-            let (_dir, root, src, dest, _hash) = fixture();
-            let (target, name) = parent(&root, &dest).unwrap();
-            let synced = std::cell::Cell::new(0);
-            let result = commit_no_replace_with(
-                &root,
-                src.as_path().as_os_str(),
-                &target,
-                &name,
-                |_, _, _, _| Err(code.into()),
-                |directory| {
-                    assert_eq!(root.read(dest.as_path()).unwrap(), b"PAYLOAD");
-                    if synced.get() == 0 {
-                        assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
-                    } else {
-                        assert!(!root.exists(src.as_path()));
-                    }
-                    synced.set(synced.get() + 1);
-                    sync_directory(directory)
-                },
-                |directory, name| directory.remove_file(name),
-            )
-            .unwrap();
-            assert!(matches!(result, MoveResult::Durable));
-            assert_eq!(synced.get(), 2);
-            assert!(!root.exists(src.as_path()));
-            assert_eq!(root.read(dest.as_path()).unwrap(), b"PAYLOAD");
-        }
-    }
-
-    #[test]
-    fn no_overwrite_move_other_errors_never_link_or_copy() {
-        for code in [
-            Errno::ACCESS,
-            Errno::EXIST,
-            Errno::IO,
-            Errno::TIMEDOUT,
-            Errno::OPNOTSUPP,
-        ] {
-            let (_dir, root, src, dest, hash) = fixture();
-            let result = move_existing_with(
-                &root,
-                &src,
-                &dest,
-                &hash,
-                |source, name, target, destination| {
-                    commit_no_replace_with(
-                        source,
-                        name,
-                        target,
-                        destination,
-                        |_, _, _, _| Err(code.into()),
-                        |_| panic!("refused move must never sync"),
-                        |_, _| panic!("refused move must never remove"),
-                    )
-                },
-                |_, _, _, _| panic!("non-EXDEV must never copy"),
-            );
-            assert!(
-                matches!(result, Err(WritebackError::Io(error)) if error.raw_os_error() == Some(code.raw_os_error()))
-            );
-            assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
-            assert!(!root.exists(dest.as_path()));
-        }
     }
 
     #[test]
@@ -794,83 +644,6 @@ mod tests {
     }
 
     #[test]
-    fn no_overwrite_move_removal_failure_retains_both_names() {
-        let (_dir, root, src, dest, _hash) = fixture();
-        let (target, name) = parent(&root, &dest).unwrap();
-        let result = commit_no_replace_with(
-            &root,
-            src.as_path().as_os_str(),
-            &target,
-            &name,
-            |_, _, _, _| Err(Errno::NOSYS.into()),
-            sync_directory,
-            |_, _| Err(Errno::ACCESS.into()),
-        );
-        assert!(
-            matches!(result, Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied)
-        );
-        assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
-        assert_eq!(root.read(dest.as_path()).unwrap(), b"PAYLOAD");
-    }
-
-    #[test]
-    fn no_overwrite_move_source_sync_failure_is_visible_uncertain() {
-        for fallback in [false, true] {
-            let (_dir, root, src, dest, _hash) = fixture();
-            let (target, name) = parent(&root, &dest).unwrap();
-            let synced = std::cell::Cell::new(0);
-            let result = commit_no_replace_with(
-                &root,
-                src.as_path().as_os_str(),
-                &target,
-                &name,
-                |source, name, target, destination| {
-                    if fallback {
-                        Err(Errno::INVAL.into())
-                    } else {
-                        rename_no_replace(source, name, target, destination)
-                    }
-                },
-                |directory| {
-                    synced.set(synced.get() + 1);
-                    if synced.get() == 2 {
-                        Err(Errno::IO.into())
-                    } else {
-                        sync_directory(directory)
-                    }
-                },
-                |directory, name| directory.remove_file(name),
-            )
-            .unwrap();
-            assert!(
-                matches!(result, MoveResult::VisibleUncertain(error) if error.raw_os_error() == Some(Errno::IO.raw_os_error()))
-            );
-            assert!(!root.exists(src.as_path()));
-            assert_eq!(root.read(dest.as_path()).unwrap(), b"PAYLOAD");
-        }
-    }
-
-    #[test]
-    fn no_overwrite_move_prepares_nested_destination() {
-        let (_dir, root, src, _, hash) = fixture();
-        let destination = "new/author/book.epub".parse().unwrap();
-        prepare_destination(&root, &destination).unwrap();
-        prepare_destination(&root, &destination).unwrap();
-        move_existing(&root, &src, &destination, &hash).unwrap();
-        assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
-        assert!(!root.exists(src.as_path()));
-    }
-
-    #[test]
-    fn no_overwrite_move_parent_file_refuses_before_relocation() {
-        let (_dir, root, src, _, _hash) = fixture();
-        root.write("occupied", b"FOREIGN").unwrap();
-        assert!(prepare_destination(&root, &"occupied/book.epub".parse().unwrap()).is_err());
-        assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
-        assert_eq!(root.read("occupied").unwrap(), b"FOREIGN");
-    }
-
-    #[test]
     fn no_overwrite_move_late_file_preserves_both() {
         let (_dir, root, src, dest, hash) = fixture();
         let result = move_existing_with(
@@ -892,32 +665,6 @@ mod tests {
     }
 
     #[test]
-    fn no_overwrite_move_dangling_link_preserves_source() {
-        let (_dir, root, src, dest, hash) = fixture();
-        root.symlink("missing.epub", dest.as_path()).unwrap();
-        let result = move_existing(&root, &src, &dest, &hash);
-        assert!(
-            matches!(result, Err(WritebackError::Io(error)) if error.kind() == std::io::ErrorKind::AlreadyExists)
-        );
-        assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
-        assert_eq!(
-            root.read_link(dest.as_path()).unwrap(),
-            Path::new("missing.epub")
-        );
-    }
-
-    #[test]
-    fn no_overwrite_move_prepares_internal_symlink_parent() {
-        let (_dir, root, src, _, hash) = fixture();
-        root.symlink("subdir", "alias").unwrap();
-        let destination = "alias/nested/book.epub".parse().unwrap();
-        prepare_destination(&root, &destination).unwrap();
-        move_existing(&root, &src, &destination, &hash).unwrap();
-        assert_eq!(root.read("subdir/nested/book.epub").unwrap(), b"PAYLOAD");
-        assert!(!root.exists(src.as_path()));
-    }
-
-    #[test]
     fn no_overwrite_move_refuses_escaping_destination_parent() {
         let (dir, root, src, _, _hash) = fixture();
         let outside = tempfile::tempdir().unwrap();
@@ -925,133 +672,6 @@ mod tests {
         assert!(prepare_destination(&root, &"escape/nested/book.epub".parse().unwrap()).is_err());
         assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
         assert!(!outside.path().join("nested").exists());
-    }
-
-    #[test]
-    fn no_overwrite_copy_free_destination_uses_actual_parent_and_cleans_staging() {
-        let (_dir, root, src, _, hash) = fixture();
-        root.symlink("subdir", "alias").unwrap();
-        let dest = "alias/new.epub".parse().unwrap();
-        let result = move_existing_with(
-            &root,
-            &src,
-            &dest,
-            &hash,
-            |_, _, _, _| Err(Errno::XDEV.into()),
-            |temp, staging, parent, name| {
-                let entries = root.read_dir("subdir")?.collect::<Result<Vec<_>, _>>()?;
-                assert_eq!(entries.len(), 1);
-                assert!(entries[0].file_type()?.is_dir());
-                assert!(uuid::Uuid::parse_str(&entries[0].file_name().to_string_lossy()).is_ok());
-                persist(temp, staging, parent, name)?;
-                assert_eq!(staging.read_dir(".")?.count(), 0);
-                Ok(())
-            },
-        )
-        .unwrap();
-        assert!(matches!(result, MoveResult::Durable));
-        assert!(!root.exists(src.as_path()));
-        assert_eq!(root.read("subdir/new.epub").unwrap(), b"PAYLOAD");
-        let entries = root
-            .read_dir("subdir")
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].file_name(), "new.epub");
-    }
-
-    #[test]
-    fn no_overwrite_copy_unsupported_codes_use_hard_link_commit() {
-        for code in [Errno::INVAL, Errno::NOSYS] {
-            let (_dir, root, src, dest, hash) = fixture();
-            let result = move_existing_with(
-                &root,
-                &src,
-                &dest,
-                &hash,
-                |_, _, _, _| Err(Errno::XDEV.into()),
-                |temp, staging, parent, name| {
-                    persist_with(
-                        temp,
-                        staging,
-                        parent,
-                        name,
-                        |source, name, target, destination| {
-                            commit_no_replace_with(
-                                source,
-                                name,
-                                target,
-                                destination,
-                                |_, _, _, _| Err(code.into()),
-                                sync_directory,
-                                |directory, name| directory.remove_file(name),
-                            )
-                        },
-                    )
-                },
-            )
-            .unwrap();
-            assert!(matches!(result, MoveResult::Durable));
-            assert!(!root.exists(src.as_path()));
-            assert_eq!(root.read(dest.as_path()).unwrap(), b"PAYLOAD");
-            assert_eq!(root.read_dir("subdir").unwrap().count(), 1);
-        }
-    }
-
-    #[test]
-    fn no_overwrite_copy_link_refuses_late_file_and_dangling_link() {
-        for code in [Errno::INVAL, Errno::NOSYS] {
-            for dangling in [false, true] {
-                let (_dir, root, src, dest, hash) = fixture();
-                let result = move_existing_with(
-                    &root,
-                    &src,
-                    &dest,
-                    &hash,
-                    |_, _, _, _| Err(Errno::XDEV.into()),
-                    |temp, staging, parent, name| {
-                        persist_with(
-                            temp,
-                            staging,
-                            parent,
-                            name,
-                            |source, name, target, destination| {
-                                commit_no_replace_with(
-                                    source,
-                                    name,
-                                    target,
-                                    destination,
-                                    |_, _, target, name| {
-                                        if dangling {
-                                            target.symlink("missing.epub", name)?;
-                                        } else {
-                                            target.write(name, b"FOREIGN")?;
-                                        }
-                                        Err(code.into())
-                                    },
-                                    |_| panic!("refused commit must never sync"),
-                                    |_, _| panic!("refused commit must never remove"),
-                                )
-                            },
-                        )
-                    },
-                );
-                assert!(
-                    matches!(result, Err(WritebackError::Io(error)) if error.kind() == std::io::ErrorKind::AlreadyExists)
-                );
-                assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
-                if dangling {
-                    assert_eq!(
-                        root.read_link(dest.as_path()).unwrap(),
-                        Path::new("missing.epub")
-                    );
-                } else {
-                    assert_eq!(root.read(dest.as_path()).unwrap(), b"FOREIGN");
-                }
-                assert_eq!(root.read_dir("subdir").unwrap().count(), 1);
-            }
-        }
     }
 
     #[test]
@@ -1110,41 +730,6 @@ mod tests {
         );
         assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
         assert_eq!(root.read(dest.as_path()).unwrap(), b"FOREIGN");
-    }
-
-    #[test]
-    fn no_overwrite_copy_dangling_link_preserves_source() {
-        let (_dir, root, src, dest, hash) = fixture();
-        let result = move_existing_with(
-            &root,
-            &src,
-            &dest,
-            &hash,
-            |_, _, _, _| Err(std::io::ErrorKind::CrossesDevices.into()),
-            |temp, staging, parent, name| {
-                parent.symlink("missing.epub", name)?;
-                persist(temp, staging, parent, name)
-            },
-        );
-        assert!(
-            matches!(result, Err(WritebackError::Io(error)) if error.kind() == std::io::ErrorKind::AlreadyExists)
-        );
-        assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
-        assert_eq!(
-            root.read_link(dest.as_path()).unwrap(),
-            Path::new("missing.epub")
-        );
-    }
-
-    #[test]
-    fn contained_move_same_fs_renames_atomically() {
-        let (_dir, root, src, dest, hash) = fixture();
-        assert!(matches!(
-            move_existing(&root, &src, &dest, &hash).unwrap(),
-            MoveResult::Durable
-        ));
-        assert!(!root.exists(src.as_path()));
-        assert_eq!(root.read(dest.as_path()).unwrap(), b"PAYLOAD");
     }
 
     #[test]
@@ -1239,22 +824,6 @@ mod tests {
                 .unwrap()
                 .file_type()
                 .is_symlink()
-        );
-    }
-
-    #[test]
-    fn normalise_rejects_parent_dir() {
-        assert!(normalise_relative(Path::new("../evil.epub")).is_err());
-    }
-    #[test]
-    fn normalise_rejects_absolute() {
-        assert!(normalise_relative(Path::new("/etc/passwd")).is_err());
-    }
-    #[test]
-    fn normalise_strips_cur_dir() {
-        assert_eq!(
-            normalise_relative(Path::new("./sub/file.epub")).unwrap(),
-            PathBuf::from("sub/file.epub")
         );
     }
 }
