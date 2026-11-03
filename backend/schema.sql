@@ -2318,6 +2318,13 @@ CREATE INDEX idx_manifestations_enrichment_queue ON public.manifestations USING 
 
 
 --
+-- Name: idx_manifestations_isbn_10; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_manifestations_isbn_10 ON public.manifestations USING btree (isbn_10) WHERE (isbn_10 IS NOT NULL);
+
+
+--
 -- Name: idx_manifestations_isbn_10_version_id; Type: INDEX; Schema: public; Owner: reverie_migrator
 --
 

@@ -6,17 +6,20 @@
 
 // Phase B building block: callers are wired in Phase C.
 
-use crate::services::metadata::isbn::parse_isbn;
-
 /// Return a stable key for the given raw ISBN string.
 ///
 /// Resolves both ISBN-10 and ISBN-13 inputs to their ISBN-13 canonical form
-/// via [`parse_isbn`], then prefixes with `"isbn:"`.  Returns `None` if the
+/// using the ISBN crate, then prefixes with `"isbn:"`.  Returns `None` if the
 /// string is not a valid ISBN.
 #[must_use]
 pub fn isbn_key(raw: &str) -> Option<String> {
-    let result = parse_isbn(raw);
-    result.isbn_13.map(|s| format!("isbn:{s}"))
+    let value = match raw.parse::<isbn::Isbn>() {
+        Ok(isbn::Isbn::_10(value)) => isbn::Isbn13::from(value),
+        Ok(isbn::Isbn::_13(value)) => value,
+        Err(_) => return None,
+    };
+    let compact = value.to_string();
+    (compact.starts_with("978") || compact.starts_with("979")).then(|| format!("isbn:{compact}"))
 }
 
 /// Return a stable key combining a title and author.

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET isbn_10 = $1, isbn_13 = $2, publisher = $3, pub_date = $4, pages = $5, isbn_10_version_id = $6, isbn_13_version_id = $7, publisher_version_id = $8, pub_date_version_id = $9, pages_version_id = $10, suspected_duplicate_work_id = $12 WHERE id = $11",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff868d15fce88e14b9b77b891a4fbbf60b7b8f74dcdc44ef5c83367e67293893"
+}

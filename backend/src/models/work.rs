@@ -3,8 +3,8 @@
 //! The flow is split so the orchestrator can honour the ingest
 //! invariant (every canonical field has a matching `metadata_versions` row):
 //!
-//! 1. `match_existing` — pure match; returns `Some(work_id)` on ISBN or
-//!    title+author fuzzy match, else `None`.
+//! 1. ISBN candidates preserve separate works; `match_existing` resolves
+//!    title and author matches only when no ISBN candidate exists.
 //! 2. `create_stub` — inserts an empty-placeholder work so the manifestation FK
 //!    is satisfied before any drafts are written.
 //! 3. `upgrade_stub` — runs an `UPDATE` against the stub with the metadata and wires
@@ -34,31 +34,17 @@ use crate::services::metadata::extractor::ExtractedMetadata;
 /// Consumed by the enrichment orchestrator.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RematchOutcome {
-    /// No matching ISBN row elsewhere; the manifestation is left untouched.
+    /// No matching ISBN row elsewhere; any obsolete candidate pointer is cleared.
     NoOp,
-    /// The current work was a stub safe to retire; its sole manifestation
-    /// has been moved to the matched work and the stub deleted.
-    AutoMerged {
-        /// Stub work id that was deleted.
-        from: Uuid,
-        /// Surviving work id that absorbed the manifestation.
-        to: Uuid,
-    },
-    /// A potential duplicate exists but cannot be auto-merged. Two
-    /// conditions produce this outcome: (1) multiple distinct works match
-    /// the ISBN (ambiguous merge target), or (2) exactly one match exists
-    /// but the current work has other manifestations or `manual`-source
-    /// drafts that block safe retirement.
-    /// `manifestations.suspected_duplicate_work_id` has been set for
-    /// operator review.
+    /// A potential duplicate is recorded without changing work membership.
     Suspected {
         /// Work id of the suspected duplicate.
         matched_work: Uuid,
     },
 }
 
-/// Try to match an existing work by ISBN-13 or title+author similarity (0.6).
-/// Pure read; never writes.
+/// Return an attachable work or an ISBN candidate, preserving candidate independence.
+/// Candidate lookup locks matching rows but never writes.
 ///
 /// # Errors
 ///
@@ -66,24 +52,17 @@ pub enum RematchOutcome {
 pub async fn match_existing(
     conn: &mut PgConnection,
     metadata: &ExtractedMetadata,
-) -> Result<Option<Uuid>, sqlx::Error> {
-    if let Some(isbn) = &metadata.isbn
-        && let Some(isbn_13) = &isbn.isbn_13
-    {
-        let hit = sqlx::query_scalar!(
-            "SELECT w.id FROM works w \
-             JOIN manifestations m ON m.work_id = w.id \
-             WHERE m.isbn_13 = $1 \
-             LIMIT 1",
-            isbn_13,
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-        if hit.is_some() {
-            return Ok(hit);
-        }
+) -> Result<(Option<Uuid>, Option<Uuid>), sqlx::Error> {
+    let candidate = isbn_candidate(
+        conn,
+        metadata.isbn_10.as_deref(),
+        metadata.isbn_13.as_deref(),
+        None,
+    )
+    .await?;
+    if candidate.is_some() {
+        return Ok((None, candidate));
     }
-
     if let Some(title) = &metadata.title
         && let Some(first_author) = metadata.first_author()
     {
@@ -102,11 +81,11 @@ pub async fn match_existing(
         .fetch_optional(&mut *conn)
         .await?;
         if hit.is_some() {
-            return Ok(hit);
+            return Ok((hit, None));
         }
     }
 
-    Ok(None)
+    Ok((None, None))
 }
 
 /// Insert an empty-placeholder work used to satisfy the manifestation FK
@@ -227,7 +206,8 @@ pub async fn find_or_create(
 ) -> Result<Uuid, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    if let Some(id) = match_existing(&mut tx, metadata).await? {
+    let (matched, _) = match_existing(&mut tx, metadata).await?;
+    if let Some(id) = matched {
         tx.commit().await?;
         return Ok(id);
     }
@@ -302,25 +282,55 @@ async fn find_or_create_series(
     .await
 }
 
-/// Re-check a manifestation's ISBN against other works.
-///
-/// Auto-merges the current work into a matched work when:
-///   * exactly one other work holds the same ISBN,
-///   * current work has no other manifestations, and
-///   * current work has no `manual`-source drafts.
-///
-/// Otherwise, if any matches exist, sets `suspected_duplicate_work_id`.
-///
-/// Must be called inside the caller's transaction; uses `FOR UPDATE` on
-/// candidate rows to avoid concurrent rematch races.
-/// Consumed by the enrichment orchestrator.
+/// Find one possible duplicate from supplied ISBNs and comparison-only equivalents.
 ///
 /// # Errors
+/// Returns database errors from the bounded, locked candidate lookup.
+pub(crate) async fn isbn_candidate(
+    conn: &mut PgConnection,
+    isbn_10: Option<&str>,
+    isbn_13: Option<&str>,
+    excluded_work: Option<Uuid>,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    let mut tens = Vec::new();
+    let mut thirteens = Vec::new();
+    if let Some(raw) = isbn_10
+        && let Ok(value) = raw.parse::<isbn::Isbn10>()
+    {
+        tens.push(value.to_string());
+        thirteens.push(isbn::Isbn13::from(value).to_string());
+    }
+    if let Some(raw) = isbn_13
+        && let Ok(value) = raw.parse::<isbn::Isbn13>()
+    {
+        let compact = value.to_string();
+        if compact.starts_with("978") || compact.starts_with("979") {
+            thirteens.push(compact);
+            if let Ok(ten) = isbn::Isbn10::try_from(value) {
+                tens.push(ten.to_string());
+            }
+        }
+    }
+    if tens.is_empty() && thirteens.is_empty() {
+        return Ok(None);
+    }
+    sqlx::query_scalar!(
+        "SELECT m.work_id FROM manifestations m \
+         WHERE (m.isbn_10 = ANY($1) OR m.isbn_13 = ANY($2)) \
+           AND ($3::uuid IS NULL OR m.work_id != $3) \
+         ORDER BY m.work_id, m.id LIMIT 1 FOR UPDATE",
+        &tens,
+        &thirteens,
+        excluded_work,
+    )
+    .fetch_optional(&mut *conn)
+    .await
+}
+
+/// Refresh the possible-duplicate pointer without changing work membership.
 ///
-/// Returns [`sqlx::Error`] from any of: the manifestation lookup, the
-/// `FOR UPDATE` candidate scan, the safety-condition counts, the
-/// `manifestations.work_id` `UPDATE`, the stub `DELETE`, or the
-/// `suspected_duplicate_work_id` `UPDATE`.
+/// # Errors
+/// Returns errors from manifestation locking, candidate lookup or pointer update.
 pub async fn rematch_on_isbn_change(
     conn: &mut PgConnection,
     manifestation_id: Uuid,
@@ -331,102 +341,130 @@ pub async fn rematch_on_isbn_change(
     )
     .fetch_optional(&mut *conn)
     .await?;
-
     let Some(row) = row else {
         return Ok(RematchOutcome::NoOp);
     };
-    let current_work_id = row.work_id;
-    let isbn_10 = row.isbn_10;
-    let isbn_13 = row.isbn_13;
-
-    if isbn_10.is_none() && isbn_13.is_none() {
-        return Ok(RematchOutcome::NoOp);
-    }
-
-    // Postgres forbids DISTINCT with FOR UPDATE, so lock the manifestation
-    // rows (not-distinct) and dedupe their work_ids in Rust. The FOR UPDATE
-    // still guarantees no concurrent rematch can mutate the same matched
-    // manifestation mid-flight.
-    let raw_matches = sqlx::query_scalar!(
-        "SELECT m.work_id FROM manifestations m \
-         WHERE m.work_id != $3 \
-           AND ( \
-               (m.isbn_13 = $1 AND $1 IS NOT NULL) OR \
-               (m.isbn_10 = $2 AND $2 IS NOT NULL) \
-           ) \
-         FOR UPDATE",
-        isbn_13,
-        isbn_10,
-        current_work_id,
+    let candidate = isbn_candidate(
+        conn,
+        row.isbn_10.as_deref(),
+        row.isbn_13.as_deref(),
+        Some(row.work_id),
     )
-    .fetch_all(&mut *conn)
     .await?;
-
-    let mut seen = std::collections::HashSet::new();
-    let mut matches: Vec<Uuid> = Vec::new();
-    for w in raw_matches {
-        if seen.insert(w) {
-            matches.push(w);
-        }
-    }
-
-    if matches.is_empty() {
-        return Ok(RematchOutcome::NoOp);
-    }
-
-    if matches.len() == 1 {
-        let other_manifestations = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM manifestations \
-             WHERE work_id = $1 AND id != $2",
-            current_work_id,
-            manifestation_id,
-        )
-        .fetch_one(&mut *conn)
-        .await?;
-
-        let manual_drafts = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions mv \
-             JOIN manifestations m ON m.id = mv.manifestation_id \
-             WHERE m.work_id = $1 AND mv.source = 'manual'",
-            current_work_id,
-        )
-        .fetch_one(&mut *conn)
-        .await?;
-
-        if other_manifestations == 0 && manual_drafts == 0 {
-            let target_work_id = matches[0];
-            sqlx::query!(
-                "UPDATE manifestations SET work_id = $1 WHERE id = $2",
-                target_work_id,
-                manifestation_id,
-            )
-            .execute(&mut *conn)
-            .await?;
-            sqlx::query!("DELETE FROM works WHERE id = $1", current_work_id)
-                .execute(&mut *conn)
-                .await?;
-            return Ok(RematchOutcome::AutoMerged {
-                from: current_work_id,
-                to: target_work_id,
-            });
-        }
-    }
-
-    let pick = matches[0];
     sqlx::query!(
         "UPDATE manifestations SET suspected_duplicate_work_id = $1 WHERE id = $2",
-        pick,
+        candidate,
         manifestation_id,
     )
     .execute(&mut *conn)
     .await?;
-
-    Ok(RematchOutcome::Suspected { matched_work: pick })
+    Ok(candidate.map_or(RematchOutcome::NoOp, |matched_work| {
+        RematchOutcome::Suspected { matched_work }
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    // REV-REQ-0073 AC1.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn isbn_contract_candidates(pool: PgPool) {
+        use crate::models::manifestation_format::ManifestationFormat;
+        use crate::models::validation_status::ValidationStatus;
+        use crate::services::files::LibraryLocation;
+        use crate::services::ingestion::{ManifestationMeta, commit_ingest, copier::CopyResult};
+        let pool = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let mut metadata = test_metadata(&format!("Candidate {marker}"), "Candidate Author");
+        let existing = find_or_create(&pool, &metadata).await.unwrap();
+        let old_m = insert_manifestation(
+            &pool,
+            existing,
+            Some("9780306406157"),
+            &format!("{marker}-existing"),
+        )
+        .await;
+        metadata.isbn_10 = Some("0306406152".into());
+        let library_id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let location = LibraryLocation {
+            library_id,
+            path: format!("candidate-{marker}.epub").parse().unwrap(),
+        };
+        let copied = CopyResult {
+            dest_path: location.path.as_str().into(),
+            sha256: marker.clone(),
+            file_size: 1000,
+            identity: (1, 1),
+        };
+        let (independent, manifestation) = commit_ingest(
+            &pool,
+            &Some(metadata),
+            &std::collections::HashMap::new(),
+            &location,
+            &copied,
+            ManifestationMeta {
+                format: ManifestationFormat::Epub,
+                validation_status: ValidationStatus::Clean,
+                accessibility_metadata: &None,
+                has_embedded_cover: Some(false),
+                current_hash: &copied.sha256,
+                current_size: 1000,
+            },
+        )
+        .await
+        .unwrap();
+        assert_ne!(independent, existing);
+        let row = sqlx::query!("SELECT work_id, suspected_duplicate_work_id, isbn_10, isbn_13, isbn_10_version_id, isbn_13_version_id FROM manifestations WHERE id = $1", manifestation)
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(row.work_id, independent);
+        assert_eq!(row.suspected_duplicate_work_id, Some(existing));
+        assert_eq!(row.isbn_10.as_deref(), Some("0306406152"));
+        assert!(row.isbn_10_version_id.is_some());
+        assert!(row.isbn_13.is_none() && row.isbn_13_version_id.is_none());
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_10 = $1 WHERE id = $2",
+            "0306406152",
+            old_m
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let outcome = rematch_on_isbn_change(&mut tx, manifestation)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            outcome,
+            RematchOutcome::Suspected {
+                matched_work: existing
+            }
+        );
+        let work = sqlx::query_scalar!(
+            "SELECT work_id FROM manifestations WHERE id = $1",
+            manifestation
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(work, independent);
+        let work = sqlx::query_scalar!("SELECT work_id FROM manifestations WHERE id = $1", old_m)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(work, existing);
+        let surviving = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM works WHERE id = $1",
+            independent
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(surviving, 1);
+    }
+
     use crate::services::metadata::extractor::ExtractedCreator;
     use crate::test_support::db::ingestion_pool_for;
 
@@ -446,7 +484,8 @@ mod tests {
             pages: None,
             publisher: None,
             pub_date: None,
-            isbn: None,
+            isbn_10: None,
+            isbn_13: None,
             subjects: vec![],
             series: None,
             inversion: None,
@@ -581,16 +620,6 @@ mod tests {
 
     /// Helper: insert a blank work directly (bypassing `find_or_create` so
     /// test titles don't collide via `pg_trgm` similarity).
-    async fn insert_work(pool: &PgPool, title: &str) -> Uuid {
-        sqlx::query_scalar!(
-            "INSERT INTO works (title, sort_title) VALUES ($1, lower($1)) RETURNING id",
-            title,
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap()
-    }
-
     /// Helper: insert a manifestation row for a given work/ISBN combo.
     /// Returns the manifestation id.
     async fn insert_manifestation(
@@ -618,112 +647,4 @@ mod tests {
         .unwrap()
     }
 
-    /// Stub work has 2 manifestations → suspected, not auto-merged.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn rematch_suspected_when_multiple_manifestations(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let marker = Uuid::new_v4().simple().to_string();
-        let isbn = "9780000000002";
-
-        let real_meta = test_metadata(&format!("Real MultiMani {marker}"), "RM Author");
-        let real_work_id = find_or_create(&pool, &real_meta).await.unwrap();
-        let _ = insert_manifestation(&pool, real_work_id, Some(isbn), &format!("{marker}-a")).await;
-
-        let stub_meta = test_metadata(&format!("Stub MultiMani {marker}"), "SM Author");
-        let stub_work_id = find_or_create(&pool, &stub_meta).await.unwrap();
-        let target_m =
-            insert_manifestation(&pool, stub_work_id, Some(isbn), &format!("{marker}-b")).await;
-        // Add a second manifestation on the stub — should inhibit auto-merge.
-        let _sibling_m =
-            insert_manifestation(&pool, stub_work_id, None, &format!("{marker}-c")).await;
-
-        let mut tx = pool.begin().await.unwrap();
-        let outcome = rematch_on_isbn_change(&mut tx, target_m).await.unwrap();
-        tx.commit().await.unwrap();
-
-        assert_eq!(
-            outcome,
-            RematchOutcome::Suspected {
-                matched_work: real_work_id
-            },
-            "expected Suspected outcome"
-        );
-
-        // Stub work must still exist.
-        let stub_exists = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM works WHERE id = $1",
-            stub_work_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(stub_exists, 1, "stub work should NOT be deleted");
-
-        // suspected_duplicate_work_id should be set.
-        let dup = sqlx::query_scalar!(
-            "SELECT suspected_duplicate_work_id FROM manifestations WHERE id = $1",
-            target_m,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(dup, Some(real_work_id));
-    }
-
-    /// Stub work has a manual-source draft → suspected, not auto-merged.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn rematch_suspected_when_manual_draft_exists(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let marker = Uuid::new_v4().simple().to_string();
-        let isbn = "9780000000003";
-
-        let real_work_id = insert_work(&pool, &format!("Real-MD-{marker}")).await;
-        let _ = insert_manifestation(&pool, real_work_id, Some(isbn), &format!("{marker}-a")).await;
-
-        let stub_work_id = insert_work(&pool, &format!("Stub-MD-{marker}")).await;
-        let stub_m =
-            insert_manifestation(&pool, stub_work_id, Some(isbn), &format!("{marker}-b")).await;
-
-        // Add a manual-source draft on the stub.
-        sqlx::query!(
-            "INSERT INTO metadata_versions \
-               (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) \
-             VALUES ($1, 'manual', 'title', '\"User Override\"'::jsonb, \
-                     digest('user-override', 'sha256'), 'isbn', 1.0)",
-            stub_m,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let mut tx = pool.begin().await.unwrap();
-        let outcome = rematch_on_isbn_change(&mut tx, stub_m).await.unwrap();
-        tx.commit().await.unwrap();
-
-        assert_eq!(
-            outcome,
-            RematchOutcome::Suspected {
-                matched_work: real_work_id
-            },
-            "expected Suspected because of manual draft"
-        );
-
-        let stub_exists = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM works WHERE id = $1",
-            stub_work_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(stub_exists, 1, "stub work should NOT be deleted");
-
-        let dup = sqlx::query_scalar!(
-            "SELECT suspected_duplicate_work_id FROM manifestations WHERE id = $1",
-            stub_m,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(dup, Some(real_work_id));
-    }
 }
