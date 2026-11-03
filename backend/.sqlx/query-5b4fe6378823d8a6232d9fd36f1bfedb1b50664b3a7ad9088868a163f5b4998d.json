@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "WITH selected AS (\n             SELECT i.id, i.generation FROM ingestion_inputs i\n             JOIN ingestion_input_classes c ON c.id = i.id\n             WHERE c.reason_class = $1 ORDER BY i.id LIMIT $2\n             FOR UPDATE OF i SKIP LOCKED\n           )\n           UPDATE ingestion_inputs i SET status = 'pending', reason = NULL, completed_at = NULL,\n             retry_reset_at = clock_timestamp(), retries_exhausted_at = NULL\n           FROM selected s WHERE i.id = s.id AND i.generation = s.generation\n           RETURNING i.id, i.source_path,\n             i.fingerprint AS \"fingerprint: sqlx::types::Json<Fingerprint>\", i.generation,\n             i.status AS \"status: InputStatus\", i.reason, i.work_id, i.retry_reset_at, i.observed_at",
+  "query": "WITH selected AS (\n             SELECT i.id, i.generation FROM ingestion_inputs i\n             JOIN ingestion_input_classes c ON c.id = i.id\n             WHERE c.reason_class = $1 AND i.status = c.status ORDER BY i.id LIMIT $2\n             FOR UPDATE OF i SKIP LOCKED\n           )\n           UPDATE ingestion_inputs i SET status = 'pending', reason = NULL, completed_at = NULL,\n             retry_reset_at = clock_timestamp(), retries_exhausted_at = NULL\n           FROM selected s WHERE i.id = s.id AND i.generation = s.generation\n           RETURNING i.id, i.source_path,\n             i.fingerprint AS \"fingerprint: sqlx::types::Json<Fingerprint>\", i.generation,\n             i.status AS \"status: InputStatus\", i.reason, i.work_id, i.retry_reset_at, i.observed_at",
   "describe": {
     "columns": [
       {
@@ -137,5 +137,5 @@
       false
     ]
   },
-  "hash": "38e59821db1d0c5c239874b13f584d62ced18fd484f3f80017de6c16899af188"
+  "hash": "5b4fe6378823d8a6232d9fd36f1bfedb1b50664b3a7ad9088868a163f5b4998d"
 }
