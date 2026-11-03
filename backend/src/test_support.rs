@@ -555,6 +555,20 @@ pub mod db {
         server_with_config(app_pool, ingestion_pool, super::test_config())
     }
 
+    pub struct AdminEnv {
+        pub ing: PgPool,
+        pub server: axum_test::TestServer,
+        pub auth: String,
+    }
+
+    pub async fn admin_env(pool: &PgPool) -> AdminEnv {
+        let app = app_pool_for(pool).await;
+        let ing = ingestion_pool_for(pool).await;
+        let (_, auth) = create_admin_and_basic_auth(&app).await;
+        let server = server_with_real_pools(&app, &ing);
+        AdminEnv { ing, server, auth }
+    }
+
     pub fn server_with_config(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,

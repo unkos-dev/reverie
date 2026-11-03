@@ -5,23 +5,10 @@ use uuid::Uuid;
 
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::test_support;
+use crate::test_support::db::{AdminEnv as Env, admin_env as env};
 
 const LIST: &str = "/api/v1/dashboard/enrichment-failures";
 const COUNTS: &str = "/api/v1/dashboard/enrichment-failures/counts";
-
-struct Env {
-    ing: PgPool,
-    server: axum_test::TestServer,
-    auth: String,
-}
-
-async fn env(pool: &PgPool) -> Env {
-    let app = test_support::db::app_pool_for(pool).await;
-    let ing = test_support::db::ingestion_pool_for(pool).await;
-    let (_, auth) = test_support::db::create_admin_and_basic_auth(&app).await;
-    let server = test_support::db::server_with_real_pools(&app, &ing);
-    Env { ing, server, auth }
-}
 
 async fn seed(
     env: &Env,
