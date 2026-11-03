@@ -2869,15 +2869,15 @@ fn should_warm_cover(format: ManifestationFormat, has_embedded_cover: Option<boo
 
 /// Manifestation-typed metadata for the initial insert, grouped so the
 /// commit signature does not grow a parameter per new column.
-struct ManifestationMeta<'a> {
-    format: ManifestationFormat,
-    validation_status: ValidationStatus,
-    accessibility_metadata: &'a Option<serde_json::Value>,
-    has_embedded_cover: Option<bool>,
+pub struct ManifestationMeta<'a> {
+    pub(crate) format: ManifestationFormat,
+    pub(crate) validation_status: ValidationStatus,
+    pub(crate) accessibility_metadata: &'a Option<serde_json::Value>,
+    pub(crate) has_embedded_cover: Option<bool>,
     /// Hash and size of the library file as it exists now: the copy's values
     /// unless a repair rewrote the file.
-    current_hash: &'a str,
-    current_size: u64,
+    pub(crate) current_hash: &'a str,
+    pub(crate) current_size: u64,
 }
 
 /// Run the ingest DB sequence atomically and return `(work_id, manifestation_id)`.
@@ -2894,7 +2894,7 @@ struct ManifestationMeta<'a> {
     reason = "commit_ingest is called with &extracted from a site that holds an owned Option; changing to Option<&T> would require .as_ref() at the call site with no readability benefit"
 )]
 #[cfg(test)]
-async fn commit_ingest(
+pub async fn commit_ingest(
     pool: &PgPool,
     extracted: &Option<crate::services::metadata::extractor::ExtractedMetadata>,
     vars: &std::collections::HashMap<String, String>,
@@ -2927,9 +2927,9 @@ async fn commit_ingest_outcome(
     let mut tx = pool.begin().await?;
 
     // 1. Try to match an existing work (only when OPF gave us signal).
-    let matched = match extracted.as_ref() {
+    let (matched, candidate) = match extracted {
         Some(meta) => work::match_existing(&mut tx, meta).await?,
-        None => None,
+        None => (None, None),
     };
 
     let (work_id, was_created) = match matched {
@@ -2987,10 +2987,8 @@ async fn commit_ingest_outcome(
     // 5. Populate manifestation canonical columns + *_version_id pointers
     //    from OPF extraction (not the heuristic row — only real OPF values
     //    become canonical ISBN/publisher/pub_date).
-    let (isbn_10, isbn_13) = extracted
-        .as_ref()
-        .and_then(|m| m.isbn.as_ref())
-        .map_or((None, None), |i| (i.isbn_10.clone(), i.isbn_13.clone()));
+    let isbn_10 = extracted.as_ref().and_then(|m| m.isbn_10.clone());
+    let isbn_13 = extracted.as_ref().and_then(|m| m.isbn_13.clone());
     let publisher = extracted.as_ref().and_then(|m| m.publisher.clone());
     let observed_date = extracted.and_then(|metadata| metadata.pub_date.as_deref());
     let pub_date = observed_date.and_then(|value| {
@@ -3008,7 +3006,8 @@ async fn commit_ingest_outcome(
         "UPDATE manifestations SET \
             isbn_10 = $1, isbn_13 = $2, publisher = $3, pub_date = $4, pages = $5, \
             isbn_10_version_id = $6, isbn_13_version_id = $7, \
-            publisher_version_id = $8, pub_date_version_id = $9, pages_version_id = $10 \
+            publisher_version_id = $8, pub_date_version_id = $9, pages_version_id = $10, \
+            suspected_duplicate_work_id = $12 \
          WHERE id = $11",
         isbn_10.as_deref(),
         isbn_13.as_deref(),
@@ -3023,6 +3022,7 @@ async fn commit_ingest_outcome(
             .and_then(|_| draft_ids.get("pub_date").copied()),
         draft_ids.get("pages").copied(),
         manifestation_id,
+        candidate,
     )
     .execute(&mut *tx)
     .await?;
@@ -3067,7 +3067,8 @@ fn draft_metadata(
                 pages: None,
                 publisher: None,
                 pub_date: None,
-                isbn: None,
+                isbn_10: None,
+                isbn_13: None,
                 subjects: Vec::new(),
                 series: None,
                 inversion: None,
@@ -4459,9 +4460,10 @@ mod tests {
     }
 
     /// Build an EPUB with Dublin Core metadata for integration testing.
-    fn make_metadata_epub() -> Vec<u8> {
+    fn make_metadata_epub(isbns: &[&str]) -> Vec<u8> {
+        let identifiers = isbns.join("</dc:identifier><dc:identifier>");
         build_epub(
-            br##"<?xml version="1.0" encoding="UTF-8"?>
+            format!(r##"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
   <metadata>
     <dc:title id="t1">The Integration Test</dc:title>
@@ -4469,7 +4471,7 @@ mod tests {
     <meta refines="#t2" property="title-type">subtitle</meta>
     <dc:creator opf:role="aut">Test McAuthor</dc:creator>
     <dc:language>en</dc:language>
-    <dc:identifier>urn:isbn:9780306406157</dc:identifier>
+    <dc:identifier>{identifiers}</dc:identifier>
     <dc:publisher>Test Press</dc:publisher>
     <dc:description>A book for testing metadata extraction</dc:description>
     <meta property="schema:numberOfPages">327</meta>
@@ -4478,7 +4480,7 @@ mod tests {
   </metadata>
   <manifest/>
   <spine/>
-</package>"##,
+</package>"##).as_bytes(),
             Some(CONTAINER_XML),
         )
     }
@@ -4515,6 +4517,267 @@ mod tests {
 </package>"#,
             Some(CONTAINER_XML),
         )
+    }
+
+    // REV-REQ-0073 AC1.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_extracts_metadata_from_epub(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ingestion, library, config) = scan_env();
+
+        // Use a filename that differs from the OPF metadata to test rename
+        let source = ingestion.path().join("Unknown - somefile.epub");
+        std::fs::write(&source, make_metadata_epub(&["urn:isbn:9780306406157"])).unwrap();
+
+        let result = drive_owner(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1);
+        assert_eq!(result.failed, 0);
+
+        // File should be renamed to metadata-based path: "McAuthor, Test/The Integration Test.epub"
+        let dest = library
+            .path()
+            .join("McAuthor, Test/The Integration Test.epub");
+        assert!(
+            dest.exists(),
+            "expected metadata-renamed file at {}",
+            dest.display()
+        );
+
+        // Verify work title
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
+        let title = sqlx::query_scalar!(
+            "SELECT w.title FROM works w \
+             JOIN manifestations m ON m.work_id = w.id \
+             WHERE m.file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(title, "The Integration Test");
+
+        // Verify author was created and linked
+        let author_name = sqlx::query_scalar!(
+            "SELECT a.name FROM authors a \
+             JOIN work_authors wa ON wa.author_id = a.id \
+             JOIN manifestations m ON m.work_id = wa.work_id \
+             WHERE m.file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(author_name, "Test McAuthor");
+
+        // Verify ISBN was populated on the manifestation
+        let isbn = sqlx::query!(
+            "SELECT isbn_10, isbn_13 FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(isbn.isbn_13.as_deref(), Some("9780306406157"));
+        assert!(isbn.isbn_10.is_none());
+
+        // Verify subtitle landed on the work with its pointer set.
+        let (subtitle, subtitle_version_id) = sqlx::query!(
+            "SELECT w.subtitle, w.subtitle_version_id FROM works w \
+             JOIN manifestations m ON m.work_id = w.id \
+             WHERE m.file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.subtitle, r.subtitle_version_id))
+        .unwrap();
+        assert_eq!(subtitle.as_deref(), Some("A Subtitle For Testing"));
+        assert!(subtitle_version_id.is_some());
+
+        // Verify page count landed on the manifestation with its pointer set.
+        let (pages, pages_version_id) = sqlx::query!(
+            "SELECT pages, pages_version_id FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.pages, r.pages_version_id))
+        .unwrap();
+        assert_eq!(pages, Some(327));
+        assert!(pages_version_id.is_some());
+
+        // Verify metadata_versions drafts were created
+        let draft_count = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions mv \
+             JOIN manifestations m ON m.id = mv.manifestation_id \
+             WHERE m.file_path = $1 AND mv.source = 'opf' AND mv.status::text = 'pending'",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            draft_count >= 5,
+            "expected at least 5 draft rows, got {draft_count}"
+        );
+
+        // Verify series was created
+        let series_count = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM series_works sw \
+             JOIN manifestations m ON m.work_id = sw.work_id \
+             WHERE m.file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(series_count, 1, "expected series link");
+    }
+
+    // REV-REQ-0072 AC1,4; REV-REQ-0073 AC2,4.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ingest_sets_version_pointers_for_all_canonical_fields(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ingestion, library, config) = scan_env();
+
+        let marker = uuid::Uuid::new_v4().simple().to_string();
+        let source = ingestion.path().join(format!("invariant-{marker}.epub"));
+        std::fs::write(
+            &source,
+            make_metadata_epub(&["0 8044-2957-X", "979 10-90636-07-1"]),
+        )
+        .unwrap();
+
+        let result = drive_owner(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1, "expected 1 processed");
+
+        let dest = library
+            .path()
+            .join("McAuthor, Test/The Integration Test.epub");
+        assert!(dest.exists(), "expected file at {}", dest.display());
+
+        // Pull every canonical field + its pointer in one query.
+        // `w.title` is NOT NULL in the schema; force it to nullable via
+        // `AS "title?"` so the field type stays `Option<String>` matching
+        // the truly-nullable peers. The uniform `if x.is_some()` asserts
+        // below then handle every canonical/pointer pair the same way.
+        struct Invariant {
+            title: Option<String>,
+            title_version_id: Option<uuid::Uuid>,
+            subtitle: Option<String>,
+            subtitle_version_id: Option<uuid::Uuid>,
+            language: Option<String>,
+            language_version_id: Option<uuid::Uuid>,
+            publisher: Option<String>,
+            publisher_version_id: Option<uuid::Uuid>,
+            pub_date_version_id: Option<uuid::Uuid>,
+            isbn_10: Option<String>,
+            isbn_10_version_id: Option<uuid::Uuid>,
+            isbn_13: Option<String>,
+            isbn_13_version_id: Option<uuid::Uuid>,
+            pages: Option<i32>,
+            pages_version_id: Option<uuid::Uuid>,
+        }
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
+        let inv = sqlx::query_as!(
+            Invariant,
+            "SELECT w.title AS \"title?\", w.title_version_id, \
+                    w.subtitle, w.subtitle_version_id, \
+                    w.language, w.language_version_id, \
+                    m.publisher, m.publisher_version_id, \
+                    m.pub_date_version_id, \
+                    m.isbn_10, m.isbn_10_version_id, m.isbn_13, m.isbn_13_version_id, \
+                    m.pages, m.pages_version_id \
+             FROM manifestations m \
+             JOIN works w ON w.id = m.work_id \
+             WHERE m.file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let Invariant {
+            title,
+            title_version_id: title_ptr,
+            subtitle,
+            subtitle_version_id: subtitle_ptr,
+            language,
+            language_version_id: language_ptr,
+            publisher,
+            publisher_version_id: publisher_ptr,
+            pub_date_version_id: pub_date_ptr,
+            isbn_10,
+            isbn_10_version_id: isbn_10_ptr,
+            isbn_13,
+            isbn_13_version_id: isbn_13_ptr,
+            pages,
+            pages_version_id: pages_ptr,
+        } = inv;
+
+        assert_eq!(isbn_10.as_deref(), Some("080442957X"));
+        assert_eq!(isbn_13.as_deref(), Some("9791090636071"));
+        assert!(isbn_10_ptr.is_some());
+
+        // Invariant: non-NULL canonical value ⇒ non-NULL pointer.
+        if title.is_some() {
+            assert!(title_ptr.is_some(), "title set but title_version_id NULL");
+        }
+        if subtitle.is_some() {
+            assert!(
+                subtitle_ptr.is_some(),
+                "subtitle set but subtitle_version_id NULL"
+            );
+        }
+        if language.is_some() {
+            assert!(
+                language_ptr.is_some(),
+                "language set but language_version_id NULL"
+            );
+        }
+        if publisher.is_some() {
+            assert!(
+                publisher_ptr.is_some(),
+                "publisher set but publisher_version_id NULL"
+            );
+        }
+        if isbn_13.is_some() {
+            assert!(
+                isbn_13_ptr.is_some(),
+                "isbn_13 set but isbn_13_version_id NULL"
+            );
+        }
+        if pages.is_some() {
+            assert!(pages_ptr.is_some(), "pages set but pages_version_id NULL");
+        }
+
+        // Every non-NULL pointer must reference a real source='opf' row.
+        for pointer in [
+            title_ptr,
+            subtitle_ptr,
+            language_ptr,
+            publisher_ptr,
+            pub_date_ptr,
+            isbn_10_ptr,
+            isbn_13_ptr,
+            pages_ptr,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let source_for_ptr = sqlx::query_scalar!(
+                "SELECT source FROM metadata_versions WHERE id = $1",
+                pointer,
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("pointer {pointer} did not resolve to a metadata_versions row: {e}")
+            });
+            assert_eq!(
+                source_for_ptr, "opf",
+                "pointer {pointer} resolved to source '{source_for_ptr}', expected 'opf'"
+            );
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -5118,7 +5381,7 @@ mod tests {
         let completed = ingestion.path().join("Author - Completed.epub");
         let duplicate = ingestion.path().join("Author - Duplicate.epub");
         let rejected = ingestion.path().join("Author - Rejected.epub");
-        std::fs::write(&completed, make_metadata_epub()).unwrap();
+        std::fs::write(&completed, make_metadata_epub(&["urn:isbn:9780306406157"])).unwrap();
         std::fs::write(&duplicate, &duplicate_bytes).unwrap();
         std::fs::write(&rejected, b"corrupt archive").unwrap();
         let siblings = [

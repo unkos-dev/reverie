@@ -522,18 +522,6 @@ async fn apply_canonical_batch(
                                     "enrichment: work.duplicate_suspected"
                                 );
                             }
-                            work::RematchOutcome::AutoMerged { from, to } => {
-                                // warn! (not info!) — auto-merge is a
-                                // destructive structural change: the `from`
-                                // work is deleted and the manifestation is
-                                // re-parented. Matches `Suspected`'s tier so
-                                // both rematch outcomes are visible to
-                                // operators filtering at warn level.
-                                warn!(
-                                    %manifestation_id, %from, %to,
-                                    "enrichment: work.auto_merged"
-                                );
-                            }
                         }
                     }
                     // Enqueue writeback in the same tx so the pointer move
@@ -1183,6 +1171,13 @@ async fn apply_field(
                 tracing::warn!(field = %field, raw = %value, "non-string canonical value; skipping apply");
                 return Ok(false);
             };
+            let v = match v.parse::<isbn::Isbn10>() {
+                Ok(value) => value.to_string(),
+                Err(error) => {
+                    tracing::debug!(%error, "ISBN observation refused for canonical promotion");
+                    return Ok(false);
+                }
+            };
             sqlx::query!(
                 "UPDATE manifestations SET isbn_10 = $1, isbn_10_version_id = $2 WHERE id = $3",
                 v,
@@ -1198,6 +1193,17 @@ async fn apply_field(
                 tracing::warn!(field = %field, raw = %value, "non-string canonical value; skipping apply");
                 return Ok(false);
             };
+            let v = match v.parse::<isbn::Isbn13>() {
+                Ok(value) => value.to_string(),
+                Err(error) => {
+                    tracing::debug!(%error, "ISBN observation refused for canonical promotion");
+                    return Ok(false);
+                }
+            };
+            if !v.starts_with("978") && !v.starts_with("979") {
+                tracing::debug!("non-ISBN EAN refused for canonical promotion");
+                return Ok(false);
+            }
             sqlx::query!(
                 "UPDATE manifestations SET isbn_13 = $1, isbn_13_version_id = $2 WHERE id = $3",
                 v,
@@ -2947,6 +2953,91 @@ mod tests {
         );
     }
 
+    // REV-REQ-0072 AC2-4.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn isbn_contract_invalid_provider(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        for (field, raw) in [
+            ("isbn_13", "4006381333931"),
+            ("isbn_10", "0306406153"),
+            ("isbn_13", "9780306406150"),
+        ] {
+            let marker = Uuid::new_v4().simple().to_string();
+            let (work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+            let bad = SourceResult {
+                field_name: field.into(),
+                raw_value: serde_json::json!(raw),
+                match_type: "isbn".into(),
+            };
+
+            let mut tx = pool.begin().await.unwrap();
+            let id_bad = upsert_journal_row(&mut tx, m_id, "openlibrary", &bad)
+                .await
+                .unwrap();
+            let hash = value_hash::value_hash(&bad.field_name, &bad.raw_value);
+            let mut per_field: PerFieldRows = std::collections::HashMap::new();
+            per_field.insert(
+                field.into(),
+                vec![(
+                    "openlibrary".into(),
+                    PolicyInputRow {
+                        id: id_bad,
+                        value_hash: hash,
+                    },
+                )],
+            );
+
+            let snapshot = Snapshot {
+                manifestation_id: m_id,
+                work_id,
+                lookup_keys: Vec::new(),
+                canonical: CanonicalState::default(),
+            };
+
+            let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+
+            assert_eq!(
+                outcome.applied, 0,
+                "invalid observation must not count as applied"
+            );
+            assert_eq!(outcome.staged, 0);
+            assert_eq!(outcome.skipped_locked, 0);
+
+            let row = sqlx::query!(
+                "SELECT isbn_10, isbn_10_version_id, isbn_13, isbn_13_version_id FROM manifestations WHERE id = $1",
+                m_id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert!(row.isbn_10.is_none() && row.isbn_10_version_id.is_none());
+            assert!(row.isbn_13.is_none() && row.isbn_13_version_id.is_none());
+            let journal = sqlx::query_scalar!(
+                "SELECT new_value FROM metadata_versions WHERE id = $1",
+                id_bad
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(journal, bad.raw_value);
+
+            let writeback_rows = sqlx::query_scalar!(
+                "SELECT COUNT(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+                m_id,
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                writeback_rows, 0,
+                "no writeback should be enqueued for a skipped apply"
+            );
+        }
+    }
+
     // ── external identifiers + ratings (native-id enrichment) ────────────
 
     /// ISBN-less fixture: no isbn column and an empty stub title, so lookup
@@ -3932,8 +4023,8 @@ mod tests {
                     ("publisher", json!("Provider publisher")),
                     ("pub_date", json!("2026-01")),
                     ("pages", json!(200)),
-                    ("isbn_10", json!("0451524934")),
-                    ("isbn_13", json!("9780451524935")),
+                    ("isbn_10", json!("0 8044-2957-X")),
+                    ("isbn_13", json!("979 10-90636-07-1")),
                 ]
                 .into_iter()
                 .map(|(field, raw_value)| SourceResult {
@@ -4062,14 +4153,14 @@ mod tests {
         assert_eq!(current.pages, Some(if edit { 300 } else { 200 }));
         assert_eq!(
             current.isbn_10.as_deref(),
-            Some(if edit { "0306406152" } else { "0451524934" })
+            Some(if edit { "0306406152" } else { "080442957X" })
         );
         assert_eq!(
             current.isbn_13.as_deref(),
             Some(if edit {
                 "9780306406157"
             } else {
-                "9780451524935"
+                "9791090636071"
             })
         );
         let rows = sqlx::query!(
@@ -4102,6 +4193,7 @@ mod tests {
         assert_eq!(jobs, if edit { 0 } else { 8 });
     }
 
+    // REV-REQ-0051 AC6; REV-REQ-0072 AC1,4; REV-REQ-0073 AC2-4.
     #[sqlx::test(migrations = "./migrations")]
     async fn scalar_empty_fields_fill_after_provider_round_trip(pool: PgPool) {
         scalar_run_with_intervening_edit(&pool, false).await;
