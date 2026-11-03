@@ -1377,6 +1377,14 @@ async fn change_own_password_weak_new_returns_422(pool: PgPool) {
         .json(&json!({"current_password": OLD_PW, "new_password": "password"}))
         .await;
     test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        test_support::db::server_with_real_pools(&app_pool, &ingestion_pool)
+            .post("/auth/local/login")
+            .json(&json!({"email": "change-weak@example.com", "password": OLD_PW}))
+            .await
+            .status_code(),
+        StatusCode::NO_CONTENT
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -1952,6 +1960,12 @@ async fn credential_link_policy_rejection_and_concurrent_redemption(pool: PgPool
             .await
             .status_code(),
         StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert!(
+        crate::models::local_credentials::find_by_user_id(&app, id)
+            .await
+            .unwrap()
+            .is_none()
     );
     assert!(
         crate::models::credential_link::lookup(&app, &token)
