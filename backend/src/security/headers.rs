@@ -415,6 +415,66 @@ mod tests {
     // --- Wrong method on a matched API route: 405 problem details ---
 
     #[tokio::test]
+    async fn api_typo_returns_json_404_with_api_csp() {
+        let mut security = crate::test_support::test_config().security;
+        security.csp_api_header = Some(HeaderValue::from_static(
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+        ));
+        let server = test_server_with_security(security);
+        let r = server.get("/api/v1/__nope__").await;
+        let body = crate::test_support::assert_problem(
+            &r,
+            crate::error::problems::NOT_FOUND,
+            axum::http::StatusCode::NOT_FOUND,
+        );
+        assert_eq!(body["title"].as_str(), Some("Not Found"));
+        // `instance` field proves the problem_instance_layer fires on
+        // composite-fallback responses too (not only matched routes).
+        // A layer-order regression that drops it from the fallback path
+        // breaks this assertion.
+        assert_eq!(body["instance"].as_str(), Some("/api/v1/__nope__"));
+        let csp = r
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(csp.contains("default-src 'none'"));
+    }
+
+    #[tokio::test]
+    async fn bare_reserved_prefixes_never_fall_through_to_the_spa_index() {
+        let index = "<!doctype html><title>spa-index-marker</title>";
+        let dist = fixture_dist(index.as_bytes());
+        let server = dist_server(&dist);
+
+        for path in ["/api", "/auth", "/opds"] {
+            let r = server.get(path).await;
+            let body = crate::test_support::assert_problem(
+                &r,
+                crate::error::problems::NOT_FOUND,
+                StatusCode::NOT_FOUND,
+            );
+            assert_eq!(body["instance"].as_str(), Some(path), "{path}");
+            assert!(!r.text().contains("spa-index-marker"), "{path}");
+            assert_eq!(
+                r.headers().get(header::CONTENT_SECURITY_POLICY).unwrap(),
+                "default-src 'none'",
+                "{path}"
+            );
+        }
+
+        let health = server.get("/health").await;
+        health.assert_status_ok();
+        assert!(!health.text().contains("spa-index-marker"));
+
+        let control = server.get("/library").await;
+        control.assert_status_ok();
+        assert!(control.text().contains("spa-index-marker"));
+    }
+
+    #[tokio::test]
     async fn wrong_method_on_matched_v1_route_returns_405_problem() {
         let server = test_support::test_server();
         let r = server.post("/api/v1/enrichment/status").await;
