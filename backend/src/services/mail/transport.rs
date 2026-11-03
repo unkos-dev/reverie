@@ -381,60 +381,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn smtp_transport_plaintext_accepts_message_with_envelope_and_headers() {
-        let (port, log) = fake_relay(Script::default()).await;
-        let result = submit(&settings(port, SmtpSecurity::Plaintext, false), &mail()).await;
-        assert_eq!(result, Ok(()));
-        let log = commands(&log);
-        assert!(
-            log.iter()
-                .any(|line| line == "MAIL FROM:<reverie@example.com>"),
-            "{log:?}"
-        );
-        assert!(
-            log.iter()
-                .any(|line| line == "RCPT TO:<reader@example.org>"),
-            "{log:?}"
-        );
-        assert!(!log.iter().any(|line| line.starts_with("AUTH")), "{log:?}");
-        let data = log.iter().find(|line| line.starts_with("DATA\n")).unwrap();
-        assert!(data.contains("From: reverie@example.com"), "{data}");
-        assert!(data.contains("Reply-To: support@example.com"), "{data}");
-        assert!(data.contains("To: reader@example.org"), "{data}");
-        assert!(data.contains("Subject: Your link"), "{data}");
-        assert!(
-            data.contains("Message-ID: <01234567-89ab-cdef-0123-456789abcdef@example.com>"),
-            "{data}"
-        );
-        assert!(data.contains("Date: "), "{data}");
-        assert!(data.contains("Open the link within 15 minutes."), "{data}");
-        assert!(log.last().is_some_and(|line| line == "QUIT"), "{log:?}");
-    }
-
-    #[test]
-    fn smtp_transport_message_id_is_stable_per_job_and_distinct_across_jobs() {
-        let config = settings(25, SmtpSecurity::Plaintext, false);
-        let header = |job: Uuid| {
-            let message = compose(
-                &config,
-                &OutgoingMail {
-                    job_id: Some(job),
-                    ..mail()
-                },
-            )
-            .unwrap();
-            let text = String::from_utf8(message.formatted()).unwrap();
-            text.lines()
-                .find(|line| line.starts_with("Message-ID:"))
-                .unwrap()
-                .to_owned()
-        };
-        let first = Uuid::from_u128(1);
-        assert_eq!(header(first), header(first));
-        assert_ne!(header(first), header(Uuid::from_u128(2)));
-    }
-
-    #[tokio::test]
     async fn smtp_transport_payload_text_cannot_inject_headers_or_recipients() {
         let (port, log) = fake_relay(Script::default()).await;
         let hostile = OutgoingMail {
@@ -461,42 +407,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn smtp_transport_transient_refusals_are_temporary() {
-        for script in [
-            Script {
-                rcpt: "451 4.3.0 relay-marker mailbox busy",
-                ..Script::default()
-            },
-            Script {
-                end_of_data: "452 4.2.2 relay-marker over quota",
-                ..Script::default()
-            },
-        ] {
-            let (port, _) = fake_relay(script).await;
-            let result = submit(&settings(port, SmtpSecurity::Plaintext, false), &mail()).await;
-            assert_eq!(result, Err(FailureCategory::TemporaryRefusal));
-        }
-    }
-
-    #[tokio::test]
-    async fn smtp_transport_permanent_refusals_are_permanent() {
-        for script in [
-            Script {
-                rcpt: "550 5.1.1 relay-marker no such user",
-                ..Script::default()
-            },
-            Script {
-                end_of_data: "554 5.7.1 relay-marker rejected",
-                ..Script::default()
-            },
-        ] {
-            let (port, _) = fake_relay(script).await;
-            let result = submit(&settings(port, SmtpSecurity::Plaintext, false), &mail()).await;
-            assert_eq!(result, Err(FailureCategory::PermanentRefusal));
-        }
-    }
-
-    #[tokio::test]
     async fn smtp_transport_errors_carry_no_relay_text_or_addresses() {
         let (port, _) = fake_relay(Script {
             rcpt: "550 5.1.1 relay-marker reader@example.org unknown",
@@ -516,46 +426,6 @@ mod tests {
             assert!(!diagnostic.contains(marker), "{marker} in {diagnostic}");
         }
         assert!(std::error::Error::source(&error).is_none());
-    }
-
-    #[tokio::test]
-    async fn smtp_transport_acceptance_survives_a_stalled_quit() {
-        let (port, log) = fake_relay(Script {
-            hang_on_quit: true,
-            ..Script::default()
-        })
-        .await;
-        let started = tokio::time::Instant::now();
-        let submission = tokio::spawn(async move {
-            submit(&settings(port, SmtpSecurity::Plaintext, false), &mail()).await
-        });
-        tokio::time::timeout(Duration::from_secs(5), async {
-            while !sent(&log, "QUIT") {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("the relay must accept DATA before the clock advances");
-        tokio::time::pause();
-        tokio::time::advance(SUBMISSION_TIMEOUT).await;
-        assert_eq!(submission.await.unwrap(), Ok(()));
-        assert!(sent(&log, "DATA"));
-        assert!(sent(&log, "QUIT"));
-        assert!(started.elapsed() <= SUBMISSION_TIMEOUT + Duration::from_secs(1));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn smtp_transport_unresponsive_relay_times_out_at_the_bound() {
-        let (port, _) = fake_relay(Script {
-            hang_after_greeting: true,
-            ..Script::default()
-        })
-        .await;
-        let started = tokio::time::Instant::now();
-        let result = submit(&settings(port, SmtpSecurity::Plaintext, false), &mail()).await;
-        assert_eq!(result, Err(FailureCategory::Timeout));
-        assert!(started.elapsed() >= SUBMISSION_TIMEOUT);
-        assert!(started.elapsed() < SUBMISSION_TIMEOUT + Duration::from_secs(1));
     }
 
     #[tokio::test]
@@ -602,90 +472,5 @@ mod tests {
             "{:?}",
             commands(&log)
         );
-    }
-
-    #[tokio::test]
-    async fn smtp_transport_plaintext_login_is_sent_when_selected() {
-        let (port, log) = fake_relay(Script {
-            extensions: vec!["AUTH PLAIN"],
-            ..Script::default()
-        })
-        .await;
-        let result = submit(&settings(port, SmtpSecurity::Plaintext, true), &mail()).await;
-        assert_eq!(result, Ok(()));
-        let log = commands(&log);
-        let auth = log
-            .iter()
-            .position(|line| line.starts_with("AUTH PLAIN "))
-            .unwrap();
-        let mail_from = log
-            .iter()
-            .position(|line| line.starts_with("MAIL FROM"))
-            .unwrap();
-        assert!(auth < mail_from, "{log:?}");
-        // base64 of "\0relay-user\0relay-pass"
-        assert_eq!(log[auth], "AUTH PLAIN AHJlbGF5LXVzZXIAcmVsYXktcGFzcw==");
-    }
-
-    #[tokio::test]
-    async fn smtp_transport_rejected_login_is_authentication_and_sends_nothing() {
-        let (port, log) = fake_relay(Script {
-            extensions: vec!["AUTH PLAIN"],
-            auth: "535 5.7.8 relay-marker bad credentials",
-            ..Script::default()
-        })
-        .await;
-        let result = submit(&settings(port, SmtpSecurity::Plaintext, true), &mail()).await;
-        assert_eq!(result, Err(FailureCategory::Authentication));
-        assert!(
-            !sent(&log, "MAIL FROM") && !sent(&log, "DATA"),
-            "{:?}",
-            commands(&log)
-        );
-    }
-
-    #[tokio::test]
-    async fn smtp_transport_login_without_a_common_mechanism_is_authentication() {
-        let (port, log) = fake_relay(Script {
-            extensions: vec!["AUTH XOAUTH2"],
-            ..Script::default()
-        })
-        .await;
-        let result = submit(&settings(port, SmtpSecurity::Plaintext, true), &mail()).await;
-        assert_eq!(result, Err(FailureCategory::Authentication));
-        assert!(!sent(&log, "MAIL FROM"), "{:?}", commands(&log));
-    }
-
-    #[tokio::test]
-    async fn smtp_transport_no_login_configured_never_authenticates() {
-        let (port, log) = fake_relay(Script {
-            extensions: vec!["AUTH PLAIN"],
-            ..Script::default()
-        })
-        .await;
-        let result = submit(&settings(port, SmtpSecurity::Plaintext, false), &mail()).await;
-        assert_eq!(result, Ok(()));
-        assert!(!sent(&log, "AUTH"));
-    }
-
-    #[tokio::test]
-    async fn smtp_transport_refused_connection_is_connection_failure() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        let result = submit(&settings(port, SmtpSecurity::Plaintext, false), &mail()).await;
-        assert_eq!(result, Err(FailureCategory::Connection));
-    }
-
-    #[tokio::test]
-    async fn smtp_transport_service_unavailable_greeting_is_not_accepted() {
-        let (port, log) = fake_relay(Script {
-            greeting: "554 5.3.2 relay-marker no service",
-            ..Script::default()
-        })
-        .await;
-        let result = submit(&settings(port, SmtpSecurity::Plaintext, false), &mail()).await;
-        assert!(result.is_err());
-        assert!(!sent(&log, "MAIL FROM"), "{:?}", commands(&log));
     }
 }

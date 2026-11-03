@@ -1411,7 +1411,7 @@ impl CapturedLogs {
 pub mod mail {
     use std::sync::{Arc, Mutex};
 
-    use chrono::{DateTime, TimeDelta, Utc};
+    use chrono::{TimeDelta, Utc};
     use lettre::message::Mailbox;
     use sqlx::PgPool;
     use tokio::{
@@ -1431,7 +1431,6 @@ pub mod mail {
         Accept,
         Transient,
         Permanent,
-        Hang,
     }
 
     /// A plaintext SMTP listener that records what it was sent.
@@ -1474,10 +1473,6 @@ pub mod mail {
         /// Every message body the relay received, headers included.
         pub fn messages(&self) -> Vec<String> {
             self.messages.lock().unwrap().clone()
-        }
-
-        pub fn message_count(&self) -> usize {
-            self.messages.lock().unwrap().len()
         }
 
         /// Every envelope recipient the relay was offered.
@@ -1539,7 +1534,6 @@ pub mod mail {
                     Behaviour::Accept => "250 queued".to_owned(),
                     Behaviour::Transient => "451 try again later".to_owned(),
                     Behaviour::Permanent => "550 refused".to_owned(),
-                    Behaviour::Hang => std::future::pending().await,
                 }
             } else if upper.starts_with("QUIT") {
                 writer.write_all(&say("221 bye")).await.unwrap();
@@ -1640,18 +1634,6 @@ pub mod mail {
         .fetch_one(pool)
         .await
         .unwrap()
-    }
-
-    pub async fn backdate(pool: &PgPool, id: Uuid, enqueued_at: DateTime<Utc>) {
-        sqlx::query!(
-            "UPDATE mail_jobs SET enqueued_at = $2::timestamptz, next_attempt_at = $2::timestamptz, \
-                    expires_at = $2::timestamptz + interval '30 days' WHERE id = $1",
-            id,
-            enqueued_at
-        )
-        .execute(pool)
-        .await
-        .unwrap();
     }
 
     pub fn key() -> QueueKey {

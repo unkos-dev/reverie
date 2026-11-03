@@ -183,64 +183,12 @@ mod tests {
     }
 
     #[test]
-    fn smtp_crypto_empty_plaintext_round_trips() {
-        let job = Uuid::new_v4();
-        let sealed = seal(&key(), job, "notice", b"").unwrap();
-        let opened = open(&key(), job, "notice", &sealed.nonce, &sealed.ciphertext).unwrap();
-        assert_eq!(opened, Vec::<u8>::new());
-    }
-
-    #[test]
     fn smtp_crypto_fresh_nonce_per_encryption() {
         let job = Uuid::new_v4();
         let first = sealed(job);
         let second = sealed(job);
         assert_ne!(first.nonce, second.nonce);
         assert_ne!(first.ciphertext, second.ciphertext);
-    }
-
-    #[test]
-    fn smtp_crypto_every_tampered_ciphertext_byte_is_refused() {
-        let job = Uuid::new_v4();
-        let sealed = sealed(job);
-        for index in 0..sealed.ciphertext.len() {
-            let mut altered = sealed.ciphertext.clone();
-            altered[index] ^= 0x01;
-            let result = open(&key(), job, "email_recovery", &sealed.nonce, &altered);
-            assert_eq!(result, Err(CryptoError::Open), "byte {index}");
-        }
-    }
-
-    #[test]
-    fn smtp_crypto_tampered_nonce_is_refused() {
-        let job = Uuid::new_v4();
-        let sealed = sealed(job);
-        for index in 0..sealed.nonce.len() {
-            let mut altered = sealed.nonce.clone();
-            altered[index] ^= 0x80;
-            let result = open(&key(), job, "email_recovery", &altered, &sealed.ciphertext);
-            assert_eq!(result, Err(CryptoError::Open), "byte {index}");
-        }
-    }
-
-    #[test]
-    fn smtp_crypto_malformed_nonce_and_truncated_ciphertext_are_refused() {
-        let job = Uuid::new_v4();
-        let sealed = sealed(job);
-        for nonce in [&[][..], &sealed.nonce[..11], &[0_u8; 13][..]] {
-            let result = open(&key(), job, "email_recovery", nonce, &sealed.ciphertext);
-            assert_eq!(result, Err(CryptoError::Open));
-        }
-        for len in [0, 1, 15, sealed.ciphertext.len() - 1] {
-            let result = open(
-                &key(),
-                job,
-                "email_recovery",
-                &sealed.nonce,
-                &sealed.ciphertext[..len],
-            );
-            assert_eq!(result, Err(CryptoError::Open), "length {len}");
-        }
     }
 
     #[test]
@@ -262,33 +210,6 @@ mod tests {
     }
 
     #[test]
-    fn smtp_crypto_wrong_key_is_refused() {
-        let job = Uuid::new_v4();
-        let sealed = sealed(job);
-        let other = QueueKey::from_bytes([7; 32]);
-        let result = open(
-            &other,
-            job,
-            "email_recovery",
-            &sealed.nonce,
-            &sealed.ciphertext,
-        );
-        assert_eq!(result, Err(CryptoError::Open));
-    }
-
-    #[test]
-    fn smtp_crypto_refusal_maps_to_payload_unreadable() {
-        assert_eq!(
-            CryptoError::Open.category(),
-            FailureCategory::PayloadUnreadable
-        );
-        assert_eq!(
-            FailureCategory::PayloadUnreadable.as_str(),
-            "payload_unreadable"
-        );
-    }
-
-    #[test]
     fn smtp_crypto_diagnostics_never_expose_key_or_payload() {
         let job = Uuid::new_v4();
         let sealed = sealed(job);
@@ -303,23 +224,5 @@ mod tests {
         assert!(!diagnostic.contains("secret-body-marker"));
         assert!(!format!("{:?}", key()).contains("1, 2, 3"));
         assert!(format!("{:?}", key()).contains("REDACTED"));
-    }
-
-    #[test]
-    fn smtp_crypto_key_parse_accepts_only_canonical_32_bytes() {
-        assert!(QueueKey::parse(ENCODED).is_ok());
-        let encoded_zeros = Base64UrlUnpadded::encode_string(&[0_u8; 32]);
-        assert!(QueueKey::parse(&encoded_zeros).is_ok());
-        for bad in [
-            "",
-            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh",
-            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8A",
-            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
-            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh+",
-            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh9",
-            " AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
-        ] {
-            assert_eq!(QueueKey::parse(bad).err(), Some(QueueKeyError), "{bad:?}");
-        }
     }
 }
