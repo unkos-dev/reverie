@@ -167,7 +167,7 @@ async fn bulk_input_retry_caps_batches_and_preserves_attempt_history(pool: PgPoo
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn bulk_input_retry_refuses_a_demoted_admin_token_without_command(pool: PgPool) {
+async fn ingestion_admin_routes_refuse_a_demoted_admin_token(pool: PgPool) {
     use crate::auth::{scope::Scope, token};
     let app = test_support::db::app_pool_for(&pool).await;
     let (id, _) = test_support::db::create_admin_and_basic_auth(&app).await;
@@ -197,14 +197,28 @@ async fn bulk_input_retry_refuses_a_demoted_admin_token_without_command(pool: Pg
     .execute(&pool)
     .await
     .unwrap();
-    server
-        .post("/api/v1/ingestion/inputs/retries")
-        .add_header(
-            AUTHORIZATION,
-            format!("Bearer {}{}.{}", token::TOKEN_PREFIX, device.id, plain),
+    let bearer = format!("Bearer {}{}.{}", token::TOKEN_PREFIX, device.id, plain);
+    let body = serde_json::json!({"reason":"needs_change"});
+    for (method, path) in [
+        ("GET", "/api/v1/ingestion/status"),
+        ("POST", "/api/v1/ingestion/scan"),
+        ("POST", "/api/v1/ingestion/inputs/retries"),
+        ("GET", "/api/v1/ingestion/inputs"),
+        ("GET", "/api/v1/ingestion/inputs/counts"),
+    ] {
+        let request = match method {
+            "GET" => server.get(path),
+            _ => server.post(path).json(&body),
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            request
+                .add_header(AUTHORIZATION, bearer.clone())
+                .into_future(),
         )
-        .json(&serde_json::json!({"reason":"needs_change"}))
         .await
+        .unwrap_or_else(|_| panic!("{method} {path} did not answer"))
         .assert_status_forbidden();
+    }
     assert!(commands.lock().await.try_recv().is_err());
 }
