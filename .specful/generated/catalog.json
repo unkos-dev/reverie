@@ -979,7 +979,7 @@
       "id": "REV-REQ-0003",
       "kind": "req",
       "path": "docs/specs/library/requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md",
-      "title": "Library list filter values that fail to decode are rejected"
+      "title": "Library list range filters apply their bounds as declared"
     },
     {
       "governed-by": [
