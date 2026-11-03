@@ -8180,7 +8180,7 @@ mod tests {
         let source = ingestion.path().join(format!("invariant-{marker}.epub"));
         std::fs::write(
             &source,
-            make_metadata_epub(&["0 8044-2957-X", "979 10-90636-07-1"]),
+            make_metadata_epub(&["urn:isbn:0 8044-2957-X", "urn:isbn:979 10-90636-07-1"]),
         )
         .unwrap();
 

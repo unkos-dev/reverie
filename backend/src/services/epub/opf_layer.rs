@@ -523,7 +523,8 @@ pub fn validate(
                             content_attr.or_else(|| read_element_text(&mut reader, e.name()));
                         if let Some(refines) = refines_attr
                             && value.as_deref().is_some_and(|v| {
-                                v.trim() == "15" || v.trim().eq_ignore_ascii_case("isbn")
+                                matches!(v.trim(), "02" | "15")
+                                    || v.trim().eq_ignore_ascii_case("isbn")
                             })
                         {
                             isbn_refines.insert(refines);
@@ -607,7 +608,7 @@ pub fn validate(
                 if prop.as_deref() == Some("identifier-type") {
                     if let Some(refines) = refines_attr.clone()
                         && content.as_deref().is_some_and(|v| {
-                            v.trim() == "15" || v.trim().eq_ignore_ascii_case("isbn")
+                            matches!(v.trim(), "02" | "15") || v.trim().eq_ignore_ascii_case("isbn")
                         })
                     {
                         isbn_refines.insert(refines);
