@@ -6,7 +6,7 @@
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 
 # renovate: datasource=pypi depName=sqlfluff
-sqlfluff_version := "4.4.0"
+sqlfluff_version := "4.5.0"
 
 # Shellcheck every tracked shell script.
 [group('infra')]

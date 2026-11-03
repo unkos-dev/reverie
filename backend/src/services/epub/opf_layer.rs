@@ -65,6 +65,30 @@ pub struct SeriesMeta {
     pub position: Option<f64>,
 }
 
+/// A supplied identifier with its bibliographic declaration and package role.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Identifier {
+    /// Identifier text before ISBN parsing.
+    pub value: String,
+    /// Element identifier for EPUB refinements.
+    pub id: Option<String>,
+    /// Whether the package selects this identifier as its identity.
+    pub package_identity: bool,
+    /// Whether a scheme or identifier-type refinement declares an ISBN.
+    pub declared_isbn: bool,
+}
+
+impl From<&str> for Identifier {
+    fn from(value: &str) -> Self {
+        Self {
+            value: value.into(),
+            id: None,
+            package_identity: false,
+            declared_isbn: false,
+        }
+    }
+}
+
 /// All data extracted from the `OPF` package document in a single parse pass.
 #[derive(Debug, Clone)]
 pub struct OpfData {
@@ -113,7 +137,7 @@ pub struct OpfData {
     /// Dublin Core: language
     pub language: Option<String>,
     /// Dublin Core: all identifier values (ISBNs, URNs, etc.)
-    pub identifiers: Vec<String>,
+    pub identifiers: Vec<Identifier>,
     /// Dublin Core: subject values
     pub subjects: Vec<String>,
     /// Series metadata (calibre or `EPUB3` collection)
@@ -399,7 +423,9 @@ pub fn validate(
     let mut labelled_date: Option<String> = None;
     let mut epub3 = false;
     let mut language: Option<String> = None;
-    let mut identifiers: Vec<String> = Vec::new();
+    let mut identifiers: Vec<Identifier> = Vec::new();
+    let mut package_identifier = None;
+    let mut isbn_refines = HashSet::new();
     let mut subjects: Vec<String> = Vec::new();
     let mut number_of_pages: Option<String> = None;
 
@@ -492,6 +518,18 @@ pub fn validate(
                         }
                         continue;
                     }
+                    if prop == "identifier-type" {
+                        let value =
+                            content_attr.or_else(|| read_element_text(&mut reader, e.name()));
+                        if let Some(refines) = refines_attr
+                            && value.as_deref().is_some_and(|v| {
+                                v.trim() == "15" || v.trim().eq_ignore_ascii_case("isbn")
+                            })
+                        {
+                            isbn_refines.insert(refines);
+                        }
+                        continue;
+                    }
                     if prop == "role" {
                         // Multiple role refines may target the same creator
                         // (EPUB 3.3 §D.3.10 example: one creator, aut + ill).
@@ -565,6 +603,17 @@ pub fn validate(
                     .flatten()
                     .find(|a| a.key.as_ref() == "refines")
                     .map(|a| a.value.into_owned());
+
+                if prop.as_deref() == Some("identifier-type") {
+                    if let Some(refines) = refines_attr.clone()
+                        && content.as_deref().is_some_and(|v| {
+                            v.trim() == "15" || v.trim().eq_ignore_ascii_case("isbn")
+                        })
+                    {
+                        isbn_refines.insert(refines);
+                    }
+                    continue;
+                }
 
                 // EPUB 3 self-closing group-position: value lives in the
                 // `content` attr, no text body (quick-xml fires Event::Empty,
@@ -673,6 +722,10 @@ pub fn validate(
                     .find(|a| a.key.as_ref() == "id")
                     .map(|a| a.value.into_owned());
 
+                let declared_isbn = e.attributes().flatten().any(|a| {
+                    local_name(a.key.as_ref()) == "scheme"
+                        && attr_text(&a).eq_ignore_ascii_case("isbn")
+                });
                 let publication_event = e
                     .attributes()
                     .flatten()
@@ -708,7 +761,12 @@ pub fn validate(
                             _ => {}
                         },
                         "language" if language.is_none() => language = Some(text),
-                        "identifier" => identifiers.push(text),
+                        "identifier" => identifiers.push(Identifier {
+                            value: text,
+                            id: id_attr,
+                            package_identity: false,
+                            declared_isbn,
+                        }),
                         "subject" => subjects.push(text),
                         _ => {}
                     }
@@ -716,7 +774,12 @@ pub fn validate(
             }
             // General arm — meta and DC already handled by guarded arms above
             Event::Empty(e) | Event::Start(e) => match e.name().as_ref() {
-                "package" => {
+                name if local_name(name) == "package" => {
+                    package_identifier = e
+                        .attributes()
+                        .flatten()
+                        .find(|a| a.key.as_ref() == "unique-identifier")
+                        .map(|a| attr_text(&a));
                     epub3 = e.attributes().flatten().any(|attribute| {
                         attribute.key.as_ref() == "version" && attribute.value.starts_with('3')
                     });
@@ -824,6 +887,14 @@ pub fn validate(
                 SeriesMeta { name, position }
             })
         });
+
+    for identifier in &mut identifiers {
+        identifier.package_identity =
+            identifier.id.is_some() && identifier.id == package_identifier;
+        if let Some(id) = &identifier.id {
+            identifier.declared_isbn |= isbn_refines.contains(&format!("#{id}"));
+        }
+    }
 
     // Main title = first dc:title without a subtitle refine; subtitle = text
     // of the first one with it. Creator precedence is document order per

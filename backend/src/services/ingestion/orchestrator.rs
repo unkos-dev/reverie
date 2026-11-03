@@ -2869,15 +2869,15 @@ fn should_warm_cover(format: ManifestationFormat, has_embedded_cover: Option<boo
 
 /// Manifestation-typed metadata for the initial insert, grouped so the
 /// commit signature does not grow a parameter per new column.
-struct ManifestationMeta<'a> {
-    format: ManifestationFormat,
-    validation_status: ValidationStatus,
-    accessibility_metadata: &'a Option<serde_json::Value>,
-    has_embedded_cover: Option<bool>,
+pub struct ManifestationMeta<'a> {
+    pub(crate) format: ManifestationFormat,
+    pub(crate) validation_status: ValidationStatus,
+    pub(crate) accessibility_metadata: &'a Option<serde_json::Value>,
+    pub(crate) has_embedded_cover: Option<bool>,
     /// Hash and size of the library file as it exists now: the copy's values
     /// unless a repair rewrote the file.
-    current_hash: &'a str,
-    current_size: u64,
+    pub(crate) current_hash: &'a str,
+    pub(crate) current_size: u64,
 }
 
 /// Run the ingest DB sequence atomically and return `(work_id, manifestation_id)`.
@@ -2894,7 +2894,7 @@ struct ManifestationMeta<'a> {
     reason = "commit_ingest is called with &extracted from a site that holds an owned Option; changing to Option<&T> would require .as_ref() at the call site with no readability benefit"
 )]
 #[cfg(test)]
-async fn commit_ingest(
+pub async fn commit_ingest(
     pool: &PgPool,
     extracted: &Option<crate::services::metadata::extractor::ExtractedMetadata>,
     vars: &std::collections::HashMap<String, String>,
@@ -2927,9 +2927,9 @@ async fn commit_ingest_outcome(
     let mut tx = pool.begin().await?;
 
     // 1. Try to match an existing work (only when OPF gave us signal).
-    let matched = match extracted.as_ref() {
+    let (matched, candidate) = match extracted {
         Some(meta) => work::match_existing(&mut tx, meta).await?,
-        None => None,
+        None => (None, None),
     };
 
     let (work_id, was_created) = match matched {
@@ -2987,10 +2987,8 @@ async fn commit_ingest_outcome(
     // 5. Populate manifestation canonical columns + *_version_id pointers
     //    from OPF extraction (not the heuristic row — only real OPF values
     //    become canonical ISBN/publisher/pub_date).
-    let (isbn_10, isbn_13) = extracted
-        .as_ref()
-        .and_then(|m| m.isbn.as_ref())
-        .map_or((None, None), |i| (i.isbn_10.clone(), i.isbn_13.clone()));
+    let isbn_10 = extracted.as_ref().and_then(|m| m.isbn_10.clone());
+    let isbn_13 = extracted.as_ref().and_then(|m| m.isbn_13.clone());
     let publisher = extracted.as_ref().and_then(|m| m.publisher.clone());
     let observed_date = extracted.and_then(|metadata| metadata.pub_date.as_deref());
     let pub_date = observed_date.and_then(|value| {
@@ -3008,7 +3006,8 @@ async fn commit_ingest_outcome(
         "UPDATE manifestations SET \
             isbn_10 = $1, isbn_13 = $2, publisher = $3, pub_date = $4, pages = $5, \
             isbn_10_version_id = $6, isbn_13_version_id = $7, \
-            publisher_version_id = $8, pub_date_version_id = $9, pages_version_id = $10 \
+            publisher_version_id = $8, pub_date_version_id = $9, pages_version_id = $10, \
+            suspected_duplicate_work_id = $12 \
          WHERE id = $11",
         isbn_10.as_deref(),
         isbn_13.as_deref(),
@@ -3023,6 +3022,7 @@ async fn commit_ingest_outcome(
             .and_then(|_| draft_ids.get("pub_date").copied()),
         draft_ids.get("pages").copied(),
         manifestation_id,
+        candidate,
     )
     .execute(&mut *tx)
     .await?;
@@ -3067,7 +3067,8 @@ fn draft_metadata(
                 pages: None,
                 publisher: None,
                 pub_date: None,
-                isbn: None,
+                isbn_10: None,
+                isbn_13: None,
                 subjects: Vec::new(),
                 series: None,
                 inversion: None,
@@ -7161,9 +7162,10 @@ mod tests {
     }
 
     /// Build an EPUB with Dublin Core metadata for integration testing.
-    fn make_metadata_epub() -> Vec<u8> {
+    fn make_metadata_epub(isbns: &[&str]) -> Vec<u8> {
+        let identifiers = isbns.join("</dc:identifier><dc:identifier>");
         build_epub(
-            br##"<?xml version="1.0" encoding="UTF-8"?>
+            format!(r##"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
   <metadata>
     <dc:title id="t1">The Integration Test</dc:title>
@@ -7171,7 +7173,7 @@ mod tests {
     <meta refines="#t2" property="title-type">subtitle</meta>
     <dc:creator opf:role="aut">Test McAuthor</dc:creator>
     <dc:language>en</dc:language>
-    <dc:identifier>urn:isbn:9780306406157</dc:identifier>
+    <dc:identifier>{identifiers}</dc:identifier>
     <dc:publisher>Test Press</dc:publisher>
     <dc:description>A book for testing metadata extraction</dc:description>
     <meta property="schema:numberOfPages">327</meta>
@@ -7180,7 +7182,7 @@ mod tests {
   </metadata>
   <manifest/>
   <spine/>
-</package>"##,
+</package>"##).as_bytes(),
             Some(CONTAINER_XML),
         )
     }
@@ -7219,6 +7221,7 @@ mod tests {
         )
     }
 
+    // REV-REQ-0073 AC1.
     #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_owner_extracts_metadata_from_epub(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
@@ -7226,7 +7229,7 @@ mod tests {
 
         // Use a filename that differs from the OPF metadata to test rename
         let source = ingestion.path().join("Unknown - somefile.epub");
-        std::fs::write(&source, make_metadata_epub()).unwrap();
+        std::fs::write(&source, make_metadata_epub(&["urn:isbn:9780306406157"])).unwrap();
 
         let result = drive_owner(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1);
@@ -7269,14 +7272,15 @@ mod tests {
         assert_eq!(author_name, "Test McAuthor");
 
         // Verify ISBN was populated on the manifestation
-        let isbn = sqlx::query_scalar!(
-            "SELECT isbn_13 FROM manifestations WHERE file_path = $1",
+        let isbn = sqlx::query!(
+            "SELECT isbn_10, isbn_13 FROM manifestations WHERE file_path = $1",
             dest_str,
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(isbn.as_deref(), Some("9780306406157"));
+        assert_eq!(isbn.isbn_13.as_deref(), Some("9780306406157"));
+        assert!(isbn.isbn_10.is_none());
 
         // Verify subtitle landed on the work with its pointer set.
         let (subtitle, subtitle_version_id) = sqlx::query!(
@@ -8056,7 +8060,7 @@ mod tests {
         let completed = ingestion.path().join("Author - Completed.epub");
         let duplicate = ingestion.path().join("Author - Duplicate.epub");
         let rejected = ingestion.path().join("Author - Rejected.epub");
-        std::fs::write(&completed, make_metadata_epub()).unwrap();
+        std::fs::write(&completed, make_metadata_epub(&["urn:isbn:9780306406157"])).unwrap();
         std::fs::write(&duplicate, &duplicate_bytes).unwrap();
         std::fs::write(&rejected, b"corrupt archive").unwrap();
         let siblings = [
@@ -8166,6 +8170,7 @@ mod tests {
         }
     }
 
+    // REV-REQ-0072 AC1,4; REV-REQ-0073 AC2,4.
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_sets_version_pointers_for_all_canonical_fields(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
@@ -8173,7 +8178,11 @@ mod tests {
 
         let marker = uuid::Uuid::new_v4().simple().to_string();
         let source = ingestion.path().join(format!("invariant-{marker}.epub"));
-        std::fs::write(&source, make_metadata_epub()).unwrap();
+        std::fs::write(
+            &source,
+            make_metadata_epub(&["0 8044-2957-X", "979 10-90636-07-1"]),
+        )
+        .unwrap();
 
         let result = drive_owner(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
@@ -8198,6 +8207,8 @@ mod tests {
             publisher: Option<String>,
             publisher_version_id: Option<uuid::Uuid>,
             pub_date_version_id: Option<uuid::Uuid>,
+            isbn_10: Option<String>,
+            isbn_10_version_id: Option<uuid::Uuid>,
             isbn_13: Option<String>,
             isbn_13_version_id: Option<uuid::Uuid>,
             pages: Option<i32>,
@@ -8211,7 +8222,7 @@ mod tests {
                     w.language, w.language_version_id, \
                     m.publisher, m.publisher_version_id, \
                     m.pub_date_version_id, \
-                    m.isbn_13, m.isbn_13_version_id, \
+                    m.isbn_10, m.isbn_10_version_id, m.isbn_13, m.isbn_13_version_id, \
                     m.pages, m.pages_version_id \
              FROM manifestations m \
              JOIN works w ON w.id = m.work_id \
@@ -8231,11 +8242,17 @@ mod tests {
             publisher,
             publisher_version_id: publisher_ptr,
             pub_date_version_id: pub_date_ptr,
+            isbn_10,
+            isbn_10_version_id: isbn_10_ptr,
             isbn_13,
             isbn_13_version_id: isbn_13_ptr,
             pages,
             pages_version_id: pages_ptr,
         } = inv;
+
+        assert_eq!(isbn_10.as_deref(), Some("080442957X"));
+        assert_eq!(isbn_13.as_deref(), Some("9791090636071"));
+        assert!(isbn_10_ptr.is_some());
 
         // Invariant: non-NULL canonical value ⇒ non-NULL pointer.
         if title.is_some() {
@@ -8276,6 +8293,7 @@ mod tests {
             language_ptr,
             publisher_ptr,
             pub_date_ptr,
+            isbn_10_ptr,
             isbn_13_ptr,
             pages_ptr,
         ]
@@ -8370,7 +8388,7 @@ mod tests {
 
         let marker = uuid::Uuid::new_v4().simple().to_string();
         let source = ingestion.path().join(format!("authors-{marker}.epub"));
-        std::fs::write(&source, make_metadata_epub()).unwrap();
+        std::fs::write(&source, make_metadata_epub(&["urn:isbn:9780306406157"])).unwrap();
 
         let result = drive_owner(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
