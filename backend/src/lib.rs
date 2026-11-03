@@ -327,7 +327,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     // First-run env seed: create the first administrator from REVERIE_BOOTSTRAP_*
     // if configured and none exists. Idempotent; honours the single-admin gate.
-    seed_admin_if_configured(&pool, &config)
+    seed_admin_if_configured(&pool, &config, read_bootstrap_seed())
         .await
         .context("bootstrap the first administrator from the environment seed")?;
 
@@ -887,14 +887,18 @@ fn read_bootstrap_seed() -> Option<(String, String, String)> {
 ///
 /// Returns an error on an invalid seed email, a rejected password, hashing
 /// failure, or a database error other than the benign already-bootstrapped race.
-async fn seed_admin_if_configured(pool: &sqlx::PgPool, config: &Config) -> anyhow::Result<bool> {
+async fn seed_admin_if_configured(
+    pool: &sqlx::PgPool,
+    config: &Config,
+    seed: Option<(String, String, String)>,
+) -> anyhow::Result<bool> {
     if models::user::admin_exists(pool)
         .await
         .context("check for an existing administrator")?
     {
         return Ok(false);
     }
-    let Some((email, display_name, password)) = read_bootstrap_seed() else {
+    let Some((email, display_name, password)) = seed else {
         return Ok(false);
     };
     if !models::user::is_addr_spec(&email) {
@@ -931,7 +935,7 @@ pub async fn run_bootstrap() -> anyhow::Result<()> {
     let pool = db::init_pool(config.database_url.expose_secret(), 1)
         .await
         .context("connect to the database")?;
-    if seed_admin_if_configured(&pool, &config).await? {
+    if seed_admin_if_configured(&pool, &config, read_bootstrap_seed()).await? {
         return Ok(());
     }
     if models::user::admin_exists(&pool).await? {
@@ -2130,5 +2134,21 @@ mod tests {
                 .is_none(),
             "delete must remove the row"
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn bootstrap_seed_refuses_a_password_the_policy_rejects(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let seed = Some((
+            "admin@example.com".to_owned(),
+            "Admin".to_owned(),
+            "password".to_owned(),
+        ));
+        assert!(
+            super::seed_admin_if_configured(&app_pool, &test_support::test_state().config, seed)
+                .await
+                .is_err()
+        );
+        assert!(!crate::models::user::admin_exists(&app_pool).await.unwrap());
     }
 }
