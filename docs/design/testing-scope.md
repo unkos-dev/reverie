@@ -5,8 +5,7 @@ Browser-dependent component behaviour runs in Vitest Browser Mode with `vitest-b
 logic and build plugins run in Node. Application navigation runs against production builds in Chromium and Firefox
 through `just js::library-journeys`.
 
-The CSP-hash plugin tests remain under `frontend/vite-plugins/__tests__/csp-hash.test.ts`. The backend's cookie response
-contract is covered by `backend/tests/cookie_jar_sanity.rs`.
+The CSP-hash plugin tests remain under `frontend/vite-plugins/__tests__/csp-hash.test.ts`.
 
 Visual acceptance requires rendered inspection against `frontend/DESIGN.md`, including light and dark themes and the
 applicable viewport sizes. Component assertions do not replace that inspection. Playwright and axe-core check the

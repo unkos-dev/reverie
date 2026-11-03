@@ -344,7 +344,7 @@ is never reached.
   contained open is ambiguous and maps to 500 rather than an inferred escape.
 - **CLI dispatch of an unrecognised or malformed subcommand.** A single unknown token, or an unexpected trailing
   argument after a recognised one, is rejected with a message naming the bad token or the expected usage, rather than
-  falling through to `Serve`; both directions are pinned by `parse_command_maps_args_rejects_unknown_and_trailing`.
+  falling through to `Serve`.
 - **`reverie migrate` with no migration DSN.** `resolve_migration_dsn` rejects a missing, empty, or whitespace-only
   `DATABASE_URL_MIGRATION` before `db::run_migrations` is ever called, independently of the equivalent guard inside
   configuration loading (this path deliberately never builds a full `Config`).
@@ -385,10 +385,8 @@ When `auto_migrate` is unset or `false`, `run` never reads the migration DSN. Co
 `config.migration_database_url` to `None` whenever `auto_migrate` is `false` (covered by that subject, not restated
 here), and `apply_or_verify_schema`'s default branch calls `db::verify_schema_current` against the application pool
 only, never reading `migration_database_url` at all; the opt-in branch is the only code path in this subject that does.
-Both directions are pinned by tests (`apply_or_verify_flag_off_takes_verify_branch`,
-`apply_or_verify_flag_on_takes_migrate_branch`), so an inverted branch condition fails the suite rather than shipping
-silently. The repository-provided Compose topology keeps the migration credential entirely on the out-of-band
-`reverie migrate` path.
+The repository-provided Compose topology keeps the migration credential entirely on the out-of-band `reverie migrate`
+path.
 
 The writeback pool's every connection sets the `app.system_context` GUC that the `manifestations_*_system`
 row-level-security policies key on (owned by the row-level-security subject, not restated here); this subject's own
