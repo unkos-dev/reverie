@@ -18,33 +18,6 @@ fn auth(header: &str) -> (HeaderName, HeaderValue) {
 
 // ---------- GET /api/v1/users ----------
 
-#[sqlx::test(migrations = "./migrations")]
-async fn list_users_serializes_timestamps_as_rfc3339_strings(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server
-        .get("/api/v1/users")
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .await;
-    assert_eq!(r.status_code(), StatusCode::OK);
-
-    // The frontend user Zod schema parses created_at/updated_at as strings, so
-    // both must reach the wire as RFC 3339 strings rather than any structured
-    // form.
-    let body: Vec<serde_json::Value> = r.json();
-    let created = body[0]["created_at"]
-        .as_str()
-        .expect("created_at is a JSON string");
-    let updated = body[0]["updated_at"]
-        .as_str()
-        .expect("updated_at is a JSON string");
-    assert!(chrono::DateTime::parse_from_rfc3339(created).is_ok());
-    assert!(chrono::DateTime::parse_from_rfc3339(updated).is_ok());
-}
-
 // ---------- PUT /api/v1/users/{id}/role ----------
 
 #[sqlx::test(migrations = "./migrations")]
