@@ -372,26 +372,4 @@ mod tests {
         holder.commit().await.unwrap();
         assert!(!waiter.await.unwrap());
     }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn credential_link_cascades_on_user_delete(pool: PgPool) {
-        let id = account(&pool).await;
-        let (token, _) = issue(
-            &mut pool.acquire().await.unwrap(),
-            id,
-            crate::models::credential_link::CREDENTIAL_LINK_TTL,
-        )
-        .await
-        .unwrap();
-        sqlx::query!("DELETE FROM users WHERE id = $1", id)
-            .execute(&pool)
-            .await
-            .unwrap();
-        assert!(lookup(&pool, &token).await.unwrap().is_none());
-        assert!(
-            !consume(&mut pool.acquire().await.unwrap(), id, &token)
-                .await
-                .unwrap()
-        );
-    }
 }

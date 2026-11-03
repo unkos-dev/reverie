@@ -35,7 +35,9 @@ externally shared source bytes.
 - Candidate disposal precedes final publication for rejection. Checked by
   `capability_ingestion_acquisition_rejected_candidate_never_publishes`.
 - An unchanged rejected generation remains suppressed across startup and an admin scan. A changed fingerprint restores
-  eligibility as a new generation.
+  eligibility as a new generation. Checked by
+  `capability_ingestion_coordinator_import_duplicate_rejection_cleanup_and_restart_suppression` and
+  `capability_ingestion_inputs_current_uniqueness_and_removed_replacement`.
 - A validator error that is a verdict on the file, a refused repair candidate or a failed required repair, reaches the
   same outcome. Checked by `capability_ingestion_owner_rejects_candidate_refused_by_validation` and
   `capability_ingestion_owner_rejects_epub_whose_required_repair_fails`; `only_content_verdicts_are_file_defects` fixes

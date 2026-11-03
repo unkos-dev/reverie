@@ -781,42 +781,6 @@ pub mod db {
         axum_test::TestServer::new(app)
     }
 
-    /// Same as [`server_with_real_pools`] but with a caller-chosen
-    /// `opds.page_size` (shared page-size knob for every paginated list).
-    /// Pagination-walk tests use a tiny page size so two-page walks need
-    /// only a handful of fixture rows.
-    pub fn server_with_real_pools_page_size(
-        app_pool: &PgPool,
-        ingestion_pool: &PgPool,
-        page_size: u32,
-    ) -> axum_test::TestServer {
-        use crate::state::AppState;
-        let (mut config, library_files) = super::test_storage_config(
-            None,
-            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
-        );
-        config.opds.page_size = page_size;
-        let state = AppState {
-            pool: app_pool.clone(),
-            ingestion_pool: ingestion_pool.clone(),
-            ingestion: crate::services::ingestion::coordinator_channel().0,
-            library_files,
-            hash_limiter: crate::auth::password::HashLimiter::new(
-                usize::try_from(config.auth_hash_concurrency).unwrap(),
-            ),
-            config,
-            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
-            login_limiter: super::test_login_limiter(),
-            recovery_limiter: super::test_login_limiter(),
-            oidc_limiter: super::test_login_limiter(),
-            settings: super::test_settings(),
-            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-            mail: None,
-        };
-        let app = crate::build_router(state);
-        axum_test::TestServer::new(app)
-    }
-
     /// Insert (work, manifestation) via `reverie_ingestion` for use as
     /// fixture data in route tests.  Returns `(work_id, manifestation_id)`.
     pub async fn insert_work_and_manifestation(
@@ -1978,30 +1942,6 @@ pub mod mail {
         .fetch_one(pool)
         .await
         .unwrap()
-    }
-
-    /// Mark a delivery accepted and old enough that the 60-second interval has passed.
-    pub async fn settle_delivery(pool: &PgPool, id: Uuid) {
-        sqlx::query!(
-            "UPDATE mail_jobs SET state = 'accepted', terminal_at = clock_timestamp(), \
-                    enqueued_at = clock_timestamp() - interval '2 minutes', \
-                    next_attempt_at = clock_timestamp() - interval '2 minutes' WHERE id = $1",
-            id
-        )
-        .execute(pool)
-        .await
-        .unwrap();
-    }
-
-    /// Wait until `user` has at least `count` jobs of `purpose`.
-    pub async fn wait_for_count(pool: &PgPool, user: Uuid, purpose: &str, count: i64) {
-        for _ in 0..500 {
-            if job_count(pool, user, Some(purpose)).await >= count {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-        panic!("fewer than {count} {purpose} jobs appeared");
     }
 
     /// Fail every later insert into `mail_jobs`.

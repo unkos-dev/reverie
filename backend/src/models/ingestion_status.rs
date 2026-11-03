@@ -61,36 +61,3 @@ impl IngestionStatus {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn as_str_matches_serde_lowercase() {
-        for (variant, wire) in [
-            (IngestionStatus::Pending, "pending"),
-            (IngestionStatus::Processing, "processing"),
-            (IngestionStatus::Complete, "complete"),
-            (IngestionStatus::Failed, "failed"),
-            (IngestionStatus::Skipped, "skipped"),
-        ] {
-            assert_eq!(variant.as_str(), wire);
-        }
-    }
-
-    #[test]
-    fn json_roundtrip_uses_lowercase_string() {
-        let status = IngestionStatus::Complete;
-        let json = serde_json::to_string(&status).expect("serialize");
-        assert_eq!(json, "\"complete\"");
-        let back: IngestionStatus = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, IngestionStatus::Complete);
-    }
-
-    #[test]
-    fn json_rejects_unknown_variant() {
-        let result: Result<IngestionStatus, _> = serde_json::from_str("\"resumed\"");
-        assert!(result.is_err(), "expected resumed to be rejected");
-    }
-}

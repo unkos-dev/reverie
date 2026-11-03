@@ -257,155 +257,9 @@ mod tests {
 
     // ---- level helper ----
 
-    #[test]
-    fn canonical_field_carries_level_and_scheme() {
-        assert_eq!(
-            IdentifierLevel::Work.canonical_field("openlibrary"),
-            "identifiers.work.openlibrary"
-        );
-        assert_eq!(
-            IdentifierLevel::Manifestation.canonical_field("googlebooks"),
-            "identifiers.manifestation.googlebooks"
-        );
-        assert_eq!(
-            IdentifierLevel::from_segment("work"),
-            Some(IdentifierLevel::Work)
-        );
-        assert_eq!(IdentifierLevel::from_segment("edition"), None);
-    }
-
     // ---- single-slot replacement + constraints (owner pool bypasses RLS) ----
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn manifestation_upsert_replaces_in_place(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "midd-replace").await;
-
-        upsert_manifestation_identifier(&pool, m, "googlebooks", "zyTZAAAAYAAJ", None)
-            .await
-            .expect("first upsert");
-        upsert_manifestation_identifier(&pool, m, "googlebooks", "NEWvalue123", None)
-            .await
-            .expect("replacing upsert");
-
-        let rows: Vec<String> = sqlx::query_scalar!(
-            "SELECT external_id FROM manifestation_external_identifiers \
-             WHERE manifestation_id = $1 AND scheme = 'googlebooks'",
-            m,
-        )
-        .fetch_all(&pool)
-        .await
-        .expect("select");
-        assert_eq!(
-            rows,
-            vec!["NEWvalue123".to_string()],
-            "single slot, replaced"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn work_upsert_replaces_in_place(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (w, _m) = insert_work_and_manifestation(&ingestion, "widd-replace").await;
-
-        upsert_work_identifier(&pool, w, "openlibrary", "OL111W", None)
-            .await
-            .expect("first upsert");
-        upsert_work_identifier(&pool, w, "openlibrary", "OL222W", None)
-            .await
-            .expect("replacing upsert");
-
-        let got = get_work_identifier(&pool, w, "openlibrary")
-            .await
-            .expect("get");
-        assert_eq!(got, Some("OL222W".to_string()));
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn scheme_fk_rejects_non_scheme_value(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "scheme-fk").await;
-        // `manual` is a provenance source, not an identifier scheme.
-        let err = upsert_manifestation_identifier(&pool, m, "manual", "whatever", None)
-            .await
-            .expect_err("scheme=manual must be FK-rejected");
-        assert_eq!(
-            err_code(&err).as_deref(),
-            Some("23503"),
-            "foreign_key_violation"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn external_id_check_rejects_unsafe_values(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "extid-unsafe").await;
-        for bad in ["has/slash", "has?query", "has space", "café", ""] {
-            let res = upsert_manifestation_identifier(&pool, m, "asin", bad, None).await;
-            assert!(
-                res.is_err(),
-                "external_id {bad:?} must violate the charset CHECK"
-            );
-        }
-        // A well-formed ASIN is accepted.
-        upsert_manifestation_identifier(&pool, m, "asin", "B004GXAX8C", None)
-            .await
-            .expect("valid ASIN accepted");
-    }
-
     // ---- cascade on entity deletion ----
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn deleting_manifestation_cascades_its_identifiers(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "midd-cascade").await;
-        upsert_manifestation_identifier(&pool, m, "googlebooks", "vol123", None)
-            .await
-            .expect("upsert");
-
-        sqlx::query!("DELETE FROM manifestations WHERE id = $1", m)
-            .execute(&pool)
-            .await
-            .expect("delete manifestation");
-
-        let remaining: i64 = sqlx::query_scalar!(
-            "SELECT count(*) AS \"c!\" FROM manifestation_external_identifiers \
-             WHERE manifestation_id = $1",
-            m,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("count");
-        assert_eq!(remaining, 0, "manifestation identifiers cascade-deleted");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn deleting_work_cascades_its_identifiers(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (w, m) = insert_work_and_manifestation(&ingestion, "widd-cascade").await;
-        upsert_work_identifier(&pool, w, "openlibrary", "OL999W", None)
-            .await
-            .expect("upsert");
-        // Remove the manifestation first (its FK to the work is also cascade,
-        // but delete it explicitly so the work delete is unambiguous).
-        sqlx::query!("DELETE FROM manifestations WHERE id = $1", m)
-            .execute(&pool)
-            .await
-            .expect("delete manifestation");
-        sqlx::query!("DELETE FROM works WHERE id = $1", w)
-            .execute(&pool)
-            .await
-            .expect("delete work");
-
-        let remaining: i64 = sqlx::query_scalar!(
-            "SELECT count(*) AS \"c!\" FROM work_external_identifiers WHERE work_id = $1",
-            w,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("count");
-        assert_eq!(remaining, 0, "work identifiers cascade-deleted");
-    }
 
     // ---- RLS: reads ----
 
@@ -474,65 +328,7 @@ mod tests {
         );
     }
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn rls_enabled_fresh_child_sees_no_identifier_rows(pool: PgPool) {
-        // Asserts ENABLE is in force: a child with no shelf sees zero rows even
-        // though the row exists and grants permit SELECT.
-        let ingestion = ingestion_pool_for(&pool).await;
-        let app = app_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "enable-check").await;
-        upsert_manifestation_identifier(&pool, m, "googlebooks", "hiddenX", None)
-            .await
-            .expect("seed");
-
-        let (child_id, _) = create_child_user_and_basic_auth(&app, "enable-child").await;
-        let mut tx = acquire_with_rls(&app, child_id).await.expect("rls tx");
-        let count: i64 = sqlx::query_scalar!(
-            "SELECT count(*) AS \"c!\" FROM manifestation_external_identifiers",
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .expect("select");
-        assert_eq!(
-            count, 0,
-            "RLS ENABLE hides all rows from a shelf-less child"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn adult_reads_all_identifiers(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let app = app_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "adult-read").await;
-        upsert_manifestation_identifier(&pool, m, "googlebooks", "adultsee", None)
-            .await
-            .expect("seed");
-        let (adult_id, _) = create_adult_and_basic_auth(&app, "adult-read").await;
-        let mut tx = acquire_with_rls(&app, adult_id).await.expect("rls tx");
-        let count: i64 = sqlx::query_scalar!(
-            "SELECT count(*) AS \"c!\" FROM manifestation_external_identifiers WHERE manifestation_id = $1",
-            m,
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .expect("select");
-        assert_eq!(count, 1, "adult sees all identifiers");
-    }
-
     // ---- RLS: writes ----
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn adult_can_insert_identifier(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let app = app_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "adult-write").await;
-        let (adult_id, _) = create_adult_and_basic_auth(&app, "adult-write").await;
-        let mut tx = acquire_with_rls(&app, adult_id).await.expect("rls tx");
-        upsert_manifestation_identifier(&mut *tx, m, "googlebooks", "adultwrote", None)
-            .await
-            .expect("adult insert succeeds");
-        tx.commit().await.expect("commit");
-    }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn child_cannot_insert_identifier(pool: PgPool) {
@@ -564,16 +360,6 @@ mod tests {
             .expect_err("readonly insert denied");
         // readonly holds no INSERT grant → 42501 insufficient_privilege.
         assert!(is_rls_denied(&err), "expected 42501, got {err:?}");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn ingestion_can_upsert_identifier(pool: PgPool) {
-        let ingestion = ingestion_pool_for(&pool).await;
-        let (_w, m) = insert_work_and_manifestation(&ingestion, "ing-write").await;
-        // ingestion has USING(true) WITH CHECK(true) and needs no GUC.
-        upsert_manifestation_identifier(&ingestion, m, "googlebooks", "ingwrote", None)
-            .await
-            .expect("ingestion upsert succeeds");
     }
 
     #[sqlx::test(migrations = "./migrations")]

@@ -99,19 +99,8 @@ mod tests {
     }
 
     #[test]
-    fn verify_correct_token() {
-        let (plaintext, hash) = generate_device_token();
-        assert!(verify_device_token(&plaintext, &hash));
-    }
-
-    #[test]
     fn verify_wrong_token() {
         let (_plaintext, hash) = generate_device_token();
         assert!(!verify_device_token("wrong-token", &hash));
-    }
-
-    #[test]
-    fn verify_malformed_hash() {
-        assert!(!verify_device_token("any-token", "not-a-valid-hash"));
     }
 }

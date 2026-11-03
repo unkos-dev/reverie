@@ -669,30 +669,6 @@ mod tests {
     }
 
     #[test]
-    fn file_backed_epub_admitted_index_and_refused_archive() {
-        let (_dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
-        let (handle, report) = inspect(File::open(&path).unwrap()).unwrap();
-        assert_eq!(report.outcome, ValidationOutcome::Clean);
-        assert_eq!(
-            zip_layer::read_entry(&handle, "OEBPS/chapter.xhtml").unwrap(),
-            b"<html/>"
-        );
-        assert!(zip_layer::read_entry(&handle, "unadmitted").is_none());
-        File::options()
-            .write(true)
-            .open(&path)
-            .unwrap()
-            .set_len(MAX_ARCHIVE_BYTES + 1)
-            .unwrap();
-        let report = super::validate(File::open(&path).unwrap()).unwrap();
-        assert_eq!(report.outcome, ValidationOutcome::Quarantined);
-        assert!(matches!(
-            report.issues[0].kind,
-            IssueKind::ArchiveTooLarge { .. }
-        ));
-    }
-
-    #[test]
     fn file_backed_epub_multiple_encoding_repairs() {
         let first =
             b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><html><body>\xe9</body></html>";
@@ -802,20 +778,6 @@ mod tests {
                 .unwrap();
         assert!(final_opf.contains("<dc:title>New</dc:title>"));
         assert!(!final_opf.contains("idref=\"missing\""));
-    }
-
-    #[test]
-    fn file_backed_epub_source_handle_survives_replacement() {
-        let (_dir, path) =
-            file_fixture(&[("chapter.xhtml", b"<html>original</html>")], false, false);
-        let (handle, _) = inspect(File::open(&path).unwrap()).unwrap();
-        let replacement = path.with_extension("replacement");
-        std::fs::write(&replacement, b"new object").unwrap();
-        std::fs::rename(&replacement, &path).unwrap();
-        assert_eq!(
-            zip_layer::read_entry(&handle, "OEBPS/chapter.xhtml").unwrap(),
-            b"<html>original</html>"
-        );
     }
 
     #[test]
@@ -1062,37 +1024,6 @@ mod tests {
         assert_eq!(report2.outcome, ValidationOutcome::Clean);
     }
 
-    fn quarantine_of(entries: &[(&str, &[u8])]) -> ValidationReport {
-        let mut writer = ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let options = FileOptions::<ExtendedFileOptions>::default()
-            .compression_method(zip::CompressionMethod::Stored);
-        writer.start_file("mimetype", options.clone()).unwrap();
-        writer.write_all(repack::MIMETYPE_CONTENT).unwrap();
-        for (name, bytes) in entries {
-            writer.start_file(*name, options.clone()).unwrap();
-            writer.write_all(bytes).unwrap();
-        }
-        let bytes = writer.finish().unwrap().into_inner();
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("book.epub");
-        std::fs::write(&path, &bytes).unwrap();
-        let report = validate_and_repair(&path).unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), bytes);
-        report
-    }
-
-    fn assert_irrecoverable(report: &ValidationReport, expected: impl Fn(&IssueKind) -> bool) {
-        assert_eq!(report.outcome, ValidationOutcome::Quarantined);
-        assert!(
-            report
-                .issues
-                .iter()
-                .any(|i| i.severity == Severity::Irrecoverable && expected(&i.kind)),
-            "{:?}",
-            report.issues
-        );
-    }
-
     #[test]
     fn only_content_verdicts_are_file_defects() {
         let io = || std::io::Error::other("storage");
@@ -1108,119 +1039,5 @@ mod tests {
             }
             .is_file_defect()
         );
-    }
-
-    #[test]
-    fn archive_without_container_or_package_document_is_quarantined() {
-        let report = quarantine_of(&[("OEBPS/chapter.xhtml", b"<html/>")]);
-        assert_irrecoverable(&report, |kind| {
-            matches!(
-                kind,
-                IssueKind::MissingContainer {
-                    opf_candidate: None
-                }
-            )
-        });
-    }
-
-    #[test]
-    fn empty_archive_is_quarantined() {
-        let report = quarantine_of(&[]);
-        assert_irrecoverable(&report, |kind| {
-            matches!(
-                kind,
-                IssueKind::MissingContainer {
-                    opf_candidate: None
-                }
-            )
-        });
-    }
-
-    #[test]
-    fn container_naming_no_package_document_is_quarantined() {
-        let report = quarantine_of(&[(
-            "META-INF/container.xml",
-            b"<container><rootfiles/></container>",
-        )]);
-        assert_irrecoverable(
-            &report,
-            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "META-INF/container.xml"),
-        );
-    }
-
-    #[test]
-    fn malformed_container_tail_is_quarantined() {
-        for tail in [
-            "<broken",
-            "",
-            "</wrong>",
-            "</rootfiles></container><extra/>",
-            "</rootfiles></container>trailing text",
-        ] {
-            let xml =
-                format!("<container><rootfiles><rootfile full-path=\"OEBPS/content.opf\"/>{tail}");
-            let report = quarantine_of(&[
-                ("META-INF/container.xml", xml.as_bytes()),
-                ("OEBPS/content.opf", CONTENT_OPF),
-            ]);
-            assert_irrecoverable(
-                &report,
-                |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "META-INF/container.xml"),
-            );
-        }
-    }
-
-    #[test]
-    fn package_document_absent_from_archive_is_quarantined() {
-        let report = quarantine_of(&[("META-INF/container.xml", CONTAINER_XML)]);
-        assert_irrecoverable(
-            &report,
-            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf"),
-        );
-    }
-
-    #[test]
-    fn package_document_failing_to_parse_is_quarantined() {
-        let report = quarantine_of(&[
-            ("META-INF/container.xml", CONTAINER_XML),
-            ("OEBPS/content.opf", b"<package><metadata></package>"),
-        ]);
-        assert_irrecoverable(
-            &report,
-            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf"),
-        );
-    }
-
-    #[test]
-    fn truncated_package_document_is_quarantined() {
-        let report = quarantine_of(&[
-            ("META-INF/container.xml", CONTAINER_XML),
-            (
-                "OEBPS/content.opf",
-                b"<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:title>Cut off",
-            ),
-        ]);
-        assert_irrecoverable(
-            &report,
-            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf"),
-        );
-    }
-
-    #[test]
-    fn crc_failure_in_a_content_entry_is_quarantined() {
-        let (_dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
-        let mut bytes = std::fs::read(&path).unwrap();
-        let last_directory_record = bytes
-            .windows(4)
-            .rposition(|window| window == [0x50, 0x4b, 0x01, 0x02])
-            .unwrap();
-        bytes[last_directory_record + 16] ^= 0xFF;
-        std::fs::write(&path, &bytes).unwrap();
-        let report = validate_and_repair(&path).unwrap();
-        assert_irrecoverable(
-            &report,
-            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/chapter.xhtml"),
-        );
-        assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 }

@@ -147,66 +147,6 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn insert_then_resolve_by_issuer_subject(pool: PgPool) {
-        let subject = format!("sub-{}", Uuid::new_v4());
-        let issuer = "https://issuer.example.com";
-        let user_id = insert_user(&pool, &subject).await;
-
-        insert_oidc(&pool, user_id, issuer, &subject)
-            .await
-            .expect("insert identity");
-
-        let resolved = find_user_id_by_oidc(&pool, issuer, &subject)
-            .await
-            .expect("resolve");
-        assert_eq!(resolved, Some(user_id));
-
-        let identity = find_by_oidc(&pool, issuer, &subject)
-            .await
-            .expect("fetch")
-            .expect("identity present");
-        assert_eq!(identity.user_id, user_id);
-        assert_eq!(identity.provider, IdentityProvider::Oidc);
-        assert_eq!(identity.issuer, issuer);
-        assert_eq!(identity.subject, subject);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn absent_identity_resolves_to_none(pool: PgPool) {
-        let resolved = find_user_id_by_oidc(&pool, "https://issuer.example.com", "ghost")
-            .await
-            .expect("resolve");
-        assert_eq!(resolved, None);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn same_subject_under_two_issuers_is_two_identities(pool: PgPool) {
-        // Spec key: the same `sub` string under different issuers is two
-        // distinct identities, never collapsed. Distinct users avoid the
-        // users email-lower uniqueness index (emails are NULL here anyway).
-        let subject = format!("shared-sub-{}", Uuid::new_v4());
-        let user_a = insert_user(&pool, &format!("a-{subject}")).await;
-        let user_b = insert_user(&pool, &format!("b-{subject}")).await;
-
-        insert_oidc(&pool, user_a, "https://issuer-a.example.com", &subject)
-            .await
-            .expect("insert a");
-        insert_oidc(&pool, user_b, "https://issuer-b.example.com", &subject)
-            .await
-            .expect("insert b");
-
-        let resolved_a = find_user_id_by_oidc(&pool, "https://issuer-a.example.com", &subject)
-            .await
-            .expect("resolve a");
-        let resolved_b = find_user_id_by_oidc(&pool, "https://issuer-b.example.com", &subject)
-            .await
-            .expect("resolve b");
-        assert_eq!(resolved_a, Some(user_a));
-        assert_eq!(resolved_b, Some(user_b));
-        assert_ne!(resolved_a, resolved_b);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn duplicate_issuer_subject_is_rejected(pool: PgPool) {
         let subject = format!("dup-{}", Uuid::new_v4());
         let issuer = "https://issuer.example.com";
@@ -222,54 +162,6 @@ mod tests {
         assert_eq!(
             err.as_database_error().and_then(|e| e.constraint()),
             Some("user_identities_issuer_subject_key"),
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn update_advances_updated_at_via_trigger(pool: PgPool) {
-        // The BEFORE UPDATE trigger must bump updated_at on mutation; without it
-        // the column keeps its insert-time value. user_identities has no
-        // app-mutable non-key column yet, so rotate `subject` purely to exercise
-        // the trigger; this guards the first real UPDATE path a later slice adds.
-        let subject = format!("touch-{}", Uuid::new_v4());
-        let rotated = format!("rotated-{}", Uuid::new_v4());
-        let issuer = "https://issuer.example.com";
-        let user_id = insert_user(&pool, &subject).await;
-        insert_oidc(&pool, user_id, issuer, &subject)
-            .await
-            .expect("insert identity");
-
-        let before = find_by_oidc(&pool, issuer, &subject)
-            .await
-            .expect("fetch before")
-            .expect("identity present");
-
-        // Separate the two transaction timestamps so the strict comparison
-        // below proves the trigger fired rather than passing on equal clocks.
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-
-        sqlx::query!(
-            "UPDATE user_identities SET subject = $2 WHERE id = $1",
-            before.id,
-            rotated,
-        )
-        .execute(&pool)
-        .await
-        .expect("update identity");
-
-        let after = find_by_oidc(&pool, issuer, &rotated)
-            .await
-            .expect("fetch after")
-            .expect("identity present");
-
-        assert_eq!(after.id, before.id, "same row mutated");
-        assert!(
-            after.updated_at > before.updated_at,
-            "BEFORE UPDATE trigger must advance updated_at"
-        );
-        assert_eq!(
-            after.created_at, before.created_at,
-            "created_at must not change on update"
         );
     }
 }

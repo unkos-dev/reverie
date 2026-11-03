@@ -5,6 +5,8 @@ id: "REV-DESIGN-0013"
 title: "Ingestion pipeline"
 satisfies:
   - "REV-REQ-0043"
+  - "REV-REQ-0072"
+  - "REV-REQ-0073"
 governed-by:
   - "REV-ADR-0020"
   - "REV-ADR-0052"
@@ -31,6 +33,19 @@ owned staging beneath the library root. EPUB validation operates on that candida
 same filesystem; a filesystem boundary requires independently verified staging on the actual destination filesystem.
 Final publication uses the delivered contained no-overwrite primitive. Metadata naming and suffix selection consume
 shared path exclusion; final registration reserves the manifestation's path claim in its transaction.
+
+OPF parsing retains the package-identity role of each identifier and ISBN declarations from EPUB 2 schemes, EPUB 3
+identifier-type refinements and ISBN URN forms. Extraction admits only identifiers explicitly declared as ISBNs by a
+scheme, identifier-type refinement, or `urn:isbn:` prefix. Numeric refinement values `02` and `15` require the
+`onix:codelist5` scheme; the literal `isbn` also declares an ISBN. Unlabelled and other-system identifiers do not supply
+canonical ISBNs merely because their numbers pass ISBN validation. Extraction selects ISBN-10 and ISBN-13 independently,
+preferring bibliographic entries over the package identifier and preserving document order within each class. The `isbn`
+crate parses and normalises each value; ISBN-13 also requires a `978` or `979` prefix. Missing formats stay absent.
+Drafts and initial canonical pointers refer only to the valid supplied values.
+
+Before title/author matching, ingestion checks both formats and their comparison-only equivalents for an ISBN candidate.
+A candidate causes a separate work to be created and records `suspected_duplicate_work_id`; the same call skips fuzzy
+grouping. Without an ISBN candidate, title/author matching retains its existing behaviour.
 
 ## Interfaces and dependencies
 

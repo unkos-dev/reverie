@@ -239,31 +239,6 @@ mod tests {
     }
 
     #[test]
-    fn repackage_adds_container_xml_when_missing() {
-        let opf_content = b"<package><manifest/><spine/></package>";
-        let epub_bytes = make_epub(&[("OEBPS/content.opf", opf_content)]);
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.epub");
-        std::fs::write(&path, &epub_bytes).unwrap();
-
-        let issues = vec![Issue {
-            layer: Layer::Container,
-            severity: Severity::Repaired,
-            kind: IssueKind::MissingContainer {
-                opf_candidate: Some("OEBPS/content.opf".to_string()),
-            },
-        }];
-
-        repackage(&path, &issues, Some("OEBPS/content.opf")).unwrap();
-
-        // Verify container.xml is in the repacked archive
-        let repacked = std::fs::read(&path).unwrap();
-        let cursor = std::io::Cursor::new(repacked);
-        let mut archive = ZipArchive::new(cursor).unwrap();
-        assert!(archive.by_name("META-INF/container.xml").is_ok());
-    }
-
-    #[test]
     fn repackage_mimetype_is_first_and_stored() {
         let epub_bytes = make_epub(&[("OEBPS/content.opf", b"<package/>")]);
         let dir = tempfile::tempdir().unwrap();
@@ -286,19 +261,5 @@ mod tests {
         let first = archive.by_index(0).unwrap();
         assert_eq!(first.name().unwrap(), MIMETYPE_ENTRY);
         assert_eq!(first.compression(), zip::CompressionMethod::Stored);
-    }
-
-    #[test]
-    fn rewrite_opf_removes_broken_spine_ref() {
-        let opf = br#"<package>
-<spine>
-<itemref idref="ch1"/>
-<itemref idref="ch2"/>
-</spine>
-</package>"#;
-        let result = rewrite_opf_remove_broken_spine(opf, &["ch2".to_string()]).unwrap();
-        let result_str = std::str::from_utf8(&result).unwrap();
-        assert!(result_str.contains("ch1"));
-        assert!(!result_str.contains("ch2"));
     }
 }

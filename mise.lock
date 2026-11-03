@@ -50,14 +50,14 @@ url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/67906
 provenance = "github-attestations"
 
 [[tools."github:owenlamont/ryl"]]
-version = "0.26.1"
+version = "0.27.0"
 backend = "github:owenlamont/ryl"
-specifiers = ["v0.26.1"]
+specifiers = ["v0.27.0"]
 
 [tools."github:owenlamont/ryl"."platforms.linux-x64"]
-checksum = "sha256:17b6fe666c19828179c11e15943643c4d9a940dc5d7c1ae3ec0055f81aaa3023"
-url = "https://github.com/owenlamont/ryl/releases/download/v0.26.1/ryl-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/owenlamont/ryl/releases/assets/674247184"
+checksum = "sha256:8d494a2742d8f2d57a49bd7db38034650ca98200f08d0c733c4650cbf5ec026d"
+url = "https://github.com/owenlamont/ryl/releases/download/v0.27.0/ryl-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/owenlamont/ryl/releases/assets/692188528"
 provenance = "github-attestations"
 
 [[tools."github:sourcefrog/cargo-mutants"]]
@@ -148,14 +148,14 @@ url = "https://github.com/opengrep/opengrep/releases/download/v1.33.1/opengrep_m
 url_api = "https://api.github.com/repos/opengrep/opengrep/releases/assets/688084224"
 
 [[tools.pnpm]]
-version = "11.28.9"
+version = "11.28.10"
 backend = "aqua:pnpm/pnpm"
-specifiers = ["11.28.9"]
+specifiers = ["11.28.10"]
 
 [tools.pnpm."platforms.linux-x64"]
-checksum = "sha256:44588952c6e0e2c25f5b3363c5736d7a176ce8dc6200ae8179bd688e60a212a7"
-url = "https://github.com/pnpm/pnpm/releases/download/v11.28.9/pnpm-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/679944760"
+checksum = "sha256:9eb5631ddcb9ce221de77e1ec5c81572e2fca0916f020aded00ebdbbf48db155"
+url = "https://github.com/pnpm/pnpm/releases/download/v11.28.10/pnpm-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/692550287"
 provenance = "github-attestations"
 
 [[tools.rumdl]]
@@ -223,14 +223,14 @@ url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/679980644"
 provenance = "github-attestations"
 
 [[tools.vacuum]]
-version = "0.36.0"
+version = "0.36.1"
 backend = "aqua:daveshanley/vacuum"
-specifiers = ["0.36.0"]
+specifiers = ["0.36.1"]
 
 [tools.vacuum."platforms.linux-x64"]
-checksum = "sha256:58324dfc3322bc431f394ef7822586d17b269169ab3297cb29be6847d5519a1e"
-url = "https://github.com/daveshanley/vacuum/releases/download/v0.36.0/vacuum_0.36.0_linux_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/daveshanley/vacuum/releases/assets/688806961"
+checksum = "sha256:4001b21cf12bd9e6b64f8d29fe6bdc473e34edbeff084e87f81e9af2c13e033f"
+url = "https://github.com/daveshanley/vacuum/releases/download/v0.36.1/vacuum_0.36.1_linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/daveshanley/vacuum/releases/assets/693717905"
 provenance = "cosign"
 
 [[tools.vale]]

@@ -14,11 +14,10 @@ pub mod path_template;
 pub mod watcher;
 
 mod orchestrator;
+#[cfg(test)]
+pub(crate) use orchestrator::{ManifestationMeta, commit_ingest};
 
 pub use orchestrator::{
     CoordinatorCommands, CoordinatorHandle, DependencyReason, DiscoveryResult, coordinator_channel,
     run_watcher,
 };
-
-#[cfg(test)]
-pub(crate) use orchestrator::Command;

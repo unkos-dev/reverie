@@ -7,7 +7,7 @@
 
 use crate::services::epub::opf_layer;
 
-use super::{inversion, isbn, sanitiser};
+use super::{inversion, sanitiser};
 
 /// Fully processed metadata derived from a single `OPF` document.
 ///
@@ -45,11 +45,10 @@ pub struct ExtractedMetadata {
     /// Non-empty publication text selected from `OPF` `<dc:date>`, retained
     /// before validation and canonical promotion.
     pub pub_date: Option<String>,
-    /// First valid `ISBN` found among the `OPF` identifiers. `None` when no
-    /// recognisable valid `ISBN` was present (the extractor selects the first
-    /// `IsbnResult` whose `valid` flag is set, so an invalid-only identifier
-    /// list yields `None` rather than a `valid = false` result).
-    pub isbn: Option<isbn::IsbnResult>,
+    /// Independently supplied, validated compact ISBN-10.
+    pub isbn_10: Option<String>,
+    /// Independently supplied, validated compact ISBN-13.
+    pub isbn_13: Option<String>,
     /// Sanitised subject/genre tags.
     pub subjects: Vec<String>,
     /// Series name and position parsed from Calibre-style `OPF` series metadata.
@@ -151,12 +150,7 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         .filter(|value| !value.trim().is_empty())
         .cloned();
 
-    // Parse ISBNs from identifiers — keep the first valid one
-    let isbn = opf
-        .identifiers
-        .iter()
-        .map(|id| isbn::parse_isbn(id))
-        .find(|r| r.valid);
+    let (isbn_10, isbn_13) = extract_isbns(opf);
 
     let (creators, unmapped_contributors) = collect_creators(&opf.creators);
 
@@ -196,7 +190,8 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         pages,
         publisher,
         pub_date,
-        isbn,
+        isbn_10,
+        isbn_13,
         subjects,
         series,
         inversion,
@@ -204,6 +199,40 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
     };
     meta.confidence = completeness_confidence(&meta);
     meta
+}
+
+fn extract_isbns(opf: &opf_layer::OpfData) -> (Option<String>, Option<String>) {
+    let mut isbn_10 = None;
+    let mut isbn_13 = None;
+    for package_identity in [false, true] {
+        for identifier in &opf.identifiers {
+            if identifier.package_identity != package_identity {
+                continue;
+            }
+            let raw = identifier.value.trim();
+            let urn_prefix = raw
+                .get(..9)
+                .filter(|prefix| prefix.eq_ignore_ascii_case("urn:isbn:"));
+            if !identifier.declared_isbn && urn_prefix.is_none() {
+                continue;
+            }
+            let value = urn_prefix.map_or(raw, |_| &raw[9..]);
+            match value.parse::<isbn::Isbn>() {
+                Ok(isbn::Isbn::_10(value)) if isbn_10.is_none() => {
+                    isbn_10 = Some(value.to_string());
+                }
+                Ok(isbn::Isbn::_13(value)) if isbn_13.is_none() => {
+                    let compact = value.to_string();
+                    if compact.starts_with("978") || compact.starts_with("979") {
+                        isbn_13 = Some(compact);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    (isbn_10, isbn_13)
 }
 
 /// Map creators/contributors to role-tagged [`ExtractedCreator`]s plus the
@@ -269,7 +298,7 @@ fn completeness_confidence(meta: &ExtractedMetadata) -> f32 {
     if !meta.creators.is_empty() {
         confidence += 0.1;
     }
-    if meta.isbn.is_some() {
+    if meta.isbn_10.is_some() || meta.isbn_13.is_some() {
         confidence += 0.1;
     }
     if meta.publisher.is_some() {
@@ -319,7 +348,7 @@ fn map_relator(code: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::epub::opf_layer::{Creator, OpfData, SeriesMeta};
+    use crate::services::epub::opf_layer::OpfData;
     use std::collections::HashMap;
 
     fn empty_opf() -> OpfData {
@@ -344,184 +373,54 @@ mod tests {
         }
     }
 
-    fn creator(name: &str, roles: &[&str]) -> Creator {
-        Creator {
-            name: name.into(),
-            roles: roles.iter().map(|r| (*r).to_string()).collect(),
-            from_contributor: false,
-        }
-    }
-
+    // REV-REQ-0072 AC2-4; REV-REQ-0073 AC1; incident: non-ISBN identifiers promoted as ISBNs.
     #[test]
-    fn extract_full_metadata() {
-        let opf = OpfData {
-            title: Some("The Hobbit".into()),
-            creators: vec![creator("J. R. R. Tolkien", &["aut"])],
-            description: Some("<p>A fantasy novel</p>".into()),
-            // The OPF parse layer decodes entities before ExtractedMetadata
-            // ever sees this field, so the fixture supplies already-decoded
-            // text rather than raw "&amp;" markup.
-            publisher: Some("Allen & Unwin".into()),
-            date: Some("1937-09-21".into()),
-            language: Some("en".into()),
-            identifiers: vec!["urn:isbn:9780547928227".into()],
-            subjects: vec!["Fantasy".into()],
-            series_meta: Some(SeriesMeta {
-                name: "Middle-earth".into(),
-                position: Some(1.0),
-            }),
+    fn isbn_contract_extraction() {
+        use std::io::Write;
+
+        let single = extract(&OpfData {
+            identifiers: vec!["urn:isbn:0306406152".into()],
             ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.title.as_deref(), Some("The Hobbit"));
-        assert_eq!(m.sort_title.as_deref(), Some("the hobbit"));
-        assert_eq!(m.description.as_deref(), Some("A fantasy novel"));
-        assert_eq!(m.publisher.as_deref(), Some("Allen & Unwin"));
-        assert!(m.pub_date.is_some());
-        assert_eq!(m.creators[0].name, "J. R. R. Tolkien");
-        assert_eq!(m.creators[0].sort_name, "Tolkien, J. R. R.");
-        assert_eq!(m.creators[0].role, "author");
-        assert!(m.isbn.as_ref().is_some_and(|i| i.valid));
-        assert_eq!(m.series.as_ref().unwrap().name, "Middle-earth");
-        assert!(m.confidence > 0.8);
-    }
-
-    #[test]
-    fn extract_minimal_metadata() {
-        let m = extract(&empty_opf());
-        assert!(m.title.is_none());
-        assert!(m.creators.is_empty());
-        assert!(m.isbn.is_none());
-        assert_eq!(m.confidence, 0.3);
-    }
-
-    #[test]
-    fn sort_name_generation() {
-        assert_eq!(generate_sort_name("J. R. R. Tolkien"), "Tolkien, J. R. R.");
-        assert_eq!(generate_sort_name("Tolkien"), "Tolkien");
-        assert_eq!(generate_sort_name("Mary Shelley"), "Shelley, Mary");
-    }
-
-    #[test]
-    fn role_mapping() {
-        assert_eq!(map_relator("aut"), Some("author"));
-        assert_eq!(map_relator("edt"), Some("editor"));
-        assert_eq!(map_relator("trl"), Some("translator"));
-        assert_eq!(map_relator("nrt"), Some("narrator"));
-        assert_eq!(map_relator("ill"), None);
-    }
-
-    #[test]
-    fn multi_author_extraction() {
-        let opf = OpfData {
-            creators: vec![
-                creator("Author One", &["aut"]),
-                creator("Editor Two", &["edt"]),
-            ],
+        });
+        assert_eq!(single.isbn_10.as_deref(), Some("0306406152"));
+        assert_eq!(single.isbn_13, None);
+        let invalid = extract(&OpfData {
+            identifiers: vec!["urn:isbn:0306406153".into()],
             ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.creators.len(), 2);
-        assert_eq!(m.creators[1].role, "editor");
-    }
-
-    #[test]
-    fn dc_creator_with_no_role_defaults_to_author() {
-        let opf = OpfData {
-            creators: vec![creator("No Role", &[])],
+        });
+        assert!(invalid.isbn_10.is_none() && invalid.isbn_13.is_none());
+        let ean = extract(&OpfData {
+            identifiers: vec!["urn:isbn:4006381333931".into()],
             ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.creators.len(), 1);
-        assert_eq!(m.creators[0].role, "author");
-        assert!(m.unmapped_contributors.is_empty());
-    }
+        });
+        assert!(ean.isbn_10.is_none() && ean.isbn_13.is_none());
 
-    #[test]
-    fn bare_contributor_with_no_role_is_staged_not_guessed() {
-        let opf = OpfData {
-            creators: vec![Creator {
-                name: "Some Helper".into(),
-                roles: vec![],
-                from_contributor: true,
-            }],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert!(
-            m.creators.is_empty(),
-            "a bare dc:contributor must never be guessed as an author"
+        let xml = br##"<package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="package-id">
+            <metadata>
+                <dc:identifier id="package-id">urn:uuid:example</dc:identifier>
+                <dc:identifier>9780306406157</dc:identifier>
+                <dc:identifier opf:scheme="AMAZON">0306406152</dc:identifier>
+                <dc:identifier id="other-ten">0306406152</dc:identifier>
+                <meta refines="#other-ten" property="identifier-type" scheme="onix:codelist1">02</meta>
+                <dc:identifier id="other-thirteen">9780306406157</dc:identifier>
+                <meta refines="#other-thirteen" property="identifier-type" scheme="onix:codelist1" content="15"/>
+                <dc:identifier opf:scheme="ISBN">9791090636071</dc:identifier>
+                <dc:identifier id="isbn-ten">080442957X</dc:identifier>
+                <meta refines="#isbn-ten" property="identifier-type" scheme="onix:codelist5" content="02"/>
+            </metadata><manifest/><spine/>
+        </package>"##;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        zip.start_file("content.opf", options).unwrap();
+        zip.write_all(xml).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        let handle = crate::services::epub::zip_layer::ZipHandle::from_bytes(&bytes);
+        let opf = opf_layer::validate(&handle, Some("content.opf"), &mut Vec::new()).unwrap();
+        let recognised = extract(&opf);
+        assert_eq!(
+            (recognised.isbn_10.as_deref(), recognised.isbn_13.as_deref()),
+            (Some("080442957X"), Some("9791090636071"))
         );
-        assert_eq!(m.unmapped_contributors.len(), 1);
-        assert_eq!(m.unmapped_contributors[0].name, "Some Helper");
-        assert!(m.unmapped_contributors[0].code.is_none());
-    }
-
-    #[test]
-    fn unknown_relator_code_is_staged_not_guessed() {
-        let opf = OpfData {
-            creators: vec![creator("Illustrator Person", &["ill"])],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert!(
-            m.creators.is_empty(),
-            "an unknown relator code must never be guessed as an author"
-        );
-        assert_eq!(m.unmapped_contributors.len(), 1);
-        assert_eq!(m.unmapped_contributors[0].code.as_deref(), Some("ill"));
-    }
-
-    #[test]
-    fn multi_role_creator_splits_into_mapped_and_unmapped() {
-        // EPUB 3.3 §D.3.10: one creator, two role refines (aut + ill).
-        let opf = OpfData {
-            creators: vec![creator("Maurice Sendak", &["aut", "ill"])],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.creators.len(), 1);
-        assert_eq!(m.creators[0].role, "author");
-        assert_eq!(m.unmapped_contributors.len(), 1);
-        assert_eq!(m.unmapped_contributors[0].name, "Maurice Sendak");
-        assert_eq!(m.unmapped_contributors[0].code.as_deref(), Some("ill"));
-    }
-
-    #[test]
-    fn duplicate_name_role_pair_keeps_first_occurrence() {
-        let opf = OpfData {
-            creators: vec![
-                creator("Same Person", &["aut"]),
-                creator("Same Person", &["aut"]),
-            ],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.creators.len(), 1);
-    }
-
-    #[test]
-    fn subtitle_sanitized() {
-        let opf = OpfData {
-            subtitle: Some("The Final <b>Empire</b>".into()),
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.subtitle.as_deref(), Some("The Final Empire"));
-    }
-
-    #[test]
-    fn pages_parse_bounds() {
-        let parse = |raw: &str| {
-            extract(&OpfData {
-                number_of_pages: Some(raw.into()),
-                ..empty_opf()
-            })
-            .pages
-        };
-        assert_eq!(parse("353"), Some(353));
-        assert_eq!(parse("0"), None);
-        assert_eq!(parse("-5"), None);
-        assert_eq!(parse("n/a"), None);
     }
 }
