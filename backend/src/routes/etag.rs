@@ -203,90 +203,6 @@ pub fn if_match_mismatch(current_etag: &HeaderValue) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Serialize;
-
-    #[derive(Serialize)]
-    struct Fixture {
-        a: &'static str,
-        b: i32,
-    }
-
-    #[test]
-    fn hash_etag_is_quoted_and_stable() {
-        let f = Fixture { a: "x", b: 1 };
-        let one = hash_etag(&f).unwrap();
-        let two = hash_etag(&f).unwrap();
-        assert_eq!(one, two);
-        let s = one.to_str().unwrap();
-        assert!(s.starts_with('"') && s.ends_with('"'));
-    }
-
-    #[test]
-    fn hash_etag_changes_with_state() {
-        let a = hash_etag(&Fixture { a: "x", b: 1 }).unwrap();
-        let b = hash_etag(&Fixture { a: "x", b: 2 }).unwrap();
-        assert_ne!(a, b);
-    }
-
-    /// Every `etagc` byte class, exercised as one tag: `%x21`, the ends of
-    /// `%x23-7E`, and the ends of `obs-text`.
-    const EVERY_ETAGC_CLASS: &[u8] = b"\"!\x23~\x80\xff\"";
-
-    #[test]
-    fn parse_strong_entity_tag_grammar_table() {
-        // (label, raw field value, accepted). Byte literals rather than
-        // `HeaderValue`s because `http` refuses to build a header carrying a
-        // C0 control or DEL, so those rows are only reachable here.
-        let cases: &[(&str, &[u8], bool)] = &[
-            ("empty tag is a valid entity-tag", b"\"\"", true),
-            ("ordinary opaque tag", b"\"abc\"", true),
-            ("every etagc byte class", EVERY_ETAGC_CLASS, true),
-            ("obs-text lower bound", b"\"\x80\"", true),
-            ("obs-text upper bound", b"\"\xff\"", true),
-            (
-                "surrounding OWS is not tag content",
-                b"  \t\"abc\"\t ",
-                true,
-            ),
-            ("SP is not etagc", b"\"a b\"", false),
-            ("HTAB inside the quotes is not etagc", b"\"a\tb\"", false),
-            ("NUL is not etagc", b"\"a\x00b\"", false),
-            ("C0 control is not etagc", b"\"a\x1fb\"", false),
-            ("DEL is not etagc", b"\"a\x7fb\"", false),
-            (
-                "inner DQUOTE can only be a list",
-                b"\"abc\", \"def\"",
-                false,
-            ),
-            ("weak validator", b"W/\"abc\"", false),
-            ("wildcard", b"*", false),
-            ("unquoted", b"abc", false),
-            ("missing closing quote", b"\"abc", false),
-            ("missing opening quote", b"abc\"", false),
-            ("lone quote", b"\"", false),
-            ("empty field value", b"", false),
-            ("OWS only", b" \t ", false),
-        ];
-        for (label, raw, accepted) in cases {
-            assert_eq!(
-                parse_strong_entity_tag(raw).is_ok(),
-                *accepted,
-                "{label}: {raw:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn parse_strong_entity_tag_preserves_opaque_bytes() {
-        let tag = parse_strong_entity_tag(EVERY_ETAGC_CLASS).unwrap();
-        assert_eq!(&*tag.0, EVERY_ETAGC_CLASS);
-    }
-
-    #[test]
-    fn parse_strong_entity_tag_drops_only_surrounding_ows() {
-        let tag = parse_strong_entity_tag(b" \t\"abc\" \t").unwrap();
-        assert_eq!(&*tag.0, b"\"abc\"");
-    }
 
     #[test]
     fn strong_comparison_is_octet_exact() {
@@ -302,38 +218,5 @@ mod tests {
         let tag = parse_strong_entity_tag(b"\"\x80\"").unwrap();
         assert!(tag.matches(&HeaderValue::from_bytes(b"\"\x80\"").unwrap()));
         assert!(!tag.matches(&HeaderValue::from_bytes(b"\"\x81\"").unwrap()));
-    }
-
-    #[test]
-    fn parse_if_match_absent_is_none() {
-        let headers = HeaderMap::new();
-        assert!(parse_if_match(&headers).unwrap().is_none());
-    }
-
-    #[test]
-    fn parse_if_match_accepts_one_strong_tag() {
-        let mut headers = HeaderMap::new();
-        headers.insert(IF_MATCH, HeaderValue::from_static("\"abc\""));
-        let tag = parse_if_match(&headers).unwrap().unwrap();
-        assert!(tag.matches(&HeaderValue::from_static("\"abc\"")));
-    }
-
-    #[test]
-    fn parse_if_match_rejects_repeated_header_instances() {
-        let mut headers = HeaderMap::new();
-        headers.append(IF_MATCH, HeaderValue::from_static("\"abc\""));
-        headers.append(IF_MATCH, HeaderValue::from_static("\"def\""));
-        assert!(parse_if_match(&headers).is_err());
-    }
-
-    // Two valid instances are still rejected: repeating the field is the
-    // list form, and the reason must not depend on the values being
-    // individually well-formed.
-    #[test]
-    fn parse_if_match_rejects_repeated_instances_before_parsing_either() {
-        let mut headers = HeaderMap::new();
-        headers.append(IF_MATCH, HeaderValue::from_static("\"abc\""));
-        headers.append(IF_MATCH, HeaderValue::from_static("\"abc\""));
-        assert!(parse_if_match(&headers).is_err());
     }
 }

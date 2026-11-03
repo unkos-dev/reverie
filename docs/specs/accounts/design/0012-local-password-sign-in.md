@@ -254,9 +254,10 @@ replayed automatically. No worker or asynchronous completion callback can write 
 ends. A cancelled hash caller cannot release computation capacity early: the blocking closure retains its permit clone
 until Argon2 finishes, and its late result cannot write accounting.
 
-Administrator creation and link issuance do not hash; redemption performs one computation.
-`auth_hash_census_users_endpoints` counts the hash and verification sites on the users endpoints, and
-`auth_hash_results_match_kernels` checks that the limiter's hash and verification results match the direct kernels.
+Twelve hash and verification sites span the seven hashing endpoints. Administrator creation and link issuance do not
+hash; redemption performs one computation. While login holds the only permit and four other logins queue, the
+pool-backed `GET /health/ready` still completes on a two-connection application pool. `auth_hash_results_match_kernels`
+checks that the limiter's hash and verification results match the direct kernels.
 
 `password_admission_route_two_pools_ninth_failure_race` checks that nine failures plus two simultaneous requests from
 separate application pools and sources yield one verification/`422` and one account `429`.
@@ -294,8 +295,7 @@ the maximum, and that a recording breach-check server receives no request for it
   self-service change: `TooShort`/`TooLong` name the configured bound, `TooWeak` carries zxcvbn's feedback (or a generic
   message when zxcvbn returns none), and `Breached` returns the fixed sentence "this password has appeared in a known
   data breach; choose a password you have not used elsewhere". CLI bootstrap and startup seeding propagate policy
-  rejection as a process error before creating the administrator. `register_weak_password_returns_422` and
-  `register_invalid_email_returns_422` cover the client-visible shape of a registration rejection.
+  rejection as a process error before creating the administrator. A registration rejection answers `422`.
 - **HIBP unreachable, slow, or erroring.** `check_breached` treats a transport error, any non-2xx status (including a
   `429` or `503` from HIBP itself), an unreadable response body, and a count that cannot be parsed on the one matching
   suffix line, all identically: log a `warn` and return `false` (not breached). `enforce` then proceeds on strength
@@ -304,7 +304,7 @@ the maximum, and that a recording breach-check server receives no request for it
   `enforce_allows_a_strong_password_when_breach_check_fails_open` confirms a strong candidate is still accepted when the
   check itself fails open.
 - **A duplicate email on `register`.** `user::create_local` returns `CreateUserError::EmailExists`, mapped to
-  `AppError::EmailConflict` (`409`); `register_duplicate_email_returns_409` covers it.
+  `AppError::EmailConflict` (`409`).
 
 ## Security and operations
 

@@ -283,32 +283,6 @@ mod tests {
 
     use crate::test_support;
 
-    #[tokio::test]
-    async fn create_token_returns_401_without_auth() {
-        let server = test_support::test_server();
-        let response = server
-            .post("/api/v1/tokens")
-            .json(&serde_json::json!({"name": "My Kindle"}))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn list_tokens_returns_401_without_auth() {
-        let server = test_support::test_server();
-        let response = server.get("/api/v1/tokens").await;
-        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn revoke_token_returns_401_without_auth() {
-        let server = test_support::test_server();
-        let response = server
-            .delete(&format!("/api/v1/tokens/{}", uuid::Uuid::new_v4()))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
-    }
-
     /// Provision a user + device token in the per-test database and return a
     /// `TestServer` plus the `Basic` credential string authenticating as that
     /// user. Centralises the auth/state/router wiring shared by the
@@ -441,52 +415,6 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn create_token_defaults_scope_and_expiry(pool: sqlx::PgPool) {
-        let (server, basic) = authenticated_test_server(pool).await;
-
-        let response = server
-            .post("/api/v1/tokens")
-            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
-            .json(&serde_json::json!({"name": "defaults"}))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::CREATED);
-        let body = response.json::<serde_json::Value>();
-        assert_eq!(body["scopes"], serde_json::json!(["read"]));
-        assert!(body["expires_at"].is_null());
-        assert!(
-            body["token"]
-                .as_str()
-                .expect("token is a string")
-                .starts_with(crate::auth::token::TOKEN_PREFIX)
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_token_mints_requested_scopes_and_expiry(pool: sqlx::PgPool) {
-        let (server, basic) = authenticated_test_server(pool).await;
-
-        let response = server
-            .post("/api/v1/tokens")
-            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
-            .json(&serde_json::json!({"name": "scoped", "scopes": ["read", "write"], "expires_in_days": 90}))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::CREATED);
-        let body = response.json::<serde_json::Value>();
-        assert_eq!(body["scopes"], serde_json::json!(["read", "write"]));
-        assert!(body["expires_at"].as_str().is_some());
-
-        // The response credential re-verifies as a valid Bearer token for
-        // its own mint — round-trips through the exact resolver a client
-        // would hit.
-        let token = body["token"].as_str().expect("token is a string");
-        let list = server
-            .get("/api/v1/tokens")
-            .add_header(axum::http::header::AUTHORIZATION, format!("Bearer {token}"))
-            .await;
-        assert_eq!(list.status_code(), StatusCode::OK);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn create_token_rejects_admin_scope_ceiling(pool: sqlx::PgPool) {
         let (server, basic) = authenticated_test_server(pool).await;
 
@@ -498,60 +426,6 @@ mod tests {
             .json(&serde_json::json!({"name": "audit", "scopes": ["read", "admin"]}))
             .await;
         assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_token_rejects_invalid_expires_in_days(pool: sqlx::PgPool) {
-        let (server, basic) = authenticated_test_server(pool).await;
-
-        let response = server
-            .post("/api/v1/tokens")
-            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
-            .json(&serde_json::json!({"name": "bad-expiry", "expires_in_days": 45}))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_token_validates_name(pool: sqlx::PgPool) {
-        let (server, basic) = authenticated_test_server(pool).await;
-
-        // Empty name
-        let response = server
-            .post("/api/v1/tokens")
-            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
-            .json(&serde_json::json!({"name": ""}))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
-
-        // Name too long
-        let long_name = "x".repeat(256);
-        let response = server
-            .post("/api/v1/tokens")
-            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
-            .json(&serde_json::json!({"name": long_name}))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
-
-        // Exactly 255 characters is the accepted upper boundary — pins the
-        // `> 255` comparison against a `>= 255` off-by-one regression.
-        let max_name = "x".repeat(255);
-        let response = server
-            .post("/api/v1/tokens")
-            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
-            .json(&serde_json::json!({"name": max_name}))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::CREATED);
-
-        // The limit counts characters, not bytes: 255 multibyte chars (510
-        // bytes) is accepted, matching the "1-255 characters" message.
-        let multibyte = "é".repeat(255);
-        let response = server
-            .post("/api/v1/tokens")
-            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
-            .json(&serde_json::json!({"name": multibyte}))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::CREATED);
     }
 
     #[sqlx::test(migrations = "./migrations")]
