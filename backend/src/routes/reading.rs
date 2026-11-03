@@ -802,17 +802,4 @@ mod tests {
             "412 must carry the current, not the stale, ETag"
         );
     }
-
-    // Reading shares the metadata parser, so it owes the same status
-    // contract: refused header forms are 400, never the 412 a false
-    // precondition earns.
-    // `obs-text` is valid entity-tag content, so such a tag is compared
-    // rather than refused, and compares unequal against Reverie's ASCII
-    // validators.
-    // An accepted tag is compared before the content is processed, so the
-    // same invalid body resolves differently by precondition outcome: the
-    // matching tag reaches body validation and earns 422, while the stale
-    // tag stops at the precondition and earns 412. Evaluating the body
-    // first would collapse both rows to 422 and hide a stale representation
-    // behind a body error.
 }

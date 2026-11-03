@@ -625,13 +625,6 @@ async fn search_child_only_sees_shelved_titles(pool: PgPool) {
     assert_eq!(items[0]["title"], "Kid Favourite Story");
 }
 
-// ─── 11b — perf gate ─────────────────────────────────────────────────────
-
-// Performance gate: seeds 10K rows and asserts p50 of 11 trials
-// stays under 200 ms. `#[ignore]`d so default per-PR runs skip it;
-// the nightly CI lane runs `cargo test -- --ignored`. Calibrated
-// against the dev DB — treat as a regression alarm (planner change,
-// missing index), not a production SLO.
 #[sqlx::test(migrations = "./migrations")]
 async fn list_endpoint_reading_state_is_caller_scoped(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
