@@ -165,3 +165,46 @@ async fn bulk_input_retry_caps_batches_and_preserves_attempt_history(pool: PgPoo
             .is_empty()
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_input_retry_refuses_a_demoted_admin_token_without_command(pool: PgPool) {
+    use crate::auth::{scope::Scope, token};
+    let app = test_support::db::app_pool_for(&pool).await;
+    let (id, _) = test_support::db::create_admin_and_basic_auth(&app).await;
+    let mut state = test_support::test_state();
+    state.pool = app.clone();
+    let (handle, commands) = crate::services::ingestion::coordinator_channel();
+    state.ingestion = handle;
+    let server = axum_test::TestServer::new(crate::build_router_with_session_store(
+        state,
+        tower_sessions::MemoryStore::default(),
+    ));
+    let (plain, hash) = token::generate_device_token();
+    let device = crate::models::device_token::create_with_limit(
+        &app,
+        id,
+        "bulk",
+        &hash,
+        &[Scope::Admin],
+        None,
+    )
+    .await
+    .unwrap();
+    sqlx::query!(
+        "UPDATE users SET role = 'adult'::user_role WHERE id = $1",
+        id
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    server
+        .post("/api/v1/ingestion/inputs/retries")
+        .add_header(
+            AUTHORIZATION,
+            format!("Bearer {}{}.{}", token::TOKEN_PREFIX, device.id, plain),
+        )
+        .json(&serde_json::json!({"reason":"needs_change"}))
+        .await
+        .assert_status_forbidden();
+    assert!(commands.lock().await.try_recv().is_err());
+}
