@@ -7,6 +7,8 @@ satisfies:
   - "REV-REQ-0052"
   - "REV-REQ-0055"
   - "REV-REQ-0056"
+  - "REV-REQ-0072"
+  - "REV-REQ-0073"
 governed-by:
   - "REV-ADR-0067"
 ---
@@ -56,7 +58,7 @@ even though a `cover_version_id` canonical-pointer column exists on `manifestati
 Depends on: `crate::db::acquire_with_rls` and the `manifestations`/`works` row-level-security policies (Design
 "Row-level security and database context") for every route; `CurrentUser::require_not_child` and `require_scope` (Design
 "Authorization axes") on every route; `routes::etag::hash_etag`, `routes::etag::if_match_mismatch` and
-`routes::etag::parse_if_match` for the manual `PATCH`'s precondition; `services::metadata::isbn` and
+`routes::etag::parse_if_match` for the manual `PATCH`'s precondition; the `isbn` crate and
 `services::metadata::external_id` for field-level parsing; `routes::library::load_genres_for_manifestations`,
 `routes::library::load_moods_for_manifestations` and `routes::library::load_tags_for_manifestations` to assemble the
 editable metadata span.
@@ -262,10 +264,11 @@ successful closure retain their existing owners.
    to reconcile stale drafts. Acceptance leaves review status `pending`; canonical pointers record promotion. Repeated
    acceptance remains allowed and enqueues another writeback job for file-backed fields.
 3. `apply_version` rejects the row outright if its `new_value` is JSON `null` (a manual-clear audit row, never a draft
-   eligible for promotion), `422`. Otherwise it normalises the string, runs the `isbn_13` `UPDATE ... RETURNING`, and
-   swaps the pointer.
-4. Because the field is an ISBN, `work::rematch_on_isbn_change` runs before commit: accepting an ISBN draft can regroup
-   the manifestation under a different work.
+   eligible for promotion), `422`. ISBN promotion parses the supplied format through the `isbn` crate, requires a `978`
+   or `979` prefix for ISBN-13, and normalises the value before the `UPDATE ... RETURNING` swaps the pointer. Invalid
+   values return field-keyed `FieldValidation`; accepting or reverting a raw provider observation uses the same gate.
+4. Because the field is an ISBN, `work::rematch_on_isbn_change` runs before commit to refresh the possible-duplicate
+   pointer while preserving work membership.
 5. `enqueue_writeback` inserts a `writeback_jobs` row in the same transaction the pointer moved in.
 
 **Reverting a field, to a specific version versus to null.**
@@ -285,6 +288,10 @@ revert-to-null sets both the canonical column and its pointer to `NULL`. Neither
 row's `status`, so the version that was canonical before the revert, and every other pending or rejected draft for the
 field, stays in the journal unchanged. Pending drafts remain available to a subsequent accept or revert; rejected drafts
 remain available to a subsequent revert.
+
+ISBN reverts and clears refresh the candidate pointer before commit. Each ISBN field changes independently; clearing one
+leaves its counterpart intact. Individually valid, non-equivalent pairs can be saved. The detail and editable metadata
+responses derive `isbn_mismatch` from their returned canonical pair, with false for either value absent.
 
 **A manual identifier edit while enrichment is `in_progress`, for the same manifestation.**
 
@@ -307,13 +314,14 @@ manifestation has no matching lock.
   policy-refused header (wildcard, weak tag, tag list, repeated header) is `AppError::MalformedHeader` (`400`); a
   non-matching tag is `AppError::IfMatchMismatch` (`412`, carrying the current tag). All three are evaluated before
   request-body validation.
-- Publication refusal uses `AppError::FieldValidation` (`422`) with the registered validation type and a string message
-  in `errors.pub_date`. The entire metadata transaction rolls back, including journal, pointer and job writes.
-- `AppError::Validation` (`422`) covers: an entirely empty `PATCH` body; an invalid ISBN checksum, length, or
-  non-numeric ISBN; an attempt to clear `title` or `contributors.author`; an author-role rewrite that would leave a
-  previously-authored work with zero authors; an over-cap or duplicate contributor/vocabulary/identifier list; an
-  unknown vocabulary/role/scheme, or an identifier whose scheme does not belong to its stated level; a malformed
-  identifier value; and accepting a `null`-valued audit row directly.
+- Publication and ISBN refusals use `AppError::FieldValidation` (`422`) with the registered validation type and a
+  message keyed by the submitted field (`pub_date`, `isbn_10` or `isbn_13`). The entire metadata transaction rolls back,
+  including journal, pointer and job writes.
+- `AppError::Validation` (`422`) covers: an entirely empty `PATCH` body; an attempt to clear `title` or
+  `contributors.author`; an author-role rewrite that would leave a previously-authored work with zero authors; an
+  over-cap or duplicate contributor/vocabulary/identifier list; an unknown vocabulary/role/scheme, or an identifier
+  whose scheme does not belong to its stated level; a malformed identifier value; and accepting a `null`-valued audit
+  row directly.
 - The zero-authors guard is not one rule but two, with different comparisons. `apply_version`'s `contributors.author`
   arm (accept and revert-to-version) rejects whenever the role's post-write count is zero, with no reference to what it
   was before, so it also blocks re-promoting an old author list onto a work that has no author by design.

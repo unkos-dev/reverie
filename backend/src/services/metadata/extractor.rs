@@ -7,7 +7,7 @@
 
 use crate::services::epub::opf_layer;
 
-use super::{inversion, isbn, sanitiser};
+use super::{inversion, sanitiser};
 
 /// Fully processed metadata derived from a single `OPF` document.
 ///
@@ -45,11 +45,10 @@ pub struct ExtractedMetadata {
     /// Non-empty publication text selected from `OPF` `<dc:date>`, retained
     /// before validation and canonical promotion.
     pub pub_date: Option<String>,
-    /// First valid `ISBN` found among the `OPF` identifiers. `None` when no
-    /// recognisable valid `ISBN` was present (the extractor selects the first
-    /// `IsbnResult` whose `valid` flag is set, so an invalid-only identifier
-    /// list yields `None` rather than a `valid = false` result).
-    pub isbn: Option<isbn::IsbnResult>,
+    /// Independently supplied, validated compact ISBN-10.
+    pub isbn_10: Option<String>,
+    /// Independently supplied, validated compact ISBN-13.
+    pub isbn_13: Option<String>,
     /// Sanitised subject/genre tags.
     pub subjects: Vec<String>,
     /// Series name and position parsed from Calibre-style `OPF` series metadata.
@@ -151,12 +150,7 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         .filter(|value| !value.trim().is_empty())
         .cloned();
 
-    // Parse ISBNs from identifiers — keep the first valid one
-    let isbn = opf
-        .identifiers
-        .iter()
-        .map(|id| isbn::parse_isbn(id))
-        .find(|r| r.valid);
+    let (isbn_10, isbn_13) = extract_isbns(opf);
 
     let (creators, unmapped_contributors) = collect_creators(&opf.creators);
 
@@ -196,7 +190,8 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         pages,
         publisher,
         pub_date,
-        isbn,
+        isbn_10,
+        isbn_13,
         subjects,
         series,
         inversion,
@@ -204,6 +199,37 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
     };
     meta.confidence = completeness_confidence(&meta);
     meta
+}
+
+fn extract_isbns(opf: &opf_layer::OpfData) -> (Option<String>, Option<String>) {
+    let mut isbn_10 = None;
+    let mut isbn_13 = None;
+    for package_identity in [false, true] {
+        for identifier in &opf.identifiers {
+            if identifier.package_identity != package_identity {
+                continue;
+            }
+            let raw = identifier.value.trim();
+            let value = raw
+                .get(..9)
+                .filter(|prefix| prefix.eq_ignore_ascii_case("urn:isbn:"))
+                .map_or(raw, |_| &raw[9..]);
+            match value.parse::<isbn::Isbn>() {
+                Ok(isbn::Isbn::_10(value)) if isbn_10.is_none() => {
+                    isbn_10 = Some(value.to_string());
+                }
+                Ok(isbn::Isbn::_13(value)) if isbn_13.is_none() => {
+                    let compact = value.to_string();
+                    if compact.starts_with("978") || compact.starts_with("979") {
+                        isbn_13 = Some(compact);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    (isbn_10, isbn_13)
 }
 
 /// Map creators/contributors to role-tagged [`ExtractedCreator`]s plus the
@@ -269,7 +295,7 @@ fn completeness_confidence(meta: &ExtractedMetadata) -> f32 {
     if !meta.creators.is_empty() {
         confidence += 0.1;
     }
-    if meta.isbn.is_some() {
+    if meta.isbn_10.is_some() || meta.isbn_13.is_some() {
         confidence += 0.1;
     }
     if meta.publisher.is_some() {
@@ -313,5 +339,55 @@ fn map_relator(code: &str) -> Option<&'static str> {
         "trl" => Some("translator"),
         "nrt" => Some("narrator"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::epub::opf_layer::OpfData;
+    use std::collections::HashMap;
+
+    fn empty_opf() -> OpfData {
+        OpfData {
+            manifest: HashMap::new(),
+            cover_href: None,
+            meta_cover_href: None,
+            spine_idrefs: vec![],
+            opf_path: "OEBPS/content.opf".into(),
+            accessibility_metadata: None,
+            title: None,
+            subtitle: None,
+            creators: vec![],
+            number_of_pages: None,
+            description: None,
+            publisher: None,
+            date: None,
+            language: None,
+            identifiers: vec![],
+            subjects: vec![],
+            series_meta: None,
+        }
+    }
+
+    // REV-REQ-0072 AC2-4; REV-REQ-0073 AC1.
+    #[test]
+    fn isbn_contract_extraction() {
+        let single = extract(&OpfData {
+            identifiers: vec!["urn:isbn:0306406152".into()],
+            ..empty_opf()
+        });
+        assert_eq!(single.isbn_10.as_deref(), Some("0306406152"));
+        assert_eq!(single.isbn_13, None);
+        let invalid = extract(&OpfData {
+            identifiers: vec!["0306406153".into()],
+            ..empty_opf()
+        });
+        assert!(invalid.isbn_10.is_none() && invalid.isbn_13.is_none());
+        let ean = extract(&OpfData {
+            identifiers: vec!["urn:isbn:4006381333931".into()],
+            ..empty_opf()
+        });
+        assert!(ean.isbn_10.is_none() && ean.isbn_13.is_none());
     }
 }

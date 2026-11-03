@@ -115,28 +115,27 @@ pub async fn write_drafts(
         .await?;
         out.insert("language".into(), id);
     }
-    if let Some(isbn) = &metadata.isbn {
-        let match_type = if isbn.valid { "isbn" } else { "title" };
-        if let Some(v) = &isbn.isbn_10 {
+    {
+        if let Some(v) = &metadata.isbn_10 {
             let id = insert_draft(
                 conn,
                 manifestation_id,
                 "isbn_10",
                 &json_string(v),
                 confidence,
-                match_type,
+                "isbn",
             )
             .await?;
             out.insert("isbn_10".into(), id);
         }
-        if let Some(v) = &isbn.isbn_13 {
+        if let Some(v) = &metadata.isbn_13 {
             let id = insert_draft(
                 conn,
                 manifestation_id,
                 "isbn_13",
                 &json_string(v),
                 confidence,
-                match_type,
+                "isbn",
             )
             .await?;
             out.insert("isbn_13".into(), id);
