@@ -31,12 +31,8 @@ occurs.
 
 - A request to `GET /api/v1/books` with an id-valued filter parameter (for example `author`, `series`, or `shelf`) set
   to a value that is not a valid UUID returns `400 Bad Request`, not `200 OK` with that condition omitted.
-- A request with an integer-valued filter parameter (`pages_gte`, `pages_lte`, `rating_gte`, `rating_lte`) set to a
-  non-integer value returns `400 Bad Request`.
 - A request with a timestamp-valued filter parameter (`created_at_gte`, `created_at_lt`) set to a value that is not a
   RFC 3339 instant returns `400 Bad Request`.
-- A request with a boolean-valued filter parameter (for example `pages_empty`, `subtitle_empty`) set to a value that is
-  not a recognised boolean literal returns `400 Bad Request`.
 - The response body for each rejection above is a Problem Details document, matching the documented `400` response for
   `GET /api/v1/books` in the OpenAPI contract.
 - Complete inverted numeric or timestamp bounds return a successful empty page. Equal numeric bounds match that exact

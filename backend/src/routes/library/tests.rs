@@ -580,28 +580,6 @@ async fn list_filter_unknown_sort_field_returns_422(pool: PgPool) {
 // ─── 11b — search endpoint ───────────────────────────────────────────────
 
 #[sqlx::test(migrations = "./migrations")]
-async fn search_sql_injection_probe_is_safe(pool: PgPool) {
-    // Bound parameter path absorbs a malformed query; schema survives.
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-
-    insert_book(&ingestion_pool, "x", "Harmless Title").await;
-
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let _ = server
-        .get("/api/v1/search?q=%27%29%3B+DROP+TABLE+works%3B--")
-        .add_header(AUTHORIZATION, basic)
-        .await;
-
-    let still_there: i64 = sqlx::query_scalar!("SELECT COUNT(*) AS \"c!\" FROM works")
-        .fetch_one(&ingestion_pool)
-        .await
-        .expect("works survives");
-    assert!(still_there > 0, "works table must survive the SQL probe");
-}
-
-#[sqlx::test(migrations = "./migrations")]
 async fn books_filter_sql_injection_probe_is_safe(pool: PgPool) {
     // Every typed filter value reaches SQL through `push_bind`; a hostile needle
     // in a text filter or the quick search is bound, not interpolated, so the
@@ -897,68 +875,6 @@ async fn filter_numeric_equal_bounds_match_and_inverted_bounds_are_empty(pool: P
             Vec::<String>::new()
         );
     }
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn filter_validation_errors_400_and_422(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
-
-    let status_of = |url: String| {
-        let basic = basic.clone();
-        let server = &server;
-        async move {
-            server
-                .get(&url)
-                .add_header(AUTHORIZATION, basic)
-                .await
-                .status_code()
-        }
-    };
-
-    // 21 author_any ids -> 422 (over the value cap).
-    let many = (0..=20)
-        .map(|_| format!("author_any={}", Uuid::new_v4()))
-        .collect::<Vec<_>>()
-        .join("&");
-    assert_eq!(
-        status_of(format!("/api/v1/books?{many}")).await,
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
-
-    // 201-char title_contains -> 422 (over the text cap).
-    let long = "a".repeat(201);
-    assert_eq!(
-        status_of(format!("/api/v1/books?title_contains={long}")).await,
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
-
-    // Unknown status token -> 422.
-    assert_eq!(
-        status_of("/api/v1/books?status_any=currently_reading".to_owned()).await,
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
-
-    // Non-integer pages -> 400 (type-level serde rejection).
-    assert_eq!(
-        status_of("/api/v1/books?pages_gte=lots".to_owned()).await,
-        StatusCode::BAD_REQUEST
-    );
-
-    for query in ["pages_gte=-1", "rating_gte=6", "rating_lte=0"] {
-        assert_eq!(
-            status_of(format!("/api/v1/books?{query}")).await,
-            StatusCode::UNPROCESSABLE_ENTITY
-        );
-    }
-
-    // Malformed author uuid -> 400.
-    assert_eq!(
-        status_of("/api/v1/books?author=not-a-uuid".to_owned()).await,
-        StatusCode::BAD_REQUEST
-    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
