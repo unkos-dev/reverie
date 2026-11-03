@@ -660,8 +660,8 @@ mod tests {
     use crate::models::account_email_proof::{self, ProofPurpose, lock_account};
     use crate::test_support::db::{app_pool_for, readonly_pool_for};
     use crate::test_support::mail::{
-        account, backdate, digest, enqueue_bearer, enqueue_notice, key, other_key, payload,
-        payload_present, state_of,
+        account, digest, enqueue_bearer, enqueue_notice, key, other_key, payload, payload_present,
+        state_of,
     };
 
     const ADDRESS: &str = "reader@example.org";
