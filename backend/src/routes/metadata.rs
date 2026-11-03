@@ -3583,12 +3583,6 @@ mod tests {
         );
     }
 
-    // ── Publisher hash convergence (debt: publisher-hash-divergence) ──────
-    //
-    // The manual edit path must hash via the same canonical normaliser as
-    // the enrichment pipeline so whitespace-equivalent publishers dedup
-    // identically regardless of entry path.
-
     #[sqlx::test(migrations = "./migrations")]
     async fn publication_date_roundtrip_preserves_precision(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -3821,15 +3815,6 @@ mod tests {
              writeback job must ride the same transaction"
         );
     }
-
-    // ── revert learns contributors.<role> ───────────────────────────────────
-
-    // ── revert accepts a sibling manifestation's version for work-scoped
-    //    fields, but keeps the strict same-manifestation match for
-    //    manifestation-scoped fields ─────────────────────────────────────
-
-    // ── manual PATCH threads the prior contributors.<role> stamp instead of
-    //    always reporting previous_version_id: None ──────────────────────
 
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_contributors_empty_object_enqueues_no_writeback(pool: sqlx::PgPool) {
@@ -4098,10 +4083,6 @@ mod tests {
         assert!(row.description.is_none());
     }
 
-    // ── PATCH genres / moods / tags / content_rating ───────────────────────
-
-    // ── external identifiers: manual write paths ──────────────────────────
-
     async fn writeback_job_count(pool: &sqlx::PgPool, m_id: Uuid) -> i64 {
         sqlx::query_scalar!(
             "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
@@ -4348,22 +4329,6 @@ mod tests {
         );
     }
 
-    // Both grammar violations and the well-formed forms this API refuses by
-    // policy are defects in the request's own shape, so they are 400 rather
-    // than the 412 a false precondition earns. No refreshed tag would make
-    // any of these parse.
-    // `obs-text` is valid entity-tag content, so such a tag is parsed and
-    // compared rather than refused. Reverie's own validators are ASCII, so
-    // it compares unequal and earns the ordinary 412.
-    // A request whose header and body are both defective is answered for the
-    // header: 422 is scoped to content that parsed, and this request's own
-    // shape failed first.
-    // An accepted tag is compared before the content is processed, so the
-    // same invalid body resolves differently by precondition outcome: the
-    // matching tag reaches body validation and earns 422, while the stale
-    // tag stops at the precondition and earns 412. Evaluating the body
-    // first would collapse both rows to 422 and hide a stale representation
-    // behind a body error.
     /// RLS coverage for the taxonomy junction tables (`manifestation_genres`,
     /// `manifestation_moods`, `manifestation_tags`): a direct read or write on
     /// these tables must be scoped through `manifestations` visibility the

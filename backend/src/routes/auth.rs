@@ -1227,8 +1227,6 @@ struct ThemeResponse {
     theme_preference: ThemePreference,
 }
 
-// Serde is the wire-boundary gate: an invalid theme_preference is a 422 from
-// the JSON extractor, which the patch_theme_rejects_invalid_value test pins.
 /// `PATCH /auth/me/theme` — persist the caller's theme preference and
 /// refresh the FOUC theme cookie.
 ///
@@ -3531,9 +3529,6 @@ mod tests {
         );
     }
 
-    // with_always_save(true): an authenticated read must slide the OnInactivity
-    // expiry. Without it, OnInactivity only refreshes on a save (login), so an
-    // active user would be logged out 24h after login regardless of activity.
     #[sqlx::test(migrations = "./migrations")]
     async fn disabled_user_live_session_is_rejected(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
