@@ -38,8 +38,7 @@ inside this subject's batch transaction; the recipe's own doc comment states it 
 `reverie migrate` (run via `db-migrate`) as the path real instances use. It owns the
 `#[sqlx::test(migrations = "./migrations")]` harness as a fourth, test-only way migrations reach a database, and the
 secondary-role pool helpers those tests build against the per-test database (`crate::test_support::db::app_pool_for` and
-its siblings). It owns the decode-range `CHECK` constraint convention and its coverage test,
-`backend/src/db.rs::tests::every_timestamptz_column_has_decode_range_check`.
+its siblings). It owns the decode-range `CHECK` constraint convention.
 
 It does not own the SQL the migrations contain: the tables, columns, row-level-security policies and grants they create
 are schema-design content, owned by "Row-level security and database context" for the RLS-relevant objects and by the
@@ -175,12 +174,8 @@ across both the `public` and `tower_sessions` schemas. PostgreSQL's `TIMESTAMPTZ
 includes the `-infinity`/`infinity` specials, none of which `chrono::DateTime<Utc>` can represent; an out-of-range value
 read through `sqlx`'s decode path panics rather than returning an error. The constraint rejects such a value at write
 time instead, so the panicking decode path is unreachable for any column the constraint covers as long as every
-first-party column carries one. `every_timestamptz_column_has_decode_range_check` (`backend/src/db.rs`) enforces that
-going forward: it scans `information_schema.columns` for every `timestamp with time zone` column in `public` and
-`tower_sessions` (excluding `_sqlx_migrations`, which sqlx itself manages and only ever writes via `now()`), anti-joins
-against `pg_constraint` for a `CHECK` whose definition contains both bound literals, and fails the migration this landed
-in — since it is a `#[sqlx::test(migrations = "./migrations")]` test, it re-runs against every migration set the tree
-ever ships — if a new `TIMESTAMPTZ` column has no matching constraint.
+first-party column carries one. A new `TIMESTAMPTZ` column follows the convention by declaring its own constraint; no
+check enforces it.
 
 ## Interfaces and dependencies
 
