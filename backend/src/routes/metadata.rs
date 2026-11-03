@@ -2760,6 +2760,85 @@ mod tests {
 
     use axum::http::header::AUTHORIZATION;
 
+    async fn insert_sibling_manifestation(ingestion_pool: &sqlx::PgPool, work_id: Uuid) -> Uuid {
+        let marker = Uuid::new_v4().simple().to_string();
+        let file_path = format!("fixtures/admin-test-sibling-{marker}.epub");
+        let file_hash = format!("admin-test-sibling-hash-{marker}");
+        sqlx::query_scalar!(
+            "WITH inserted AS (INSERT INTO manifestations \
+                (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                 file_size_bytes, ingestion_status, validation_status) \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
+            work_id,
+            file_path,
+            file_hash,
+        )
+        .fetch_one(ingestion_pool)
+        .await
+        .expect("insert sibling manifestation")
+    }
+
+    fn version_id_of(body: &serde_json::Value, field: &str) -> String {
+        body["fields"][field]["version_id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("expected a version_id for field '{field}' in {body}"))
+            .to_string()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_pages_rejects_version_journaled_under_sibling_manifestation(
+        pool: sqlx::PgPool,
+    ) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // Patch pages (manifestation-scoped) via A.
+        let initial_a = server
+            .get(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag_a = etag_value(initial_a.headers());
+        let patch_a = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_a).unwrap(),
+            )
+            .json(&serde_json::json!({"pages": 250}))
+            .await;
+        assert_eq!(patch_a.status_code(), StatusCode::OK);
+        let body_a: serde_json::Value = patch_a.json();
+        let version_a = version_id_of(&body_a, "pages");
+
+        // Revert on B with A's version id must 404: pages is
+        // manifestation-scoped, so a sibling's journal row must not be
+        // applicable to another edition's columns.
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_b}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "pages",
+                "version_id": version_a,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::NOT_FOUND,
+            "manifestation-scoped fields must keep the strict same-manifestation \
+             match; body = {}",
+            revert.text()
+        );
+    }
+
     /// Insert a `metadata_versions` row for `(manifestation_id, field_name)`
     /// via the ingestion pool, returning its id.
     async fn insert_version(
