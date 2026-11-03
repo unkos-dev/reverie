@@ -109,13 +109,7 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   a handler passed to `routes!` without the annotation fails to compile; there is no way to register a route through
   this mechanism and leave it undocumented.
 - `backend/tests/gen_openapi.rs` is the drift gate: `spec_json()` must render byte-identical to the committed
-  `backend/openapi.json` (`REGEN=1 cargo test --test gen_openapi` rewrites it), plus narrower assertions: every
-  `ProblemDetails`-referencing response declares `application/problem+json` as its only content type, the document
-  reports `openapi: "3.1.x"` and covers `/health`/`/health/ready`, the three security schemes and the document-level
-  deny-by-default are present, and a handful of library, series and dashboard routes and their DTO schemas are
-  registered. The extractor coverage test requires `400`/`413`/`415`/`422` for JSON-body operations and `400` for
-  path-parameter operations, each as `application/problem+json`, and rejects an empty operation census. Unit tests in
-  `openapi.rs` exercise the modifier's classification, preservation of explicit responses and repeated application.
+  `backend/openapi.json` (`REGEN=1 cargo test --test gen_openapi` rewrites it).
 - `frontend/src/api/errors.ts` declares `ApiError extends Error` (`status`, `type`, `title`, `detail`, and a
   `problemSlug` computed property that takes the last path segment of `type`) plus two free functions,
   `isIfMatchMismatch`/`isIfMatchRequired`, that test `status` and `problemSlug` together — built entirely on
