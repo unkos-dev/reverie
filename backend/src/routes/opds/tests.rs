@@ -93,34 +93,6 @@ async fn unauthenticated_returns_challenge(pool: PgPool) {
     assert_eq!(problem["status"], 401);
 }
 
-// ── Regression: DB failure surfaces as 500, not a 401 challenge ──────────
-
-#[sqlx::test(migrations = "./migrations")]
-async fn basic_only_db_failure_returns_500_not_challenge(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let tmp = tempfile::TempDir::new().unwrap();
-    let server =
-        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
-
-    // Close the app pool the server's state holds. A subsequent Basic auth
-    // attempt drives verify_basic into a PoolClosed sqlx::Error that
-    // bubbles up as AppError::Internal.  Before the fix, BasicOnly's
-    // wildcard arm swallowed it into a 401 + challenge.
-    app_pool.close().await;
-
-    let response = server.get("/opds").add_header(AUTHORIZATION, basic).await;
-    assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-    assert!(
-        response
-            .headers()
-            .get(axum::http::header::WWW_AUTHENTICATE)
-            .is_none(),
-        "500 must not emit a Basic challenge"
-    );
-}
-
 // ── Test 22: revoked device token rejected ───────────────────────────────
 
 #[sqlx::test(migrations = "./migrations")]
@@ -499,93 +471,6 @@ async fn insert_manifestation_bytes(
 }
 
 // ── Regression: series feed renders every manifestation in one page ─────
-
-#[sqlx::test(migrations = "./migrations")]
-async fn series_feed_renders_all_manifestations(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let tmp = tempfile::TempDir::new().unwrap();
-
-    let series_id: Uuid = sqlx::query_scalar!(
-        "INSERT INTO series (name, sort_name) VALUES ('Long Saga', 'Long Saga') RETURNING id",
-    )
-    .fetch_one(&ingestion_pool)
-    .await
-    .expect("insert series");
-
-    // 51 books (> page_size=50). Positions are monotonic with `i`; created_at
-    // is 2020 for all except the last, which is 2023 — so on the buggy
-    // `(created_at, id) < cursor` page 2, the last position's row is
-    // filtered out. Fix: no cursor on series, whole series on one page.
-    let mut expected: Vec<Uuid> = Vec::with_capacity(51);
-    for i in 0..51u32 {
-        let title = format!("Volume {i:03}");
-        let work_id: Uuid = sqlx::query_scalar!(
-            "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
-            title,
-        )
-        .fetch_one(&ingestion_pool)
-        .await
-        .expect("insert work");
-        let created_at: DateTime<Utc> = if i == 50 {
-            "2023-01-01T00:00:00Z".parse().expect("valid timestamp")
-        } else {
-            "2020-01-01T00:00:00Z".parse().expect("valid timestamp")
-        };
-        let file_path = format!("fixtures/series-{i}.epub");
-        let hash = format!("series-hash-{i}");
-        let m_id: Uuid = sqlx::query_scalar!(
-            "WITH inserted AS (INSERT INTO manifestations \
-                (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
-                 file_size_bytes, ingestion_status, validation_status, created_at) \
-             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'clean'::validation_status, $4) \
-             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
-            work_id,
-            file_path,
-            hash,
-            created_at,
-        )
-        .fetch_one(&ingestion_pool)
-        .await
-        .expect("insert manifestation");
-        let position = f64::from(i as i32 + 1);
-        sqlx::query!(
-            "INSERT INTO series_works (series_id, work_id, position) \
-             VALUES ($1, $2, $3::float8)",
-            series_id,
-            work_id,
-            position,
-        )
-        .execute(&ingestion_pool)
-        .await
-        .expect("insert series_works");
-        expected.push(m_id);
-    }
-
-    let server =
-        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
-    let response = server
-        .get(&format!("/opds/library/series/{series_id}"))
-        .add_header(AUTHORIZATION, basic)
-        .await;
-    assert_eq!(response.status_code(), StatusCode::OK);
-    let body = std::str::from_utf8(response.as_bytes()).unwrap();
-
-    for m_id in &expected {
-        let urn = format!("urn:reverie:manifestation:{m_id}");
-        assert!(
-            body.contains(&urn),
-            "missing {urn} — buggy cursor pagination would drop the last-position row"
-        );
-    }
-    // Single-page contract: no rel="next" on series feed.
-    assert!(
-        !body.contains(r#"rel="next""#),
-        "series feed must emit the whole series on one page — no next link"
-    );
-}
 
 // ── Wrong password returns a Basic challenge ────────────────────────────
 

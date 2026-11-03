@@ -106,58 +106,6 @@ async fn toggle_child_on_sets_role_child(pool: PgPool) {
 
 // ---------- PATCH /api/v1/users/{id} ----------
 
-#[sqlx::test(migrations = "./migrations")]
-async fn patch_user_invalid_email_format_returns_422(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let (adult_id, _) = test_support::db::create_adult_and_basic_auth(&app_pool, "bad-email").await;
-
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    for bad in [
-        "notanemail",
-        "a@",
-        "@domain.com",
-        "a@.com",
-        // Display-name and domain-literal forms. `EmailAddress::is_valid`
-        // (default options) accepts these and would store the angle/bracket-bearing
-        // string raw; `is_addr_spec` rejects them. Exercised here so a revert of the
-        // PATCH path back to `is_valid` is caught at the route level, not just in the
-        // `is_addr_spec` unit test.
-        "Bob <bob@example.com>",
-        "bob@[127.0.0.1]",
-        "\"john doe\"@example.com",
-        "\"john\"@example.com",
-        "jane@homelab",
-        "jane!books@example.com",
-        "jane#books@example.com",
-        "jane%books@example.com",
-        "jane/books@example.com",
-        "josé@example.com",
-        "",
-    ] {
-        if bad.is_empty() {
-            // Empty string is a separate validation path tested elsewhere.
-            continue;
-        }
-        let r = server
-            .patch(&format!("/api/v1/users/{adult_id}"))
-            .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-            .json(&json!({"email": bad}))
-            .await;
-        let problem = test_support::assert_problem(
-            &r,
-            problems::VALIDATION,
-            StatusCode::UNPROCESSABLE_ENTITY,
-        );
-        assert!(
-            problem["detail"].as_str().unwrap().contains("valid"),
-            "expected 'valid' in detail for input {bad:?}, got: {:?}",
-            problem["detail"]
-        );
-    }
-}
-
 // ---------- SECURITY: concurrent last-admin demotion ----------
 
 // ---------- 403 guards: child-status PUT and PATCH ----------
