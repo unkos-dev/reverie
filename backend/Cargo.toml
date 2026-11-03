@@ -131,6 +131,7 @@ zip = { version = "9.0.3", default-features = false, features = [
 # Server-side password-strength estimator (NIST SP 800-63B strength floor,
 # docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md). Pure Rust, no network.
 zxcvbn = "3"
+isbn = "0.8"
 
 [dev-dependencies]
 tempfile = "3.27.0"

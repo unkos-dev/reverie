@@ -121,7 +121,18 @@ precedes filesystem visibility; the imported transaction clears it with the clai
 cover columns (`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`, `has_embedded_cover`), and
 `accessibility_metadata` are likewise columns this table carries for a neighbouring subject's semantics.
 `suspected_duplicate_work_id` (`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a candidate
-duplicate rather than the owning work.
+duplicate rather than the owning work. `isbn_candidate` compares both supplied formats and their crate-derived
+equivalents in one bounded, parameterised query. Ingestion creates a separate work when a candidate exists instead of
+falling through to title/author grouping. `rematch_on_isbn_change` refreshes the candidate pointer inside the caller's
+transaction, clearing it when no candidate remains; it neither moves manifestations nor deletes works. The pointer
+records one candidate even when several works match. Duplicate-review interaction and confirmed grouping are outside
+this model's delivered interfaces.
+
+`isbn_10` and `isbn_13` hold independently supplied compact values. Conversion supports comparison and cache keys, never
+counterpart storage. Canonical promotion validates each supplied value through the `isbn` crate and requires ISBN-13 to
+begin with `978` or `979`. Individually valid mismatches can be saved. Book-detail and editable-metadata reads derive
+`isbn_mismatch` from the canonical pair: it is false when either value is absent, and true for valid, non-equivalent
+pairs, including an ISBN-13 without an ISBN-10 equivalent. No stored mismatch flag exists.
 
 **Library ownership.** `libraries.id` defaults to `uuidv7()`. Its unique, non-empty `configuration_key` binds an
 identity to deployment configuration; the migration seeds `default`. The row stores no root path or naming policy.
@@ -186,13 +197,14 @@ service. The production writers are: `backend/src/models/work.rs` (`match_existi
 entry point of the Design "Ingestion pipeline" into this model, called from
 `backend/src/services/ingestion/orchestrator.rs`; the same file's `rematch_on_isbn_change`, consumed by the enrichment
 orchestrator's ISBN re-check and, in `metadata.rs`, by `accept_manifestation`'s accepted-ISBN-version path and
-`update_book_metadata`'s touched-ISBN path; `backend/src/routes/metadata.rs`, the manual review and edit surface, which
-also writes `work_authors` and the vocabulary junctions through `apply_contributors_patch` and `apply_vocabulary_patch`;
-`backend/src/services/enrichment/` (`orchestrator.rs`, `queue.rs`, `field_lock.rs`), which applies accepted canonical
-values; `backend/src/services/writeback/` (`orchestrator.rs`, `queue.rs`), which updates `file_path` and
-`current_file_hash` after a successful on-disk rewrite; and `backend/src/services/metadata/draft.rs`, which writes the
-`metadata_versions` rows the pointer columns name. The production readers include `backend/src/routes/library/mod.rs`
-and `filters.rs`, and the shared `backend/src/routes/sort_spec.rs` and `cursor.rs` modules they import (also used by
+`update_book_metadata`'s touched-ISBN path and `revert_manifestation`'s ISBN revert/clear path;
+`backend/src/routes/metadata.rs`, the manual review and edit surface, which also writes `work_authors` and the
+vocabulary junctions through `apply_contributors_patch` and `apply_vocabulary_patch`; `backend/src/services/enrichment/`
+(`orchestrator.rs`, `queue.rs`, `field_lock.rs`), which applies accepted canonical values;
+`backend/src/services/writeback/` (`orchestrator.rs`, `queue.rs`), which updates `file_path` and `current_file_hash`
+after a successful on-disk rewrite; and `backend/src/services/metadata/draft.rs`, which writes the `metadata_versions`
+rows the pointer columns name. The production readers include `backend/src/routes/library/mod.rs` and `filters.rs`, and
+the shared `backend/src/routes/sort_spec.rs` and `cursor.rs` modules they import (also used by
 `backend/src/routes/shelves/mod.rs`), `backend/src/routes/series/mod.rs`, `backend/src/routes/opds/` (the OPDS catalogue
 subject), and `backend/src/routes/suggest.rs` and `backend/src/routes/library/search.rs` (vocabulary and text search).
 

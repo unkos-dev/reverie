@@ -6,6 +6,8 @@ title: "Enrichment pipeline"
 satisfies:
   - "REV-REQ-0051"
   - "REV-REQ-0052"
+  - "REV-REQ-0072"
+  - "REV-REQ-0073"
 governed-by:
   - "REV-ADR-0067"
   - "REV-ADR-0007"
@@ -61,8 +63,8 @@ stages the image such an observation points to.
 Depends on: the row-level-security mechanism and the ingestion role's unconditional policies the queue and the dry-run's
 fan-out rely on to reach `manifestations` without a per-user session context (the Design "Row-level security and
 database context"); `crate::models::work::rematch_on_isbn_change` for the ISBN-change hook; the external-identifier and
-rating registry's model functions for reading and writing identifier and rating slots; `crate::services::metadata::isbn`
-and `crate::services::metadata::external_id` for ISBN parsing and canonical identifier-field addressing.
+rating registry's model functions for reading and writing identifier and rating slots; the `isbn` crate for ISBN parsing
+and conversion, and `crate::services::metadata::external_id` for canonical identifier-field addressing.
 
 Depended on by: the Design "Writeback pipeline", which drains the `writeback_jobs` rows this subject enqueues; the
 Design "Metadata review and editing", which reads and resolves the `metadata_versions` rows this subject journals and
@@ -197,8 +199,8 @@ ambient path and has no production caller.
   `manifestations.enrichment_status` counts under `acquire_with_rls`, so a child sees counts scoped to its own visible
   manifestations like any other row-level-security-gated read.
 - `crate::models::work::rematch_on_isbn_change(tx, manifestation_id)`: called from `apply_canonical_batch` inside the
-  same transaction whenever an `isbn_10` or `isbn_13` apply succeeds; its `RematchOutcome` (`NoOp`/`AutoMerged`/
-  `Suspected`) is logged but not otherwise acted on here.
+  same transaction whenever an `isbn_10` or `isbn_13` apply succeeds; its `RematchOutcome` (`NoOp`/`Suspected`) is
+  logged but not otherwise acted on here.
 - `crate::models::external_identifier`'s `get_work_identifier`/`get_manifestation_identifier`/`upsert_work_identifier`/
   `upsert_manifestation_identifier`, and `crate::models::external_rating`'s `upsert_rating`/`delete_rating`: the
   registry's model functions this subject fills through on an identifier or rating observation.
@@ -298,7 +300,11 @@ compatibility path.
    `policy::decide`. On `Decision::Apply` it calls `apply_field`, on success triggers the ISBN rematch hook when the
    field is `isbn_10`/`isbn_13`, enqueues a writeback job for any non-identifier field, and `break`s out of the
    per-source loop, so when multiple sources agree in the same run, whichever completed the fan-out first is the one
-   whose journal row becomes the canonical pointer, not a fixed tie-break.
+   whose journal row becomes the canonical pointer, not a fixed tie-break. ISBN writes validate and normalise the
+   supplied format through the `isbn` crate. ISBN-13 additionally requires a `978` or `979` prefix. A refused
+   observation remains raw in `metadata_versions.new_value`, without a canonical value, canonical pointer or writeback
+   job. Applying one format never populates its counterpart. Comparison-only conversion preserves equivalent ISBN cache
+   keys and candidate discovery; the rematch operation records a possible duplicate without changing work membership.
 5. The transaction commits once, carrying the journal writes, the canonical updates, the rematch outcome and every
    writeback enqueue together.
 6. `finish` (in `queue.rs`) inspects the outcome: if every enabled source failed non-terminally and nothing applied or

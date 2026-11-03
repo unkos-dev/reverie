@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT isbn_10, isbn_10_version_id, isbn_13, isbn_13_version_id FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "isbn_10",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_10"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "isbn_10_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_10_version_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "isbn_13",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_13"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "isbn_13_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_13_version_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e196bb8d528064d0790943d34549090c30b54e8fda3259bec341da0af439d58f"
+}
