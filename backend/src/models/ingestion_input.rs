@@ -847,6 +847,24 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_inputs_current_uniqueness_and_removed_replacement(pool: PgPool) {
         let original = observed(&pool, 10).await;
+        let job = begin_attempt(&pool, &original, Uuid::new_v4())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        finish(
+            &mut tx,
+            &original,
+            job,
+            AttemptOutcome::Rejected,
+            InputStatus::Rejected,
+            Some("invalid EPUB"),
+            &[],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
         assert!(
             observe(
                 &pool,
@@ -860,9 +878,11 @@ mod tests {
         let same = observed(&pool, 10).await;
         assert_eq!(same.id, original.id);
         assert_eq!(same.generation, 1);
+        assert_eq!(same.status, InputStatus::Rejected);
         let changed = observed(&pool, 11).await;
         assert_eq!(changed.id, original.id);
         assert_eq!(changed.generation, 2);
+        assert_eq!(changed.status, InputStatus::Pending);
         remove(&pool, &changed, "external_disappearance")
             .await
             .unwrap();
