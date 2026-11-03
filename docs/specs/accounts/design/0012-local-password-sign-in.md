@@ -254,17 +254,15 @@ replayed automatically. No worker or asynchronous completion callback can write 
 ends. A cancelled hash caller cannot release computation capacity early: the blocking closure retains its permit clone
 until Argon2 finishes, and its late result cannot write accounting.
 
-`auth_hash_census_` route tests count twelve hash and verification sites across the seven hashing endpoints.
 Administrator creation and link issuance do not hash; redemption performs one computation.
-`auth_hash_login_pool_progress` holds the only permit during login, queues four other logins and checks that the
-pool-backed `GET /health/ready` completes using a two-connection application pool. The `auth_hash_` unit tests cover the
-active bound, wait expiry, cancellation, panic and kernel-equivalent results.
+`auth_hash_census_users_endpoints` counts the hash and verification sites on the users endpoints, and
+`auth_hash_results_match_kernels` checks that the limiter's hash and verification results match the direct kernels.
 
 `password_admission_route_two_pools_ninth_failure_race` checks that nine failures plus two simultaneous requests from
 separate application pools and sources yield one verification/`422` and one account `429`.
 `password_admission_route_parity_blocked_correct_and_no_verification` checks equivalent admitted and blocked states for
-known, unknown, disabled and passwordless accounts. The other `password_admission_` tests cover reset ordering,
-cancellation, lost commit acknowledgement, cohort loss, storage failure and the verified version snapshot.
+known, unknown, disabled and passwordless accounts. The other `password_admission_` tests cover the window and block
+boundaries, threshold rejection and reset, cancellation and the verified version snapshot.
 
 **Self-registration reaching the shared policy:** after the `self_registration_enabled` and `local_auth_enabled` gates
 and `enforce_source_rate_limit`, `register` validates the email shape, then calls `password_policy::enforce_from_config`
