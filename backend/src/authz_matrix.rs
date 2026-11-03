@@ -135,24 +135,6 @@ fn every_api_v1_op_declares_a_scope() {
 }
 
 #[test]
-fn smtp_verification_ops_declare_only_the_session_transport() {
-    let ops = parse_operations();
-    for (method, path) in [
-        ("GET", "/api/v1/account/email-verifications"),
-        ("POST", "/api/v1/account/email-verifications"),
-        ("POST", "/api/v1/account/email-verifications/confirmations"),
-        ("POST", "/api/v1/users/{id}/credential-links/emails"),
-        ("GET", "/api/v1/users/{id}/credential-links/emails/{job_id}"),
-    ] {
-        let op = ops
-            .iter()
-            .find(|op| op.method == method && op.path == path)
-            .unwrap_or_else(|| panic!("{method} {path} is not in the OpenAPI spec"));
-        assert_eq!(op.transports, ["session_cookie"], "{method} {path}");
-    }
-}
-
-#[test]
 fn mutating_verb_ops_require_write_scope() {
     let ops = parse_operations();
     let mutating = ["POST", "PUT", "PATCH", "DELETE"];

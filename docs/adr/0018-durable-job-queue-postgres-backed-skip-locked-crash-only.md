@@ -117,8 +117,7 @@ proof that earlier writes became durable.
 Shared path claims enforce owner-correct recorded and intent locations. Ordinary recovery retains its edit budget until
 destination finalisation commits the edit debit; carriers keep bounded attempts, and finish reads the durable count.
 Transient reset, sweep and claim errors retry within the existing worker without losing its tracked jobs. The
-`path_claim_` and `relocation_downgrade_` cases cover publisher ownership and populated reverse migration through
-existing test seams.
+`path_claim_` cases cover publisher ownership through existing test seams.
 
 Sibling ADR: [crash-safe state](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md), committed-state
 durability; this ADR is its in-flight-work complement, and the boundary it notes (transactions do not cover filesystem

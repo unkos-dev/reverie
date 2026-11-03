@@ -118,8 +118,7 @@ with sqlx-cli without building the backend; it is an authoring shortcut, not a s
 
 `just db-migrate` and `just rust::migrate` compile against the committed SQLx cache, so a fresh development database
 needs no schema for compilation. If queries or migrations change, regenerate the cache with `just rust::sqlx-prepare`;
-that command prepares its own disposable database. To apply a changed migration set through the shipped runner, run
-`just rust::test reverie_migrator_can_apply_full_migration_set`.
+that command prepares its own disposable database.
 
 `backend/schema.sql` is the committed `pg_dump` of a database with every migration applied. A change to the migrations
 regenerates it with `just rust::schema-dump`, which migrates a scratch database on its own disposable cluster;

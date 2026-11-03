@@ -300,6 +300,42 @@ async fn change_own_password_wrong_current_returns_422(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_weak_new_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    test_support::db::create_adult_with_password(
+        &app_pool,
+        "change-weak",
+        "change-weak@example.com",
+        OLD_PW,
+    )
+    .await;
+    let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    server.save_cookies();
+    server
+        .post("/auth/local/login")
+        .json(&json!({"email": "change-weak@example.com", "password": OLD_PW}))
+        .await;
+    let me: serde_json::Value = server.get("/auth/me").await.json();
+    let token = me["csrf_token"].as_str().unwrap().to_owned();
+
+    let r = server
+        .post("/api/v1/account/password")
+        .add_header(csrf_header(&token).0, csrf_header(&token).1)
+        .json(&json!({"current_password": OLD_PW, "new_password": "password"}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        test_support::db::server_with_real_pools(&app_pool, &ingestion_pool)
+            .post("/auth/local/login")
+            .json(&json!({"email": "change-weak@example.com", "password": OLD_PW}))
+            .await
+            .status_code(),
+        StatusCode::NO_CONTENT
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn change_own_password_oidc_only_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -782,6 +818,12 @@ async fn credential_link_policy_rejection_and_concurrent_redemption(pool: PgPool
             .await
             .status_code(),
         StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert!(
+        crate::models::local_credentials::find_by_user_id(&app, id)
+            .await
+            .unwrap()
+            .is_none()
     );
     assert!(
         crate::models::credential_link::lookup(&app, &token)

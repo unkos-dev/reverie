@@ -3780,6 +3780,47 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn setup_refuses_a_password_the_policy_rejects(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/setup")
+            .json(&serde_json::json!({
+                "email": "admin@example.com",
+                "display_name": "Admin",
+                "password": "password",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(!crate::models::user::admin_exists(&app_pool).await.unwrap());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_refuses_a_password_the_policy_rejects(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_self_registration(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/register")
+            .json(&serde_json::json!({
+                "email": "self-reg@example.com",
+                "display_name": "Self Reg",
+                "password": "password",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            crate::models::user::find_by_email(&pool, "self-reg@example.com")
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn register_creates_adult_when_enabled(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

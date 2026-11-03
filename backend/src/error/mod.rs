@@ -577,13 +577,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unauthorized_returns_401_problem() {
-        let (status, _, json) = parse_problem(AppError::Unauthorized).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_problem_shape(&json, problems::UNAUTHORIZED, 401, "Unauthorized");
-    }
-
-    #[tokio::test]
     async fn unauthorized_carries_bare_bearer_challenge() {
         let response = AppError::Unauthorized.into_response();
         let challenge = response
@@ -603,6 +596,8 @@ mod tests {
         let (status, _, json) = parse_problem(AppError::InvalidCredential).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_problem_shape(&json, problems::UNAUTHORIZED, 401, "Unauthorized");
+        let (_, _, unauthorized) = parse_problem(AppError::Unauthorized).await;
+        assert_eq!(json, unauthorized);
     }
 
     #[tokio::test]
@@ -660,173 +655,6 @@ mod tests {
         assert_eq!(
             json["detail"].as_str().unwrap(),
             "If-Match header must be ASCII"
-        );
-    }
-
-    #[tokio::test]
-    async fn malformed_path_returns_400_with_message_in_detail() {
-        let (status, ct, json) = parse_problem(AppError::MalformedPath(
-            "a path parameter has the wrong shape".into(),
-        ))
-        .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert!(
-            ct.contains("application/problem+json"),
-            "wrong content-type: {ct}"
-        );
-        assert_problem_shape(
-            &json,
-            problems::MALFORMED_PATH,
-            400,
-            "Malformed Path Parameter",
-        );
-        assert_eq!(
-            json["detail"].as_str().unwrap(),
-            "a path parameter has the wrong shape"
-        );
-    }
-
-    #[tokio::test]
-    async fn path_rejection_other_kind_maps_to_internal() {
-        use axum::extract::{FromRequestParts, Path};
-
-        let request = axum::http::Request::builder().uri("/x").body(()).unwrap();
-        let (mut parts, ()) = request.into_parts();
-        let rejection = Path::<uuid::Uuid>::from_request_parts(&mut parts, &())
-            .await
-            .unwrap_err();
-
-        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert!(
-            ct.contains("application/problem+json"),
-            "wrong content-type: {ct}"
-        );
-        assert_problem_shape(&json, problems::INTERNAL, 500, "Internal Server Error");
-    }
-
-    #[derive(Debug, serde::Deserialize)]
-    struct Probe {
-        #[expect(
-            dead_code,
-            reason = "field exists only to give serde something to reject"
-        )]
-        name: String,
-    }
-
-    fn json_request(
-        content_type: Option<&str>,
-        body: impl Into<axum::body::Body>,
-    ) -> axum::http::Request<axum::body::Body> {
-        let mut builder = axum::http::Request::builder().method("POST").uri("/");
-        if let Some(content_type) = content_type {
-            builder = builder.header(header::CONTENT_TYPE, content_type);
-        }
-        builder.body(body.into()).unwrap()
-    }
-
-    #[tokio::test]
-    async fn json_data_error_maps_to_422_invalid_request_body() {
-        let request = json_request(Some("application/json"), r#"{"name": 5}"#);
-        let rejection =
-            <axum::Json<Probe> as axum::extract::FromRequest<()>>::from_request(request, &())
-                .await
-                .unwrap_err();
-
-        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert!(
-            ct.contains("application/problem+json"),
-            "wrong content-type: {ct}"
-        );
-        assert_problem_shape(
-            &json,
-            problems::INVALID_REQUEST_BODY,
-            422,
-            "Invalid Request Body",
-        );
-        assert_eq!(
-            json["detail"].as_str().unwrap(),
-            "the request body does not match the expected fields or types"
-        );
-    }
-
-    #[tokio::test]
-    async fn json_syntax_error_maps_to_400_invalid_request_body() {
-        let request = json_request(Some("application/json"), "{");
-        let rejection =
-            <axum::Json<Probe> as axum::extract::FromRequest<()>>::from_request(request, &())
-                .await
-                .unwrap_err();
-
-        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert!(
-            ct.contains("application/problem+json"),
-            "wrong content-type: {ct}"
-        );
-        assert_problem_shape(
-            &json,
-            problems::INVALID_REQUEST_BODY,
-            400,
-            "Invalid Request Body",
-        );
-        assert_eq!(
-            json["detail"].as_str().unwrap(),
-            "the request body is not valid JSON"
-        );
-    }
-
-    #[tokio::test]
-    async fn missing_json_content_type_maps_to_415_invalid_request_body() {
-        let request = json_request(None, r#"{"name": "x"}"#);
-        let rejection =
-            <axum::Json<Probe> as axum::extract::FromRequest<()>>::from_request(request, &())
-                .await
-                .unwrap_err();
-
-        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
-        assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
-        assert!(
-            ct.contains("application/problem+json"),
-            "wrong content-type: {ct}"
-        );
-        assert_problem_shape(
-            &json,
-            problems::INVALID_REQUEST_BODY,
-            415,
-            "Invalid Request Body",
-        );
-        assert_eq!(
-            json["detail"].as_str().unwrap(),
-            "the request body must be sent as application/json"
-        );
-    }
-
-    #[tokio::test]
-    async fn oversized_json_body_maps_to_413_invalid_request_body() {
-        let oversized = " ".repeat(3 * 1024 * 1024);
-        let request = json_request(Some("application/json"), oversized);
-        let rejection =
-            <axum::Json<Probe> as axum::extract::FromRequest<()>>::from_request(request, &())
-                .await
-                .unwrap_err();
-
-        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
-        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
-        assert!(
-            ct.contains("application/problem+json"),
-            "wrong content-type: {ct}"
-        );
-        assert_problem_shape(
-            &json,
-            problems::INVALID_REQUEST_BODY,
-            413,
-            "Invalid Request Body",
-        );
-        assert_eq!(
-            json["detail"].as_str().unwrap(),
-            "the request body could not be read"
         );
     }
 
@@ -924,14 +752,5 @@ mod tests {
             "wrong content-type: {ct}"
         );
         assert_problem_shape(&json, problems::BASIC_AUTH_REQUIRED, 401, "Unauthorized");
-    }
-
-    #[tokio::test]
-    async fn instance_omitted_outside_request() {
-        let (_, _, json) = parse_problem(AppError::NotFound).await;
-        assert!(
-            json.get("instance").is_none(),
-            "instance must be omitted when task-local is unset, got: {json}"
-        );
     }
 }

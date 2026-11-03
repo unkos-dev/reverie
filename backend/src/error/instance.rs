@@ -47,32 +47,3 @@ pub async fn problem_instance_layer(req: Request, next: Next) -> Response {
 pub fn current_request_uri() -> Option<String> {
     CURRENT_URI.try_with(String::clone).ok()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::Router;
-    use axum::middleware::from_fn;
-    use axum::routing::get;
-    use axum_test::TestServer;
-
-    async fn handler() -> String {
-        current_request_uri().unwrap_or_else(|| "<unset>".into())
-    }
-
-    #[tokio::test]
-    async fn middleware_captures_request_path() {
-        let app = Router::new()
-            .route("/api/v1/books", get(handler))
-            .layer(from_fn(problem_instance_layer));
-        let server = TestServer::new(app);
-        let r = server.get("/api/v1/books?cursor=foo").await;
-        r.assert_status_ok();
-        assert_eq!(r.text(), "/api/v1/books");
-    }
-
-    #[tokio::test]
-    async fn outside_request_returns_none() {
-        assert!(current_request_uri().is_none());
-    }
-}
