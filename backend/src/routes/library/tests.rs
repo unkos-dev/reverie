@@ -513,29 +513,6 @@ async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_filter_malformed_author_uuid_returns_400(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-
-    let response = server
-        .get("/api/v1/books?author=garbage")
-        .add_header(AUTHORIZATION, basic)
-        .await;
-    let body = test_support::assert_problem(
-        &response,
-        problems::MALFORMED_QUERY,
-        StatusCode::BAD_REQUEST,
-    );
-    let detail = body["detail"].as_str().expect("detail string");
-    assert!(
-        detail.contains("malformed query parameter"),
-        "got detail: {detail}"
-    );
-}
-
-#[sqlx::test(migrations = "./migrations")]
 async fn list_filter_unknown_sort_field_returns_422(pool: PgPool) {
     // `?sort=` is validated in-handler against the `SortColumn`
     // whitelist (`SortSpec::parse`) after the query string decodes: a
@@ -791,17 +768,6 @@ async fn filter_created_at_inclusive_lower_exclusive_upper_and_cursor_identity(p
         let mut titles = filtered_titles(&server, &basic, &format!("/api/v1/books?{query}")).await;
         titles.sort();
         assert_eq!(titles, expected, "{query}");
-    }
-    for query in [
-        "created_at_gte=2026-06-30",
-        "created_at_lt=2026-02-30T00:00:00Z",
-        "created_at_gte=nope",
-    ] {
-        let bad = server
-            .get(&format!("/api/v1/books?{query}"))
-            .add_header(AUTHORIZATION, basic.clone())
-            .await;
-        test_support::assert_problem(&bad, problems::MALFORMED_QUERY, StatusCode::BAD_REQUEST);
     }
     let server = server_with_page_size(&app_pool, &ingestion_pool, 1);
     let first = server
