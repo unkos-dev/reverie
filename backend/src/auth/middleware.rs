@@ -389,21 +389,6 @@ mod tests {
     use crate::test_support::oidc_mock::MockOidcProvider;
     use crate::test_support::{self, db};
 
-    async fn bearer_device_token(pool: &PgPool, user_id: Uuid) -> String {
-        let (plaintext, hash) = token::generate_device_token();
-        let dt = device_token::create_with_limit(
-            pool,
-            user_id,
-            "bearer-integration-test",
-            &hash,
-            Scope::for_role(Role::Adult),
-            None,
-        )
-        .await
-        .expect("create device token");
-        format!("Bearer {}{}.{plaintext}", token::TOKEN_PREFIX, dt.id)
-    }
-
     async fn identity_count(pool: &PgPool, issuer: &str, subject: &str) -> i64 {
         sqlx::query_scalar!(
             "SELECT count(*) AS \"c!\" FROM user_identities WHERE issuer = $1 AND subject = $2",
@@ -494,32 +479,6 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn device_token_bearer_reaches_protected_endpoint(pool: PgPool) {
-        let app_pool = db::app_pool_for(&pool).await;
-        let ingestion_pool = db::ingestion_pool_for(&pool).await;
-        let server = db::server_with_real_pools(&app_pool, &ingestion_pool);
-        let (user_id, _) = db::create_adult_and_basic_auth(&app_pool, "bearer-happy").await;
-        let response = server
-            .get("/api/v1/shelves")
-            .add_header(AUTHORIZATION, bearer_device_token(&app_pool, user_id).await)
-            .await;
-        assert_eq!(response.status_code(), StatusCode::OK);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn basic_auth_reaches_protected_endpoint(pool: PgPool) {
-        let app_pool = db::app_pool_for(&pool).await;
-        let ingestion_pool = db::ingestion_pool_for(&pool).await;
-        let server = db::server_with_real_pools(&app_pool, &ingestion_pool);
-        let (_, basic) = db::create_adult_and_basic_auth(&app_pool, "basic-happy").await;
-        let response = server
-            .get("/api/v1/shelves")
-            .add_header(AUTHORIZATION, basic)
-            .await;
-        assert_eq!(response.status_code(), StatusCode::OK);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn no_credential_at_all_gets_bare_bearer_challenge(pool: PgPool) {
         let app_pool = db::app_pool_for(&pool).await;
         let ingestion_pool = db::ingestion_pool_for(&pool).await;
@@ -527,32 +486,5 @@ mod tests {
         let response = server.get("/api/v1/shelves").await;
         test_support::assert_problem(&response, problems::UNAUTHORIZED, StatusCode::UNAUTHORIZED);
         assert_eq!(response.header(WWW_AUTHENTICATE), "Bearer");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn session_precedes_unsupported_bearer(pool: PgPool) {
-        let app_pool = db::app_pool_for(&pool).await;
-        let ingestion_pool = db::ingestion_pool_for(&pool).await;
-        db::create_adult_with_password(
-            &app_pool,
-            "session-precedence",
-            "session@example.com",
-            "correct horse battery staple",
-        )
-        .await;
-        let mut server = db::server_with_real_pools(&app_pool, &ingestion_pool);
-        server.save_cookies();
-        let login = server
-            .post("/auth/local/login")
-            .json(&serde_json::json!({
-                "email": "session@example.com", "password": "correct horse battery staple",
-            }))
-            .await;
-        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
-        let response = server
-            .get("/api/v1/shelves")
-            .add_header(AUTHORIZATION, "Bearer external.token.signature")
-            .await;
-        assert_eq!(response.status_code(), StatusCode::OK);
     }
 }

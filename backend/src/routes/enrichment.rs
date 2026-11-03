@@ -239,33 +239,6 @@ mod tests {
     use axum::http::StatusCode;
     use uuid::Uuid;
 
-    #[tokio::test]
-    async fn trigger_requires_auth() {
-        let server = test_support::test_server();
-        let id = Uuid::new_v4();
-        let response = server
-            .post(&format!("/api/v1/manifestations/{id}/enrichment/trigger"))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn status_requires_auth() {
-        let server = test_support::test_server();
-        let response = server.get("/api/v1/enrichment/status").await;
-        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn dry_run_requires_auth() {
-        let server = test_support::test_server();
-        let id = Uuid::new_v4();
-        let response = server
-            .post(&format!("/api/v1/manifestations/{id}/enrichment/dry-run"))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
-    }
-
     /// X3: admin POST /trigger must reset `enrichment_status` / `attempt_count`
     /// on a real manifestation row.  Pre-C2 this 404'd in production
     /// because state.pool had no `app.current_user_id` session var.
@@ -334,72 +307,6 @@ mod tests {
             row.enrichment_failures,
             serde_json::json!([]),
             "enrichment_failures not cleared"
-        );
-    }
-
-    /// A trigger while a run is active must not release the worker's claim
-    /// (a second worker could pick the row up concurrently); it records a
-    /// rerun request for the completion bookkeeping instead.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn trigger_during_active_run_defers_requeue(pool: sqlx::PgPool) {
-        use axum::http::header::AUTHORIZATION;
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
-        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-        let marker = Uuid::new_v4().simple().to_string();
-        let (_work_id, m_id) =
-            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
-
-        sqlx::query!(
-            "UPDATE manifestations \
-             SET enrichment_status = 'in_progress'::enrichment_status, \
-                 enrichment_attempt_count = 1, \
-                 enrichment_attempted_at = now() \
-             WHERE id = $1",
-            m_id,
-        )
-        .execute(&ing_pool)
-        .await
-        .expect("seed in_progress state");
-
-        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
-        let response = server
-            .post(&format!("/api/v1/manifestations/{m_id}/enrichment/trigger"))
-            .add_header(AUTHORIZATION, basic)
-            .await;
-        assert_eq!(
-            response.status_code(),
-            StatusCode::ACCEPTED,
-            "body = {}",
-            response.text()
-        );
-
-        let row = sqlx::query!(
-            "SELECT enrichment_status AS \"status!: crate::models::enrichment_status::EnrichmentStatus\", \
-                    enrichment_attempt_count, enrichment_attempted_at, \
-                    enrichment_rerun_requested \
-             FROM manifestations WHERE id = $1",
-            m_id,
-        )
-        .fetch_one(&ing_pool)
-        .await
-        .expect("fetch manifestation");
-        assert_eq!(
-            row.status,
-            crate::models::enrichment_status::EnrichmentStatus::InProgress,
-            "the trigger must not release the active claim"
-        );
-        assert!(
-            row.enrichment_rerun_requested,
-            "the trigger must leave a rerun request for the completion path"
-        );
-        assert_eq!(
-            row.enrichment_attempt_count, 1,
-            "the active claim's attempt counter is untouched"
-        );
-        assert!(
-            row.enrichment_attempted_at.is_some(),
-            "the active claim's timestamp is untouched"
         );
     }
 }

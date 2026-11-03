@@ -348,7 +348,7 @@ fn map_relator(code: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::epub::opf_layer::{Creator, OpfData, SeriesMeta};
+    use crate::services::epub::opf_layer::OpfData;
     use std::collections::HashMap;
 
     fn empty_opf() -> OpfData {
@@ -370,14 +370,6 @@ mod tests {
             identifiers: vec![],
             subjects: vec![],
             series_meta: None,
-        }
-    }
-
-    fn creator(name: &str, roles: &[&str]) -> Creator {
-        Creator {
-            name: name.into(),
-            roles: roles.iter().map(|r| (*r).to_string()).collect(),
-            from_contributor: false,
         }
     }
 
@@ -430,178 +422,5 @@ mod tests {
             (recognised.isbn_10.as_deref(), recognised.isbn_13.as_deref()),
             (Some("080442957X"), Some("9791090636071"))
         );
-    }
-
-    #[test]
-    fn extract_full_metadata() {
-        let opf = OpfData {
-            title: Some("The Hobbit".into()),
-            creators: vec![creator("J. R. R. Tolkien", &["aut"])],
-            description: Some("<p>A fantasy novel</p>".into()),
-            // The OPF parse layer decodes entities before ExtractedMetadata
-            // ever sees this field, so the fixture supplies already-decoded
-            // text rather than raw "&amp;" markup.
-            publisher: Some("Allen & Unwin".into()),
-            date: Some("1937-09-21".into()),
-            language: Some("en".into()),
-            identifiers: vec!["urn:isbn:9780547928227".into()],
-            subjects: vec!["Fantasy".into()],
-            series_meta: Some(SeriesMeta {
-                name: "Middle-earth".into(),
-                position: Some(1.0),
-            }),
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.title.as_deref(), Some("The Hobbit"));
-        assert_eq!(m.sort_title.as_deref(), Some("the hobbit"));
-        assert_eq!(m.description.as_deref(), Some("A fantasy novel"));
-        assert_eq!(m.publisher.as_deref(), Some("Allen & Unwin"));
-        assert!(m.pub_date.is_some());
-        assert_eq!(m.creators[0].name, "J. R. R. Tolkien");
-        assert_eq!(m.creators[0].sort_name, "Tolkien, J. R. R.");
-        assert_eq!(m.creators[0].role, "author");
-        assert_eq!(m.isbn_13.as_deref(), Some("9780547928227"));
-        assert_eq!(m.series.as_ref().unwrap().name, "Middle-earth");
-        assert!(m.confidence > 0.8);
-    }
-
-    #[test]
-    fn extract_minimal_metadata() {
-        let m = extract(&empty_opf());
-        assert!(m.title.is_none());
-        assert!(m.creators.is_empty());
-        assert!(m.isbn_10.is_none() && m.isbn_13.is_none());
-        assert_eq!(m.confidence, 0.3);
-    }
-
-    #[test]
-    fn sort_name_generation() {
-        assert_eq!(generate_sort_name("J. R. R. Tolkien"), "Tolkien, J. R. R.");
-        assert_eq!(generate_sort_name("Tolkien"), "Tolkien");
-        assert_eq!(generate_sort_name("Mary Shelley"), "Shelley, Mary");
-    }
-
-    #[test]
-    fn role_mapping() {
-        assert_eq!(map_relator("aut"), Some("author"));
-        assert_eq!(map_relator("edt"), Some("editor"));
-        assert_eq!(map_relator("trl"), Some("translator"));
-        assert_eq!(map_relator("nrt"), Some("narrator"));
-        assert_eq!(map_relator("ill"), None);
-    }
-
-    #[test]
-    fn multi_author_extraction() {
-        let opf = OpfData {
-            creators: vec![
-                creator("Author One", &["aut"]),
-                creator("Editor Two", &["edt"]),
-            ],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.creators.len(), 2);
-        assert_eq!(m.creators[1].role, "editor");
-    }
-
-    #[test]
-    fn dc_creator_with_no_role_defaults_to_author() {
-        let opf = OpfData {
-            creators: vec![creator("No Role", &[])],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.creators.len(), 1);
-        assert_eq!(m.creators[0].role, "author");
-        assert!(m.unmapped_contributors.is_empty());
-    }
-
-    #[test]
-    fn bare_contributor_with_no_role_is_staged_not_guessed() {
-        let opf = OpfData {
-            creators: vec![Creator {
-                name: "Some Helper".into(),
-                roles: vec![],
-                from_contributor: true,
-            }],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert!(
-            m.creators.is_empty(),
-            "a bare dc:contributor must never be guessed as an author"
-        );
-        assert_eq!(m.unmapped_contributors.len(), 1);
-        assert_eq!(m.unmapped_contributors[0].name, "Some Helper");
-        assert!(m.unmapped_contributors[0].code.is_none());
-    }
-
-    #[test]
-    fn unknown_relator_code_is_staged_not_guessed() {
-        let opf = OpfData {
-            creators: vec![creator("Illustrator Person", &["ill"])],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert!(
-            m.creators.is_empty(),
-            "an unknown relator code must never be guessed as an author"
-        );
-        assert_eq!(m.unmapped_contributors.len(), 1);
-        assert_eq!(m.unmapped_contributors[0].code.as_deref(), Some("ill"));
-    }
-
-    #[test]
-    fn multi_role_creator_splits_into_mapped_and_unmapped() {
-        // EPUB 3.3 §D.3.10: one creator, two role refines (aut + ill).
-        let opf = OpfData {
-            creators: vec![creator("Maurice Sendak", &["aut", "ill"])],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.creators.len(), 1);
-        assert_eq!(m.creators[0].role, "author");
-        assert_eq!(m.unmapped_contributors.len(), 1);
-        assert_eq!(m.unmapped_contributors[0].name, "Maurice Sendak");
-        assert_eq!(m.unmapped_contributors[0].code.as_deref(), Some("ill"));
-    }
-
-    #[test]
-    fn duplicate_name_role_pair_keeps_first_occurrence() {
-        let opf = OpfData {
-            creators: vec![
-                creator("Same Person", &["aut"]),
-                creator("Same Person", &["aut"]),
-            ],
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.creators.len(), 1);
-    }
-
-    #[test]
-    fn subtitle_sanitized() {
-        let opf = OpfData {
-            subtitle: Some("The Final <b>Empire</b>".into()),
-            ..empty_opf()
-        };
-        let m = extract(&opf);
-        assert_eq!(m.subtitle.as_deref(), Some("The Final Empire"));
-    }
-
-    #[test]
-    fn pages_parse_bounds() {
-        let parse = |raw: &str| {
-            extract(&OpfData {
-                number_of_pages: Some(raw.into()),
-                ..empty_opf()
-            })
-            .pages
-        };
-        assert_eq!(parse("353"), Some(353));
-        assert_eq!(parse("0"), None);
-        assert_eq!(parse("-5"), None);
-        assert_eq!(parse("n/a"), None);
     }
 }

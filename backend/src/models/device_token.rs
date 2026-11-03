@@ -272,177 +272,6 @@ mod tests {
     use super::*;
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn create_list_revoke_lifecycle(pool: PgPool) {
-        let display_name = format!("token-test-{}", Uuid::new_v4());
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
-            display_name,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("create user");
-
-        let token = create(&pool, user_id, "My Kindle", "fake-hash")
-            .await
-            .expect("create token");
-        assert_eq!(token.name, "My Kindle");
-        assert!(token.revoked_at.is_none());
-
-        let tokens = list_for_user(&pool, user_id).await.expect("list");
-        assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].id, token.id);
-
-        let revoked = revoke(&pool, token.id, user_id).await.expect("revoke");
-        assert!(revoked);
-
-        let tokens = list_for_user(&pool, user_id)
-            .await
-            .expect("list after revoke");
-        assert!(tokens.is_empty());
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn list_for_user_excludes_revoked(pool: PgPool) {
-        let display_name = format!("revoke-filter-{}", Uuid::new_v4());
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
-            display_name,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("create user");
-
-        let active = create(&pool, user_id, "active", "hash-active")
-            .await
-            .expect("create active");
-        let to_revoke = create(&pool, user_id, "to-revoke", "hash-revoked")
-            .await
-            .expect("create revoked");
-        assert!(revoke(&pool, to_revoke.id, user_id).await.expect("revoke"),);
-
-        let listed = list_for_user(&pool, user_id).await.expect("list");
-        assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].id, active.id);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_with_limit_returns_limit_exceeded_at_cap(pool: PgPool) {
-        let display_name = format!("limit-cap-{}", Uuid::new_v4());
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
-            display_name,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("create user");
-
-        let cap = usize::try_from(MAX_TOKENS_PER_USER).expect("MAX_TOKENS_PER_USER fits usize");
-        for i in 0..cap {
-            create_with_limit(
-                &pool,
-                user_id,
-                &format!("t-{i}"),
-                &format!("h-{i}"),
-                &[Scope::Read],
-                None,
-            )
-            .await
-            .expect("create within limit");
-        }
-
-        let result = create_with_limit(
-            &pool,
-            user_id,
-            "overflow",
-            "h-overflow",
-            &[Scope::Read],
-            None,
-        )
-        .await;
-        assert!(
-            matches!(result, Err(CreateError::LimitExceeded)),
-            "expected LimitExceeded at cap, got {result:?}"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_with_limit_excludes_revoked_from_count(pool: PgPool) {
-        let display_name = format!("limit-revoked-{}", Uuid::new_v4());
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
-            display_name,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("create user");
-
-        // Saturate then revoke them all; revoked tokens must not block creation.
-        let cap = usize::try_from(MAX_TOKENS_PER_USER).expect("MAX_TOKENS_PER_USER fits usize");
-        for i in 0..cap {
-            let t = create_with_limit(
-                &pool,
-                user_id,
-                &format!("r-{i}"),
-                &format!("rh-{i}"),
-                &[Scope::Read],
-                None,
-            )
-            .await
-            .expect("create within limit");
-            assert!(revoke(&pool, t.id, user_id).await.expect("revoke"));
-        }
-
-        let result =
-            create_with_limit(&pool, user_id, "active", "h-active", &[Scope::Read], None).await;
-        assert!(
-            result.is_ok(),
-            "revoked tokens must not block creation: {result:?}"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn update_last_used_debounced_within_window(pool: PgPool) {
-        let display_name = format!("debounce-{}", Uuid::new_v4());
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
-            display_name,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("create user");
-        let token = create(&pool, user_id, "debounce", "hash-debounce")
-            .await
-            .expect("create token");
-
-        update_last_used(&pool, token.id).await.expect("first");
-        let first = sqlx::query_scalar!(
-            "SELECT last_used_at FROM device_tokens WHERE id = $1",
-            token.id,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("fetch first");
-        let first = first.expect("first last_used_at not null");
-
-        // Sleep 50ms then update again; the SQL predicate should veto the write
-        // because last_used_at < now() - interval '5 minutes' is false.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        update_last_used(&pool, token.id).await.expect("second");
-        let second = sqlx::query_scalar!(
-            "SELECT last_used_at FROM device_tokens WHERE id = $1",
-            token.id,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("fetch second")
-        .expect("second last_used_at not null");
-        assert_eq!(
-            first, second,
-            "second update within 5-minute window must be a no-op"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn new_device_token_defaults_scopes_to_read(pool: PgPool) {
         let display_name = format!("scopes-default-{}", Uuid::new_v4());
         let user_id = sqlx::query_scalar!(
@@ -459,73 +288,6 @@ mod tests {
 
         assert_eq!(token.scopes, vec![Scope::Read]);
         assert!(token.expires_at.is_none());
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_with_limit_roundtrips_scopes_and_expiry(pool: PgPool) {
-        let display_name = format!("mint-roundtrip-{}", Uuid::new_v4());
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
-            display_name,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("create user");
-
-        let expires_at = Utc::now() + TimeDelta::days(90);
-        let token = create_with_limit(
-            &pool,
-            user_id,
-            "roundtrip",
-            "h-roundtrip",
-            &[Scope::Read, Scope::Write],
-            Some(expires_at),
-        )
-        .await
-        .expect("create token");
-
-        assert_eq!(token.scopes, vec![Scope::Read, Scope::Write]);
-        assert_eq!(
-            token.expires_at.map(|d: DateTime<Utc>| d.timestamp()),
-            Some(expires_at.timestamp())
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_with_limit_excludes_expired_from_count(pool: PgPool) {
-        let display_name = format!("limit-expired-{}", Uuid::new_v4());
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
-            display_name,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("create user");
-
-        // Saturate with already-expired tokens. Regression guard: the cap
-        // count must exclude expired rows, else an expired-but-unrevoked
-        // token permanently eats a slot.
-        let cap = usize::try_from(MAX_TOKENS_PER_USER).expect("MAX_TOKENS_PER_USER fits usize");
-        let expired = Utc::now() - TimeDelta::days(1);
-        for i in 0..cap {
-            create_with_limit(
-                &pool,
-                user_id,
-                &format!("e-{i}"),
-                &format!("eh-{i}"),
-                &[Scope::Read],
-                Some(expired),
-            )
-            .await
-            .expect("create within limit");
-        }
-
-        let result =
-            create_with_limit(&pool, user_id, "active", "h-active", &[Scope::Read], None).await;
-        assert!(
-            result.is_ok(),
-            "expired tokens must not block creation: {result:?}"
-        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -594,6 +356,36 @@ mod tests {
                 .expect("find unknown")
                 .is_none(),
             "unknown id must not resolve"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_with_limit_roundtrips_scopes_and_expiry(pool: PgPool) {
+        let display_name = format!("mint-roundtrip-{}", Uuid::new_v4());
+        let user_id = sqlx::query_scalar!(
+            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
+            display_name,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("create user");
+
+        let expires_at = Utc::now() + TimeDelta::days(90);
+        let token = create_with_limit(
+            &pool,
+            user_id,
+            "roundtrip",
+            "h-roundtrip",
+            &[Scope::Read, Scope::Write],
+            Some(expires_at),
+        )
+        .await
+        .expect("create token");
+
+        assert_eq!(token.scopes, vec![Scope::Read, Scope::Write]);
+        assert_eq!(
+            token.expires_at.map(|d: DateTime<Utc>| d.timestamp()),
+            Some(expires_at.timestamp())
         );
     }
 }

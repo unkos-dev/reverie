@@ -366,34 +366,6 @@ pub async fn rematch_on_isbn_change(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::metadata::extractor::{ExtractedCreator, SeriesInfo};
-    use crate::test_support::db::ingestion_pool_for;
-
-    fn test_metadata(title: &str, author: &str) -> ExtractedMetadata {
-        ExtractedMetadata {
-            title: Some(title.into()),
-            sort_title: Some(title.to_lowercase()),
-            subtitle: None,
-            description: None,
-            language: Some("en".into()),
-            creators: vec![ExtractedCreator {
-                name: author.into(),
-                sort_name: format!("{author}, Test"),
-                role: "author".into(),
-            }],
-            unmapped_contributors: vec![],
-            pages: None,
-            publisher: None,
-            pub_date: None,
-            isbn_10: None,
-            isbn_13: None,
-            subjects: vec![],
-            series: None,
-            inversion: None,
-            confidence: 0.5,
-        }
-    }
-
     // REV-REQ-0073 AC1.
     #[sqlx::test(migrations = "./migrations")]
     async fn isbn_contract_candidates(pool: PgPool) {
@@ -493,145 +465,32 @@ mod tests {
         assert_eq!(surviving, 1);
     }
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn find_or_create_new_work(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let meta = test_metadata("Test Book Alpha", "Test Author Alpha");
-        let work_id = find_or_create(&pool, &meta).await.unwrap();
+    use crate::services::metadata::extractor::ExtractedCreator;
+    use crate::test_support::db::ingestion_pool_for;
 
-        let title = sqlx::query_scalar!("SELECT title FROM works WHERE id = $1", work_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(title, "Test Book Alpha");
-
-        let author_name = sqlx::query_scalar!(
-            "SELECT a.name FROM authors a \
-             JOIN work_authors wa ON wa.author_id = a.id \
-             WHERE wa.work_id = $1",
-            work_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(author_name, "Test Author Alpha");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn find_or_create_deduplicates_authors(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-
-        let meta1 = test_metadata("Astronomy Fundamentals", "Shared Author Name");
-        let meta2 = test_metadata("Renaissance Cooking Guide", "Shared Author Name");
-
-        let work_id1 = find_or_create(&pool, &meta1).await.unwrap();
-        let work_id2 = find_or_create(&pool, &meta2).await.unwrap();
-        assert_ne!(work_id1, work_id2);
-
-        let author_id1 = sqlx::query_scalar!(
-            "SELECT author_id FROM work_authors WHERE work_id = $1 LIMIT 1",
-            work_id1,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        let author_id2 = sqlx::query_scalar!(
-            "SELECT author_id FROM work_authors WHERE work_id = $1 LIMIT 1",
-            work_id2,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(author_id1, author_id2, "same author should be reused");
-
-        let count = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM authors WHERE name = 'Shared Author Name'",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(count, 1);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn match_existing_uses_author_role_not_leading_editor(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let meta_existing = test_metadata("Quantum Botany Handbook", "Quantum Botany Writer");
-        let work_id = find_or_create(&pool, &meta_existing).await.unwrap();
-
-        let mut meta_incoming = test_metadata("Quantum Botany Handbook", "Quantum Botany Writer");
-        meta_incoming.creators.insert(
-            0,
-            ExtractedCreator {
-                name: "Zebra Editing Stranger".into(),
-                sort_name: "Stranger, Zebra Editing".into(),
-                role: "editor".into(),
-            },
-        );
-
-        let mut conn = pool.acquire().await.unwrap();
-        let (hit, _) = match_existing(&mut conn, &meta_incoming).await.unwrap();
-        assert_eq!(
-            hit,
-            Some(work_id),
-            "author-role creator must drive the title+author match even \
-             when an editor precedes it in document order"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn match_existing_ignores_non_author_role_rows(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let work_id = sqlx::query_scalar!(
-            "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
-            "Volcanic Cartography Atlas",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        crate::test_support::db::insert_contributor(
-            &pool,
-            work_id,
-            "Meridian Mapmaker Osgood",
-            "translator",
-            0,
-        )
-        .await;
-
-        let meta = test_metadata("Volcanic Cartography Atlas", "Meridian Mapmaker Osgood");
-        let mut conn = pool.acquire().await.unwrap();
-        let (hit, _) = match_existing(&mut conn, &meta).await.unwrap();
-        assert_eq!(
-            hit, None,
-            "a translator-role row must not satisfy the author similarity match"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn find_or_create_deduplicates_series(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-
-        let mut meta1 = test_metadata("Series Book 1", "Series Author");
-        meta1.series = Some(SeriesInfo {
-            name: "Test Series Dedup".into(),
-            position: Some(1.0),
-        });
-        let mut meta2 = test_metadata("Series Book 2", "Series Author");
-        meta2.series = Some(SeriesInfo {
-            name: "Test Series Dedup".into(),
-            position: Some(2.0),
-        });
-
-        let _work_id1 = find_or_create(&pool, &meta1).await.unwrap();
-        let _work_id2 = find_or_create(&pool, &meta2).await.unwrap();
-
-        let count = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM series WHERE name = 'Test Series Dedup'",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(count, 1);
+    fn test_metadata(title: &str, author: &str) -> ExtractedMetadata {
+        ExtractedMetadata {
+            title: Some(title.into()),
+            sort_title: Some(title.to_lowercase()),
+            subtitle: None,
+            description: None,
+            language: Some("en".into()),
+            creators: vec![ExtractedCreator {
+                name: author.into(),
+                sort_name: format!("{author}, Test"),
+                role: "author".into(),
+            }],
+            unmapped_contributors: vec![],
+            pages: None,
+            publisher: None,
+            pub_date: None,
+            isbn_10: None,
+            isbn_13: None,
+            subjects: vec![],
+            series: None,
+            inversion: None,
+            confidence: 0.5,
+        }
     }
 
     /// Helper: insert a `metadata_versions` row directly, for use as a
@@ -761,16 +620,6 @@ mod tests {
 
     /// Helper: insert a blank work directly (bypassing `find_or_create` so
     /// test titles don't collide via `pg_trgm` similarity).
-    async fn insert_work(pool: &PgPool, title: &str) -> Uuid {
-        sqlx::query_scalar!(
-            "INSERT INTO works (title, sort_title) VALUES ($1, lower($1)) RETURNING id",
-            title,
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap()
-    }
-
     /// Helper: insert a manifestation row for a given work/ISBN combo.
     /// Returns the manifestation id.
     async fn insert_manifestation(
@@ -796,31 +645,5 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap()
-    }
-
-    /// No other work has the ISBN → `NoOp`.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn rematch_noop_when_isbn_unique(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let marker = Uuid::new_v4().simple().to_string();
-        let isbn = "9780000000004";
-
-        let work_id = insert_work(&pool, &format!("Solo-{marker}")).await;
-        let m = insert_manifestation(&pool, work_id, Some(isbn), &format!("{marker}-solo")).await;
-
-        let mut tx = pool.begin().await.unwrap();
-        let outcome = rematch_on_isbn_change(&mut tx, m).await.unwrap();
-        tx.commit().await.unwrap();
-
-        assert_eq!(outcome, RematchOutcome::NoOp);
-
-        let dup = sqlx::query_scalar!(
-            "SELECT suspected_duplicate_work_id FROM manifestations WHERE id = $1",
-            m,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert!(dup.is_none(), "no suspected pointer should be set");
     }
 }

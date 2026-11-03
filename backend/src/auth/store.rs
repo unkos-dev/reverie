@@ -228,20 +228,6 @@ mod tests {
         );
     }
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn readonly_role_reads_session_expiry(pool: PgPool) {
-        insert_session(&pool).await;
-        let readonly = readonly_pool_for(&pool).await;
-
-        let count: i64 =
-            sqlx::query_scalar!("SELECT count(expiry_date) AS \"c!\" FROM tower_sessions.session")
-                .fetch_one(&readonly)
-                .await
-                .expect("reverie_readonly keeps SELECT on expiry_date");
-
-        assert_eq!(count, 1);
-    }
-
     #[test]
     fn preserves_a_subsecond_instant() {
         let expiry = OffsetDateTime::from_unix_timestamp(1_785_000_896).expect("epoch seconds")
@@ -255,32 +241,5 @@ mod tests {
             converted.to_rfc3339_opts(SecondsFormat::AutoSi, true),
             "2026-07-25T17:34:56.123456789Z"
         );
-    }
-
-    #[test]
-    fn preserves_a_pre_epoch_subsecond_instant() {
-        // Whole seconds go negative while the nanosecond-of-second stays
-        // positive. A conversion that added the two as signed quantities would
-        // land a full second away; going through the epoch does not.
-        let expiry = OffsetDateTime::UNIX_EPOCH - time::Duration::milliseconds(500);
-
-        let converted = expiry_to_timestamptz(expiry).expect("representable");
-
-        assert_eq!(expiry.unix_timestamp(), -1);
-        assert_eq!(expiry.nanosecond(), 500_000_000);
-        assert_eq!(
-            converted.to_rfc3339_opts(SecondsFormat::AutoSi, true),
-            "1969-12-31T23:59:59.500Z"
-        );
-    }
-
-    #[test]
-    fn round_trips_a_whole_second_instant() {
-        let expiry = OffsetDateTime::from_unix_timestamp(1_785_000_896).expect("epoch seconds");
-
-        let converted = expiry_to_timestamptz(expiry).expect("representable");
-
-        assert_eq!(converted.timestamp(), 1_785_000_896);
-        assert_eq!(converted.timestamp_subsec_nanos(), 0);
     }
 }

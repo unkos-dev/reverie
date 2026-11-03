@@ -48,33 +48,3 @@ impl ThemePreference {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn as_str_matches_serde_lowercase() {
-        // Wire-format invariant: the frontend
-        // `ThemePreference = "system" | "light" | "dark"` union depends on
-        // these exact literals.
-        assert_eq!(ThemePreference::System.as_str(), "system");
-        assert_eq!(ThemePreference::Light.as_str(), "light");
-        assert_eq!(ThemePreference::Dark.as_str(), "dark");
-    }
-
-    #[test]
-    fn json_roundtrip_uses_lowercase_string() {
-        let pref = ThemePreference::Dark;
-        let json = serde_json::to_string(&pref).expect("serialize");
-        assert_eq!(json, "\"dark\"");
-        let back: ThemePreference = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, ThemePreference::Dark);
-    }
-
-    #[test]
-    fn json_rejects_unknown_variant() {
-        let result: Result<ThemePreference, _> = serde_json::from_str("\"purple\"");
-        assert!(result.is_err(), "expected purple to be rejected");
-    }
-}

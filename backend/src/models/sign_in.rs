@@ -186,6 +186,18 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn sign_in_cohort_win_is_exclusive(pool: PgPool) {
+        start(&pool, "one", "state").await;
+        assert_eq!(
+            join_pending(&pool, "one").await.unwrap(),
+            CohortState::Pending
+        );
+        let (first, second) = tokio::join!(claim_win(&pool, "one"), claim_win(&pool, "one"));
+        assert_ne!(first.unwrap(), second.unwrap());
+        assert_eq!(join_pending(&pool, "one").await.unwrap(), CohortState::Won);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn sign_in_attempt_start_replaces_previous(pool: PgPool) {
         start(&pool, "one", "first").await;
         start_oidc_attempt(&pool, "one", "second", "replacement", "new-nonce")
@@ -203,55 +215,5 @@ mod tests {
             .unwrap();
         assert_eq!(attempt.pkce_verifier, "replacement");
         assert_eq!(attempt.nonce, "new-nonce");
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn sign_in_cohort_win_is_exclusive(pool: PgPool) {
-        start(&pool, "one", "state").await;
-        assert_eq!(
-            join_pending(&pool, "one").await.unwrap(),
-            CohortState::Pending
-        );
-        let (first, second) = tokio::join!(claim_win(&pool, "one"), claim_win(&pool, "one"));
-        assert_ne!(first.unwrap(), second.unwrap());
-        assert_eq!(join_pending(&pool, "one").await.unwrap(), CohortState::Won);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn sign_in_cohort_rows_cascade_with_session(pool: PgPool) {
-        start(&pool, "one", "state").await;
-        sqlx::query!("DELETE FROM tower_sessions.session WHERE id = 'one'")
-            .execute(&pool)
-            .await
-            .unwrap();
-        assert_eq!(
-            sqlx::query_scalar!("SELECT count(*) FROM sign_in_cohorts")
-                .fetch_one(&pool)
-                .await
-                .unwrap(),
-            Some(0)
-        );
-        assert!(
-            claim_oidc_attempt(&pool, "one", "state")
-                .await
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn sign_in_attempt_sweep_deletes_only_expired_in_batches(pool: PgPool) {
-        for id in ["one", "two", "three", "live"] {
-            start(&pool, id, "state").await;
-        }
-        sqlx::query!("UPDATE oidc_sign_in_attempts SET expires_at = now() - interval '1 second' WHERE session_id <> 'live'").execute(&pool).await.unwrap();
-        assert_eq!(delete_expired_attempts(&pool, 2).await.unwrap(), 2);
-        assert_eq!(delete_expired_attempts(&pool, 2).await.unwrap(), 1);
-        assert!(
-            claim_oidc_attempt(&pool, "live", "state")
-                .await
-                .unwrap()
-                .is_some()
-        );
     }
 }

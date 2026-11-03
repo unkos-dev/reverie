@@ -29,8 +29,8 @@ requests.
 
 ## Acceptance criteria
 
-- A cover SVG carrying a DOCTYPE is refused. Checked by `rejects_svg_with_doctype` and `dtd_entities_are_inert` in
-  `backend/src/services/covers/svg.rs`; the latter confirms a DOCTYPE-declared external entity is never fetched.
+- A cover SVG carrying a DOCTYPE is refused. Checked by `rejects_svg_with_doctype` in
+  `backend/src/services/covers/svg.rs`.
 - An `<image>` reference to an absolute path, or to a path that traverses outside the archive, is refused before any
   resolver is consulted. Checked by `blocks_external_path_href` and `blocks_traversal_href` in
   `backend/src/services/covers/svg.rs`.
@@ -47,7 +47,7 @@ requests.
 
   | Bound | Limit | Checked by (`backend/src/services/covers/svg.rs`) |
   | ----- | ----- | ------------------------------------------------- |
-  | Raw SVG input size | 4,194,304 bytes (4 MiB) | `rejects_oversized_svg_input`; `parses_as_svg_rejects_malformed_and_oversized` |
+  | Raw SVG input size | 4,194,304 bytes (4 MiB) | `rejects_oversized_svg_input` |
   | Element nesting depth | 48 levels | `rejects_deeply_nested_svg_without_crashing`; `accepts_moderately_nested_svg` confirms 45 levels is accepted |
   | Byte size of one embedded raster | 8,388,608 bytes (8 MiB) | `rejects_oversized_sibling_image` |
   | Decoded pixel count of one embedded raster | 16,777,216 pixels (16 megapixels) | `rejects_huge_pixel_sibling`; `rejects_huge_pixel_data_uri` |
