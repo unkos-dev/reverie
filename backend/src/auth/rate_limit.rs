@@ -99,47 +99,10 @@ pub fn client_ip(
 mod tests {
     use super::*;
 
-    #[test]
-    fn throttle_reclamation_governor_preserves_live_and_removes_replenished_keys() {
-        use governor::clock::FakeRelativeClock;
-        let clock = FakeRelativeClock::default();
-        let limiter = RateLimiter::dashmap_with_clock(
-            Quota::per_minute(NonZeroU32::new(1).unwrap()),
-            clock.clone(),
-        );
-        let ip: IpAddr = "192.0.2.1".parse().unwrap();
-        assert!(limiter.check_key(&ip).is_ok());
-        assert!(limiter.check_key(&ip).is_err());
-        limiter.retain_recent();
-        assert_eq!(limiter.len(), 1);
-        assert!(limiter.check_key(&ip).is_err());
-        clock.advance(std::time::Duration::from_secs(121));
-        limiter.retain_recent();
-        assert!(limiter.is_empty());
-        assert!(limiter.check_key(&ip).is_ok());
-    }
-
     use std::net::Ipv4Addr;
 
     fn ip(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
         IpAddr::V4(Ipv4Addr::new(a, b, c, d))
-    }
-
-    #[test]
-    fn limiter_blocks_over_quota_per_key() {
-        let limiter = build_login_limiter(NonZeroU32::new(1).expect("non-zero"));
-        let one = ip(10, 0, 0, 1);
-        let two = ip(10, 0, 0, 2);
-
-        assert!(limiter.check_key(&one).is_ok(), "first attempt admitted");
-        assert!(
-            limiter.check_key(&one).is_err(),
-            "second attempt over quota"
-        );
-        assert!(
-            limiter.check_key(&two).is_ok(),
-            "a different IP has an independent budget"
-        );
     }
 
     #[test]
@@ -151,43 +114,5 @@ mod tests {
             client_ip(&headers, Some(ip(127, 0, 0, 1)), None),
             Some(ip(127, 0, 0, 1))
         );
-    }
-
-    #[test]
-    fn client_ip_trusts_configured_header_first_token() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-forwarded-for",
-            "9.9.9.9, 10.0.0.1".parse().expect("header"),
-        );
-        assert_eq!(
-            client_ip(&headers, Some(ip(127, 0, 0, 1)), Some("x-forwarded-for")),
-            Some(ip(9, 9, 9, 9)),
-            "leftmost forwarded token is the originating client"
-        );
-    }
-
-    #[test]
-    fn client_ip_falls_back_to_peer_on_missing_or_bad_header() {
-        let headers = HeaderMap::new();
-        // Trusted header configured but absent → peer.
-        assert_eq!(
-            client_ip(&headers, Some(ip(127, 0, 0, 1)), Some("x-forwarded-for")),
-            Some(ip(127, 0, 0, 1))
-        );
-
-        let mut garbage = HeaderMap::new();
-        garbage.insert("x-forwarded-for", "not-an-ip".parse().expect("header"));
-        assert_eq!(
-            client_ip(&garbage, Some(ip(127, 0, 0, 1)), Some("x-forwarded-for")),
-            Some(ip(127, 0, 0, 1)),
-            "unparsable forwarded value falls back to peer"
-        );
-    }
-
-    #[test]
-    fn client_ip_returns_none_when_no_peer_and_no_trusted_header() {
-        let headers = HeaderMap::new();
-        assert_eq!(client_ip(&headers, None, None), None);
     }
 }

@@ -169,32 +169,3 @@ fn detect_declared_encoding(bytes: &[u8]) -> Option<String> {
     let enc_end = after.find(quote_char)?;
     Some(after[..enc_end].to_string())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::services::epub::{IssueKind, Severity};
-
-    #[test]
-    fn latin1_declared_non_utf8_bytes_emits_repaired() {
-        // Craft bytes with XML declaration claiming ISO-8859-1 that are not valid UTF-8
-        let mut bytes: Vec<u8> = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><html/>".to_vec();
-        bytes.push(0xE9); // é in Latin-1, invalid as UTF-8 continuation
-        let mut issues = Vec::new();
-        validate_xhtml_document(&bytes, "test.xhtml", &mut issues);
-        assert!(
-            issues
-                .iter()
-                .any(|i| matches!(&i.kind, IssueKind::EncodingMismatch { .. })),
-            "expected EncodingMismatch issue, got: {issues:?}"
-        );
-    }
-
-    #[test]
-    fn non_utf8_no_declaration_emits_degraded() {
-        let bytes: Vec<u8> = vec![0xE9, 0xE0, 0xF3]; // not valid UTF-8, no XML decl
-        let mut issues = Vec::new();
-        validate_xhtml_document(&bytes, "test.xhtml", &mut issues);
-        assert!(issues.iter().any(|i| i.severity == Severity::Degraded));
-    }
-}

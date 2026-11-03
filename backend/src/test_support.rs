@@ -1258,37 +1258,6 @@ pub mod oidc_mock {
             );
         }
 
-        pub async fn hold_jwks(&mut self) -> std::sync::mpsc::SyncSender<()> {
-            drop(self.jwks_guard.take());
-            let (release, wait) = std::sync::mpsc::sync_channel(1);
-            let wait = std::sync::Mutex::new(wait);
-            let response = ResponseTemplate::new(200).set_body_json(self.jwks());
-            self.jwks_guard = Some(
-                Mock::given(method("GET"))
-                    .and(path("/jwks"))
-                    .respond_with(move |_: &wiremock::Request| {
-                        wait.lock()
-                            .unwrap()
-                            .recv_timeout(std::time::Duration::from_secs(5))
-                            .unwrap();
-                        response.clone()
-                    })
-                    .expect(1)
-                    .mount_as_scoped(&self.server)
-                    .await,
-            );
-            release
-        }
-
-        pub async fn wait_for_jwks(&self) {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                self.jwks_guard.as_ref().unwrap().wait_until_satisfied(),
-            )
-            .await
-            .unwrap();
-        }
-
         pub async fn request_count(&self, endpoint: &str) -> usize {
             self.server
                 .received_requests()
@@ -1453,12 +1422,6 @@ pub mod oidc_mock {
                 self.metadata(),
                 OidcTransport::for_tests(),
             )
-        }
-
-        /// Serve discovery metadata for the mock provider.
-        pub async fn mount_discovery(&self) {
-            self.mount_discovery_with_token_endpoint(&format!("{}/token", self.issuer))
-                .await;
         }
 
         /// Serve discovery metadata with a chosen token endpoint.
@@ -1963,17 +1926,6 @@ pub mod mail {
         .execute(pool)
         .await
         .unwrap();
-    }
-
-    /// Wait until `user` has at least `count` jobs of `purpose`.
-    pub async fn wait_for_count(pool: &PgPool, user: Uuid, purpose: &str, count: i64) {
-        for _ in 0..500 {
-            if job_count(pool, user, Some(purpose)).await >= count {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-        panic!("fewer than {count} {purpose} jobs appeared");
     }
 
     /// Fail every later insert into `mail_jobs`.

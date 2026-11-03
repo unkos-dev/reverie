@@ -694,7 +694,9 @@
       "kind": "design",
       "path": "docs/specs/ingestion/design/0013-ingestion-pipeline.md",
       "satisfies": [
-        "REV-REQ-0043"
+        "REV-REQ-0043",
+        "REV-REQ-0072",
+        "REV-REQ-0073"
       ],
       "title": "Ingestion pipeline"
     },
@@ -742,7 +744,9 @@
       "path": "docs/specs/metadata/design/0016-enrichment-pipeline.md",
       "satisfies": [
         "REV-REQ-0051",
-        "REV-REQ-0052"
+        "REV-REQ-0052",
+        "REV-REQ-0072",
+        "REV-REQ-0073"
       ],
       "title": "Enrichment pipeline"
     },
@@ -774,7 +778,9 @@
       "satisfies": [
         "REV-REQ-0052",
         "REV-REQ-0055",
-        "REV-REQ-0056"
+        "REV-REQ-0056",
+        "REV-REQ-0072",
+        "REV-REQ-0073"
       ],
       "title": "Metadata review and editing"
     },
@@ -1536,6 +1542,18 @@
       "kind": "req",
       "path": "docs/specs/security/requirements/0071-the-production-build-s-csp-hash-matches-its-pre-paint-theme-script.md",
       "title": "The production build's CSP hash matches its pre-paint theme script"
+    },
+    {
+      "id": "REV-REQ-0072",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0072-canonical-isbn-values-are-structurally-valid.md",
+      "title": "Canonical ISBN values are structurally valid"
+    },
+    {
+      "id": "REV-REQ-0073",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0073-canonical-isbn-formats-remain-independent.md",
+      "title": "Canonical ISBN formats remain independent"
     }
   ]
 }

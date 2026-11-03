@@ -1132,6 +1132,7 @@ async fn detail(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
+    let isbn_mismatch = row.isbn_mismatch();
     let series = match (row.series_id, row.series_name) {
         (Some(sid), Some(name)) => Some(SeriesRef {
             id: sid,
@@ -1152,6 +1153,7 @@ async fn detail(
         series,
         description: row.description,
         language: row.language,
+        isbn_mismatch,
         isbn_13: row.isbn_13,
         isbn_10: row.isbn_10,
         pages: row.pages,
@@ -1213,6 +1215,22 @@ struct DetailRow {
     series_id: Option<Uuid>,
     series_name: Option<String>,
     series_position: Option<f64>,
+}
+
+impl DetailRow {
+    fn isbn_mismatch(&self) -> bool {
+        if let (Some(ten), Some(thirteen)) = (&self.isbn_10, &self.isbn_13)
+            && let (Ok(ten), Ok(thirteen)) = (
+                ten.parse::<isbn::Isbn10>(),
+                thirteen.parse::<isbn::Isbn13>(),
+            )
+        {
+            matches!(thirteen.to_string().get(..3), Some("978" | "979"))
+                && isbn::Isbn13::from(ten) != thirteen
+        } else {
+            false
+        }
+    }
 }
 
 /// Single-row fetch for [`detail`]. Joins the work for prose +

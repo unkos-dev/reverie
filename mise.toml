@@ -16,7 +16,7 @@ typos = "1.51.1"
 uv = "0.13.6"
 # OpenAPI linter for the generated spec, run by the openapi-policy CI job
 # against .vacuum.yaml.
-vacuum = "0.36.0"
+vacuum = "0.36.1"
 vale = "3.25.1"
 zizmor = "1.31.1"
 # The package manager, resolved through mise's aqua backend and so
@@ -33,7 +33,7 @@ zizmor = "1.31.1"
 # re-executes the declared version instead of refusing to run, so there is no
 # EBADDEVENGINES-shaped failure to hold in lockstep and no bin contest with
 # node to order around.
-pnpm = "11.28.9"
+pnpm = "11.28.10"
 # No node entry, deliberately. `devEngines.runtime` in package.json is the one
 # place the Node version is written: vp honours it (so `node-manager: true` in
 # CI resolves from the project rather than from a second pin here), pnpm
@@ -52,7 +52,7 @@ locked = false
 
 # YAML linter; reads .yamllint.yaml. Run by `just infra::ryl`.
 [tools."github:owenlamont/ryl"]
-version = "v0.26.1"
+version = "v0.27.0"
 
 # Prebuilt Rust tools used by local recipes. The GitHub backend enables
 # checksum and provenance verification when upstream publishes them.

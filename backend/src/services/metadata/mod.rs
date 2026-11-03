@@ -13,8 +13,6 @@ pub mod external_id;
 pub mod extractor;
 /// Heuristic title-author inversion detection.
 pub mod inversion;
-/// `ISBN-10` / `ISBN-13` checksum validation, conversion, and normalisation.
-pub mod isbn;
 /// `HTML`-to-plaintext sanitisation pipeline for untrusted metadata text.
 pub mod sanitiser;
 

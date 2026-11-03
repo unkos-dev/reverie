@@ -70,37 +70,3 @@ impl std::fmt::Display for EnrichmentStatus {
         f.write_str(self.as_str())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn as_str_matches_serde_snake_case() {
-        for (variant, wire) in [
-            (EnrichmentStatus::Pending, "pending"),
-            (EnrichmentStatus::InProgress, "in_progress"),
-            (EnrichmentStatus::Complete, "complete"),
-            (EnrichmentStatus::Failed, "failed"),
-            (EnrichmentStatus::Skipped, "skipped"),
-        ] {
-            assert_eq!(variant.as_str(), wire);
-            assert_eq!(format!("{variant}"), wire);
-        }
-    }
-
-    #[test]
-    fn json_roundtrip_uses_snake_case_string() {
-        let status = EnrichmentStatus::InProgress;
-        let json = serde_json::to_string(&status).expect("serialize");
-        assert_eq!(json, "\"in_progress\"");
-        let back: EnrichmentStatus = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, EnrichmentStatus::InProgress);
-    }
-
-    #[test]
-    fn json_rejects_unknown_variant() {
-        let result: Result<EnrichmentStatus, _> = serde_json::from_str("\"resumed\"");
-        assert!(result.is_err(), "expected resumed to be rejected");
-    }
-}

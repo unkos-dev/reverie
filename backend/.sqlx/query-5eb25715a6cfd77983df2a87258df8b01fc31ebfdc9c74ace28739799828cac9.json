@@ -1,10 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT isbn_13 FROM manifestations WHERE file_path = $1",
+  "query": "SELECT isbn_10, isbn_13 FROM manifestations WHERE file_path = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "isbn_10",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_10"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
         "name": "isbn_13",
         "type_info": "Text",
         "origin": {
@@ -21,8 +32,9 @@
       ]
     },
     "nullable": [
+      true,
       true
     ]
   },
-  "hash": "0744000cf09324be33a5f4fc20cfa37d8abb047deef9ee72a9bfcfb496d205ca"
+  "hash": "5eb25715a6cfd77983df2a87258df8b01fc31ebfdc9c74ace28739799828cac9"
 }

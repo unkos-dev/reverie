@@ -3041,7 +3041,7 @@
         },
         "responses": {
           "200": {
-            "description": "Version promoted to canonical; accepted ISBN changes may re-match the work"
+            "description": "Version promoted to canonical; accepted ISBN changes refresh the possible-duplicate pointer"
           },
           "400": {
             "description": "The request body is not valid JSON, or a path parameter is malformed",
@@ -9434,6 +9434,7 @@
           "title",
           "authors",
           "contributors",
+          "isbn_mismatch",
           "cover_url",
           "tags",
           "genres",
@@ -9537,6 +9538,10 @@
               "null"
             ],
             "description": "`manifestations.isbn_13`."
+          },
+          "isbn_mismatch": {
+            "type": "boolean",
+            "description": "Whether the saved ISBN pair contains valid, non-equivalent numbers."
           },
           "language": {
             "type": [
@@ -9818,6 +9823,7 @@
         "description": "Response body for `GET /api/v1/books/{id}/metadata` — exactly the span\n[`UpdateMetadataFields`] can write, field for field.",
         "required": [
           "title",
+          "isbn_mismatch",
           "genres",
           "moods",
           "tags",
@@ -9868,6 +9874,10 @@
               "null"
             ],
             "description": "ISBN-13; `null` when unset."
+          },
+          "isbn_mismatch": {
+            "type": "boolean",
+            "description": "Whether the saved ISBN pair contains valid, non-equivalent numbers."
           },
           "language": {
             "type": [

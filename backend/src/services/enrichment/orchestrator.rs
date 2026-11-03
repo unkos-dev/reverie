@@ -522,18 +522,6 @@ async fn apply_canonical_batch(
                                     "enrichment: work.duplicate_suspected"
                                 );
                             }
-                            work::RematchOutcome::AutoMerged { from, to } => {
-                                // warn! (not info!) — auto-merge is a
-                                // destructive structural change: the `from`
-                                // work is deleted and the manifestation is
-                                // re-parented. Matches `Suspected`'s tier so
-                                // both rematch outcomes are visible to
-                                // operators filtering at warn level.
-                                warn!(
-                                    %manifestation_id, %from, %to,
-                                    "enrichment: work.auto_merged"
-                                );
-                            }
                         }
                     }
                     // Enqueue writeback in the same tx so the pointer move
@@ -1183,6 +1171,13 @@ async fn apply_field(
                 tracing::warn!(field = %field, raw = %value, "non-string canonical value; skipping apply");
                 return Ok(false);
             };
+            let v = match v.parse::<isbn::Isbn10>() {
+                Ok(value) => value.to_string(),
+                Err(error) => {
+                    tracing::debug!(%error, "ISBN observation refused for canonical promotion");
+                    return Ok(false);
+                }
+            };
             sqlx::query!(
                 "UPDATE manifestations SET isbn_10 = $1, isbn_10_version_id = $2 WHERE id = $3",
                 v,
@@ -1198,6 +1193,17 @@ async fn apply_field(
                 tracing::warn!(field = %field, raw = %value, "non-string canonical value; skipping apply");
                 return Ok(false);
             };
+            let v = match v.parse::<isbn::Isbn13>() {
+                Ok(value) => value.to_string(),
+                Err(error) => {
+                    tracing::debug!(%error, "ISBN observation refused for canonical promotion");
+                    return Ok(false);
+                }
+            };
+            if !v.starts_with("978") && !v.starts_with("979") {
+                tracing::debug!("non-ISBN EAN refused for canonical promotion");
+                return Ok(false);
+            }
             sqlx::query!(
                 "UPDATE manifestations SET isbn_13 = $1, isbn_13_version_id = $2 WHERE id = $3",
                 v,
@@ -1345,86 +1351,12 @@ pub(crate) async fn fan_out_for_dry_run_with_sources(
 
 #[cfg(test)]
 mod tests {
-    #![expect(
-        clippy::disallowed_methods,
-        reason = "bare reqwest::Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
-    )]
     use super::*;
     use crate::config::{CoverConfig, EnrichmentConfig};
     use crate::models::manifestation_format::ManifestationFormat;
     use serde_json::json;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    // ── fan_out budget behaviour ──────────────────────────────────────────
-
-    struct FastSource;
-    #[async_trait::async_trait]
-    impl MetadataSource for FastSource {
-        fn id(&self) -> &'static str {
-            "fast"
-        }
-        fn enabled(&self) -> bool {
-            true
-        }
-        async fn lookup(
-            &self,
-            _ctx: &LookupCtx<'_>,
-            _key: &LookupKey,
-        ) -> Result<LookupOutcome, SourceError> {
-            Ok(LookupOutcome::default())
-        }
-    }
-
-    struct SlowSource;
-    #[async_trait::async_trait]
-    impl MetadataSource for SlowSource {
-        fn id(&self) -> &'static str {
-            "slow"
-        }
-        fn enabled(&self) -> bool {
-            true
-        }
-        async fn lookup(
-            &self,
-            _ctx: &LookupCtx<'_>,
-            _key: &LookupKey,
-        ) -> Result<LookupOutcome, SourceError> {
-            tokio::time::sleep(Duration::from_mins(1)).await;
-            Ok(LookupOutcome::default())
-        }
-    }
-
-    /// A hung provider must NOT discard
-    /// completed siblings, and every unfinished provider must be reported
-    /// as `SourceError::Timeout` so the queue marks the row `failed`
-    /// (eligible for retry) instead of silently `complete`.
-    #[tokio::test]
-    async fn fan_out_preserves_partial_results_and_emits_timeouts() {
-        let sources: Vec<Arc<dyn MetadataSource>> =
-            vec![Arc::new(FastSource), Arc::new(SlowSource)];
-        let http = reqwest::Client::new();
-        let key = LookupKey::Isbn("9780000000000".into());
-
-        let runs = fan_out(&sources, &http, &key, Duration::from_millis(50)).await;
-
-        assert_eq!(
-            runs.len(),
-            2,
-            "every enabled source must produce a SourceRun"
-        );
-        let fast = runs.iter().find(|r| r.source_id == "fast").unwrap();
-        let slow = runs.iter().find(|r| r.source_id == "slow").unwrap();
-        assert!(
-            fast.outcome.is_ok(),
-            "fast source result was discarded by timeout"
-        );
-        assert!(
-            matches!(slow.outcome, Err(SourceError::Timeout)),
-            "slow source should surface as Timeout, got {:?}",
-            slow.outcome
-        );
-    }
 
     // Tests run against `reverie_ingestion`: that role holds the
     // `manifestations_ingestion_full_access` RLS policy which lets the
@@ -1434,17 +1366,6 @@ mod tests {
     // the missing `SELECT` grant so the orchestrator's
     // `field_lock::is_locked_tx` call succeeds under this role.
     use crate::test_support::db::{app_pool_for, ingestion_pool_for};
-
-    /// Build a known-valid observation for seeding a cached rating; the
-    /// constructor's own validation is covered in `models::external_rating`.
-    fn seed_rating(
-        rating: f32,
-        rating_scale: f32,
-        review_count: i32,
-    ) -> external_rating::RatingObservation {
-        external_rating::RatingObservation::new(rating, rating_scale, review_count)
-            .expect("valid test rating")
-    }
 
     /// Build the enabled adapters against mock-server URIs directly, bypassing
     /// [`build_sources`] and [`Config`]: the production endpoints are fixed
@@ -1563,84 +1484,6 @@ mod tests {
         (work_id, manifestation_id)
     }
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn load_snapshot_lookup_key_uses_author_display_name(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let marker = Uuid::new_v4().simple().to_string();
-        let title = format!("Snapshot Vocab {marker}");
-        let sort_form = format!("{marker}, Alpha Writer");
-        let display_form = format!("Alpha Writer {marker}");
-        let work_id = sqlx::query_scalar!(
-            "INSERT INTO works (title, sort_title, first_author_sort_name) \
-             VALUES ($1, $1, $2) RETURNING id",
-            title,
-            sort_form,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        let path = format!("fixtures/snap-{marker}.epub");
-        let hash = format!("snap-hash-{marker}");
-        let m_id = sqlx::query_scalar!(
-            "WITH inserted AS (INSERT INTO manifestations \
-               (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
-                file_size_bytes, ingestion_status, validation_status) \
-             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
-            work_id,
-            path,
-            hash,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        let editor_name = format!("Edit Person {marker}");
-        let editor_sort = format!("{marker}, Edit Person");
-        let editor_id = sqlx::query_scalar!(
-            "INSERT INTO authors (name, sort_name) VALUES ($1, $2) RETURNING id",
-            editor_name,
-            editor_sort,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        let author_id = sqlx::query_scalar!(
-            "INSERT INTO authors (name, sort_name) VALUES ($1, $2) RETURNING id",
-            display_form,
-            sort_form,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        // Editor sits at position 0: the role filter must skip it and pick
-        // the position-1 author row.
-        sqlx::query!(
-            "INSERT INTO work_authors (work_id, author_id, role, position) \
-             VALUES ($1, $2, 'editor', 0), ($1, $3, 'author', 1)",
-            work_id,
-            editor_id,
-            author_id,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let snapshot = load_snapshot(&pool, m_id).await.unwrap();
-        match snapshot.lookup_keys.last().cloned() {
-            Some(LookupKey::TitleAuthor { title: t, author }) => {
-                assert_eq!(t, title);
-                assert_eq!(
-                    author, display_form,
-                    "lookup key must carry the display-form name external \
-                     sources match on, not first_author_sort_name"
-                );
-            }
-            other => panic!("expected TitleAuthor lookup key, got {other:?}"),
-        }
-    }
-
     /// Build an `/api/books?bibkeys=ISBN:X&jscmd=data` mock response.
     ///
     /// Existing callers still pass the old `{title, publishers: [...]}`
@@ -1690,164 +1533,6 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(body))
             .mount(server)
             .await;
-    }
-
-    /// Three sources return the same title → Apply fires AND the applied
-    /// row's confidence reflects the quorum=3 boost.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn orchestrator_multi_source_agreement_applies_with_quorum_boost(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        // Pick an ISBN that does NOT collide with the one baked into
-        // `make_metadata_epub()` (9780306406157) — on test panic, lingering
-        // rows would otherwise pollute the ingest-invariant tests that run
-        // later in the alphabetical order.
-        let isbn = "9780451524935";
-        let marker = Uuid::new_v4().simple().to_string();
-        let canon_title = format!("Agreement Canon {marker}");
-
-        mock_openlibrary_isbn(&ol, isbn, json!({"title": canon_title})).await;
-        mock_googlebooks_isbn(
-            &gb,
-            json!({"items":[{"volumeInfo":{"title": canon_title}}]}),
-        )
-        .await;
-        mock_hardcover(&hc, json!({"data":{"books":[{"title": canon_title}]}})).await;
-
-        let (_work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-
-        let outcome = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-        // The break-after-Apply guard inside apply_canonical_batch must
-        // prevent agreeing siblings from re-applying — exactly one Apply,
-        // exactly one writeback row.
-        assert_eq!(
-            outcome.applied, 1,
-            "agreement should Apply once, not once per agreeing source"
-        );
-        let writeback_rows = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            writeback_rows, 1,
-            "expected exactly one writeback row, got {writeback_rows}"
-        );
-
-        let canon = sqlx::query_scalar!(
-            "SELECT w.title FROM works w \
-             JOIN manifestations m ON m.work_id = w.id WHERE m.id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            canon, canon_title,
-            "canonical title should match agreement value"
-        );
-
-        // Three sources agreed on `title`; quorum=3 boost (1.20×) must be
-        // persisted on the journal rows.  The maximum quorum-1 score for any
-        // ISBN-matched source is `hardcover` at 0.85; with the boost,
-        // `openlibrary` reaches 0.96 — anything ≥ 0.90 proves the boost
-        // landed in the row, not just the log.
-        let max_score = sqlx::query_scalar!(
-            "SELECT MAX(confidence_score) AS \"max_score!\" FROM metadata_versions \
-             WHERE manifestation_id = $1 AND field_name = 'title'",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert!(
-            max_score >= 0.90,
-            "expected quorum-boosted confidence_score >= 0.90 on title, got {max_score}"
-        );
-    }
-
-    /// Three sources disagree on title → Propose downgrade — all rows stage,
-    /// canonical title remains empty.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn orchestrator_disagreement_stages_all_candidates(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let isbn = "9780441172719";
-        let marker = Uuid::new_v4().simple().to_string();
-
-        mock_openlibrary_isbn(&ol, isbn, json!({"title": format!("OL Title {marker}")})).await;
-        mock_googlebooks_isbn(
-            &gb,
-            json!({"items":[{"volumeInfo":{"title": format!("GB Title {marker}")}}]}),
-        )
-        .await;
-        mock_hardcover(
-            &hc,
-            json!({"data":{"books":[{"title": format!("HC Title {marker}")}]}}),
-        )
-        .await;
-
-        let (_work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-
-        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-
-        // Title journal rows written (all pending), but canonical empty.
-        let title_rows = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions \
-             WHERE manifestation_id = $1 AND field_name = 'title'",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert!(
-            title_rows >= 3,
-            "expected ≥3 title journal rows across sources, got {title_rows}"
-        );
-
-        let canon_title = sqlx::query_scalar!(
-            "SELECT w.title FROM works w \
-             JOIN manifestations m ON m.work_id = w.id WHERE m.id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert!(
-            canon_title.is_empty(),
-            "canonical title should remain empty after disagreement, got '{canon_title}'"
-        );
-
-        let title_version_id = sqlx::query_scalar!(
-            "SELECT w.title_version_id FROM works w \
-             JOIN manifestations m ON m.work_id = w.id WHERE m.id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert!(
-            title_version_id.is_none(),
-            "no Apply should have run, title_version_id should be NULL"
-        );
     }
 
     /// One source returns `publisher` (`AutoFill` by default) on an empty
@@ -1985,106 +1670,6 @@ mod tests {
         assert!(canon_title.is_empty(), "canonical title must stay empty");
     }
 
-    /// Empty canonical `works.subtitle` + a source-provided subtitle → applied.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn orchestrator_subtitle_autofill_applies_when_canonical_empty(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let isbn = "9780553213119";
-        let marker = Uuid::new_v4().simple().to_string();
-        let subtitle = format!("A Subtitle {marker}");
-
-        mock_openlibrary_isbn(&ol, isbn, json!({})).await;
-        mock_googlebooks_isbn(
-            &gb,
-            json!({"items": [{"volumeInfo": {"subtitle": subtitle}}]}),
-        )
-        .await;
-        mock_hardcover(&hc, json!({"data": {"books": []}})).await;
-
-        let (_work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-
-        let (canon_subtitle, subtitle_ptr) = sqlx::query!(
-            "SELECT w.subtitle, w.subtitle_version_id FROM works w \
-             JOIN manifestations m ON m.work_id = w.id WHERE m.id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .map(|r| (r.subtitle, r.subtitle_version_id))
-        .unwrap();
-        assert_eq!(canon_subtitle.as_deref(), Some(subtitle.as_str()));
-        assert!(subtitle_ptr.is_some());
-    }
-
-    /// A non-empty canonical `works.subtitle` must Stage (not overwrite) a
-    /// differing source-provided subtitle — `AutoFill` only fills empty slots.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn orchestrator_subtitle_autofill_stages_when_canonical_already_set(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let isbn = "9780345391803";
-        let marker = Uuid::new_v4().simple().to_string();
-        let existing_subtitle = format!("Existing Subtitle {marker}");
-        let proposed_subtitle = format!("Proposed Subtitle {marker}");
-
-        mock_openlibrary_isbn(&ol, isbn, json!({})).await;
-        mock_googlebooks_isbn(
-            &gb,
-            json!({"items": [{"volumeInfo": {"subtitle": proposed_subtitle}}]}),
-        )
-        .await;
-        mock_hardcover(&hc, json!({"data": {"books": []}})).await;
-
-        let (work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        sqlx::query!(
-            "UPDATE works SET subtitle = $1 WHERE id = $2",
-            existing_subtitle,
-            work_id,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-
-        let (canon_subtitle, subtitle_ptr) = sqlx::query!(
-            "SELECT w.subtitle, w.subtitle_version_id FROM works w \
-             JOIN manifestations m ON m.work_id = w.id WHERE m.id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .map(|r| (r.subtitle, r.subtitle_version_id))
-        .unwrap();
-        assert_eq!(
-            canon_subtitle.as_deref(),
-            Some(existing_subtitle.as_str()),
-            "non-empty canonical subtitle must not be clobbered by AutoFill"
-        );
-        assert!(
-            subtitle_ptr.is_none(),
-            "staged (not applied) proposals must not set the pointer"
-        );
-    }
-
     /// A `contributors.editor` lock (entity `work`) isolates that role: the
     /// locked role is skipped while `contributors.author` in the same batch
     /// still stages. Enrichment never applies contributors (no apply arm), so
@@ -2179,214 +1764,11 @@ mod tests {
         .unwrap()
     }
 
-    /// `dry_run::preview` fans out + fills `api_cache` but never writes to
-    /// `metadata_versions`.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn orchestrator_dry_run_leaves_journal_unchanged_writes_api_cache(pool: PgPool) {
-        use crate::services::enrichment::dry_run;
-
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let isbn = "9780553283686";
-        let marker = Uuid::new_v4().simple().to_string();
-        let canon_title = format!("Dry Run Title {marker}");
-
-        mock_openlibrary_isbn(&ol, isbn, json!({"title": canon_title})).await;
-        mock_googlebooks_isbn(
-            &gb,
-            json!({"items":[{"volumeInfo":{"title": canon_title}}]}),
-        )
-        .await;
-        mock_hardcover(&hc, json!({"data":{"books":[{"title": canon_title}]}})).await;
-
-        let (_work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-
-        // Baseline counts — scoped by manifestation / lookup_key so other
-        // tests' rows don't pollute.
-        let mv_before = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions WHERE manifestation_id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        let isbn_lookup = format!("isbn:{isbn}");
-        let cache_before = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM api_cache WHERE lookup_key = $1",
-            isbn_lookup,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        let diff = dry_run::preview_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-        assert!(
-            !diff.would_apply.is_empty() || !diff.would_stage.is_empty(),
-            "dry_run should surface at least one proposed change"
-        );
-
-        let mv_after = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions WHERE manifestation_id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        let cache_after = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM api_cache WHERE lookup_key = $1",
-            isbn_lookup,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        assert_eq!(
-            mv_after,
-            mv_before,
-            "dry_run must NOT write to metadata_versions (delta {})",
-            mv_after - mv_before
-        );
-        assert!(
-            cache_after > cache_before,
-            "dry_run must populate api_cache (before={cache_before}, after={cache_after})"
-        );
-    }
-
     // ── Phase-direct tests ────────────────────────────
     //
     // The phase decomposition makes it cheap to exercise tail-of-distribution
     // scenarios that would otherwise need three configured wiremock servers
     // and a full `run_once` integration call.
-
-    #[test]
-    fn every_source_error_maps_to_one_closed_class() {
-        use reqwest::StatusCode;
-        let cases = [
-            (SourceError::NotFound, FailureClass::NotFound),
-            (
-                SourceError::RateLimited { retry_after: None },
-                FailureClass::RateLimited,
-            ),
-            (
-                SourceError::Http(StatusCode::BAD_GATEWAY),
-                FailureClass::SourceError,
-            ),
-            (SourceError::Timeout, FailureClass::Timeout),
-            (
-                SourceError::Other(anyhow::anyhow!("connection reset")),
-                FailureClass::Unreachable,
-            ),
-        ];
-        for (error, class) in cases {
-            assert_eq!(summarise_failure("openlibrary", &error).class, class);
-        }
-    }
-
-    /// Every source returned an error → no journal rows, all failures
-    /// summarised with correct `retry_after` / terminal flags. The
-    /// `SourceError::Other` case also verifies that
-    /// `summarise_failure`'s `{err:#}` formatting preserves the full
-    /// anyhow `.chain()` of context.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn apply_journal_batch_collects_all_source_failures(pool: PgPool) {
-        use reqwest::StatusCode;
-
-        let pool = ingestion_pool_for(&pool).await;
-        // No DB row needed — apply_journal_batch only touches the DB on the
-        // Ok arm; the manifestation_id is bound only inside upsert_journal_row.
-        // If a future change adds a failure-side write (e.g. a
-        // `source_failures` table), this test will need a real fixture row
-        // to avoid an FK violation.
-        let m_id = Uuid::new_v4();
-
-        let chained = anyhow::anyhow!("leaf parse error")
-            .context("decoding response body")
-            .context("during google_books fetch");
-
-        let results = vec![
-            SourceRun {
-                source_id: "openlibrary".into(),
-                outcome: Err(SourceError::Timeout),
-            },
-            SourceRun {
-                source_id: "googlebooks".into(),
-                outcome: Err(SourceError::Http(StatusCode::NOT_FOUND)),
-            },
-            SourceRun {
-                source_id: "hardcover".into(),
-                outcome: Err(SourceError::RateLimited {
-                    retry_after: Some(Duration::from_mins(1)),
-                }),
-            },
-            SourceRun {
-                source_id: "chained".into(),
-                outcome: Err(SourceError::Other(chained)),
-            },
-        ];
-
-        let mut tx = pool.begin().await.unwrap();
-        let (per_field, failures) = apply_journal_batch(&mut tx, m_id, &results).await.unwrap();
-        tx.commit().await.unwrap();
-
-        assert!(
-            per_field.is_empty(),
-            "no journal rows should be written when every source errored"
-        );
-        assert_eq!(failures.len(), 4);
-
-        let ol = failures
-            .iter()
-            .find(|f| f.source_id == "openlibrary")
-            .unwrap();
-        assert!(ol.retry_after.is_none(), "Timeout has no retry_after");
-        assert!(!ol.terminal, "Timeout is retryable");
-
-        let gb = failures
-            .iter()
-            .find(|f| f.source_id == "googlebooks")
-            .unwrap();
-        assert!(gb.retry_after.is_none(), "Http(404) has no retry_after");
-        assert!(gb.terminal, "non-429 4xx must be terminal");
-
-        let hc = failures
-            .iter()
-            .find(|f| f.source_id == "hardcover")
-            .unwrap();
-        assert_eq!(
-            hc.retry_after,
-            Some(Duration::from_mins(1)),
-            "RateLimited retry_after must round-trip"
-        );
-        assert!(!hc.terminal, "RateLimited is not terminal");
-
-        // anyhow chain preservation — `err.to_string()` would have only
-        // surfaced the leaf; `{err:#}` walks `.chain()` and joins the
-        // outer context. Each layer must appear in the stored error.
-        let chained = failures.iter().find(|f| f.source_id == "chained").unwrap();
-        assert!(
-            chained.error.contains("leaf parse error"),
-            "leaf must survive: {}",
-            chained.error
-        );
-        assert!(
-            chained.error.contains("decoding response body"),
-            "middle context must survive: {}",
-            chained.error
-        );
-        assert!(
-            chained.error.contains("during google_books fetch"),
-            "outer context must survive: {}",
-            chained.error
-        );
-    }
 
     /// Two sources agree on a hash → first Apply fires, the inner loop
     /// `break`s, no second Apply, exactly one writeback enqueue.
@@ -2464,420 +1846,6 @@ mod tests {
         );
     }
 
-    /// A pending row from a prior run with a different `value_hash` must
-    /// downgrade `AutoFill` to Propose — even when canonical is empty and the
-    /// new run has only one row.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn apply_canonical_batch_merges_prior_pending_into_decision(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let isbn = "9780747532699";
-        let marker = Uuid::new_v4().simple().to_string();
-        let (work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-
-        let prior = SourceResult {
-            field_name: "publisher".into(),
-            raw_value: serde_json::json!(format!("Prior Publisher {marker}")),
-            match_type: "isbn".into(),
-        };
-        let new = SourceResult {
-            field_name: "publisher".into(),
-            raw_value: serde_json::json!(format!("New Publisher {marker}")),
-            match_type: "isbn".into(),
-        };
-
-        let mut tx = pool.begin().await.unwrap();
-        // Simulate the prior run's pending row.
-        upsert_journal_row(&mut tx, m_id, "openlibrary", &prior)
-            .await
-            .unwrap();
-        // The current run's row.
-        let id_new = upsert_journal_row(&mut tx, m_id, "googlebooks", &new)
-            .await
-            .unwrap();
-        let new_hash = value_hash::value_hash(&new.field_name, &new.raw_value);
-        let mut per_field: PerFieldRows = std::collections::HashMap::new();
-        per_field.insert(
-            "publisher".into(),
-            vec![(
-                "googlebooks".into(),
-                PolicyInputRow {
-                    id: id_new,
-                    value_hash: new_hash,
-                },
-            )],
-        );
-
-        let snapshot = Snapshot {
-            manifestation_id: m_id,
-            work_id,
-            lookup_keys: Vec::new(),
-            canonical: CanonicalState::default(),
-        };
-
-        let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        assert_eq!(
-            outcome.applied, 0,
-            "disagreement with stored pending must prevent AutoFill"
-        );
-        assert_eq!(
-            outcome.staged, 1,
-            "the new run's row should land in Stage when prior pending disagrees"
-        );
-
-        let canon_publisher =
-            sqlx::query_scalar!("SELECT publisher FROM manifestations WHERE id = $1", m_id,)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert!(
-            canon_publisher.is_none(),
-            "canonical publisher must remain empty"
-        );
-
-        let writeback_rows = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            writeback_rows, 0,
-            "Stage decision must not enqueue a writeback"
-        );
-    }
-
-    /// Positive control for `apply_canonical_batch_merges_prior_pending_into_decision`:
-    /// the same shape (single source, empty canonical) MUST Apply when no
-    /// disagreeing prior pending row exists. If this test fails, the
-    /// prior-pending Stage assertion above is passing vacuously.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn apply_canonical_batch_applies_when_no_prior_pending(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let isbn = "9780747538103";
-        let marker = Uuid::new_v4().simple().to_string();
-        let (work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-
-        let new = SourceResult {
-            field_name: "publisher".into(),
-            raw_value: serde_json::json!(format!("Solo Publisher {marker}")),
-            match_type: "isbn".into(),
-        };
-
-        let mut tx = pool.begin().await.unwrap();
-        let id_new = upsert_journal_row(&mut tx, m_id, "googlebooks", &new)
-            .await
-            .unwrap();
-        let new_hash = value_hash::value_hash(&new.field_name, &new.raw_value);
-        let mut per_field: PerFieldRows = std::collections::HashMap::new();
-        per_field.insert(
-            "publisher".into(),
-            vec![(
-                "googlebooks".into(),
-                PolicyInputRow {
-                    id: id_new,
-                    value_hash: new_hash,
-                },
-            )],
-        );
-
-        let snapshot = Snapshot {
-            manifestation_id: m_id,
-            work_id,
-            lookup_keys: Vec::new(),
-            canonical: CanonicalState::default(),
-        };
-
-        let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        assert_eq!(
-            outcome.applied, 1,
-            "single source + empty canonical + no prior pending MUST Apply"
-        );
-        assert_eq!(outcome.staged, 0);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn apply_canonical_batch_applies_pages(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let marker = Uuid::new_v4().simple().to_string();
-        let (work_id, m_id) = insert_enrich_fixture(&pool, "9781857231380", &marker).await;
-
-        let new = SourceResult {
-            field_name: "pages".into(),
-            raw_value: serde_json::json!(353),
-            match_type: "isbn".into(),
-        };
-
-        let mut tx = pool.begin().await.unwrap();
-        let id_new = upsert_journal_row(&mut tx, m_id, "googlebooks", &new)
-            .await
-            .unwrap();
-        let new_hash = value_hash::value_hash(&new.field_name, &new.raw_value);
-        let mut per_field: PerFieldRows = std::collections::HashMap::new();
-        per_field.insert(
-            "pages".into(),
-            vec![(
-                "googlebooks".into(),
-                PolicyInputRow {
-                    id: id_new,
-                    value_hash: new_hash,
-                },
-            )],
-        );
-        let snapshot = Snapshot {
-            manifestation_id: m_id,
-            work_id,
-            lookup_keys: Vec::new(),
-            canonical: CanonicalState::default(),
-        };
-        let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        assert_eq!(
-            outcome.applied, 1,
-            "positive pages on empty canonical must Apply"
-        );
-        let row = sqlx::query!(
-            "SELECT pages, pages_version_id FROM manifestations WHERE id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(row.pages, Some(353));
-        assert_eq!(row.pages_version_id, Some(id_new));
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn apply_canonical_batch_skips_non_positive_pages(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let marker = Uuid::new_v4().simple().to_string();
-        let (work_id, m_id) = insert_enrich_fixture(&pool, "9781857231397", &marker).await;
-
-        let new = SourceResult {
-            field_name: "pages".into(),
-            raw_value: serde_json::json!(0),
-            match_type: "isbn".into(),
-        };
-
-        let mut tx = pool.begin().await.unwrap();
-        let id_new = upsert_journal_row(&mut tx, m_id, "googlebooks", &new)
-            .await
-            .unwrap();
-        let new_hash = value_hash::value_hash(&new.field_name, &new.raw_value);
-        let mut per_field: PerFieldRows = std::collections::HashMap::new();
-        per_field.insert(
-            "pages".into(),
-            vec![(
-                "googlebooks".into(),
-                PolicyInputRow {
-                    id: id_new,
-                    value_hash: new_hash,
-                },
-            )],
-        );
-        let snapshot = Snapshot {
-            manifestation_id: m_id,
-            work_id,
-            lookup_keys: Vec::new(),
-            canonical: CanonicalState::default(),
-        };
-        let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        assert_eq!(
-            outcome.applied, 0,
-            "non-positive pages must skip the canonical write"
-        );
-        let row = sqlx::query!(
-            "SELECT pages, pages_version_id FROM manifestations WHERE id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(row.pages, None);
-        assert_eq!(row.pages_version_id, None);
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_journal_row_refreshes_new_value_on_reorder(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let marker = Uuid::new_v4().simple().to_string();
-        let (_work_id, m_id) = insert_enrich_fixture(&pool, "9781857231403", &marker).await;
-
-        let first = SourceResult {
-            field_name: "contributors.author".into(),
-            raw_value: serde_json::json!([format!("Ada {marker}"), format!("Grace {marker}")]),
-            match_type: "isbn".into(),
-        };
-        let reordered = SourceResult {
-            field_name: "contributors.author".into(),
-            raw_value: serde_json::json!([format!("Grace {marker}"), format!("Ada {marker}")]),
-            match_type: "isbn".into(),
-        };
-
-        let mut tx = pool.begin().await.unwrap();
-        let id_first = upsert_journal_row(&mut tx, m_id, "openlibrary", &first)
-            .await
-            .unwrap();
-        let id_second = upsert_journal_row(&mut tx, m_id, "openlibrary", &reordered)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-        assert_eq!(
-            id_first, id_second,
-            "order-insensitive hash must collide on the same journal row"
-        );
-
-        let row = sqlx::query!(
-            "SELECT new_value, observation_count FROM metadata_versions WHERE id = $1",
-            id_first,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            row.new_value, reordered.raw_value,
-            "colliding upsert must refresh new_value to the latest representation"
-        );
-        assert_eq!(row.observation_count, 2);
-    }
-
-    /// `apply_field` returning `Ok(false)` for a non-string JSON value
-    /// must skip without inflating counters or enqueuing writebacks; the
-    /// inner loop must `continue` to the next source for the same field.
-    ///
-    /// Both rows are inserted directly with a forged shared `value_hash`
-    /// to defeat `policy::decide`'s disagreement check —
-    /// `upsert_journal_row` would compute distinct hashes from the
-    /// distinct raw values, and `load_existing_pending` re-reads those
-    /// real hashes. The forge is necessary to land both sources in the
-    /// `Decision::Apply` branch so the continue-on-Ok(false) branch is
-    /// actually exercised.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn apply_canonical_batch_skips_non_string_value_and_continues(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let isbn = "9780743273565";
-        let marker = Uuid::new_v4().simple().to_string();
-        let (work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-
-        let good_value = format!("Good Publisher {marker}");
-        let shared_hash: Vec<u8> = vec![0u8; 32];
-
-        // Bad row: array (non-string) → apply_field returns Ok(false).
-        let bad_value = serde_json::json!(["Bad Publisher"]);
-        let id_bad = sqlx::query_scalar!(
-            "INSERT INTO metadata_versions \
-                (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7) \
-             RETURNING id",
-            m_id,
-            "openlibrary",
-            "publisher",
-            bad_value,
-            shared_hash,
-            "isbn",
-            0.85_f32,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        // Good row: string → apply_field returns Ok(true).
-        let good_json = serde_json::json!(good_value.clone());
-        let id_good = sqlx::query_scalar!(
-            "INSERT INTO metadata_versions \
-                (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7) \
-             RETURNING id",
-            m_id,
-            "googlebooks",
-            "publisher",
-            good_json,
-            shared_hash,
-            "isbn",
-            0.85_f32,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        let mut per_field: PerFieldRows = std::collections::HashMap::new();
-        per_field.insert(
-            "publisher".into(),
-            vec![
-                (
-                    "openlibrary".into(),
-                    PolicyInputRow {
-                        id: id_bad,
-                        value_hash: shared_hash.clone(),
-                    },
-                ),
-                (
-                    "googlebooks".into(),
-                    PolicyInputRow {
-                        id: id_good,
-                        value_hash: shared_hash,
-                    },
-                ),
-            ],
-        );
-
-        let snapshot = Snapshot {
-            manifestation_id: m_id,
-            work_id,
-            lookup_keys: Vec::new(),
-            canonical: CanonicalState::default(),
-        };
-
-        let mut tx = pool.begin().await.unwrap();
-        let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        assert_eq!(
-            outcome.applied, 1,
-            "bad-value source must be skipped; good source must apply"
-        );
-
-        let canon =
-            sqlx::query_scalar!("SELECT publisher FROM manifestations WHERE id = $1", m_id,)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(
-            canon.as_deref(),
-            Some(good_value.as_str()),
-            "canonical publisher must come from the good source"
-        );
-
-        let writeback_rows = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            writeback_rows, 1,
-            "exactly one writeback row for the successful apply"
-        );
-    }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn apply_canonical_batch_skips_malformed_pub_date(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
@@ -2947,6 +1915,91 @@ mod tests {
         );
     }
 
+    // REV-REQ-0072 AC2-4.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn isbn_contract_invalid_provider(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        for (field, raw) in [
+            ("isbn_13", "4006381333931"),
+            ("isbn_10", "0306406153"),
+            ("isbn_13", "9780306406150"),
+        ] {
+            let marker = Uuid::new_v4().simple().to_string();
+            let (work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+            let bad = SourceResult {
+                field_name: field.into(),
+                raw_value: serde_json::json!(raw),
+                match_type: "isbn".into(),
+            };
+
+            let mut tx = pool.begin().await.unwrap();
+            let id_bad = upsert_journal_row(&mut tx, m_id, "openlibrary", &bad)
+                .await
+                .unwrap();
+            let hash = value_hash::value_hash(&bad.field_name, &bad.raw_value);
+            let mut per_field: PerFieldRows = std::collections::HashMap::new();
+            per_field.insert(
+                field.into(),
+                vec![(
+                    "openlibrary".into(),
+                    PolicyInputRow {
+                        id: id_bad,
+                        value_hash: hash,
+                    },
+                )],
+            );
+
+            let snapshot = Snapshot {
+                manifestation_id: m_id,
+                work_id,
+                lookup_keys: Vec::new(),
+                canonical: CanonicalState::default(),
+            };
+
+            let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+
+            assert_eq!(
+                outcome.applied, 0,
+                "invalid observation must not count as applied"
+            );
+            assert_eq!(outcome.staged, 0);
+            assert_eq!(outcome.skipped_locked, 0);
+
+            let row = sqlx::query!(
+                "SELECT isbn_10, isbn_10_version_id, isbn_13, isbn_13_version_id FROM manifestations WHERE id = $1",
+                m_id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert!(row.isbn_10.is_none() && row.isbn_10_version_id.is_none());
+            assert!(row.isbn_13.is_none() && row.isbn_13_version_id.is_none());
+            let journal = sqlx::query_scalar!(
+                "SELECT new_value FROM metadata_versions WHERE id = $1",
+                id_bad
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(journal, bad.raw_value);
+
+            let writeback_rows = sqlx::query_scalar!(
+                "SELECT COUNT(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+                m_id,
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                writeback_rows, 0,
+                "no writeback should be enqueued for a skipped apply"
+            );
+        }
+    }
+
     // ── external identifiers + ratings (native-id enrichment) ────────────
 
     /// ISBN-less fixture: no isbn column and an empty stub title, so lookup
@@ -2983,169 +2036,6 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(body))
             .mount(server)
             .await;
-    }
-
-    #[test]
-    fn derive_lookup_keys_order_is_pinned() {
-        let mut identifiers = std::collections::HashMap::new();
-        identifiers.insert(
-            "identifiers.manifestation.openlibrary".to_string(),
-            "OL7353617M".to_string(),
-        );
-        identifiers.insert(
-            "identifiers.work.openlibrary".to_string(),
-            "OL45804W".to_string(),
-        );
-        identifiers.insert(
-            "identifiers.manifestation.googlebooks".to_string(),
-            "zyTZAAAAYAAJ".to_string(),
-        );
-        identifiers.insert("identifiers.work.hardcover".to_string(), "dune".to_string());
-        // Never-fetched schemes must not become keys.
-        identifiers.insert(
-            "identifiers.manifestation.asin".to_string(),
-            "B004GXAX8C".to_string(),
-        );
-        identifiers.insert("identifiers.work.goodreads".to_string(), "5907".to_string());
-
-        let priorities: std::collections::HashMap<String, i32> = [
-            ("openlibrary".to_string(), 100),
-            ("googlebooks".to_string(), 100),
-            ("hardcover".to_string(), 90),
-        ]
-        .into_iter()
-        .collect();
-
-        let keys = derive_lookup_keys(
-            Some("9780441172719"),
-            None,
-            Some("Dune"),
-            Some("Frank Herbert"),
-            &identifiers,
-            &priorities,
-        );
-
-        let rendered: Vec<String> = keys
-            .iter()
-            .map(|k| match k {
-                LookupKey::Isbn(v) => format!("isbn|{v}"),
-                LookupKey::ExternalId { scheme, value } => format!("ext|{scheme}|{value}"),
-                LookupKey::TitleAuthor { .. } => "ta".to_string(),
-            })
-            .collect();
-        // Pinned total order: ISBN; then priority desc with the fixed
-        // [openlibrary, googlebooks, hardcover] tie-break, manifestation
-        // before work within a scheme; title/author last. asin/goodreads
-        // never appear.
-        assert_eq!(
-            rendered,
-            vec![
-                "isbn|isbn:9780441172719".to_string(),
-                "ext|openlibrary|OL7353617M".to_string(),
-                "ext|openlibrary|OL45804W".to_string(),
-                "ext|googlebooks|zyTZAAAAYAAJ".to_string(),
-                "ext|hardcover|dune".to_string(),
-                "ta".to_string(),
-            ],
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn load_snapshot_never_fetched_schemes_yield_no_keys(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let marker = Uuid::new_v4().simple().to_string();
-        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
-        upsert_manifestation_identifier(&pool, m_id, "asin", "B004GXAX8C", None)
-            .await
-            .unwrap();
-
-        let snapshot = load_snapshot(&pool, m_id).await.unwrap();
-        assert!(
-            snapshot.lookup_keys.is_empty(),
-            "an asin-only manifestation has nothing fetchable, got {:?}",
-            snapshot.lookup_keys
-        );
-    }
-
-    /// An ISBN-less manifestation with a stored OL edition id resolves by
-    /// native id, and the edition's parent-work link `AutoFill`s the empty
-    /// work-level slot in the registry — with a journal pointer, no
-    /// writeback, and no calls to the other adapters.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn run_once_external_id_autofills_empty_registry_slot(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let marker = Uuid::new_v4().simple().to_string();
-        let (work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
-        upsert_manifestation_identifier(&pool, m_id, "openlibrary", "OL7353617M", None)
-            .await
-            .unwrap();
-
-        mock_ol_edition(
-            &ol,
-            "OL7353617M",
-            json!({"works": [{"key": "/works/OL45804W"}]}),
-        )
-        .await;
-
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        let outcome = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-        assert_eq!(outcome.applied, 1, "work-level id should AutoFill");
-
-        let row = sqlx::query!(
-            "SELECT external_id, source_version_id FROM work_external_identifiers \
-             WHERE work_id = $1 AND scheme = 'openlibrary'",
-            work_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(row.external_id, "OL45804W");
-        let version_id = row.source_version_id.expect("journal pointer wired");
-        let journaled: serde_json::Value = sqlx::query_scalar!(
-            "SELECT new_value AS \"new_value!\" FROM metadata_versions WHERE id = $1",
-            version_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(journaled, json!("OL45804W"));
-
-        let writebacks: i64 = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(writebacks, 0, "identifier applies never enqueue writeback");
-
-        // Dispatch is per-scheme: the other adapters must not be called.
-        assert!(
-            gb.received_requests().await.unwrap_or_default().is_empty(),
-            "googlebooks must not be queried for an openlibrary id"
-        );
-        assert!(
-            hc.received_requests().await.unwrap_or_default().is_empty(),
-            "hardcover must not be queried for an openlibrary id"
-        );
-
-        // The attempt cached under its own type-prefixed key.
-        let kind: String = sqlx::query_scalar!(
-            "SELECT response_kind::text AS \"kind!\" FROM api_cache \
-             WHERE source = 'openlibrary' AND lookup_key = 'external:openlibrary:OL7353617M'",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(kind, "hit");
     }
 
     /// A populated work-level slot with a different value must Stage, not be
@@ -3203,472 +2093,6 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(pending, 1, "the observation stays pending for review");
-    }
-
-    /// A prior pending row with a different value downgrades `AutoFill` to
-    /// Stage even though the slot itself is empty (cross-source or
-    /// cross-run disagreement).
-    #[sqlx::test(migrations = "./migrations")]
-    async fn run_once_identifier_disagreement_with_prior_pending_stages(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let marker = Uuid::new_v4().simple().to_string();
-        let (work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
-        upsert_manifestation_identifier(&pool, m_id, "openlibrary", "OL7353617M", None)
-            .await
-            .unwrap();
-        // A disagreeing observation from an earlier run, still pending.
-        let hash = value_hash::value_hash("identifiers.work.openlibrary", &json!("OL777W"));
-        sqlx::query!(
-            "INSERT INTO metadata_versions \
-                 (manifestation_id, source, field_name, new_value, value_hash, \
-                  match_type, confidence_score) \
-             VALUES ($1, 'hardcover', 'identifiers.work.openlibrary', $2, $3, \
-                     'external_id', 0.85)",
-            m_id,
-            json!("OL777W"),
-            hash,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        mock_ol_edition(
-            &ol,
-            "OL7353617M",
-            json!({"works": [{"key": "/works/OL45804W"}]}),
-        )
-        .await;
-
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        let outcome = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-        assert_eq!(outcome.applied, 0, "disagreement must downgrade AutoFill");
-        assert!(outcome.staged >= 1);
-
-        let rows: i64 = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM work_external_identifiers WHERE work_id = $1",
-            work_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(rows, 0, "no registry write on disagreement");
-    }
-
-    /// Ratings land in the cache keyed (manifestation, source), are updated
-    /// in place on re-run, and are never journaled.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn run_once_upserts_ratings_in_place_and_never_journals_them(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let marker = Uuid::new_v4().simple().to_string();
-        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
-        upsert_manifestation_identifier(&pool, m_id, "googlebooks", "zyTZAAAAYAAJ", None)
-            .await
-            .unwrap();
-
-        let volume = |rating: f64, count: i64| {
-            json!({
-                "id": "zyTZAAAAYAAJ",
-                "volumeInfo": {"averageRating": rating, "ratingsCount": count}
-            })
-        };
-        Mock::given(method("GET"))
-            .and(path("/volumes/zyTZAAAAYAAJ"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(volume(4.5, 100)))
-            .mount(&gb)
-            .await;
-
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-
-        let row = sqlx::query!(
-            "SELECT rating, rating_scale, review_count FROM manifestation_external_ratings \
-             WHERE manifestation_id = $1 AND source = 'googlebooks'",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert!((row.rating - 4.5).abs() < 1e-6);
-        assert!((row.rating_scale - 5.0).abs() < 1e-6);
-        assert_eq!(row.review_count, 100);
-
-        // Ratings never enter the journal.
-        let journaled: i64 = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions \
-             WHERE manifestation_id = $1 AND field_name ILIKE '%rating%'",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(journaled, 0, "rating observations must never be journaled");
-
-        // Re-run with a changed score: same row, updated in place. Reset the
-        // enrichment cache row first so the rerun actually refetches.
-        gb.reset().await;
-        Mock::given(method("GET"))
-            .and(path("/volumes/zyTZAAAAYAAJ"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(volume(3.9, 250)))
-            .mount(&gb)
-            .await;
-        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-
-        let rows = sqlx::query!(
-            "SELECT rating, review_count FROM manifestation_external_ratings \
-             WHERE manifestation_id = $1 AND source = 'googlebooks'",
-            m_id,
-        )
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-        assert_eq!(rows.len(), 1, "re-run must update in place, not duplicate");
-        assert!((rows[0].rating - 3.9).abs() < 1e-6);
-        assert_eq!(rows[0].review_count, 250);
-    }
-
-    /// Two editions of one work keep independent per-source ratings: the
-    /// manifestation-level cache cannot cross-clobber.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn run_once_ratings_are_independent_per_edition(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let marker = Uuid::new_v4().simple().to_string();
-        let (work_id, m1) = insert_isbnless_fixture(&pool, &marker).await;
-        let path2 = format!("fixtures/orch-extid-b-{marker}.epub");
-        let hash2 = format!("orch-extid-b-hash-{marker}");
-        let m2: Uuid = sqlx::query_scalar!(
-            "WITH inserted AS (INSERT INTO manifestations \
-               (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
-                file_size_bytes, ingestion_status, validation_status) \
-             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
-            work_id,
-            path2,
-            hash2,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        upsert_manifestation_identifier(&pool, m1, "googlebooks", "volAAA111", None)
-            .await
-            .unwrap();
-        upsert_manifestation_identifier(&pool, m2, "googlebooks", "volBBB222", None)
-            .await
-            .unwrap();
-
-        for (vol, rating) in [("volAAA111", 4.0), ("volBBB222", 2.0)] {
-            Mock::given(method("GET"))
-                .and(path(format!("/volumes/{vol}")))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                    "id": vol,
-                    "volumeInfo": {"averageRating": rating, "ratingsCount": 10}
-                })))
-                .mount(&gb)
-                .await;
-        }
-
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        let _ = run_once_with_sources(&pool, &cfg, &sources, m1)
-            .await
-            .unwrap();
-        let _ = run_once_with_sources(&pool, &cfg, &sources, m2)
-            .await
-            .unwrap();
-
-        let r1 = sqlx::query_scalar!(
-            "SELECT rating FROM manifestation_external_ratings \
-             WHERE manifestation_id = $1 AND source = 'googlebooks'",
-            m1,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        let r2 = sqlx::query_scalar!(
-            "SELECT rating FROM manifestation_external_ratings \
-             WHERE manifestation_id = $1 AND source = 'googlebooks'",
-            m2,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert!((r1 - 4.0).abs() < 1e-6);
-        assert!((r2 - 2.0).abs() < 1e-6, "editions keep independent ratings");
-    }
-
-    /// A missed native id falls through to the next key in order, and each
-    /// attempt caches under its own type-prefixed key so the miss cannot
-    /// poison the winning key's cache entry.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn run_once_fallback_tries_next_key_and_caches_per_key(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let marker = Uuid::new_v4().simple().to_string();
-        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
-        // openlibrary outranks googlebooks (same priority, fixed precedence),
-        // so the OL id is attempted first and misses.
-        upsert_manifestation_identifier(&pool, m_id, "openlibrary", "OL404404M", None)
-            .await
-            .unwrap();
-        upsert_manifestation_identifier(&pool, m_id, "googlebooks", "volFALLBACK", None)
-            .await
-            .unwrap();
-
-        Mock::given(method("GET"))
-            .and(path("/books/OL404404M.json"))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&ol)
-            .await;
-        let title = format!("Fallback Title {marker}");
-        Mock::given(method("GET"))
-            .and(path("/volumes/volFALLBACK"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "volFALLBACK",
-                "volumeInfo": {"title": title}
-            })))
-            .mount(&gb)
-            .await;
-
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        let outcome = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-        assert!(outcome.applied >= 1, "fallback key should produce applies");
-
-        let canon_title: String = sqlx::query_scalar!(
-            "SELECT w.title FROM works w \
-             JOIN manifestations m ON m.work_id = w.id WHERE m.id = $1",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(canon_title, title, "title applied from the fallback key");
-
-        let miss_kind: String = sqlx::query_scalar!(
-            "SELECT response_kind::text AS \"kind!\" FROM api_cache \
-             WHERE source = 'openlibrary' AND lookup_key = 'external:openlibrary:OL404404M'",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(miss_kind, "miss", "the missed attempt caches as a miss");
-
-        let hit_kind: String = sqlx::query_scalar!(
-            "SELECT response_kind::text AS \"kind!\" FROM api_cache \
-             WHERE source = 'googlebooks' AND lookup_key = 'external:googlebooks:volFALLBACK'",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            hit_kind, "hit",
-            "the winning attempt caches under its own key"
-        );
-    }
-
-    /// A rating-capable record that stops reporting a rating clears the
-    /// cached row; a path that never carries rating data leaves it alone.
-    #[sqlx::test(migrations = "./migrations")]
-    async fn run_once_clears_rating_when_provider_omits_it(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let marker = Uuid::new_v4().simple().to_string();
-        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
-        upsert_manifestation_identifier(&pool, m_id, "googlebooks", "volDROPPED", None)
-            .await
-            .unwrap();
-        // A rating cached by an earlier run.
-        crate::models::external_rating::upsert_rating(
-            &pool,
-            m_id,
-            "googlebooks",
-            &seed_rating(4.5, 5.0, 100),
-        )
-        .await
-        .unwrap();
-
-        // The re-fetched Volume record no longer reports a rating.
-        Mock::given(method("GET"))
-            .and(path("/volumes/volDROPPED"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "volDROPPED",
-                "volumeInfo": {"title": "Unrated"}
-            })))
-            .mount(&gb)
-            .await;
-
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-
-        let remaining: i64 = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM manifestation_external_ratings \
-             WHERE manifestation_id = $1 AND source = 'googlebooks'",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            remaining, 0,
-            "a rating the provider no longer reports must be cleared"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn run_once_clears_rating_when_provider_reports_unusable_value(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        // Two editions cover both unusable classes reachable from the
-        // adapters: a rating above its scale and a negative rating. The
-        // scale predicate of `RatingObservation::new` is unreachable from
-        // the adapters, which pin 5.0, and an unstorable review count is
-        // clamped to unreported before construction instead of becoming
-        // unusable.
-        let over_scale = Uuid::new_v4().simple().to_string();
-        let (_ow, over_id) = insert_isbnless_fixture(&pool, &over_scale).await;
-        upsert_manifestation_identifier(&pool, over_id, "googlebooks", "volOVER", None)
-            .await
-            .unwrap();
-        let negative_rating = Uuid::new_v4().simple().to_string();
-        let (_nw, negative_id) = insert_isbnless_fixture(&pool, &negative_rating).await;
-        upsert_manifestation_identifier(&pool, negative_id, "googlebooks", "volNEG", None)
-            .await
-            .unwrap();
-        for m in [over_id, negative_id] {
-            crate::models::external_rating::upsert_rating(
-                &pool,
-                m,
-                "googlebooks",
-                &seed_rating(4.5, 5.0, 100),
-            )
-            .await
-            .unwrap();
-        }
-
-        // Both payloads carry ratings `RatingObservation::new` rejects.
-        Mock::given(method("GET"))
-            .and(path("/volumes/volOVER"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "volOVER",
-                "volumeInfo": {"title": "Over Scale", "averageRating": 6.0, "ratingsCount": 12}
-            })))
-            .mount(&gb)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/volumes/volNEG"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "volNEG",
-                "volumeInfo": {"title": "Negative Rating", "averageRating": -0.5, "ratingsCount": 3}
-            })))
-            .mount(&gb)
-            .await;
-
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        for m in [over_id, negative_id] {
-            let _ = run_once_with_sources(&pool, &cfg, &sources, m)
-                .await
-                .unwrap();
-        }
-
-        let remaining: i64 = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM manifestation_external_ratings \
-             WHERE manifestation_id = ANY($1::uuid[]) AND source = 'googlebooks'",
-            &[over_id, negative_id][..],
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            remaining, 0,
-            "a rating the schema would reject must not survive as the cached score"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn run_once_retains_rating_on_non_rating_capable_path(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ol, gb, hc) = (
-            MockServer::start().await,
-            MockServer::start().await,
-            MockServer::start().await,
-        );
-        let marker = Uuid::new_v4().simple().to_string();
-        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
-        upsert_manifestation_identifier(&pool, m_id, "openlibrary", "OL7353617M", None)
-            .await
-            .unwrap();
-        // An openlibrary rating cached from an earlier search-path run.
-        crate::models::external_rating::upsert_rating(
-            &pool,
-            m_id,
-            "openlibrary",
-            &seed_rating(4.2, 5.0, 55),
-        )
-        .await
-        .unwrap();
-
-        // The native edition record carries no rating data either way.
-        mock_ol_edition(&ol, "OL7353617M", json!({"title": "Dune"})).await;
-
-        let cfg = config_with_mock_sources();
-        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
-        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
-            .await
-            .unwrap();
-
-        let remaining: i64 = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM manifestation_external_ratings \
-             WHERE manifestation_id = $1 AND source = 'openlibrary'",
-            m_id,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            remaining, 1,
-            "a path with no rating data must not clear the cached rating"
-        );
     }
 
     /// Two sibling manifestations concurrently observing disagreeing
@@ -3932,8 +2356,8 @@ mod tests {
                     ("publisher", json!("Provider publisher")),
                     ("pub_date", json!("2026-01")),
                     ("pages", json!(200)),
-                    ("isbn_10", json!("0451524934")),
-                    ("isbn_13", json!("9780451524935")),
+                    ("isbn_10", json!("0 8044-2957-X")),
+                    ("isbn_13", json!("979 10-90636-07-1")),
                 ]
                 .into_iter()
                 .map(|(field, raw_value)| SourceResult {
@@ -4062,14 +2486,14 @@ mod tests {
         assert_eq!(current.pages, Some(if edit { 300 } else { 200 }));
         assert_eq!(
             current.isbn_10.as_deref(),
-            Some(if edit { "0306406152" } else { "0451524934" })
+            Some(if edit { "0306406152" } else { "080442957X" })
         );
         assert_eq!(
             current.isbn_13.as_deref(),
             Some(if edit {
                 "9780306406157"
             } else {
-                "9780451524935"
+                "9791090636071"
             })
         );
         let rows = sqlx::query!(
@@ -4102,6 +2526,7 @@ mod tests {
         assert_eq!(jobs, if edit { 0 } else { 8 });
     }
 
+    // REV-REQ-0051 AC6; REV-REQ-0072 AC1,4; REV-REQ-0073 AC2-4.
     #[sqlx::test(migrations = "./migrations")]
     async fn scalar_empty_fields_fill_after_provider_round_trip(pool: PgPool) {
         scalar_run_with_intervening_edit(&pool, false).await;

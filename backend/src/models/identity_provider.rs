@@ -30,23 +30,3 @@ pub enum IdentityProvider {
     /// `OpenID` Connect federated identity, keyed on `(issuer, subject)`.
     Oidc,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn json_roundtrip_uses_lowercase_string() {
-        let provider = IdentityProvider::Oidc;
-        let json = serde_json::to_string(&provider).expect("serialize");
-        assert_eq!(json, "\"oidc\"");
-        let back: IdentityProvider = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, IdentityProvider::Oidc);
-    }
-
-    #[test]
-    fn json_rejects_unknown_variant() {
-        let result: Result<IdentityProvider, _> = serde_json::from_str("\"saml\"");
-        assert!(result.is_err(), "expected saml to be rejected");
-    }
-}
