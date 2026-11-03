@@ -380,6 +380,28 @@ fn ssrf_client(redirect_limit: usize, timeout: Duration, user_agent: &str) -> re
 mod tests {
     use super::*;
 
+    #[test]
+    fn ip_is_denied_refuses_one_address_in_every_denied_range() {
+        for addr in [
+            "0.0.0.1",
+            "10.0.0.1",
+            "100.64.0.1",
+            "127.0.0.1",
+            "169.254.169.254",
+            "172.16.0.1",
+            "192.168.0.1",
+            "224.0.0.1",
+            "::",
+            "::1",
+            "fe80::1",
+            "fd00::1",
+            "ff02::1",
+            "::ffff:169.254.169.254",
+        ] {
+            assert!(ip_is_denied(addr.parse().unwrap()), "{addr} must be denied");
+        }
+    }
+
     /// The custom DNS resolver must reject hostnames whose entire resolution
     /// set falls in a denied IP range — closes the TOCTOU window between
     /// `validate_hop` and reqwest's connection-time resolution.
