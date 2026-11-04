@@ -31,6 +31,9 @@ on handling session expiration client-side. See
 - Several requests that fail together for the same lapsed session produce exactly one navigation to sign-in, not one per
   failing request. Checked by `` `is guarded — repeated calls navigate once` `` in
   `frontend/tests/browser/lib/query/client.test.tsx`.
-- `GET /auth/me` answering `401` or `403`, with no other request failing, navigates the browser to sign-in once.
+- `GET /auth/me` answering `401` or `403`, with no other request failing, navigates the browser to sign-in once. Checked
+  by `` `an identity check answering %i navigates to sign-in once` `` in
+  `frontend/tests/browser/lib/query/client.test.tsx`.
 - `GET /auth/me` failing with a network error or with a status other than `401` or `403` does not navigate the browser
-  to sign-in.
+  to sign-in. Checked by `` `%s from the identity check does not navigate to sign-in` `` in
+  `frontend/tests/browser/lib/query/client.test.tsx`.
