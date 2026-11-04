@@ -278,8 +278,8 @@ fn metadata_target(snap: &JobSnapshot) -> Target<'_> {
         publisher: snap.publisher.as_deref(),
         pub_date: (snap.field_name.as_deref() == Some("pub_date"))
             .then_some(snap.pub_date.as_deref()),
-        isbn_10: snap.isbn_10.as_deref(),
-        isbn_13: snap.isbn_13.as_deref(),
+        isbn_10: (snap.field_name.as_deref() == Some("isbn_10")).then_some(snap.isbn_10.as_deref()),
+        isbn_13: (snap.field_name.as_deref() == Some("isbn_13")).then_some(snap.isbn_13.as_deref()),
         series: None,
     }
 }
@@ -832,6 +832,57 @@ fn move_cover_sidecar(files: &LibraryFiles, cover: &PendingCover) -> Result<(), 
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn isbn_writeback_target() {
+        let mut snap = JobSnapshot {
+            manifestation_id: Uuid::new_v4(),
+            reason: JobReason::Metadata,
+            field_name: Some("isbn_10".into()),
+            file_path: "book.epub".parse().unwrap(),
+            library_id: LibraryId::from_uuid(Uuid::new_v4()),
+            current_file_hash: String::new(),
+            file_size_bytes: 0,
+            relocation: None,
+            format: ManifestationFormat::Epub,
+            cover_path: None,
+            title: None,
+            subtitle: None,
+            description: None,
+            language: None,
+            publisher: None,
+            pub_date: None,
+            isbn_10: None,
+            isbn_13: None,
+            primary_author: None,
+        };
+        // Data corruption boundary: only the tagged format receives the latest value or clear.
+        assert_eq!(metadata_target(&snap).isbn_10, Some(None));
+        assert_eq!(metadata_target(&snap).isbn_13, None);
+        snap.isbn_10 = Some("080442957X".into());
+        assert_eq!(metadata_target(&snap).isbn_10, Some(Some("080442957X")));
+        snap.field_name = Some("isbn_13".into());
+        assert_eq!(metadata_target(&snap).isbn_13, Some(None));
+        assert_eq!(metadata_target(&snap).isbn_10, None);
+        snap.isbn_13 = Some("9791090636071".into());
+        assert_eq!(metadata_target(&snap).isbn_13, Some(Some("9791090636071")));
+        snap.field_name = Some("title".into());
+        assert_eq!(
+            (
+                metadata_target(&snap).isbn_10,
+                metadata_target(&snap).isbn_13
+            ),
+            (None, None)
+        );
+        snap.field_name = None;
+        assert_eq!(
+            (
+                metadata_target(&snap).isbn_10,
+                metadata_target(&snap).isbn_13
+            ),
+            (None, None)
+        );
+    }
 
     async fn run_fixture(
         pool: &PgPool,

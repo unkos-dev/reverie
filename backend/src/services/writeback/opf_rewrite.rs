@@ -4,8 +4,8 @@
 //! Core / `<meta>` elements in place, and preserves everything else
 //! byte-for-byte (unknown namespaces, custom `<meta>`, `<dc:coverage>`,
 //! prologue, declaration order).  Callers pass a `Target` carrying the
-//! desired per-field values; `None` for a field means "leave the OPF's
-//! current value alone".
+//! desired per-field values. ISBN and publication targets distinguish
+//! unchanged values, replacements and clears.
 //!
 //! Memory-instinct: never use string substitution or regex on XML.  All
 //! transforms go through `quick-xml` events.
@@ -13,17 +13,14 @@
 use quick_xml::Reader;
 use quick_xml::Writer;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::name::{Namespace, ResolveResult};
+use quick_xml::reader::NsReader;
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 
 use super::error::WritebackError;
 
-/// Target values to write back into the `OPF`.  Each field semantics:
-///
-/// - `None`: leave the `OPF`'s current value alone.
-/// - `Some(v)`: set the Dublin Core element's text content to `v`.  An empty
-///   `v` is written as an empty element (not deleted) — the MVP does not
-///   delete existing `OPF` fields.
+/// Target values for existing metadata; ISBN and publication operations also insert or clear.
 #[derive(Debug, Default, Clone)]
 pub struct Target<'a> {
     /// `dc:title` text.  Applied to the main title element only: a `dc:title`
@@ -44,10 +41,10 @@ pub struct Target<'a> {
     /// `None` leaves publication metadata unchanged; `Some(None)` clears it;
     /// `Some(Some(value))` writes text at its supplied precision.
     pub pub_date: Option<Option<&'a str>>,
-    /// `ISBN`-10 string; used as fallback when `isbn_13` is absent.
-    pub isbn_10: Option<&'a str>,
-    /// `ISBN`-13 string; preferred over `isbn_10` when both are set.
-    pub isbn_13: Option<&'a str>,
+    /// `None` leaves ISBN-10 unchanged; `Some(None)` clears bibliographic entries.
+    pub isbn_10: Option<Option<&'a str>>,
+    /// `None` leaves ISBN-13 unchanged; `Some(None)` clears bibliographic entries.
+    pub isbn_13: Option<Option<&'a str>>,
     /// Series name and optional position; written as `belongs-to-collection`
     /// (`EPUB3`) and/or `calibre:series` (`EPUB2` or when both forms exist).
     pub series: Option<SeriesRef<'a>>,
@@ -85,7 +82,41 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
     // once to rewrite.
     let events = read_all_events(opf_bytes)?;
 
-    let meta = scan_metadata(&events);
+    let mut meta = scan_metadata(&events);
+    scan_isbn_metadata(opf_bytes, &events, &mut meta)?;
+    let operations = [target.isbn_10, target.isbn_13];
+    let mut selected = [None; 2];
+    let mut removed = HashSet::new();
+    for (i, _) in events.iter().enumerate() {
+        if let Some(&(format, _)) = meta.isbn_identifiers.get(&i) {
+            match operations[format] {
+                Some(Some(_)) if selected[format].is_none() => selected[format] = Some(i),
+                Some(_) => {
+                    removed.insert(i);
+                }
+                None => {}
+            }
+        }
+    }
+    let mut removed_ids = HashSet::new();
+    loop {
+        for &i in &removed {
+            if let Event::Start(e) | Event::Empty(e) = &events[i]
+                && let Some(id) = isbn_attribute(e, "id")?
+            {
+                removed_ids.insert(id);
+            }
+        }
+        let count = removed.len();
+        for (i, target) in &meta.refinements {
+            if removed_ids.contains(target) {
+                removed.insert(*i);
+            }
+        }
+        if removed.len() == count {
+            break;
+        }
+    }
 
     // Rewrite pass.
     let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -93,7 +124,6 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
     let mut depth: usize = 0;
     let mut belongs_to_written = false;
     let mut calibre_series_written = false;
-    let mut isbn_identifier_written = false;
 
     // If the file uses EPUB 3, we write belongs-to-collection.  If it ALSO
     // has pre-existing calibre:series meta, we update both (downstream-reader
@@ -105,6 +135,28 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
     let mut i = 0;
     while i < events.len() {
         let ev = &events[i];
+        if removed.contains(&i) {
+            i = skip_to_matching_end(&events, i) + 1;
+            continue;
+        }
+        if let Some(&(format, had_urn)) = meta.isbn_identifiers.get(&i)
+            && let Some(Some(value)) = operations[format]
+            && let Event::Start(e) | Event::Empty(e) = ev
+        {
+            let mut start = e.clone();
+            if attr_value(e, "id").is_none() {
+                let id = allocate_isbn_id(&mut meta.document_ids, format);
+                start.push_attribute(("id", id.as_str()));
+            }
+            let text = if had_urn || meta.epub_version.starts_with('3') {
+                format!("urn:isbn:{value}")
+            } else {
+                value.to_owned()
+            };
+            write_replaced_element_from_empty(&mut writer, &start, &text)?;
+            i = skip_to_matching_end(&events, i) + 1;
+            continue;
+        }
         match ev {
             Event::Start(e) => {
                 depth += 1;
@@ -143,17 +195,6 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                         depth -= 1;
                         continue;
                     }
-                    // dc:identifier — update if opf:scheme matches ISBN.
-                    if local == "identifier"
-                        && is_isbn_identifier(e)
-                        && let Some(new_isbn) = target.isbn_13.or(target.isbn_10)
-                    {
-                        write_replaced_element(&mut writer, e, new_isbn)?;
-                        isbn_identifier_written = true;
-                        i = skip_to_matching_end(&events, i) + 1;
-                        depth -= 1;
-                        continue;
-                    }
                     // <meta property="belongs-to-collection"> — update text + refinement metas.
                     if local == "meta"
                         && has_attr(e, "property", "belongs-to-collection")
@@ -176,11 +217,26 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
             }
             Event::Empty(e) => {
                 let local = local_name(e.name().as_ref()).to_owned();
-                if local == "metadata"
-                    && let Some(Some(value)) = target.pub_date
+                if (local == "metadata" && matches!(target.pub_date, Some(Some(_))))
+                    || (meta.isbn_metadata.contains(&i)
+                        && operations
+                            .iter()
+                            .any(|operation| matches!(operation, Some(Some(_)))))
                 {
                     writer.write_event(Event::Start(e.clone()))?;
-                    write_publication_date(&mut writer, value)?;
+                    if local == "metadata"
+                        && let Some(Some(value)) = target.pub_date
+                    {
+                        write_publication_date(&mut writer, value)?;
+                    }
+                    for (format, operation) in operations.iter().enumerate() {
+                        if meta.isbn_metadata.contains(&i)
+                            && let Some(Some(value)) = operation
+                        {
+                            let id = allocate_isbn_id(&mut meta.document_ids, format);
+                            write_new_isbn_identifier(&mut writer, value, &id, &meta.epub_version)?;
+                        }
+                    }
                     writer.write_event(Event::End(BytesEnd::new(e.name().as_ref())))?;
                     i += 1;
                     continue;
@@ -204,15 +260,6 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                     {
                         // Rare: <dc:title/> as empty element — expand to paired.
                         write_replaced_element_from_empty(&mut writer, e, new_text)?;
-                        i += 1;
-                        continue;
-                    }
-                    if local == "identifier"
-                        && is_isbn_identifier(e)
-                        && let Some(new_isbn) = target.isbn_13.or(target.isbn_10)
-                    {
-                        write_replaced_element_from_empty(&mut writer, e, new_isbn)?;
-                        isbn_identifier_written = true;
                         i += 1;
                         continue;
                     }
@@ -244,20 +291,23 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                 depth -= 1;
                 let local = local_name(e.name().as_ref()).to_owned();
 
-                // Before closing <metadata>, insert any fresh elements we need.
-                if in_metadata_depth == Some(depth + 1) && local == "metadata" {
-                    if meta.selected_publication_date.is_none()
-                        && let Some(Some(value)) = target.pub_date
+                let closes_metadata = in_metadata_depth == Some(depth + 1) && local == "metadata";
+                if closes_metadata
+                    && meta.selected_publication_date.is_none()
+                    && let Some(Some(value)) = target.pub_date
+                {
+                    write_publication_date(&mut writer, value)?;
+                }
+                for (format, operation) in operations.iter().enumerate() {
+                    if meta.isbn_metadata.contains(&i)
+                        && selected[format].is_none()
+                        && let Some(Some(value)) = operation
                     {
-                        write_publication_date(&mut writer, value)?;
+                        let id = allocate_isbn_id(&mut meta.document_ids, format);
+                        write_new_isbn_identifier(&mut writer, value, &id, &meta.epub_version)?;
                     }
-                    // ISBN insertion when absent.
-                    if !isbn_identifier_written
-                        && let Some(new_isbn) = target.isbn_13.or(target.isbn_10)
-                        && !new_isbn.is_empty()
-                    {
-                        write_new_isbn_identifier(&mut writer, new_isbn)?;
-                    }
+                }
+                if closes_metadata {
                     // belongs-to-collection insertion when absent.
                     if !belongs_to_written
                         && use_belongs_to
@@ -310,6 +360,10 @@ struct ScanResult {
     title_types: HashMap<String, String>,
     publication_dates: HashSet<usize>,
     selected_publication_date: Option<usize>,
+    document_ids: HashSet<String>,
+    isbn_metadata: HashSet<usize>,
+    isbn_identifiers: HashMap<usize, (usize, bool)>,
+    refinements: HashMap<usize, String>,
 }
 
 fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
@@ -363,6 +417,10 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
     let (publication_dates, selected_publication_date) =
         scan_publication_dates(events, &epub_version);
     ScanResult {
+        document_ids: HashSet::new(),
+        isbn_metadata: HashSet::new(),
+        isbn_identifiers: HashMap::new(),
+        refinements: HashMap::new(),
         publication_dates,
         selected_publication_date,
         epub_version,
@@ -370,6 +428,223 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
         had_calibre_series: had_calibre,
         title_types,
     }
+}
+
+fn scan_isbn_metadata(
+    bytes: &[u8],
+    events: &[Event<'static>],
+    meta: &mut ScanResult,
+) -> Result<(), WritebackError> {
+    let mut reader = NsReader::from_reader(bytes);
+    let mut depth = 0;
+    let mut metadata_depth = None;
+    let mut dc_metadata_depth = None;
+    let mut dc_metadata = HashSet::new();
+    let mut package_id = None;
+    let mut candidates = Vec::new();
+    let mut declared = HashSet::new();
+    for (i, event) in events.iter().enumerate() {
+        let (namespace, _) = reader.read_resolved_event()?;
+        let is_opf = namespace == ResolveResult::Bound(Namespace("http://www.idpf.org/2007/opf"));
+        if matches!(event, Event::End(_)) {
+            if dc_metadata_depth == Some(depth) {
+                dc_metadata.insert(i);
+                dc_metadata_depth = None;
+            }
+            if metadata_depth == Some(depth) {
+                meta.isbn_metadata.insert(i);
+                metadata_depth = None;
+            }
+            depth -= 1;
+            continue;
+        }
+        let (Event::Start(element) | Event::Empty(element)) = event else {
+            continue;
+        };
+        let element_depth = depth + 1;
+        depth += usize::from(matches!(event, Event::Start(_)));
+        if let Some(id) = isbn_attribute(element, "id")? {
+            meta.document_ids.insert(id);
+        }
+        let name = element.name();
+        let local = local_name(name.as_ref());
+        if is_opf && local == "package" && element_depth == 1 {
+            package_id = isbn_attribute(element, "unique-identifier")?;
+            meta.epub_version =
+                isbn_attribute(element, "version")?.unwrap_or_else(|| meta.epub_version.clone());
+        }
+        if is_opf && local == "metadata" && element_depth == 2 {
+            meta.isbn_metadata.insert(i);
+            metadata_depth = matches!(event, Event::Start(_)).then_some(element_depth);
+            continue;
+        }
+        if is_opf
+            && local == "dc-metadata"
+            && meta.epub_version.starts_with('2')
+            && metadata_depth == Some(element_depth - 1)
+        {
+            dc_metadata.insert(i);
+            dc_metadata_depth = matches!(event, Event::Start(_)).then_some(element_depth);
+            continue;
+        }
+        if metadata_depth != Some(element_depth - 1) && dc_metadata_depth != Some(element_depth - 1)
+        {
+            continue;
+        }
+        scan_isbn_entry(&reader, events, i, meta, &mut candidates, &mut declared)?;
+    }
+    if !dc_metadata.is_empty() {
+        meta.isbn_metadata = dc_metadata;
+    }
+    meta.isbn_identifiers =
+        classify_isbn_identifiers(events, candidates, package_id.as_deref(), &declared)?;
+    Ok(())
+}
+
+fn scan_isbn_entry(
+    reader: &NsReader<&[u8]>,
+    events: &[Event<'static>],
+    index: usize,
+    meta: &mut ScanResult,
+    candidates: &mut Vec<(usize, Option<String>, bool)>,
+    declared: &mut HashSet<String>,
+) -> Result<(), WritebackError> {
+    let (Event::Start(element) | Event::Empty(element)) = &events[index] else {
+        return Ok(());
+    };
+    let (namespace, local) = reader.resolver().resolve_element(element.name());
+    if namespace == ResolveResult::Bound(Namespace("http://purl.org/dc/elements/1.1/"))
+        && local.as_ref() == "identifier"
+    {
+        candidates.push((
+            index,
+            isbn_attribute(element, "id")?,
+            has_isbn_scheme(element, reader.resolver())?,
+        ));
+    }
+    if namespace == ResolveResult::Bound(Namespace("http://www.idpf.org/2007/opf"))
+        && local.as_ref() == "meta"
+        && let Some(id) = scan_isbn_refinement(element, events, index, meta)?
+    {
+        declared.insert(id);
+    }
+    Ok(())
+}
+
+fn scan_isbn_refinement(
+    element: &BytesStart<'_>,
+    events: &[Event<'static>],
+    index: usize,
+    meta: &mut ScanResult,
+) -> Result<Option<String>, WritebackError> {
+    let Some(reference) = isbn_attribute(element, "refines")? else {
+        return Ok(None);
+    };
+    let Some(id) = reference.strip_prefix('#') else {
+        return Ok(None);
+    };
+    meta.refinements.insert(index, id.to_owned());
+    if isbn_attribute(element, "property")?.as_deref() != Some("identifier-type") {
+        return Ok(None);
+    }
+    let value = match isbn_attribute(element, "content")? {
+        Some(value) => value,
+        None => isbn_element_text(events, index)?,
+    };
+    let scheme = isbn_attribute(element, "scheme")?;
+    let declared = value.trim().eq_ignore_ascii_case("isbn")
+        || (scheme.as_deref() == Some("onix:codelist5") && matches!(value.trim(), "02" | "15"));
+    Ok(declared.then(|| id.to_owned()))
+}
+
+fn classify_isbn_identifiers(
+    events: &[Event<'static>],
+    candidates: Vec<(usize, Option<String>, bool)>,
+    package_id: Option<&str>,
+    declared: &HashSet<String>,
+) -> Result<HashMap<usize, (usize, bool)>, WritebackError> {
+    let mut identifiers = HashMap::new();
+    for (i, id, scheme_is_isbn) in candidates {
+        if id.is_some() && id.as_deref() == package_id {
+            continue;
+        }
+        let value = isbn_element_text(events, i)?;
+        let value = value.trim();
+        let urn = value
+            .get(..9)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("urn:isbn:"));
+        if !scheme_is_isbn && !urn && !id.as_ref().is_some_and(|id| declared.contains(id)) {
+            continue;
+        }
+        let number = if urn { &value[9..] } else { value };
+        let format = match number.parse::<isbn::Isbn>() {
+            Ok(isbn::Isbn::_10(_)) => 0,
+            Ok(isbn::Isbn::_13(number))
+                if number.to_string().starts_with("978")
+                    || number.to_string().starts_with("979") =>
+            {
+                1
+            }
+            _ => continue,
+        };
+        identifiers.insert(i, (format, urn));
+    }
+    Ok(identifiers)
+}
+
+fn has_isbn_scheme(
+    element: &BytesStart<'_>,
+    resolver: &quick_xml::name::NamespaceResolver,
+) -> Result<bool, WritebackError> {
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(quick_xml::Error::from)?;
+        let (binding, name) = resolver.resolve_attribute(attribute.key);
+        if name.as_ref() == "scheme"
+            && binding == ResolveResult::Bound(Namespace("http://www.idpf.org/2007/opf"))
+            && attribute
+                .normalized_value(quick_xml::XmlVersion::Implicit1_0)?
+                .eq_ignore_ascii_case("isbn")
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn isbn_element_text(events: &[Event<'static>], start: usize) -> Result<String, WritebackError> {
+    let mut value = String::new();
+    if matches!(events[start], Event::Start(_)) {
+        for event in &events[start + 1..skip_to_matching_end(events, start)] {
+            match event {
+                Event::Text(text) => {
+                    value.push_str(&text.xml_content(quick_xml::XmlVersion::Implicit1_0));
+                }
+                Event::CData(text) => {
+                    value.push_str(&text.xml_content(quick_xml::XmlVersion::Implicit1_0));
+                }
+                Event::GeneralRef(reference) => value.push_str(
+                    &quick_xml::escape::unescape(&format!("&{};", reference.as_ref()))
+                        .map_err(quick_xml::Error::from)?,
+                ),
+                _ => {}
+            }
+        }
+    }
+    Ok(value)
+}
+
+fn isbn_attribute(element: &BytesStart<'_>, name: &str) -> Result<Option<String>, WritebackError> {
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(quick_xml::Error::from)?;
+        if attribute.key.as_ref() == name {
+            return Ok(Some(
+                attribute
+                    .normalized_value(quick_xml::XmlVersion::Implicit1_0)?
+                    .into_owned(),
+            ));
+        }
+    }
+    Ok(None)
 }
 
 fn scan_publication_dates(
@@ -471,13 +746,30 @@ fn write_replaced_element_from_empty(
 fn write_new_isbn_identifier(
     writer: &mut Writer<Cursor<Vec<u8>>>,
     isbn: &str,
+    id: &str,
+    version: &str,
 ) -> Result<(), WritebackError> {
     let mut start = BytesStart::new("dc:identifier");
-    start.push_attribute(("opf:scheme", "ISBN"));
-    writer.write_event(Event::Start(start))?;
-    writer.write_event(Event::Text(BytesText::new(isbn)))?;
-    writer.write_event(Event::End(BytesEnd::new("dc:identifier")))?;
-    Ok(())
+    start.push_attribute(("xmlns:dc", "http://purl.org/dc/elements/1.1/"));
+    start.push_attribute(("id", id));
+    if version.starts_with('3') {
+        write_replaced_element_from_empty(writer, &start, &format!("urn:isbn:{isbn}"))
+    } else {
+        start.push_attribute(("xmlns:opf", "http://www.idpf.org/2007/opf"));
+        start.push_attribute(("opf:scheme", "ISBN"));
+        write_replaced_element_from_empty(writer, &start, isbn)
+    }
+}
+
+fn allocate_isbn_id(ids: &mut HashSet<String>, format: usize) -> String {
+    let prefix = if format == 0 { "isbn-10" } else { "isbn-13" };
+    let mut id = prefix.to_owned();
+    let mut suffix = 1;
+    while !ids.insert(id.clone()) {
+        id = format!("{prefix}-{suffix}");
+        suffix += 1;
+    }
+    id
 }
 
 fn write_belongs_to_collection(
@@ -604,17 +896,6 @@ fn attr_value(start: &BytesStart<'_>, name: &str) -> Option<String> {
 
 fn attr_value_as_string(start: &BytesStart<'_>, name: &str) -> Option<String> {
     attr_value(start, name)
-}
-
-fn is_isbn_identifier(start: &BytesStart<'_>) -> bool {
-    for attr in start.attributes().flatten() {
-        if local_name(attr.key.as_ref()) == "scheme"
-            && attr.value.as_ref().eq_ignore_ascii_case("ISBN")
-        {
-            return true;
-        }
-    }
-    false
 }
 
 fn local_name(name: &str) -> &str {
@@ -895,26 +1176,209 @@ mod tests {
         }
     }
 
+    fn assert_isbn_writeback_state(xml: &str, expected: &[&str], version: &str) {
+        let events = read_all_events(xml.as_bytes()).unwrap();
+        let mut ids = HashSet::new();
+        let mut identifiers = HashMap::new();
+        let mut references = Vec::new();
+        for (i, event) in events.iter().enumerate() {
+            let (Event::Start(e) | Event::Empty(e)) = event else {
+                continue;
+            };
+            if let Some(id) = attr_value(e, "id") {
+                assert!(ids.insert(id.clone()), "duplicate document ID");
+                if local_name(e.name().as_ref()) == "identifier" {
+                    identifiers.insert(id, element_text(&events, i).unwrap());
+                }
+            }
+            if let Some(reference) = attr_value(e, "refines") {
+                references.push(reference);
+            }
+            if local_name(e.name().as_ref()) == "package" {
+                assert_eq!(
+                    attr_value(e, "unique-identifier").as_deref(),
+                    Some("pub-id")
+                );
+                assert_eq!(attr_value(e, "version").as_deref(), Some(version));
+            }
+        }
+        assert!(
+            references
+                .iter()
+                .all(|reference| ids.contains(reference.strip_prefix('#').unwrap()))
+        );
+        for (id, value) in [
+            ("pub-id", "9780306406157"),
+            ("uuid", "urn:uuid:A1B2C3D4"),
+            ("provider", "080442957X"),
+            ("isbn-10", "080442957X"),
+        ] {
+            assert_eq!(
+                identifiers.remove(id).as_deref(),
+                Some(value),
+                "identifier {id} changed"
+            );
+        }
+        let mut actual: Vec<_> = identifiers
+            .values()
+            .map(|value| value.strip_prefix("urn:isbn:").unwrap_or(value))
+            .collect();
+        actual.sort_unstable();
+        assert_eq!(actual, expected);
+        if expected.contains(&"9791090636071") {
+            assert_eq!(
+                identifiers.get("editable").map(String::as_str),
+                Some("urn:isbn:9791090636071")
+            );
+        } else {
+            assert!(!ids.contains("kind") && !ids.contains("dependent"));
+        }
+        assert!(xml.contains("<dc:coverage>2010</dc:coverage>"));
+        assert!(xml.contains(r##"<meta refines="#pub-id" property="identifier-type" scheme="onix:codelist5">15</meta>"##));
+    }
+
+    fn assert_wrapped_isbns(xml: &str, expected: &[&str]) -> HashMap<String, String> {
+        let events = read_all_events(xml.as_bytes()).unwrap();
+        let mut reader = NsReader::from_reader(xml.as_bytes());
+        let mut parents = Vec::new();
+        let mut wrapper = None;
+        let mut identifiers = HashMap::new();
+        for (i, event) in events.iter().enumerate() {
+            let (namespace, _) = reader.read_resolved_event().unwrap();
+            match event {
+                Event::Start(element) | Event::Empty(element) => {
+                    let name = element.name();
+                    let local = local_name(name.as_ref());
+                    if namespace == ResolveResult::Bound(Namespace("http://www.idpf.org/2007/opf"))
+                        && local == "dc-metadata"
+                    {
+                        assert!(wrapper.replace(i).is_none());
+                    }
+                    if namespace
+                        == ResolveResult::Bound(Namespace("http://purl.org/dc/elements/1.1/"))
+                    {
+                        assert_eq!(
+                            parents.last().copied(),
+                            wrapper,
+                            "Dublin Core element outside wrapper"
+                        );
+                        if local == "identifier" {
+                            let id = attr_value(element, "id").unwrap();
+                            assert!(
+                                identifiers
+                                    .insert(id, element_text(&events, i).unwrap())
+                                    .is_none()
+                            );
+                        }
+                    }
+                    if matches!(event, Event::Start(_)) {
+                        parents.push(i);
+                    }
+                }
+                Event::End(_) => {
+                    parents.pop().unwrap();
+                }
+                _ => {}
+            }
+        }
+        assert!(wrapper.is_some());
+        assert_eq!(
+            identifiers.remove("bookid").as_deref(),
+            Some("urn:uuid:1234")
+        );
+        let mut actual: Vec<_> = identifiers.values().map(String::as_str).collect();
+        actual.sort_unstable();
+        assert_eq!(actual, expected);
+        assert!(xml.contains(r#"unique-identifier="bookid""#));
+        identifiers
+    }
+
     #[test]
-    fn transform_updates_only_isbn_identifier() {
-        let input =
-            sample_epub3(r#"<dc:identifier opf:scheme="ISBN">9789999999999</dc:identifier>"#);
+    fn isbn_writeback_contract() {
+        // Data corruption boundary: bibliographic edits preserve package identity and unrelated XML.
+        let input = sample_epub3(r##"<dc:identifier id="uuid">urn:uuid:A1B2C3D4</dc:identifier>
+    <dc:identifier id="editable">urn:isbn:9780306406&#49;57</dc:identifier>
+    <meta id="kind" refines="#editable" property="identifier-type" scheme="onix:codelist5">15</meta>
+    <meta id="dependent" refines="#kind" property="alternate-script">ISBN</meta>
+    <meta refines="#dependent" property="alternate-script" content="ISBN"/>
+    <meta refines="#pub-id" property="identifier-type" scheme="onix:codelist5">15</meta>
+    <dc:identifier id="duplicate" opf:scheme="ISBN">9780306406157</dc:identifier>
+    <meta refines="#duplicate" property="identifier-type" content="ISBN"/>
+    <dc:identifier id="provider">080442957X</dc:identifier>
+    <vendor:identifier xmlns:vendor="urn:vendor" id="isbn-10" opf:scheme="ISBN">080442957X</vendor:identifier>
+    <dc:coverage>2010</dc:coverage>"##)
+            .replace("<dc:identifier id=\"pub-id\">urn:uuid:A1B2C3D4", "<dc:identifier id=\"pub-id\" opf:scheme=\"ISBN\">9780306406157");
+        let mut output = input;
+        let ten = "080442957X";
+        let thirteen = "9791090636071";
+        let changed_ten = "0306406152";
+        for (index, (isbn_10, isbn_13, expected)) in [
+            (Some(Some(ten)), Some(Some(thirteen)), vec![ten, thirteen]),
+            (Some(Some(ten)), Some(Some(thirteen)), vec![ten, thirteen]),
+            (Some(Some(changed_ten)), None, vec![changed_ten, thirteen]),
+            (None, Some(None), vec![changed_ten]),
+            (Some(None), None, vec![]),
+            (None, Some(Some("9780306406157")), vec!["9780306406157"]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let next = transform_str(
+                &output,
+                &Target {
+                    isbn_10,
+                    isbn_13,
+                    ..Default::default()
+                },
+            );
+            assert_isbn_writeback_state(&next, &expected, "3.0");
+            if index == 1 {
+                assert_eq!(next, output);
+            }
+            output = next;
+        }
+        let epub2 = output.replace("version=\"3.0\"", "version=\"2.0\"");
         let target = Target {
-            isbn_13: Some("9781234567890"),
+            isbn_13: Some(Some("9780804429573")),
             ..Default::default()
         };
-        let out = transform_str(&input, &target);
-        assert!(out.contains("9781234567890"), "ISBN not updated: {out}");
-        assert!(!out.contains("9789999999999"), "old ISBN leaked: {out}");
-        // Package unique-identifier still points at UUID.
-        assert!(
-            out.contains(r#"unique-identifier="pub-id""#),
-            "unique-identifier mutated: {out}"
+        let set = transform_str(&epub2, &target);
+        let clear = transform_str(
+            &set,
+            &Target {
+                isbn_13: Some(None),
+                ..Default::default()
+            },
         );
-        // UUID identifier preserved.
-        assert!(
-            out.contains("urn:uuid:A1B2C3D4"),
-            "UUID identifier lost: {out}"
+        assert_isbn_writeback_state(&clear, &[], "2.0");
+        let replay = transform_str(&set, &target);
+        assert_isbn_writeback_state(&replay, &["9780804429573"], "2.0");
+        assert_eq!(replay, set);
+        let wrapped = sample_epub2(
+            r#"<dc:identifier id="wrapped-isbn" opf:scheme="ISBN">9780306406157</dc:identifier>"#,
+        )
+        .replace("<metadata>", "<metadata><opf:dc-metadata>")
+        .replace("</metadata>", "</opf:dc-metadata></metadata>");
+        let clear = transform_str(
+            &wrapped,
+            &Target {
+                isbn_13: Some(None),
+                ..Default::default()
+            },
+        );
+        assert_wrapped_isbns(&clear, &[]);
+        let set = transform_str(
+            &wrapped,
+            &Target {
+                isbn_10: Some(Some(ten)),
+                isbn_13: Some(Some(thirteen)),
+                ..Default::default()
+            },
+        );
+        let identifiers = assert_wrapped_isbns(&set, &[ten, thirteen]);
+        assert_eq!(
+            identifiers.get("wrapped-isbn").map(String::as_str),
+            Some(thirteen)
         );
     }
 

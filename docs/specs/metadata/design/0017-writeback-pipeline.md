@@ -134,11 +134,12 @@ writeback. There is no EXDEV fallback, replay or `cover_path` rewrite for this s
   ZIP, filesystem and sidecar phases run in `spawn_blocking`; SQL stays on the async job.
 - `backend/src/services/writeback/opf_rewrite.rs` (`transform`) is a pure function: given `OPF` bytes and a `Target`
   struct naming the desired per-field values, it streams the source through `quick_xml` events, replaces the targeted
-  Dublin Core and `<meta>` elements that already exist, and inserts one when the target value is present but no matching
-  element does (exercised today only for the `ISBN` identifier; the routine that rewrites the `OPF` supports the same
-  insertion for series metadata, though no caller reaches it). Every other element is preserved byte-for-byte. The
-  orchestrator always passes `series: None` today; no caller populates `Target::series`, so series membership is never
-  written back through this path even though the routine that rewrites the `OPF` supports the field.
+  Dublin Core and `<meta>` elements that already exist, and inserts missing publication dates or bibliographic ISBN
+  entries for Set operations. Clear removes the targeted publication dates or ISBN format and any refinements left
+  dangling by ISBN removal. Every other element is preserved byte-for-byte. The routine also supports series insertion,
+  though no caller reaches it. The orchestrator always passes `series: None` today; no caller populates
+  `Target::series`, so series membership is never written back through this path even though the routine that rewrites
+  the `OPF` supports the field.
 - `backend/src/services/writeback/cover_embed.rs` (`plan_embed`) checks replacement bytes with the raster decoder shared
   with EPUB cover validation, refusing unknown formats and images that fail to decode before planning a mutation. It
   inspects the `OPF` manifest to decide whether a new cover replaces an existing entry in place, is added under a fresh
@@ -247,6 +248,27 @@ one when absent, retaining supplied text precision. EPUB 2 selects an explicit p
 date; EPUB 3 selects publication `dc:date`. Clear removes publication elements, including fallback dates, without
 removing creation/modification events or `dcterms:modified`. The transform preserves EPUB version, XML escaping,
 repair-before-transform and validated atomic publication with accepted hash and size.
+
+Each ISBN target distinguishes Unchanged, Set and Clear. An `isbn_10` or `isbn_13` job selects its own operation from
+the latest canonical value; other field tags and generic jobs leave both formats unchanged. A two-field edit retains its
+two jobs. The job stores field identity rather than a captured value, so replay reads the current correction. Clearing a
+value leaves existing enrichment eligibility and field-lock behaviour intact.
+
+The XML scan resolves namespaces and recognises explicitly declared ISBNs only in Dublin Core identifiers in OPF
+metadata or its EPUB 2 `dc-metadata` container: EPUB 2 ISBN schemes, `urn:isbn:` values and ISBN identifier-type
+refinements. Numeric refinement values `02` and `15` require `onix:codelist5`. The `isbn` crate classifies structurally
+valid entries by format; ISBN-13 also requires a `978` or `979` prefix. Unlabelled, invalid and other-system identifiers
+remain unchanged. The identifier referenced by `package unique-identifier`, including its value, ID and refinements,
+remains unchanged even when it is an ISBN.
+
+Replacement retains an existing `urn:isbn:` declaration in either EPUB version. Set reuses the first editable entry for
+its format, retaining its ID, removes redundant entries of that format and inserts a bibliographic entry when none
+exists. Each supplied number survives independently, including a valid mismatched pair. Clear removes only the targeted
+format's bibliographic entries. Removal also drops refinements targeting deleted IDs, following dependent refinements
+until no dangling targets remain. Generated IDs avoid every existing document ID. When EPUB 2 metadata uses an OPF
+`dc-metadata` wrapper, new ISBN entries go inside it. New EPUB 2 entries declare the Dublin Core and OPF namespaces and
+use `opf:scheme="ISBN"`; new EPUB 3 entries declare Dublin Core and use `urn:isbn:` values. Existing prefixes, package
+version and unrelated XML remain intact.
 
 ### Library path ownership
 
