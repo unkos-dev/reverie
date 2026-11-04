@@ -13,7 +13,7 @@ import { useMutation } from "@tanstack/react-query";
 import { readThemeCookie, writeThemeCookie, type ThemePreference } from "./cookie";
 import { fetchMe, patchTheme } from "./api";
 
-const PATCH_FAILURE_MESSAGE = "Could not save theme preference. Reverted to your previous setting.";
+const PATCH_FAILURE_MESSAGE = "Could not save theme preference. Choose a theme to try again.";
 
 type EffectiveTheme = "light" | "dark";
 
