@@ -29,9 +29,8 @@ that tab without a full page reload.
 ## Acceptance criteria
 
 - A mutating request answered `403` or `428` with problem type `csrf-mismatch` or `csrf-missing` is followed by one
-  `GET /auth/me` and one resend carrying the token that response supplied. Checked for `428` with `csrf-missing` by
-  `"428 csrf-missing refreshes once and retries with the new token"`, and for `403` with `csrf-mismatch` by
-  `"403 csrf-mismatch triggers refreshCsrfToken() once and retries"`, in `frontend/tests/browser/api/fetch.test.tsx`.
+  `GET /auth/me` and one resend carrying the token that response supplied. Checked for each status and type by
+  `"a %i %s rejection refreshes once and retries with the new token"` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A `403` or `428` whose problem type is neither `csrf-mismatch` nor `csrf-missing` is not retried, and the caller
   receives that response as an error. Checked for `428` by `"a non-CSRF 428 throws without a retry"`, and for `403` by
   `"403 with a NON-csrf-mismatch problem type does not retry"`, in `frontend/tests/browser/api/fetch.test.tsx`.
@@ -39,7 +38,9 @@ that tab without a full page reload.
   by `"204 on csrf-mismatch retry path returns undefined (does not call .json())"` in
   `frontend/tests/browser/api/fetch.test.tsx`.
 - A CSRF rejection of the resent request is not retried: the mutation is sent at most twice, and the caller receives the
-  second rejection as an error.
+  second rejection as an error. Checked by
+  `"an empty refreshed token drops the stale header, and the retry's rejection reaches the caller"` in
+  `frontend/tests/browser/api/fetch.test.tsx`.
 
 ## More information
 

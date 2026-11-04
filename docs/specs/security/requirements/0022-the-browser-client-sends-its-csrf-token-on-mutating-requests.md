@@ -27,11 +27,13 @@ server access logs. See the
 ## Acceptance criteria
 
 - A `POST`, `PUT`, `PATCH` or `DELETE` request sent while the client holds a token carries that token in the
-  `X-CSRF-Token` header. Checked for `POST` by `"POST injects X-CSRF-Token when token is cached"` in
+  `X-CSRF-Token` header. Checked for each method by `"%s injects X-CSRF-Token when token is cached"` in
   `frontend/tests/browser/api/fetch.test.tsx`.
 - A mutating request issued while the client holds no token is preceded by exactly one `GET /auth/me`, and is sent
   without the header when that response supplies no token. Checked by
   `"POST with no cached token hydrates once; still omits the header when none is issued"` in
   `frontend/tests/browser/api/fetch.test.tsx`.
 - A `GET /auth/me` response whose `csrf_token` is an empty string supplies no token, so a mutating request whose token
-  acquisition yields only that response is sent without the header.
+  acquisition yields only that response is sent without the header. Checked by
+  `"an empty refreshed token drops the stale header, and the retry's rejection reaches the caller"` in
+  `frontend/tests/browser/api/fetch.test.tsx`.

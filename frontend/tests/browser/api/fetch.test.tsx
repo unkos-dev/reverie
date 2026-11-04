@@ -54,33 +54,22 @@ async function seedCsrf(token: string): Promise<void> {
 }
 
 describe("apiFetch — CSRF header injection", () => {
-  test("GET does NOT inject X-CSRF-Token even when token is cached", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+  test.each(["POST", "PUT", "PATCH", "DELETE"])(
+    "%s injects X-CSRF-Token when token is cached",
+    async (method) => {
+      await seedCsrf(SAMPLE_TOKEN);
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    await apiFetch("/api/v1/books");
+      await apiFetch("/api/v1/books", { method, body: "{}" });
 
-    const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
-    expect(headers.has("X-CSRF-Token")).toBe(false);
-  });
-
-  test("POST injects X-CSRF-Token when token is cached", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    await apiFetch("/api/v1/books", { method: "POST", body: "{}" });
-
-    const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
-    expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
-  });
+      const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
+      expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
+    },
+  );
 
   test("POST with no cached token hydrates once; still omits the header when none is issued", async () => {
-    // First response serves the lazy /auth/me hydration (no token for an
-    // anonymous session), second the POST itself.
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({}))
@@ -95,29 +84,63 @@ describe("apiFetch — CSRF header injection", () => {
   });
 });
 
-describe("apiFetch — csrf-missing retry", () => {
-  test("428 csrf-missing refreshes once and retries with the new token", async () => {
-    // A stale cached token the server no longer recognises as present
-    // (session rotation cleared it server-side).
+describe("apiFetch — CSRF rejection retry", () => {
+  test.each([
+    [403, "csrf-mismatch"],
+    [403, "csrf-missing"],
+    [428, "csrf-missing"],
+    [428, "csrf-mismatch"],
+  ])("a %i %s rejection refreshes once and retries with the new token", async (status, slug) => {
     await seedCsrf(SAMPLE_TOKEN);
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        problemResponse({
+          type: `https://reverie.example/probs/${slug}`,
+          title: "Rejected",
+          status,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    const result = await apiFetch("/api/v1/books", { method: "POST", body: "{}" });
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy.mock.calls[1]?.[0]).toBe("/auth/me");
+    const retriedHeaders = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
+    expect(retriedHeaders.get("X-CSRF-Token")).toBe(REFRESHED_TOKEN);
+  });
+
+  test("an empty refreshed token drops the stale header, and the retry's rejection reaches the caller", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        problemResponse({
+          type: "https://reverie.example/probs/csrf-mismatch",
+          title: "Forbidden",
+          status: 403,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrf_token: "" }))
       .mockResolvedValueOnce(
         problemResponse({
           type: "https://reverie.example/probs/csrf-missing",
           title: "Precondition Required",
           status: 428,
         }),
-      )
-      .mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }))
-      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+      );
 
-    await apiFetch("/api/v1/books", { method: "POST", body: "{}" });
+    const err = (await apiFetch("/api/v1/books", { method: "POST", body: "{}" }).catch(
+      (e: unknown) => e,
+    )) as ApiError;
 
+    expect(err.status).toBe(428);
+    expect(err.problemSlug).toBe("csrf-missing");
     expect(fetchSpy).toHaveBeenCalledTimes(3);
-    expect(fetchSpy.mock.calls[1]?.[0]).toBe("/auth/me");
-    const retriedHeaders = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
-    expect(retriedHeaders.get("X-CSRF-Token")).toBe(REFRESHED_TOKEN);
+    expect(new Headers(fetchSpy.mock.calls[2]?.[1]?.headers).has("X-CSRF-Token")).toBe(false);
   });
 
   test("a non-CSRF 428 throws without a retry", async () => {
@@ -210,41 +233,7 @@ describe("apiFetch — RFC 9457 error parsing", () => {
   });
 });
 
-describe("apiFetch — csrf-mismatch retry", () => {
-  test("403 csrf-mismatch triggers refreshCsrfToken() once and retries", async () => {
-    await seedCsrf(SAMPLE_TOKEN);
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    // Attempt 1: mutating request → 403 csrf-mismatch.
-    fetchSpy.mockResolvedValueOnce(
-      problemResponse({
-        type: "https://reverie.example/probs/csrf-mismatch",
-        title: "Forbidden",
-        status: 403,
-        detail: "CSRF token invalid.",
-      }),
-    );
-    // Refresh: /auth/me responds with the rotated token.
-    fetchSpy.mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }));
-    // Retry: succeeds.
-    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true }));
-
-    const result = await apiFetch("/api/v1/books", { method: "POST" });
-
-    expect(result).toEqual({ ok: true });
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
-    // First attempt used the seeded token.
-    expect(new Headers(fetchSpy.mock.calls[0]?.[1]?.headers).get("X-CSRF-Token")).toBe(
-      SAMPLE_TOKEN,
-    );
-    // /auth/me was hit between attempts.
-    expect(fetchSpy.mock.calls[1]?.[0]).toBe("/auth/me");
-    // Retry used the refreshed token.
-    expect(new Headers(fetchSpy.mock.calls[2]?.[1]?.headers).get("X-CSRF-Token")).toBe(
-      REFRESHED_TOKEN,
-    );
-  });
-
+describe("apiFetch — non-CSRF 403", () => {
   test("403 with a NON-csrf-mismatch problem type does not retry", async () => {
     await seedCsrf(SAMPLE_TOKEN);
 
