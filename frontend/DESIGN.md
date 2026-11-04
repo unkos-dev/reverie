@@ -172,9 +172,9 @@ current implementation.
 Reverie's surfaces feel like a museum after hours — the collection is the point, the lighting is considered, the chrome
 stays out of the reader's way. Cinematic-boutique is the locked visual register: the Library is the identity surface and
 carries the atmosphere (subtle animated warm gradients, a static noise texture, a photographic hero band, a solid
-accent-text masthead H1, hover-lift on covers, and a press-F cinematic mode that dissolves the chrome). Typography does
-the structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that
-inherits palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.
+accent-text masthead H1, hover-lift on covers, and a cinematic toggle that dissolves the chrome). Typography does the
+structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that inherits
+palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.
 
 Colour is governed through a three-tier token tree: generated Radix primitives (`--sand` / `--gold` / `--danger` ramps),
 then semantic roles (`--canvas` / `--fg` / `--accent` / …) with a shadcn-compatibility alias layer, then a sealed
@@ -544,6 +544,15 @@ Shelf filters use a native multiple ListBox with visible options and section Cle
 multiple ComboBox with removable tags. Both match any selected value, with no synthetic All option. Removing one chip
 keeps the other selections. Series choices and restored labels come from independent queries, so narrowing results does
 not remove available options. Search text stays after choosing a series.
+
+The existing Search bar keeps its position, label and filtering behaviour. Control+K or Meta+K opens the command palette
+only while focus is within the shell DOM. Portals and document-body focus do not register that shortcut. The native
+palette owns dismissal and virtual focus; visible Help opens the table shortcut dialog.
+
+A native Cinematic view toggle stays at the existing bottom-centre hint position, outside hidden chrome. Its selected
+label is Exit cinematic view. Chrome fades and leaves keyboard traversal through visibility; pointer-idle and reduced
+motion behaviour remain. Home and Stats retain their navigation positions with visible static Planned status outside Tab
+order.
 
 ### Signature: Lockup
 

@@ -6,8 +6,7 @@
  * floating menu button (top-left) that also carries the lockup — feature
  * parity at every size, no desktop-only paths (spec §7).
  *
- * There is no top utility strip: search lives in the page's filter rail
- * and the hero art runs to the top edge (editorial redesign).
+ * Search remains page-owned and the hero art runs to the top edge.
  *
  * Admin routes (`handle: { zone: "admin" }`) flip the content column to
  * `canvas-2` — the "rooms of the house" tone shift (philosophy §4). The
@@ -18,6 +17,7 @@
  * chrome (spec S2) — the shell knows nothing about it.
  */
 import { Button } from "react-aria-components";
+import { useKeyboard } from "react-aria";
 import { Menu } from "lucide-react";
 import { useState, type ReactElement, type ReactNode } from "react";
 import { useMatches } from "react-router";
@@ -36,15 +36,20 @@ import { LeftRail } from "./LeftRail";
 
 type AppShellProps = {
   children: ReactNode;
+  onOpenSearch: () => void;
 };
 
 /** Shell chrome: skip link, left rail (or drawer), main column. */
-export function AppShell({ children }: Readonly<AppShellProps>): ReactElement {
+export function AppShell({ children, onOpenSearch }: Readonly<AppShellProps>): ReactElement {
+  const { keyboardProps } = useKeyboard({
+    shortcuts: { "Control+k": onOpenSearch, "Meta+k": onOpenSearch },
+  });
   const matches = useMatches();
   const isAdminZone = matches.some((match) => hasAdminZone(match.handle));
 
   return (
     <div
+      {...keyboardProps}
       className="group/zone bg-canvas text-fg flex min-h-screen"
       {...(isAdminZone ? { "data-zone": "admin" } : {})}
     >
@@ -54,9 +59,7 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactElement {
       >
         Skip to content
       </a>
-      {/* Mobile nav — the top strip that used to host this is gone (search
-          lives in the filter rail now); float the drawer trigger instead. */}
-      <div className="fixed left-3 top-3 z-40 lg:hidden">
+      <div data-chrome="" className="fixed left-3 top-3 z-40 lg:hidden">
         <DrawerSlot />
       </div>
       <div

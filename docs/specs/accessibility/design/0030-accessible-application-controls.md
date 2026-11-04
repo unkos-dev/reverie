@@ -76,6 +76,16 @@ The command palette uses MenuItem links with Router navigation and closure. `Aut
 arrow navigation; Tab traverses the result links. The Menu owns scrolling. Dialog and Select labels belong to their
 native parent composition.
 
+App owns palette open state and passes it through ordinary props. The shell DOM boundary uses `useKeyboard.shortcuts`
+for Control+K and Meta+K, opening the palette through native matching and propagation. Portal and document-body focus
+are outside that boundary. Native close resets the palette query. The existing Library SearchField keeps its own filter
+behaviour and location.
+
+The cinematic ToggleButton controls the existing presentation owner through `isSelected` and `onChange`. It remains
+visible outside hidden chrome at the bottom centre; visibility removes hidden chrome from keyboard traversal. The
+pointer-idle timer and reduced motion remain presentation concerns. Visible Help opens the native shortcuts dialog. Home
+and Stats have static Planned status within their existing non-interactive rows.
+
 Ingestion disclosures mount query children only while expanded. Book tabs activate from arrow keys and mount only the
 selected panel. Filter disclosures retain their mounted editors, as described by the
 [Library state Design](../../library/design/0001-library-filter-and-sort-state.md).

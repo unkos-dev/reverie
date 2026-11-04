@@ -21,6 +21,7 @@ import {
   type ReactElement,
 } from "react";
 import { Link, matchPath } from "react-router";
+import { ToggleButton } from "react-aria-components";
 
 import {
   ApiError,
@@ -181,9 +182,7 @@ export function LibraryPage(): ReactElement {
   const editFeedback = useCellEditFeedback();
   const owner = useLibraryFilters();
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
-  // Drives cinematic mode via the document `data-cinematic` attribute (CSS
-  // reads it); the boolean return is unused — visibility is CSS-only.
-  useCinematicMode();
+  const cinematic = useCinematicMode();
   const [overlay, setOverlay] = useState<OverlayState>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [hasRenderedControls, setHasRenderedControls] = useState(false);
@@ -257,18 +256,13 @@ export function LibraryPage(): ReactElement {
     <>
       <Atmosphere />
       <BookmarkRibbon />
-      {/* Always rendered; `.cinema-hint` fades in/out purely via the
-          `[data-cinematic="on"]` opacity rule. Gating it on the boolean
-          would unmount it in the same commit that clears the attribute,
-          so the CSS fade-out could never paint. `aria-hidden` because it's
-          a visual-only affordance — opacity:0 still exposes it to AT, so
-          without this it would be announced on every load. */}
-      <p
-        className="cinema-hint font-mono text-fg-muted text-xs uppercase tracking-[0.2em]"
-        aria-hidden="true"
+      <ToggleButton
+        isSelected={cinematic.active}
+        onChange={cinematic.setActive}
+        className="cinema-control bg-surface text-fg-muted border-border data-selected:text-fg data-focus-visible:ring-accent rounded-md border px-3 py-2 font-mono text-xs uppercase tracking-wide outline-none data-focus-visible:ring-2"
       >
-        Cinematic mode · press F to exit
-      </p>
+        {cinematic.active ? "Exit cinematic view" : "Cinematic view"}
+      </ToggleButton>
       {/* Raise the browse content above the fixed atmosphere layers. */}
       <div className="relative z-[2]">
         <div className="px-6 py-10 sm:px-10">

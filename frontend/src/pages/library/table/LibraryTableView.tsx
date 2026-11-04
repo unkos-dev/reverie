@@ -45,11 +45,7 @@ import { AuthorsCellEditor } from "./editors/AuthorsCellEditor";
 import { RatingCellEditor } from "./editors/RatingCellEditor";
 import { StatusCellEditor } from "./editors/StatusCellEditor";
 import { TextCellEditor } from "./editors/TextCellEditor";
-import {
-  GridShortcutsDialog,
-  GridShortcutsTrigger,
-  useShortcutsHotkey,
-} from "./GridShortcutsDialog";
+import { GridShortcutsDialog, GridShortcutsTrigger } from "./GridShortcutsDialog";
 import { pendingKey, useCellEdit } from "./useCellEdit";
 
 const EMPTY_CELL = "—";
@@ -577,7 +573,6 @@ export function LibraryTableView({
   onRowActivate,
 }: Readonly<Props>): ReactElement {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  useShortcutsHotkey(setShortcutsOpen);
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const { pendingCells, onCellEdit, onGridKeyDown, undo, undoPending, undoAvailable, undoLabel } =
     useCellEdit({

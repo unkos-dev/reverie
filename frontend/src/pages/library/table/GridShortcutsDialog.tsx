@@ -1,9 +1,7 @@
 /**
  * Keyboard-shortcuts overlay for the library table view.
  *
- * `?` opens the dialog from anywhere on the page (guarded so typing a
- * literal `?` into a field doesn't hijack it); `Esc` or the close button
- * dismiss it. The shared native dialog owns focus restoration.
+ * The visible Help control opens the shared native dialog, which owns dismissal and focus restoration.
  *
  * The shortcut list documents react-data-grid's native keyboard model
  * (no custom key handling is added by this feature) plus the paging
@@ -18,7 +16,7 @@
  * react-data-grid at the pinned tag implements F2-open only, so Escape or
  * Enter are the close paths.
  */
-import { useEffect, type ReactElement } from "react";
+import type { ReactElement } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -27,40 +25,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-/** True when the caller is typing into an editable element. */
-function inEditableField(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
-}
-
-/**
- * Registers the global `?` keydown binding that opens the shortcuts
- * overlay. Ignored while typing into a field or while a modifier key
- * is held, so it never steals a literal `?` from prose input.
- */
-// oxlint-disable-next-line react/only-export-components -- hook shares the module with the dialog + trigger it opens; splitting would scatter one cohesive feature across files.
-export function useShortcutsHotkey(setOpen: (open: boolean) => void): void {
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      if (
-        event.key === "?" &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !inEditableField(document.activeElement)
-      ) {
-        event.preventDefault();
-        setOpen(true);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [setOpen]);
-}
 
 type ShortcutRow = {
   keys: string[];
@@ -78,7 +42,6 @@ const SHORTCUT_ROWS: ShortcutRow[] = [
     keys: ["Shift", "Tab"],
     description: "Move to the previous cell; exits the grid at the first cell",
   },
-  { keys: ["?"], description: "Open this shortcuts overlay" },
   { keys: ["Esc"], description: "Close this overlay" },
   { keys: ["Enter"], description: "Edit the focused cell" },
   {
@@ -96,7 +59,7 @@ type GridShortcutsDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-/** `?`-triggered overlay documenting the table view's keyboard model. */
+/** Documents the table view's keyboard model. */
 export function GridShortcutsDialog({
   open,
   onOpenChange,
