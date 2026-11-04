@@ -33,6 +33,7 @@ function bookFixture(overrides: Partial<BookDetail> = {}): BookDetail {
     language: "en",
     isbn_13: "9780374528379",
     isbn_10: "0374528373",
+    isbn_mismatch: false,
     publisher: null,
     pub_date: null,
     cover_url: "/api/v1/books/abc-123/cover/thumb",

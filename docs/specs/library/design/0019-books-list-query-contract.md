@@ -111,6 +111,13 @@ folding rather than before, because the unaccent dictionary can map some Unicode
 undo an escape applied first; `isbn_13_contains` and the `_eq`/`_ne` legs stay accent-sensitive and escape in Rust via
 `escape_like` before binding.
 
+ISBN-13 contains removes ASCII spaces and hyphens before matching and fingerprinting; exact matching is unchanged.
+Validation caps the trimmed raw input at 200 characters before separator removal. The shared contains normalisation
+applies blank optional-text handling to its result, then each consumer uses that effective value: the predicate escapes
+literal LIKE input and binds the partial value, and the fingerprint records the same value. Search accepts incomplete
+ISBN fragments without checksum validation. Equivalent separator spellings share cursor identity; a changed effective
+fragment invalidates the cursor. The API retains `isbn_13_eq` and both ISBN-13 empty comparisons.
+
 `canonical_filter_string` and `filter_fingerprint` (SHA-256 truncated to the first 16 hex characters, 8 bytes) turn the
 active filter set into the cursor's filter-fingerprint leg. Every multi-value list is sorted with repeats removed so
 neither parameter order nor value order changes the string, and every free-text value and list entry is escaped through

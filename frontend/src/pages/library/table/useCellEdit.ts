@@ -525,6 +525,15 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
         console.error("[useCellEdit.onCellEdit] metadata mutation failed", err);
         if (isIfMatchMismatch(err) || isIfMatchRequired(err)) {
           announceConflict(row.id, route.workScoped, "metadata");
+        } else if (
+          columnKey === "isbn_13" &&
+          err instanceof ApiError &&
+          err.status === 422 &&
+          err.errors?.isbn_13 !== undefined
+        ) {
+          toast.error(
+            "ISBN-13 wasn’t saved. Check the 13-digit number; spaces and hyphens are allowed.",
+          );
         } else {
           toast.error(formatError(err));
         }

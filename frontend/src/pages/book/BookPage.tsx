@@ -168,6 +168,14 @@ function OverviewTab({ book }: Readonly<TabProps>): ReactElement {
         <Field label="Language" value={book.language ?? "—"} />
         <Field label="ISBN-13" value={book.isbn_13 ?? "—"} mono />
         <Field label="ISBN-10" value={book.isbn_10 ?? "—"} mono />
+        {book.isbn_mismatch ? (
+          <div className="col-span-2">
+            <dt className="sr-only">ISBN mismatch</dt>
+            <dd className="text-fg-muted text-sm">
+              These ISBN-10 and ISBN-13 values do not correspond. Check both values.
+            </dd>
+          </div>
+        ) : null}
         <Field label="Ingestion" value={book.ingestion_status} />
         <Field label="Enrichment" value={book.enrichment_status} />
         <Field label="Validation" value={book.validation_status} />

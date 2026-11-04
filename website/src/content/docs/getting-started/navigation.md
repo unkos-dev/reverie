@@ -61,8 +61,7 @@ Two toolbar controls shape the table to your taste. The **density toggle** switc
 small cover beside each title) and compact ones. The **Columns** popover shows or hides individual columns; Title stays
 put because every row needs its anchor. Both are personal display preferences, and so are your view choice and your
 sort: they belong to your account rather than to one browser, so they follow you to a second machine and survive signing
-out and back in. They never travel in a shared link, which carries the query (filters and search) instead: someone
-opening your link sees the same books, arranged their own way.
+out and back in. Filters and search belong to the current Library visit and do not travel in shared links.
 
 **Reset to default** at the foot of the Columns popover clears your column choice rather than merely showing everything,
 so the table goes back to whatever this installation ships as its default and stays with that default if it later
@@ -78,9 +77,8 @@ keyboard-reachable fallback for when scrolling can't trigger loading, such as a 
 page without a scrollbar. Sorting happens on the server through a column header press (see below), so the order is
 correct across the whole collection, not just the rows on screen.
 
-Your view choice travels in the URL (`?view=table`), so a shared link opens exactly what you see; Reverie also remembers
-your last choice on your account and uses it the next time you open the Library without one, on this machine or any
-other.
+Your current Library visit retains its view choice. Reverie also remembers that choice on your account for fresh Library
+visits, on this machine or any other; a shared link carries no view override.
 
 ## Book details without leaving the list
 
@@ -130,14 +128,20 @@ within each author, for example, while paging stays stable: rows don't get skipp
 ## Filtering the library
 
 The filter drawer is the single home for every filter, in every view. Grid and table express the identical grammar,
-because one surface edits the same URL state for both; a condition set while browsing covers never disappears when you
-switch to the table, or the other way around.
+because both use the same visit state. A condition set while browsing covers remains when you switch to the table, or
+the other way around.
 
 The drawer stacks one collapsible section per condition. Shelf and series are pick-one facets. Authors, tags, genres,
 and moods each get a typeahead that accepts several values at once, in any-of, all-of, or none-of mode, so you can ask
 for books tagged both X and Y, in any of three genres, or in none of a set of moods. Reading status filters by state,
-including **Unread** for books you have not started. Text columns (title, subtitle, ISBN) filter by contains, equals, or
-is-empty; page count and rating filter by range; **added** filters by a date range.
+including **Unread** for books you have not started. Title offers contains, equals and does-not-equal; subtitle offers
+contains and is-empty. ISBN-13 offers contains and is-empty. Page count and rating filter by range; **added** filters by
+a date range.
+
+ISBN-13 narrows results as you type, without requiring a complete number or valid checksum. Spaces and hyphens do not
+change a partial match: `978163`, `978-163` and `978 163` all find `9781639739134`. Enter a full ISBN through the same
+contains control. Switching to is-empty keeps your entered text for when you return to contains. Text changes publish
+immediately; the controls stay usable while results update.
 
 A section with something active opens on mount, shows a count beside its name, and carries its own **Clear**. Everything
 else stays folded, so a long drawer reads as a table of contents rather than a wall of form controls.
@@ -148,9 +152,9 @@ Le Guin", and a mixed set splits the count ("Tags (2, 1 not)"), so a chip never 
 does. The chips keep state visible while the drawer is closed, so the collection can never be silently narrower than it
 looks, and dropping one condition is one click instead of a trip into the drawer.
 
-Filters and search live in the URL, so a filtered library is bookmarkable and shareable, and reloading the page brings
-back exactly the filters you had. Whoever opens the link sees those same books in their own sort order, because ordering
-belongs to the account, not the address.
+Reloading or returning with Back or Forward restores that Library visit's filters and search before requesting books. A
+fresh navigation to Library starts without filters. Edits add no history entries, so Back returns to the preceding page
+rather than stepping through filter changes. Shared links and bookmarks carry no filter state.
 
 ## Editing from the table
 
@@ -194,6 +198,20 @@ A cell shows what you typed the moment you commit, marked as busy until the serv
 settles on the value the server stored, which can differ slightly from what you typed: an ISBN-13 you enter with
 hyphens, for example, comes back normalised. On failure the cell snaps back to the value it held before your edit, and a
 toast explains what went wrong.
+
+A refused ISBN-13 edit keeps the saved cell value and shows: "ISBN-13 wasn’t saved. Check the 13-digit number; spaces
+and hyphens are allowed." Correct the number by editing the cell again.
+
+## Inspecting and correcting ISBNs
+
+The Book page and Edit metadata show this warning beside the saved ISBN pair when both numbers are individually valid
+but do not correspond: "These ISBN-10 and ISBN-13 values do not correspond. Check both values." You can save a valid
+mismatched pair. Unsaved typing does not change the warning; correcting or clearing either saved value removes it after
+refresh.
+
+Edit metadata shows invalid ISBN feedback beside the named field and retains your submitted values for correction. Only
+edited fields are saved, and clearing a saved value requires confirmation. Each ISBN stays independent; a successful
+formatted edit displays the compact number returned by the server.
 
 ## Cinematic mode
 

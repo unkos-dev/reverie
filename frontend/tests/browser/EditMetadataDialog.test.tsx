@@ -29,6 +29,7 @@ function metadataFixture(overrides: Partial<BookMetadata> = {}): BookMetadata {
     publisher: null,
     pub_date: null,
     isbn_10: null,
+    isbn_mismatch: false,
     isbn_13: null,
     pages: null,
     content_rating: null,

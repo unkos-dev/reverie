@@ -722,6 +722,37 @@ async fn filtered_titles(server: &TestServer, basic: &str, url: &str) -> Vec<Str
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn isbn_partial_filter_accepts_separators(pool: PgPool) {
+    // Incident: formatted partial searches missed compact stored ISBN-13 values.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (_, target_id) = insert_book(&ingestion_pool, "isbn-partial", "ISBN target").await;
+    sqlx::query!(
+        "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
+        "9781639739134",
+        target_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("set ISBN-13");
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/v1/books?isbn_13_contains=978-%20163")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let ids: Vec<Uuid> = body["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .map(|item| item["id"].as_str().expect("item id").parse().expect("UUID"))
+        .collect();
+    assert_eq!(ids, vec![target_id]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn filter_created_at_inclusive_lower_exclusive_upper_and_cursor_identity(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

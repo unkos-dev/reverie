@@ -36,6 +36,9 @@ Native NumberFields publish numeric values with snapping, steppers and intrinsic
 DatePickers provide keyboard segments and calendars. SearchField and TextField publish raw text immediately. Native
 controls own unfinished input; the application holds no separate draft or delayed filter queue.
 
+Library offers ISBN-13 contains and is-empty filters. The visit retains raw ISBN-13 text, including dormant text under
+is-empty; the server normalises search separators.
+
 Vocabulary filters compose multiple-selection ComboBoxes with a limit of 20 values per mode. At the limit,
 `disabledKeys` disables suggestions outside the current selection while selected options and removal tags remain usable.
 Associated description text explains how to make room; oversized selections use controlled invalidity and FieldError

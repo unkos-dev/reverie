@@ -293,6 +293,17 @@ ISBN reverts and clears refresh the candidate pointer before commit. Each ISBN f
 leaves its counterpart intact. Individually valid, non-equivalent pairs can be saved. The detail and editable metadata
 responses derive `isbn_mismatch` from their returned canonical pair, with false for either value absent.
 
+BookPage and Edit metadata display the saved ISBN mismatch beside the ISBN pair. Both client read schemas require
+`isbn_mismatch`; each surface reads its existing query rather than computing a warning from drafts. Successful saves
+refresh the detail and editable-metadata queries, so correction or clearing removes the warning from the refreshed Book
+view and subsequent edit-sheet read. Native named FieldErrors display ISBN refusals through the existing
+`Form.validationErrors` map and retain submitted values for correction. A valid mismatch remains savable.
+
+The table's metadata catch handles precondition conflicts first. A keyed ISBN-13 validation refusal displays "ISBN-13
+wasn’t saved. Check the 13-digit number; spaces and hyphens are allowed." It clears the pending overlay and retains the
+saved cache value without recording an undo success. Other failures keep their generic feedback; successful edits apply
+the server-normalised value to the displayed rows' source query.
+
 **A manual identifier edit while enrichment is `in_progress`, for the same manifestation.**
 
 `apply_identifier_patches` inspects the manifestation's current `enrichment_status` in the same `UPDATE` that resets it.

@@ -22,7 +22,7 @@ type WireOp<C extends TextColumn> = {
 export const TEXT_COLUMN_OPS: { readonly [C in TextColumn]: readonly WireOp<C>[] } = {
   title: ["contains", "eq", "ne"],
   subtitle: ["contains", "empty"],
-  isbn_13: ["contains", "eq", "empty"],
+  isbn_13: ["contains", "empty"],
 };
 
 const textFilterSchema = (ops: readonly TextOp[]) =>
@@ -129,7 +129,6 @@ function assignText(params: ListBooksParams, prefix: TextColumn, filter: TextFil
   if (op === "contains") params[`${prefix}_contains`] = text;
   if (prefix === "title" && op === "eq") params.title_eq = text;
   if (prefix === "title" && op === "ne") params.title_ne = text;
-  if (prefix === "isbn_13" && op === "eq") params.isbn_13_eq = text;
 }
 
 function assignSet(

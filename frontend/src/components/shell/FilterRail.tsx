@@ -176,7 +176,7 @@ export function FilterRail({
         }}
       />
       <TextSection
-        title="ISBN"
+        title="ISBN-13"
         ops={TEXT_COLUMN_OPS.isbn_13}
         value={filters.isbn13}
         activeCount={textCount(filters.isbn13)}

@@ -233,7 +233,7 @@ export function buildFilterSummary(
   });
   pushText(segments, "Title", "title", filters.title, "title");
   pushText(segments, "Subtitle", "subtitle", filters.subtitle, "subtitle");
-  pushText(segments, "ISBN", "isbn", filters.isbn13, "isbn13");
+  pushText(segments, "ISBN-13", "isbn", filters.isbn13, "isbn13");
   pushRange(segments, "Pages", "pages", filters.pages, "pages");
   pushRange(segments, "Rating", "rating", filters.rating, "rating");
   if (filters.addedAfter !== undefined)
