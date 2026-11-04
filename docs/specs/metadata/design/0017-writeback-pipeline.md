@@ -261,13 +261,13 @@ also requires a `978` or `979` prefix. Unlabelled, invalid and other-system iden
 referenced by `package unique-identifier`, including its value, ID and refinements, remains unchanged even when it is an
 ISBN.
 
-Set reuses the first editable entry for its format, retaining its ID, removes redundant entries of that format and
-inserts a bibliographic entry when none exists. Each supplied number survives independently, including a valid
-mismatched pair. Clear removes only the targeted format's bibliographic entries. Removal also drops refinements
-targeting deleted IDs, following dependent refinements until no dangling targets remain. Generated IDs avoid every
-existing document ID. New EPUB 2 entries declare the Dublin Core and OPF namespaces and use `opf:scheme="ISBN"`; new
-EPUB 3 entries declare Dublin Core and use `urn:isbn:` values. Existing prefixes, package version and unrelated XML
-remain intact.
+Replacement retains an existing `urn:isbn:` declaration in either EPUB version. Set reuses the first editable entry for
+its format, retaining its ID, removes redundant entries of that format and inserts a bibliographic entry when none
+exists. Each supplied number survives independently, including a valid mismatched pair. Clear removes only the targeted
+format's bibliographic entries. Removal also drops refinements targeting deleted IDs, following dependent refinements
+until no dangling targets remain. Generated IDs avoid every existing document ID. New EPUB 2 entries declare the Dublin
+Core and OPF namespaces and use `opf:scheme="ISBN"`; new EPUB 3 entries declare Dublin Core and use `urn:isbn:` values.
+Existing prefixes, package version and unrelated XML remain intact.
 
 ### Library path ownership
 

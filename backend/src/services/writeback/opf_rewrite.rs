@@ -88,7 +88,7 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
     let mut selected = [None; 2];
     let mut removed = HashSet::new();
     for (i, _) in events.iter().enumerate() {
-        if let Some(&format) = meta.isbn_identifiers.get(&i) {
+        if let Some(&(format, _)) = meta.isbn_identifiers.get(&i) {
             match operations[format] {
                 Some(Some(_)) if selected[format].is_none() => selected[format] = Some(i),
                 Some(_) => {
@@ -139,7 +139,7 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
             i = skip_to_matching_end(&events, i) + 1;
             continue;
         }
-        if let Some(&format) = meta.isbn_identifiers.get(&i)
+        if let Some(&(format, had_urn)) = meta.isbn_identifiers.get(&i)
             && let Some(Some(value)) = operations[format]
             && let Event::Start(e) | Event::Empty(e) = ev
         {
@@ -148,7 +148,7 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                 let id = allocate_isbn_id(&mut meta.document_ids, format);
                 start.push_attribute(("id", id.as_str()));
             }
-            let text = if meta.epub_version.starts_with('3') {
+            let text = if had_urn || meta.epub_version.starts_with('3') {
                 format!("urn:isbn:{value}")
             } else {
                 value.to_owned()
@@ -360,7 +360,7 @@ struct ScanResult {
     selected_publication_date: Option<usize>,
     document_ids: HashSet<String>,
     isbn_metadata: HashSet<usize>,
-    isbn_identifiers: HashMap<usize, usize>,
+    isbn_identifiers: HashMap<usize, (usize, bool)>,
     refinements: HashMap<usize, String>,
 }
 
@@ -444,68 +444,91 @@ fn scan_isbn_metadata(
         let is_opf = namespace == ResolveResult::Bound(Namespace("http://www.idpf.org/2007/opf"));
         let is_dc =
             namespace == ResolveResult::Bound(Namespace("http://purl.org/dc/elements/1.1/"));
-        match event {
-            Event::Start(e) | Event::Empty(e) => {
-                let element_depth = depth + 1;
-                if let Some(id) = isbn_attribute(e, "id")? {
-                    meta.document_ids.insert(id);
-                }
-                let name = e.name();
-                let local = local_name(name.as_ref());
-                if is_opf && local == "package" && element_depth == 1 {
-                    package_id = isbn_attribute(e, "unique-identifier")?;
-                    if let Some(version) = isbn_attribute(e, "version")? {
-                        meta.epub_version = version;
-                    }
-                }
-                if is_opf && local == "metadata" && element_depth == 2 {
-                    metadata_depth = Some(element_depth);
-                    meta.isbn_metadata.insert(i);
-                }
-                if metadata_depth == Some(element_depth - 1) {
-                    if is_dc && local == "identifier" {
-                        let scheme_is_isbn = has_isbn_scheme(e, reader.resolver())?;
-                        candidates.push((i, isbn_attribute(e, "id")?, scheme_is_isbn));
-                    }
-                    if is_opf
-                        && local == "meta"
-                        && let Some(reference) = isbn_attribute(e, "refines")?
-                        && let Some(id) = reference.strip_prefix('#')
-                    {
-                        meta.refinements.insert(i, id.to_owned());
-                        if isbn_attribute(e, "property")?.as_deref() == Some("identifier-type") {
-                            let value = match isbn_attribute(e, "content")? {
-                                Some(value) => value,
-                                None => isbn_element_text(events, i)?,
-                            };
-                            let scheme = isbn_attribute(e, "scheme")?;
-                            if value.trim().eq_ignore_ascii_case("isbn")
-                                || (scheme.as_deref() == Some("onix:codelist5")
-                                    && matches!(value.trim(), "02" | "15"))
-                            {
-                                declared.insert(id.to_owned());
-                            }
-                        }
-                    }
-                }
-                if matches!(event, Event::Start(_)) {
-                    depth += 1;
-                } else if metadata_depth == Some(element_depth) {
-                    metadata_depth = None;
-                }
+        if matches!(event, Event::End(_)) {
+            if metadata_depth == Some(depth) {
+                meta.isbn_metadata.insert(i);
+                metadata_depth = None;
             }
-            Event::End(_) => {
-                if metadata_depth == Some(depth) {
-                    meta.isbn_metadata.insert(i);
-                    metadata_depth = None;
-                }
-                depth -= 1;
-            }
-            _ => {}
+            depth -= 1;
+            continue;
+        }
+        let (Event::Start(element) | Event::Empty(element)) = event else {
+            continue;
+        };
+        let element_depth = depth + 1;
+        depth += usize::from(matches!(event, Event::Start(_)));
+        if let Some(id) = isbn_attribute(element, "id")? {
+            meta.document_ids.insert(id);
+        }
+        let name = element.name();
+        let local = local_name(name.as_ref());
+        if is_opf && local == "package" && element_depth == 1 {
+            package_id = isbn_attribute(element, "unique-identifier")?;
+            meta.epub_version =
+                isbn_attribute(element, "version")?.unwrap_or_else(|| meta.epub_version.clone());
+        }
+        if is_opf && local == "metadata" && element_depth == 2 {
+            meta.isbn_metadata.insert(i);
+            metadata_depth = matches!(event, Event::Start(_)).then_some(element_depth);
+            continue;
+        }
+        if metadata_depth != Some(element_depth - 1) {
+            continue;
+        }
+        if is_dc && local == "identifier" {
+            candidates.push((
+                i,
+                isbn_attribute(element, "id")?,
+                has_isbn_scheme(element, reader.resolver())?,
+            ));
+        }
+        if is_opf
+            && local == "meta"
+            && let Some(id) = scan_isbn_refinement(element, events, i, meta)?
+        {
+            declared.insert(id);
         }
     }
+    meta.isbn_identifiers =
+        classify_isbn_identifiers(events, candidates, package_id.as_deref(), &declared)?;
+    Ok(())
+}
+
+fn scan_isbn_refinement(
+    element: &BytesStart<'_>,
+    events: &[Event<'static>],
+    index: usize,
+    meta: &mut ScanResult,
+) -> Result<Option<String>, WritebackError> {
+    let Some(reference) = isbn_attribute(element, "refines")? else {
+        return Ok(None);
+    };
+    let Some(id) = reference.strip_prefix('#') else {
+        return Ok(None);
+    };
+    meta.refinements.insert(index, id.to_owned());
+    if isbn_attribute(element, "property")?.as_deref() != Some("identifier-type") {
+        return Ok(None);
+    }
+    let value = match isbn_attribute(element, "content")? {
+        Some(value) => value,
+        None => isbn_element_text(events, index)?,
+    };
+    let scheme = isbn_attribute(element, "scheme")?;
+    let declared = value.trim().eq_ignore_ascii_case("isbn")
+        || (scheme.as_deref() == Some("onix:codelist5") && matches!(value.trim(), "02" | "15"));
+    Ok(declared.then(|| id.to_owned()))
+}
+
+fn classify_isbn_identifiers(
+    events: &[Event<'static>],
+    candidates: Vec<(usize, Option<String>, bool)>,
+    package_id: Option<&str>,
+    declared: &HashSet<String>,
+) -> Result<HashMap<usize, (usize, bool)>, WritebackError> {
+    let mut identifiers = HashMap::new();
     for (i, id, scheme_is_isbn) in candidates {
-        if id.is_some() && id == package_id {
+        if id.is_some() && id.as_deref() == package_id {
             continue;
         }
         let value = isbn_element_text(events, i)?;
@@ -527,9 +550,9 @@ fn scan_isbn_metadata(
             }
             _ => continue,
         };
-        meta.isbn_identifiers.insert(i, format);
+        identifiers.insert(i, (format, urn));
     }
-    Ok(())
+    Ok(identifiers)
 }
 
 fn has_isbn_scheme(
@@ -1116,6 +1139,67 @@ mod tests {
         }
     }
 
+    fn assert_isbn_writeback_state(xml: &str, expected: &[&str], version: &str) {
+        let events = read_all_events(xml.as_bytes()).unwrap();
+        let mut ids = HashSet::new();
+        let mut identifiers = HashMap::new();
+        let mut references = Vec::new();
+        for (i, event) in events.iter().enumerate() {
+            let (Event::Start(e) | Event::Empty(e)) = event else {
+                continue;
+            };
+            if let Some(id) = attr_value(e, "id") {
+                assert!(ids.insert(id.clone()), "duplicate document ID");
+                if local_name(e.name().as_ref()) == "identifier" {
+                    identifiers.insert(id, element_text(&events, i).unwrap());
+                }
+            }
+            if let Some(reference) = attr_value(e, "refines") {
+                references.push(reference);
+            }
+            if local_name(e.name().as_ref()) == "package" {
+                assert_eq!(
+                    attr_value(e, "unique-identifier").as_deref(),
+                    Some("pub-id")
+                );
+                assert_eq!(attr_value(e, "version").as_deref(), Some(version));
+            }
+        }
+        assert!(
+            references
+                .iter()
+                .all(|reference| ids.contains(reference.strip_prefix('#').unwrap()))
+        );
+        for (id, value) in [
+            ("pub-id", "9780306406157"),
+            ("uuid", "urn:uuid:A1B2C3D4"),
+            ("provider", "080442957X"),
+            ("isbn-10", "080442957X"),
+        ] {
+            assert_eq!(
+                identifiers.remove(id).as_deref(),
+                Some(value),
+                "identifier {id} changed"
+            );
+        }
+        let mut actual: Vec<_> = identifiers
+            .values()
+            .map(|value| value.strip_prefix("urn:isbn:").unwrap_or(value))
+            .collect();
+        actual.sort_unstable();
+        assert_eq!(actual, expected);
+        if expected.contains(&"9791090636071") {
+            assert_eq!(
+                identifiers.get("editable").map(String::as_str),
+                Some("urn:isbn:9791090636071")
+            );
+        } else {
+            assert!(!ids.contains("kind") && !ids.contains("dependent"));
+        }
+        assert!(xml.contains("<dc:coverage>2010</dc:coverage>"));
+        assert!(xml.contains(r##"<meta refines="#pub-id" property="identifier-type" scheme="onix:codelist5">15</meta>"##));
+    }
+
     #[test]
     fn isbn_writeback_contract() {
         // Data corruption boundary: bibliographic edits preserve package identity and unrelated XML.
@@ -1131,65 +1215,6 @@ mod tests {
     <vendor:identifier xmlns:vendor="urn:vendor" id="isbn-10" opf:scheme="ISBN">080442957X</vendor:identifier>
     <dc:coverage>2010</dc:coverage>"##)
             .replace("<dc:identifier id=\"pub-id\">urn:uuid:A1B2C3D4", "<dc:identifier id=\"pub-id\" opf:scheme=\"ISBN\">9780306406157");
-        let assert_state = |xml: &str, expected: &[&str]| {
-            let events = read_all_events(xml.as_bytes()).unwrap();
-            let mut ids = HashSet::new();
-            let mut identifiers = HashMap::new();
-            let mut references = Vec::new();
-            for (i, event) in events.iter().enumerate() {
-                if let Event::Start(e) | Event::Empty(e) = event {
-                    if let Some(id) = attr_value(e, "id") {
-                        assert!(ids.insert(id.clone()), "duplicate document ID");
-                        if local_name(e.name().as_ref()) == "identifier" {
-                            identifiers.insert(id, element_text(&events, i).unwrap());
-                        }
-                    }
-                    if let Some(reference) = attr_value(e, "refines") {
-                        references.push(reference);
-                    }
-                    if local_name(e.name().as_ref()) == "package" {
-                        assert_eq!(
-                            attr_value(e, "unique-identifier").as_deref(),
-                            Some("pub-id")
-                        );
-                        assert_eq!(attr_value(e, "version").as_deref(), Some("3.0"));
-                    }
-                }
-            }
-            assert!(
-                references
-                    .iter()
-                    .all(|reference| ids.contains(reference.strip_prefix('#').unwrap()))
-            );
-            for (id, value) in [
-                ("pub-id", "9780306406157"),
-                ("uuid", "urn:uuid:A1B2C3D4"),
-                ("provider", "080442957X"),
-                ("isbn-10", "080442957X"),
-            ] {
-                assert_eq!(
-                    identifiers.remove(id).as_deref(),
-                    Some(value),
-                    "identifier {id} changed"
-                );
-            }
-            let mut actual: Vec<_> = identifiers
-                .values()
-                .map(|value| value.strip_prefix("urn:isbn:").unwrap_or(value))
-                .collect();
-            actual.sort_unstable();
-            assert_eq!(actual, expected);
-            if expected.contains(&"9791090636071") {
-                assert_eq!(
-                    identifiers.get("editable").map(String::as_str),
-                    Some("urn:isbn:9791090636071")
-                );
-            } else {
-                assert!(!ids.contains("kind") && !ids.contains("dependent"));
-            }
-            assert!(xml.contains("<dc:coverage>2010</dc:coverage>"));
-            assert!(xml.contains(r##"<meta refines="#pub-id" property="identifier-type" scheme="onix:codelist5">15</meta>"##));
-        };
         let mut output = input;
         let ten = "080442957X";
         let thirteen = "9791090636071";
@@ -1213,12 +1238,29 @@ mod tests {
                     ..Default::default()
                 },
             );
-            assert_state(&next, &expected);
+            assert_isbn_writeback_state(&next, &expected, "3.0");
             if index == 1 {
                 assert_eq!(next, output);
             }
             output = next;
         }
+        let epub2 = output.replace("version=\"3.0\"", "version=\"2.0\"");
+        let target = Target {
+            isbn_13: Some(Some("9780804429573")),
+            ..Default::default()
+        };
+        let set = transform_str(&epub2, &target);
+        let clear = transform_str(
+            &set,
+            &Target {
+                isbn_13: Some(None),
+                ..Default::default()
+            },
+        );
+        assert_isbn_writeback_state(&clear, &[], "2.0");
+        let replay = transform_str(&set, &target);
+        assert_isbn_writeback_state(&replay, &["9780804429573"], "2.0");
+        assert_eq!(replay, set);
     }
 
     #[test]
