@@ -254,20 +254,21 @@ the latest canonical value; other field tags and generic jobs leave both formats
 two jobs. The job stores field identity rather than a captured value, so replay reads the current correction. Clearing a
 value leaves existing enrichment eligibility and field-lock behaviour intact.
 
-The XML scan resolves namespaces and recognises explicitly declared ISBNs only in Dublin Core identifiers directly
-inside OPF metadata: EPUB 2 ISBN schemes, `urn:isbn:` values and ISBN identifier-type refinements. Numeric refinement
-values `02` and `15` require `onix:codelist5`. The `isbn` crate classifies structurally valid entries by format; ISBN-13
-also requires a `978` or `979` prefix. Unlabelled, invalid and other-system identifiers remain unchanged. The identifier
-referenced by `package unique-identifier`, including its value, ID and refinements, remains unchanged even when it is an
-ISBN.
+The XML scan resolves namespaces and recognises explicitly declared ISBNs only in Dublin Core identifiers in OPF
+metadata or its EPUB 2 `dc-metadata` container: EPUB 2 ISBN schemes, `urn:isbn:` values and ISBN identifier-type
+refinements. Numeric refinement values `02` and `15` require `onix:codelist5`. The `isbn` crate classifies structurally
+valid entries by format; ISBN-13 also requires a `978` or `979` prefix. Unlabelled, invalid and other-system identifiers
+remain unchanged. The identifier referenced by `package unique-identifier`, including its value, ID and refinements,
+remains unchanged even when it is an ISBN.
 
 Replacement retains an existing `urn:isbn:` declaration in either EPUB version. Set reuses the first editable entry for
 its format, retaining its ID, removes redundant entries of that format and inserts a bibliographic entry when none
 exists. Each supplied number survives independently, including a valid mismatched pair. Clear removes only the targeted
 format's bibliographic entries. Removal also drops refinements targeting deleted IDs, following dependent refinements
-until no dangling targets remain. Generated IDs avoid every existing document ID. New EPUB 2 entries declare the Dublin
-Core and OPF namespaces and use `opf:scheme="ISBN"`; new EPUB 3 entries declare Dublin Core and use `urn:isbn:` values.
-Existing prefixes, package version and unrelated XML remain intact.
+until no dangling targets remain. Generated IDs avoid every existing document ID. When EPUB 2 metadata uses an OPF
+`dc-metadata` wrapper, new ISBN entries go inside it. New EPUB 2 entries declare the Dublin Core and OPF namespaces and
+use `opf:scheme="ISBN"`; new EPUB 3 entries declare Dublin Core and use `urn:isbn:` values. Existing prefixes, package
+version and unrelated XML remain intact.
 
 ### Library path ownership
 
