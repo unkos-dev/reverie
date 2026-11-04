@@ -43,6 +43,3 @@ the next action without exposing provider text or distinguishing an email collis
 - The login page renders fixed copy for each recognised outcome and requires a click or keyboard activation to start a
   fresh provider attempt. Mounting, refreshing and browser back do not retry an authorization response.
 - An unknown, absent, empty or repeated outcome renders ordinary login without displaying the supplied value.
-- Callback route tests named `oidc_outcome_`, the existing callback/key-refresh/account-refusal tests in
-  `backend/src/routes/auth.rs`, and the per-outcome tests in `frontend/tests/browser/auth-login.test.tsx` exercise the
-  condition-to-destination and recovery contracts. Rendered acceptance uses the login screen specification.

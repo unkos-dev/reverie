@@ -119,9 +119,10 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   optional, parsed with Zod via `safeParse`), `peekProblem` (clones the response, gates on the `Content-Type` header,
   parses), `problemFromResponse`/`problemToApiError` (assemble the `ApiError`, falling back to `response.statusText` and
   empty strings for fields a non-conforming body omits), and `decodeSuccess` (the shared 2xx/error decoder used by both
-  the first attempt and the CSRF-retry attempt, described by the Design "CSRF protection"). CSRF token injection and
-  retry, and `ETag` capture/replay, live in the same file but are owned by their own Designs; this Design covers only
-  the request/response mechanics every code path shares regardless of which of those two other concerns fired.
+  the first attempt and the CSRF-retry attempt, described by the Design "CSRF protection"; it returns `undefined` for a
+  `204` or `205` without reading a body). CSRF token injection and retry, and `ETag` capture/replay, live in the same
+  file but are owned by their own Designs; this Design covers only the request/response mechanics every code path shares
+  regardless of which of those two other concerns fired.
 
 ## Interfaces and dependencies
 
