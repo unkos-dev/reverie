@@ -52,6 +52,8 @@ import {
   type LibraryView,
 } from "@/routes/library-params";
 
+import { useCellEditFeedback } from "./table/useCellEdit";
+import { FieldError } from "@/components/ui/field";
 import { BatchBar } from "./BatchBar";
 import { BookDetailDrawer } from "./BookDetailDrawer";
 import { EmptyLibrary } from "./EmptyLibrary";
@@ -176,6 +178,7 @@ function useLibraryBooks(listKey: BooksListKey, eligible: boolean, sortPending: 
 }
 
 export function LibraryPage(): ReactElement {
+  const editFeedback = useCellEditFeedback();
   const owner = useLibraryFilters();
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
@@ -308,6 +311,29 @@ export function LibraryPage(): ReactElement {
           />
           <Separator className="mb-8" />
 
+          {editFeedback.length > 0 ? (
+            <section aria-label="Edit outcomes" className="mb-4 space-y-3">
+              {editFeedback.map((feedback) => (
+                <div key={feedback.id} className="space-y-2">
+                  <FieldError>
+                    {feedback.field} for “{feedback.bookTitle}”: {feedback.message}
+                  </FieldError>
+                  <p className="text-fg-muted break-words text-sm">
+                    Submitted value: {feedback.submitted}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    isPending={feedback.reloading}
+                    onPress={feedback.reload}
+                  >
+                    Reload
+                  </Button>
+                </div>
+              ))}
+            </section>
+          ) : null}
           <LibraryBooks
             items={items}
             filtered={hasActiveFilterState(filterState)}

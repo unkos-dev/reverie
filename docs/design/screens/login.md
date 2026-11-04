@@ -1,13 +1,14 @@
 # Login screen
 
-The login page offers the sign-in methods enabled on the instance and explains an unsuccessful OIDC attempt without
+The login page offers the sign-in methods enabled on the instance and explains fixed authentication outcomes without
 showing provider text. Copy in double quotes is exact.
 
 ## Entry point and route
 
 Route: `/login`. OIDC start and callback failures navigate here with one of six values in `outcome`. The page parses the
-value through a closed Zod enum. A missing, empty, unknown or repeated outcome renders ordinary login, without echoing
-any supplied value. A recognised outcome remains on refresh and browser back; the page never rewrites it.
+value through a closed Zod enum. Successful registration, first-administrator setup and password changes use the same
+notice with fixed local success copy. A missing, empty, unknown or repeated outcome renders ordinary login, without
+echoing any supplied value. A recognised outcome remains on refresh and browser back; the page never rewrites it.
 
 An instance requiring first-administrator setup redirects to `/setup`, including when the URL carries an outcome.
 
@@ -44,6 +45,9 @@ appears.
 | `keys` | "Sign-in could not be verified" | "Try again later. If this keeps happening, contact your administrator." |
 | `account` | "Unable to sign in" | "Could not sign in with this account. Contact your administrator for help." |
 | `throttled` | "Too many sign-in attempts" | "Wait a moment, then try again." |
+| `registered` | "Account created" | "Sign in to continue." |
+| `setup-complete` | "Administrator created" | "Sign in to continue." |
+| `password-changed` | "Password changed" | "Sign in with your new password." |
 
 Provider `error_description`, error codes, callback state, tokens and other supplied text never appear in a notice. The
 account notice does not distinguish an email collision from a disabled account.
@@ -68,7 +72,7 @@ Local submission retains its existing pending state and credential-error behavio
 
 ## Rendered acceptance
 
-- Compare all six outcomes at 1920 x 1080 in light and dark themes against this layout and exact copy.
+- Compare all recognised outcomes at 1920 x 1080 in light and dark themes against this layout and exact copy.
 - Spot-check 2880 x 1800 and 3440 x 1440 for column width, centring and spacing.
 - Check WCAG 1.4.10 reflow at 320 CSS px (400% zoom): no horizontal scroll, clipped text or unreachable controls.
 - Check notice focus, Tab order, focus visibility, contrast and explicit-click retry.

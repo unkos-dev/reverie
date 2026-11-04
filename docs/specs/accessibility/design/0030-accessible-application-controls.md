@@ -103,8 +103,21 @@ confirmation; a refused save leaves the sheet open with the entered values and e
 opens the confirmation before the action runs, including for implicit submission. The confirmation button allows the
 next submission through to the action.
 
-Table-load recovery belongs to the Library results region and is described in the Library state Design. Shared controls
-do not change query-cache ownership or the grid's edit transaction.
+Table-load recovery belongs to the Library results region and is described in the Library state Design. Cell failures
+also render in that region, outside conditional table rendering, from account-scoped TanStack mutation state. Each
+mutation captures its book, field, submitted value and displayed source query. Mutation lifecycle handlers apply
+confirmed results even after table replacement; the existing synchronous grid adapter supplies pending-cell protection.
+Targeted metadata and reading-state queries re-read the affected resource independently of list membership and reconnect
+through TanStack. Fresh reads update the captured source and reconcile matching or superseded failures without repeating
+writes or creating Undo provenance. A matching read disables further recovery reads for that operation; its cached
+confirmation stays resolved across later edits. Mutation-cache retention is in-memory, not a durable operation ledger.
+
+The table owns a bounded, ten-entry sequential Undo history. Undo last edit and the table-scoped Control/Meta+Z shortcut
+use the same latest valid entry; native text-input Undo remains available in editors. The visible button names its field
+and book, retains focus while pending and waits for in-flight cell operations. Metadata Undo preserves the response's
+previous-version pointer or required counter-patch; reading Undo applies its own server response. Failed Undo retains
+its entry for correction or retry. Removing the table ends access to this history. Shared controls do not change the
+grid's editing model. The application uses local feedback without a notification runtime.
 
 ## Security and operations
 

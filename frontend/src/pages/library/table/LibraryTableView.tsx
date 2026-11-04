@@ -579,10 +579,11 @@ export function LibraryTableView({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useShortcutsHotkey(setShortcutsOpen);
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
-  const { pendingCells, onCellEdit, onGridKeyDown } = useCellEdit({
-    listKey: listQueryKey,
-    columns: BASE_COLUMNS,
-  });
+  const { pendingCells, onCellEdit, onGridKeyDown, undo, undoPending, undoAvailable, undoLabel } =
+    useCellEdit({
+      listKey: listQueryKey,
+      columns: BASE_COLUMNS,
+    });
   const columns = useComposedColumns(pendingCells, hiddenColumns, density, isMobile, onRowActivate);
 
   const sortState: SortState = sort.map((level) => ({
@@ -617,6 +618,19 @@ export function LibraryTableView({
     // grid's own cells and any open editor without needing a ref.
     <div data-testid="library-table" onKeyDown={onGridKeyDown}>
       <div className="mb-2 flex items-center justify-end gap-4">
+        {undoLabel !== undefined ? (
+          <span className="text-fg-muted text-sm">{undoLabel}</span>
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onPress={undo}
+          isPending={undoPending}
+          isDisabled={!undoAvailable && !undoPending}
+        >
+          Undo last edit
+        </Button>
         <GridShortcutsTrigger onOpenChange={setShortcutsOpen} />
       </div>
       {/* Sort-stack announcements come from LibraryPage's always-mounted

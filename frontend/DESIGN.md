@@ -518,6 +518,12 @@ success; inline errors are not repeated in a toast.
 
 ### Library Table
 
+The table's Undo last edit button sits beside Help and names the next field and book to reverse. It uses the existing
+bounded history sequentially and becomes unavailable when the table is removed. Native pending state preserves focus and
+suppresses repeated activation. Cell failures retain the submitted value and named target in the Library results region
+outside the table, with native Reload and ordinary Query recovery. They remain readable when loading, empty, blocked or
+grid results replace the table. No toast runtime supplies feedback.
+
 The table is a dense catalogue surface using the same canvas, text and accent roles as the rest of the application. Its
 header uses surface-2, row hover uses surface, and selected rows use accent-soft. Cells use the inherited body face at
 14px; titles have medium weight.

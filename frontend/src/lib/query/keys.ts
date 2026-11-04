@@ -87,6 +87,7 @@ function normalizeListParams(params: ListBooksParams): ListBooksParams {
 /** Read-only key arrays — `as const` makes them tuples for TS narrowing. */
 export const queryKeys = {
   books: {
+    reading: (id: string, userId: string | null) => ["books", "reading", userId, id] as const,
     /** Root namespace; invalidate to wipe every books-* cache slot. */
     all: ["books"] as const satisfies BooksAllKey,
     /** List endpoint with filters/sort/cursor. Distinct params = distinct slot. */
