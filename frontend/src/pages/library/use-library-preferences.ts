@@ -28,9 +28,9 @@
  * merged patch is the reader's latest intent. Two tabs can drift until one
  * reloads; nothing is corrupted, and a reload converges.
  *
- * No value here is ever written to the browser URL. Filters and search are
- * URL state with exactly one writer, and view's `?view=` param still wins
- * over the stored choice while present. Sort has no URL form at all: it is
+ * No value here is ever written to the browser URL. A Library visit's own
+ * view override wins over the stored view while the visit holds one. Sort
+ * has no URL form at all: it is
  * a one-layer per-user preference, resolved here and sent explicitly on the
  * list request (see `docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md`
  * for why the two-layer URL-over-preference model was retired).
@@ -71,7 +71,7 @@ export type LibraryPreferences = {
   /** Effective hidden-column keys. Stale keys are inert: the table
    *  intersects them with the columns it actually has. */
   hiddenColumns: ReadonlySet<string>;
-  /** Effective view choice, which a `?view=` param still overrides. */
+  /** Effective view choice, which a Library visit's view override still overrides. */
   view: LibraryView;
   /**
    * The reader's sort override in the `?sort=` wire grammar, or `""` when
