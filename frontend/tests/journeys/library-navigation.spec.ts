@@ -77,6 +77,7 @@ async function intercept(page: Page): Promise<Fixture> {
           description: null,
           language: "en",
           isbn_10: null,
+          isbn_mismatch: false,
           publisher: null,
           pub_date: null,
           metadata_version_summary: { pending: 0, accepted: 0 },

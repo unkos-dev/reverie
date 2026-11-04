@@ -44,6 +44,7 @@ import { useLibraryFilters } from "@/lib/hooks/use-library-filters";
 import { queryKeys, type BooksListKey } from "@/lib/query/keys";
 
 import {
+  countActiveFilters,
   filterStateToParams,
   hasActiveFilterState,
   isLibraryRequestEligible,
@@ -240,7 +241,7 @@ export function LibraryPage(): ReactElement {
     preferences.setHiddenColumns(next);
   }
 
-  const activeFilterCount = Object.keys(filterStateToParams(filterState)).length;
+  const activeFilterCount = countActiveFilters(filterState);
 
   function openOverlay(next: Exclude<OverlayState, null>): void {
     setOverlay(next);

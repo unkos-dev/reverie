@@ -358,6 +358,11 @@ function EditMetadataFields({
               }}
             />
           ))}
+          {metadata.isbn_mismatch ? (
+            <p className="text-fg-muted text-sm">
+              These ISBN-10 and ISBN-13 values do not correspond. Check both values.
+            </p>
+          ) : null}
         </div>
         {state.error ? <FieldError>{state.error}</FieldError> : null}
         <SheetFooter className="mt-auto pt-4">

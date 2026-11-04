@@ -6,6 +6,7 @@
  */
 import {
   effectiveText,
+  isIsbn13FilterActive,
   type FilterState,
   type RangeFilter,
   type TextFilter,
@@ -62,6 +63,7 @@ function pushText(
   filter: TextFilter,
   prop: "title" | "subtitle" | "isbn13",
 ): void {
+  if (prop === "isbn13" && !isIsbn13FilterActive(filter)) return;
   const op = filter.op ?? "contains";
   const text = effectiveText(filter) ?? "";
   if (op !== "empty" && text === "") return;
@@ -233,7 +235,7 @@ export function buildFilterSummary(
   });
   pushText(segments, "Title", "title", filters.title, "title");
   pushText(segments, "Subtitle", "subtitle", filters.subtitle, "subtitle");
-  pushText(segments, "ISBN", "isbn", filters.isbn13, "isbn13");
+  pushText(segments, "ISBN-13", "isbn", filters.isbn13, "isbn13");
   pushRange(segments, "Pages", "pages", filters.pages, "pages");
   pushRange(segments, "Rating", "rating", filters.rating, "rating");
   if (filters.addedAfter !== undefined)

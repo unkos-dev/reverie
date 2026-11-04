@@ -22,7 +22,7 @@ type WireOp<C extends TextColumn> = {
 export const TEXT_COLUMN_OPS: { readonly [C in TextColumn]: readonly WireOp<C>[] } = {
   title: ["contains", "eq", "ne"],
   subtitle: ["contains", "empty"],
-  isbn_13: ["contains", "eq", "empty"],
+  isbn_13: ["contains", "empty"],
 };
 
 const textFilterSchema = (ops: readonly TextOp[]) =>
@@ -93,6 +93,10 @@ export function effectiveText(filter: TextFilter): string | undefined {
   return text === "" ? undefined : text;
 }
 
+export function isIsbn13FilterActive(filter: TextFilter): boolean {
+  return filter.op === "empty" || (filter.text?.replace(/[ -]/g, "").trim() ?? "") !== "";
+}
+
 export function libraryTextError(value: string | undefined): string | undefined {
   return Array.from(value?.trim() ?? "").length > 200
     ? "Use 200 characters or fewer, excluding surrounding spaces."
@@ -129,7 +133,6 @@ function assignText(params: ListBooksParams, prefix: TextColumn, filter: TextFil
   if (op === "contains") params[`${prefix}_contains`] = text;
   if (prefix === "title" && op === "eq") params.title_eq = text;
   if (prefix === "title" && op === "ne") params.title_ne = text;
-  if (prefix === "isbn_13" && op === "eq") params.isbn_13_eq = text;
 }
 
 function assignSet(
@@ -177,6 +180,12 @@ export function filterStateToParams(
   return params;
 }
 
+export function countActiveFilters(state: FilterState): number {
+  const params = filterStateToParams(state);
+  if (!isIsbn13FilterActive(state.isbn13)) delete params.isbn_13_contains;
+  return Object.keys(params).length;
+}
+
 export function hasActiveFilterState(state: FilterState): boolean {
-  return Object.keys(filterStateToParams(state)).length > 0;
+  return countActiveFilters(state) > 0;
 }

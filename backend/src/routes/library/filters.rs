@@ -205,7 +205,7 @@ pub(super) fn canonical_filter_string(p: &ListParams) -> String {
     push_text_part(
         &mut parts,
         "isbn_13_contains",
-        p.isbn_13_contains.as_deref(),
+        normalized_isbn_contains(p.isbn_13_contains.as_deref()).as_deref(),
     );
     push_text_part(&mut parts, "isbn_13_eq", p.isbn_13_eq.as_deref());
     push_text_part(&mut parts, "q", p.q.as_deref());
@@ -426,8 +426,8 @@ fn push_text_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     if let Some(empty) = p.subtitle_empty {
         push_is_empty(qb, "w.subtitle", empty);
     }
-    if let Some(needle) = trimmed(p.isbn_13_contains.as_deref()) {
-        push_ilike_contains_plain(qb, "m.isbn_13", needle);
+    if let Some(needle) = normalized_isbn_contains(p.isbn_13_contains.as_deref()) {
+        push_ilike_contains_plain(qb, "m.isbn_13", &needle);
     }
     if let Some(needle) = trimmed(p.isbn_13_eq.as_deref()) {
         push_ilike_exact(qb, "m.isbn_13", needle, false);
@@ -628,6 +628,11 @@ fn push_q_predicate(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
 /// whitespace-only needle pushes no predicate.
 fn trimmed(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|s| !s.is_empty())
+}
+
+fn normalized_isbn_contains(value: Option<&str>) -> Option<String> {
+    let compact = value?.replace([' ', '-'], "");
+    trimmed(Some(&compact)).map(str::to_owned)
 }
 
 /// Escape the delimiter characters the canonical filter string uses to carry

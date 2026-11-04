@@ -36,6 +36,11 @@ Native NumberFields publish numeric values with snapping, steppers and intrinsic
 DatePickers provide keyboard segments and calendars. SearchField and TextField publish raw text immediately. Native
 controls own unfinished input; the application holds no separate draft or delayed filter queue.
 
+Library offers ISBN-13 contains and is-empty filters. The visit retains raw ISBN-13 text, including dormant text under
+is-empty; the server normalises search separators. A shared ISBN-13 predicate-presence check treats separator-only
+contains text as dormant for chips, section and overall counts, and filtered-empty classification. Is-empty remains
+active independently of retained text.
+
 Vocabulary filters compose multiple-selection ComboBoxes with a limit of 20 values per mode. At the limit,
 `disabledKeys` disables suggestions outside the current selection while selected options and removal tags remain usable.
 Associated description text explains how to make room; oversized selections use controlled invalidity and FieldError
@@ -73,9 +78,11 @@ signals used by pagination and row actions.
 | Selected rows                       | Library page                   | Current intent and projection |
 
 The `reverieLibrary` entry field holds the owned visit; writes preserve unrelated entry data. Filter state keeps raw
-text and its selected operator even when the text is blank. Chips, counts and requests derive only effective predicates.
-Complete inverted bounds remain entered. The native owner keeps immediate dispatch composition aligned with the
-persisted snapshot; query completion and suggestion responses never write filter intent.
+text and its selected operator even when the text is blank. Chips and counts describe effective predicates. Requests
+retain raw ISBN-13 contains text, so the server applies its raw length cap before separator removal; the client uses the
+same raw request value for eligibility and cache identity. Complete inverted bounds remain entered. The native owner
+keeps immediate dispatch composition aligned with the persisted snapshot; query completion and suggestion responses
+never write filter intent.
 
 Callers include quick search, every rail section, section clear, chip removal, global and empty-state clear, view
 gestures and the table-chunk fallback. View gestures also write the existing preference; chunk failure changes only the
