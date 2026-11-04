@@ -12,7 +12,6 @@ vi.mock("@/api", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
   return { ...original, getBookMetadata: vi.fn(), updateBookMetadata: vi.fn() };
 });
-vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 beforeEach(() => {
   vi.resetAllMocks();

@@ -9,7 +9,7 @@
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
-import { toast } from "sonner";
+import { FieldError } from "@/components/ui/field";
 
 import {
   ApiError,
@@ -50,14 +50,11 @@ type VersionsTabProps = {
 };
 
 /**
- * Top-level Versions tab. Owns the Edit dialog open state but delegates
- * each row to [`PendingRow`] so accept/reject can render without
- * shared state.
+ * Versions tab with field-owned review outcomes and an Edit dialog.
  */
 export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const grouped = groupByField(book.metadata_versions);
-  const fieldsWithDrafts = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
   // Name/label defs only: EditMetadataDialog seeds each field's canonical
   // value itself from a fresh GET, not from this (possibly stale) `book`.
   const editableFields = (
@@ -66,6 +63,9 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
     name,
     label: FIELD_LABEL[name] ?? name,
   }));
+  const fieldNames = [
+    ...new Set([...editableFields.map(({ name }) => name), ...Object.keys(grouped)]),
+  ].sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="space-y-6">
@@ -85,19 +85,17 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
         </Button>
       </div>
 
-      {fieldsWithDrafts.length > 0 ? (
-        <div className="space-y-6">
-          {fieldsWithDrafts.map((field) => (
-            <FieldGroup
-              key={field}
-              manifestationId={book.id}
-              field={field}
-              canonical={canonicalValue(book, field)}
-              rows={grouped[field] ?? []}
-            />
-          ))}
-        </div>
-      ) : null}
+      <div className="space-y-6">
+        {fieldNames.map((field) => (
+          <FieldGroup
+            key={field}
+            manifestationId={book.id}
+            field={field}
+            canonical={canonicalValue(book, field)}
+            rows={grouped[field] ?? []}
+          />
+        ))}
+      </div>
 
       <EditMetadataDialog
         manifestationId={book.id}
@@ -122,7 +120,7 @@ function FieldGroup({
   field,
   canonical,
   rows,
-}: Readonly<FieldGroupProps>): ReactElement {
+}: Readonly<FieldGroupProps>): ReactElement | null {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const invalidate = () =>
@@ -134,14 +132,27 @@ function FieldGroup({
     mutationFn: () => revertField(manifestationId, field, null),
     onSuccess: () => {
       void invalidate();
-      toast.success(`Cleared ${FIELD_LABEL[field] ?? field}`);
     },
     onError: (err: unknown) => {
       console.error("[VersionsTab.revertField] mutation failed", err);
-      toast.error(formatError(err));
     },
   });
 
+  const review = useMutation({
+    mutationFn: ({ row, action }: { row: MetadataVersionRow; action: "accept" | "reject" }) =>
+      action === "accept"
+        ? acceptVersion(manifestationId, row.id)
+        : rejectVersion(manifestationId, row.id),
+    onSuccess: () => {
+      void invalidate();
+    },
+    onError: (error) => {
+      console.error("[VersionsTab] review failed", error);
+      void invalidate();
+    },
+  });
+  if (rows.length === 0 && !review.isError && !review.isPending && !revertMutation.isError)
+    return null;
   return (
     <section
       className="border-border space-y-3 rounded-md border p-4"
@@ -161,7 +172,7 @@ function FieldGroup({
             onPress={() => {
               setConfirmOpen(true);
             }}
-            isDisabled={revertMutation.isPending}
+            isDisabled={revertMutation.isPending || review.isPending}
           >
             Clear
           </Button>
@@ -170,10 +181,39 @@ function FieldGroup({
       <ul className="space-y-2 text-sm">
         <CanonicalRow canonical={canonical} />
         {rows.map((row) => (
-          <PendingRow key={row.id} manifestationId={manifestationId} field={field} row={row} />
+          <PendingRow
+            key={row.id}
+            row={row}
+            accepting={
+              review.isPending &&
+              review.variables.row.id === row.id &&
+              review.variables.action === "accept"
+            }
+            rejecting={
+              review.isPending &&
+              review.variables.row.id === row.id &&
+              review.variables.action === "reject"
+            }
+            busy={review.isPending || revertMutation.isPending}
+            onAccept={() => {
+              review.mutate({ row, action: "accept" });
+            }}
+            onReject={() => {
+              review.mutate({ row, action: "reject" });
+            }}
+          />
         ))}
       </ul>
 
+      {review.isError ? (
+        <FieldError>
+          {review.variables.row.source} draft:{" "}
+          {review.error instanceof ApiError && review.error.status === 404
+            ? "This draft is no longer available."
+            : formatError(review.error)}
+        </FieldError>
+      ) : null}
+      {revertMutation.isError ? <FieldError>{formatError(revertMutation.error)}</FieldError> : null}
       <AlertDialogContent isOpen={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogHeader>
           <AlertDialogTitle>Clear {FIELD_LABEL[field] ?? field}?</AlertDialogTitle>
@@ -216,46 +256,22 @@ function CanonicalRow({ canonical }: Readonly<CanonicalRowProps>): ReactElement 
 }
 
 type PendingRowProps = {
-  manifestationId: string;
-  field: string;
   row: MetadataVersionRow;
+  accepting: boolean;
+  rejecting: boolean;
+  busy: boolean;
+  onAccept: () => void;
+  onReject: () => void;
 };
 
-function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>): ReactElement {
-  const queryClient = useQueryClient();
-  const invalidate = () =>
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.books.detail(manifestationId),
-    });
-
-  const acceptMutation = useMutation({
-    mutationFn: () => acceptVersion(manifestationId, row.id),
-    onSuccess: () => {
-      void invalidate();
-      toast.success(`Accepted ${row.source} draft for ${FIELD_LABEL[field] ?? field}`);
-    },
-    onError: (err: unknown) => {
-      console.error("[VersionsTab.acceptVersion] mutation failed", err);
-      void invalidate();
-      toast.error(
-        err instanceof ApiError && err.status === 404
-          ? "This draft is no longer available to accept."
-          : formatError(err),
-      );
-    },
-  });
-  const rejectMutation = useMutation({
-    mutationFn: () => rejectVersion(manifestationId, row.id),
-    onSuccess: () => {
-      void invalidate();
-      toast.success(`Rejected ${row.source} draft`);
-    },
-    onError: (err: unknown) => {
-      console.error("[VersionsTab.rejectVersion] mutation failed", err);
-      toast.error(formatError(err));
-    },
-  });
-
+function PendingRow({
+  row,
+  accepting,
+  rejecting,
+  busy,
+  onAccept,
+  onReject,
+}: Readonly<PendingRowProps>): ReactElement {
   const value = renderValue(row.new_value);
 
   return (
@@ -267,24 +283,15 @@ function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>):
         <p className="text-fg mt-1 break-words">{value}</p>
       </div>
       <div className="flex shrink-0 gap-2">
-        <Button
-          size="sm"
-          onPress={() => {
-            acceptMutation.mutate();
-          }}
-          isPending={acceptMutation.isPending}
-          isDisabled={rejectMutation.isPending}
-        >
+        <Button size="sm" onPress={onAccept} isPending={accepting} isDisabled={busy && !accepting}>
           Accept
         </Button>
         <Button
           size="sm"
           variant="outline"
-          onPress={() => {
-            rejectMutation.mutate();
-          }}
-          isPending={rejectMutation.isPending}
-          isDisabled={acceptMutation.isPending}
+          onPress={onReject}
+          isPending={rejecting}
+          isDisabled={busy && !rejecting}
         >
           Reject
         </Button>

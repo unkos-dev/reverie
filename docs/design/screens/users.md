@@ -40,11 +40,11 @@ For a reset:
 
 "{name} uses this link to choose a new password. It expires {expiry}. You won't see it again."
 
-Show the read-only link, then "Copy link" and "Done". Copying succeeds with the toast "Link copied.". Build the URL from
-the browser's origin as `/set-password#{token}` when the account has no password and `/reset-password#{token}` when it
-has one. Closing the result clears the displayed link. Format {expiry} with the existing date-time formatter. If
-clipboard access is unavailable or denied, keep the link visible and show the error toast "Couldn't copy the link.
-Select the link and copy it manually.".
+Show the read-only link, then "Copy link" and "Done". Copying shows "Link copied." beside the control. Build the URL
+from the browser's origin as `/set-password#{token}` when the account has no password and `/reset-password#{token}` when
+it has one. Closing the result clears the displayed link. Format {expiry} with the existing date-time formatter. If
+clipboard access is unavailable or denied, keep the link visible and show local feedback "Couldn't copy the link. Select
+the link and copy it manually.".
 
 ## Reset and cancel
 
@@ -57,8 +57,8 @@ When a link is active, add "This replaces the link created earlier.". Buttons: "
 issuance opens the reset link result. A no-email refusal shows "Add an email address to {name} before creating a link."
 
 An active link adds an "invited" badge for an account without a password, or "link pending" for an account with one. Its
-accessible name appends "expires {expiry}". "Cancel link" appears while a link is active; success shows the toast "Link
-cancelled.". Cancelling does not change the password.
+accessible name appends "expires {expiry}". "Cancel link" appears while a link is active; success retains local "Link
+cancelled." feedback beside that account. Cancelling does not change the password.
 
 Hide "Reset password" on the administrator's own row. Hide "Create user", "Reset password" and "Cancel link" when local
 authentication is disabled. Retain the existing account and role controls, loading skeletons, empty state and list-error

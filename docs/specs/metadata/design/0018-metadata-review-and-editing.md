@@ -219,9 +219,10 @@ null. It applies no client date parser. Structured `ApiError.errors` values pass
 `Form.validationErrors` and native `FieldError` associations. A refused date and every other submitted value remain in
 the mounted form for correction. Publication guidance recommends YYYY-MM-DD or YYYY and leaving unknown values empty. An
 Accepted formats button opens the native popover with the full supported list and a format-reference link. General
-failures appear inline; structured field refusals use native field feedback. Ordinary failures and successful saves
-produce no toast; the actionable ETag conflict notification retains its existing owner. Pending, clear-confirmation and
-successful closure retain their existing owners.
+failures appear inline; structured field refusals use native field feedback. Ordinary failures and successful saves use
+the changed content and local feedback. ETag conflicts remain beside the refused inputs. Discard edits and reload
+explicitly replaces them with a fresh metadata read; a failed reload retains the draft. Review failures stay in their
+field section outside removable draft rows. Pending, clear-confirmation and successful closure retain their owners.
 
 **A manual `PATCH`: an operator edits publisher, clears pub_date, and sets a work identifier from the edit dialog.**
 

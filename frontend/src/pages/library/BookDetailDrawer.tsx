@@ -13,7 +13,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, FolderPlus, Loader2 } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 import { Link } from "react-router";
-import { toast } from "sonner";
 
 import { addShelfItem, getBook, listShelves, type BookDetail, type Shelf } from "@/api";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -216,15 +215,13 @@ function AddToShelf({
   const addMutation = useMutation({
     mutationFn: ({ shelfId }: { shelfId: string; shelfName: string }) =>
       addShelfItem(shelfId, bookId),
-    onSuccess: (_data, { shelfName }) => {
-      toast.success(`Added "${bookTitle}" to ${shelfName}`);
+    onSuccess: () => {
       // Whole family: list counts and any cached shelf detail both go
       // stale after a membership write.
       void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.all });
     },
-    onError: (mutationError, { shelfName }) => {
+    onError: (mutationError) => {
       console.error("[BookDetailDrawer] add to shelf failed", mutationError);
-      toast.error(`Couldn't add "${bookTitle}" to ${shelfName}`);
     },
   });
 
@@ -235,31 +232,59 @@ function AddToShelf({
   }
 
   return (
-    <DropdownMenu>
-      <Button type="button" variant="outline" isDisabled={addMutation.isPending}>
-        {addMutation.isPending ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        ) : (
-          <FolderPlus className="size-4" aria-hidden="true" />
-        )}
-        Add to shelf
-      </Button>
-      <DropdownMenuContent placement="bottom start">
-        {shelves === undefined || shelves.length === 0 ? (
-          <DropdownMenuItem isDisabled>{shelfStatusText()}</DropdownMenuItem>
-        ) : (
-          shelves.map((shelf) => (
-            <DropdownMenuItem
-              key={shelf.id}
-              onAction={() => {
-                addMutation.mutate({ shelfId: shelf.id, shelfName: shelf.name });
-              }}
-            >
-              {shelf.name}
-            </DropdownMenuItem>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="space-y-2">
+      <DropdownMenu>
+        <Button type="button" variant="outline" isDisabled={addMutation.isPending}>
+          {addMutation.isPending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <FolderPlus className="size-4" aria-hidden="true" />
+          )}
+          Add to shelf
+        </Button>
+        <DropdownMenuContent placement="bottom start">
+          {shelves === undefined || shelves.length === 0 ? (
+            <DropdownMenuItem isDisabled>{shelfStatusText()}</DropdownMenuItem>
+          ) : (
+            shelves.map((shelf) => (
+              <DropdownMenuItem
+                key={shelf.id}
+                onAction={() => {
+                  addMutation.mutate({ shelfId: shelf.id, shelfName: shelf.name });
+                }}
+              >
+                {shelf.name}
+              </DropdownMenuItem>
+            ))
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {addMutation.isPending ? (
+        <p role="status" className="text-fg-muted text-sm">
+          Adding “{bookTitle}” to {addMutation.variables.shelfName}…
+        </p>
+      ) : null}
+      {addMutation.isSuccess ? (
+        <p role="status" className="text-fg-muted text-sm">
+          Added “{bookTitle}” to {addMutation.variables.shelfName}.
+        </p>
+      ) : null}
+      {addMutation.isError ? (
+        <div className="space-y-2">
+          <p role="alert" className="text-destructive text-sm">
+            Couldn&apos;t add “{bookTitle}” to {addMutation.variables.shelfName}.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            onPress={() => {
+              addMutation.mutate(addMutation.variables);
+            }}
+          >
+            Try again
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }

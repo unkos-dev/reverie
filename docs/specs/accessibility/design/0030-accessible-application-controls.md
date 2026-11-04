@@ -86,6 +86,13 @@ Publication edits use one text field. Server `errors.pub_date` reaches `Form.val
 and the native `FieldError` identifies the refused field. The refused date and other submitted edits remain available;
 editing the field clears its native server error and permits correction without a competing client parser.
 
+Feedback stays with the action's context. Inline errors are not repeated in a toast. Copy status stays beside the
+read-only credential and retains manual-copy recovery. Row actions retain named failures beside their target. Membership
+outcomes remain outside the closing menu. Batch progress and consolidated results derive from a serial Query mutation's
+captured IDs and shelf; failed-ID retry and the result remain available when selection becomes empty. Completion removes
+only succeeded IDs from the current selection. Theme validation refusals render below the User chip; cookie and outage
+policies stay with the preference owner. Auth success uses fixed, allowlisted copy on the login destination.
+
 Field-specific validation appears beside its field with native associations. General API failures remain standalone
 alerts rather than being assigned to an unrelated field. Pending controls suppress duplicate submission while keeping
 the entered values available when the request settles. Cancellation and successful completion retain the owning screen's

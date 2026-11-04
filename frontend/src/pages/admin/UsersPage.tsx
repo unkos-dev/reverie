@@ -9,7 +9,6 @@ import { Form, Label as AriaLabel } from "react-aria-components";
 import { type ReactElement, useCallback, useState } from "react";
 import { Navigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { z } from "zod";
 
 import { useAuthMe } from "@/hooks/useAuthMe";
@@ -104,46 +103,6 @@ function UsersPage(): ReactElement {
     void queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
   }, [queryClient]);
 
-  const roleMutation = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: Role }) => updateUserRole(id, role),
-    onSuccess: () => {
-      invalidateUsers();
-      // Invalidate the caller's own identity. staleTime: Infinity means it
-      // never auto-refreshes, so a self-demotion would leave me.role='admin'
-      // cached indefinitely without this explicit invalidation.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() });
-    },
-    onError: (err: Error) => {
-      toast.error(`Role update failed: ${errorDetail(err)}`);
-    },
-  });
-
-  const statusMutation = useMutation({
-    mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) =>
-      setAccountStatus(id, disabled),
-    onSuccess: (user) => {
-      invalidateUsers();
-      toast.success(`${user.display_name} ${user.disabled ? "disabled" : "enabled"}.`);
-    },
-    onError: (err: Error) => {
-      toast.error(`Account status update failed: ${errorDetail(err)}`);
-    },
-  });
-
-  const handleRoleChange = useCallback(
-    (userId: string, role: Role) => {
-      roleMutation.mutate({ id: userId, role });
-    },
-    [roleMutation],
-  );
-
-  const handleStatusToggle = useCallback(
-    (userId: string, disabled: boolean) => {
-      statusMutation.mutate({ id: userId, disabled });
-    },
-    [statusMutation],
-  );
-
   if (meLoading) {
     return (
       <div className="mx-auto max-w-6xl p-6">
@@ -232,8 +191,6 @@ function UsersPage(): ReactElement {
                 isSelf={user.id === me.id}
                 localAuthEnabled={localAuthEnabled}
                 onLinkChange={invalidateUsers}
-                onRoleChange={handleRoleChange}
-                onStatusToggle={handleStatusToggle}
               />
             ))}
           </TableBody>
@@ -248,8 +205,6 @@ type UserRowProps = {
   onLinkChange: () => void;
   user: User;
   isSelf: boolean;
-  onRoleChange: (userId: string, role: Role) => void;
-  onStatusToggle: (userId: string, disabled: boolean) => void;
 };
 
 function isRole(v: string): v is Role {
@@ -261,9 +216,19 @@ function UserRow({
   onLinkChange,
   user,
   isSelf,
-  onRoleChange,
-  onStatusToggle,
 }: Readonly<UserRowProps>): ReactElement {
+  const queryClient = useQueryClient();
+  const roleMutation = useMutation({
+    mutationFn: (role: Role) => updateUserRole(user.id, role),
+    onSuccess: () => {
+      onLinkChange();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() });
+    },
+  });
+  const statusMutation = useMutation({
+    mutationFn: (disabled: boolean) => setAccountStatus(user.id, disabled),
+    onSuccess: onLinkChange,
+  });
   const activeExpiry = user.credential_link_expires_at;
   const linkActive = activeExpiry !== null;
   const linkStatus = user.has_password ? "link pending" : "invited";
@@ -271,10 +236,6 @@ function UserRow({
     mutationFn: () => cancelCredentialLink(user.id),
     onSuccess: () => {
       onLinkChange();
-      toast.success("Link cancelled.");
-    },
-    onError: (err: Error) => {
-      toast.error(errorDetail(err));
     },
   });
   return (
@@ -292,9 +253,10 @@ function UserRow({
         <Select
           aria-label="Role"
           value={user.role}
+          isDisabled={roleMutation.isPending}
           onChange={(v) => {
             if (typeof v !== "string") return;
-            if (isRole(v)) onRoleChange(user.id, v);
+            if (isRole(v)) roleMutation.mutate(v);
           }}
         >
           <SelectTrigger className="w-28">
@@ -306,6 +268,9 @@ function UserRow({
             <SelectItem id="child">child</SelectItem>
           </SelectContent>
         </Select>
+        {roleMutation.isError ? (
+          <FieldError>Role update failed: {errorDetail(roleMutation.error)}</FieldError>
+        ) : null}
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap gap-2">
@@ -346,14 +311,26 @@ function UserRow({
             <Button
               variant={user.disabled ? "outline" : "destructive"}
               size="sm"
+              isPending={statusMutation.isPending}
               onPress={() => {
-                onStatusToggle(user.id, !user.disabled);
+                statusMutation.mutate(!user.disabled);
               }}
             >
               {user.disabled ? "Enable" : "Disable"}
             </Button>
           )}
         </div>
+        {statusMutation.isError ? (
+          <FieldError>Account status update failed: {errorDetail(statusMutation.error)}</FieldError>
+        ) : null}
+        {cancel.isError ? (
+          <FieldError>Could not cancel link: {errorDetail(cancel.error)}</FieldError>
+        ) : null}
+        {cancel.isSuccess ? (
+          <p role="status" className="text-fg-muted text-sm">
+            Link cancelled.
+          </p>
+        ) : null}
       </TableCell>
     </TableRow>
   );
@@ -432,12 +409,13 @@ function LinkResultContent({
     : `${result.name} uses this link to choose a new password. It expires ${expiry}. You won't see it again.`;
   const sendLabel =
     status?.status === "failed" || sending.isError || delivery.isError ? "Try again" : "Send email";
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   async function copyLink(): Promise<void> {
     try {
       await navigator.clipboard.writeText(url);
-      toast.success("Link copied.");
+      setCopyStatus("Link copied.");
     } catch {
-      toast.error("Couldn't copy the link. Select the link and copy it manually.");
+      setCopyStatus("Couldn't copy the link. Select the link and copy it manually.");
     }
   }
   return (
@@ -447,6 +425,11 @@ function LinkResultContent({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <Input readOnly value={url} aria-label="Credential link" />
+      {copyStatus !== null ? (
+        <p role="status" className="text-fg-muted mt-2 text-sm">
+          {copyStatus}
+        </p>
+      ) : null}
       {mailMessage !== null ? (
         <p role="status" className="mt-4 text-sm">
           {mailMessage}

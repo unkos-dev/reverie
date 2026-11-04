@@ -15,8 +15,6 @@ vi.mock("@/api", async (importOriginal) => {
   return { ...original, acceptVersion: vi.fn(), getBook: vi.fn(), revertField: vi.fn() };
 });
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-
 afterEach(() => {
   vi.resetAllMocks();
 });

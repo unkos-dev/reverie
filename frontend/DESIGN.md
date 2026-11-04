@@ -449,6 +449,13 @@ The canonical brand palette, Radix Colors and generated colour primitives remain
 shadcn-compatibility aliases in `styles/themes/index.css` remain available to existing components. New code prefers the
 canonical `--color-canvas` / `--color-fg` / `--color-accent` token names.
 
+Action feedback stays in the owning flow. Copy status sits beside the credential; failed row actions name their target.
+Membership outcomes remain below the shelf menu. Batch progress, consolidated outcomes and failed-book retry remain in
+the labelled Group even when selection becomes empty. Metadata conflicts retain edits above the form actions and offer
+an explicit Discard edits and reload action. Theme validation refusal appears below the User chip. Successful account
+creation and password changes use fixed context at the login destination. Visible changed content communicates routine
+success; inline errors are not repeated in a toast.
+
 ### Buttons
 
 - **Shape:** rounded-lg (0.75 rem / 12 px) by default. Smaller variants reach for `min(var(--radius-md), 12px)` (sm /
