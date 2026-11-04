@@ -33,5 +33,5 @@ server access logs. See the
   without the header when that response supplies no token. Checked by
   `"POST with no cached token hydrates once; still omits the header when none is issued"` in
   `frontend/tests/browser/api/fetch.test.tsx`.
-- A `GET /auth/me` response whose `csrf_token` is an empty string supplies no token: the next mutating request carries
-  no `X-CSRF-Token` header.
+- A `GET /auth/me` response whose `csrf_token` is an empty string supplies no token, so a mutating request whose token
+  acquisition yields only that response is sent without the header.

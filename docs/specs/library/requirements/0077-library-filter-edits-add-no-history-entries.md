@@ -22,4 +22,5 @@ would replay the reader's narrowing steps instead of returning them to where the
 
 ## Acceptance criteria
 
-- After filter edits, Back from Library leaves the Library rather than stepping through earlier filter states.
+- After filter edits, Back reaches the entry that preceded the edited visit, which may itself be a Library visit, rather
+  than stepping through earlier filter states.
