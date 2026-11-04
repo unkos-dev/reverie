@@ -69,25 +69,19 @@ describe("apiFetch — CSRF header injection", () => {
     },
   );
 
-  test.each([
-    ["no csrf_token", {}],
-    ["an empty csrf_token", { csrf_token: "" }],
-  ])(
-    "POST with no cached token hydrates once; omits the header when hydration yields %s",
-    async (_, body) => {
-      const fetchSpy = vi
-        .spyOn(globalThis, "fetch")
-        .mockResolvedValueOnce(jsonResponse(body))
-        .mockResolvedValueOnce(jsonResponse({ ok: true }));
+  test("POST with no cached token hydrates once; still omits the header when none is issued", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-      await apiFetch("/api/v1/books", { method: "POST" });
+    await apiFetch("/api/v1/books", { method: "POST" });
 
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
-      expect(fetchSpy.mock.calls[0]?.[0]).toBe("/auth/me");
-      const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
-      expect(headers.has("X-CSRF-Token")).toBe(false);
-    },
-  );
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/auth/me");
+    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
+    expect(headers.has("X-CSRF-Token")).toBe(false);
+  });
 });
 
 describe("apiFetch — CSRF rejection retry", () => {
@@ -119,7 +113,7 @@ describe("apiFetch — CSRF rejection retry", () => {
     expect(retriedHeaders.get("X-CSRF-Token")).toBe(REFRESHED_TOKEN);
   });
 
-  test("a CSRF rejection of the retried request reaches the caller without another retry", async () => {
+  test("an empty refreshed token drops the stale header, and the retry's rejection reaches the caller", async () => {
     await seedCsrf(SAMPLE_TOKEN);
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -130,7 +124,7 @@ describe("apiFetch — CSRF rejection retry", () => {
           status: 403,
         }),
       )
-      .mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }))
+      .mockResolvedValueOnce(jsonResponse({ csrf_token: "" }))
       .mockResolvedValueOnce(
         problemResponse({
           type: "https://reverie.example/probs/csrf-missing",
@@ -146,6 +140,7 @@ describe("apiFetch — CSRF rejection retry", () => {
     expect(err.status).toBe(428);
     expect(err.problemSlug).toBe("csrf-missing");
     expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(new Headers(fetchSpy.mock.calls[2]?.[1]?.headers).has("X-CSRF-Token")).toBe(false);
   });
 
   test("a non-CSRF 428 throws without a retry", async () => {

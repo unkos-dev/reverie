@@ -31,9 +31,9 @@ server access logs. See the
   `frontend/tests/browser/api/fetch.test.tsx`.
 - A mutating request issued while the client holds no token is preceded by exactly one `GET /auth/me`, and is sent
   without the header when that response supplies no token. Checked by
-  `"POST with no cached token hydrates once; omits the header when hydration yields %s"` in
+  `"POST with no cached token hydrates once; still omits the header when none is issued"` in
   `frontend/tests/browser/api/fetch.test.tsx`.
 - A `GET /auth/me` response whose `csrf_token` is an empty string supplies no token, so a mutating request whose token
-  acquisition yields only that response is sent without the header. Checked by the empty `csrf_token` case of
-  `"POST with no cached token hydrates once; omits the header when hydration yields %s"` in
+  acquisition yields only that response is sent without the header. Checked by
+  `"an empty refreshed token drops the stale header, and the retry's rejection reaches the caller"` in
   `frontend/tests/browser/api/fetch.test.tsx`.

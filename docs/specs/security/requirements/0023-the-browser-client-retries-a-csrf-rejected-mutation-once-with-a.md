@@ -39,7 +39,7 @@ that tab without a full page reload.
   `frontend/tests/browser/api/fetch.test.tsx`.
 - A CSRF rejection of the resent request is not retried: the mutation is sent at most twice, and the caller receives the
   second rejection as an error. Checked by
-  `"a CSRF rejection of the retried request reaches the caller without another retry"` in
+  `"an empty refreshed token drops the stale header, and the retry's rejection reaches the caller"` in
   `frontend/tests/browser/api/fetch.test.tsx`.
 
 ## More information
