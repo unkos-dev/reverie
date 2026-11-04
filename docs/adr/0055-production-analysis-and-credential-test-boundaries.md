@@ -63,9 +63,15 @@ against each scan, so a newly available fix restores the finding. Unclassifiable
 stay in `snyk-container-sarif-unfiltered` for 14 days and withheld counts appear in the step summary. Withholding an
 unfixable base-OS CVE accepts risk; it makes no VEX `not_affected` assertion. The SBOM still lists all packages.
 
-Snyk Open Source scans all projects with development dependencies. Its severity sanitiser removes invalid non-numeric
-CVSS properties from licence findings without dropping findings. Main-branch monitoring refreshes the dependency
-baseline with `--target-reference=main`.
+Snyk Open Source scans all projects with development dependencies and uses the monitored `main` target's reviewed
+decisions. Dashboard ingestion withholds only results carrying an accepted external suppression; pending, rejected and
+unclassified results remain visible. Snyk owns decision scope, expiry and restoration when a fix becomes available,
+avoiding a second ignore list in the repository. Raw results remain available for 14 days, and withheld counts appear in
+the step summary.
+
+SARIF compatibility handling removes invalid non-numeric CVSS properties and optional suppression `guid` properties from
+the upload copy. This preserves findings and decision status while meeting GitHub's schema, which rejects UUIDv7
+suppression identifiers. The retained raw output preserves those identifiers and the decision justifications.
 
 ### Consequences
 
@@ -77,3 +83,6 @@ baseline with `--target-reference=main`.
   review within their retention window.
 - Negative: the CodeQL Rust extractor is beta, so changes to its options or test boundaries require renewed proof.
 - Negative: the container predicate depends on remediation wording; changed wording restores alerts until reviewed.
+- Negative: GitHub treats withheld Open Source findings as fixed rather than dismissed. The acceptance rationale remains
+  in Snyk and the retained raw output; it does not mean the dependency was repaired.
+- Negative: Open Source ingestion depends on Snyk applying current decisions, including expiry and fix availability.
