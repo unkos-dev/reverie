@@ -18,7 +18,6 @@ import { useActionState, useEffect, useRef, type ReactElement } from "react";
 import { Form, type FormProps } from "react-aria-components";
 import { Link, Navigate, useLocation } from "react-router";
 import { z } from "zod";
-import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, loginLocal } from "@/api/auth";
@@ -127,7 +126,6 @@ export function Component(): ReactElement {
     } catch (err) {
       const message =
         err instanceof ApiError && err.detail !== "" ? err.detail : "Incorrect email or password.";
-      toast.error(message);
       return { values, error: message };
     }
   }, {});

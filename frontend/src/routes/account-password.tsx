@@ -75,7 +75,6 @@ export function Component(): ReactElement {
         err instanceof ApiError && err.detail !== ""
           ? err.detail
           : "Could not change the password.";
-      toast.error(message);
       return { values, error: message };
     }
   }, {});

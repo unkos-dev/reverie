@@ -257,7 +257,6 @@ function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>):
   });
 
   const value = renderValue(row.new_value);
-  const busy = acceptMutation.isPending || rejectMutation.isPending;
 
   return (
     <li className="border-border flex items-start justify-between gap-4 rounded-sm border p-3">
@@ -273,7 +272,8 @@ function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>):
           onPress={() => {
             acceptMutation.mutate();
           }}
-          isDisabled={busy}
+          isPending={acceptMutation.isPending}
+          isDisabled={rejectMutation.isPending}
         >
           Accept
         </Button>
@@ -283,7 +283,8 @@ function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>):
           onPress={() => {
             rejectMutation.mutate();
           }}
-          isDisabled={busy}
+          isPending={rejectMutation.isPending}
+          isDisabled={acceptMutation.isPending}
         >
           Reject
         </Button>

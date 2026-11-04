@@ -334,7 +334,7 @@ function UserRow({
             <Button
               variant="outline"
               size="sm"
-              isDisabled={cancel.isPending}
+              isPending={cancel.isPending}
               onPress={() => {
                 cancel.mutate();
               }}

@@ -12,6 +12,7 @@
 import { FolderPlus, Loader2 } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Group } from "react-aria-components";
 import { toast } from "sonner";
 
 import { addShelfItem, listShelves, type Shelf } from "@/api";
@@ -97,8 +98,7 @@ export function BatchBar({
   }
 
   return (
-    <div
-      role="toolbar"
+    <Group
       aria-label="Batch actions"
       className="border-border bg-surface-1 sticky bottom-4 z-10 mt-4 flex flex-wrap items-center gap-3 border p-3"
     >
@@ -146,6 +146,6 @@ export function BatchBar({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
+    </Group>
   );
 }

@@ -211,7 +211,7 @@ function TokenRow({ token, onRevoke, revoking }: Readonly<TokenRowProps>): React
         <Button
           variant="destructive"
           size="sm"
-          isDisabled={revoking}
+          isPending={revoking}
           onPress={() => {
             onRevoke(token.id);
           }}
@@ -245,7 +245,6 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
     onError: (err: Error) => {
       const detail = errorDetail(err);
       setError(detail);
-      toast.error(`Create failed: ${detail}`);
     },
   });
 

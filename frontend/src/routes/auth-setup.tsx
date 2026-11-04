@@ -91,7 +91,6 @@ export function Component(): ReactElement {
       } catch (err) {
         const message =
           err instanceof ApiError && err.detail !== "" ? err.detail : "Could not complete setup.";
-        toast.error(message);
         return { values, error: message };
       }
     },

@@ -49,9 +49,6 @@ function ShelvesContent(): ReactElement {
       toast.success("Shelf created.");
       setCreateOpen(false);
     },
-    onError: (err) => {
-      toast.error(err instanceof ApiError ? err.detail : "Could not create shelf.");
-    },
   });
 
   const renameMutation = useMutation({
@@ -60,9 +57,6 @@ function ShelvesContent(): ReactElement {
       void qc.invalidateQueries({ queryKey: queryKeys.shelves.all });
       toast.success("Shelf renamed.");
       setRenameTarget(null);
-    },
-    onError: (err) => {
-      toast.error(err instanceof ApiError ? err.detail : "Could not rename shelf.");
     },
   });
 
@@ -137,7 +131,8 @@ function ShelvesContent(): ReactElement {
                   onPress={() => {
                     deleteMutation.mutate(shelf.id);
                   }}
-                  isDisabled={deleteMutation.isPending}
+                  isPending={deleteMutation.isPending && deleteMutation.variables === shelf.id}
+                  isDisabled={deleteMutation.isPending && deleteMutation.variables !== shelf.id}
                 >
                   <Trash2 className="size-4" aria-hidden="true" />
                 </Button>

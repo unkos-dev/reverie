@@ -57,6 +57,10 @@ error; retrying within the open dialog retains both.
 
 ## Runtime behaviour
 
+Persistent write initiators use native Button pending state: they retain focus and suppress repeated activation while
+the request settles. Conflicting siblings are disabled. Batch actions use a labelled Group with ordinary Tab order and
+immediate native shelf menus.
+
 Actions stay pending until the awaited mutation and its completion work settle. Expected refusals retain entered values
 and allow correction or retry. Successful submission preserves each screen's navigation, reset or dialog closure
 behaviour. Token receipt values use read-only TextFields with associated Labels and styled Inputs.
