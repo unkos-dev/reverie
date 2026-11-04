@@ -44,8 +44,6 @@ owasp-array-limit:
 owasp-string-limit:
   - $.paths['/api/v1/authors/suggest'].get.parameters[0].schema
   - $.paths['/api/v1/books'].get.parameters[0].schema
-  - $.paths['/api/v1/books'].get.parameters[7].schema.items
-  - $.paths['/api/v1/books'].get.parameters[8].schema.items
   - $.paths['/api/v1/books'].get.parameters[9].schema.items
   - $.paths['/api/v1/books'].get.parameters[10].schema.items
   - $.paths['/api/v1/books'].get.parameters[11].schema.items
@@ -53,15 +51,17 @@ owasp-string-limit:
   - $.paths['/api/v1/books'].get.parameters[13].schema.items
   - $.paths['/api/v1/books'].get.parameters[14].schema.items
   - $.paths['/api/v1/books'].get.parameters[15].schema.items
-  - $.paths['/api/v1/books'].get.parameters[16].schema
-  - $.paths['/api/v1/books'].get.parameters[17].schema
+  - $.paths['/api/v1/books'].get.parameters[16].schema.items
+  - $.paths['/api/v1/books'].get.parameters[17].schema.items
   - $.paths['/api/v1/books'].get.parameters[18].schema
   - $.paths['/api/v1/books'].get.parameters[19].schema
+  - $.paths['/api/v1/books'].get.parameters[20].schema
   - $.paths['/api/v1/books'].get.parameters[21].schema
-  - $.paths['/api/v1/books'].get.parameters[22].schema
-  - $.paths['/api/v1/books'].get.parameters[27].schema
-  - $.paths['/api/v1/books'].get.parameters[28].schema
-  - $.paths['/api/v1/books'].get.parameters[34].schema
+  - $.paths['/api/v1/books'].get.parameters[23].schema
+  - $.paths['/api/v1/books'].get.parameters[24].schema
+  - $.paths['/api/v1/books'].get.parameters[29].schema
+  - $.paths['/api/v1/books'].get.parameters[30].schema
+  - $.paths['/api/v1/books'].get.parameters[36].schema
   - $.paths['/api/v1/books/{id}/metadata'].patch.parameters[1].schema
   - $.paths['/api/v1/books/{id}/reading'].patch.parameters[1].schema
   - $.paths['/api/v1/dashboard/enrichment-failures'].get.parameters[0].schema
