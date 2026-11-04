@@ -62,6 +62,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(suggest_series))
         .routes(routes!(suggest_publishers))
         .routes(routes!(authors_by_id))
+        .routes(routes!(series_by_id))
 }
 
 /// Upper bound on `?id=` repetitions for the authors batch-get. Chip hydration
@@ -131,6 +132,25 @@ struct AuthorsByIdParams {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 struct AuthorsResponse {
     items: Vec<Suggestion>,
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct SeriesByIdParams {
+    #[serde(default)]
+    #[param(max_items = 60, max_length = 45)]
+    id: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct SeriesLabel {
+    id: Uuid,
+    value: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct SeriesResponse {
+    items: Vec<SeriesLabel>,
 }
 
 /// Validated, normalized inputs shared by every entity's query pair, so each
@@ -779,6 +799,70 @@ async fn authors_by_id(
     Ok(Json(AuthorsResponse { items }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/series",
+    summary = "Resolve series ids to names",
+    description = "Resolves the requested series ids to display names. Only series attached to a manifestation in the caller's visible library are returned; hidden and unknown ids are omitted alike. Requires at least one id and rejects more than 60.",
+    tag = "suggest",
+    params(SeriesByIdParams),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    responses(
+        (status = 200, description = "Resolved series labels", body = SeriesResponse),
+        (status = 400, description = "Malformed id parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Missing id filter or too many ids", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn series_by_id(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    params: Result<Query<SeriesByIdParams>, QueryRejection>,
+) -> Result<Json<SeriesResponse>, AppError> {
+    let Query(params) = params?;
+    if params.id.is_empty() {
+        return Err(AppError::Validation("id filter is required".into()));
+    }
+    if params.id.len() > MAX_RESOLVE_IDS {
+        return Err(AppError::Validation(format!(
+            "too many id filters: maximum {MAX_RESOLVE_IDS}"
+        )));
+    }
+    let mut ids = params.id;
+    ids.sort_unstable();
+    ids.dedup();
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let rows = sqlx::query_as!(
+        VocabRow,
+        r#"SELECT s.id, s.name
+             FROM series s
+            WHERE s.id = ANY($1)
+              AND EXISTS (
+                      SELECT 1 FROM series_works sw
+                      JOIN manifestations m ON m.work_id = sw.work_id
+                     WHERE sw.series_id = s.id
+                  )
+            ORDER BY s.name ASC"#,
+        &ids,
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let items = rows
+        .into_iter()
+        .map(|row| SeriesLabel {
+            id: row.id,
+            value: row.name,
+        })
+        .collect();
+    Ok(Json(SeriesResponse { items }))
+}
+
 /// `GET /api/v1/series/suggest`: series names in use on a visible
 /// manifestation, ranked prefix-first then by similarity.
 ///
@@ -954,6 +1038,64 @@ mod tests {
             .iter()
             .map(|s| s["value"].as_str().expect("value string").to_owned())
             .collect()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn series_by_id_omits_out_of_rls_scope(pool: PgPool) {
+        // Listed boundary: private labels cannot disclose an unseen manifestation.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (visible_work, visible_book) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "series-visible")
+                .await;
+        let (hidden_work, _) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "series-hidden").await;
+        let visible = sqlx::query_scalar!(
+            "INSERT INTO series (name, sort_name) VALUES ($1, $1) RETURNING id",
+            "Visible series",
+        )
+        .fetch_one(&ingestion_pool)
+        .await
+        .unwrap();
+        let hidden = sqlx::query_scalar!(
+            "INSERT INTO series (name, sort_name) VALUES ($1, $1) RETURNING id",
+            "Hidden series",
+        )
+        .fetch_one(&ingestion_pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO series_works (series_id, work_id) VALUES ($1, $2), ($3, $4)",
+            visible,
+            visible_work,
+            hidden,
+            hidden_work,
+        )
+        .execute(&ingestion_pool)
+        .await
+        .unwrap();
+        let (child, basic) =
+            test_support::db::create_child_user_and_basic_auth(&app_pool, "series-child").await;
+        let shelf = test_support::db::create_shelf(&app_pool, child, "Visible books").await;
+        test_support::db::add_to_shelf(&app_pool, shelf, visible_book).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        let unknown = Uuid::new_v4();
+        let response = server
+            .get(&format!(
+                "/api/v1/series?id={visible}&id={hidden}&id={unknown}"
+            ))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "{}",
+            response.text()
+        );
+        assert_eq!(
+            response.json::<serde_json::Value>(),
+            serde_json::json!({"items": [{"id": visible, "value": "Visible series"}]})
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

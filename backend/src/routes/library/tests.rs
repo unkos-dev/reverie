@@ -467,8 +467,7 @@ async fn work_endpoint_child_without_shelf_returns_404_not_empty_array(pool: PgP
 
 #[sqlx::test(migrations = "./migrations")]
 async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
-    // Cross-user shelf probe: caller queries another user's shelf id —
-    // the filter must yield zero rows, not leak shelf contents.
+    // REV-REQ-0059: scalar and multi-shelf filters cannot reveal foreign memberships.
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -479,8 +478,10 @@ async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
     let (_w2, m2) = insert_book(&ingestion_pool, "b", "Other Book").await;
 
     let my_shelf = test_support::db::create_shelf(&app_pool, admin_id, "mine").await;
+    let second_shelf = test_support::db::create_shelf(&app_pool, admin_id, "second").await;
     let other_shelf = test_support::db::create_shelf(&app_pool, other_id, "theirs").await;
     test_support::db::add_to_shelf(&app_pool, my_shelf, m1).await;
+    test_support::db::add_to_shelf(&app_pool, second_shelf, m2).await;
     test_support::db::add_to_shelf(&app_pool, other_shelf, m2).await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
@@ -499,7 +500,7 @@ async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
 
     let r = server
         .get(&format!("/api/v1/books?shelf={other_shelf}"))
-        .add_header(AUTHORIZATION, basic)
+        .add_header(AUTHORIZATION, basic.clone())
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
     let items = r.json::<serde_json::Value>()["items"]
@@ -510,6 +511,38 @@ async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
         items.is_empty(),
         "must not expose another user's shelf members"
     );
+
+    let owned = server
+        .get(&format!(
+            "/api/v1/books?shelf_any={my_shelf}&shelf_any={second_shelf}"
+        ))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(owned.status_code(), StatusCode::OK);
+    let mut ids: Vec<Uuid> = owned.json::<serde_json::Value>()["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| serde_json::from_value(item["id"].clone()).unwrap())
+        .collect();
+    ids.sort_unstable();
+    let mut expected = vec![m1, m2];
+    expected.sort_unstable();
+    assert_eq!(ids, expected);
+
+    for unavailable in [other_shelf, Uuid::new_v4()] {
+        let mixed = server
+            .get(&format!(
+                "/api/v1/books?shelf_any={my_shelf}&shelf_any={unavailable}"
+            ))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(mixed.status_code(), StatusCode::OK);
+        assert_eq!(
+            mixed.json::<serde_json::Value>()["items"],
+            serde_json::json!([])
+        );
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -853,7 +886,7 @@ async fn filter_numeric_equal_bounds_match_and_inverted_bounds_are_empty(pool: P
 async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let (w1, thin) = insert_book_at(&ingestion_pool, "thin", "Thin", ts(1)).await;
     set_pages(&ingestion_pool, thin, 100).await;
     let (w2, thick) = insert_book_at(&ingestion_pool, "thick", "Thick", ts(2)).await;
@@ -874,6 +907,27 @@ async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPo
     .execute(&ingestion_pool)
     .await
     .expect("link shared author to second work");
+    let series = sqlx::query_scalar!(
+        "INSERT INTO series (name, sort_name) VALUES ($1, $1) RETURNING id",
+        "Shared series",
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .unwrap();
+    sqlx::query!(
+        "INSERT INTO series_works (series_id, work_id) VALUES ($1, $2), ($3, $4)",
+        series,
+        w1,
+        series,
+        w2,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .unwrap();
+    let shelf = test_support::db::create_shelf(&app_pool, admin, "Both books").await;
+    let empty_shelf = test_support::db::create_shelf(&app_pool, admin, "Empty").await;
+    test_support::db::add_to_shelf(&app_pool, shelf, thin).await;
+    test_support::db::add_to_shelf(&app_pool, shelf, thick).await;
     // page_size 1 so page 1 yields a cursor mid-walk.
     let server = server_with_page_size(&app_pool, &ingestion_pool, 1);
 
@@ -918,9 +972,11 @@ async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPo
     // matches both books, so at page_size 1 the walk spans two pages and mints
     // a cursor; `other` is an unrelated id that any-of tolerates.
     let other = Uuid::new_v4();
+    let arrays =
+        format!("shelf_any={shelf}&shelf_any={empty_shelf}&series_any={series}&series_any={other}");
     let minted = server
         .get(&format!(
-            "/api/v1/books?author_any={shared}&author_any={other}&pages_gte=50"
+            "/api/v1/books?author_any={shared}&author_any={other}&pages_gte=50&{arrays}"
         ))
         .add_header(AUTHORIZATION, basic.clone())
         .await;
@@ -932,9 +988,9 @@ async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPo
         .to_owned();
     let reordered = server
         .get(&format!(
-            "/api/v1/books?author_any={other}&author_any={shared}&pages_gte=50&cursor={nc}"
+            "/api/v1/books?author_any={other}&author_any={shared}&pages_gte=50&shelf_any={empty_shelf}&shelf_any={shelf}&series_any={other}&series_any={series}&cursor={nc}"
         ))
-        .add_header(AUTHORIZATION, basic)
+        .add_header(AUTHORIZATION, basic.clone())
         .await;
     assert_eq!(
         reordered.status_code(),
@@ -942,6 +998,30 @@ async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPo
         "reordered values must keep the fingerprint: {}",
         reordered.text()
     );
+    // REV-REQ-0057: each changed predicate rejects the cursor without returning items.
+    for changed_arrays in [
+        format!("shelf_any={shelf}&series_any={series}&series_any={other}"),
+        format!("shelf_any={shelf}&shelf_any={empty_shelf}&series_any={series}"),
+    ] {
+        let changed = server
+            .get(&format!(
+                "/api/v1/books?author_any={shared}&author_any={other}&pages_gte=50&{changed_arrays}&cursor={nc}"
+            ))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let problem = test_support::assert_problem(
+            &changed,
+            problems::VALIDATION,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+        assert!(
+            problem["detail"]
+                .as_str()
+                .unwrap()
+                .contains("cursor filter mismatch")
+        );
+        assert!(problem.get("items").is_none());
+    }
 }
 
 // ── external identifiers + ratings projection ────────────────────────────

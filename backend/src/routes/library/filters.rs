@@ -103,6 +103,8 @@ pub(super) fn validate(p: &ListParams) -> Result<(), AppError> {
         ("author", p.author.len()),
         ("author_any", p.author_any.len()),
         ("author_none", p.author_none.len()),
+        ("series_any", p.series_any.len()),
+        ("shelf_any", p.shelf_any.len()),
         ("status_any", p.status_any.len()),
         ("status_none", p.status_none.len()),
     ] {
@@ -176,6 +178,8 @@ pub(super) fn canonical_filter_string(p: &ListParams) -> String {
     push_multi(&mut parts, "author", &uuids_to_strings(&p.author));
     push_multi(&mut parts, "author_any", &uuids_to_strings(&p.author_any));
     push_multi(&mut parts, "author_none", &uuids_to_strings(&p.author_none));
+    push_multi(&mut parts, "series_any", &uuids_to_strings(&p.series_any));
+    push_multi(&mut parts, "shelf_any", &uuids_to_strings(&p.shelf_any));
     push_multi(&mut parts, "tag", &p.tag);
     push_multi(&mut parts, "tag_any", &p.tag_any);
     push_multi(&mut parts, "tag_none", &p.tag_none);
@@ -274,6 +278,14 @@ pub(super) fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListPa
         qb.push_bind(series_id);
         qb.push(")");
     }
+    if !p.series_any.is_empty() {
+        qb.push(
+            " AND EXISTS (SELECT 1 FROM series_works sw2 \
+              WHERE sw2.work_id = w.id AND sw2.series_id = ANY(",
+        );
+        qb.push_bind(p.series_any.clone());
+        qb.push("))");
+    }
     if let Some(shelf_id) = p.shelf {
         qb.push(
             " AND EXISTS (SELECT 1 FROM shelf_items si \
@@ -283,6 +295,19 @@ pub(super) fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListPa
         );
         qb.push_bind(shelf_id);
         qb.push(" AND s.user_id = current_setting('app.current_user_id', true)::uuid)");
+    }
+    if !p.shelf_any.is_empty() {
+        qb.push(" AND NOT EXISTS (SELECT 1 FROM unnest(");
+        qb.push_bind(p.shelf_any.clone());
+        qb.push(
+            "::uuid[]) requested(id) WHERE NOT EXISTS (\
+             SELECT 1 FROM shelves s WHERE s.id = requested.id \
+             AND s.user_id = current_setting('app.current_user_id', true)::uuid)) \
+             AND EXISTS (SELECT 1 FROM shelf_items si \
+             WHERE si.manifestation_id = m.id AND si.shelf_id = ANY(",
+        );
+        qb.push_bind(p.shelf_any.clone());
+        qb.push("))");
     }
     push_vocab_predicates(
         qb,
