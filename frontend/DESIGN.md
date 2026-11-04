@@ -540,6 +540,11 @@ header uses surface-2, row hover uses surface, and selected rows use accent-soft
 Source: [LibraryTableView](src/pages/library/table/LibraryTableView.tsx) and the
 [grid theme](src/lib/grid/grid-theme.css).
 
+Shelf filters use a native multiple ListBox with visible options and section Clear. Series filters use a searchable
+multiple ComboBox with removable tags. Both match any selected value, with no synthetic All option. Removing one chip
+keeps the other selections. Series choices and restored labels come from independent queries, so narrowing results does
+not remove available options. Search text stays after choosing a series.
+
 ### Signature: Lockup
 
 The canonical brand expression — glyph (the Slot) + wordmark, inline, at `src/components/Lockup.tsx`. The Lockup is

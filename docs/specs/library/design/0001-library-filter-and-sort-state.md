@@ -46,6 +46,18 @@ Vocabulary filters compose multiple-selection ComboBoxes with a limit of 20 valu
 Associated description text explains how to make room; oversized selections use controlled invalidity and FieldError
 feedback.
 
+Shelf and series selections are UUID arrays, matching ANY within a facet and AND between facets. A native multiple
+ListBox keeps the independently fetched owned shelf options visible. Toggle selection and select-all publish actual IDs;
+empty selection is unrestricted, including unassigned books. Oversized selection remains editable with associated
+feedback while list requests stay blocked. Section Clear and per-ID chip removal use the same visit owner.
+
+Series uses the multiple ComboBox and TagGroup composition with UUID identity. Native `allowsCustomValue` retains free
+search text on commit and dismissal; only selected UUID items publish predicates. Its independent server suggestions
+require two query characters and return up to twenty ranked choices. Controlled query text remains after selection and
+does not depend on narrowed Library results. `useSeriesLabels` reads bounded `GET /api/v1/series?id=…` data for restored
+chips and selections; missing or failed labels retain the selected UUID with a short-ID fallback. No response writes
+filter intent.
+
 `useLibraryPreferences()` resolves sort and display preferences. The page supplies its one sort intent handler to the
 rail and table headers. `useInfiniteQuery` observes the current filter request, retaining previous pages through
 `keepPreviousData` while a changed request loads.
@@ -129,6 +141,11 @@ Closure creates no separate commit or rollback transaction.
 An absent or malformed owned payload starts a clean visit as a unit. Restoration preserves unrelated entry data and adds
 no recovery write or UI; the next ordinary owner write replaces the owned payload. Intrinsic numeric domains and
 calendar values are checked before restored data drives controls or requests.
+
+Legacy scalar shelf and series values decode to singleton arrays; absent values become empty arrays. This decoding adds
+no recovery write. A malformed member still rejects the owned payload atomically. Wire projection uses `shelf_any` and
+`series_any`; scalar API parameters remain available to other callers. Query keys sort array values and remove
+duplicates, retaining the source key attached to displayed rows.
 
 Exceeding a text or selection-count limit does not make an otherwise well-formed visit malformed. Such visits retain all
 filters and the view override for correction or clearing, while request eligibility enforces those limits.

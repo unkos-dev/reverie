@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from "lucide-react";
-import { Button as AriaButton } from "react-aria-components";
-import { useEffect, type ReactElement, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, X } from "lucide-react";
+import { Button as AriaButton, ListBox, ListBoxItem } from "react-aria-components";
+import { useEffect, useId, type ReactElement, type ReactNode } from "react";
 
 import { listShelves, MAX_SORT_LEVELS, SORT_FIELDS, type Shelf, type SortLevelParam } from "@/api";
-import { Checkbox } from "@/components/ui/checkbox";
+import { TypeaheadMultiSelect } from "@/components/library/TypeaheadMultiSelect";
 import { Disclosure, DisclosurePanel } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,10 +16,12 @@ import {
 } from "@/components/ui/select";
 import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
 import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
+import { useSeriesLabels } from "@/lib/hooks/use-series-labels";
 import type { LibraryFilters } from "@/lib/hooks/use-library-filters";
 import { queryKeys } from "@/lib/query/keys";
 import {
   isIsbn13FilterActive,
+  MAX_FILTER_VALUES,
   TEXT_COLUMN_OPS,
   type RangeFilter,
   type TextFilter,
@@ -35,17 +37,9 @@ import {
   type VocabFamily,
 } from "../library/editors";
 
-/** One selectable series in the facet (id is the URL/param value). */
-export type SeriesFacetOption = {
-  id: string;
-  name: string;
-};
-
 type FilterRailProps = {
   owner: LibraryFilters;
   showContradiction: boolean;
-  /** Distinct series from the loaded pages. */
-  seriesOptions: SeriesFacetOption[];
   /** The resolved effective sort stack; see the module docstring. */
   sortLevels: readonly SortLevelParam[];
   /** True when the stack is the inherited installation order, which is when
@@ -59,7 +53,6 @@ type FilterRailProps = {
 export function FilterRail({
   owner,
   showContradiction,
-  seriesOptions,
   sortLevels,
   sortInherited,
   onSortChange,
@@ -70,6 +63,7 @@ export function FilterRail({
     ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
   ];
   const authorNames = useAuthorLabels(authorIds);
+  const seriesNames = useSeriesLabels(filters.series);
 
   const setCount = (set: { all: string[]; any: string[]; none: string[] }): number =>
     set.all.length + set.any.length + set.none.length;
@@ -112,22 +106,26 @@ export function FilterRail({
           commitAll((current) => ({ ...current, shelf }));
         }}
         onClear={() => {
-          commitAll((current) => ({ ...current, shelf: undefined }));
+          commitAll((current) => ({ ...current, shelf: [] }));
         }}
       />
       <RailSection
         title="Series"
-        activeCount={filters.series === undefined ? 0 : 1}
+        activeCount={filters.series.length}
         onClear={() => {
-          commitAll((current) => ({ ...current, series: undefined }));
+          commitAll((current) => ({ ...current, series: [] }));
         }}
       >
-        <FacetList
-          options={seriesOptions}
-          active={filters.series}
-          emptyText="No series in view."
-          onPick={(series) => {
-            commitAll((current) => ({ ...current, series }));
+        <TypeaheadMultiSelect
+          kind="series"
+          label="Series"
+          selected={filters.series.map((id) => ({ id, value: seriesNames.labelFor(id) }))}
+          maxSelectedItems={MAX_FILTER_VALUES}
+          onChange={(selected) => {
+            commitAll((current) => ({
+              ...current,
+              series: selected.flatMap((item) => (item.id === undefined ? [] : [item.id])),
+            }));
           }}
         />
       </RailSection>
@@ -470,44 +468,15 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
   );
 }
 
-type FacetListProps = {
-  options: readonly { id: string; name: string }[];
-  active: string | undefined;
-  emptyText: string;
-  onPick: (id: string | undefined) => void;
-};
-
-/** Single-select checkbox facet: re-picking the active value clears it (the
- *  URL grammar carries one value; the checkbox previews future multi-select). */
-function FacetList({ options, active, emptyText, onPick }: Readonly<FacetListProps>): ReactElement {
-  return (
-    <div className="flex flex-col gap-0.5">
-      {options.map((option) => (
-        <Checkbox
-          key={option.id}
-          value={option.id}
-          isSelected={active === option.id}
-          onChange={(selected) => {
-            onPick(selected ? option.id : undefined);
-          }}
-          className="text-fg-muted hover:bg-surface hover:text-fg data-selected:bg-surface data-selected:text-fg w-full cursor-pointer gap-2 rounded-md px-2 py-1.5 font-normal transition-colors [&>[data-slot=checkbox-indicator]]:size-3.5"
-        >
-          <span className="truncate">{option.name}</span>
-        </Checkbox>
-      ))}
-      {options.length === 0 ? <p className="text-fg-faint px-2 py-1.5">{emptyText}</p> : null}
-    </div>
-  );
-}
-
 type ShelfSectionProps = {
-  activeShelf: string | undefined;
-  onPick: (shelf: string | undefined) => void;
+  activeShelf: readonly string[];
+  onPick: (shelf: string[]) => void;
   /** Clear-affordance path, distinct from `onPick` so it resets drafts. */
   onClear: () => void;
 };
 
 function ShelfSection({ activeShelf, onPick, onClear }: Readonly<ShelfSectionProps>): ReactElement {
+  const descriptionId = useId();
   const {
     data: shelves,
     isLoading,
@@ -530,8 +499,48 @@ function ShelfSection({ activeShelf, onPick, onClear }: Readonly<ShelfSectionPro
   else if (isError) emptyText = "Couldn't load shelves.";
 
   return (
-    <RailSection title="Shelf" activeCount={activeShelf === undefined ? 0 : 1} onClear={onClear}>
-      <FacetList options={options} active={activeShelf} emptyText={emptyText} onPick={onPick} />
+    <RailSection title="Shelf" activeCount={activeShelf.length} onClear={onClear}>
+      <ListBox
+        aria-label="Shelves"
+        aria-describedby={descriptionId}
+        aria-invalid={activeShelf.length > MAX_FILTER_VALUES || undefined}
+        items={options}
+        selectionMode="multiple"
+        selectionBehavior="toggle"
+        selectedKeys={activeShelf}
+        onSelectionChange={(keys) => {
+          onPick(keys === "all" ? options.map((option) => option.id) : [...keys].map(String));
+        }}
+        renderEmptyState={() => <p className="text-fg-faint px-2 py-1.5">{emptyText}</p>}
+        className="flex flex-col gap-0.5 outline-none"
+      >
+        {(option) => (
+          <ListBoxItem
+            id={option.id}
+            textValue={option.name}
+            className="text-fg-muted hover:bg-surface hover:text-fg data-selected:bg-surface data-selected:text-fg data-focus-visible:ring-accent flex w-full cursor-default items-center gap-2 rounded-md px-2 py-1.5 outline-none transition-colors data-focus-visible:ring-2"
+          >
+            {({ isSelected }) => (
+              <>
+                <Check
+                  aria-hidden="true"
+                  className={`size-3.5 shrink-0 ${isSelected ? "opacity-100" : "opacity-0"}`}
+                />
+                <span className="truncate">{option.name}</span>
+              </>
+            )}
+          </ListBoxItem>
+        )}
+      </ListBox>
+      <p
+        id={descriptionId}
+        className="text-fg-muted mt-2 text-sm"
+        role={activeShelf.length > MAX_FILTER_VALUES ? "alert" : undefined}
+      >
+        {activeShelf.length > MAX_FILTER_VALUES
+          ? `Choose ${String(MAX_FILTER_VALUES)} or fewer shelves.`
+          : "Match any selected shelf."}
+      </p>
     </RailSection>
   );
 }

@@ -11,11 +11,6 @@ import type { SortLevelParam } from "@/api";
 
 import { FilterRail } from "@/components/shell/FilterRail";
 
-const SERIES = [
-  { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Discworld" },
-  { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Culture" },
-];
-
 const SHELVES = [
   {
     id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
@@ -92,7 +87,6 @@ function SortOwner({
           setView: () => {},
         }}
         showContradiction
-        seriesOptions={SERIES}
         sortLevels={override ?? DEFAULT_STACK}
         sortInherited={override === null}
         onSortChange={(next) => {

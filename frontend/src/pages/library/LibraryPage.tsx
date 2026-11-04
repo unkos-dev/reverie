@@ -34,7 +34,7 @@ import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { sortStackSummary } from "@/components/library/sort-summary";
-import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
+import { FilterRail } from "@/components/shell/FilterRail";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -250,8 +250,6 @@ export function LibraryPage(): ReactElement {
     setOverlay(next);
   }
 
-  const seriesOptions = librarySeriesOptions(items);
-  const seriesById = new Map(seriesOptions.map(({ id, name }) => [id, name]));
   if (!loading && !hasRenderedControls) setHasRenderedControls(true);
   if (loading && !hasRenderedControls) return <LibrarySkeleton />;
 
@@ -303,12 +301,7 @@ export function LibraryPage(): ReactElement {
             canResetColumns={preferences.canResetColumns}
             onResetColumns={preferences.resetColumns}
           />
-          <FilterChips
-            filters={filterState}
-            seriesNames={seriesById}
-            onRemove={commitAll}
-            onClearAll={clearAll}
-          />
+          <FilterChips filters={filterState} onRemove={commitAll} onClearAll={clearAll} />
           <Separator className="mb-8" />
 
           {editFeedback.length > 0 ? (
@@ -424,7 +417,6 @@ export function LibraryPage(): ReactElement {
         <FilterRail
           owner={owner}
           showContradiction={showContradiction}
-          seriesOptions={seriesOptions}
           sortLevels={sortLevels}
           sortInherited={preferences.sortInherited}
           onSortChange={handleSortChange}
@@ -439,14 +431,6 @@ export function LibraryPage(): ReactElement {
       />
     </>
   );
-}
-
-function librarySeriesOptions(items: BookListItem[]): SeriesFacetOption[] {
-  const byId = new Map<string, string>();
-  for (const book of items) {
-    if (book.series !== null) byId.set(book.series.id, book.series.name);
-  }
-  return [...byId].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 type LibraryBooksProps = {
