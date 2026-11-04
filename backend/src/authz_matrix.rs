@@ -510,6 +510,61 @@ async fn write_token_blocked_from_every_admin_op(pool: PgPool) {
     }
 }
 
+// Demotion leaves a device token's stored scopes intact, so an admin-scoped
+// token held by a demoted account clears every scope gate and only the role
+// check stands between it and admin surface.
+#[sqlx::test(migrations = "./migrations")]
+async fn demoted_admin_token_blocked_from_every_admin_op(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let (admin_id, _basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    sqlx::query!(
+        "UPDATE users SET role = 'adult'::user_role WHERE id = $1",
+        admin_id
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let ops = parse_operations();
+    let admin_ops: Vec<&Operation> = ops
+        .iter()
+        .filter(|op| required_scope(op) == Some(Scope::Admin))
+        .filter(|op| {
+            op.transports
+                .iter()
+                .any(|transport| transport == "device_token_bearer")
+        })
+        .collect();
+    assert!(
+        !admin_ops.is_empty(),
+        "expected at least one device-token admin op"
+    );
+
+    for op in admin_ops {
+        let path = substitute_path_params(&op.path);
+        let body = body_for(&op.method, &op.path);
+        let status = call_with_scoped_token(
+            &server,
+            &app_pool,
+            admin_id,
+            &[Scope::Admin],
+            &op.method,
+            &path,
+            body.as_ref(),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "a demoted admin's token must be blocked from {} {}, got {status}",
+            op.method,
+            op.path
+        );
+    }
+}
+
 // A scopeless token authenticates as nothing: `read` is the floor, so a
 // credential carrying no scope is rejected at the auth seam and reaches no
 // operation, reads included. Minted directly at the model layer to bypass
