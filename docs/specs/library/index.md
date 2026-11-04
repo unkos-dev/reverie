@@ -5,7 +5,7 @@
 ## Requirements
 
 - [REV-REQ-0001](requirements/0001-library-sort-resolves-only-from-the-per-user-preference.md): Library sort resolves only from the per-user preference
-- [REV-REQ-0002](requirements/0002-library-filter-state-has-exactly-one-writer.md): Library filter state has exactly one writer
+- [REV-REQ-0002](requirements/0002-a-library-filter-edit-changes-only-what-the-reader-asked-to-change.md): A Library filter edit changes only what the reader asked to change
 - [REV-REQ-0003](requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md): Library list range filters apply their bounds as declared
 - [REV-REQ-0025](requirements/0025-a-manifestation-s-file-identity-is-unique.md): A manifestation's file identity is unique
 - [REV-REQ-0026](requirements/0026-a-manifestation-s-ingestion-hash-never-changes.md): A manifestation's ingestion hash never changes
@@ -15,6 +15,9 @@
 - [REV-REQ-0058](requirements/0058-a-sort-request-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md): A sort request naming an unrecognised or repeated column is refused before any query runs
 - [REV-REQ-0059](requirements/0059-a-shelf-and-its-items-are-visible-to-and-changeable-by-their-owner-only.md): A shelf and its items are visible to and changeable by their owner only
 - [REV-REQ-0065](requirements/0065-a-managed-file-location-identifies-its-library-and-a-relative-path.md): A managed file location identifies its library and a relative path
+- [REV-REQ-0075](requirements/0075-a-resumed-library-visit-restores-its-filter-state.md): A resumed Library visit restores its filter state
+- [REV-REQ-0076](requirements/0076-a-fresh-library-visit-starts-without-filters.md): A fresh Library visit starts without filters
+- [REV-REQ-0077](requirements/0077-library-filter-edits-add-no-history-entries.md): Library filter edits add no history entries
 
 ## Designs
 

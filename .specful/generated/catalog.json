@@ -511,7 +511,10 @@
       "satisfies": [
         "REV-REQ-0001",
         "REV-REQ-0002",
-        "REV-REQ-0003"
+        "REV-REQ-0003",
+        "REV-REQ-0075",
+        "REV-REQ-0076",
+        "REV-REQ-0077"
       ],
       "title": "Library filter and sort state"
     },
@@ -968,8 +971,8 @@
       ],
       "id": "REV-REQ-0002",
       "kind": "req",
-      "path": "docs/specs/library/requirements/0002-library-filter-state-has-exactly-one-writer.md",
-      "title": "Library filter state has exactly one writer"
+      "path": "docs/specs/library/requirements/0002-a-library-filter-edit-changes-only-what-the-reader-asked-to-change.md",
+      "title": "A Library filter edit changes only what the reader asked to change"
     },
     {
       "governed-by": [
@@ -1563,6 +1566,33 @@
       "kind": "req",
       "path": "docs/specs/accounts/requirements/0074-every-path-that-sets-a-password-refuses-one-the-password-policy-rejects.md",
       "title": "Every path that sets a password refuses one the password policy rejects"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0066"
+      ],
+      "id": "REV-REQ-0075",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0075-a-resumed-library-visit-restores-its-filter-state.md",
+      "title": "A resumed Library visit restores its filter state"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0066"
+      ],
+      "id": "REV-REQ-0076",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0076-a-fresh-library-visit-starts-without-filters.md",
+      "title": "A fresh Library visit starts without filters"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0066"
+      ],
+      "id": "REV-REQ-0077",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0077-library-filter-edits-add-no-history-entries.md",
+      "title": "Library filter edits add no history entries"
     }
   ]
 }

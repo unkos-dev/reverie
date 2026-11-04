@@ -35,9 +35,8 @@ its drivers are recorded in
 - A stale `?sort=` value present in the URL (for example from an old bookmark) does not change the resolved sort stack;
   the stored preference, or the installation default when the reader has no override, still applies.
 - A table header click and every action in the sort stack editor (add a level, remove a level, reorder, flip direction,
-  reset) reach the wire as a `sort_stack` write on `/auth/me/preferences`, and no other write path for the sort stack
-  exists.
-- Removing the last level of an inherited descending stack, or pressing the sort section's reset control, sends
+  reset) reach the wire as a `sort_stack` write on `/auth/me/preferences`.
+- Removing the last level of the reader's override, or pressing the sort section's reset control, sends
   `sort_stack: null` and the display transitions to the installation order; it never becomes unsorted.
 - WHEN the reader has a non-empty `sort_stack` override, the books list request (`GET /api/v1/books`) carries that stack
   as its `sort` query parameter.

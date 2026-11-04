@@ -7,6 +7,9 @@ satisfies:
   - "REV-REQ-0001"
   - "REV-REQ-0002"
   - "REV-REQ-0003"
+  - "REV-REQ-0075"
+  - "REV-REQ-0076"
+  - "REV-REQ-0077"
 governed-by:
   - "REV-ADR-0066"
   - "REV-ADR-0062"
