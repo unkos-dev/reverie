@@ -140,8 +140,9 @@ a date range.
 
 ISBN-13 narrows results as you type, without requiring a complete number or valid checksum. Spaces and hyphens do not
 change a partial match: `978163`, `978-163` and `978 163` all find `9781639739134`. Enter a full ISBN through the same
-contains control. Switching to is-empty keeps your entered text for when you return to contains. Text changes publish
-immediately; the controls stay usable while results update.
+contains control. Input containing only spaces and hyphens stays editable without an active ISBN-13 filter. Switching to
+is-empty keeps your entered text for when you return to contains. Text changes publish immediately; the controls stay
+usable while results update.
 
 A section with something active opens on mount, shows a count beside its name, and carries its own **Clear**. Everything
 else stays folded, so a long drawer reads as a table of contents rather than a wall of form controls.

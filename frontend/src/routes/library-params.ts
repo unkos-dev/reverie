@@ -93,6 +93,10 @@ export function effectiveText(filter: TextFilter): string | undefined {
   return text === "" ? undefined : text;
 }
 
+export function isIsbn13FilterActive(filter: TextFilter): boolean {
+  return filter.op === "empty" || (filter.text?.replace(/[ -]/g, "").trim() ?? "") !== "";
+}
+
 export function libraryTextError(value: string | undefined): string | undefined {
   return Array.from(value?.trim() ?? "").length > 200
     ? "Use 200 characters or fewer, excluding surrounding spaces."
@@ -176,6 +180,12 @@ export function filterStateToParams(
   return params;
 }
 
+export function countActiveFilters(state: FilterState): number {
+  const params = filterStateToParams(state);
+  if (!isIsbn13FilterActive(state.isbn13)) delete params.isbn_13_contains;
+  return Object.keys(params).length;
+}
+
 export function hasActiveFilterState(state: FilterState): boolean {
-  return Object.keys(filterStateToParams(state)).length > 0;
+  return countActiveFilters(state) > 0;
 }

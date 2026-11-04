@@ -19,6 +19,7 @@ import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
 import type { LibraryFilters } from "@/lib/hooks/use-library-filters";
 import { queryKeys } from "@/lib/query/keys";
 import {
+  isIsbn13FilterActive,
   TEXT_COLUMN_OPS,
   type RangeFilter,
   type TextFilter,
@@ -179,7 +180,7 @@ export function FilterRail({
         title="ISBN-13"
         ops={TEXT_COLUMN_OPS.isbn_13}
         value={filters.isbn13}
-        activeCount={textCount(filters.isbn13)}
+        activeCount={Number(isIsbn13FilterActive(filters.isbn13))}
         onChange={(isbn13) => {
           commitAll((current) => ({ ...current, isbn13 }));
         }}

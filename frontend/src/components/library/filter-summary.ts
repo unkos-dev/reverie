@@ -6,6 +6,7 @@
  */
 import {
   effectiveText,
+  isIsbn13FilterActive,
   type FilterState,
   type RangeFilter,
   type TextFilter,
@@ -62,6 +63,7 @@ function pushText(
   filter: TextFilter,
   prop: "title" | "subtitle" | "isbn13",
 ): void {
+  if (prop === "isbn13" && !isIsbn13FilterActive(filter)) return;
   const op = filter.op ?? "contains";
   const text = effectiveText(filter) ?? "";
   if (op !== "empty" && text === "") return;
