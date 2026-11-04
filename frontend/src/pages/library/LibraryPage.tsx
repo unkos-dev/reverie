@@ -259,7 +259,7 @@ export function LibraryPage(): ReactElement {
       <ToggleButton
         isSelected={cinematic.active}
         onChange={cinematic.setActive}
-        className="cinema-control bg-surface text-fg-muted border-border data-selected:text-fg data-focus-visible:ring-accent rounded-md border px-3 py-2 font-mono text-xs uppercase tracking-wide outline-none data-focus-visible:ring-3"
+        className="cinema-control bg-surface text-fg-muted border-border data-selected:text-fg rounded-md border px-3 py-2 font-mono text-xs uppercase tracking-wide outline-none"
       >
         {cinematic.active ? "Exit cinematic view" : "Cinematic view"}
       </ToggleButton>

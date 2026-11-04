@@ -518,7 +518,7 @@ function ShelfSection({ activeShelf, onPick, onClear }: Readonly<ShelfSectionPro
           <ListBoxItem
             id={option.id}
             textValue={option.name}
-            className="text-fg-muted hover:bg-surface hover:text-fg data-selected:bg-surface data-selected:text-fg data-focus-visible:ring-accent flex w-full cursor-default items-center gap-2 rounded-md px-2 py-1.5 outline-none transition-colors data-focus-visible:ring-3"
+            className="text-fg-muted hover:bg-surface hover:text-fg data-selected:bg-surface data-selected:text-fg flex w-full cursor-default items-center gap-2 rounded-md px-2 py-1.5 outline-none transition-colors"
           >
             {({ isSelected }) => (
               <>
