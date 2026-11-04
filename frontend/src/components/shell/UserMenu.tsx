@@ -127,7 +127,7 @@ export function UserChip(): ReactElement | null {
         </DropdownMenuContent>
       </DropdownMenu>
       {failure ? (
-        <p role="alert" className="text-destructive px-2 pb-2 text-sm">
+        <p role="alert" className="text-fg-muted px-2 pb-2 text-sm">
           {failure}
         </p>
       ) : null}

@@ -271,7 +271,7 @@ function AddToShelf({
       ) : null}
       {addMutation.isError ? (
         <div className="space-y-2">
-          <p role="alert" className="text-destructive text-sm">
+          <p role="alert" className="text-fg-muted text-sm">
             Couldn&apos;t add “{bookTitle}” to {addMutation.variables.shelfName}.
           </p>
           <Button
