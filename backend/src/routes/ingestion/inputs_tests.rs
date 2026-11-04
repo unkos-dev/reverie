@@ -6,7 +6,6 @@ use uuid::Uuid;
 use crate::models::ingestion_input::{
     self, AttemptOutcome, Fingerprint, Input, InputPath, InputStatus, RejectionReason,
 };
-use crate::test_support;
 use crate::test_support::db::{AdminEnv as Env, admin_env as env};
 
 fn fingerprint(inode: u64) -> Fingerprint {
@@ -151,61 +150,4 @@ async fn bulk_input_retry_caps_batches_and_preserves_attempt_history(pool: PgPoo
             .0
             .is_empty()
     );
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn ingestion_admin_routes_refuse_a_demoted_admin_token(pool: PgPool) {
-    use crate::auth::{scope::Scope, token};
-    let app = test_support::db::app_pool_for(&pool).await;
-    let (id, _) = test_support::db::create_admin_and_basic_auth(&app).await;
-    let mut state = test_support::test_state();
-    state.pool = app.clone();
-    let (handle, commands) = crate::services::ingestion::coordinator_channel();
-    state.ingestion = handle;
-    let server = axum_test::TestServer::new(crate::build_router_with_session_store(
-        state,
-        tower_sessions::MemoryStore::default(),
-    ));
-    let (plain, hash) = token::generate_device_token();
-    let device = crate::models::device_token::create_with_limit(
-        &app,
-        id,
-        "bulk",
-        &hash,
-        &[Scope::Admin],
-        None,
-    )
-    .await
-    .unwrap();
-    sqlx::query!(
-        "UPDATE users SET role = 'adult'::user_role WHERE id = $1",
-        id
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    let bearer = format!("Bearer {}{}.{}", token::TOKEN_PREFIX, device.id, plain);
-    let body = serde_json::json!({"reason":"needs_change"});
-    for (method, path) in [
-        ("GET", "/api/v1/ingestion/status"),
-        ("POST", "/api/v1/ingestion/scan"),
-        ("POST", "/api/v1/ingestion/inputs/retries"),
-        ("GET", "/api/v1/ingestion/inputs"),
-        ("GET", "/api/v1/ingestion/inputs/counts"),
-    ] {
-        let request = match method {
-            "GET" => server.get(path),
-            _ => server.post(path).json(&body),
-        };
-        tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            request
-                .add_header(AUTHORIZATION, bearer.clone())
-                .into_future(),
-        )
-        .await
-        .unwrap_or_else(|_| panic!("{method} {path} did not answer"))
-        .assert_status_forbidden();
-    }
-    assert!(commands.lock().await.try_recv().is_err());
 }

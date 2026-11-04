@@ -4,7 +4,6 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::models::enrichment_status::EnrichmentStatus;
-use crate::test_support;
 use crate::test_support::db::{AdminEnv as Env, admin_env as env};
 
 const LIST: &str = "/api/v1/dashboard/enrichment-failures";
@@ -50,17 +49,6 @@ async fn seed(
     .fetch_one(&env.ing)
     .await
     .unwrap()
-}
-
-async fn failing(env: &Env, title: &str, failures: Value) -> Uuid {
-    seed(
-        env,
-        title,
-        EnrichmentStatus::Failed,
-        Some("transient source failures"),
-        failures,
-    )
-    .await
 }
 
 async fn get(env: &Env, url: &str) -> axum_test::TestResponse {
@@ -184,39 +172,4 @@ async fn bulk_enrichment_retry_preserves_provider_timing_and_reset_columns(pool:
             assert_eq!(actual, expected);
         }
     }
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn bulk_enrichment_retry_checks_scope_and_current_role(pool: PgPool) {
-    use crate::auth::{scope::Scope, token};
-    let env = env(&pool).await;
-    let app = test_support::db::app_pool_for(&pool).await;
-    let (id, _) = test_support::db::create_admin_and_basic_auth(&app).await;
-    let row = failing(&env, "untouched", json!([entry("openlibrary", "timeout")])).await;
-    let before = bulk_snapshot(&env, row).await;
-    for scopes in [vec![Scope::Write], vec![Scope::Admin]] {
-        let (plain, hash) = token::generate_device_token();
-        let device =
-            crate::models::device_token::create_with_limit(&app, id, "bulk", &hash, &scopes, None)
-                .await
-                .unwrap();
-        if scopes == vec![Scope::Admin] {
-            sqlx::query!(
-                "UPDATE users SET role = 'adult'::user_role WHERE id = $1",
-                id
-            )
-            .execute(&pool)
-            .await
-            .unwrap();
-        }
-        let bearer = format!("Bearer {}{}.{}", token::TOKEN_PREFIX, device.id, plain);
-        let response = env
-            .server
-            .post(&format!("{LIST}/retries"))
-            .add_header(AUTHORIZATION, bearer)
-            .json(&json!({"source":"openlibrary", "class":"timeout"}))
-            .await;
-        assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
-    }
-    assert_eq!(bulk_snapshot(&env, row).await, before);
 }
