@@ -327,13 +327,33 @@ type CellEditContext = {
 type CellEditRecord = {
   id: number;
   status: "idle" | "pending" | "success" | "error";
-  submittedAt: number;
   error: Error | null;
   context: CellEditContext | undefined;
 };
 
 function cellEditKey(userId: string | null) {
   return ["library-cell-edit", userId] as const;
+}
+
+function retireCellFailures(client: QueryClient, context: CellEditContext): void {
+  const cache = client.getMutationCache();
+  // This account-scoped key belongs only to the three mutations carrying CellEditContext.
+  const mutations = cache.findAll({
+    mutationKey: cellEditKey(context.userId),
+    exact: true,
+  }) as Mutation<unknown, Error, { context: CellEditContext }>[];
+  const current = mutations.find((mutation) => mutation.state.variables?.context === context);
+  for (const mutation of mutations) {
+    const previous = mutation.state.variables?.context;
+    if (
+      current !== undefined &&
+      mutation.mutationId < current.mutationId &&
+      mutation.state.status === "error" &&
+      previous?.row.id === context.row.id &&
+      previous.columnKey === context.columnKey
+    )
+      cache.remove(mutation);
+  }
 }
 
 function resourceKey(context: CellEditContext): QueryKey {
@@ -374,6 +394,7 @@ function recoveryOptions(id: number, context: CellEditContext, client: QueryClie
     },
     enabled: (query) => query.state.data === undefined || !matchesRead(context, query.state.data),
     staleTime: 0,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -412,7 +433,6 @@ function useCellEditRecords(): CellEditRecord[] {
     select: (mutation) => ({
       id: mutation.mutationId,
       status: mutation.state.status,
-      submittedAt: mutation.state.submittedAt,
       error: mutation.state.error,
       context: mutation.state.variables?.context,
     }),
@@ -434,18 +454,7 @@ export function useCellEditFeedback(): CellEditFeedback[] {
   const records = useCellEditRecords();
   const errors = records.flatMap((record) => {
     const context = record.context;
-    if (
-      record.status !== "error" ||
-      context === undefined ||
-      records.some(
-        (later) =>
-          later.status === "success" &&
-          later.submittedAt > record.submittedAt &&
-          later.context?.row.id === context.row.id &&
-          later.context.columnKey === context.columnKey,
-      )
-    )
-      return [];
+    if (record.status !== "error" || context === undefined) return [];
     return [{ ...record, context }];
   });
   const recovery = useQueries({
@@ -559,6 +568,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
       return applied;
     },
     onSuccess: (applied, { context, previousRow }) => {
+      retireCellFailures(queryClient, context);
       const route = EDIT_ROUTES[context.columnKey];
       if (route.pipeline !== "metadata") return;
       updateListCache(
@@ -595,6 +605,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
       previousRow: BookListItem;
     }) => updateReadingState(context.row.id, patch),
     onSuccess: (response, { context, previousRow }) => {
+      retireCellFailures(queryClient, context);
       const route = EDIT_ROUTES[context.columnKey];
       if (route.pipeline !== "reading") return;
       updateListCache(
@@ -632,7 +643,8 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
       else await updateBookMetadata(entry.manifestationId, entry.counterPatch);
       return { pipeline: "metadata" } as const;
     },
-    onSuccess: (result, { entry }) => {
+    onSuccess: (result, { entry, context }) => {
+      retireCellFailures(queryClient, context);
       if (entry.pipeline === "metadata") restoreMetadataRow(queryClient, entry.listKey, entry);
       else if (result.pipeline === "reading")
         restoreReadingRow(queryClient, entry.listKey, entry, result.response);

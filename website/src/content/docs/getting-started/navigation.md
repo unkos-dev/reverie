@@ -26,10 +26,9 @@ are destinations you return to, not filters you apply.
 
 ## Planned entries are visible
 
-The rail shows a few destinations that aren't built yet; Home and Stats render dimmed with a "Planned: not in this
-release" note. This is deliberate: the rail communicates the product's intended shape, and a self-hosting operator
-evaluating Reverie can see where it is going without reading a roadmap. Planned entries are skipped by keyboard
-navigation and never act as links.
+The rail shows a few destinations that aren't built yet; Home and Stats render with a visible **Planned** label. This is
+deliberate: the rail communicates the product's intended shape, and a self-hosting operator evaluating Reverie can see
+where it is going without reading a roadmap. Planned entries are skipped by keyboard navigation and never act as links.
 
 Settings is not a rail destination: it lives in the user menu at the foot of the rail, and only administrators see it.
 Everyone else sees no Settings entry at all. See [Instance settings](/reverie/guides/instance-settings/).
@@ -38,10 +37,10 @@ Everyone else sees no Settings entry at all. See [Instance settings](/reverie/gu
 
 Reverie separates finding a book from narrowing the books in view.
 
-The **command palette** navigates: pick a book and it takes you there. Open it with `⌘K` / `Ctrl K` or the `/` key from
-anywhere outside a text field. The **search box** in the Library toolbar filters: type two or more characters and the
-collection you are browsing shrinks to the matches, in whatever view and sort order you already had. It never navigates,
-and clearing it brings everything back.
+The **command palette** navigates: pick a book and it takes you there. Open it with `⌘K` / `Ctrl K` while focus is in
+the app shell. The shortcut does not open it from dialogs or popovers. The **search box** in the Library toolbar
+filters: type two or more characters and the collection you are browsing shrinks to the matches, in whatever view and
+sort order you already had. It never navigates, and clearing it brings everything back.
 
 The split keeps each surface honest. A single box would have to guess whether you meant "go to this book" or "show me
 fewer books", and the palette stays free to grow into a broader command surface without dragging filter semantics along.
@@ -54,8 +53,8 @@ place, and acting on many books at once. Filters, search, and sort belong to the
 never changes which books you're looking at, only how they're drawn.
 
 The table carries a full keyboard model: arrow keys move cell by cell, `Home` and `End` jump within a row, `Ctrl Home`
-and `Ctrl End` jump to the first and last loaded row, and `PageUp`/`PageDown` move a viewport at a time. Press `?`
-inside the table for the complete shortcut list.
+and `Ctrl End` jump to the first and last loaded row, and `PageUp`/`PageDown` move a viewport at a time. Use the table's
+**Help** control for the complete shortcut list.
 
 Two toolbar controls shape the table to your taste. The **density toggle** switches between comfortable rows (with a
 small cover beside each title) and compact ones. The **Columns** popover shows or hides individual columns; Title stays
@@ -131,12 +130,13 @@ The filter drawer is the single home for every filter, in every view. Grid and t
 because both use the same visit state. A condition set while browsing covers remains when you switch to the table, or
 the other way around.
 
-The drawer stacks one collapsible section per condition. Shelf and series are pick-one facets. Authors, tags, genres,
-and moods each get a typeahead that accepts several values at once, in any-of, all-of, or none-of mode, so you can ask
-for books tagged both X and Y, in any of three genres, or in none of a set of moods. Reading status filters by state,
-including **Unread** for books you have not started. Title offers contains, equals and does-not-equal; subtitle offers
-contains and is-empty. ISBN-13 offers contains and is-empty. Page count and rating filter by range; **added** filters by
-a date range.
+The drawer stacks one collapsible section per condition. Select several shelves or series to match any selection within
+that section. Shelf and series conditions combine with each other and with the other filters. Their choices remain
+available when the results narrow; each section has its own **Clear**. Authors, tags, genres, and moods each get a
+typeahead that accepts several values at once, in any-of, all-of, or none-of mode, so you can ask for books tagged both
+X and Y, in any of three genres, or in none of a set of moods. Reading status filters by state, including **Unread** for
+books you have not started. Title offers contains, equals and does-not-equal; subtitle offers contains and is-empty.
+ISBN-13 offers contains and is-empty. Page count and rating filter by range; **added** filters by a date range.
 
 ISBN-13 narrows results as you type, without requiring a complete number or valid checksum. Spaces and hyphens do not
 change a partial match: `978163`, `978-163` and `978 163` all find `9781639739134`. Enter a full ISBN through the same
@@ -178,8 +178,9 @@ alone: nobody else browsing the same library sees them, and they never touch the
 
 ### Undo
 
-Every commit ends in a toast with an Undo button, and `Ctrl Z` undoes the most recent edit without needing the toast
-still on screen. The table remembers your last ten edits, so pressing undo repeatedly steps back through them in order.
+The **Undo last edit** button beside table Help names the book and field it will restore. `⌘Z` / `Ctrl Z` while focus is
+in the table uses the same history; text fields keep their own native Undo. The table remembers your last ten edits, so
+using Undo repeatedly steps back through them in order. Switching away from the table ends access to that history.
 
 Undo works differently depending on what you edited. Title, subtitle, ISBN-13, pages, and author edits undo by restoring
 whichever metadata version was current immediately before your edit, the same version history the book page's Versions
@@ -197,8 +198,14 @@ happens to be current.
 
 A cell shows what you typed the moment you commit, marked as busy until the server confirms it. On success the cell
 settles on the value the server stored, which can differ slightly from what you typed: an ISBN-13 you enter with
-hyphens, for example, comes back normalised. On failure the cell snaps back to the value it held before your edit, and a
-toast explains what went wrong.
+hyphens, for example, comes back normalised. On failure the cell keeps its saved value. Local feedback above the results
+identifies the book and field, shows the submitted value, and offers **Reload** to read the latest server value.
+Feedback can remain visible when the table is replaced by grid, empty or loading results.
+
+Failure feedback is temporary and held in memory. It can expire five minutes after the table is removed, or after a
+later save or Undo replaces that request. Expiry removes its displayed submitted value and **Reload** action; it does
+not change saved server data. This is not a countdown from when the error appears, and some messages remain longer while
+they are the latest request in the table. Reloading the app also clears this feedback.
 
 A refused ISBN-13 edit keeps the saved cell value and shows: "ISBN-13 wasn’t saved. Check the 13-digit number; spaces
 and hyphens are allowed." Correct the number by editing the cell again.
@@ -216,9 +223,9 @@ formatted edit displays the compact number returned by the server.
 
 ## Cinematic mode
 
-On the Library page, press `F` (outside any text field) to dissolve the surrounding chrome; the navigation rail,
-toolbar, and controls fade out so the cover art fills the screen. Press `F` again or `Escape` to exit. After two seconds
-of pointer stillness the cursor hides too; moving the pointer brings it back.
+On the Library page, use **Cinematic view** at the bottom centre to dissolve the surrounding chrome; the navigation
+rail, toolbar, and controls fade out so the cover art fills the screen. The toggle stays available as
+**Exit cinematic view**. After two seconds of pointer stillness the cursor hides too; moving the pointer brings it back.
 
 ## Admin is a different room
 

@@ -117,10 +117,19 @@ Table-load recovery belongs to the Library results region and is described in th
 also render in that region, outside conditional table rendering, from account-scoped TanStack mutation state. Each
 mutation captures its book, field, submitted value and displayed source query. Mutation lifecycle handlers apply
 confirmed results even after table replacement; the existing synchronous grid adapter supplies pending-cell protection.
-Targeted metadata and reading-state queries re-read the affected resource independently of list membership and reconnect
-through TanStack. Fresh reads update the captured source and reconcile matching or superseded failures without repeating
-writes or creating Undo provenance. A matching read disables further recovery reads for that operation; its cached
-confirmation stays resolved across later edits. Mutation-cache retention is in-memory, not a durable operation ledger.
+A successful save or Undo removes earlier failed mutations for the same book and field from the account's cache. Their
+retirement does not depend on retaining the later success record. Targeted metadata and reading-state queries re-read
+the affected resource independently of list membership. They read on initial recovery, reconnect and explicit Reload,
+without another read on window focus. Fresh reads update the captured source and reconcile matching failures without
+repeating writes or creating Undo provenance. A matching read disables further recovery reads for that operation; its
+cached confirmation stays resolved across later edits. Mutation-cache retention is in-memory, not a durable operation
+ledger.
+
+Failed mutations use TanStack's native retention: they remain while observed, then become eligible for collection five
+minutes after their last mutation observer detaches. The initiating hook's next request or table removal detaches that
+observer; `useMutationState` does not extend the lifetime. Collection removes the failure message, displayed submitted
+value, Reload action and reconnect recovery. The interval starts at detachment, not when feedback appears. No separate
+feedback timer, extended cache lifetime or Dismiss control applies.
 
 The table owns a bounded, ten-entry sequential Undo history. Undo last edit and the table-scoped Control/Meta+Z shortcut
 use the same latest valid entry; native text-input Undo remains available in editors. The visible button names its field
