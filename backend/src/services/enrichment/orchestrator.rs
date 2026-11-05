@@ -203,7 +203,7 @@ pub(super) fn statement_millis(remaining: Duration) -> i32 {
         .max(1)
 }
 
-pub(super) async fn limit_statement(
+async fn limit_statement(
     tx: &mut Transaction<'_, Postgres>,
     remaining: Duration,
 ) -> sqlx::Result<()> {
@@ -214,7 +214,7 @@ pub(super) async fn limit_statement(
     Ok(())
 }
 
-pub(super) async fn rollback_owned(
+async fn rollback_owned(
     mut tx: Transaction<'_, Postgres>,
 ) -> Result<(), CleanupFailure> {
     loop {

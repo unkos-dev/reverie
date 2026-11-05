@@ -229,70 +229,54 @@ async fn finish(
     attempt_count: i32,
     result: anyhow::Result<RunOutcome>,
 ) -> sqlx::Result<()> {
-    let mut tx = pool.begin().await?;
-    let result: sqlx::Result<()> = async {
-        orchestrator::limit_statement(
-            &mut tx,
-            Duration::from_secs(u64::from(config.enrichment.run_timeout_secs)),
-        )
-        .await?;
-        match result {
-            Ok(outcome) => {
-                // If every source failed with non-terminal errors, treat the row
-                // as `failed` so we retry; otherwise mark complete.
-                let enabled_tried = !outcome.source_failures.is_empty();
-                let any_terminal = outcome.source_failures.iter().any(|f| f.terminal);
-                let applied_or_staged = outcome.applied + outcome.staged > 0;
+    match result {
+        Ok(outcome) => {
+            // If every source failed with non-terminal errors, treat the row
+            // as `failed` so we retry; otherwise mark complete.
+            let enabled_tried = !outcome.source_failures.is_empty();
+            let any_terminal = outcome.source_failures.iter().any(|f| f.terminal);
+            let applied_or_staged = outcome.applied + outcome.staged > 0;
 
-                if enabled_tried && !applied_or_staged && !any_terminal {
-                    // Surface the longest retry_after among rate-limited failures.
-                    let retry_after = outcome
-                        .source_failures
-                        .iter()
-                        .filter_map(|f| f.retry_after)
-                        .max();
-                    mark_failed(
-                        &mut *tx,
-                        id,
-                        attempt_count,
-                        config,
-                        retry_after,
-                        Some("transient source failures"),
-                        &failure_entries(&outcome.source_failures),
-                    )
-                    .await?;
-                } else {
-                    mark_complete(&mut *tx, id).await?;
-                }
-            }
-            Err(e) => {
-                warn!(error = %e, %id, "enrichment run_once failed");
-                let internal = [FailureEntry {
-                    source: None,
-                    class: FailureClass::Internal,
-                }];
+            if enabled_tried && !applied_or_staged && !any_terminal {
+                // Surface the longest retry_after among rate-limited failures.
+                let retry_after = outcome
+                    .source_failures
+                    .iter()
+                    .filter_map(|f| f.retry_after)
+                    .max();
                 mark_failed(
-                    &mut *tx,
+                    pool,
                     id,
                     attempt_count,
                     config,
-                    None,
-                    Some(&e.to_string()),
-                    &internal,
+                    retry_after,
+                    Some("transient source failures"),
+                    &failure_entries(&outcome.source_failures),
                 )
                 .await?;
+            } else {
+                mark_complete(pool, id).await?;
             }
         }
-        Ok(())
+        Err(e) => {
+            warn!(error = %e, %id, "enrichment run_once failed");
+            let internal = [FailureEntry {
+                source: None,
+                class: FailureClass::Internal,
+            }];
+            mark_failed(
+                pool,
+                id,
+                attempt_count,
+                config,
+                None,
+                Some(&e.to_string()),
+                &internal,
+            )
+            .await?;
+        }
     }
-    .await;
-    if let Err(error) = result {
-        orchestrator::rollback_owned(tx)
-            .await
-            .map_err(|failure| failure.0)?;
-        return Err(error);
-    }
-    tx.commit().await
+    Ok(())
 }
 
 /// One entry per failing source, ordered by source key. When a source failed
@@ -726,6 +710,38 @@ mod tests {
             cancel.cancel();
             worker.await.unwrap().unwrap();
         }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn finish_waits_for_a_row_lock_held_past_the_run_budget(owner: PgPool) {
+        let pool = ingestion_pool_for(&owner).await;
+        let (mut config, _files) = test_config_with_max_attempts(3);
+        config.enrichment.run_timeout_secs = 1;
+        let (_, id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(0)).await;
+        let mut blocker = owner.begin().await.unwrap();
+        sqlx::query!("SELECT id FROM manifestations WHERE id = $1 FOR UPDATE", id)
+            .fetch_one(&mut *blocker)
+            .await
+            .unwrap();
+        let outcome = RunOutcome {
+            manifestation_id: id,
+            applied: 0,
+            staged: 0,
+            skipped_locked: 0,
+            source_failures: Vec::new(),
+            duplicate_suspected: false,
+        };
+        let bookkeeping = tokio::spawn({
+            let pool = pool.clone();
+            async move { finish(&pool, &config, id, 1, Ok(outcome)).await }
+        });
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        blocker.commit().await.unwrap();
+        bookkeeping.await.unwrap().unwrap();
+        let status = sqlx::query_scalar!(r#"SELECT enrichment_status AS "status!: EnrichmentStatus" FROM manifestations WHERE id = $1"#, id)
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(status, EnrichmentStatus::Complete);
     }
 
     #[sqlx::test(migrations = "./migrations")]

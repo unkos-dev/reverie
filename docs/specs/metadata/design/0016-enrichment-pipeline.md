@@ -397,9 +397,10 @@ a projection, not a preview of a specific journal row a subsequent real run woul
 - Whole-run expiry records class `internal` with no source through the existing guarded failure transition. Ordinary
   retry backoff and `max_attempts` still apply. A rerun requested during the expired attempt takes precedence and leaves
   immediately eligible `pending` with cleared attempts and failures. The queue retains its claim and semaphore permit
-  through transaction cleanup and `finish`. Bookkeeping uses an owned transaction with a finite local statement limit
-  derived from `run_timeout_secs`, outside the expired work deadline. A cleanup or uncertain commit failure skips normal
-  failure bookkeeping and leaves the durable claim for startup recovery; bookkeeping errors are logged with the UUID.
+  through transaction cleanup and `finish`. Bookkeeping is a single guarded update outside the expired work deadline,
+  with no statement limit, so a row lock held by another session delays it rather than abandoning it. A cleanup or
+  uncertain commit failure skips normal failure bookkeeping and leaves the durable claim for startup recovery;
+  bookkeeping errors are logged with the UUID.
 - A run that kills the process never reaches `mark_failed`, where the `Skipped` transition evaluates `max_attempts`.
   Repeated process crashes therefore do not exhaust the attempt limit. The preserved last-attempt timestamp and counter
   bound retries through the claim query's backoff schedule, which reaches 24 hours and stays there.
