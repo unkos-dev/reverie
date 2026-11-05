@@ -78,9 +78,9 @@ test("blur, Clear and subsequent typing use the current intent without resurrect
 });
 test.each([
   undefined,
-  { filters: { ...emptyFilterState(), pages: { gte: -1 } }, view: "table" },
+  { filters: { ...emptyFilterState(), q: "saved search", shelf: ["not-a-uuid"] }, view: "table" },
   { filters: emptyFilterState(), view: "list" },
-])("unusable owned payload starts a clean visit without a recovery write: %j", async (payload) => {
+])("REV-REQ-0075 AC5: unusable saved state restores no filters: %j", async (payload) => {
   await mount({ keep: 1, reverieLibrary: payload });
   await expect
     .element(page.getByRole("status"))
