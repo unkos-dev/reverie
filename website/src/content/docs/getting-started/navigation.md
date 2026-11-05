@@ -88,6 +88,9 @@ books doesn't cost a round trip through the book page for each one; the grid kee
 click goes straight to the full record, because browsing covers ends in reading, not managing. The filter drawer and the
 details drawer share the right edge and never stack: opening one closes the other.
 
+Closing the drawer does not cancel a submitted shelf addition. Reopening the same book shows any retained progress,
+result or **Try again** action. This feedback is temporary and can expire five minutes after you close the drawer.
+
 ## Selecting books and acting on them
 
 Table rows carry checkboxes. Select a few (shift-click selects a range; `Shift Space` toggles the current row) and a bar

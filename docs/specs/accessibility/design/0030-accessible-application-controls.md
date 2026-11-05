@@ -102,12 +102,15 @@ editing the field clears its native server error and permits correction without 
 
 Feedback stays with the action's context. Inline errors are not repeated in a toast. Copy status stays beside the
 read-only credential and retains manual-copy recovery. Row actions retain named failures beside their target. Membership
-outcomes remain outside the closing menu. Batch progress and consolidated results derive from a serial Query mutation's
-captured IDs and shelf; failed-ID retry and the result remain available when selection becomes empty. Completion removes
-only succeeded IDs from the current selection. The batch owner stays mounted across table, grid and blocked-result
-branches. Versions observes pending and failed review mutations to retain their field groups when the last draft
-disappears from refreshed book data. Theme validation refusals render below the User chip; cookie and outage policies
-stay with the preference owner. Auth success uses fixed, allowlisted copy on the login destination.
+outcomes remain outside the closing menu. Drawer shelf additions capture the book and shelf in account/book-scoped
+mutation variables. Reopening the same book observes its latest cached addition, retaining progress, result and retry
+across drawer dismissal. These records use native mutation-cache retention; cache observation does not extend it. Batch
+progress and consolidated results derive from a serial Query mutation's captured IDs and shelf; failed-ID retry and the
+result remain available when selection becomes empty. Completion removes only succeeded IDs from the current selection.
+The batch owner stays mounted across table, grid and blocked-result branches. Versions observes pending and failed
+review mutations to retain their field groups when the last draft disappears from refreshed book data. Theme validation
+refusals render below the User chip; cookie and outage policies stay with the preference owner. Auth success uses fixed,
+allowlisted copy on the login destination.
 
 Field-specific validation appears beside its field with native associations. General API failures remain standalone
 alerts rather than being assigned to an unrelated field. Pending controls suppress duplicate submission while keeping
@@ -134,8 +137,9 @@ stays resolved across later edits. Mutation-cache retention is in-memory, not a 
 Before a cell write starts, its mutation lifecycle cancels conflicting recovery queries through TanStack and their
 transport AbortSignal. Recovery waits while a write affects the same resource; a work-scoped metadata write also
 coordinates recovery for sibling editions. Reading writes and unrelated resources remain independent. Reload retains
-native pending behaviour during that wait. After settlement, unresolved recovery can read fresh data. Aborted reads
-cannot apply stale resource or list values or replace a newer response's ETag.
+native pending behaviour during that wait. The subscribed mutation snapshot supplies a literal disabled state while
+blocked. After settlement, the native observer sees that transition and automatically resumes unresolved recovery.
+Aborted reads cannot apply stale resource or list values or replace a newer response's ETag.
 
 Failed mutations use TanStack's native retention: they remain while observed, then become eligible for collection five
 minutes after their last mutation observer detaches. The initiating hook's next request or table removal detaches that

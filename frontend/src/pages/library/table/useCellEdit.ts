@@ -432,7 +432,12 @@ function matchesRead(context: CellEditContext, data: BookMetadata | ReadingState
   return JSON.stringify(value) === JSON.stringify(submitted);
 }
 
-function recoveryOptions(id: number, context: CellEditContext, client: QueryClient) {
+function recoveryOptions(
+  id: number,
+  context: CellEditContext,
+  client: QueryClient,
+  blocked: boolean,
+) {
   return queryOptions({
     queryKey: [...resourceKey(context), "cell-recovery", id],
     queryFn: async ({ signal }): Promise<BookMetadata | ReadingState> => {
@@ -443,9 +448,9 @@ function recoveryOptions(id: number, context: CellEditContext, client: QueryClie
       applyRecoveryRead(client, context, data);
       return data;
     },
-    enabled: (query) =>
-      !hasPendingResourceWrite(client, context) &&
-      (query.state.data === undefined || !matchesRead(context, query.state.data)),
+    enabled: blocked
+      ? false
+      : (query) => query.state.data === undefined || !matchesRead(context, query.state.data),
     staleTime: 0,
     refetchOnWindowFocus: false,
   });
@@ -505,13 +510,20 @@ type CellEditFeedback = {
 export function useCellEditFeedback(): CellEditFeedback[] {
   const client = useQueryClient();
   const records = useCellEditRecords();
+  const pending = records.flatMap((record) =>
+    record.status === "pending" && record.context !== undefined ? [record.context] : [],
+  );
   const errors = records.flatMap((record) => {
     const context = record.context;
     if (record.status !== "error" || context === undefined) return [];
-    return [{ ...record, context }];
+    return [
+      { ...record, context, blocked: pending.some((write) => affectsResource(write, context)) },
+    ];
   });
   const recovery = useQueries({
-    queries: errors.map((record) => recoveryOptions(record.id, record.context, client)),
+    queries: errors.map((record) =>
+      recoveryOptions(record.id, record.context, client, record.blocked),
+    ),
   });
   return errors.flatMap((record, index) => {
     const context = record.context;
@@ -538,7 +550,7 @@ export function useCellEditFeedback(): CellEditFeedback[] {
         field: COLUMN_LABELS[context.columnKey],
         submitted,
         message: context.operation === "undo" ? `Undo failed: ${message}` : message,
-        reloading: read.isFetching || hasPendingResourceWrite(client, context),
+        reloading: read.isFetching || record.blocked,
         reload: () => {
           if (!hasPendingResourceWrite(client, context)) void read.refetch();
         },

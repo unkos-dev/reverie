@@ -9,7 +9,13 @@
  * the book route; Add to shelf posts through the shelves API. Anything
  * without a backend contract (delete, download) is absent by decision.
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+  type MutationState,
+} from "@tanstack/react-query";
 import { ExternalLink, FolderPlus, Loader2 } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 import { Link } from "react-router";
@@ -19,6 +25,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
 const EMPTY_CELL = "—";
@@ -189,6 +196,13 @@ function formatDate(iso: string): string {
   return Number.isNaN(date.getTime()) ? EMPTY_CELL : date.toLocaleDateString();
 }
 
+type ShelfAddition = {
+  bookId: string;
+  bookTitle: string;
+  shelfId: string;
+  shelfName: string;
+};
+
 /**
  * Shelf picker over the shelves list; each pick posts one membership row.
  * The shelves list is invalidated on success so the left rail's per-shelf
@@ -199,6 +213,14 @@ function AddToShelf({
   bookTitle,
 }: Readonly<{ bookId: string; bookTitle: string }>): ReactElement {
   const queryClient = useQueryClient();
+  const userId = queryClient.getQueryData<AuthMe>(queryKeys.auth.me())?.id ?? null;
+  const mutationKey = ["library-shelf-add", userId, bookId] as const;
+  const additions = useMutationState<MutationState<void, Error, ShelfAddition>>({
+    filters: { mutationKey, exact: true },
+  });
+  const addition = additions.at(-1);
+  const submitted = addition?.variables;
+  const pending = addition?.status === "pending";
   const {
     data: shelves,
     isError,
@@ -213,8 +235,8 @@ function AddToShelf({
   }, [isError, error]);
 
   const addMutation = useMutation({
-    mutationFn: ({ shelfId }: { shelfId: string; shelfName: string }) =>
-      addShelfItem(shelfId, bookId),
+    mutationKey,
+    mutationFn: ({ shelfId, bookId }: ShelfAddition) => addShelfItem(shelfId, bookId),
     onSuccess: () => {
       // Whole family: list counts and any cached shelf detail both go
       // stale after a membership write.
@@ -234,8 +256,8 @@ function AddToShelf({
   return (
     <div className="space-y-2">
       <DropdownMenu>
-        <Button type="button" variant="outline" isDisabled={addMutation.isPending}>
-          {addMutation.isPending ? (
+        <Button type="button" variant="outline" isPending={pending}>
+          {pending ? (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           ) : (
             <FolderPlus className="size-4" aria-hidden="true" />
@@ -250,7 +272,12 @@ function AddToShelf({
               <DropdownMenuItem
                 key={shelf.id}
                 onAction={() => {
-                  addMutation.mutate({ shelfId: shelf.id, shelfName: shelf.name });
+                  addMutation.mutate({
+                    bookId,
+                    bookTitle,
+                    shelfId: shelf.id,
+                    shelfName: shelf.name,
+                  });
                 }}
               >
                 {shelf.name}
@@ -259,26 +286,26 @@ function AddToShelf({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      {addMutation.isPending ? (
+      {pending && submitted !== undefined ? (
         <p role="status" className="text-fg-muted text-sm">
-          Adding “{bookTitle}” to {addMutation.variables.shelfName}…
+          Adding “{submitted.bookTitle}” to {submitted.shelfName}…
         </p>
       ) : null}
-      {addMutation.isSuccess ? (
+      {addition?.status === "success" && submitted !== undefined ? (
         <p role="status" className="text-fg-muted text-sm">
-          Added “{bookTitle}” to {addMutation.variables.shelfName}.
+          Added “{submitted.bookTitle}” to {submitted.shelfName}.
         </p>
       ) : null}
-      {addMutation.isError ? (
+      {addition?.status === "error" && submitted !== undefined ? (
         <div className="space-y-2">
           <p role="alert" className="text-fg-muted text-sm">
-            Couldn&apos;t add “{bookTitle}” to {addMutation.variables.shelfName}.
+            Couldn&apos;t add “{submitted.bookTitle}” to {submitted.shelfName}.
           </p>
           <Button
             type="button"
             variant="outline"
             onPress={() => {
-              addMutation.mutate(addMutation.variables);
+              addMutation.mutate(submitted);
             }}
           >
             Try again
