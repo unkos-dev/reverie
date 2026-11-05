@@ -191,6 +191,14 @@
       "groupName": "radix-gen",
       "dependencyDashboardApproval": true,
       "automerge": false
+    },
+    {
+      "description": "Take maintainer-released Specful versions without the release-age hold or dashboard approval. The repository's maintainer publishes Specful, so the hold's protection against an untrusted new release does not apply; required checks still gate the merge.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["github:unkos-dev/specful"],
+      "minimumReleaseAge": null,
+      "dependencyDashboardApproval": false,
+      "automerge": true
     }
   ],
   "customManagers": [

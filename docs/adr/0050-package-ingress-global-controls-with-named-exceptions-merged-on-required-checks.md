@@ -77,3 +77,7 @@ is pinned in the SQL lint recipe and runs through mise-pinned `uv` in an isolate
 dependency lockfile would add maintenance for a tool that does not enter the application. Transitive versions can change
 between fresh environments and are outside the repository's locked dependency audits. Source builds are disabled to
 prevent install-time build execution; local and CI lint use the same recipe.
+
+Specful is a named developer-tool exception to the release-age hold and major-version dashboard approval. This
+repository's maintainer publishes its releases, so those holds add no independent review of the publisher. Its version
+pin, committed `mise.lock` checksum and required checks still apply; updates merge automatically when those checks pass.
