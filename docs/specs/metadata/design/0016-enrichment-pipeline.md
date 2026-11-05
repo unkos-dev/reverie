@@ -12,7 +12,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0067"
   - "REV-ADR-0007"
-  - "REV-ADR-0018"
+  - "REV-ADR-0068"
   - "REV-ADR-0051"
 ---
 
@@ -78,11 +78,14 @@ metadata counts.
 ### State-writer census
 
 - `manifestations.enrichment_status`, `_attempt_count`, `_attempted_at`, `_retry_not_before`, `_error`, `_failures`,
-  `_rerun_requested`: written by `queue.rs`'s `claim_next`/`mark_complete`/`mark_failed`/`revert_in_progress` (the
-  queue's own lifecycle), plus external re-queue writers: `routes/enrichment.rs::trigger` and
+  `_rerun_requested`: written by `queue.rs`'s
+  `claim_next`/`mark_complete`/`mark_failed`/`rescue_stale_claims`/`revert_in_progress` (the queue's own lifecycle),
+  plus external re-queue writers: `routes/enrichment.rs::trigger` and
   `routes/dashboard/enrichment_failures.rs::retry_failures` share the connection-bound `enrichment::reset_retries`
   helper with explicit provider-timing policy. `routes/metadata.rs::apply_identifier_patches` retains its own
   CASE-guarded reset (a manual identifier edit implicitly re-queues enrichment).
+- `manifestations.enrichment_claim_seq`: written only by `claim_next`, which increments it on every claim. Nothing
+  resets it.
 - `metadata_versions` rows have three writer classes. This subject's own automated observations: written by
   `orchestrator::upsert_journal_row` (insert, or an `observation_count` bump on conflict) and by
   `apply_canonical_batch`'s own `confidence_score` update. A second writer with no overlap in code path: ingestion-time
@@ -124,7 +127,7 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
   sole, authoritative copy of that schedule. A row whose `enrichment_retry_not_before` is still in the future is also
   ineligible, so a rate-limited row waits for both the backoff window and the provider's `Retry-After`. At startup with
   enrichment enabled, `revert_in_progress` treats every `in_progress` row as orphaned under the single-instance
-  deployment decision.
+  deployment decision. Each tick first runs `rescue_stale_claims` before claiming.
 - `orchestrator.rs` is the per-manifestation flow. `load_snapshot` reads the current canonical state, the active
   identifier-registry slots and the `metadata_sources.base_priority` values, and derives the ordered `lookup_keys` list
   via `derive_lookup_keys`. `fan_out_with_fallback` tries each key in order under one shared wall-clock budget,
@@ -333,8 +336,20 @@ alone does not establish completed rollback.
 
 The deadline is checked before commit starts. A started commit is awaited through its outcome with database-side limits
 still active. Expiry during commit retains any committed catalogue changes and their atomic writeback enqueue, then
-records the attempt as expired. An uncertain commit outcome leaves recovery to startup rather than being described as
+records the attempt as expired. An uncertain commit outcome leaves recovery to rescue rather than being described as
 proven rollback. Already committed cache entries remain available.
+
+Every claim increments `enrichment_claim_seq`, and the attempt carries the new value as its fence. The catalogue
+transaction first locks the manifestation row with `FOR UPDATE`, conditioned on `in_progress` and that sequence, and
+holds the lock to commit; when the condition fails, the attempt stops with `ClaimLost` before any write and skips
+bookkeeping. `mark_complete` and `mark_failed` update only a row still carrying the attempt's sequence. A rerun resets
+the attempt count but never the sequence, so a later claim cannot share a stale attempt's fence.
+
+On each tick, `rescue_stale_claims` locks up to 100 `in_progress` rows claimed more than twice `run_timeout_secs` ago,
+oldest first, with `FOR UPDATE SKIP LOCKED`, and applies the shared failure transition with class `internal`, no source
+and the fixed error `enrichment claim expired`. A row whose catalogue transaction or bookkeeping holds its lock is
+skipped until that transaction resolves. Rescue uses the ordinary backoff, attempt cap and rerun precedence, and a
+rescue database error stops the queue the way a claim error does.
 
 **A group retry** (`POST /api/v1/dashboard/enrichment-failures/retries`) accepts `{source, class}`, with `none`
 selecting a null source. It requires admin scope and administrator role, with browser CSRF protection. In the caller's
@@ -390,7 +405,8 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   `enrichment task panicked`; `finish` applies the usual retry backoff and attempt cap. A rerun requested during the run
   takes precedence, resetting the row to immediately eligible `pending`. The task retains its semaphore permit until
   bookkeeping finishes, then releases it so the worker can process other work. Bookkeeping failures are logged with the
-  manifestation identifier; if the database update fails, the row remains `in_progress` until restart recovery.
+  manifestation identifier; if the database update fails, the row remains `in_progress` until rescue or restart
+  recovery.
 - Panic recovery requires unwinding; a build using `panic = "abort"` terminates the process and relies on startup
   recovery. String panic payloads are logged with the manifestation identifier after control characters are removed;
   non-string payloads use a fixed diagnostic. The database error remains fixed.
@@ -399,8 +415,8 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   immediately eligible `pending` with cleared attempts and failures. The queue retains its claim and semaphore permit
   through transaction cleanup and `finish`. Bookkeeping is a single guarded update outside the expired work deadline,
   with no statement limit, so a row lock held by another session delays it rather than abandoning it. A cleanup or
-  uncertain commit failure skips normal failure bookkeeping and leaves the durable claim for startup recovery;
-  bookkeeping errors are logged with the UUID.
+  uncertain commit failure skips normal failure bookkeeping and leaves the durable claim for rescue; bookkeeping errors
+  are logged with the UUID.
 - A run that kills the process never reaches `mark_failed`, where the `Skipped` transition evaluates `max_attempts`.
   Repeated process crashes therefore do not exhaust the attempt limit. The preserved last-attempt timestamp and counter
   bound retries through the claim query's backoff schedule, which reaches 24 hours and stays there.
@@ -425,7 +441,7 @@ Timeout diagnostics carry the manifestation UUID and configured budget, without 
 metadata. The budget begins cancellation; safe database cleanup and failure bookkeeping can extend it. PostgreSQL's
 statement limit bounds server work, but an unresponsive network can prevent acknowledged cleanup or recovery. The
 synchronous redirect-time DNS resolver is not pre-emptible by Tokio timers. The default therefore does not promise
-release at exactly 120 seconds. Database unavailability retains the startup-recovery limitation.
+release at exactly 120 seconds. While the database is unavailable, neither bookkeeping nor rescue can release a claim.
 
 Immediately after a group retry commits, the handler emits a structured `bulk_retry` event with `outcome=committed`, the
 requesting user UUID, a server-generated request UUID, source/class and queued/remaining counts. Client IP resolution

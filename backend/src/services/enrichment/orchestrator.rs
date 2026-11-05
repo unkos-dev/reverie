@@ -194,6 +194,10 @@ pub fn build_sources(config: &Config) -> Vec<Arc<dyn MetadataSource>> {
 pub(super) struct RunTimeout;
 
 #[derive(Debug, thiserror::Error)]
+#[error("enrichment claim is no longer held by this attempt")]
+pub(super) struct ClaimLost;
+
+#[derive(Debug, thiserror::Error)]
 #[error("enrichment transaction cleanup failed: {0}")]
 pub(super) struct CleanupFailure(#[from] pub(super) sqlx::Error);
 
@@ -214,9 +218,7 @@ async fn limit_statement(
     Ok(())
 }
 
-async fn rollback_owned(
-    mut tx: Transaction<'_, Postgres>,
-) -> Result<(), CleanupFailure> {
+async fn rollback_owned(mut tx: Transaction<'_, Postgres>) -> Result<(), CleanupFailure> {
     loop {
         match tx.flush().await {
             Ok(()) => break,
@@ -287,15 +289,25 @@ async fn commit_owned(
 /// # Errors
 ///
 /// Returns an error if the database is unreachable, the manifestation does
-/// not exist, or the transaction commit fails.
+/// not exist, the claim identified by `claim_seq` is no longer held, or the
+/// transaction commit fails.
 pub async fn run_once(
     pool: &PgPool,
     config: &Config,
     manifestation_id: Uuid,
+    claim_seq: i64,
     deadline: Instant,
 ) -> anyhow::Result<RunOutcome> {
     let sources = build_sources(config);
-    run_queued_with_sources(pool, config, &sources, manifestation_id, deadline).await
+    run_queued_with_sources(
+        pool,
+        config,
+        &sources,
+        manifestation_id,
+        claim_seq,
+        deadline,
+    )
+    .await
 }
 
 /// [`run_once`] body taking an explicit source set, so tests can substitute
@@ -309,7 +321,15 @@ async fn run_once_with_sources(
 ) -> anyhow::Result<RunOutcome> {
     let deadline =
         Instant::now() + Duration::from_secs(u64::from(config.enrichment.run_timeout_secs));
-    run_queued_with_sources(pool, config, sources, manifestation_id, deadline).await
+    let claim_seq = sqlx::query_scalar!(
+        "UPDATE manifestations SET enrichment_status = 'in_progress', \
+         enrichment_claim_seq = enrichment_claim_seq + 1 WHERE id = $1 \
+         RETURNING enrichment_claim_seq",
+        manifestation_id,
+    )
+    .fetch_one(pool)
+    .await?;
+    run_queued_with_sources(pool, config, sources, manifestation_id, claim_seq, deadline).await
 }
 
 pub(super) async fn run_queued_with_sources(
@@ -317,6 +337,7 @@ pub(super) async fn run_queued_with_sources(
     config: &Config,
     sources: &[Arc<dyn MetadataSource>],
     manifestation_id: Uuid,
+    claim_seq: i64,
     deadline: Instant,
 ) -> anyhow::Result<RunOutcome> {
     let mut tx = timeout_at(deadline, pool.begin())
@@ -371,6 +392,16 @@ pub(super) async fn run_queued_with_sources(
         .map_err(|_| RunTimeout)??;
     let result = timeout_at(deadline, async {
         limit_statement(&mut tx, deadline.saturating_duration_since(Instant::now())).await?;
+        // Held to commit, so the rescuer cannot reclaim the row mid-transaction.
+        sqlx::query_scalar!(
+            "SELECT id FROM manifestations WHERE id = $1 \
+             AND enrichment_status = 'in_progress' AND enrichment_claim_seq = $2 FOR UPDATE",
+            manifestation_id,
+            claim_seq,
+        )
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(ClaimLost)?;
         let (per_field, failures) =
             apply_journal_batch(&mut tx, manifestation_id, &results).await?;
         limit_statement(&mut tx, deadline.saturating_duration_since(Instant::now())).await?;
@@ -1831,11 +1862,21 @@ mod tests {
         let run_pool = pool.clone();
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let claim_seq = sqlx::query_scalar!(
+            "UPDATE manifestations SET enrichment_status = 'in_progress', \
+             enrichment_claim_seq = enrichment_claim_seq + 1 WHERE id = $1 \
+             RETURNING enrichment_claim_seq",
+            id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
         let task = tokio::spawn(
             async move {
                 let _permit = permit;
-                run_queued_with_sources(&run_pool, &config, &[source], id, deadline).await
+                run_queued_with_sources(&run_pool, &config, &[source], id, claim_seq, deadline)
+                    .await
             }
             .with_subscriber(subscriber),
         );

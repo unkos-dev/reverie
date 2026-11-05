@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0053"
 title: "At most one writeback rewrites a manifestation's file at a time"
 governed-by:
-  - "REV-ADR-0018"
+  - "REV-ADR-0068"
 ---
 
 # At most one writeback rewrites a manifestation's file at a time

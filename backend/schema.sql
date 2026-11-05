@@ -994,6 +994,7 @@ CREATE TABLE public.manifestations (
     relocation_destination_path text,
     enrichment_failures jsonb DEFAULT '[]'::jsonb NOT NULL,
     enrichment_retry_not_before timestamp with time zone,
+    enrichment_claim_seq bigint DEFAULT 0 NOT NULL,
     CONSTRAINT manifestations_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_enrichment_attempted_at_ts_decode_range CHECK (((enrichment_attempted_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (enrichment_attempted_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_enrichment_failures_check CHECK ((jsonb_typeof(enrichment_failures) = 'array'::text)),

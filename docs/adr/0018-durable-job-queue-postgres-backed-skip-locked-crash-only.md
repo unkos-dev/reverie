@@ -3,11 +3,13 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0018"
 title: "Durable job queue: Postgres-backed, SKIP LOCKED, crash-only"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-05"
 decided-on: "2026-06-08"
 decision-makers:
   - "John Unkovich"
+superseded-by:
+  - "REV-ADR-0068"
 ---
 
 # Durable job queue: Postgres-backed, SKIP LOCKED, crash-only
