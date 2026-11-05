@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Licence checker glob overrides](2026-11-05-licence-checker-glob-overrides.md): lifts when the licence checker's
+  dependency graph resolves patched versions without either override and passes the licence checks.
 - [Frontend CI Ubuntu mirror selection](2026-10-26-frontend-ci-ubuntu-mirror.md): lifts when the runner image fixes slow
   mirror failover and browser provisioning succeeds with its unmodified mirror list.
 - [crypto-bigint timing risk in OIDC signature verification](2026-10-25-crypto-bigint-verification-only.md): lifts when
