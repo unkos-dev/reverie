@@ -91,8 +91,9 @@ details drawer share the right edge and never stack: opening one closes the othe
 Closing the drawer does not cancel a submitted shelf addition. Reopening the same book shows any retained progress,
 result or **Try again** action. This feedback is temporary and can expire five minutes after you close the drawer.
 
-The full record's **Versions** tab restores any retained pending review or failure when you return to the book.
-Returning does not repeat the review. Feedback is temporary and can expire five minutes after you leave.
+The full record's **Versions** tab restores retained progress or failures for **Accept**, **Reject** and **Clear** when
+you return to the book. Returning does not repeat an action. A failed Clear keeps its error beside the field; use
+**Clear** and confirm again to retry. Feedback is temporary and can expire five minutes after you leave.
 
 ## Selecting books and acting on them
 
