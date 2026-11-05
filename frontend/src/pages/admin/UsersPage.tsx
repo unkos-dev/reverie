@@ -211,20 +211,51 @@ function isRole(v: string): v is Role {
   return v === "admin" || v === "adult" || v === "child";
 }
 
+function UserRole({
+  user,
+  onChanged,
+}: Readonly<{ user: User; onChanged: () => void }>): ReactElement {
+  const queryClient = useQueryClient();
+  const roleMutation = useMutation({
+    mutationFn: (role: Role) => updateUserRole(user.id, role),
+    onSuccess: () => {
+      onChanged();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() });
+    },
+  });
+  return (
+    <>
+      <Select
+        aria-label="Role"
+        value={user.role}
+        isDisabled={roleMutation.isPending}
+        onChange={(v) => {
+          if (typeof v !== "string") return;
+          if (isRole(v)) roleMutation.mutate(v);
+        }}
+      >
+        <SelectTrigger className="w-28" isDisabled={false} isPending={roleMutation.isPending}>
+          <SelectValue>{roleMutation.isPending ? "Saving…" : undefined}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem id="admin">admin</SelectItem>
+          <SelectItem id="adult">adult</SelectItem>
+          <SelectItem id="child">child</SelectItem>
+        </SelectContent>
+      </Select>
+      {roleMutation.isError ? (
+        <FieldError>Role update failed: {errorDetail(roleMutation.error)}</FieldError>
+      ) : null}
+    </>
+  );
+}
+
 function UserRow({
   localAuthEnabled,
   onLinkChange,
   user,
   isSelf,
 }: Readonly<UserRowProps>): ReactElement {
-  const queryClient = useQueryClient();
-  const roleMutation = useMutation({
-    mutationFn: (role: Role) => updateUserRole(user.id, role),
-    onSuccess: () => {
-      onLinkChange();
-      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() });
-    },
-  });
   const statusMutation = useMutation({
     mutationFn: (disabled: boolean) => setAccountStatus(user.id, disabled),
     onSuccess: onLinkChange,
@@ -250,27 +281,7 @@ function UserRow({
       </TableCell>
       <TableCell className="text-muted-foreground">{user.email ?? "no email"}</TableCell>
       <TableCell>
-        <Select
-          aria-label="Role"
-          value={user.role}
-          isDisabled={roleMutation.isPending}
-          onChange={(v) => {
-            if (typeof v !== "string") return;
-            if (isRole(v)) roleMutation.mutate(v);
-          }}
-        >
-          <SelectTrigger className="w-28">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem id="admin">admin</SelectItem>
-            <SelectItem id="adult">adult</SelectItem>
-            <SelectItem id="child">child</SelectItem>
-          </SelectContent>
-        </Select>
-        {roleMutation.isError ? (
-          <FieldError>Role update failed: {errorDetail(roleMutation.error)}</FieldError>
-        ) : null}
+        <UserRole user={user} onChanged={onLinkChange} />
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap gap-2">
@@ -354,6 +365,33 @@ const mailFailureReasons = {
   payload_unreadable: "the queued message couldn't be read",
 };
 
+function linkEmailMessage({
+  inactive,
+  sendingError,
+  requestFailed,
+  status,
+  queued,
+  email,
+}: {
+  inactive: boolean;
+  sendingError: Error | null;
+  requestFailed: boolean;
+  status: Awaited<ReturnType<typeof fetchCredentialLinkEmail>> | undefined;
+  queued: boolean;
+  email: string | null;
+}): string | null {
+  if (inactive) return "This link is no longer active. Create a new link to send it.";
+  if (sendingError instanceof ApiError && sendingError.status === 503)
+    return "Email isn't available right now. Copy the link instead.";
+  if (requestFailed) return "Couldn't confirm the request. Try again.";
+  if (status?.status === "failed")
+    return `Sending failed: ${mailFailureReasons[status.failure_category]}. Copy the link instead, or try again.`;
+  if (status?.status === "accepted")
+    return `The mail server accepted the email for ${email ?? ""}. This doesn't confirm it reached the inbox.`;
+  if (queued) return `Sending to ${email ?? ""}…`;
+  return null;
+}
+
 function LinkResultContent({
   result,
   onDone,
@@ -392,17 +430,14 @@ function LinkResultContent({
   const accepted = status?.status === "accepted";
   const queued =
     sending.isPending || delivery.isFetching || (!delivery.isError && status?.status === "queued");
-  let mailMessage: string | null = null;
-  if (inactive) mailMessage = "This link is no longer active. Create a new link to send it.";
-  else if (sending.error instanceof ApiError && sending.error.status === 503)
-    mailMessage = "Email isn't available right now. Copy the link instead.";
-  else if (sending.isError || delivery.isError)
-    mailMessage = "Couldn't confirm the request. Try again.";
-  else if (status?.status === "failed")
-    mailMessage = `Sending failed: ${mailFailureReasons[status.failure_category]}. Copy the link instead, or try again.`;
-  else if (accepted)
-    mailMessage = `The mail server accepted the email for ${result.email ?? ""}. This doesn't confirm it reached the inbox.`;
-  else if (queued) mailMessage = `Sending to ${result.email ?? ""}…`;
+  const mailMessage = linkEmailMessage({
+    inactive,
+    sendingError: sending.error,
+    requestFailed: sending.isError || delivery.isError,
+    status,
+    queued,
+    email: result.email,
+  });
   const expiry = formatDateTime(result.expires_at);
   const description = result.newAccount
     ? `${result.name} uses this link to choose a password. It expires ${expiry}. You won't see it again. If it's lost, create a new link from the user list.`

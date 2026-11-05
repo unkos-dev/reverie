@@ -178,8 +178,32 @@ function useLibraryBooks(listKey: BooksListKey, eligible: boolean, sortPending: 
   };
 }
 
-export function LibraryPage(): ReactElement {
+function CellEditOutcomes(): ReactElement | null {
   const editFeedback = useCellEditFeedback();
+  return editFeedback.length > 0 ? (
+    <section aria-label="Edit outcomes" className="mb-4 space-y-3">
+      {editFeedback.map((feedback) => (
+        <div key={feedback.id} className="space-y-2">
+          <FieldError>
+            {feedback.field} for “{feedback.bookTitle}”: {feedback.message}
+          </FieldError>
+          <p className="text-fg-muted break-words text-sm">Submitted value: {feedback.submitted}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            isPending={feedback.reloading}
+            onPress={feedback.reload}
+          >
+            Reload
+          </Button>
+        </div>
+      ))}
+    </section>
+  ) : null;
+}
+
+export function LibraryPage(): ReactElement {
   const owner = useLibraryFilters();
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
   const cinematic = useCinematicMode();
@@ -203,7 +227,6 @@ export function LibraryPage(): ReactElement {
   const {
     items,
     displayedKey,
-    blocked,
     blockedMessage,
     updating,
     canLoadMore,
@@ -298,29 +321,7 @@ export function LibraryPage(): ReactElement {
           <FilterChips filters={filterState} onRemove={commitAll} onClearAll={clearAll} />
           <Separator className="mb-8" />
 
-          {editFeedback.length > 0 ? (
-            <section aria-label="Edit outcomes" className="mb-4 space-y-3">
-              {editFeedback.map((feedback) => (
-                <div key={feedback.id} className="space-y-2">
-                  <FieldError>
-                    {feedback.field} for “{feedback.bookTitle}”: {feedback.message}
-                  </FieldError>
-                  <p className="text-fg-muted break-words text-sm">
-                    Submitted value: {feedback.submitted}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    isPending={feedback.reloading}
-                    onPress={feedback.reload}
-                  >
-                    Reload
-                  </Button>
-                </div>
-              ))}
-            </section>
-          ) : null}
+          <CellEditOutcomes />
           <LibraryBooks
             items={items}
             filtered={hasActiveFilterState(filterState)}
@@ -359,22 +360,20 @@ export function LibraryPage(): ReactElement {
             </TableChunkBoundary>
           </LibraryBooks>
 
-          {viewMode === "table" && !blocked ? (
-            <BatchBar
-              selectedIds={selectedIds}
-              hasMorePages={canLoadMore}
-              onClearSelection={() => {
-                setSelectedIds(new Set());
-              }}
-              onCompleted={(succeededIds) => {
-                setSelectedIds((current) => {
-                  const next = new Set(current);
-                  for (const id of succeededIds) next.delete(id);
-                  return next;
-                });
-              }}
-            />
-          ) : null}
+          <BatchBar
+            selectedIds={selectedIds}
+            hasMorePages={canLoadMore}
+            onClearSelection={() => {
+              setSelectedIds(new Set());
+            }}
+            onCompleted={(succeededIds) => {
+              setSelectedIds((current) => {
+                const next = new Set(current);
+                for (const id of succeededIds) next.delete(id);
+                return next;
+              });
+            }}
+          />
 
           {viewMode !== "table" && canLoadMore ? (
             <LibraryPagination

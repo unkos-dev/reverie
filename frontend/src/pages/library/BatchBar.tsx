@@ -41,6 +41,7 @@ export function BatchBar({
   } = useQuery<Shelf[]>({
     queryKey: queryKeys.shelves.list(),
     queryFn: ({ signal }) => listShelves(signal),
+    enabled: selectedIds.size > 0,
     staleTime: 60_000,
   });
   // A shelf-less picker is sanctioned degradation, but the failure must

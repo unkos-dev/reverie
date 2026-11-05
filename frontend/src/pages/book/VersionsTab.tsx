@@ -7,7 +7,12 @@
  * `["books", "detail", id]` cache slot so the canonical fields, the
  * pending list, and the version-count badge refetch in lockstep.
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useMutationState,
+  useQueryClient,
+  type Mutation,
+} from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
 import { FieldError } from "@/components/ui/field";
 
@@ -49,12 +54,30 @@ type VersionsTabProps = {
   book: BookDetail;
 };
 
+type ReviewVariables = { row: MetadataVersionRow; action: "accept" | "reject" };
+
+function reviewKey(manifestationId: string) {
+  return [...queryKeys.books.detail(manifestationId), "version-review"] as const;
+}
+
 /**
  * Versions tab with field-owned review outcomes and an Edit dialog.
  */
 export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const grouped = groupByField(book.metadata_versions);
+  const retainedFields = useMutationState<
+    string | undefined,
+    Mutation<unknown, Error, ReviewVariables>
+  >({
+    filters: {
+      mutationKey: reviewKey(book.id),
+      exact: true,
+      predicate: (mutation) =>
+        mutation.state.status === "pending" || mutation.state.status === "error",
+    },
+    select: (mutation) => mutation.state.variables?.row.field_name,
+  });
   // Name/label defs only: EditMetadataDialog seeds each field's canonical
   // value itself from a fresh GET, not from this (possibly stale) `book`.
   const editableFields = (
@@ -64,7 +87,11 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
     label: FIELD_LABEL[name] ?? name,
   }));
   const fieldNames = [
-    ...new Set([...editableFields.map(({ name }) => name), ...Object.keys(grouped)]),
+    ...new Set([
+      ...editableFields.map(({ name }) => name),
+      ...Object.keys(grouped),
+      ...retainedFields.filter((field) => field !== undefined),
+    ]),
   ].sort((a, b) => a.localeCompare(b));
 
   return (
@@ -139,7 +166,8 @@ function FieldGroup({
   });
 
   const review = useMutation({
-    mutationFn: ({ row, action }: { row: MetadataVersionRow; action: "accept" | "reject" }) =>
+    mutationKey: reviewKey(manifestationId),
+    mutationFn: ({ row, action }: ReviewVariables) =>
       action === "accept"
         ? acceptVersion(manifestationId, row.id)
         : rejectVersion(manifestationId, row.id),

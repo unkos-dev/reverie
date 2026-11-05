@@ -61,6 +61,10 @@ Persistent write initiators use native Button pending state: they retain focus a
 the request settles. Conflicting siblings are disabled. Batch actions use a labelled Group with ordinary Tab order and
 immediate native shelf menus.
 
+Role changes retain focus on the Select trigger through its native Button pending state. The Select disables its native
+input while the write settles. The trigger overrides the inherited disabled prop and uses pending behaviour to stay in
+the Tab order and suppress activation. Confirmed user data controls the selected role.
+
 Actions stay pending until the awaited mutation and its completion work settle. Expected refusals retain entered values
 and allow correction or retry. Successful submission preserves each screen's navigation, reset or dialog closure
 behaviour. Token receipt values use read-only TextFields with associated Labels and styled Inputs.
@@ -100,8 +104,10 @@ Feedback stays with the action's context. Inline errors are not repeated in a to
 read-only credential and retains manual-copy recovery. Row actions retain named failures beside their target. Membership
 outcomes remain outside the closing menu. Batch progress and consolidated results derive from a serial Query mutation's
 captured IDs and shelf; failed-ID retry and the result remain available when selection becomes empty. Completion removes
-only succeeded IDs from the current selection. Theme validation refusals render below the User chip; cookie and outage
-policies stay with the preference owner. Auth success uses fixed, allowlisted copy on the login destination.
+only succeeded IDs from the current selection. The batch owner stays mounted across table, grid and blocked-result
+branches. Versions observes pending and failed review mutations to retain their field groups when the last draft
+disappears from refreshed book data. Theme validation refusals render below the User chip; cookie and outage policies
+stay with the preference owner. Auth success uses fixed, allowlisted copy on the login destination.
 
 Field-specific validation appears beside its field with native associations. General API failures remain standalone
 alerts rather than being assigned to an unrelated field. Pending controls suppress duplicate submission while keeping
@@ -117,13 +123,19 @@ Table-load recovery belongs to the Library results region and is described in th
 also render in that region, outside conditional table rendering, from account-scoped TanStack mutation state. Each
 mutation captures its book, field, submitted value and displayed source query. Mutation lifecycle handlers apply
 confirmed results even after table replacement; the existing synchronous grid adapter supplies pending-cell protection.
-A successful save or Undo removes earlier failed mutations for the same book and field from the account's cache. Their
-retirement does not depend on retaining the later success record. Targeted metadata and reading-state queries re-read
-the affected resource independently of list membership. They read on initial recovery, reconnect and explicit Reload,
-without another read on window focus. Fresh reads update the captured source and reconcile matching failures without
-repeating writes or creating Undo provenance. A matching read disables further recovery reads for that operation; its
-cached confirmation stays resolved across later edits. Mutation-cache retention is in-memory, not a durable operation
-ledger.
+A successful save or Undo removes earlier failed mutations for the same book and field from the account's cache. A
+failure arriving after a newer cached success for that cell is removed on delivery. Removed failures stay retired after
+the correcting success is collected. Targeted metadata and reading-state queries re-read the affected resource
+independently of list membership. They read on initial recovery, reconnect and explicit Reload, without another read on
+window focus. Fresh reads update the captured source and reconcile matching failures without repeating writes or
+creating Undo provenance. A matching read disables further recovery reads for that operation; its cached confirmation
+stays resolved across later edits. Mutation-cache retention is in-memory, not a durable operation ledger.
+
+Before a cell write starts, its mutation lifecycle cancels conflicting recovery queries through TanStack and their
+transport AbortSignal. Recovery waits while a write affects the same resource; a work-scoped metadata write also
+coordinates recovery for sibling editions. Reading writes and unrelated resources remain independent. Reload retains
+native pending behaviour during that wait. After settlement, unresolved recovery can read fresh data. Aborted reads
+cannot apply stale resource or list values or replace a newer response's ETag.
 
 Failed mutations use TanStack's native retention: they remain while observed, then become eligible for collection five
 minutes after their last mutation observer detaches. The initiating hook's next request or table removal detaches that

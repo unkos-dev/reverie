@@ -97,6 +97,9 @@ of a selection, and a control that silently meant "everything matching the filte
 its limit. Changing the query (filters, search, sort) or switching views clears the selection, because acting on rows
 you can no longer see is the kind of surprise a management surface exists to prevent.
 
+A submitted batch keeps the books and shelf you chose. Its progress, result and **Retry failed books** action remain
+available if you switch views or clear the selection. Retry sends only the books that could not be added.
+
 ## Sorting the library
 
 The library always has an order. Before you have chosen one it is the order Reverie ships with, newest additions first,

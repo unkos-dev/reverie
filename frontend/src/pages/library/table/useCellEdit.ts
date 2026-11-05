@@ -335,22 +335,44 @@ function cellEditKey(userId: string | null) {
   return ["library-cell-edit", userId] as const;
 }
 
-function retireCellFailures(client: QueryClient, context: CellEditContext): void {
-  const cache = client.getMutationCache();
+function cellMutations(client: QueryClient, userId: string | null) {
   // This account-scoped key belongs only to the three mutations carrying CellEditContext.
-  const mutations = cache.findAll({
-    mutationKey: cellEditKey(context.userId),
+  return client.getMutationCache().findAll({
+    mutationKey: cellEditKey(userId),
     exact: true,
   }) as Mutation<unknown, Error, { context: CellEditContext }>[];
+}
+
+function sameCell(first: CellEditContext | undefined, second: CellEditContext): boolean {
+  return first?.row.id === second.row.id && first.columnKey === second.columnKey;
+}
+
+function retireCellFailures(
+  client: QueryClient,
+  context: CellEditContext,
+  outcome: "success" | "error" = "success",
+): void {
+  const cache = client.getMutationCache();
+  const mutations = cellMutations(client, context.userId);
   const current = mutations.find((mutation) => mutation.state.variables?.context === context);
-  for (const mutation of mutations) {
-    const previous = mutation.state.variables?.context;
+  if (current === undefined) return;
+  if (outcome === "error") {
     if (
-      current !== undefined &&
+      mutations.some(
+        (mutation) =>
+          mutation.mutationId > current.mutationId &&
+          mutation.state.status === "success" &&
+          sameCell(mutation.state.variables?.context, context),
+      )
+    )
+      cache.remove(current);
+    return;
+  }
+  for (const mutation of mutations) {
+    if (
       mutation.mutationId < current.mutationId &&
       mutation.state.status === "error" &&
-      previous?.row.id === context.row.id &&
-      previous.columnKey === context.columnKey
+      sameCell(mutation.state.variables?.context, context)
     )
       cache.remove(mutation);
   }
@@ -360,6 +382,34 @@ function resourceKey(context: CellEditContext): QueryKey {
   return context.pipeline === "metadata"
     ? queryKeys.books.metadata(context.row.id)
     : queryKeys.books.reading(context.row.id, context.userId);
+}
+
+function affectsResource(write: CellEditContext, read: CellEditContext): boolean {
+  return (
+    write.pipeline === read.pipeline &&
+    (write.row.id === read.row.id || (write.workScoped && write.row.work_id === read.row.work_id))
+  );
+}
+
+function hasPendingResourceWrite(client: QueryClient, context: CellEditContext): boolean {
+  return cellMutations(client, context.userId).some((mutation) => {
+    const write = mutation.state.variables?.context;
+    return (
+      mutation.state.status === "pending" && write !== undefined && affectsResource(write, context)
+    );
+  });
+}
+
+async function cancelRecoveryReads(client: QueryClient, context: CellEditContext): Promise<void> {
+  const affected = cellMutations(client, context.userId).flatMap((mutation) => {
+    const read = mutation.state.variables?.context;
+    return read !== undefined && affectsResource(context, read) ? [read] : [];
+  });
+  await Promise.all(
+    [context, ...affected].map((read) =>
+      client.cancelQueries({ queryKey: [...resourceKey(read), "cell-recovery"] }),
+    ),
+  );
 }
 
 function valueForRow(row: BookListItem, columnKey: EditableColumnKey): unknown {
@@ -389,10 +439,13 @@ function recoveryOptions(id: number, context: CellEditContext, client: QueryClie
       const data = await (context.pipeline === "metadata"
         ? getBookMetadata(context.row.id, signal)
         : getReadingState(context.row.id, signal));
+      signal.throwIfAborted();
       applyRecoveryRead(client, context, data);
       return data;
     },
-    enabled: (query) => query.state.data === undefined || !matchesRead(context, query.state.data),
+    enabled: (query) =>
+      !hasPendingResourceWrite(client, context) &&
+      (query.state.data === undefined || !matchesRead(context, query.state.data)),
     staleTime: 0,
     refetchOnWindowFocus: false,
   });
@@ -485,9 +538,9 @@ export function useCellEditFeedback(): CellEditFeedback[] {
         field: COLUMN_LABELS[context.columnKey],
         submitted,
         message: context.operation === "undo" ? `Undo failed: ${message}` : message,
-        reloading: read.isFetching,
+        reloading: read.isFetching || hasPendingResourceWrite(client, context),
         reload: () => {
-          void read.refetch();
+          if (!hasPendingResourceWrite(client, context)) void read.refetch();
         },
       },
     ];
@@ -544,11 +597,13 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
 
   function failed(error: Error, variables: { context: CellEditContext }): void {
     console.error("[useCellEdit] request failed", error);
+    retireCellFailures(queryClient, variables.context, "error");
     void queryClient.invalidateQueries({ queryKey: variables.context.listKey });
   }
 
   const metadataMutation = useMutation({
     mutationKey: cellEditKey(userId),
+    onMutate: ({ context }) => cancelRecoveryReads(queryClient, context),
     mutationFn: async ({
       context,
       patch,
@@ -596,6 +651,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
 
   const readingMutation = useMutation({
     mutationKey: cellEditKey(userId),
+    onMutate: ({ context }) => cancelRecoveryReads(queryClient, context),
     mutationFn: ({
       context,
       patch,
@@ -632,6 +688,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
 
   const undoMutation = useMutation({
     mutationKey: cellEditKey(userId),
+    onMutate: ({ context }) => cancelRecoveryReads(queryClient, context),
     mutationFn: async ({ entry }: { context: CellEditContext; entry: UndoEntry }) => {
       if (entry.pipeline === "reading")
         return {
