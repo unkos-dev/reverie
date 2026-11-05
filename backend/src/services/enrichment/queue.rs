@@ -279,6 +279,11 @@ async fn finish(
     claim_seq: i64,
     result: anyhow::Result<RunOutcome>,
 ) -> sqlx::Result<()> {
+    let claim = Claim {
+        id,
+        attempt_count,
+        seq: claim_seq,
+    };
     match result {
         Ok(outcome) => {
             // If every source failed with non-terminal errors, treat the row
@@ -296,9 +301,7 @@ async fn finish(
                     .max();
                 mark_failed(
                     pool,
-                    id,
-                    attempt_count,
-                    claim_seq,
+                    claim,
                     config,
                     retry_after,
                     Some("transient source failures"),
@@ -315,17 +318,7 @@ async fn finish(
                 source: None,
                 class: FailureClass::Internal,
             }];
-            mark_failed(
-                pool,
-                id,
-                attempt_count,
-                claim_seq,
-                config,
-                None,
-                Some(&e.to_string()),
-                &internal,
-            )
-            .await?;
+            mark_failed(pool, claim, config, None, Some(&e.to_string()), &internal).await?;
         }
     }
     Ok(())
@@ -384,16 +377,26 @@ async fn mark_complete(
 /// operator's edit resets the row to a fresh `pending` with no backoff, the
 /// same shape an edit on an idle failed row produces, so the rerun is never
 /// deferred behind a backoff window or swallowed by `skipped`.
-async fn mark_failed(
-    executor: impl sqlx::PgExecutor<'_>,
+#[derive(Clone, Copy)]
+struct Claim {
     id: Uuid,
     attempt_count: i32,
-    claim_seq: i64,
+    seq: i64,
+}
+
+async fn mark_failed(
+    executor: impl sqlx::PgExecutor<'_>,
+    claim: Claim,
     config: &Config,
     retry_after: Option<Duration>,
     error: Option<&str>,
     failures: &[FailureEntry],
 ) -> sqlx::Result<()> {
+    let Claim {
+        id,
+        attempt_count,
+        seq: claim_seq,
+    } = claim;
     let failures = serde_json::to_value(failures).map_err(|e| sqlx::Error::Encode(Box::new(e)))?;
     let max = config.enrichment.max_attempts.cast_signed();
     let next_status = if attempt_count >= max {
