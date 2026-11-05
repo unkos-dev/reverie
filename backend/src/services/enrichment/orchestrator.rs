@@ -1714,9 +1714,6 @@ mod tests {
             .await;
     }
 
-    /// One source returns `publisher` (`AutoFill` by default) on an empty
-    /// canonical → Apply fires and `publisher` is written to the
-    /// manifestation.
     #[tokio::test(start_paused = true)]
     async fn enrichment_timeout_waits_for_commit() {
         // REV-REQ-0078, criterion 5; catalogue corruption boundary.
