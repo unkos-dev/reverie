@@ -107,10 +107,12 @@ mutation variables. Reopening the same book observes its latest cached addition,
 across drawer dismissal. These records use native mutation-cache retention; cache observation does not extend it. Batch
 progress and consolidated results derive from a serial Query mutation's captured IDs and shelf; failed-ID retry and the
 result remain available when selection becomes empty. Completion removes only succeeded IDs from the current selection.
-The batch owner stays mounted across table, grid and blocked-result branches. Versions observes pending and failed
-review mutations to retain their field groups when the last draft disappears from refreshed book data. Theme validation
-refusals render below the User chip; cookie and outage policies stay with the preference owner. Auth success uses fixed,
-allowlisted copy on the login destination.
+The batch owner stays mounted across table, grid and blocked-result branches. Versions observes each field's latest
+cached review state and submitted draft. Pending controls and failures remain available after panel or route remounting,
+including when refreshed book data removes the draft. A pending review without its row retains a local status message.
+Native cache retention applies; returning does not replay the review. Theme validation refusals render below the User
+chip; cookie and outage policies stay with the preference owner. Auth success uses fixed, allowlisted copy on the login
+destination.
 
 Field-specific validation appears beside its field with native associations. General API failures remain standalone
 alerts rather than being assigned to an unrelated field. Pending controls suppress duplicate submission while keeping

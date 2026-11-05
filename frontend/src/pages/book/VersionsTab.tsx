@@ -11,7 +11,7 @@ import {
   useMutation,
   useMutationState,
   useQueryClient,
-  type Mutation,
+  type MutationState,
 } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
 import { FieldError } from "@/components/ui/field";
@@ -55,6 +55,7 @@ type VersionsTabProps = {
 };
 
 type ReviewVariables = { row: MetadataVersionRow; action: "accept" | "reject" };
+type ReviewState = MutationState<void, Error, ReviewVariables>;
 
 function reviewKey(manifestationId: string) {
   return [...queryKeys.books.detail(manifestationId), "version-review"] as const;
@@ -66,18 +67,14 @@ function reviewKey(manifestationId: string) {
 export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const grouped = groupByField(book.metadata_versions);
-  const retainedFields = useMutationState<
-    string | undefined,
-    Mutation<unknown, Error, ReviewVariables>
-  >({
-    filters: {
-      mutationKey: reviewKey(book.id),
-      exact: true,
-      predicate: (mutation) =>
-        mutation.state.status === "pending" || mutation.state.status === "error",
-    },
-    select: (mutation) => mutation.state.variables?.row.field_name,
+  const reviews = useMutationState<ReviewState>({
+    filters: { mutationKey: reviewKey(book.id), exact: true },
   });
+  const retainedFields = reviews.flatMap((review) =>
+    (review.status === "pending" || review.status === "error") && review.variables !== undefined
+      ? [review.variables.row.field_name]
+      : [],
+  );
   // Name/label defs only: EditMetadataDialog seeds each field's canonical
   // value itself from a fresh GET, not from this (possibly stale) `book`.
   const editableFields = (
@@ -90,7 +87,7 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
     ...new Set([
       ...editableFields.map(({ name }) => name),
       ...Object.keys(grouped),
-      ...retainedFields.filter((field) => field !== undefined),
+      ...retainedFields,
     ]),
   ].sort((a, b) => a.localeCompare(b));
 
@@ -120,6 +117,7 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
             field={field}
             canonical={canonicalValue(book, field)}
             rows={grouped[field] ?? []}
+            reviewState={reviews.findLast((review) => review.variables?.row.field_name === field)}
           />
         ))}
       </div>
@@ -139,6 +137,7 @@ type FieldGroupProps = {
   field: string;
   canonical: string | null;
   rows: MetadataVersionRow[];
+  reviewState: ReviewState | undefined;
 };
 
 /** One field's section: current canonical row + pending alternatives. */
@@ -147,9 +146,12 @@ function FieldGroup({
   field,
   canonical,
   rows,
+  reviewState,
 }: Readonly<FieldGroupProps>): ReactElement | null {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const reviewPending = reviewState?.status === "pending";
+  const submitted = reviewState?.variables;
   const invalidate = () =>
     queryClient.invalidateQueries({
       queryKey: queryKeys.books.detail(manifestationId),
@@ -179,7 +181,12 @@ function FieldGroup({
       void invalidate();
     },
   });
-  if (rows.length === 0 && !review.isError && !review.isPending && !revertMutation.isError)
+  if (
+    rows.length === 0 &&
+    reviewState?.status !== "error" &&
+    !reviewPending &&
+    !revertMutation.isError
+  )
     return null;
   return (
     <section
@@ -200,7 +207,7 @@ function FieldGroup({
             onPress={() => {
               setConfirmOpen(true);
             }}
-            isDisabled={revertMutation.isPending || review.isPending}
+            isDisabled={revertMutation.isPending || reviewPending}
           >
             Clear
           </Button>
@@ -213,16 +220,12 @@ function FieldGroup({
             key={row.id}
             row={row}
             accepting={
-              review.isPending &&
-              review.variables.row.id === row.id &&
-              review.variables.action === "accept"
+              reviewPending && submitted?.row.id === row.id && submitted.action === "accept"
             }
             rejecting={
-              review.isPending &&
-              review.variables.row.id === row.id &&
-              review.variables.action === "reject"
+              reviewPending && submitted?.row.id === row.id && submitted.action === "reject"
             }
-            busy={review.isPending || revertMutation.isPending}
+            busy={reviewPending || revertMutation.isPending}
             onAccept={() => {
               review.mutate({ row, action: "accept" });
             }}
@@ -233,14 +236,7 @@ function FieldGroup({
         ))}
       </ul>
 
-      {review.isError ? (
-        <FieldError>
-          {review.variables.row.source} draft:{" "}
-          {review.error instanceof ApiError && review.error.status === 404
-            ? "This draft is no longer available."
-            : formatError(review.error)}
-        </FieldError>
-      ) : null}
+      <ReviewOutcome reviewState={reviewState} rows={rows} />
       {revertMutation.isError ? <FieldError>{formatError(revertMutation.error)}</FieldError> : null}
       <AlertDialogContent isOpen={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogHeader>
@@ -263,6 +259,30 @@ function FieldGroup({
       </AlertDialogContent>
     </section>
   );
+}
+
+function ReviewOutcome({
+  reviewState,
+  rows,
+}: Readonly<Pick<FieldGroupProps, "reviewState" | "rows">>): ReactElement | null {
+  if (reviewState === undefined || reviewState.variables === undefined) return null;
+  const { row, action } = reviewState.variables;
+  if (reviewState.status === "error")
+    return (
+      <FieldError>
+        {row.source} draft:{" "}
+        {reviewState.error instanceof ApiError && reviewState.error.status === 404
+          ? "This draft is no longer available."
+          : formatError(reviewState.error)}
+      </FieldError>
+    );
+  if (reviewState.status === "pending" && !rows.some((pending) => pending.id === row.id))
+    return (
+      <p role="status" className="text-fg-muted text-sm">
+        {action === "accept" ? "Accepting" : "Rejecting"} {row.source} draft…
+      </p>
+    );
+  return null;
 }
 
 type CanonicalRowProps = {
