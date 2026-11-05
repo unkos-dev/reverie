@@ -21,8 +21,8 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use futures::stream::{FuturesUnordered, StreamExt};
-use sqlx::{PgPool, Postgres, Transaction};
-use tokio::time::sleep;
+use sqlx::{Connection, PgConnection, PgPool, Postgres, Transaction};
+use tokio::time::{Instant, sleep, timeout_at};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -189,8 +189,96 @@ pub fn build_sources(config: &Config) -> Vec<Arc<dyn MetadataSource>> {
     v
 }
 
-/// Full per-manifestation run.  Writes to `api_cache`, `metadata_versions`,
-/// and canonical columns atomically.
+#[derive(Debug, thiserror::Error)]
+#[error("enrichment run exceeded time budget")]
+pub(super) struct RunTimeout;
+
+#[derive(Debug, thiserror::Error)]
+#[error("enrichment transaction cleanup failed: {0}")]
+pub(super) struct CleanupFailure(#[from] pub(super) sqlx::Error);
+
+pub(super) fn statement_millis(remaining: Duration) -> i32 {
+    i32::try_from(remaining.as_millis())
+        .unwrap_or(i32::MAX)
+        .max(1)
+}
+
+pub(super) async fn limit_statement(
+    tx: &mut Transaction<'_, Postgres>,
+    remaining: Duration,
+) -> sqlx::Result<()> {
+    let millis = statement_millis(remaining).to_string();
+    sqlx::query!("SELECT set_config('statement_timeout', $1, true)", millis)
+        .fetch_one(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+pub(super) async fn rollback_owned(
+    mut tx: Transaction<'_, Postgres>,
+) -> Result<(), CleanupFailure> {
+    loop {
+        match tx.flush().await {
+            Ok(()) => break,
+            Err(sqlx::Error::Database(error)) => {
+                warn!(sqlstate = ?error.code(), "enrichment: draining interrupted statement error");
+            }
+            Err(error) => return Err(CleanupFailure(error)),
+        }
+    }
+    tx.rollback().await.map_err(CleanupFailure)
+}
+
+async fn resolve_work<T>(
+    tx: Transaction<'_, Postgres>,
+    result: Result<anyhow::Result<T>, tokio::time::error::Elapsed>,
+    deadline: Instant,
+) -> anyhow::Result<(Transaction<'_, Postgres>, T)> {
+    match result {
+        Ok(Ok(value)) if Instant::now() < deadline => Ok((tx, value)),
+        other => {
+            rollback_owned(tx).await?;
+            match other {
+                Ok(Err(error))
+                    if Instant::now() < deadline
+                        && !error.downcast_ref::<sqlx::Error>().is_some_and(|error| {
+                            error
+                                .as_database_error()
+                                .is_some_and(|error| error.code().as_deref() == Some("57014"))
+                        }) =>
+                {
+                    Err(error)
+                }
+                _ => Err(RunTimeout.into()),
+            }
+        }
+    }
+}
+
+async fn commit_transaction(
+    tx: Transaction<'_, Postgres>,
+    deadline: Instant,
+) -> anyhow::Result<()> {
+    if Instant::now() >= deadline {
+        rollback_owned(tx).await?;
+        return Err(RunTimeout.into());
+    }
+    commit_owned(tx.commit(), deadline).await
+}
+
+async fn commit_owned(
+    commit: impl std::future::Future<Output = sqlx::Result<()>>,
+    deadline: Instant,
+) -> anyhow::Result<()> {
+    commit.await.map_err(CleanupFailure)?;
+    if Instant::now() >= deadline {
+        return Err(RunTimeout.into());
+    }
+    Ok(())
+}
+
+/// Queued enrichment under a shared deadline, with owned cache writes and an
+/// atomic journal, canonical and writeback transaction.
 ///
 /// Returns early with an empty [`RunOutcome`] (zero applied/staged) when no
 /// lookup key can be derived.  Individual source failures are captured in
@@ -204,20 +292,46 @@ pub async fn run_once(
     pool: &PgPool,
     config: &Config,
     manifestation_id: Uuid,
+    deadline: Instant,
 ) -> anyhow::Result<RunOutcome> {
     let sources = build_sources(config);
-    run_once_with_sources(pool, config, &sources, manifestation_id).await
+    run_queued_with_sources(pool, config, &sources, manifestation_id, deadline).await
 }
 
 /// [`run_once`] body taking an explicit source set, so tests can substitute
 /// mock-server-backed adapters without routing mock URLs through [`Config`].
+#[cfg(test)]
 async fn run_once_with_sources(
     pool: &PgPool,
     config: &Config,
     sources: &[Arc<dyn MetadataSource>],
     manifestation_id: Uuid,
 ) -> anyhow::Result<RunOutcome> {
-    let snapshot = load_snapshot(pool, manifestation_id).await?;
+    let deadline =
+        Instant::now() + Duration::from_secs(u64::from(config.enrichment.run_timeout_secs));
+    run_queued_with_sources(pool, config, sources, manifestation_id, deadline).await
+}
+
+pub(super) async fn run_queued_with_sources(
+    pool: &PgPool,
+    config: &Config,
+    sources: &[Arc<dyn MetadataSource>],
+    manifestation_id: Uuid,
+    deadline: Instant,
+) -> anyhow::Result<RunOutcome> {
+    let mut tx = timeout_at(deadline, pool.begin())
+        .await
+        .map_err(|_| RunTimeout)??;
+    let result = timeout_at(deadline, async {
+        limit_statement(&mut tx, deadline.saturating_duration_since(Instant::now())).await?;
+        load_snapshot_on(&mut tx, manifestation_id).await
+    })
+    .await;
+    let (tx, snapshot) = resolve_work(tx, result, deadline).await?;
+    rollback_owned(tx).await?;
+    if Instant::now() >= deadline {
+        return Err(RunTimeout.into());
+    }
     if snapshot.lookup_keys.is_empty() {
         info!(
             %manifestation_id,
@@ -241,25 +355,33 @@ async fn run_once_with_sources(
         miss: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_miss_days)),
         error: chrono::TimeDelta::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
     };
-    let results = fan_out_with_fallback(
+    let results = fan_out_with_deadline(
         pool,
         sources,
         &http,
         &snapshot.lookup_keys,
         Duration::from_secs(config.enrichment.fetch_budget_secs),
         &ttls,
+        Some(deadline),
     )
+    .await?;
+
+    let mut tx = timeout_at(deadline, pool.begin())
+        .await
+        .map_err(|_| RunTimeout)??;
+    let result = timeout_at(deadline, async {
+        limit_statement(&mut tx, deadline.saturating_duration_since(Instant::now())).await?;
+        let (per_field, failures) =
+            apply_journal_batch(&mut tx, manifestation_id, &results).await?;
+        limit_statement(&mut tx, deadline.saturating_duration_since(Instant::now())).await?;
+        let canonical = apply_canonical_batch(&mut tx, &snapshot, &per_field).await?;
+        limit_statement(&mut tx, deadline.saturating_duration_since(Instant::now())).await?;
+        upsert_ratings(&mut tx, manifestation_id, &results).await?;
+        Ok((canonical, failures))
+    })
     .await;
-
-    // Open the single mutating transaction: journal writes + canonical updates
-    // + rematch hook all commit or roll back together.
-    let mut tx = pool.begin().await?;
-
-    let (per_field, failures) = apply_journal_batch(&mut tx, manifestation_id, &results).await?;
-    let canonical = apply_canonical_batch(&mut tx, &snapshot, &per_field).await?;
-    upsert_ratings(&mut tx, manifestation_id, &results).await?;
-
-    tx.commit().await?;
+    let (tx, (canonical, failures)) = resolve_work(tx, result, deadline).await?;
+    commit_transaction(tx, deadline).await?;
 
     Ok(RunOutcome {
         manifestation_id,
@@ -559,6 +681,14 @@ async fn apply_canonical_batch(
 ///
 /// Returns an error if the manifestation does not exist or the query fails.
 pub async fn load_snapshot(pool: &PgPool, manifestation_id: Uuid) -> anyhow::Result<Snapshot> {
+    let mut connection = pool.acquire().await?;
+    load_snapshot_on(&mut connection, manifestation_id).await
+}
+
+async fn load_snapshot_on(
+    connection: &mut PgConnection,
+    manifestation_id: Uuid,
+) -> anyhow::Result<Snapshot> {
     // `first_author` must be the display-form `a.name`, not the denormalized
     // `first_author_sort_name` column: the lookup key feeds external source
     // queries (Hardcover ilike, Google Books inauthor:) that match display
@@ -578,7 +708,7 @@ pub async fn load_snapshot(pool: &PgPool, manifestation_id: Uuid) -> anyhow::Res
          WHERE m.id = $1",
         manifestation_id,
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut *connection)
     .await?;
 
     let row = row.ok_or_else(|| anyhow!("manifestation not found: {manifestation_id}"))?;
@@ -603,7 +733,7 @@ pub async fn load_snapshot(pool: &PgPool, manifestation_id: Uuid) -> anyhow::Res
          WHERE manifestation_id = $1",
         manifestation_id,
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?;
     for r in manif_ids {
         identifiers.insert(
@@ -615,7 +745,7 @@ pub async fn load_snapshot(pool: &PgPool, manifestation_id: Uuid) -> anyhow::Res
         "SELECT scheme, external_id FROM work_external_identifiers WHERE work_id = $1",
         row.work_id,
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?;
     for r in work_ids {
         identifiers.insert(
@@ -630,7 +760,7 @@ pub async fn load_snapshot(pool: &PgPool, manifestation_id: Uuid) -> anyhow::Res
         "SELECT id, base_priority FROM metadata_sources \
          WHERE id IN ('openlibrary', 'googlebooks', 'hardcover')",
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?
     .into_iter()
     .map(|r| (r.id, r.base_priority))
@@ -762,14 +892,15 @@ pub struct SourceRun {
 /// type-prefixed key, so a fallback result can never poison another key's
 /// cache entry. Runs from every attempt are returned; missed attempts
 /// contribute empty results and their failures.
-pub async fn fan_out_with_fallback(
+async fn fan_out_with_deadline(
     pool: &PgPool,
     sources: &[Arc<dyn MetadataSource>],
     http: &reqwest::Client,
     keys: &[LookupKey],
     budget: Duration,
     ttls: &CacheTtls,
-) -> Vec<SourceRun> {
+    run_deadline: Option<Instant>,
+) -> anyhow::Result<Vec<SourceRun>> {
     let deadline = tokio::time::Instant::now() + budget;
     let mut all: Vec<SourceRun> = Vec::new();
     for key in keys {
@@ -788,8 +919,14 @@ pub async fn fan_out_with_fallback(
         if !attempt.iter().any(|s| s.enabled()) {
             continue;
         }
-        let runs = fan_out(&attempt, http, key, remaining).await;
-        cache_all(pool, &runs, key, ttls).await;
+        let runs = if let Some(deadline) = run_deadline {
+            timeout_at(deadline, fan_out(&attempt, http, key, remaining))
+                .await
+                .map_err(|_| RunTimeout)?
+        } else {
+            fan_out(&attempt, http, key, remaining).await
+        };
+        cache_all(pool, &runs, key, ttls, run_deadline).await?;
         let hit = runs
             .iter()
             .any(|r| matches!(&r.outcome, Ok(o) if !o.is_empty()));
@@ -798,7 +935,7 @@ pub async fn fan_out_with_fallback(
             break;
         }
     }
-    all
+    Ok(all)
 }
 
 /// Parallel lookup bounded by a wall-clock budget.
@@ -873,7 +1010,13 @@ pub async fn fan_out(
     done
 }
 
-async fn cache_all(pool: &PgPool, runs: &[SourceRun], key: &LookupKey, ttls: &CacheTtls) {
+async fn cache_all(
+    pool: &PgPool,
+    runs: &[SourceRun],
+    key: &LookupKey,
+    ttls: &CacheTtls,
+    deadline: Option<Instant>,
+) -> anyhow::Result<()> {
     let cache_key = key.cache_key();
     for run in runs {
         let (payload, kind, status) = match &run.outcome {
@@ -915,20 +1058,54 @@ async fn cache_all(pool: &PgPool, runs: &[SourceRun], key: &LookupKey, ttls: &Ca
                 None,
             ),
         };
-        if let Err(e) = cache::write(
-            pool,
-            &run.source_id,
-            &cache_key,
-            &payload,
-            kind,
-            status,
-            ttls,
-        )
-        .await
-        {
-            warn!(error = %e, source = %run.source_id, "api_cache write failed");
+        let result = async {
+            if let Some(deadline) = deadline {
+                let mut tx = timeout_at(deadline, pool.begin())
+                    .await
+                    .map_err(|_| RunTimeout)??;
+                let result = timeout_at(deadline, async {
+                    limit_statement(&mut tx, deadline.saturating_duration_since(Instant::now()))
+                        .await?;
+                    cache::write(
+                        &mut *tx,
+                        &run.source_id,
+                        &cache_key,
+                        &payload,
+                        kind,
+                        status,
+                        ttls,
+                    )
+                    .await?;
+                    Ok(())
+                })
+                .await;
+                match resolve_work(tx, result, deadline).await {
+                    Ok((tx, ())) => commit_transaction(tx, deadline).await,
+                    Err(error) => Err(error),
+                }
+            } else {
+                cache::write(
+                    pool,
+                    &run.source_id,
+                    &cache_key,
+                    &payload,
+                    kind,
+                    status,
+                    ttls,
+                )
+                .await
+                .map_err(Into::into)
+            }
+        }
+        .await;
+        if let Err(error) = result {
+            if error.is::<RunTimeout>() || error.is::<CleanupFailure>() {
+                return Err(error);
+            }
+            warn!(%error, source = %run.source_id, "api_cache write failed");
         }
     }
+    Ok(())
 }
 
 async fn upsert_journal_row(
@@ -1337,15 +1514,16 @@ pub(crate) async fn fan_out_for_dry_run_with_sources(
         miss: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_miss_days)),
         error: chrono::TimeDelta::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
     };
-    let results = fan_out_with_fallback(
+    let results = fan_out_with_deadline(
         pool,
         sources,
         &http,
         &snapshot.lookup_keys,
         Duration::from_secs(config.enrichment.fetch_budget_secs),
         &ttls,
+        None,
     )
-    .await;
+    .await?;
     Ok((snapshot, results))
 }
 
@@ -1415,6 +1593,7 @@ mod tests {
                 concurrency: 1,
                 poll_idle_secs: 30,
                 fetch_budget_secs: 30,
+                run_timeout_secs: 120,
                 http_timeout_secs: 10,
                 max_attempts: 3,
                 cache_ttl_hit_days: 1,
@@ -1538,6 +1717,205 @@ mod tests {
     /// One source returns `publisher` (`AutoFill` by default) on an empty
     /// canonical → Apply fires and `publisher` is written to the
     /// manifestation.
+    #[tokio::test(start_paused = true)]
+    async fn enrichment_timeout_waits_for_commit() {
+        // REV-REQ-0078, criterion 5; catalogue corruption boundary.
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let (commit_send, commit_receive) = tokio::sync::oneshot::channel();
+        let (recover_send, recover_receive) = tokio::sync::oneshot::channel();
+        let committed = Arc::new(tokio::sync::Notify::new());
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let task = tokio::spawn({
+            let committed = committed.clone();
+            async move {
+                let _permit = permit;
+                let result = commit_owned(async { commit_receive.await.unwrap() }, deadline).await;
+                committed.notify_one();
+                recover_receive.await.unwrap();
+                result
+            }
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(2)).await;
+        tokio::task::yield_now().await;
+        assert!(!commit_send.is_closed());
+        assert!(!task.is_finished());
+        assert!(semaphore.clone().try_acquire_owned().is_err());
+        commit_send.send(Ok(())).unwrap();
+        committed.notified().await;
+        assert!(!task.is_finished());
+        assert!(semaphore.clone().try_acquire_owned().is_err());
+        recover_send.send(()).unwrap();
+        assert!(task.await.unwrap().unwrap_err().is::<RunTimeout>());
+        assert!(semaphore.try_acquire_owned().is_ok());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn enrichment_timeout_rolls_back_owned_writes(owner: PgPool) {
+        // REV-REQ-0052; REV-REQ-0078, criterion 4; catalogue corruption boundary.
+        use crate::services::enrichment::sources::{RatingObservation, RatingSignal};
+        use tracing::instrument::WithSubscriber;
+        struct RatingSource(PausedScalarSource);
+        #[async_trait::async_trait]
+        impl MetadataSource for RatingSource {
+            fn id(&self) -> &'static str {
+                "googlebooks"
+            }
+            fn enabled(&self) -> bool {
+                true
+            }
+            async fn lookup(
+                &self,
+                ctx: &LookupCtx<'_>,
+                key: &LookupKey,
+            ) -> Result<LookupOutcome, SourceError> {
+                let mut outcome = self.0.lookup(ctx, key).await?;
+                outcome
+                    .fields
+                    .retain(|field| field.field_name == "publisher");
+                outcome.rating =
+                    RatingSignal::Reported(RatingObservation::new(4.0, 5.0, 10).unwrap());
+                Ok(outcome)
+            }
+        }
+        #[derive(Clone)]
+        struct LogBuffer(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for LogBuffer {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let pool = ingestion_pool_for(&owner).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_, id) = insert_enrich_fixture(&pool, "9780451524935", &marker).await;
+        let observed = SourceResult {
+            field_name: "publisher".into(),
+            raw_value: json!("Provider publisher"),
+            match_type: "isbn".into(),
+        };
+        let mut seed = pool.begin().await.unwrap();
+        let journal = upsert_journal_row(&mut seed, id, "googlebooks", &observed)
+            .await
+            .unwrap();
+        seed.commit().await.unwrap();
+        let rating = RatingObservation::new(2.0, 5.0, 3).unwrap();
+        external_rating::upsert_rating(&pool, id, "googlebooks", &rating)
+            .await
+            .unwrap();
+        let before = sqlx::query!("SELECT observation_count, confidence_score, status::text AS status, new_value FROM metadata_versions WHERE id = $1", journal)
+            .fetch_one(&owner).await.unwrap();
+        let mut blocker = owner.begin().await.unwrap();
+        sqlx::query!("SELECT manifestation_id FROM manifestation_external_ratings WHERE manifestation_id = $1 AND source = 'googlebooks' FOR UPDATE", id)
+            .fetch_one(&mut *blocker).await.unwrap();
+        let blocker_pid = sqlx::query_scalar!(r#"SELECT pg_backend_pid() AS "pid!""#)
+            .fetch_one(&mut *blocker)
+            .await
+            .unwrap();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let resume = Arc::new(tokio::sync::Notify::new());
+        let source: Arc<dyn MetadataSource> = Arc::new(RatingSource(PausedScalarSource {
+            started: started.clone(),
+            resume: resume.clone(),
+        }));
+        let buffer = LogBuffer(Arc::new(std::sync::Mutex::new(Vec::new())));
+        let writer = buffer.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .without_time()
+            .with_writer(move || writer.clone())
+            .finish();
+        let mut config = config_with_mock_sources();
+        config.enrichment.run_timeout_secs = 2;
+        let run_pool = pool.clone();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let task = tokio::spawn(
+            async move {
+                let _permit = permit;
+                run_queued_with_sources(&run_pool, &config, &[source], id, deadline).await
+            }
+            .with_subscriber(subscriber),
+        );
+        started.notified().await;
+        resume.notify_one();
+        let pid = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if let Some(pid) = sqlx::query_scalar!("SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND $1 = ANY(pg_blocking_pids(pid)) AND query LIKE '%INSERT INTO manifestation_external_ratings%'", blocker_pid)
+                    .fetch_optional(&owner).await.unwrap() { break pid; }
+                tokio::task::yield_now().await;
+            }
+        }).await.unwrap();
+        assert!(semaphore.clone().try_acquire_owned().is_err());
+        tokio::time::pause();
+        let keep_clock = tokio::spawn(async {
+            loop {
+                tokio::task::yield_now().await;
+            }
+        });
+        tokio::time::advance(Duration::from_secs(3)).await;
+        let error = task.await.unwrap().unwrap_err();
+        keep_clock.abort();
+        tokio::time::resume();
+        assert!(error.is::<RunTimeout>(), "{error:#}");
+        assert!(semaphore.try_acquire_owned().is_ok());
+        let logs = String::from_utf8(buffer.0.lock().unwrap().clone()).unwrap();
+        assert!(logs.contains("57014"), "{logs}");
+        let active = sqlx::query!(
+            "SELECT state, backend_xid::text AS xid FROM pg_stat_activity WHERE pid = $1",
+            pid
+        )
+        .fetch_one(&owner)
+        .await
+        .unwrap();
+        assert_ne!(
+            active.state.as_deref(),
+            Some("idle in transaction (aborted)")
+        );
+        assert!(active.xid.is_none());
+        let canonical = sqlx::query!(
+            "SELECT publisher, publisher_version_id FROM manifestations WHERE id = $1",
+            id
+        )
+        .fetch_one(&owner)
+        .await
+        .unwrap();
+        assert!(canonical.publisher.is_none());
+        assert!(canonical.publisher_version_id.is_none());
+        let after = sqlx::query!("SELECT observation_count, confidence_score, status::text AS status, new_value FROM metadata_versions WHERE id = $1", journal)
+            .fetch_one(&owner).await.unwrap();
+        assert_eq!(
+            (
+                after.observation_count,
+                after.confidence_score,
+                after.status,
+                after.new_value
+            ),
+            (
+                before.observation_count,
+                before.confidence_score,
+                before.status,
+                before.new_value
+            )
+        );
+        let counts = sqlx::query!("SELECT (SELECT count(*) FROM metadata_versions WHERE manifestation_id = $1) AS journal, (SELECT count(*) FROM writeback_jobs WHERE manifestation_id = $1) AS jobs", id)
+            .fetch_one(&owner).await.unwrap();
+        assert_eq!(counts.journal, Some(1));
+        assert_eq!(counts.jobs, Some(0));
+        let stored = sqlx::query!("SELECT rating, rating_scale, review_count FROM manifestation_external_ratings WHERE manifestation_id = $1 AND source = 'googlebooks'", id)
+            .fetch_one(&owner).await.unwrap();
+        assert_eq!(
+            (stored.rating, stored.rating_scale, stored.review_count),
+            (2.0, 5.0, 3)
+        );
+        blocker.rollback().await.unwrap();
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn orchestrator_autofill_applies_when_canonical_empty(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT manifestation_id FROM manifestation_external_ratings WHERE manifestation_id = $1 AND source = 'googlebooks' FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifestation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestation_external_ratings",
+            "name": "manifestation_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "84473460960318a9a9f2f172aff3ea11b85c7dfebad850156efcc1ff3d4af7cd"
+}

@@ -91,6 +91,10 @@ pub const ENV_MAP: &[(&str, &str)] = &[
         "REVERIE_ENRICHMENT_HTTP_TIMEOUT_SECS",
         "enrichment.http_timeout_secs",
     ),
+    (
+        "REVERIE_ENRICHMENT_RUN_TIMEOUT_SECS",
+        "enrichment.run_timeout_secs",
+    ),
     ("REVERIE_ENRICHMENT_MAX_ATTEMPTS", "enrichment.max_attempts"),
     (
         "REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS",

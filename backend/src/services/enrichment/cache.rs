@@ -98,7 +98,7 @@ pub async fn read(
 ///
 /// Returns a [`sqlx::Error`] if the upsert fails.
 pub async fn write(
-    pool: &PgPool,
+    executor: impl sqlx::PgExecutor<'_>,
     source: &str,
     lookup_key: &str,
     response: &Value,
@@ -132,7 +132,7 @@ pub async fn write(
         now,
         expires_at,
     )
-    .execute(pool)
+    .execute(executor)
     .await?;
 
     Ok(())

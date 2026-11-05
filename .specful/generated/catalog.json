@@ -749,7 +749,8 @@
         "REV-REQ-0051",
         "REV-REQ-0052",
         "REV-REQ-0072",
-        "REV-REQ-0073"
+        "REV-REQ-0073",
+        "REV-REQ-0078"
       ],
       "title": "Enrichment pipeline"
     },
@@ -1593,6 +1594,15 @@
       "kind": "req",
       "path": "docs/specs/library/requirements/0077-library-filter-edits-add-no-history-entries.md",
       "title": "Library filter edits add no history entries"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0018"
+      ],
+      "id": "REV-REQ-0078",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0078-a-timed-out-enrichment-run-releases-its-claim-safely.md",
+      "title": "A timed-out enrichment run releases its claim safely"
     }
   ]
 }

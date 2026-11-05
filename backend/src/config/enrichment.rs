@@ -17,6 +17,10 @@ pub struct EnrichmentConfig {
     /// Sleep between empty-queue polls
     /// (`REVERIE_ENRICHMENT_POLL_IDLE_SECS`, default `30`).
     pub poll_idle_secs: u64,
+    /// Whole-run cancellation budget in seconds; database cleanup can extend it
+    /// (`REVERIE_ENRICHMENT_RUN_TIMEOUT_SECS`, default `120`; minimum `1`).
+    #[validate(range(min = 1, message = "must be at least 1"))]
+    pub run_timeout_secs: u32,
     /// Per-job overall fetch budget
     /// (`REVERIE_ENRICHMENT_FETCH_BUDGET_SECS`, default `15`).
     pub fetch_budget_secs: u64,
@@ -45,6 +49,7 @@ impl Default for EnrichmentConfig {
             concurrency: 2,
             poll_idle_secs: 30,
             fetch_budget_secs: 15,
+            run_timeout_secs: 120,
             http_timeout_secs: 10,
             max_attempts: 10,
             cache_ttl_hit_days: 30,

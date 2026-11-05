@@ -51,6 +51,7 @@ carries, so a job for one would waste an attempt on a field the file has nowhere
   `backend/src/routes/metadata.rs`.
 - An automated apply that is rejected before the field is actually written enqueues no writeback job. Checked by
   `apply_canonical_batch_skips_malformed_pub_date` in `backend/src/services/enrichment/orchestrator.rs`, which rejects a
-  malformed value and asserts zero writeback rows afterward. No automated test interrupts the enclosing transaction
-  itself between the field write and the enqueue to confirm the two roll back together; that guarantee rests on both
-  writes sharing one transaction, not on a check specific to this path.
+  malformed value and asserts zero writeback rows afterward. `enrichment_timeout_rolls_back_owned_writes` in the same
+  file expires the catalogue transaction after canonical and writeback writes, drains the pending statement error and
+  verifies acknowledged rollback with unchanged catalogue state and no writeback job. It does not cover crashes or
+  network failures.

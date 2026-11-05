@@ -8,6 +8,7 @@ satisfies:
   - "REV-REQ-0052"
   - "REV-REQ-0072"
   - "REV-REQ-0073"
+  - "REV-REQ-0078"
 governed-by:
   - "REV-ADR-0067"
   - "REV-ADR-0007"
@@ -242,10 +243,10 @@ sidecar within the same library. Neither has a live production input. Staging do
   emits `"cover_url"`, and its default policy is `Propose` (not in `default_policy`'s `AutoFill` list), so it always
   stages for review and never reaches `Decision::Apply`; the `'cover'` reason and `apply_field`'s dedicated cover branch
   are consequently never reached from any automated apply.
-- `EnrichmentConfig` (`enabled`, `concurrency`, `poll_idle_secs`, `fetch_budget_secs`, `http_timeout_secs`,
-  `max_attempts`, the three `cache_ttl_*` fields) loads once from the environment through `figment` at process startup.
-  `backend/src/lib.rs` clones the whole `Config` into the task it spawns for `spawn_queue`; the running worker never
-  re-reads it afterwards. The `settings` table carries a parallel `enrichment_enabled`/
+- `EnrichmentConfig` (`enabled`, `concurrency`, `poll_idle_secs`, `run_timeout_secs`, `fetch_budget_secs`,
+  `http_timeout_secs`, `max_attempts`, the three `cache_ttl_*` fields) loads once from the environment through `figment`
+  at process startup. `backend/src/lib.rs` clones the whole `Config` into the task it spawns for `spawn_queue`; the
+  running worker never re-reads it afterwards. The `settings` table carries a parallel `enrichment_enabled`/
   `enrichment_concurrency`/`enrichment_poll_idle_secs`/`enrichment_fetch_budget_secs` group, validated and stored
   through `PUT /api/v1/settings`, but nothing in `queue.rs` reads `AppState::settings` (the live, revision-gated cache
   that group otherwise mirrors): a change to that group changes the validated row and nothing else; the running queue
@@ -277,16 +278,19 @@ compatibility path.
 
 **A background pass**, once `claim_next` claims a row:
 
-1. `run_once` calls `load_snapshot`, which reads canonical fields, active identifier-registry slots and provider
-   priorities, then derives `lookup_keys` in order: the ISBN key first (if either ISBN parses), then registry ids for
+1. `run_once` reads canonical fields, active identifier-registry slots and provider priorities in an owned read
+   transaction, then derives `lookup_keys` in order: the ISBN key first (if either ISBN parses), then registry ids for
    the API-capable schemes ordered by `base_priority` then fixed provider precedence then level then value, then a
    title/author fuzzy key last. A manifestation with none of these returns an empty `RunOutcome` immediately.
-2. `fan_out_with_fallback` tries each key under one shared deadline. An `ExternalId` key dispatches only to the adapter
-   whose `id()` matches its scheme; every other key variant fans out to every enabled source. `fan_out` awaits a
-   `FuturesUnordered` of the sources' `lookup` calls against a `sleep` deadline: whichever complete first are kept, and
-   any adapter still pending when the budget expires is synthesised as `SourceError::Timeout` without discarding the
-   sources that already answered. Each attempt's results are cached under that key's own cache key before the next key
-   is tried; a hit stops the fallback chain.
+2. `fan_out_with_deadline` tries each key under the source fetch budget and the queued attempt's whole-run deadline. An
+   `ExternalId` key dispatches only to the adapter whose `id()` matches its scheme; every other key variant fans out to
+   every enabled source. `fan_out` awaits a `FuturesUnordered` of the sources' `lookup` calls against a `sleep`
+   deadline: whichever complete first are kept, and any adapter still pending when the budget expires is synthesised as
+   `SourceError::Timeout` without discarding the sources that already answered. Each attempt's results are cached under
+   that key's own cache key before the next key is tried; a hit stops the fallback chain. Each queued cache write has
+   its own transaction, resolved before another phase starts. An ordinary cache error is logged and does not discard
+   provider results. The dry-run entry point uses the shared fan-out without a whole-run deadline and retains its
+   ordinary cache writes.
 3. `apply_journal_batch` upserts one `metadata_versions` row per field observation and groups the resulting
    `(source_id, PolicyInputRow)` pairs by field name.
 4. `apply_canonical_batch` locks the manifestation row `FOR UPDATE` and rereads its scalar values, then locks and
@@ -311,6 +315,26 @@ compatibility path.
    staged, the row is marked `Failed` (eligible for retry) with the longest reported `Retry-After` recorded in
    `enrichment_retry_not_before`, leaving `enrichment_attempted_at` at the claim time; otherwise (anything applied or
    staged, or a terminal per-source failure alongside a live outcome) it is marked `Complete`.
+
+The queue establishes one monotonic deadline immediately after each claim. `run_timeout_secs` is a positive startup
+setting, exposed as `REVERIE_ENRICHMENT_RUN_TIMEOUT_SECS`, with a default of 120 seconds. Snapshot reads, provider
+requests, cache writes and catalogue application consume its remaining time. The independent fetch budget still keeps
+partial source results when a provider exceeds that shorter budget; whole-run expiry instead stops the attempt with
+`enrichment run exceeded time budget`. A smaller whole-run setting can expire before the source fetch budget.
+
+Snapshot, queued cache and catalogue transactions retain their owner outside the work future that the deadline can
+cancel. Each uses a transaction-local PostgreSQL `statement_timeout` derived from the remaining budget, refreshed before
+journal, canonical and rating phases. A positive remainder below one millisecond becomes one millisecond; larger values
+cap at PostgreSQL's signed millisecond maximum. Provider calls run between transactions. At expiry, the mutating future
+stops, its borrow ends and the owner drains the same connection to protocol readiness. A pending statement error,
+including SQLSTATE `57014`, is handled without consuming the transaction; draining continues through `ReadyForQuery`.
+Explicit rollback then waits for PostgreSQL's acknowledgement before the timeout can reach recovery. Transaction Drop
+alone does not establish completed rollback.
+
+The deadline is checked before commit starts. A started commit is awaited through its outcome with database-side limits
+still active. Expiry during commit retains any committed catalogue changes and their atomic writeback enqueue, then
+records the attempt as expired. An uncertain commit outcome leaves recovery to startup rather than being described as
+proven rollback. Already committed cache entries remain available.
 
 **A group retry** (`POST /api/v1/dashboard/enrichment-failures/retries`) accepts `{source, class}`, with `none`
 selecting a null source. It requires admin scope and administrator role, with browser CSRF protection. In the caller's
@@ -369,8 +393,13 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   manifestation identifier; if the database update fails, the row remains `in_progress` until restart recovery.
 - Panic recovery requires unwinding; a build using `panic = "abort"` terminates the process and relies on startup
   recovery. String panic payloads are logged with the manifestation identifier after control characters are removed;
-  non-string payloads use a fixed diagnostic. The database error remains fixed. The source fan-out has a fetch budget,
-  but the queue does not impose a timeout on the whole run, so a stalled run can retain its claim until restart.
+  non-string payloads use a fixed diagnostic. The database error remains fixed.
+- Whole-run expiry records class `internal` with no source through the existing guarded failure transition. Ordinary
+  retry backoff and `max_attempts` still apply. A rerun requested during the expired attempt takes precedence and leaves
+  immediately eligible `pending` with cleared attempts and failures. The queue retains its claim and semaphore permit
+  through transaction cleanup and `finish`. Bookkeeping uses an owned transaction with a finite local statement limit
+  derived from `run_timeout_secs`, outside the expired work deadline. A cleanup or uncertain commit failure skips normal
+  failure bookkeeping and leaves the durable claim for startup recovery; bookkeeping errors are logged with the UUID.
 - A run that kills the process never reaches `mark_failed`, where the `Skipped` transition evaluates `max_attempts`.
   Repeated process crashes therefore do not exhaust the attempt limit. The preserved last-attempt timestamp and counter
   bound retries through the claim query's backoff schedule, which reaches 24 hours and stays there.
@@ -390,6 +419,12 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   change instead.
 
 ## Security and operations
+
+Timeout diagnostics carry the manifestation UUID and configured budget, without credentials, provider payloads or book
+metadata. The budget begins cancellation; safe database cleanup and failure bookkeeping can extend it. PostgreSQL's
+statement limit bounds server work, but an unresponsive network can prevent acknowledged cleanup or recovery. The
+synchronous redirect-time DNS resolver is not pre-emptible by Tokio timers. The default therefore does not promise
+release at exactly 120 seconds. Database unavailability retains the startup-recovery limitation.
 
 Immediately after a group retry commits, the handler emits a structured `bulk_retry` event with `outcome=committed`, the
 requesting user UUID, a server-generated request UUID, source/class and queued/remaining counts. Client IP resolution

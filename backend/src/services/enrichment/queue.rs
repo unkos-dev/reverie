@@ -14,7 +14,7 @@ use std::time::Duration;
 use futures::FutureExt;
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
-use tokio::time::Interval;
+use tokio::time::{Instant, Interval};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -45,9 +45,14 @@ pub async fn spawn_queue(
     config: Config,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
-    queue_with_runner(pool, config, cancel, |pool, config, id| async move {
-        orchestrator::run_once(&pool, &config, id).await
-    })
+    queue_with_runner(
+        pool,
+        config,
+        cancel,
+        |pool, config, id, deadline| async move {
+            orchestrator::run_once(&pool, &config, id, deadline).await
+        },
+    )
     .await
 }
 
@@ -58,7 +63,7 @@ async fn queue_with_runner<R, F>(
     run: R,
 ) -> anyhow::Result<()>
 where
-    R: Fn(PgPool, Config, Uuid) -> F + Clone + Send + Sync + 'static,
+    R: Fn(PgPool, Config, Uuid, Instant) -> F + Clone + Send + Sync + 'static,
     F: Future<Output = anyhow::Result<RunOutcome>> + Send,
 {
     if !config.enrichment.enabled {
@@ -110,13 +115,14 @@ where
                         drop(permit);
                         break;
                     };
+                    let deadline = Instant::now() + Duration::from_secs(u64::from(config.enrichment.run_timeout_secs));
                     let pool = pool.clone();
                     let cfg = config.clone();
                     let run = run.clone();
                     jobs.spawn(async move {
                         let _p = permit;
                         let result = AssertUnwindSafe(async {
-                            run(pool.clone(), cfg.clone(), id).await
+                            run(pool.clone(), cfg.clone(), id, deadline).await
                         })
                         .catch_unwind()
                         .await
@@ -124,6 +130,15 @@ where
                             warn!(%id, panic_message = ?panic_message(payload.as_ref()), "enrichment task panicked");
                             Err(anyhow::anyhow!("enrichment task panicked"))
                         });
+                        if let Err(error) = &result {
+                            if error.is::<orchestrator::CleanupFailure>() {
+                                warn!(%error, %id, "enrichment: unresolved transaction; retaining claim for startup recovery");
+                                return;
+                            }
+                            if error.is::<orchestrator::RunTimeout>() {
+                                warn!(%id, run_timeout_secs = cfg.enrichment.run_timeout_secs, "enrichment run exceeded time budget");
+                            }
+                        }
                         if let Err(e) = finish(&pool, &cfg, id, attempt_count, result).await {
                             warn!(error = %e, %id, "queue: finish bookkeeping failed");
                         }
@@ -214,54 +229,70 @@ async fn finish(
     attempt_count: i32,
     result: anyhow::Result<RunOutcome>,
 ) -> sqlx::Result<()> {
-    match result {
-        Ok(outcome) => {
-            // If every source failed with non-terminal errors, treat the row
-            // as `failed` so we retry; otherwise mark complete.
-            let enabled_tried = !outcome.source_failures.is_empty();
-            let any_terminal = outcome.source_failures.iter().any(|f| f.terminal);
-            let applied_or_staged = outcome.applied + outcome.staged > 0;
+    let mut tx = pool.begin().await?;
+    let result: sqlx::Result<()> = async {
+        orchestrator::limit_statement(
+            &mut tx,
+            Duration::from_secs(u64::from(config.enrichment.run_timeout_secs)),
+        )
+        .await?;
+        match result {
+            Ok(outcome) => {
+                // If every source failed with non-terminal errors, treat the row
+                // as `failed` so we retry; otherwise mark complete.
+                let enabled_tried = !outcome.source_failures.is_empty();
+                let any_terminal = outcome.source_failures.iter().any(|f| f.terminal);
+                let applied_or_staged = outcome.applied + outcome.staged > 0;
 
-            if enabled_tried && !applied_or_staged && !any_terminal {
-                // Surface the longest retry_after among rate-limited failures.
-                let retry_after = outcome
-                    .source_failures
-                    .iter()
-                    .filter_map(|f| f.retry_after)
-                    .max();
+                if enabled_tried && !applied_or_staged && !any_terminal {
+                    // Surface the longest retry_after among rate-limited failures.
+                    let retry_after = outcome
+                        .source_failures
+                        .iter()
+                        .filter_map(|f| f.retry_after)
+                        .max();
+                    mark_failed(
+                        &mut *tx,
+                        id,
+                        attempt_count,
+                        config,
+                        retry_after,
+                        Some("transient source failures"),
+                        &failure_entries(&outcome.source_failures),
+                    )
+                    .await?;
+                } else {
+                    mark_complete(&mut *tx, id).await?;
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, %id, "enrichment run_once failed");
+                let internal = [FailureEntry {
+                    source: None,
+                    class: FailureClass::Internal,
+                }];
                 mark_failed(
-                    pool,
+                    &mut *tx,
                     id,
                     attempt_count,
                     config,
-                    retry_after,
-                    Some("transient source failures"),
-                    &failure_entries(&outcome.source_failures),
+                    None,
+                    Some(&e.to_string()),
+                    &internal,
                 )
                 .await?;
-            } else {
-                mark_complete(pool, id).await?;
             }
         }
-        Err(e) => {
-            warn!(error = %e, %id, "enrichment run_once failed");
-            let internal = [FailureEntry {
-                source: None,
-                class: FailureClass::Internal,
-            }];
-            mark_failed(
-                pool,
-                id,
-                attempt_count,
-                config,
-                None,
-                Some(&e.to_string()),
-                &internal,
-            )
-            .await?;
-        }
+        Ok(())
     }
-    Ok(())
+    .await;
+    if let Err(error) = result {
+        orchestrator::rollback_owned(tx)
+            .await
+            .map_err(|failure| failure.0)?;
+        return Err(error);
+    }
+    tx.commit().await
 }
 
 /// One entry per failing source, ordered by source key. When a source failed
@@ -285,7 +316,7 @@ fn failure_entries(failures: &[orchestrator::SourceFailure]) -> Vec<FailureEntry
 /// released the claim). A rerun requested mid-run (an identifier edit landed
 /// after this run snapshotted its lookup keys) turns the row back into a
 /// fresh, immediately eligible `pending` instead of `complete`.
-async fn mark_complete(pool: &PgPool, id: Uuid) -> sqlx::Result<()> {
+async fn mark_complete(executor: impl sqlx::PgExecutor<'_>, id: Uuid) -> sqlx::Result<()> {
     sqlx::query!(
         "UPDATE manifestations \
          SET enrichment_status = CASE WHEN enrichment_rerun_requested \
@@ -302,7 +333,7 @@ async fn mark_complete(pool: &PgPool, id: Uuid) -> sqlx::Result<()> {
          WHERE id = $1 AND enrichment_status = 'in_progress'",
         id,
     )
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
 }
@@ -313,7 +344,7 @@ async fn mark_complete(pool: &PgPool, id: Uuid) -> sqlx::Result<()> {
 /// same shape an edit on an idle failed row produces, so the rerun is never
 /// deferred behind a backoff window or swallowed by `skipped`.
 async fn mark_failed(
-    pool: &PgPool,
+    executor: impl sqlx::PgExecutor<'_>,
     id: Uuid,
     attempt_count: i32,
     config: &Config,
@@ -360,7 +391,7 @@ async fn mark_failed(
             failures,
             id,
         )
-        .execute(pool)
+        .execute(executor)
         .await?;
     } else {
         sqlx::query!(
@@ -383,7 +414,7 @@ async fn mark_failed(
             failures,
             id,
         )
-        .execute(pool)
+        .execute(executor)
         .await?;
     }
 
@@ -465,6 +496,7 @@ mod tests {
                 concurrency: 2,
                 poll_idle_secs: 30,
                 fetch_budget_secs: 15,
+                run_timeout_secs: 120,
                 http_timeout_secs: 10,
                 max_attempts,
                 cache_ttl_hit_days: 1,
@@ -559,6 +591,141 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn enrichment_timeout_recovers_claim_and_continues(owner: PgPool) {
+        // REV-REQ-0078, criteria 1-3.
+        let pool = ingestion_pool_for(&owner).await;
+        for (max_attempts, rerun) in [(3, false), (1, false), (1, true)] {
+            let (mut config, _files) = test_config_with_max_attempts(max_attempts);
+            config.enrichment.concurrency = 1;
+            config.enrichment.run_timeout_secs = 1;
+            config.enrichment.poll_idle_secs = 2;
+            let (_, id, _) = insert_queue_fixture(&pool, EnrichmentStatus::Pending, 0, None).await;
+            sqlx::query!(
+                "UPDATE manifestations SET isbn_13 = '9780451524935' WHERE id = $1",
+                id
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            let started = Arc::new(tokio::sync::Notify::new());
+            let resume = Arc::new(tokio::sync::Notify::new());
+            let expired = Arc::new(tokio::sync::Notify::new());
+            let cancel = CancellationToken::new();
+            let worker = tokio::spawn(queue_with_runner(pool.clone(), config, cancel.clone(), {
+                let started = started.clone();
+                let resume = resume.clone();
+                let expired = expired.clone();
+                move |pool, config, current, deadline| {
+                    let started = started.clone();
+                    let resume = resume.clone();
+                    let expired = expired.clone();
+                    async move {
+                        if current == id {
+                            started.notify_one();
+                            resume.notified().await;
+                        }
+                        let result = orchestrator::run_queued_with_sources(
+                            &pool,
+                            &config,
+                            &[],
+                            current,
+                            deadline,
+                        )
+                        .await;
+                        if current == id {
+                            assert!(
+                                result
+                                    .as_ref()
+                                    .unwrap_err()
+                                    .is::<orchestrator::RunTimeout>()
+                            );
+                            expired.notify_one();
+                        } else {
+                            assert!(result.is_ok());
+                        }
+                        result
+                    }
+                }
+            }));
+            tokio::time::timeout(Duration::from_secs(5), started.notified())
+                .await
+                .unwrap();
+            let mut blocker = owner.begin().await.unwrap();
+            sqlx::query!("SELECT id FROM manifestations WHERE id = $1 FOR UPDATE", id)
+                .fetch_one(&mut *blocker)
+                .await
+                .unwrap();
+            if rerun {
+                super::super::reset_retries(
+                    &mut blocker,
+                    &[id],
+                    super::super::RetryTiming::ClearProviderDelay,
+                )
+                .await
+                .unwrap();
+            }
+            resume.notify_one();
+            tokio::time::timeout(Duration::from_secs(5), expired.notified())
+                .await
+                .unwrap();
+            let active = sqlx::query_scalar!(r#"SELECT enrichment_status AS "status!: EnrichmentStatus" FROM manifestations WHERE id = $1"#, id)
+                .fetch_one(&pool).await.unwrap();
+            assert_eq!(active, EnrichmentStatus::InProgress);
+            blocker.commit().await.unwrap();
+            let state = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let row = sqlx::query!("SELECT enrichment_status::text AS status, enrichment_attempt_count, enrichment_attempted_at, enrichment_retry_not_before, enrichment_error, enrichment_failures, enrichment_rerun_requested FROM manifestations WHERE id = $1", id)
+                        .fetch_one(&pool).await.unwrap();
+                    if row.status.as_deref() != Some("in_progress") { break row; }
+                    tokio::task::yield_now().await;
+                }
+            }).await.unwrap();
+            assert_eq!(
+                state.status.as_deref(),
+                Some(if rerun {
+                    "pending"
+                } else if max_attempts == 1 {
+                    "skipped"
+                } else {
+                    "failed"
+                })
+            );
+            assert_eq!(state.enrichment_attempt_count, i32::from(!rerun));
+            assert_eq!(state.enrichment_attempted_at.is_none(), rerun);
+            assert!(state.enrichment_retry_not_before.is_none());
+            assert!(!state.enrichment_rerun_requested);
+            if rerun {
+                assert!(state.enrichment_error.is_none());
+                assert_eq!(state.enrichment_failures, serde_json::json!([]));
+                assert_eq!(claim_next(&pool).await.unwrap(), Some((id, 1)));
+                mark_complete(&pool, id).await.unwrap();
+            } else {
+                assert_eq!(
+                    state.enrichment_error.as_deref(),
+                    Some("enrichment run exceeded time budget")
+                );
+                assert_eq!(
+                    state.enrichment_failures,
+                    serde_json::json!([{"source": null, "class": "internal"}])
+                );
+                assert_eq!(claim_next(&pool).await.unwrap(), None);
+            }
+            let (_, next, _) =
+                insert_queue_fixture(&pool, EnrichmentStatus::Pending, 0, None).await;
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let state = sqlx::query_scalar!(r#"SELECT enrichment_status AS "status!: EnrichmentStatus" FROM manifestations WHERE id = $1"#, next)
+                        .fetch_one(&pool).await.unwrap();
+                    if state == EnrichmentStatus::Complete { break; }
+                    tokio::task::yield_now().await;
+                }
+            }).await.unwrap();
+            cancel.cancel();
+            worker.await.unwrap().unwrap();
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]
