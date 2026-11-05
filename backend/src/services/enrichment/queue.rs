@@ -139,7 +139,7 @@ where
                                 return;
                             }
                             if error.is::<orchestrator::ClaimLost>() {
-                                warn!(%id, claim_seq, "enrichment: claim rescued before catalogue writes; discarding attempt");
+                                warn!(%id, claim_seq, "enrichment: claim no longer current; discarding attempt");
                                 return;
                             }
                             if error.is::<orchestrator::RunTimeout>() {
@@ -372,11 +372,6 @@ async fn mark_complete(
     Ok(())
 }
 
-/// Failure bookkeeping, guarded on `in_progress` like [`mark_complete`]. A
-/// rerun requested mid-run overrides the failure transition entirely: the
-/// operator's edit resets the row to a fresh `pending` with no backoff, the
-/// same shape an edit on an idle failed row produces, so the rerun is never
-/// deferred behind a backoff window or swallowed by `skipped`.
 #[derive(Clone, Copy)]
 struct Claim {
     id: Uuid,
@@ -384,6 +379,11 @@ struct Claim {
     seq: i64,
 }
 
+/// Failure bookkeeping, guarded on `in_progress` like [`mark_complete`]. A
+/// rerun requested mid-run overrides the failure transition entirely: the
+/// operator's edit resets the row to a fresh `pending` with no backoff, the
+/// same shape an edit on an idle failed row produces, so the rerun is never
+/// deferred behind a backoff window or swallowed by `skipped`.
 async fn mark_failed(
     executor: impl sqlx::PgExecutor<'_>,
     claim: Claim,

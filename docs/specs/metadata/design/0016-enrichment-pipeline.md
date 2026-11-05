@@ -341,9 +341,12 @@ proven rollback. Already committed cache entries remain available.
 
 Every claim increments `enrichment_claim_seq`, and the attempt carries the new value as its fence. The catalogue
 transaction first locks the manifestation row with `FOR UPDATE`, conditioned on `in_progress` and that sequence, and
-holds the lock to commit; when the condition fails, the attempt stops with `ClaimLost` before any write and skips
-bookkeeping. `mark_complete` and `mark_failed` update only a row still carrying the attempt's sequence. A rerun resets
-the attempt count but never the sequence, so a later claim cannot share a stale attempt's fence.
+holds the lock to commit. A failed fence prevents catalogue writes. After acknowledged rollback, the attempt returns
+`ClaimLost` and skips bookkeeping if its deadline has not passed. Once the deadline passes, `RunTimeout` takes
+precedence, including over `ClaimLost`, and the attempt proceeds to fenced bookkeeping. `mark_complete` and
+`mark_failed` update only a row still `in_progress` and carrying the attempt's sequence, so bookkeeping leaves a rescued
+or later claim unchanged. A rerun resets the attempt count but never the sequence, so a later claim cannot share a stale
+attempt's fence.
 
 On each tick, `rescue_stale_claims` locks up to 100 `in_progress` rows claimed more than twice `run_timeout_secs` ago,
 oldest first, with `FOR UPDATE SKIP LOCKED`, and applies the shared failure transition with class `internal`, no source
