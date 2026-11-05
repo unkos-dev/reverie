@@ -322,6 +322,13 @@
           "format": "uint64",
           "default": 30,
           "minimum": 0
+        },
+        "run_timeout_secs": {
+          "description": "Whole-run cancellation budget in seconds; database cleanup can extend it\n(`REVERIE_ENRICHMENT_RUN_TIMEOUT_SECS`, default `120`; minimum `1`).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 120,
+          "minimum": 1
         }
       }
     },

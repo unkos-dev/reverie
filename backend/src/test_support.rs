@@ -76,6 +76,7 @@ pub fn test_config() -> Config {
             concurrency: 1,
             poll_idle_secs: 30,
             fetch_budget_secs: 15,
+            run_timeout_secs: 120,
             http_timeout_secs: 10,
             max_attempts: 3,
             cache_ttl_hit_days: 1,

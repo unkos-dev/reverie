@@ -1125,6 +1125,28 @@ mod tests {
     }
 
     #[test]
+    fn enrichment_run_budget_configuration() {
+        // REV-REQ-0078, criterion 1.
+        assert_eq!(
+            cfg_from_owned(&with_overrides(&[]))
+                .unwrap()
+                .enrichment
+                .run_timeout_secs,
+            120
+        );
+        let vars = with_overrides(&[("REVERIE_ENRICHMENT_RUN_TIMEOUT_SECS", "3")]);
+        assert_eq!(
+            cfg_from_owned(&vars).unwrap().enrichment.run_timeout_secs,
+            3
+        );
+        let vars = with_overrides(&[("REVERIE_ENRICHMENT_RUN_TIMEOUT_SECS", "0")]);
+        let error = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            matches!(error, ConfigError::Invalid { ref var, .. } if var == "REVERIE_ENRICHMENT_RUN_TIMEOUT_SECS")
+        );
+    }
+
+    #[test]
     fn password_policy_default_and_configurable_floor() {
         assert_eq!(Config::default().password_min_length, 15);
         for minimum in ["0", "8", "14"] {

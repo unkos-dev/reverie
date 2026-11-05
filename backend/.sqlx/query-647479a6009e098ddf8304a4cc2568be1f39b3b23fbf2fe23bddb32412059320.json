@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT enrichment_status::text AS status, enrichment_attempt_count, enrichment_attempted_at, enrichment_retry_not_before, enrichment_error, enrichment_failures, enrichment_rerun_requested FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "enrichment_attempt_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_attempt_count"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "enrichment_attempted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_attempted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "enrichment_retry_not_before",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_retry_not_before"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "enrichment_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_error"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "enrichment_failures",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_failures"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "enrichment_rerun_requested",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_rerun_requested"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "647479a6009e098ddf8304a4cc2568be1f39b3b23fbf2fe23bddb32412059320"
+}

@@ -62,6 +62,7 @@ appear here. A required variable left unset refuses startup with a clear error.
 | `REVERIE_ENRICHMENT_POLL_IDLE_SECS` | `integer` | No | `30` | Sleep between empty-queue polls (`REVERIE_ENRICHMENT_POLL_IDLE_SECS`, default `30`). |
 | `REVERIE_ENRICHMENT_FETCH_BUDGET_SECS` | `integer` | No | `15` | Per-job overall fetch budget (`REVERIE_ENRICHMENT_FETCH_BUDGET_SECS`, default `15`). |
 | `REVERIE_ENRICHMENT_HTTP_TIMEOUT_SECS` | `integer` | No | `10` | Per-request HTTP timeout for outbound metadata fetches (`REVERIE_ENRICHMENT_HTTP_TIMEOUT_SECS`, default `10`). |
+| `REVERIE_ENRICHMENT_RUN_TIMEOUT_SECS` | `integer` | No | `120` | Whole-run cancellation budget in seconds; database cleanup can extend it (`REVERIE_ENRICHMENT_RUN_TIMEOUT_SECS`, default `120`; minimum `1`). |
 | `REVERIE_ENRICHMENT_MAX_ATTEMPTS` | `integer` | No | `10` | Maximum retry attempts before a job is considered exhausted (`REVERIE_ENRICHMENT_MAX_ATTEMPTS`, default `10`). |
 | `REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS` | `integer` | No | `30` | Cache TTL for successful (`hit`) responses (`REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS`, default `30`). |
 | `REVERIE_ENRICHMENT_CACHE_TTL_MISS_DAYS` | `integer` | No | `7` | Cache TTL for "not found" (`miss`) responses (`REVERIE_ENRICHMENT_CACHE_TTL_MISS_DAYS`, default `7`). |

@@ -123,7 +123,10 @@
       "id": "REV-ADR-0018",
       "kind": "adr",
       "path": "docs/adr/0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0068"
+      ],
       "title": "Durable job queue: Postgres-backed, SKIP LOCKED, crash-only"
     },
     {
@@ -500,6 +503,16 @@
       "title": "Publication dates preserve source precision"
     },
     {
+      "id": "REV-ADR-0068",
+      "kind": "adr",
+      "path": "docs/adr/0068-durable-job-queue-restart-bounded-reclaim-with-fenced-enrichment-rescue.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0018"
+      ],
+      "title": "Durable job queue: restart-bounded reclaim with fenced enrichment rescue"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0062",
@@ -739,7 +752,7 @@
       "governed-by": [
         "REV-ADR-0067",
         "REV-ADR-0007",
-        "REV-ADR-0018",
+        "REV-ADR-0068",
         "REV-ADR-0051"
       ],
       "id": "REV-DESIGN-0016",
@@ -749,14 +762,15 @@
         "REV-REQ-0051",
         "REV-REQ-0052",
         "REV-REQ-0072",
-        "REV-REQ-0073"
+        "REV-REQ-0073",
+        "REV-REQ-0078"
       ],
       "title": "Enrichment pipeline"
     },
     {
       "governed-by": [
         "REV-ADR-0067",
-        "REV-ADR-0018",
+        "REV-ADR-0068",
         "REV-ADR-0020",
         "REV-ADR-0051",
         "REV-ADR-0052"
@@ -1389,7 +1403,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0018"
+        "REV-ADR-0068"
       ],
       "id": "REV-REQ-0053",
       "kind": "req",
@@ -1593,6 +1607,15 @@
       "kind": "req",
       "path": "docs/specs/library/requirements/0077-library-filter-edits-add-no-history-entries.md",
       "title": "Library filter edits add no history entries"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0068"
+      ],
+      "id": "REV-REQ-0078",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0078-a-timed-out-enrichment-run-releases-its-claim-safely.md",
+      "title": "A timed-out enrichment run releases its claim safely"
     }
   ]
 }
