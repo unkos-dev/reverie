@@ -26,6 +26,9 @@ does not justify keeping it when the chosen tool meets the requirement.
   `cmdk`.
 - **No stand-in controls:** Never make a `<div>` or `<span>` act as a control, and never rebuild focus, keyboard or
   dismissal behaviour that a React Aria component already provides.
+- **Feedback:** Start without a toast. Justify each proposed inclusion by a better reader experience than local feedback
+  or the visible result. Keep action context, pending state, outcomes and recovery in the owning flow; a toast must not
+  compensate for avoidable context loss. Omit a duplicate toast when the same error remains accessible inline.
 
 ## React
 
@@ -33,6 +36,11 @@ does not justify keeping it when the chosen tool meets the requirement.
   routes use React Router's `errorElement`.
 - **Server state:** API calls live in `src/api/`, and lint bans `fetch` elsewhere. Fetching, caching and mutations go
   through React Query, never `useState` or `useEffect`.
+- **Recovery:** Use TanStack Query's ordinary mutation/query lifecycle for pending, success and error handling. Use
+  confirmed mutation data where sufficient. Where recovery needs authoritative state, reconcile through existing
+  invalidation, targeted refetch and reconnect behaviour. Preserve input and reconcile obsolete feedback with fresh
+  data. An alternative request/recovery mechanism needs evidence that supported defaults cannot meet the required
+  behaviour and the repository's scope approval.
 - **Effects:** Keep dependency arrays complete and never suppress the rule. Use `useEffectEvent` for non-reactive event
   logic an Effect calls, never to drop a dependency that should resynchronise the Effect. Return a cleanup when the
   Effect starts something that must be stopped or undone. Never pass an async function directly. An async Effect for

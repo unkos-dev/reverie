@@ -184,6 +184,8 @@ export type ListBooksParams = {
   author_none?: string[];
   series?: string;
   shelf?: string;
+  series_any?: string[];
+  shelf_any?: string[];
   // Vocabulary set filters (all-of / any-of / none-of).
   tag?: string[];
   tag_any?: string[];

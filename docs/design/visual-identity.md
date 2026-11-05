@@ -183,8 +183,9 @@ identity.
 A failed `PATCH` on a persisted preference change is handled by response class. A 401 (anonymous), 403 (expired session
 or missing CSRF), or 5xx (backend unavailable) keeps the optimistic value (the theme must not flip mid-visit on an auth
 lapse or outage) and the reconcile on the next successful authenticated load re-syncs to the server's stored preference,
-so the server stays canonical across sessions. Only a validation rejection (a 4xx other than 401/403) rolls back and
-surfaces a toast, since that is a genuine client/server disagreement rather than an auth lapse.
+so the server stays canonical across sessions. Only a validation rejection (a 4xx other than 401/403) rolls back,
+provided no newer preference has replaced it. Local feedback below the User chip explains the refusal and invites
+another choice.
 
 The cookie carries no PII, only the literal string `system`, `light`, or `dark`. It is not `HttpOnly` because the FOUC
 script runs before any module loader and must read it synchronously to avoid a flicker.

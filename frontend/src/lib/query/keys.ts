@@ -55,6 +55,8 @@ const ARRAY_PARAM_KEYS = exhaustiveArrayParamKeys([
   "author",
   "author_any",
   "author_none",
+  "series_any",
+  "shelf_any",
   "tag",
   "tag_any",
   "tag_none",
@@ -79,7 +81,7 @@ function normalizeListParams(params: ListBooksParams): ListBooksParams {
   const normalized: ListBooksParams = { ...params };
   for (const key of ARRAY_PARAM_KEYS) {
     const value = normalized[key];
-    if (value !== undefined) normalized[key] = [...value].sort(byCodepoint);
+    if (value !== undefined) normalized[key] = [...new Set(value)].sort(byCodepoint);
   }
   return normalized;
 }
@@ -87,6 +89,7 @@ function normalizeListParams(params: ListBooksParams): ListBooksParams {
 /** Read-only key arrays — `as const` makes them tuples for TS narrowing. */
 export const queryKeys = {
   books: {
+    reading: (id: string, userId: string | null) => ["books", "reading", userId, id] as const,
     /** Root namespace; invalidate to wipe every books-* cache slot. */
     all: ["books"] as const satisfies BooksAllKey,
     /** List endpoint with filters/sort/cursor. Distinct params = distinct slot. */
@@ -120,6 +123,8 @@ export const queryKeys = {
       ["authors", "resolve", [...ids].sort(byCodepoint)] as const,
   },
   series: {
+    resolve: (ids: readonly string[]) =>
+      ["series", "resolve", [...new Set(ids)].sort(byCodepoint)] as const,
     /** Root namespace; invalidate to wipe every series-* cache slot. */
     all: ["series"] as const,
     /** Detail endpoint for one series. */

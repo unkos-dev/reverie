@@ -63,6 +63,7 @@ export default defineConfig({
         extends: false,
         optimizeDeps: {
           include: [
+            "react-aria",
             "@tanstack/react-query",
             "react-router",
             "react-error-boundary",

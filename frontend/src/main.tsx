@@ -7,8 +7,7 @@
  * route loader fires) → `ThemeProvider` (sets `data-theme` on
  * `<html>` from the cookie before the route renders, paired with the
  * inline FOUC script hashed into `index.html`) → `RouterProvider` →
- * dev-only `ReactQueryDevtoolsPanel` and `<Toaster />` as siblings of
- * the router so their state survives navigation.
+ * dev-only `ReactQueryDevtoolsPanel` as a sibling of the router.
  *
  * The `@tanstack/react-query-devtools` import lives in
  * `lib/query/devtools.tsx` and is referenced only inside a
@@ -20,7 +19,6 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import "./index.css";
 import { ThemeProvider } from "./lib/theme/ThemeProvider.tsx";
-import { Toaster } from "./components/ui/sonner.tsx";
 import { queryClient } from "./lib/query/client";
 import { routes } from "./route-table";
 
@@ -39,7 +37,6 @@ createRoot(rootElement).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <RouterProvider router={router} />
-        <Toaster />
         {devtools}
       </ThemeProvider>
     </QueryClientProvider>

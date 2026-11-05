@@ -84,8 +84,8 @@ or cursor fingerprints use them. `created_at_gte` is inclusive and `created_at_l
 directly against `m.created_at`, without casting the indexed column.
 
 `validate(&ListParams)` runs once the request has fully decoded, and is the sole home of the semantic-bound checks: a
-multi-value list (`tag`, `genre`, `mood`, `author`, `status_any`/`status_none` and each list's `_any`/`_none` variants,
-fourteen fields in total) longer than `MAX_TAG_FILTERS` (20, defined in `library::mod`); a trimmed text value (`q`,
+multi-value list (`tag`, `genre`, `mood`, `author`, `status_any`/`status_none`, vocabulary `_any`/`_none` variants,
+`shelf_any` and `series_any`) longer than `MAX_TAG_FILTERS` (20, defined in `library::mod`); a trimmed text value (`q`,
 `title_contains`, `title_eq`, `title_ne`, `subtitle_contains`, `isbn_13_contains`, `isbn_13_eq`) longer than
 `MAX_TEXT_FILTER_CHARS` (200); a rating bound outside `1..=5`; a negative `pages_gte`/`pages_lte`; a
 `status_any`/`status_none` token that is neither a `ReadingStatus::from_wire` name nor the literal `unread`. Complete
@@ -93,17 +93,29 @@ inverted bounds are valid conjunctions whose result is empty. Equal numeric endp
 timestamp endpoints describe an empty half-open interval.
 
 `push_filter_predicates` is the single entry point that appends every active condition onto the query's `WHERE` clause,
-in a fixed order (author triple, then `series`, then `shelf`, then the tag/genre/mood vocabulary triples, then text,
-pages, `created_at`, status, rating, and finally `q`); the order does not change the AND-combined semantics. Each
+in a fixed order (author triple, series predicates, shelf predicates, then the tag/genre/mood vocabulary triples, then
+text, pages, `created_at`, status, rating, and finally `q`); the order does not change the AND-combined semantics. Each
 condition family has its own pushing function (`push_author_predicates`, `push_vocab_predicates`,
 `push_text_predicates`, `push_pages_predicates`, `push_created_at_predicates`, `push_status_predicates`,
 `push_rating_predicates`, `push_q_predicate`), and every one binds its user-supplied value with `push_bind`; no
 condition ever writes a column name from client input. `ListParams` carries no `#[serde(deny_unknown_fields)]`, so an
 unrecognised suffix parameter is silently dropped by the `Query` extractor and never reaches this module, rather than
-failing deserialisation. The `shelf` condition is the one filter whose predicate carries its own ownership check rather
-than leaning on a table's row-level-security policy: `shelves` has none, so the pushed `EXISTS` joins `shelf_items` to
-`shelves` and adds `AND s.user_id = current_setting('app.current_user_id', true)::uuid` inline, the same predicate shape
-the Design "Shelves" records for that table's own handlers.
+failing deserialisation. The shelf predicates carry their own ownership checks rather than leaning on a table's
+row-level-security policy: `shelves` has none, so the pushed `EXISTS` joins `shelf_items` to `shelves` and adds
+`AND s.user_id = current_setting('app.current_user_id', true)::uuid` inline, the same predicate shape the Design
+"Shelves" records for that table's own handlers.
+
+`series_any` matches at least one requested series through `series_works`. `shelf_any` matches membership in at least
+one requested shelf only when every requested shelf belongs to the caller; a foreign or unknown operand makes the whole
+predicate match no rows. The ownership probe uses a bound UUID array and `NOT EXISTS`, independently of membership. Both
+arrays combine with other families and legacy scalar `series`/`shelf` through AND. Empty arrays add no predicate or
+fingerprint part. Array values are sorted and duplicate IDs removed before fingerprinting. Permutation and duplicate
+operands preserve cursor identity; a changed set invalidates it.
+
+The independent series-label reader is `GET /api/v1/series` in `routes/suggest.rs`. It requires one to sixty repeated
+UUID `id` values and returns `{items: [{id, value}]}` from series in use on RLS-visible manifestations. Unknown and
+hidden IDs are omitted alike; malformed IDs return 400 and missing or over-cap IDs return 422. It does not read the
+current books-list result or alter a filter whose label is unavailable.
 
 Text matching is case-insensitive `ILIKE` throughout. The `_contains` legs on `title` and `subtitle`, and the `q`
 filter, additionally fold accents through `immutable_unaccent`/`immutable_unaccent_like` on the SQL side, escaping after
@@ -325,13 +337,13 @@ before the cursor's own predicate is layered on top, and the cursor only ever na
 already-visible set — it never widens it. Forging one lets a caller start their own walk at an arbitrary point in the
 sort order, which is no more than choosing which of their own visible rows to see first.
 
-The `shelf` filter is the one place in this subject that enforces ownership itself rather than leaning on a table's
-row-level-security policy, because `shelves` has none: its `EXISTS` predicate joins `shelves` and checks
-`s.user_id = current_setting('app.current_user_id', true)::uuid` inline, matching the ownership predicate the Design
-"Shelves" records for that table's own handlers. Every other filter that reaches a table row-level security does not
-cover — the tag, genre and mood vocabulary probes against their junction tables, and the status and rating probes
-against `reading_state` — relies on that table's own policy (a junction table's `SELECT` policy requires a matching,
-visible `manifestations` row; `reading_state_owner` scopes to the caller) rather than repeating a `user_id` check here.
+The shelf predicates enforce ownership themselves because `shelves` has no row-level-security policy. The scalar
+membership join and the array ownership probe check `s.user_id = current_setting('app.current_user_id', true)::uuid`,
+matching the ownership predicate the Design "Shelves" records for that table's own handlers. Every other filter that
+reaches a table row-level security does not cover — the tag, genre and mood vocabulary probes against their junction
+tables, and the status and rating probes against `reading_state` — relies on that table's own policy (a junction table's
+`SELECT` policy requires a matching, visible `manifestations` row; `reading_state_owner` scopes to the caller) rather
+than repeating a `user_id` check here.
 
 `list` declares `security(("session_cookie" = ["read"]), ...)` in its OpenAPI annotation and calls no `require_scope`,
 `require_admin` or `require_not_child` of its own: every resolved credential carries at least `read` scope, so no

@@ -1,8 +1,7 @@
 /**
  * Cinematic mode for the Library reading room.
  *
- * Press `F` (outside any field) to dissolve the surrounding chrome; `F`
- * again or `Escape` exits. After ~2s of pointer stillness the cursor
+ * The visible toggle dissolves surrounding chrome. After ~2s of pointer stillness the cursor
  * hides too, returning on the next move. State is reflected on the
  * document element as `data-cinematic` / `data-cursor-hidden` so chrome
  * anywhere in the shell can respond purely through CSS (see
@@ -13,39 +12,8 @@ import { useEffect, useState } from "react";
 /** Pointer-idle delay before the cursor hides in cinematic mode. */
 const CURSOR_IDLE_MS = 2000;
 
-/** True when the caller is typing into an editable element. */
-function inEditableField(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
-}
-
-/** Drives cinematic mode; returns whether it is currently active. */
-export function useCinematicMode(): boolean {
+export function useCinematicMode(): { active: boolean; setActive: (active: boolean) => void } {
   const [active, setActive] = useState(false);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      if (
-        (event.key === "f" || event.key === "F") &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !inEditableField(document.activeElement)
-      ) {
-        event.preventDefault();
-        setActive((current) => !current);
-      } else if (event.key === "Escape" && !inEditableField(document.activeElement)) {
-        // The search bar stays as an in-mode escape hatch, so Escape there
-        // (clear query / dismiss autocomplete) must not also exit cinematic.
-        setActive(false);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -74,5 +42,5 @@ export function useCinematicMode(): boolean {
     };
   }, [active]);
 
-  return active;
+  return { active, setActive };
 }

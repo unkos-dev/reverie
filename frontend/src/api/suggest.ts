@@ -46,6 +46,10 @@ const AuthorsResponseSchema = z.object({
   items: z.array(SuggestionSchema),
 });
 
+const SeriesResponseSchema = z.object({
+  items: z.array(z.object({ id: z.uuid(), value: z.string() })),
+});
+
 /** Upper bound on `?id=` repetitions per resolve call; matches the backend
  *  `MAX_RESOLVE_IDS` cap, over which the endpoint returns 422. Chip hydration
  *  resolves the union of the `author`, `author_any`, and `author_none` filter
@@ -91,4 +95,17 @@ export async function resolveAuthors(
   for (const id of unique) url.searchParams.append("id", id);
   const body = await apiFetch(url, signal ? { method: "GET", signal } : { method: "GET" });
   return AuthorsResponseSchema.parse(body).items;
+}
+
+/** Resolves visible series labels without depending on a books-list page. */
+export async function resolveSeries(
+  ids: readonly string[],
+  signal?: AbortSignal,
+): Promise<{ id: string; value: string }[]> {
+  const unique = [...new Set(ids)].slice(0, MAX_RESOLVE_IDS);
+  if (unique.length === 0) return [];
+  const url = new URL("/api/v1/series", window.location.origin);
+  for (const id of unique) url.searchParams.append("id", id);
+  const body = await apiFetch(url, signal ? { method: "GET", signal } : { method: "GET" });
+  return SeriesResponseSchema.parse(body).items;
 }

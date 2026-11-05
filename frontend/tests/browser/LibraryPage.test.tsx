@@ -109,6 +109,7 @@ type RenderOpts = {
   cacheParams?: ListBooksParams;
 
   extraCacheParams?: ListBooksParams[];
+  seriesLabels?: { id: string; value: string }[];
 
   url?: string;
 };
@@ -124,6 +125,7 @@ async function renderLibrary({
   preferences,
   cacheParams,
   extraCacheParams = [],
+  seriesLabels = [],
   url = "/library",
 }: RenderOpts): Promise<{
   client: QueryClient;
@@ -132,6 +134,8 @@ async function renderLibrary({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   client.setQueryData(queryKeys.shelves.list(), []);
+  if (visit?.filters?.series !== undefined)
+    client.setQueryData(queryKeys.series.resolve(visit.filters.series), seriesLabels);
   const params: ListBooksParams = cacheParams ?? {};
   const response: BookListResponse = { items, next_cursor: nextCursor };
   for (const slot of [params, ...extraCacheParams]) {
@@ -226,12 +230,15 @@ describe("LibraryPage", () => {
   });
 
   test("clearing all filters preserves the visit view and the stored sort", async () => {
+    // REV-REQ-0002: Clear removes every condition and preserves view and sort.
+    const series = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"];
+    const shelf = ["cccccccc-cccc-4ccc-8ccc-cccccccccccc"];
     await renderLibrary({
       items: [],
       nextCursor: null,
-      visit: { filters: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, view: "table" },
+      visit: { filters: { series, shelf, status: { any: ["unread"], none: [] } }, view: "table" },
       preferences: preferencesFixture({ sort_stack: "title" }),
-      cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sort: "title" },
+      cacheParams: { series_any: series, shelf_any: shelf, status_any: ["unread"], sort: "title" },
       extraCacheParams: [{ sort: "title" }],
     });
     const user = userEvent;
@@ -239,7 +246,7 @@ describe("LibraryPage", () => {
     await vi.waitFor(() => {
       const search = page.getByTestId("visit-params").element().textContent;
       expect(search).toContain("view=table");
-      expect(search).not.toContain("series=");
+      expect(search).toBe("view=table");
     });
 
     await expect.element(page.getByText("Sorted by Title ascending")).toBeInTheDocument();
@@ -250,30 +257,46 @@ describe("LibraryPage", () => {
 
   describe("filter chips", () => {
     test("a chip's remove control drops exactly that filter param", async () => {
+      // REV-REQ-0002: a condition edit and section Clear preserve sibling sections.
+      const first = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      const second = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+      const shelfId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+      const shelf = [shelfId];
+      const siblings = { status_any: ["unread"], shelf_any: shelf };
       await renderLibrary({
-        items: [
-          bookFixture({
-            id: "a",
-            series: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Discworld", position: 1 },
-          }),
-        ],
+        items: [bookFixture()],
         nextCursor: null,
         visit: {
           filters: {
-            series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            series: [first, second],
+            shelf,
             status: { any: ["unread"], none: [] },
           },
         },
-        cacheParams: { series: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", status_any: ["unread"] },
-        extraCacheParams: [{ status_any: ["unread"] }],
+        seriesLabels: [
+          { id: first, value: "Discworld" },
+          { id: second, value: "Culture" },
+        ],
+        cacheParams: { series_any: [first, second], ...siblings },
+        extraCacheParams: [{ series_any: [second], ...siblings }, siblings],
       });
       const chips = page.getByTestId("filter-chips");
       const user = userEvent;
       await user.click(chips.getByRole("button", { name: /Remove.*Series: Discworld/ }));
       await vi.waitFor(() => {
         const search = page.getByTestId("visit-params").element().textContent;
-        expect(search).not.toContain("series=");
+        expect(search).not.toContain(first);
+        expect(search).toContain(`series_any=${second}`);
         expect(search).toContain("status_any=unread");
+        expect(search).toContain(`shelf_any=${shelfId}`);
+      });
+      await user.click(page.getByRole("button", { name: /^Filters/ }));
+      await user.click(page.getByRole("button", { name: "Clear Series filters" }));
+      await vi.waitFor(() => {
+        const search = page.getByTestId("visit-params").element().textContent;
+        expect(search).not.toContain("series_any");
+        expect(search).toContain("status_any=unread");
+        expect(search).toContain(`shelf_any=${shelfId}`);
       });
     });
 

@@ -39,7 +39,7 @@ handler code that sequence runs against; it does not restate that Design's gener
 and role authorisation model that `require_scope` enforces; that is the Design "Authorization axes". It does not own the
 `ApiPath`/`ApiJson` request extractors or the `AppError`-to-Problem-Details mapping; that is the Design "API error
 contract and OpenAPI". It does not own the generic library-table cell-edit orchestration (pending-cell state, the
-bounded undo stack, the stale-tag conflict toast) in `frontend/src/pages/library/table/useCellEdit.ts` and
+bounded undo stack and local conflict recovery) in `frontend/src/pages/library/table/useCellEdit.ts` and
 `edit-routing.ts`, which applies identically to the metadata pipeline and is the Library table cell editing and undo
 subject; this subject owns only the two editor controls that orchestration routes commits through.
 

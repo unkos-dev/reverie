@@ -14,7 +14,6 @@ import { Form, Input as AriaInput, Label as AriaLabel, TextField } from "react-a
 import { type ReactElement, useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
-import { toast } from "sonner";
 import { z } from "zod";
 
 import { useAuthMe } from "@/hooks/useAuthMe";
@@ -105,17 +104,6 @@ function TokensPage(): ReactElement {
     void queryClient.invalidateQueries({ queryKey: queryKeys.tokens.all });
   }, [queryClient]);
 
-  const revokeMutation = useMutation({
-    mutationFn: (id: string) => revokeToken(id),
-    onSuccess: () => {
-      invalidateTokens();
-      toast.success("Token revoked.");
-    },
-    onError: (err: Error) => {
-      toast.error(`Revoke failed: ${errorDetail(err)}`);
-    },
-  });
-
   if (meLoading) {
     return (
       <div className="mx-auto max-w-4xl p-6">
@@ -170,14 +158,7 @@ function TokensPage(): ReactElement {
           </TableHeader>
           <TableBody>
             {tokens.map((token) => (
-              <TokenRow
-                key={token.id}
-                token={token}
-                onRevoke={(id) => {
-                  revokeMutation.mutate(id);
-                }}
-                revoking={revokeMutation.isPending && revokeMutation.variables === token.id}
-              />
+              <TokenRow key={token.id} token={token} onRevoked={invalidateTokens} />
             ))}
           </TableBody>
         </Table>
@@ -188,11 +169,11 @@ function TokensPage(): ReactElement {
 
 type TokenRowProps = {
   token: Token;
-  onRevoke: (id: string) => void;
-  revoking: boolean;
+  onRevoked: () => void;
 };
 
-function TokenRow({ token, onRevoke, revoking }: Readonly<TokenRowProps>): ReactElement {
+function TokenRow({ token, onRevoked }: Readonly<TokenRowProps>): ReactElement {
+  const revoke = useMutation({ mutationFn: () => revokeToken(token.id), onSuccess: onRevoked });
   return (
     <TableRow>
       <TableCell className="font-medium">{token.name}</TableCell>
@@ -211,13 +192,18 @@ function TokenRow({ token, onRevoke, revoking }: Readonly<TokenRowProps>): React
         <Button
           variant="destructive"
           size="sm"
-          isDisabled={revoking}
+          isPending={revoke.isPending}
           onPress={() => {
-            onRevoke(token.id);
+            revoke.mutate();
           }}
         >
           Revoke
         </Button>
+        {revoke.isError ? (
+          <FieldError>
+            Could not revoke {token.name}: {errorDetail(revoke.error)}
+          </FieldError>
+        ) : null}
       </TableCell>
     </TableRow>
   );
@@ -245,7 +231,6 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
     onError: (err: Error) => {
       const detail = errorDetail(err);
       setError(detail);
-      toast.error(`Create failed: ${detail}`);
     },
   });
 
@@ -419,15 +404,6 @@ function splitCredential(bearer: string): { username: string; password: string }
   return { username: bearer.slice(0, i), password: bearer.slice(i + 1) };
 }
 
-async function copyToClipboard(value: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(value);
-    toast.success("Copied.");
-  } catch {
-    toast.error("Copy failed. Select the text and copy it manually.");
-  }
-}
-
 function RevealCredential({ token, onDone }: Readonly<RevealCredentialProps>): ReactElement {
   const basicAuth = splitCredential(token.token);
 
@@ -466,6 +442,15 @@ type CopyFieldProps = {
 };
 
 function CopyField({ label, value }: Readonly<CopyFieldProps>): ReactElement {
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  async function copy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyStatus("Copied.");
+    } catch {
+      setCopyStatus("Copy failed. Select the text and copy it manually.");
+    }
+  }
   return (
     <TextField isReadOnly value={value} render={(props) => <Field {...props} />}>
       <AriaLabel render={(props) => <FieldLabel {...props} />}>{label}</AriaLabel>
@@ -477,12 +462,17 @@ function CopyField({ label, value }: Readonly<CopyFieldProps>): ReactElement {
           size="icon"
           aria-label={`Copy ${label}`}
           onPress={() => {
-            void copyToClipboard(value);
+            void copy();
           }}
         >
           <Copy className="size-4" aria-hidden="true" />
         </Button>
       </div>
+      {copyStatus !== null ? (
+        <p role="status" className="text-fg-muted text-sm">
+          {copyStatus}
+        </p>
+      ) : null}
     </TextField>
   );
 }

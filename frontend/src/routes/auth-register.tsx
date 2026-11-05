@@ -19,7 +19,6 @@ import { useActionState, type ReactElement } from "react";
 import { Form } from "react-aria-components";
 import { Link, useNavigate } from "react-router";
 import { z } from "zod";
-import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import {
@@ -51,8 +50,7 @@ export function Component(): ReactElement {
       password: string;
     }) => register(email, displayName, password),
     onSuccess: () => {
-      toast.success("Account created. Sign in to continue.");
-      void navigate("/login");
+      void navigate("/login?outcome=registered");
     },
   });
 
@@ -76,7 +74,6 @@ export function Component(): ReactElement {
           err instanceof ApiError && err.detail !== ""
             ? err.detail
             : "Could not create the account.";
-        toast.error(message);
         return { values, error: message };
       }
     },

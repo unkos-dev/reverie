@@ -589,6 +589,20 @@
             }
           },
           {
+            "name": "series_any",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid",
+                "maxLength": 45
+              },
+              "maxItems": 20
+            }
+          },
+          {
             "name": "shelf",
             "in": "query",
             "required": false,
@@ -596,6 +610,20 @@
               "type": "string",
               "format": "uuid",
               "maxLength": 45
+            }
+          },
+          {
+            "name": "shelf_any",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid",
+                "maxLength": 45
+              },
+              "maxItems": 20
             }
           },
           {
@@ -3865,6 +3893,91 @@
           },
           "422": {
             "description": "Empty, missing, or over-length query",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/series": {
+      "get": {
+        "tags": [
+          "suggest"
+        ],
+        "summary": "Resolve series ids to names",
+        "description": "Resolves the requested series ids to display names. Only series attached to a manifestation in the caller's visible library are returned; hidden and unknown ids are omitted alike. Requires at least one id and rejects more than 60.",
+        "operationId": "series_by_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid",
+                "maxLength": 45
+              },
+              "maxItems": 60
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved series labels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed id parameter",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Missing id filter or too many ids",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11910,6 +12023,22 @@
           }
         }
       },
+      "SeriesLabel": {
+        "type": "object",
+        "required": [
+          "id",
+          "value"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "SeriesRef": {
         "type": "object",
         "description": "Series membership for a manifestation. Embedded into both\n[`BookListRow`] and [`BookDetail`]; `None` when the work isn't on\nany series.",
@@ -11934,6 +12063,20 @@
             ],
             "format": "double",
             "description": "Position within the series (`series_works.position`), `None`\nwhen the membership row has a null position."
+          }
+        }
+      },
+      "SeriesResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SeriesLabel"
+            }
           }
         }
       },

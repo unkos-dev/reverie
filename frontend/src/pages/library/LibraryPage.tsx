@@ -21,6 +21,7 @@ import {
   type ReactElement,
 } from "react";
 import { Link, matchPath } from "react-router";
+import { ToggleButton } from "react-aria-components";
 
 import {
   ApiError,
@@ -34,7 +35,7 @@ import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { sortStackSummary } from "@/components/library/sort-summary";
-import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
+import { FilterRail } from "@/components/shell/FilterRail";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -52,6 +53,8 @@ import {
   type LibraryView,
 } from "@/routes/library-params";
 
+import { useCellEditFeedback } from "./table/useCellEdit";
+import { FieldError } from "@/components/ui/field";
 import { BatchBar } from "./BatchBar";
 import { BookDetailDrawer } from "./BookDetailDrawer";
 import { EmptyLibrary } from "./EmptyLibrary";
@@ -175,12 +178,35 @@ function useLibraryBooks(listKey: BooksListKey, eligible: boolean, sortPending: 
   };
 }
 
+function CellEditOutcomes(): ReactElement | null {
+  const editFeedback = useCellEditFeedback();
+  return editFeedback.length > 0 ? (
+    <section aria-label="Edit outcomes" className="mb-4 space-y-3">
+      {editFeedback.map((feedback) => (
+        <div key={feedback.id} className="space-y-2">
+          <FieldError>
+            {feedback.field} for “{feedback.bookTitle}”: {feedback.message}
+          </FieldError>
+          <p className="text-fg-muted break-words text-sm">Submitted value: {feedback.submitted}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            isPending={feedback.reloading}
+            onPress={feedback.reload}
+          >
+            Reload
+          </Button>
+        </div>
+      ))}
+    </section>
+  ) : null;
+}
+
 export function LibraryPage(): ReactElement {
   const owner = useLibraryFilters();
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
-  // Drives cinematic mode via the document `data-cinematic` attribute (CSS
-  // reads it); the boolean return is unused — visibility is CSS-only.
-  useCinematicMode();
+  const cinematic = useCinematicMode();
   const [overlay, setOverlay] = useState<OverlayState>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [hasRenderedControls, setHasRenderedControls] = useState(false);
@@ -201,7 +227,6 @@ export function LibraryPage(): ReactElement {
   const {
     items,
     displayedKey,
-    blocked,
     blockedMessage,
     updating,
     canLoadMore,
@@ -247,8 +272,6 @@ export function LibraryPage(): ReactElement {
     setOverlay(next);
   }
 
-  const seriesOptions = librarySeriesOptions(items);
-  const seriesById = new Map(seriesOptions.map(({ id, name }) => [id, name]));
   if (!loading && !hasRenderedControls) setHasRenderedControls(true);
   if (loading && !hasRenderedControls) return <LibrarySkeleton />;
 
@@ -256,18 +279,13 @@ export function LibraryPage(): ReactElement {
     <>
       <Atmosphere />
       <BookmarkRibbon />
-      {/* Always rendered; `.cinema-hint` fades in/out purely via the
-          `[data-cinematic="on"]` opacity rule. Gating it on the boolean
-          would unmount it in the same commit that clears the attribute,
-          so the CSS fade-out could never paint. `aria-hidden` because it's
-          a visual-only affordance — opacity:0 still exposes it to AT, so
-          without this it would be announced on every load. */}
-      <p
-        className="cinema-hint font-mono text-fg-muted text-xs uppercase tracking-[0.2em]"
-        aria-hidden="true"
+      <ToggleButton
+        isSelected={cinematic.active}
+        onChange={cinematic.setActive}
+        className="cinema-control bg-surface text-fg-muted border-border data-selected:text-fg rounded-md border px-3 py-2 font-mono text-xs uppercase tracking-wide outline-none"
       >
-        Cinematic mode · press F to exit
-      </p>
+        {cinematic.active ? "Exit cinematic view" : "Cinematic view"}
+      </ToggleButton>
       {/* Raise the browse content above the fixed atmosphere layers. */}
       <div className="relative z-[2]">
         <div className="px-6 py-10 sm:px-10">
@@ -300,14 +318,10 @@ export function LibraryPage(): ReactElement {
             canResetColumns={preferences.canResetColumns}
             onResetColumns={preferences.resetColumns}
           />
-          <FilterChips
-            filters={filterState}
-            seriesNames={seriesById}
-            onRemove={commitAll}
-            onClearAll={clearAll}
-          />
+          <FilterChips filters={filterState} onRemove={commitAll} onClearAll={clearAll} />
           <Separator className="mb-8" />
 
+          <CellEditOutcomes />
           <LibraryBooks
             items={items}
             filtered={hasActiveFilterState(filterState)}
@@ -346,22 +360,20 @@ export function LibraryPage(): ReactElement {
             </TableChunkBoundary>
           </LibraryBooks>
 
-          {viewMode === "table" && !blocked ? (
-            <BatchBar
-              selectedIds={selectedIds}
-              hasMorePages={canLoadMore}
-              onClearSelection={() => {
-                setSelectedIds(new Set());
-              }}
-              onCompleted={(succeededIds) => {
-                setSelectedIds((current) => {
-                  const next = new Set(current);
-                  for (const id of succeededIds) next.delete(id);
-                  return next;
-                });
-              }}
-            />
-          ) : null}
+          <BatchBar
+            selectedIds={selectedIds}
+            hasMorePages={canLoadMore}
+            onClearSelection={() => {
+              setSelectedIds(new Set());
+            }}
+            onCompleted={(succeededIds) => {
+              setSelectedIds((current) => {
+                const next = new Set(current);
+                for (const id of succeededIds) next.delete(id);
+                return next;
+              });
+            }}
+          />
 
           {viewMode !== "table" && canLoadMore ? (
             <LibraryPagination
@@ -398,7 +410,6 @@ export function LibraryPage(): ReactElement {
         <FilterRail
           owner={owner}
           showContradiction={showContradiction}
-          seriesOptions={seriesOptions}
           sortLevels={sortLevels}
           sortInherited={preferences.sortInherited}
           onSortChange={handleSortChange}
@@ -413,14 +424,6 @@ export function LibraryPage(): ReactElement {
       />
     </>
   );
-}
-
-function librarySeriesOptions(items: BookListItem[]): SeriesFacetOption[] {
-  const byId = new Map<string, string>();
-  for (const book of items) {
-    if (book.series !== null) byId.set(book.series.id, book.series.name);
-  }
-  return [...byId].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 type LibraryBooksProps = {

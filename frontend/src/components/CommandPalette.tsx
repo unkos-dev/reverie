@@ -1,9 +1,9 @@
 /**
  * Global library search using server-ranked results and safe snippet highlighting.
- * React Aria owns modal focus and dismissal; application shortcuts respect the focused field.
+ * React Aria owns modal focus and dismissal.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import {
   Autocomplete,
   Button,
@@ -20,53 +20,29 @@ import {
 import { SearchIcon } from "lucide-react";
 
 import { searchLibrary, type SearchHit } from "@/api";
-import { setCommandPaletteOpener } from "@/lib/command-palette";
 import { queryKeys } from "@/lib/query/keys";
 
 const SNIPPET_HL_START = "\u0002";
 const SNIPPET_HL_END = "\u0003";
 
 /** Searches from two characters and navigates to the selected book without changing library filters. */
-export function CommandPalette(): ReactElement {
-  const [open, setOpen] = useState(false);
+export function CommandPalette({
+  isOpen,
+  onOpenChange,
+}: Readonly<{ isOpen: boolean; onOpenChange: (open: boolean) => void }>): ReactElement {
   const [query, setQuery] = useState("");
   const trimmed = query.trim();
   const { data, isFetching, isError, error } = useQuery({
     queryKey: queryKeys.search(trimmed),
     queryFn: ({ signal }) => searchLibrary(trimmed, signal),
-    enabled: open && trimmed.length >= 2,
+    enabled: isOpen && trimmed.length >= 2,
     staleTime: 30_000,
   });
   const items = trimmed.length >= 2 ? (data?.items ?? []) : [];
-  const changeOpen = useCallback((next: boolean): void => {
-    setOpen(next);
+  function changeOpen(next: boolean): void {
+    onOpenChange(next);
     if (!next) setQuery("");
-  }, []);
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      const cmdK = (event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey);
-      const target = document.activeElement;
-      const inField =
-        target instanceof HTMLElement &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT" ||
-          target.isContentEditable);
-      const slash =
-        event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !inField;
-      if (!cmdK && !slash) return;
-      event.preventDefault();
-      changeOpen(cmdK ? !open : true);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    setCommandPaletteOpener(() => {
-      setOpen(true);
-    });
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      setCommandPaletteOpener(() => {});
-    };
-  }, [changeOpen, open]);
+  }
   useEffect(() => {
     if (isError) console.error("[CommandPalette] search query failed", error);
   }, [isError, error]);
@@ -79,7 +55,7 @@ export function CommandPalette(): ReactElement {
 
   return (
     <ModalOverlay
-      isOpen={open}
+      isOpen={isOpen}
       onOpenChange={changeOpen}
       isDismissable
       className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"

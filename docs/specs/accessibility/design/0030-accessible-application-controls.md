@@ -57,6 +57,14 @@ error; retrying within the open dialog retains both.
 
 ## Runtime behaviour
 
+Persistent write initiators use native Button pending state: they retain focus and suppress repeated activation while
+the request settles. Conflicting siblings are disabled. Batch actions use a labelled Group with ordinary Tab order and
+immediate native shelf menus.
+
+Role changes retain focus on the Select trigger through its native Button pending state. The Select disables its native
+input while the write settles. The trigger overrides the inherited disabled prop and uses pending behaviour to stay in
+the Tab order and suppress activation. Confirmed user data controls the selected role.
+
 Actions stay pending until the awaited mutation and its completion work settle. Expected refusals retain entered values
 and allow correction or retry. Successful submission preserves each screen's navigation, reset or dialog closure
 behaviour. Token receipt values use read-only TextFields with associated Labels and styled Inputs.
@@ -72,6 +80,16 @@ The command palette uses MenuItem links with Router navigation and closure. `Aut
 arrow navigation; Tab traverses the result links. The Menu owns scrolling. Dialog and Select labels belong to their
 native parent composition.
 
+App owns palette open state and passes it through ordinary props. The shell DOM boundary uses `useKeyboard.shortcuts`
+for Control+K and Meta+K, opening the palette through native matching and propagation. Portal and document-body focus
+are outside that boundary. Native close resets the palette query. The existing Library SearchField keeps its own filter
+behaviour and location.
+
+The cinematic ToggleButton controls the existing presentation owner through `isSelected` and `onChange`. It remains
+visible outside hidden chrome at the bottom centre; visibility removes hidden chrome from keyboard traversal. The
+pointer-idle timer and reduced motion remain presentation concerns. Visible Help opens the native shortcuts dialog. Home
+and Stats have static Planned status within their existing non-interactive rows.
+
 Ingestion disclosures mount query children only while expanded. Book tabs activate from arrow keys and mount only the
 selected panel. Filter disclosures retain their mounted editors, as described by the
 [Library state Design](../../library/design/0001-library-filter-and-sort-state.md).
@@ -81,6 +99,22 @@ selected panel. Filter disclosures retain their mounted editors, as described by
 Publication edits use one text field. Server `errors.pub_date` reaches `Form.validationErrors` through `useActionState`
 and the native `FieldError` identifies the refused field. The refused date and other submitted edits remain available;
 editing the field clears its native server error and permits correction without a competing client parser.
+
+Feedback stays with the action's context. Inline errors are not repeated in a toast. Copy status stays beside the
+read-only credential and retains manual-copy recovery. Row actions retain named failures beside their target. Membership
+outcomes remain outside the closing menu. Drawer shelf additions capture the book and shelf in account/book-scoped
+mutation variables. Reopening the same book observes its latest cached addition, retaining progress, result and retry
+across drawer dismissal. These records use native mutation-cache retention; cache observation does not extend it. Batch
+progress and consolidated results derive from a serial Query mutation's captured IDs and shelf; failed-ID retry and the
+result remain available when selection becomes empty. Completion removes only succeeded IDs from the current selection.
+The batch owner stays mounted across table, grid and blocked-result branches. Versions observes each field's latest
+cached Accept, Reject or Clear action and its submitted target. Pending controls and failures remain available after
+panel or route remounting, including when refreshed book data removes the draft. A pending review without its row
+retains a local status message. Clear retains its confirmation and inline failure; retry uses the same confirmation.
+Successful field actions remove earlier failed actions for that field and await the book refresh before pending ends.
+Native cache retention applies; returning does not replay an action. Theme validation refusals render below the User
+chip; cookie and outage policies stay with the preference owner. Auth success uses fixed, allowlisted copy on the login
+destination.
 
 Field-specific validation appears beside its field with native associations. General API failures remain standalone
 alerts rather than being assigned to an unrelated field. Pending controls suppress duplicate submission while keeping
@@ -92,8 +126,37 @@ confirmation; a refused save leaves the sheet open with the entered values and e
 opens the confirmation before the action runs, including for implicit submission. The confirmation button allows the
 next submission through to the action.
 
-Table-load recovery belongs to the Library results region and is described in the Library state Design. Shared controls
-do not change query-cache ownership or the grid's edit transaction.
+Table-load recovery belongs to the Library results region and is described in the Library state Design. Cell failures
+also render in that region, outside conditional table rendering, from account-scoped TanStack mutation state. Each
+mutation captures its book, field, submitted value and displayed source query. Mutation lifecycle handlers apply
+confirmed results even after table replacement; the existing synchronous grid adapter supplies pending-cell protection.
+A successful save or Undo removes earlier failed mutations for the same book and field from the account's cache. A
+failure arriving after a newer cached success for that cell is removed on delivery. Removed failures stay retired after
+the correcting success is collected. Targeted metadata and reading-state queries re-read the affected resource
+independently of list membership. They read on initial recovery, reconnect and explicit Reload, without another read on
+window focus. Fresh reads update the captured source and reconcile matching failures without repeating writes or
+creating Undo provenance. A matching read disables further recovery reads for that operation; its cached confirmation
+stays resolved across later edits. Mutation-cache retention is in-memory, not a durable operation ledger.
+
+Before a cell write starts, its mutation lifecycle cancels conflicting recovery queries through TanStack and their
+transport AbortSignal. Recovery waits while a write affects the same resource; a work-scoped metadata write also
+coordinates recovery for sibling editions. Reading writes and unrelated resources remain independent. Reload retains
+native pending behaviour during that wait. The subscribed mutation snapshot supplies a literal disabled state while
+blocked. After settlement, the native observer sees that transition and automatically resumes unresolved recovery.
+Aborted reads cannot apply stale resource or list values or replace a newer response's ETag.
+
+Failed mutations use TanStack's native retention: they remain while observed, then become eligible for collection five
+minutes after their last mutation observer detaches. The initiating hook's next request or table removal detaches that
+observer; `useMutationState` does not extend the lifetime. Collection removes the failure message, displayed submitted
+value, Reload action and reconnect recovery. The interval starts at detachment, not when feedback appears. No separate
+feedback timer, extended cache lifetime or Dismiss control applies.
+
+The table owns a bounded, ten-entry sequential Undo history. Undo last edit and the table-scoped Control/Meta+Z shortcut
+use the same latest valid entry; native text-input Undo remains available in editors. The visible button names its field
+and book, retains focus while pending and waits for in-flight cell operations. Metadata Undo preserves the response's
+previous-version pointer or required counter-patch; reading Undo applies its own server response. Failed Undo retains
+its entry for correction or retry. Removing the table ends access to this history. Shared controls do not change the
+grid's editing model. The application uses local feedback without a notification runtime.
 
 ## Security and operations
 
