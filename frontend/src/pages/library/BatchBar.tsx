@@ -1,8 +1,7 @@
 /**
  * Sticky batch-action bar, shown while table rows are selected: the
  * selection count, a shelf picker, and clear. Add to shelf is an awaited
- * serial loop over the selection (the shelves API is per-item; a burst of
- * parallel posts would hammer the backend), guarded against re-entry.
+ * serial mutation over the submitted selection (the shelves API is per-item).
  * Remove is deliberately absent: no delete contract exists.
  *
  * The count reflects loaded rows only (select-all cannot reach unloaded
@@ -10,9 +9,9 @@
  * rather than letting "all" be misread as "everything matching".
  */
 import { FolderPlus, Loader2 } from "lucide-react";
-import { useEffect, useState, type ReactElement } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useEffect, type ReactElement } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Group } from "react-aria-components";
 
 import { addShelfItem, listShelves, type Shelf } from "@/api";
 import { Button } from "@/components/ui/button";
@@ -35,7 +34,6 @@ export function BatchBar({
   onCompleted,
 }: Readonly<BatchBarProps>): ReactElement | null {
   const queryClient = useQueryClient();
-  const [running, setRunning] = useState(false);
   const {
     data: shelves,
     isError: shelvesError,
@@ -43,6 +41,7 @@ export function BatchBar({
   } = useQuery<Shelf[]>({
     queryKey: queryKeys.shelves.list(),
     queryFn: ({ signal }) => listShelves(signal),
+    enabled: selectedIds.size > 0,
     staleTime: 60_000,
   });
   // A shelf-less picker is sanctioned degradation, but the failure must
@@ -52,43 +51,36 @@ export function BatchBar({
     if (shelvesError) console.error("[BatchBar] shelves fetch failed", shelvesQueryError);
   }, [shelvesError, shelvesQueryError]);
 
-  if (selectedIds.size === 0) return null;
-
-  async function addAllToShelf(shelf: Shelf): Promise<void> {
-    // Re-entry guard: a second pick while a run is in flight would double-post.
-    if (running) return;
-    setRunning(true);
-    const ids = [...selectedIds];
-    const succeeded: string[] = [];
-    let failed = 0;
-    // Serial on purpose; see the module docstring.
-    for (const id of ids) {
-      try {
-        await addShelfItem(shelf.id, id);
-        succeeded.push(id);
-      } catch (error) {
-        failed += 1;
-        console.error("[BatchBar] add to shelf failed", { id, error });
+  const batch = useMutation({
+    mutationFn: async ({
+      shelf,
+      ids,
+    }: {
+      shelf: Shelf;
+      ids: readonly string[];
+      retry?: boolean;
+    }) => {
+      const succeeded: string[] = [];
+      const failed: string[] = [];
+      for (const id of ids) {
+        try {
+          await addShelfItem(shelf.id, id);
+          succeeded.push(id);
+        } catch (error) {
+          failed.push(id);
+          console.error("[BatchBar] add to shelf failed", { id, error });
+        }
       }
-    }
-    setRunning(false);
-    if (succeeded.length > 0) {
-      // Whole family: the rail's list counts AND any cached shelf detail
-      // (membership list) are both stale after a membership write.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.all });
-    }
-    if (failed === 0) {
-      toast.success(
-        `Added ${String(succeeded.length)} ${succeeded.length === 1 ? "book" : "books"} to ${shelf.name}`,
-      );
-    } else {
-      // Partial failure keeps the failed ids selected for a retry.
-      toast.error(
-        `Added ${String(succeeded.length)} of ${String(ids.length)} to ${shelf.name}; the rest stay selected`,
-      );
-    }
-    onCompleted(succeeded);
-  }
+      return { succeeded, failed };
+    },
+    onSuccess: ({ succeeded }) => {
+      if (succeeded.length > 0)
+        void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.all });
+      onCompleted(succeeded);
+    },
+  });
+
+  if (selectedIds.size === 0 && batch.isIdle) return null;
 
   function shelfStatusText(): string {
     if (shelvesError) return "Couldn't load shelves";
@@ -97,8 +89,7 @@ export function BatchBar({
   }
 
   return (
-    <div
-      role="toolbar"
+    <Group
       aria-label="Batch actions"
       className="border-border bg-surface-1 sticky bottom-4 z-10 mt-4 flex flex-wrap items-center gap-3 border p-3"
     >
@@ -111,6 +102,47 @@ export function BatchBar({
         </span>
       ) : null}
       <span className="flex-1" />
+      {batch.isPending ? (
+        <p role="status" className="text-fg-muted text-sm">
+          Adding {batch.variables.ids.length} books to {batch.variables.shelf.name}…
+        </p>
+      ) : null}
+      {batch.isSuccess ? (
+        <p role="status" className="text-fg-muted text-sm">
+          Added {batch.data.succeeded.length} of {batch.variables.ids.length} books to{" "}
+          {batch.variables.shelf.name}.
+          {batch.data.failed.length > 0
+            ? ` ${String(batch.data.failed.length)} could not be added.`
+            : ""}
+        </p>
+      ) : null}
+      {(batch.isSuccess && batch.data.failed.length > 0) ||
+      (batch.isPending && batch.variables.retry === true) ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          isPending={batch.isPending}
+          onPress={() => {
+            if (batch.isSuccess)
+              batch.mutate({ shelf: batch.variables.shelf, ids: batch.data.failed, retry: true });
+          }}
+        >
+          Retry failed books
+        </Button>
+      ) : null}
+      {!batch.isIdle && !batch.isPending ? (
+        <Button
+          type="button"
+          variant="link"
+          size="xs"
+          onPress={() => {
+            batch.reset();
+          }}
+        >
+          Dismiss result
+        </Button>
+      ) : null}
       <Button
         type="button"
         variant="link"
@@ -121,8 +153,13 @@ export function BatchBar({
         Clear selection
       </Button>
       <DropdownMenu>
-        <Button type="button" variant="outline" size="sm" isDisabled={running}>
-          {running ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          isDisabled={batch.isPending || selectedIds.size === 0}
+        >
+          {batch.isPending ? (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           ) : (
             <FolderPlus className="size-4" aria-hidden="true" />
@@ -137,7 +174,7 @@ export function BatchBar({
               <DropdownMenuItem
                 key={shelf.id}
                 onAction={() => {
-                  void addAllToShelf(shelf);
+                  batch.mutate({ shelf, ids: [...selectedIds] });
                 }}
               >
                 {shelf.name}
@@ -146,6 +183,6 @@ export function BatchBar({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
+    </Group>
   );
 }

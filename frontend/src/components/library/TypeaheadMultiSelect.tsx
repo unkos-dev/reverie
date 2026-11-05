@@ -1,6 +1,6 @@
 /**
  * Controlled vocabulary selection over server-ranked suggestions without local text filtering.
- * Callers own persisted selections; author identity uses UUIDs while other vocabularies use labels.
+ * Callers own persisted selections; author and series identity use UUIDs while other vocabularies use labels.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
@@ -25,7 +25,7 @@ import { X } from "lucide-react";
 import { suggestVocab, type SuggestKind } from "@/api";
 import { queryKeys } from "@/lib/query/keys";
 
-/** A display label with an author UUID when available; other vocabularies use the label as identity. */
+/** A display label with an author or series UUID; other vocabularies use the label as identity. */
 export type TypeaheadOption = { id?: string; value: string };
 
 type Props = {
@@ -37,7 +37,7 @@ type Props = {
   maxSelectedItems?: number;
 };
 
-/** Emits the complete selection on add/remove and clears the search query after an option is committed. */
+/** Emits the complete native selection on add/remove. */
 export function TypeaheadMultiSelect({
   kind,
   label,
@@ -56,7 +56,7 @@ export function TypeaheadMultiSelect({
     staleTime: 30_000,
   });
   function keyFor(option: TypeaheadOption): string {
-    return kind === "authors" ? (option.id ?? option.value) : option.value;
+    return kind === "authors" || kind === "series" ? (option.id ?? option.value) : option.value;
   }
   const suggestions =
     trimmed.length >= 2
@@ -81,7 +81,7 @@ export function TypeaheadMultiSelect({
         return item ? [item] : [];
       }),
     );
-    setQuery("");
+    if (kind !== "series") setQuery("");
   }
   let status: string | null = null;
   if (trimmed.length < 2) status = "Type at least 2 characters to search.";
@@ -100,6 +100,7 @@ export function TypeaheadMultiSelect({
       onChange={changeSelection}
       onOpenChange={setOpen}
       allowsEmptyCollection
+      allowsCustomValue={kind === "series"}
       isDisabled={disabled}
       isInvalid={overLimit}
       validationBehavior="aria"

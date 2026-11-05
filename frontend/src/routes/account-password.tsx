@@ -12,7 +12,6 @@ import { useActionState, type ReactElement } from "react";
 import { Form, type FormProps } from "react-aria-components";
 import { Link, useNavigate } from "react-router";
 import { z } from "zod";
-import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { changeOwnPassword } from "@/api/auth";
@@ -42,8 +41,7 @@ export function Component(): ReactElement {
       newPassword: string;
     }) => changeOwnPassword(currentPassword, newPassword),
     onSuccess: () => {
-      toast.success("Password changed. Sign in with your new password.");
-      void navigate("/login");
+      void navigate("/login?outcome=password-changed");
     },
   });
 
@@ -75,7 +73,6 @@ export function Component(): ReactElement {
         err instanceof ApiError && err.detail !== ""
           ? err.detail
           : "Could not change the password.";
-      toast.error(message);
       return { values, error: message };
     }
   }, {});

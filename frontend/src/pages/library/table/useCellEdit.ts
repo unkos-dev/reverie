@@ -7,7 +7,7 @@
  * TanStack Query list cache from the server's applied value (never the
  * local draft, since the server normalizes input, e.g. ISBN checksums),
  * tracking in-flight cells so the table can render a draft overlay, and a
- * bounded undo stack (toast action plus Ctrl+Z). The query cache stays
+ * bounded sequential undo stack. The query cache stays
  * server-confirmed throughout: there is no optimistic commit.
  *
  * `listKey` must be the exact key the library page's displayed query reads
@@ -16,12 +16,17 @@
  */
 import {
   useMutation,
+  useMutationState,
+  useQueries,
+  queryOptions,
+  type Mutation,
+  type QueryKey,
   useQueryClient,
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
 import { useRef, useState, type KeyboardEvent } from "react";
-import { toast } from "sonner";
+import type { AuthMe } from "@/hooks/useAuthMe";
 
 import {
   ApiError,
@@ -30,6 +35,7 @@ import {
   isIfMatchRequired,
   revertField,
   updateBookMetadata,
+  type BookMetadata,
   type BookListItem,
   type BookListResponse,
   type UpdateBookMetadataFields,
@@ -305,45 +311,275 @@ function formatError(err: unknown): string {
   return "Request failed.";
 }
 
-export type UseCellEditOptions = {
-  /** Exact key of the displayed list this hook patches (cursor stripped). */
+type CellEditContext = {
+  userId: string | null;
+  operation: "save" | "undo";
+  row: BookListItem;
+  bookTitle: string;
+  columnKey: EditableColumnKey;
+  pipeline: "metadata" | "reading";
+  workScoped: boolean;
+  value: unknown;
+  display: string;
   listKey: BooksListKey;
-  /** Column defs, consulted only for their `accessor` to stage a pending display value. */
+};
+
+type CellEditRecord = {
+  id: number;
+  status: "idle" | "pending" | "success" | "error";
+  error: Error | null;
+  context: CellEditContext | undefined;
+};
+
+function cellEditKey(userId: string | null) {
+  return ["library-cell-edit", userId] as const;
+}
+
+function cellMutations(client: QueryClient, userId: string | null) {
+  // This account-scoped key belongs only to the three mutations carrying CellEditContext.
+  return client.getMutationCache().findAll({
+    mutationKey: cellEditKey(userId),
+    exact: true,
+  }) as Mutation<unknown, Error, { context: CellEditContext }>[];
+}
+
+function sameCell(first: CellEditContext | undefined, second: CellEditContext): boolean {
+  return first?.row.id === second.row.id && first.columnKey === second.columnKey;
+}
+
+function retireCellFailures(
+  client: QueryClient,
+  context: CellEditContext,
+  outcome: "success" | "error" = "success",
+): void {
+  const cache = client.getMutationCache();
+  const mutations = cellMutations(client, context.userId);
+  const current = mutations.find((mutation) => mutation.state.variables?.context === context);
+  if (current === undefined) return;
+  if (outcome === "error") {
+    if (
+      mutations.some(
+        (mutation) =>
+          mutation.mutationId > current.mutationId &&
+          mutation.state.status === "success" &&
+          sameCell(mutation.state.variables?.context, context),
+      )
+    )
+      cache.remove(current);
+    return;
+  }
+  for (const mutation of mutations) {
+    if (
+      mutation.mutationId < current.mutationId &&
+      mutation.state.status === "error" &&
+      sameCell(mutation.state.variables?.context, context)
+    )
+      cache.remove(mutation);
+  }
+}
+
+function resourceKey(context: CellEditContext): QueryKey {
+  return context.pipeline === "metadata"
+    ? queryKeys.books.metadata(context.row.id)
+    : queryKeys.books.reading(context.row.id, context.userId);
+}
+
+function affectsResource(write: CellEditContext, read: CellEditContext): boolean {
+  return (
+    write.pipeline === read.pipeline &&
+    (write.row.id === read.row.id || (write.workScoped && write.row.work_id === read.row.work_id))
+  );
+}
+
+function hasPendingResourceWrite(client: QueryClient, context: CellEditContext): boolean {
+  return cellMutations(client, context.userId).some((mutation) => {
+    const write = mutation.state.variables?.context;
+    return (
+      mutation.state.status === "pending" && write !== undefined && affectsResource(write, context)
+    );
+  });
+}
+
+async function cancelRecoveryReads(client: QueryClient, context: CellEditContext): Promise<void> {
+  const affected = cellMutations(client, context.userId).flatMap((mutation) => {
+    const read = mutation.state.variables?.context;
+    return read !== undefined && affectsResource(context, read) ? [read] : [];
+  });
+  await Promise.all(
+    [context, ...affected].map((read) =>
+      client.cancelQueries({ queryKey: [...resourceKey(read), "cell-recovery"] }),
+    ),
+  );
+}
+
+function valueForRow(row: BookListItem, columnKey: EditableColumnKey): unknown {
+  return isReadingColumnKey(columnKey) ? (row.reading_state?.[columnKey] ?? null) : row[columnKey];
+}
+
+function readValue(context: CellEditContext, data: BookMetadata | ReadingState): unknown {
+  if ("contributors" in data && isMetadataColumnKey(context.columnKey)) {
+    return context.columnKey === "authors" ? data.contributors.author : data[context.columnKey];
+  }
+  if ("status" in data && isReadingColumnKey(context.columnKey)) return data[context.columnKey];
+  return undefined;
+}
+
+function matchesRead(context: CellEditContext, data: BookMetadata | ReadingState): boolean {
+  const value = readValue(context, data);
+  const submitted = context.value;
+  if (context.columnKey === "isbn_13" && typeof value === "string" && typeof submitted === "string")
+    return value === submitted.replace(/[ -]/g, "");
+  return JSON.stringify(value) === JSON.stringify(submitted);
+}
+
+function recoveryOptions(
+  id: number,
+  context: CellEditContext,
+  client: QueryClient,
+  blocked: boolean,
+) {
+  return queryOptions({
+    queryKey: [...resourceKey(context), "cell-recovery", id],
+    queryFn: async ({ signal }): Promise<BookMetadata | ReadingState> => {
+      const data = await (context.pipeline === "metadata"
+        ? getBookMetadata(context.row.id, signal)
+        : getReadingState(context.row.id, signal));
+      signal.throwIfAborted();
+      applyRecoveryRead(client, context, data);
+      return data;
+    },
+    enabled: blocked
+      ? false
+      : (query) => query.state.data === undefined || !matchesRead(context, query.state.data),
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
+}
+
+function applyRecoveryRead(
+  client: QueryClient,
+  context: CellEditContext,
+  data: BookMetadata | ReadingState,
+): void {
+  client.setQueryData(resourceKey(context), data);
+  const route = EDIT_ROUTES[context.columnKey];
+  if (route.pipeline === "metadata" && "contributors" in data) {
+    const value = readValue(context, data);
+    updateListCache(
+      client,
+      context.listKey,
+      (row) => affectsManifestation(row, context.row.id, context.row.work_id, route.workScoped),
+      (row) => route.applyToRow(row, { value, version_id: null, previous_version_id: null }),
+    );
+  } else if (route.pipeline === "reading" && "status" in data) {
+    updateListCache(
+      client,
+      context.listKey,
+      (row) => row.id === context.row.id,
+      (row) => route.applyToRow(row, data),
+    );
+  }
+  void client.invalidateQueries({ queryKey: context.listKey });
+  invalidateAffectedDetails(client, context.row.id, context.workScoped);
+}
+
+function useCellEditRecords(): CellEditRecord[] {
+  const client = useQueryClient();
+  const userId = client.getQueryData<AuthMe>(queryKeys.auth.me())?.id ?? null;
+  return useMutationState<CellEditRecord, Mutation<unknown, Error, { context: CellEditContext }>>({
+    filters: { mutationKey: cellEditKey(userId) },
+    select: (mutation) => ({
+      id: mutation.mutationId,
+      status: mutation.state.status,
+      error: mutation.state.error,
+      context: mutation.state.variables?.context,
+    }),
+  });
+}
+
+type CellEditFeedback = {
+  id: number;
+  bookTitle: string;
+  field: string;
+  submitted: string;
+  message: string;
+  reloading: boolean;
+  reload: () => void;
+};
+
+export function useCellEditFeedback(): CellEditFeedback[] {
+  const client = useQueryClient();
+  const records = useCellEditRecords();
+  const pending = records.flatMap((record) =>
+    record.status === "pending" && record.context !== undefined ? [record.context] : [],
+  );
+  const errors = records.flatMap((record) => {
+    const context = record.context;
+    if (record.status !== "error" || context === undefined) return [];
+    return [
+      { ...record, context, blocked: pending.some((write) => affectsResource(write, context)) },
+    ];
+  });
+  const recovery = useQueries({
+    queries: errors.map((record) =>
+      recoveryOptions(record.id, record.context, client, record.blocked),
+    ),
+  });
+  return errors.flatMap((record, index) => {
+    const context = record.context;
+    const read = recovery[index];
+    if (read.isSuccess && matchesRead(context, read.data)) return [];
+    let message = formatError(record.error);
+    if (isIfMatchMismatch(record.error) || isIfMatchRequired(record.error))
+      message = "This book changed elsewhere. Reload the latest values before retrying.";
+    else if (
+      context.columnKey === "isbn_13" &&
+      record.error instanceof ApiError &&
+      record.error.status === 422 &&
+      record.error.errors?.isbn_13 !== undefined
+    )
+      message = "ISBN-13 wasn’t saved. Check the 13-digit number; spaces and hyphens are allowed.";
+    if (read.isError) message += " Could not reload the current value. Try Reload again.";
+    let submitted = JSON.stringify(context.value);
+    if (context.value === null) submitted = "unset";
+    else if (typeof context.value === "string") submitted = context.value;
+    return [
+      {
+        id: record.id,
+        bookTitle: context.bookTitle,
+        field: COLUMN_LABELS[context.columnKey],
+        submitted,
+        message: context.operation === "undo" ? `Undo failed: ${message}` : message,
+        reloading: read.isFetching || record.blocked,
+        reload: () => {
+          if (!hasPendingResourceWrite(client, context)) void read.refetch();
+        },
+      },
+    ];
+  });
+}
+
+export type UseCellEditOptions = {
+  listKey: BooksListKey;
   columns: readonly GridColumn<BookListItem>[];
 };
 
 export type UseCellEditResult = {
-  /** `${row.id}:${columnKey}` -> the draft display value while a commit is in flight. */
   pendingCells: ReadonlyMap<string, string>;
   onCellEdit: (report: CellEditReport<BookListItem>) => void;
-  /** Attach to the table's own wrapper element (never `window`) so Ctrl+Z only fires with grid focus. */
   onGridKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
+  undo: () => void;
+  undoPending: boolean;
+  undoAvailable: boolean;
+  undoLabel: string | undefined;
 };
 
 export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEditResult {
   const queryClient = useQueryClient();
+  const userId = queryClient.getQueryData<AuthMe>(queryKeys.auth.me())?.id ?? null;
   const [pendingCells, setPendingCells] = useState<ReadonlyMap<string, string>>(new Map());
-  const undoStack = useRef<UndoEntry[]>([]);
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const undoIdCounter = useRef(0);
-
-  const metadataMutation = useMutation({
-    mutationFn: ({
-      manifestationId,
-      patch,
-    }: {
-      manifestationId: string;
-      patch: UpdateBookMetadataFields;
-    }) => updateBookMetadata(manifestationId, patch),
-  });
-  const readingMutation = useMutation({
-    mutationFn: ({
-      manifestationId,
-      patch,
-    }: {
-      manifestationId: string;
-      patch: UpdateReadingFields;
-    }) => updateReadingState(manifestationId, patch),
-  });
 
   function setPending(key: string, value: string): void {
     setPendingCells((prev) => {
@@ -368,227 +604,198 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
   }
 
   function pushUndo(entry: UndoEntry): void {
-    const stack = undoStack.current;
-    stack.push(entry);
-    // Bounded LIFO: the oldest entry falls off once the cap is exceeded.
-    if (stack.length > UNDO_STACK_CAP) stack.shift();
+    setUndoStack((stack) => [...stack, entry].slice(-UNDO_STACK_CAP));
   }
 
-  function removeUndoEntry(id: string): void {
-    const stack = undoStack.current;
-    const index = stack.findIndex((entry) => entry.id === id);
-    if (index !== -1) stack.splice(index, 1);
+  function failed(error: Error, variables: { context: CellEditContext }): void {
+    console.error("[useCellEdit] request failed", error);
+    retireCellFailures(queryClient, variables.context, "error");
+    void queryClient.invalidateQueries({ queryKey: variables.context.listKey });
   }
 
-  // Declared before `announceSuccess` (rather than relying on function
-  // hoisting) so the toast action's closure never forward-references it.
-  async function handleUndo(entry: UndoEntry): Promise<void> {
-    // Removed wherever it sits in the stack: the toast action undoes its
-    // own entry even when a later edit has since become the LIFO top.
-    removeUndoEntry(entry.id);
-    try {
-      if (entry.pipeline === "metadata") {
-        if (entry.strategy === "revert") {
-          await revertField(entry.manifestationId, entry.fieldName, entry.previousVersionId);
-        } else {
-          await metadataMutation.mutateAsync({
-            manifestationId: entry.manifestationId,
-            patch: entry.counterPatch,
-          });
-        }
-        restoreMetadataRow(queryClient, entry.listKey, entry);
-        // Mirrors handleCellEdit's own invalidation, including the sibling
-        // fan-out for a work-scoped field: without it, a book-detail view
-        // open on any restored sibling can keep serving the undone value
-        // for the remainder of its staleTime.
-        const route = EDIT_ROUTES[entry.columnKey];
-        invalidateAffectedDetails(
-          queryClient,
-          entry.manifestationId,
-          route.pipeline === "metadata" && route.workScoped,
-        );
-      } else {
-        const response = await readingMutation.mutateAsync({
-          manifestationId: entry.manifestationId,
-          patch: entry.counterPatch,
-        });
-        restoreReadingRow(queryClient, entry.listKey, entry, response);
-        // The reading pipeline never fans out across sibling editions.
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.books.detail(entry.manifestationId),
-        });
-      }
-      toast.success("Reverted.", { id: entry.id });
-    } catch (err) {
-      console.error("[useCellEdit.handleUndo] undo failed", err);
-      toast.error(formatError(err));
-    }
-  }
-
-  /** A stale or missing If-Match: either the row's cached value predates a
-   *  write from elsewhere (412), or the commit outran the mount-time ETag
-   *  priming fetch (428). Both share the same remedy, so they share this
-   *  affordance: a reload of the caches this edit would otherwise have
-   *  touched, offered rather than applied automatically since the operator
-   *  was mid-edit. Also re-fires the pipeline's own GET so the primed ETag
-   *  cache resyncs alongside the displayed values, not just the
-   *  list/detail caches. */
-  function announceConflict(
-    manifestationId: string,
-    workScoped: boolean,
-    pipeline: "metadata" | "reading",
-  ): void {
-    toast.error("This book changed elsewhere. Reload to see the latest values before retrying.", {
-      action: {
-        label: "Reload",
-        onClick: () => {
-          void queryClient.invalidateQueries({ queryKey: listKey });
-          invalidateAffectedDetails(queryClient, manifestationId, workScoped);
-          const refetch =
-            pipeline === "metadata"
-              ? getBookMetadata(manifestationId)
-              : getReadingState(manifestationId);
-          refetch.catch((err: unknown) => {
-            console.error("[useCellEdit.announceConflict] resync GET failed", err);
-          });
-        },
-      },
-    });
-  }
-
-  function announceSuccess(
-    columnKey: EditableColumnKey,
-    prior: MetadataUndoEntry | ReadingUndoEntry | null,
-  ): void {
-    const entry: UndoEntry | null = prior === null ? null : { ...prior, listKey };
-    const label = COLUMN_LABELS[columnKey];
-    if (entry === null) {
-      toast.success(`${label} updated.`);
-      return;
-    }
-    pushUndo(entry);
-    toast.success(`${label} updated.`, {
-      id: entry.id,
-      action: {
-        label: "Undo",
-        onClick: () => {
-          void handleUndo(entry);
-        },
-      },
-    });
-  }
-
-  async function handleCellEdit(report: CellEditReport<BookListItem>): Promise<void> {
-    const { row, previousRow, columnKey } = report;
-    if (!isEditableColumnKey(columnKey)) return;
-    const route = EDIT_ROUTES[columnKey];
-
-    if (route.pipeline === "metadata") {
-      if (!isMetadataColumnKey(columnKey)) return;
-      const patch = buildPatchIfChanged(route, previousRow, row);
-      if (patch === null) return;
-
-      const key = pendingKey(row.id, columnKey);
-      setPending(key, displayValue(columns, columnKey, row));
-      try {
-        const response = await metadataMutation.mutateAsync({ manifestationId: row.id, patch });
-        // Invariant: a successful metadata PATCH always echoes every
-        // touched field back in `fields`, keyed by the same field name.
-        const applied = lookupAppliedField(response.fields, route.field);
-        if (applied === undefined) {
-          // Distinct from the mutation-failure branch below: the server
-          // accepted the write (2xx) but its response didn't carry the
-          // field this route needs, so there's nothing safe to fold into
-          // the cache.
-          console.error(
-            "[useCellEdit.onCellEdit] metadata response missing echoed field",
-            route.field,
-          );
-          clearPending(key);
-          toast.error("The server response was missing the edited field.");
-          return;
-        }
-        updateListCache(
-          queryClient,
-          listKey,
-          (item) => affectsManifestation(item, row.id, row.work_id, route.workScoped),
-          (item) => route.applyToRow(item, applied),
-        );
-        invalidateAffectedDetails(queryClient, row.id, route.workScoped);
-        clearPending(key);
-        announceSuccess(
-          columnKey,
-          buildMetadataUndoEntry(nextUndoId(), columnKey, route, row, previousRow, applied),
-        );
-      } catch (err) {
-        clearPending(key);
-        console.error("[useCellEdit.onCellEdit] metadata mutation failed", err);
-        if (isIfMatchMismatch(err) || isIfMatchRequired(err)) {
-          announceConflict(row.id, route.workScoped, "metadata");
-        } else if (
-          columnKey === "isbn_13" &&
-          err instanceof ApiError &&
-          err.status === 422 &&
-          err.errors?.isbn_13 !== undefined
-        ) {
-          toast.error(
-            "ISBN-13 wasn’t saved. Check the 13-digit number; spaces and hyphens are allowed.",
-          );
-        } else {
-          toast.error(formatError(err));
-        }
-      }
-      return;
-    }
-
-    if (!isReadingColumnKey(columnKey)) return;
-    const patch = buildPatchIfChanged(route, previousRow, row);
-    if (patch === null) return;
-
-    const key = pendingKey(row.id, columnKey);
-    setPending(key, displayValue(columns, columnKey, row));
-    try {
-      const response = await readingMutation.mutateAsync({ manifestationId: row.id, patch });
+  const metadataMutation = useMutation({
+    mutationKey: cellEditKey(userId),
+    onMutate: ({ context }) => cancelRecoveryReads(queryClient, context),
+    mutationFn: async ({
+      context,
+      patch,
+    }: {
+      context: CellEditContext & { columnKey: MetadataColumnKey };
+      patch: UpdateBookMetadataFields;
+      previousRow: BookListItem;
+    }) => {
+      const response = await updateBookMetadata(context.row.id, patch);
+      const route = EDIT_ROUTES[context.columnKey];
+      const applied =
+        route.pipeline === "metadata"
+          ? lookupAppliedField(response.fields, route.field)
+          : undefined;
+      if (applied === undefined)
+        throw new Error("The server response was missing the edited field.");
+      return applied;
+    },
+    onSuccess: (applied, { context, previousRow }) => {
+      retireCellFailures(queryClient, context);
+      const route = EDIT_ROUTES[context.columnKey];
+      if (route.pipeline !== "metadata") return;
       updateListCache(
         queryClient,
-        listKey,
-        (item) => item.id === row.id,
+        context.listKey,
+        (item) => affectsManifestation(item, context.row.id, context.row.work_id, route.workScoped),
+        (item) => route.applyToRow(item, applied),
+      );
+      invalidateAffectedDetails(queryClient, context.row.id, route.workScoped);
+      const entry = buildMetadataUndoEntry(
+        nextUndoId(),
+        context.columnKey,
+        route,
+        context.row,
+        previousRow,
+        applied,
+      );
+      if (entry !== null) pushUndo({ ...entry, listKey: context.listKey });
+    },
+    onError: failed,
+    onSettled: (_data, _error, { context }) => {
+      clearPending(pendingKey(context.row.id, context.columnKey));
+    },
+  });
+
+  const readingMutation = useMutation({
+    mutationKey: cellEditKey(userId),
+    onMutate: ({ context }) => cancelRecoveryReads(queryClient, context),
+    mutationFn: ({
+      context,
+      patch,
+    }: {
+      context: CellEditContext & { columnKey: ReadingColumnKey };
+      patch: UpdateReadingFields;
+      previousRow: BookListItem;
+    }) => updateReadingState(context.row.id, patch),
+    onSuccess: (response, { context, previousRow }) => {
+      retireCellFailures(queryClient, context);
+      const route = EDIT_ROUTES[context.columnKey];
+      if (route.pipeline !== "reading") return;
+      updateListCache(
+        queryClient,
+        context.listKey,
+        (item) => item.id === context.row.id,
         (item) => route.applyToRow(item, response),
       );
-      clearPending(key);
-      announceSuccess(columnKey, {
+      pushUndo({
         id: nextUndoId(),
         pipeline: "reading",
-        manifestationId: row.id,
-        columnKey,
-        counterPatch: route.toPatch(row, previousRow),
+        manifestationId: context.row.id,
+        columnKey: context.columnKey,
+        counterPatch: route.toPatch(context.row, previousRow),
         previousRow,
+        listKey: context.listKey,
       });
-    } catch (err) {
-      clearPending(key);
-      console.error("[useCellEdit.onCellEdit] reading mutation failed", err);
-      if (isIfMatchMismatch(err) || isIfMatchRequired(err)) {
-        announceConflict(row.id, false, "reading");
-      } else {
-        toast.error(formatError(err));
+    },
+    onError: failed,
+    onSettled: (_data, _error, { context }) => {
+      clearPending(pendingKey(context.row.id, context.columnKey));
+    },
+  });
+
+  const undoMutation = useMutation({
+    mutationKey: cellEditKey(userId),
+    onMutate: ({ context }) => cancelRecoveryReads(queryClient, context),
+    mutationFn: async ({ entry }: { context: CellEditContext; entry: UndoEntry }) => {
+      if (entry.pipeline === "reading")
+        return {
+          pipeline: "reading",
+          response: await updateReadingState(entry.manifestationId, entry.counterPatch),
+        } as const;
+      if (entry.strategy === "revert")
+        await revertField(entry.manifestationId, entry.fieldName, entry.previousVersionId);
+      else await updateBookMetadata(entry.manifestationId, entry.counterPatch);
+      return { pipeline: "metadata" } as const;
+    },
+    onSuccess: (result, { entry, context }) => {
+      retireCellFailures(queryClient, context);
+      if (entry.pipeline === "metadata") restoreMetadataRow(queryClient, entry.listKey, entry);
+      else if (result.pipeline === "reading")
+        restoreReadingRow(queryClient, entry.listKey, entry, result.response);
+      const route = EDIT_ROUTES[entry.columnKey];
+      invalidateAffectedDetails(
+        queryClient,
+        entry.manifestationId,
+        route.pipeline === "metadata" && route.workScoped,
+      );
+      setUndoStack((stack) => stack.filter((item) => item.id !== entry.id));
+    },
+    onError: failed,
+  });
+
+  function onCellEdit({ row, previousRow, columnKey }: CellEditReport<BookListItem>): void {
+    if (!isEditableColumnKey(columnKey)) return;
+    const route = EDIT_ROUTES[columnKey];
+    const context = {
+      userId,
+      operation: "save" as const,
+      row,
+      bookTitle: previousRow.title,
+      pipeline: route.pipeline,
+      workScoped: route.pipeline === "metadata" && route.workScoped,
+      value: valueForRow(row, columnKey),
+      display: displayValue(columns, columnKey, row),
+      listKey,
+    };
+    if (route.pipeline === "metadata" && isMetadataColumnKey(columnKey)) {
+      const patch = buildPatchIfChanged(route, previousRow, row);
+      if (patch !== null) {
+        setPending(pendingKey(row.id, columnKey), context.display);
+        metadataMutation.mutate({ context: { ...context, columnKey }, patch, previousRow });
+      }
+    } else if (route.pipeline === "reading" && isReadingColumnKey(columnKey)) {
+      const patch = buildPatchIfChanged(route, previousRow, row);
+      if (patch !== null) {
+        setPending(pendingKey(row.id, columnKey), context.display);
+        readingMutation.mutate({ context: { ...context, columnKey }, patch, previousRow });
       }
     }
   }
 
-  function onCellEdit(report: CellEditReport<BookListItem>): void {
-    void handleCellEdit(report);
+  const latest = undoStack.at(-1);
+  const undoAvailable = latest !== undefined && pendingCells.size === 0 && !undoMutation.isPending;
+  function undo(): void {
+    if (!undoAvailable) return;
+    const route = EDIT_ROUTES[latest.columnKey];
+    undoMutation.mutate({
+      entry: latest,
+      context: {
+        userId,
+        operation: "undo",
+        row: latest.previousRow,
+        bookTitle: latest.previousRow.title,
+        columnKey: latest.columnKey,
+        pipeline: latest.pipeline,
+        workScoped: route.pipeline === "metadata" && route.workScoped,
+        value: valueForRow(latest.previousRow, latest.columnKey),
+        display: displayValue(columns, latest.columnKey, latest.previousRow),
+        listKey: latest.listKey,
+      },
+    });
   }
 
   function onGridKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-    if (event.key !== "z" || !(event.ctrlKey || event.metaKey)) return;
-    // An open editor gets the keystroke instead, so its own (native) undo
-    // isn't shadowed by the grid-level stack.
-    if (isEditableTarget(event.target)) return;
+    if (event.key !== "z" || !(event.ctrlKey || event.metaKey) || isEditableTarget(event.target))
+      return;
     event.preventDefault();
-    const entry = undoStack.current.pop();
-    if (entry === undefined) return;
-    void handleUndo(entry);
+    undo();
   }
 
-  return { pendingCells, onCellEdit, onGridKeyDown };
+  return {
+    pendingCells,
+    onCellEdit,
+    onGridKeyDown,
+    undo,
+    undoAvailable,
+    undoPending: undoMutation.isPending,
+    undoLabel:
+      latest === undefined
+        ? undefined
+        : `${COLUMN_LABELS[latest.columnKey]} for “${latest.previousRow.title}”`,
+  };
 }

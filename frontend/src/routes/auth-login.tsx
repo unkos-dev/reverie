@@ -18,7 +18,6 @@ import { useActionState, useEffect, useRef, type ReactElement } from "react";
 import { Form, type FormProps } from "react-aria-components";
 import { Link, Navigate, useLocation } from "react-router";
 import { z } from "zod";
-import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, loginLocal } from "@/api/auth";
@@ -29,9 +28,22 @@ import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
 
-const outcomeSchema = z.enum(["denied", "expired", "unavailable", "keys", "account", "throttled"]);
+const outcomeSchema = z.enum([
+  "denied",
+  "expired",
+  "unavailable",
+  "keys",
+  "account",
+  "throttled",
+  "registered",
+  "setup-complete",
+  "password-changed",
+]);
 
 const outcomeCopy = {
+  registered: { title: "Account created", body: "Sign in to continue." },
+  "setup-complete": { title: "Administrator created", body: "Sign in to continue." },
+  "password-changed": { title: "Password changed", body: "Sign in with your new password." },
   denied: {
     title: "Sign-in cancelled",
     body: "Sign-in was cancelled at your provider. You can try again when you're ready.",
@@ -127,7 +139,6 @@ export function Component(): ReactElement {
     } catch (err) {
       const message =
         err instanceof ApiError && err.detail !== "" ? err.detail : "Incorrect email or password.";
-      toast.error(message);
       return { values, error: message };
     }
   }, {});

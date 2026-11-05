@@ -18,13 +18,12 @@ import {
   type SummarySegment,
 } from "@/components/library/filter-summary";
 import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
+import { useSeriesLabels } from "@/lib/hooks/use-series-labels";
 import { queryKeys } from "@/lib/query/keys";
 import type { FilterState } from "@/routes/library-params";
 
 type FilterChipsProps = {
   filters: FilterState;
-  /** Series id to display name, from the page's loaded rows. */
-  seriesNames: ReadonlyMap<string, string>;
   /** Clearing write: applies a segment's removal patch. */
   onRemove: (patch: SummarySegment["remove"]) => void;
   onClearAll: () => void;
@@ -32,7 +31,6 @@ type FilterChipsProps = {
 
 export function FilterChips({
   filters,
-  seriesNames,
   onRemove,
   onClearAll,
 }: Readonly<FilterChipsProps>): ReactElement {
@@ -40,7 +38,8 @@ export function FilterChips({
     ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
   ];
   const authorNames = useAuthorLabels(authorIds);
-  const hasShelfFilter = filters.shelf !== undefined;
+  const seriesNames = useSeriesLabels(filters.series);
+  const hasShelfFilter = filters.shelf.length > 0;
   const {
     data: shelves,
     isError: shelvesError,
@@ -59,7 +58,7 @@ export function FilterChips({
   const segments = buildFilterSummary(filters, {
     authorLabel: authorNames.labelFor,
     shelfName: (id) => shelves?.find((shelf) => shelf.id === id)?.name ?? shortId(id),
-    seriesName: (id) => seriesNames.get(id) ?? shortId(id),
+    seriesName: seriesNames.labelFor,
   });
 
   return (

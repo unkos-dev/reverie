@@ -1,5 +1,5 @@
 import { RouterProvider as AriaRouterProvider } from "react-aria-components";
-import { ViewTransition, type ReactElement } from "react";
+import { useState, ViewTransition, type ReactElement } from "react";
 import { Outlet, useHref, useNavigate } from "react-router";
 
 import { CommandPalette } from "@/components/CommandPalette";
@@ -10,13 +10,12 @@ import { AppShell } from "@/components/shell/AppShell";
  *
  * Mounts the `AppShell` chrome (left rail, utility strip, admin-zone
  * tone) around the `<Outlet />` that the data-mode router fills with
- * child routes (`/library`, `/b/:id`, …), plus the global
- * `CommandPalette` as a sibling so its Cmd-K binding survives route
- * transitions.
+ * child routes (`/library`, `/b/:id`, …), plus the command palette.
  *
  */
 function App(): ReactElement {
   const navigate = useNavigate();
+  const [paletteOpen, setPaletteOpen] = useState(false);
   return (
     <AriaRouterProvider
       navigate={(to, options) => {
@@ -25,11 +24,15 @@ function App(): ReactElement {
       useHref={useHref}
     >
       <ViewTransition>
-        <AppShell>
+        <AppShell
+          onOpenSearch={() => {
+            setPaletteOpen(true);
+          }}
+        >
           <Outlet />
         </AppShell>
       </ViewTransition>
-      <CommandPalette />
+      <CommandPalette isOpen={paletteOpen} onOpenChange={setPaletteOpen} />
     </AriaRouterProvider>
   );
 }

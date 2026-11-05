@@ -36,7 +36,6 @@ import {
 } from "react-aria-components";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { FieldError } from "@/components/ui/field";
-import { toast } from "sonner";
 
 import {
   ApiError,
@@ -172,6 +171,7 @@ function EditMetadataForm({
   fields,
   onDone,
 }: Readonly<EditMetadataFormProps>): ReactElement {
+  const [reloadVersion, setReloadVersion] = useState(0);
   const metadataQuery = useQuery({
     queryKey: queryKeys.books.metadata(manifestationId),
     queryFn: ({ signal }) => getBookMetadata(manifestationId, signal),
@@ -184,7 +184,7 @@ function EditMetadataForm({
       </div>
     );
   }
-  if (metadataQuery.isError) {
+  if (metadataQuery.isError && metadataQuery.data === undefined) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-8">
         <p className="text-fg-muted text-sm">Couldn&apos;t load the latest metadata.</p>
@@ -203,6 +203,13 @@ function EditMetadataForm({
 
   return (
     <EditMetadataFields
+      key={reloadVersion}
+      onReload={async () => {
+        const result = await metadataQuery.refetch();
+        if (result.isSuccess) setReloadVersion((value) => value + 1);
+      }}
+      reloading={metadataQuery.isFetching}
+      reloadError={metadataQuery.isError}
       manifestationId={manifestationId}
       fields={fields}
       metadata={metadataQuery.data}
@@ -212,6 +219,9 @@ function EditMetadataForm({
 }
 
 type EditMetadataFieldsProps = {
+  onReload: () => Promise<void>;
+  reloading: boolean;
+  reloadError: boolean;
   manifestationId: string;
   fields: readonly EditableField[];
   metadata: BookMetadata;
@@ -219,6 +229,9 @@ type EditMetadataFieldsProps = {
 };
 
 function EditMetadataFields({
+  onReload,
+  reloading,
+  reloadError,
   manifestationId,
   fields,
   metadata,
@@ -242,19 +255,7 @@ function EditMetadataFields({
     onError: (err: unknown) => {
       console.error("[EditMetadataDialog.updateBookMetadata] mutation failed", err);
       if (isIfMatchMismatch(err)) {
-        // The 412 already carries the current ETag (captured by apiFetch),
-        // so invalidating both caches is enough to resync on reopen; no
-        // merge UI. The sheet closes because its fields seed fresh from
-        // `getBookMetadata` on the next open, not from either cache here.
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.books.detail(manifestationId),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.books.metadata(manifestationId),
-        });
-        toast.error("This book's metadata changed elsewhere.", {
-          action: { label: "Reload latest", onClick: onDone },
-        });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.books.detail(manifestationId) });
       }
     },
   });
@@ -365,6 +366,31 @@ function EditMetadataFields({
           ) : null}
         </div>
         {state.error ? <FieldError>{state.error}</FieldError> : null}
+        {mutation.isError && isIfMatchMismatch(mutation.error) ? (
+          <div className="space-y-2 py-2">
+            <FieldError>
+              This book&apos;s metadata changed elsewhere. Your edits have not been saved.
+            </FieldError>
+            <p className="text-fg-muted text-sm">
+              Reloading replaces your entered edits with the latest metadata.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              isPending={reloading}
+              onPress={() => {
+                void onReload();
+              }}
+            >
+              Discard edits and reload
+            </Button>
+            {reloadError ? (
+              <FieldError>
+                Could not reload metadata. Your entered edits are still available. Try again.
+              </FieldError>
+            ) : null}
+          </div>
+        ) : null}
         <SheetFooter className="mt-auto pt-4">
           <Button
             type="button"

@@ -9,17 +9,23 @@
  * the book route; Add to shelf posts through the shelves API. Anything
  * without a backend contract (delete, download) is absent by decision.
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+  type MutationState,
+} from "@tanstack/react-query";
 import { ExternalLink, FolderPlus, Loader2 } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 import { Link } from "react-router";
-import { toast } from "sonner";
 
 import { addShelfItem, getBook, listShelves, type BookDetail, type Shelf } from "@/api";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
 const EMPTY_CELL = "—";
@@ -190,6 +196,13 @@ function formatDate(iso: string): string {
   return Number.isNaN(date.getTime()) ? EMPTY_CELL : date.toLocaleDateString();
 }
 
+type ShelfAddition = {
+  bookId: string;
+  bookTitle: string;
+  shelfId: string;
+  shelfName: string;
+};
+
 /**
  * Shelf picker over the shelves list; each pick posts one membership row.
  * The shelves list is invalidated on success so the left rail's per-shelf
@@ -200,6 +213,14 @@ function AddToShelf({
   bookTitle,
 }: Readonly<{ bookId: string; bookTitle: string }>): ReactElement {
   const queryClient = useQueryClient();
+  const userId = queryClient.getQueryData<AuthMe>(queryKeys.auth.me())?.id ?? null;
+  const mutationKey = ["library-shelf-add", userId, bookId] as const;
+  const additions = useMutationState<MutationState<void, Error, ShelfAddition>>({
+    filters: { mutationKey, exact: true },
+  });
+  const addition = additions.at(-1);
+  const submitted = addition?.variables;
+  const pending = addition?.status === "pending";
   const {
     data: shelves,
     isError,
@@ -214,17 +235,15 @@ function AddToShelf({
   }, [isError, error]);
 
   const addMutation = useMutation({
-    mutationFn: ({ shelfId }: { shelfId: string; shelfName: string }) =>
-      addShelfItem(shelfId, bookId),
-    onSuccess: (_data, { shelfName }) => {
-      toast.success(`Added "${bookTitle}" to ${shelfName}`);
+    mutationKey,
+    mutationFn: ({ shelfId, bookId }: ShelfAddition) => addShelfItem(shelfId, bookId),
+    onSuccess: () => {
       // Whole family: list counts and any cached shelf detail both go
       // stale after a membership write.
       void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.all });
     },
-    onError: (mutationError, { shelfName }) => {
+    onError: (mutationError) => {
       console.error("[BookDetailDrawer] add to shelf failed", mutationError);
-      toast.error(`Couldn't add "${bookTitle}" to ${shelfName}`);
     },
   });
 
@@ -235,31 +254,64 @@ function AddToShelf({
   }
 
   return (
-    <DropdownMenu>
-      <Button type="button" variant="outline" isDisabled={addMutation.isPending}>
-        {addMutation.isPending ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        ) : (
-          <FolderPlus className="size-4" aria-hidden="true" />
-        )}
-        Add to shelf
-      </Button>
-      <DropdownMenuContent placement="bottom start">
-        {shelves === undefined || shelves.length === 0 ? (
-          <DropdownMenuItem isDisabled>{shelfStatusText()}</DropdownMenuItem>
-        ) : (
-          shelves.map((shelf) => (
-            <DropdownMenuItem
-              key={shelf.id}
-              onAction={() => {
-                addMutation.mutate({ shelfId: shelf.id, shelfName: shelf.name });
-              }}
-            >
-              {shelf.name}
-            </DropdownMenuItem>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="space-y-2">
+      <DropdownMenu>
+        <Button type="button" variant="outline" isPending={pending}>
+          {pending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <FolderPlus className="size-4" aria-hidden="true" />
+          )}
+          Add to shelf
+        </Button>
+        <DropdownMenuContent placement="bottom start">
+          {shelves === undefined || shelves.length === 0 ? (
+            <DropdownMenuItem isDisabled>{shelfStatusText()}</DropdownMenuItem>
+          ) : (
+            shelves.map((shelf) => (
+              <DropdownMenuItem
+                key={shelf.id}
+                onAction={() => {
+                  addMutation.mutate({
+                    bookId,
+                    bookTitle,
+                    shelfId: shelf.id,
+                    shelfName: shelf.name,
+                  });
+                }}
+              >
+                {shelf.name}
+              </DropdownMenuItem>
+            ))
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {pending && submitted !== undefined ? (
+        <p role="status" className="text-fg-muted text-sm">
+          Adding “{submitted.bookTitle}” to {submitted.shelfName}…
+        </p>
+      ) : null}
+      {addition?.status === "success" && submitted !== undefined ? (
+        <p role="status" className="text-fg-muted text-sm">
+          Added “{submitted.bookTitle}” to {submitted.shelfName}.
+        </p>
+      ) : null}
+      {addition?.status === "error" && submitted !== undefined ? (
+        <div className="space-y-2">
+          <p role="alert" className="text-fg-muted text-sm">
+            Couldn&apos;t add “{submitted.bookTitle}” to {submitted.shelfName}.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            onPress={() => {
+              addMutation.mutate(submitted);
+            }}
+          >
+            Try again
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }

@@ -41,6 +41,7 @@ const rangeFilterSchema = (min: number, max: number) =>
   });
 const tokens = z.array(z.string());
 const ids = z.array(z.uuid());
+const facetIds = z.union([ids, z.uuid().transform((id) => [id])]).default([]);
 const setFilterSchema = (values: typeof tokens | typeof ids) =>
   z.strictObject({ all: values, any: values, none: values });
 const statuses = z.array(z.enum([...ReadingStatusSchema.options, "unread"]));
@@ -60,8 +61,8 @@ export const LibraryVisitSchema = z.strictObject({
     tags: setFilterSchema(tokens),
     genres: setFilterSchema(tokens),
     moods: setFilterSchema(tokens),
-    series: z.uuid().optional(),
-    shelf: z.uuid().optional(),
+    series: facetIds,
+    shelf: facetIds,
   }),
   view: z.enum(["grid", "table"]).optional(),
 });
@@ -85,6 +86,8 @@ export function emptyFilterState(): FilterState {
     tags: { all: [], any: [], none: [] },
     genres: { all: [], any: [], none: [] },
     moods: { all: [], any: [], none: [] },
+    series: [],
+    shelf: [],
   };
 }
 
@@ -175,8 +178,8 @@ export function filterStateToParams(
   assignSet(params, ["tag", "tag_any", "tag_none"], state.tags);
   assignSet(params, ["genre", "genre_any", "genre_none"], state.genres);
   assignSet(params, ["mood", "mood_any", "mood_none"], state.moods);
-  if (state.series !== undefined) params.series = state.series;
-  if (state.shelf !== undefined) params.shelf = state.shelf;
+  if (state.series.length > 0) params.series_any = state.series;
+  if (state.shelf.length > 0) params.shelf_any = state.shelf;
   return params;
 }
 

@@ -28,9 +28,23 @@ const PREFERENCES = {
   sort_stack: null,
   defaults: { hidden_columns: [], density: "comfortable", view: "grid", sort_stack: "-created_at" },
 };
+const SERIES = [
+  { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", value: "Sea adventures" },
+  { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", value: "Sea stories" },
+];
+const SHELVES = [
+  { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Favourites" },
+  { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "Read next" },
+].map((shelf) => ({
+  ...shelf,
+  is_system: false,
+  created_at: BOOK.created_at,
+  updated_at: BOOK.created_at,
+  item_count: 1,
+}));
 
 type Fixture = { requests: URLSearchParams[] };
-async function intercept(page: Page): Promise<Fixture> {
+async function intercept(page: Page, withFacets = false): Promise<Fixture> {
   const fixture: Fixture = { requests: [] };
   await page.route(/^https?:\/\/[^/]+\/(?:api|auth)\//, async (route) => {
     const url = new URL(route.request().url());
@@ -86,7 +100,13 @@ async function intercept(page: Page): Promise<Fixture> {
         },
       });
     } else if (path === "/api/v1/shelves") {
-      await route.fulfill({ json: { items: [], next_cursor: null } });
+      await route.fulfill({ json: { items: withFacets ? SHELVES : [], next_cursor: null } });
+    } else if (path === "/api/v1/series/suggest") {
+      await route.fulfill({ json: { suggestions: withFacets ? SERIES : [] } });
+    } else if (path === "/api/v1/series") {
+      await route.fulfill({
+        json: { items: SERIES.filter((item) => url.searchParams.getAll("id").includes(item.id)) },
+      });
     } else if (path === "/api/v1/authors" || path === "/api/v1/suggest") {
       await route.fulfill({ json: { items: [], suggestions: [] } });
     } else {
@@ -94,6 +114,19 @@ async function intercept(page: Page): Promise<Fixture> {
     }
   });
   return fixture;
+}
+
+async function chooseFacets(page: Page): Promise<void> {
+  const drawer = await refine(page);
+  const shelves = await section(page, "Shelf");
+  for (const shelf of SHELVES) await shelves.getByRole("option", { name: shelf.name }).click();
+  const series = await section(page, "Series");
+  await series.getByRole("combobox", { name: "Add Series" }).fill("Sea");
+  for (const item of SERIES) {
+    await page.getByRole("option", { name: item.value, exact: true }).click();
+  }
+  await page.keyboard.press("Escape");
+  await drawer.getByRole("button", { name: "Close", exact: true }).click();
 }
 const search = (page: Page) => page.getByRole("searchbox", { name: "Search your library" });
 async function ready(page: Page): Promise<void> {
@@ -116,15 +149,19 @@ async function section(page: Page, title: string) {
 }
 
 test("rapid edits reload with their first request and no URL grammar", async ({ page }) => {
-  const fixture = await intercept(page);
+  // REV-REQ-0075: the resumed visit reaches the first list request intact.
+  const fixture = await intercept(page, true);
   await page.goto("/library");
   await ready(page);
+  await chooseFacets(page);
   await search(page).fill("The Sea");
   const before = fixture.requests.length;
   await page.reload();
   await ready(page);
   await expect(search(page)).toHaveValue("The Sea");
   expect(fixture.requests[before]?.get("q")).toBe("The Sea");
+  expect(fixture.requests[before]?.getAll("shelf_any")).toEqual(SHELVES.map((item) => item.id));
+  expect(fixture.requests[before]?.getAll("series_any")).toEqual(SERIES.map((item) => item.id));
   await expect(page.getByRole("heading", { name: "The Sea", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/library$/);
 });
@@ -132,10 +169,12 @@ test("rapid edits reload with their first request and no URL grammar", async ({ 
 test("book Back and Forward restore a visit; Back past Library does not undo edits", async ({
   page,
 }) => {
-  await intercept(page);
+  // REV-REQ-0075 and REV-REQ-0077: traversal restores predicates without filter history entries.
+  const fixture = await intercept(page, true);
   await page.goto("/shelves");
   await page.getByRole("link", { name: "Library", exact: true }).first().click();
   await ready(page);
+  await chooseFacets(page);
   await search(page).fill("Sea");
   await search(page).fill("The Sea");
   await page
@@ -146,6 +185,12 @@ test("book Back and Forward restore a visit; Back past Library does not undo edi
   await page.goBack();
   await ready(page);
   await expect(search(page)).toHaveValue("The Sea");
+  for (const series of SERIES)
+    await expect(
+      page.getByTestId("filter-chips").getByText(`Series: ${series.value}`, { exact: true }),
+    ).toBeVisible();
+  expect(fixture.requests.at(-1)?.getAll("shelf_any")).toEqual(SHELVES.map((item) => item.id));
+  expect(fixture.requests.at(-1)?.getAll("series_any")).toEqual(SERIES.map((item) => item.id));
   await page.goForward();
   await expect(page.getByRole("heading", { name: "The Sea" })).toBeVisible();
   await page.goBack();

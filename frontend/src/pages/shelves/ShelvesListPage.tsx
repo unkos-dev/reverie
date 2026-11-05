@@ -12,7 +12,6 @@ import { Suspense, useActionState, useState, type ReactElement } from "react";
 import { Form, TextField, Input as AriaInput, Label as AriaLabel } from "react-aria-components";
 import { z } from "zod";
 import { Link } from "react-router";
-import { toast } from "sonner";
 
 import { ApiError, createShelf, deleteShelf, listShelves, renameShelf, type Shelf } from "@/api";
 import { Button } from "@/components/ui/button";
@@ -46,11 +45,7 @@ function ShelvesContent(): ReactElement {
     mutationFn: (name: string) => createShelf(name),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.shelves.all });
-      toast.success("Shelf created.");
       setCreateOpen(false);
-    },
-    onError: (err) => {
-      toast.error(err instanceof ApiError ? err.detail : "Could not create shelf.");
     },
   });
 
@@ -58,22 +53,14 @@ function ShelvesContent(): ReactElement {
     mutationFn: ({ id, name }: { id: string; name: string }) => renameShelf(id, name),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.shelves.all });
-      toast.success("Shelf renamed.");
       setRenameTarget(null);
-    },
-    onError: (err) => {
-      toast.error(err instanceof ApiError ? err.detail : "Could not rename shelf.");
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteShelf(id),
+    mutationFn: (shelf: Shelf) => deleteShelf(shelf.id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.shelves.all });
-      toast.success("Shelf deleted.");
-    },
-    onError: (err) => {
-      toast.error(err instanceof ApiError ? err.detail : "Could not delete shelf.");
     },
   });
 
@@ -97,6 +84,12 @@ function ShelvesContent(): ReactElement {
         </Button>
       </header>
 
+      {deleteMutation.isError ? (
+        <FieldError>
+          Could not delete {deleteMutation.variables.name}:{" "}
+          {deleteMutation.error instanceof ApiError ? deleteMutation.error.detail : "Try again."}
+        </FieldError>
+      ) : null}
       <ul className="space-y-2">
         {shelves.map((shelf) => (
           <li
@@ -135,9 +128,10 @@ function ShelvesContent(): ReactElement {
                   size="icon"
                   aria-label="Delete shelf"
                   onPress={() => {
-                    deleteMutation.mutate(shelf.id);
+                    deleteMutation.mutate(shelf);
                   }}
-                  isDisabled={deleteMutation.isPending}
+                  isPending={deleteMutation.isPending && deleteMutation.variables.id === shelf.id}
+                  isDisabled={deleteMutation.isPending && deleteMutation.variables.id !== shelf.id}
                 >
                   <Trash2 className="size-4" aria-hidden="true" />
                 </Button>

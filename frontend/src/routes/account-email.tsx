@@ -117,7 +117,7 @@ export function Component(): ReactElement {
           <Button
             className="w-full"
             variant={sent ? "outline" : "default"}
-            isDisabled={request.isPending}
+            isPending={request.isPending}
             onPress={() => {
               request.mutate();
             }}

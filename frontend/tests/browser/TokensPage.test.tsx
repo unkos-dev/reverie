@@ -11,7 +11,6 @@ import * as tokensApi from "@/api/tokens";
 
 import { TokensPage } from "@/pages/tokens/TokensPage";
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/api/tokens", { spy: true });
 
 afterEach(async () => {

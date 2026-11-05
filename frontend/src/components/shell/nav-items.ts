@@ -3,8 +3,7 @@
  *
  * Single source of truth for primary-nav entries (spec §3):
  * live destinations render as links, disabled entries render the
- * product's future shape (spec S3 — visible, non-interactive, tooltip
- * "Planned — not in this release"), and admin-only entries render only
+ * product's future shape (visible, non-interactive, with Planned status), and admin-only entries render only
  * for `role === "admin"` (spec S6 — structural absence for non-admins,
  * enforced server-side; rail gating is cosmetic).
  *
@@ -20,9 +19,6 @@ export type NavItem = {
   /** Spec S3 placeholder: rendered but non-interactive, out of tab order. */
   disabled?: boolean;
 };
-
-/** Tooltip copy for disabled placeholder entries (spec S3). */
-export const PLANNED_TOOLTIP = "Planned — not in this release";
 
 /** Primary navigation (top of rail, in render order). */
 export const PRIMARY_NAV: NavItem[] = [

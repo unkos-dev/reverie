@@ -39,8 +39,8 @@ subject's code as its evidence. It does not own entity-tag mechanics: no shelf e
 `If-Match`, and the Design "Conditional requests and optimistic concurrency" owns the mechanisms the other resources
 use. It does not own the keyset cursor framework or the `build_next_url`/`split_page` pagination helpers it borrows from
 `backend/src/routes/library/mod.rs`, owned by the Design "Books list query contract", or that Design's library filter
-grammar `shelf` condition, which lets a books-list query scope to one shelf's membership and is referenced only as a
-dependent below.
+grammar's `shelf` and `shelf_any` predicates, which scope a books-list query to owned shelf membership and are
+referenced as a dependent below.
 
 Depends on: `CurrentUser` (`backend/src/auth/middleware.rs`) for identity and its `require_scope`/`require_not_child`
 assertions; `crate::db::acquire_with_rls` for the `add_shelf_item` visibility probe only; `ShelfCursor` and
@@ -51,10 +51,11 @@ probe and the item foreign key.
 Depended on by: the OPDS shelf-scoped feed routes (`backend/src/routes/opds/shelves.rs` and neighbours), which read the
 same two tables directly by SQL rather than through this module's Rust functions, and are described by the OPDS
 catalogue subject, not here — the OPDS EPUB download route is not shelf-scoped and never queries `shelves` or
-`shelf_items` itself, so it is not a dependent of this subject; the Design "Books list query contract"'s `shelf` filter
-condition, which references a shelf id the caller must own; and, on the client, the left rail's shelf list, the library
-filter rail's shelf facet, the filter chips row, the book detail drawer's "add to shelf" picker, and the library batch
-bar's "add selection to shelf" action — all described below only as consumers, since none of them owns shelf state.
+`shelf_items` itself, so it is not a dependent of this subject; the Design "Books list query contract"'s shelf filters,
+which require ownership of every requested shelf and match no rows if any ID is foreign or unknown; and, on the client,
+the left rail's shelf list, the library filter rail's shelf facet, the filter chips row, the book detail drawer's "add
+to shelf" picker, and the library batch bar's "add selection to shelf" action — all described below only as consumers,
+since none of them owns shelf state.
 
 ## Structure
 

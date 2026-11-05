@@ -7,9 +7,14 @@
  * `["books", "detail", id]` cache slot so the canonical fields, the
  * pending list, and the version-count badge refetch in lockstep.
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useMutationState,
+  useQueryClient,
+  type MutationState,
+} from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
-import { toast } from "sonner";
+import { FieldError } from "@/components/ui/field";
 
 import {
   ApiError,
@@ -49,15 +54,30 @@ type VersionsTabProps = {
   book: BookDetail;
 };
 
+type FieldActionVariables = { field: string } & (
+  | { action: "clear" }
+  | { row: MetadataVersionRow; action: "accept" | "reject" }
+);
+type FieldActionState = MutationState<void, Error, FieldActionVariables>;
+
+function fieldActionKey(manifestationId: string) {
+  return [...queryKeys.books.detail(manifestationId), "version-action"] as const;
+}
+
 /**
- * Top-level Versions tab. Owns the Edit dialog open state but delegates
- * each row to [`PendingRow`] so accept/reject can render without
- * shared state.
+ * Versions tab with field-owned action outcomes and an Edit dialog.
  */
 export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const grouped = groupByField(book.metadata_versions);
-  const fieldsWithDrafts = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+  const actions = useMutationState<FieldActionState>({
+    filters: { mutationKey: fieldActionKey(book.id) },
+  });
+  const retainedFields = actions.flatMap((action) =>
+    (action.status === "pending" || action.status === "error") && action.variables !== undefined
+      ? [action.variables.field]
+      : [],
+  );
   // Name/label defs only: EditMetadataDialog seeds each field's canonical
   // value itself from a fresh GET, not from this (possibly stale) `book`.
   const editableFields = (
@@ -66,6 +86,13 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
     name,
     label: FIELD_LABEL[name] ?? name,
   }));
+  const fieldNames = [
+    ...new Set([
+      ...editableFields.map(({ name }) => name),
+      ...Object.keys(grouped),
+      ...retainedFields,
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="space-y-6">
@@ -85,19 +112,18 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
         </Button>
       </div>
 
-      {fieldsWithDrafts.length > 0 ? (
-        <div className="space-y-6">
-          {fieldsWithDrafts.map((field) => (
-            <FieldGroup
-              key={field}
-              manifestationId={book.id}
-              field={field}
-              canonical={canonicalValue(book, field)}
-              rows={grouped[field] ?? []}
-            />
-          ))}
-        </div>
-      ) : null}
+      <div className="space-y-6">
+        {fieldNames.map((field) => (
+          <FieldGroup
+            key={field}
+            manifestationId={book.id}
+            field={field}
+            canonical={canonicalValue(book, field)}
+            rows={grouped[field] ?? []}
+            actionState={actions.findLast((action) => action.variables?.field === field)}
+          />
+        ))}
+      </div>
 
       <EditMetadataDialog
         manifestationId={book.id}
@@ -114,6 +140,7 @@ type FieldGroupProps = {
   field: string;
   canonical: string | null;
   rows: MetadataVersionRow[];
+  actionState: FieldActionState | undefined;
 };
 
 /** One field's section: current canonical row + pending alternatives. */
@@ -122,26 +149,40 @@ function FieldGroup({
   field,
   canonical,
   rows,
-}: Readonly<FieldGroupProps>): ReactElement {
+  actionState,
+}: Readonly<FieldGroupProps>): ReactElement | null {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const pending = actionState?.status === "pending";
+  const submitted = actionState?.variables;
+  const clearPending = pending && submitted?.action === "clear";
   const invalidate = () =>
     queryClient.invalidateQueries({
       queryKey: queryKeys.books.detail(manifestationId),
     });
 
-  const revertMutation = useMutation({
-    mutationFn: () => revertField(manifestationId, field, null),
-    onSuccess: () => {
-      void invalidate();
-      toast.success(`Cleared ${FIELD_LABEL[field] ?? field}`);
+  const mutationKey = [...fieldActionKey(manifestationId), field];
+  const action = useMutation({
+    mutationKey,
+    mutationFn: (variables: FieldActionVariables) => {
+      if (variables.action === "clear") return revertField(manifestationId, variables.field, null);
+      return variables.action === "accept"
+        ? acceptVersion(manifestationId, variables.row.id)
+        : rejectVersion(manifestationId, variables.row.id);
     },
-    onError: (err: unknown) => {
-      console.error("[VersionsTab.revertField] mutation failed", err);
-      toast.error(formatError(err));
+    onSuccess: () => {
+      const cache = queryClient.getMutationCache();
+      for (const failure of cache.findAll({ mutationKey, exact: true, status: "error" })) {
+        cache.remove(failure);
+      }
+      return invalidate();
+    },
+    onError: (error) => {
+      console.error("[VersionsTab] field action failed", error);
+      void invalidate();
     },
   });
-
+  if (rows.length === 0 && actionState?.status !== "error" && !pending) return null;
   return (
     <section
       className="border-border space-y-3 rounded-md border p-4"
@@ -154,14 +195,15 @@ function FieldGroup({
         >
           {FIELD_LABEL[field] ?? field}
         </h3>
-        {canonical !== null && field !== "title" ? (
+        {(canonical !== null || clearPending) && field !== "title" ? (
           <Button
             size="sm"
             variant="ghost"
             onPress={() => {
               setConfirmOpen(true);
             }}
-            isDisabled={revertMutation.isPending}
+            isPending={clearPending}
+            isDisabled={pending && !clearPending}
           >
             Clear
           </Button>
@@ -170,10 +212,23 @@ function FieldGroup({
       <ul className="space-y-2 text-sm">
         <CanonicalRow canonical={canonical} />
         {rows.map((row) => (
-          <PendingRow key={row.id} manifestationId={manifestationId} field={field} row={row} />
+          <PendingRow
+            key={row.id}
+            row={row}
+            accepting={pending && submitted?.action === "accept" && submitted.row.id === row.id}
+            rejecting={pending && submitted?.action === "reject" && submitted.row.id === row.id}
+            busy={pending}
+            onAccept={() => {
+              action.mutate({ field, row, action: "accept" });
+            }}
+            onReject={() => {
+              action.mutate({ field, row, action: "reject" });
+            }}
+          />
         ))}
       </ul>
 
+      <FieldOutcome actionState={actionState} rows={rows} />
       <AlertDialogContent isOpen={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogHeader>
           <AlertDialogTitle>Clear {FIELD_LABEL[field] ?? field}?</AlertDialogTitle>
@@ -185,7 +240,7 @@ function FieldGroup({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onPress={() => {
-              revertMutation.mutate();
+              action.mutate({ field, action: "clear" });
               setConfirmOpen(false);
             }}
           >
@@ -195,6 +250,36 @@ function FieldGroup({
       </AlertDialogContent>
     </section>
   );
+}
+
+function FieldOutcome({
+  actionState,
+  rows,
+}: Readonly<Pick<FieldGroupProps, "actionState" | "rows">>): ReactElement | null {
+  if (actionState === undefined || actionState.variables === undefined) return null;
+  const variables = actionState.variables;
+  if (variables.action === "clear") {
+    return actionState.status === "error" ? (
+      <FieldError>Clear failed: {formatError(actionState.error)}</FieldError>
+    ) : null;
+  }
+  const { row, action } = variables;
+  if (actionState.status === "error")
+    return (
+      <FieldError>
+        {row.source} draft:{" "}
+        {actionState.error instanceof ApiError && actionState.error.status === 404
+          ? "This draft is no longer available."
+          : formatError(actionState.error)}
+      </FieldError>
+    );
+  if (actionState.status === "pending" && !rows.some((pending) => pending.id === row.id))
+    return (
+      <p role="status" className="text-fg-muted text-sm">
+        {action === "accept" ? "Accepting" : "Rejecting"} {row.source} draft…
+      </p>
+    );
+  return null;
 }
 
 type CanonicalRowProps = {
@@ -216,48 +301,23 @@ function CanonicalRow({ canonical }: Readonly<CanonicalRowProps>): ReactElement 
 }
 
 type PendingRowProps = {
-  manifestationId: string;
-  field: string;
   row: MetadataVersionRow;
+  accepting: boolean;
+  rejecting: boolean;
+  busy: boolean;
+  onAccept: () => void;
+  onReject: () => void;
 };
 
-function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>): ReactElement {
-  const queryClient = useQueryClient();
-  const invalidate = () =>
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.books.detail(manifestationId),
-    });
-
-  const acceptMutation = useMutation({
-    mutationFn: () => acceptVersion(manifestationId, row.id),
-    onSuccess: () => {
-      void invalidate();
-      toast.success(`Accepted ${row.source} draft for ${FIELD_LABEL[field] ?? field}`);
-    },
-    onError: (err: unknown) => {
-      console.error("[VersionsTab.acceptVersion] mutation failed", err);
-      void invalidate();
-      toast.error(
-        err instanceof ApiError && err.status === 404
-          ? "This draft is no longer available to accept."
-          : formatError(err),
-      );
-    },
-  });
-  const rejectMutation = useMutation({
-    mutationFn: () => rejectVersion(manifestationId, row.id),
-    onSuccess: () => {
-      void invalidate();
-      toast.success(`Rejected ${row.source} draft`);
-    },
-    onError: (err: unknown) => {
-      console.error("[VersionsTab.rejectVersion] mutation failed", err);
-      toast.error(formatError(err));
-    },
-  });
-
+function PendingRow({
+  row,
+  accepting,
+  rejecting,
+  busy,
+  onAccept,
+  onReject,
+}: Readonly<PendingRowProps>): ReactElement {
   const value = renderValue(row.new_value);
-  const busy = acceptMutation.isPending || rejectMutation.isPending;
 
   return (
     <li className="border-border flex items-start justify-between gap-4 rounded-sm border p-3">
@@ -268,22 +328,15 @@ function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>):
         <p className="text-fg mt-1 break-words">{value}</p>
       </div>
       <div className="flex shrink-0 gap-2">
-        <Button
-          size="sm"
-          onPress={() => {
-            acceptMutation.mutate();
-          }}
-          isDisabled={busy}
-        >
+        <Button size="sm" onPress={onAccept} isPending={accepting} isDisabled={busy && !accepting}>
           Accept
         </Button>
         <Button
           size="sm"
           variant="outline"
-          onPress={() => {
-            rejectMutation.mutate();
-          }}
-          isDisabled={busy}
+          onPress={onReject}
+          isPending={rejecting}
+          isDisabled={busy && !rejecting}
         >
           Reject
         </Button>

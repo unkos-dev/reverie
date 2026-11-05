@@ -13,9 +13,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActionState, type ReactElement } from "react";
 import { Form } from "react-aria-components";
-import { Navigate, useNavigate } from "react-router";
+import { Navigate } from "react-router";
 import { z } from "zod";
-import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import {
@@ -37,7 +36,6 @@ import { AuthShell } from "./auth-shell";
 
 /** Route component for `/setup`. */
 export function Component(): ReactElement {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const {
     data: status,
@@ -64,8 +62,6 @@ export function Component(): ReactElement {
       queryClient.setQueryData<SetupStatus>(queryKeys.auth.setupStatus(), (old) =>
         old !== undefined ? { ...old, setup_required: false } : old,
       );
-      toast.success("Administrator created. Sign in to continue.");
-      void navigate("/login");
     },
   });
 
@@ -91,7 +87,6 @@ export function Component(): ReactElement {
       } catch (err) {
         const message =
           err instanceof ApiError && err.detail !== "" ? err.detail : "Could not complete setup.";
-        toast.error(message);
         return { values, error: message };
       }
     },
@@ -116,8 +111,10 @@ export function Component(): ReactElement {
     );
   }
 
-  if (!status.setup_required) {
-    return <Navigate to="/login" replace />;
+  if (!status.setup_required && !setupMutation.isPending) {
+    return (
+      <Navigate to={setupMutation.isSuccess ? "/login?outcome=setup-complete" : "/login"} replace />
+    );
   }
 
   const passwordField = newPasswordField(status);

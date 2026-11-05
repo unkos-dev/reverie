@@ -137,8 +137,9 @@ explicit sign-in link. The browser does not retry redemption automatically or in
 
 Issuing to a disabled account returns 422 with `the account is disabled`; a missing email returns 422 with
 `the account has no email address`. The Users screen explains how to correct the latter. A lost link requires another
-link. The result is shown once and can be copied or dismissed. If clipboard access is unavailable or denied, the
-existing error toast directs the administrator to select and copy the displayed link manually.
+link. The result is shown once and can be copied or dismissed. If clipboard access is unavailable or denied, the local
+Copy status directs the administrator to select and copy the displayed link manually. Cancellation feedback stays beside
+the account after its active-link controls disappear.
 
 ## Security and operations
 

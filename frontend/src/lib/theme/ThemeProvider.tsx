@@ -9,17 +9,18 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { toast } from "sonner";
+import { useMutation } from "@tanstack/react-query";
 import { readThemeCookie, writeThemeCookie, type ThemePreference } from "./cookie";
 import { fetchMe, patchTheme } from "./api";
 
-const PATCH_FAILURE_MESSAGE = "Could not save theme preference. Reverted to your previous setting.";
+const PATCH_FAILURE_MESSAGE = "Could not save theme preference. Choose a theme to try again.";
 
 type EffectiveTheme = "light" | "dark";
 
 type ThemeContextValue = {
   preference: ThemePreference;
   effective: EffectiveTheme;
+  failure: string | null;
   setPreference: (next: ThemePreference) => Promise<void>;
 };
 
@@ -84,7 +85,7 @@ type ThemeProviderProps = {
  *
  * Failure model: the cookie is the documented source of truth. Network or
  * server failures during PATCH keep the optimistic update; only validation
- * rejections (4xx other than 401/403/428) roll back and surface a toast —
+ * rejections (4xx other than 401/403/428) roll back and expose local feedback —
  * those represent real client/server disagreement. Auth lapses (401/403/428)
  * keep the cookie. Rationale lives inline in `setPreference`.
  *
@@ -186,10 +187,16 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
     };
   }, []);
 
-  const setPreference = useCallback(
-    async (next: ThemePreference): Promise<void> => {
-      const prevPreference = preference;
-      const prevEffective = effective;
+  const { mutateAsync, data } = useMutation({
+    mutationFn: async ({
+      next,
+      prevPreference,
+      prevEffective,
+    }: {
+      next: ThemePreference;
+      prevPreference: ThemePreference;
+      prevEffective: EffectiveTheme;
+    }) => {
       const systemDark = matchMedia("(prefers-color-scheme: dark)").matches;
       const nextEffective = resolveEffective(next, systemDark);
 
@@ -203,20 +210,20 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
         const result = await patchTheme(next);
         if (result.ok) {
           channelRef.current?.postMessage({ preference: next });
-          return;
+          return result;
         }
         // 401 (anonymous), 403 (csrf-mismatch / expired session), 428
         // (csrf-missing: the session carries no usable synchronizer token),
         // and 5xx (backend unavailable) are not validation failures. Keep
         // the optimistic update so the theme doesn't flip mid-visit on an
         // auth lapse or outage; emit a quiet console warning (visible in
-        // devtools) but no toast. The cookie carries the preference
+        // devtools) without interrupting the task. The cookie carries the preference
         // through the lapse; the reconcile effect above re-syncs to the
         // server's stored preference on the next successful authenticated
         // load, so the server stays canonical across sessions (see
         // docs/.../design/visual-identity.md, § Theme cookie lifecycle).
         // Only validation rejections (4xx other than 401/403/428) roll
-        // back + toast — a real client/server disagreement, not an auth
+        // back + local feedback — a real client/server disagreement, not an auth
         // lapse. Rolling back on a 403/428 would strand the reader on
         // their old theme whenever a session's token is missing or stale
         // mid-visit (the bug this guards against).
@@ -230,13 +237,15 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
           // Cookie wins → broadcast so other tabs converge without a
           // reload. Same contract as the 2xx success path.
           channelRef.current?.postMessage({ preference: next });
-          return;
+          return result;
         }
-        writeThemeCookie(prevPreference);
-        applyEffective(prevEffective);
-        setPreferenceState(prevPreference);
-        setEffectiveState(prevEffective);
-        toast.error(PATCH_FAILURE_MESSAGE);
+        if (readThemeCookie() === next) {
+          writeThemeCookie(prevPreference);
+          applyEffective(prevEffective);
+          setPreferenceState(prevPreference);
+          setEffectiveState(prevEffective);
+        }
+        return result;
       } catch (error) {
         // Network-level failure (DNS, offline, fetch reject). Cookie
         // already holds the optimistic value; treat the same as a 5xx —
@@ -244,14 +253,32 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
         // tabs converge without a reload.
         console.warn("theme PATCH failed; cookie persists", error);
         channelRef.current?.postMessage({ preference: next });
+        throw error;
       }
     },
-    [preference, effective],
+  });
+  const failure =
+    data !== undefined &&
+    !data.ok &&
+    data.status >= 400 &&
+    data.status < 500 &&
+    ![401, 403, 428].includes(data.status)
+      ? PATCH_FAILURE_MESSAGE
+      : null;
+  const setPreference = useCallback(
+    async (next: ThemePreference): Promise<void> => {
+      try {
+        await mutateAsync({ next, prevPreference: preference, prevEffective: effective });
+      } catch {
+        return;
+      }
+    },
+    [mutateAsync, preference, effective],
   );
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ preference, effective, setPreference }),
-    [preference, effective, setPreference],
+    () => ({ preference, effective, failure, setPreference }),
+    [preference, effective, failure, setPreference],
   );
 
   return <ThemeContext value={value}>{children}</ThemeContext>;

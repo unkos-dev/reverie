@@ -172,9 +172,9 @@ current implementation.
 Reverie's surfaces feel like a museum after hours — the collection is the point, the lighting is considered, the chrome
 stays out of the reader's way. Cinematic-boutique is the locked visual register: the Library is the identity surface and
 carries the atmosphere (subtle animated warm gradients, a static noise texture, a photographic hero band, a solid
-accent-text masthead H1, hover-lift on covers, and a press-F cinematic mode that dissolves the chrome). Typography does
-the structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that
-inherits palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.
+accent-text masthead H1, hover-lift on covers, and a cinematic toggle that dissolves the chrome). Typography does the
+structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that inherits
+palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.
 
 Colour is governed through a three-tier token tree: generated Radix primitives (`--sand` / `--gold` / `--danger` ramps),
 then semantic roles (`--canvas` / `--fg` / `--accent` / …) with a shadcn-compatibility alias layer, then a sealed
@@ -449,6 +449,13 @@ The canonical brand palette, Radix Colors and generated colour primitives remain
 shadcn-compatibility aliases in `styles/themes/index.css` remain available to existing components. New code prefers the
 canonical `--color-canvas` / `--color-fg` / `--color-accent` token names.
 
+Action feedback stays in the owning flow. Copy status sits beside the credential; failed row actions name their target.
+Membership outcomes remain below the shelf menu. Batch progress, consolidated outcomes and failed-book retry remain in
+the labelled Group even when selection becomes empty. Metadata conflicts retain edits above the form actions and offer
+an explicit Discard edits and reload action. Theme validation refusal appears below the User chip. Successful account
+creation and password changes use fixed context at the login destination. Visible changed content communicates routine
+success; inline errors are not repeated in a toast.
+
 ### Buttons
 
 - **Shape:** rounded-lg (0.75 rem / 12 px) by default. Smaller variants reach for `min(var(--radius-md), 12px)` (sm /
@@ -511,6 +518,12 @@ canonical `--color-canvas` / `--color-fg` / `--color-accent` token names.
 
 ### Library Table
 
+The table's Undo last edit button sits beside Help and names the next field and book to reverse. It uses the existing
+bounded history sequentially and becomes unavailable when the table is removed. Native pending state preserves focus and
+suppresses repeated activation. Cell failures retain the submitted value and named target in the Library results region
+outside the table, with native Reload and ordinary Query recovery. They remain readable when loading, empty, blocked or
+grid results replace the table. No toast runtime supplies feedback.
+
 The table is a dense catalogue surface using the same canvas, text and accent roles as the rest of the application. Its
 header uses surface-2, row hover uses surface, and selected rows use accent-soft. Cells use the inherited body face at
 14px; titles have medium weight.
@@ -526,6 +539,20 @@ header uses surface-2, row hover uses surface, and selected rows use accent-soft
 
 Source: [LibraryTableView](src/pages/library/table/LibraryTableView.tsx) and the
 [grid theme](src/lib/grid/grid-theme.css).
+
+Shelf filters use a native multiple ListBox with visible options and section Clear. Series filters use a searchable
+multiple ComboBox with removable tags. Both match any selected value, with no synthetic All option. Removing one chip
+keeps the other selections. Series choices and restored labels come from independent queries, so narrowing results does
+not remove available options. Search text stays after choosing a series.
+
+The existing Search bar keeps its position, label and filtering behaviour. Control+K or Meta+K opens the command palette
+only while focus is within the shell DOM. Portals and document-body focus do not register that shortcut. The native
+palette owns dismissal and virtual focus; visible Help opens the table shortcut dialog.
+
+A native Cinematic view toggle stays at the existing bottom-centre hint position, outside hidden chrome. Its selected
+label is Exit cinematic view. Chrome fades and leaves keyboard traversal through visibility; pointer-idle and reduced
+motion behaviour remain. Home and Stats retain their navigation positions with visible static Planned status outside Tab
+order.
 
 ### Signature: Lockup
 

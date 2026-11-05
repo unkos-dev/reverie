@@ -179,17 +179,17 @@ export function buildFilterSummary(
       text: `Search "${query}"`,
       remove: (current) => ({ ...current, q: undefined }),
     });
-  if (filters.shelf !== undefined)
+  for (const id of filters.shelf)
     segments.push({
-      key: "shelf",
-      text: `Shelf: ${resolvers.shelfName(filters.shelf)}`,
-      remove: (current) => ({ ...current, shelf: undefined }),
+      key: `shelf:${id}`,
+      text: `Shelf: ${resolvers.shelfName(id)}`,
+      remove: (current) => ({ ...current, shelf: current.shelf.filter((value) => value !== id) }),
     });
-  if (filters.series !== undefined)
+  for (const id of filters.series)
     segments.push({
-      key: "series",
-      text: `Series: ${resolvers.seriesName(filters.series)}`,
-      remove: (current) => ({ ...current, series: undefined }),
+      key: `series:${id}`,
+      text: `Series: ${resolvers.seriesName(id)}`,
+      remove: (current) => ({ ...current, series: current.series.filter((value) => value !== id) }),
     });
   pushSet(segments, {
     key: "authors",

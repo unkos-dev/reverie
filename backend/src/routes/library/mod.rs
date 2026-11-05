@@ -156,8 +156,14 @@ struct ListParams {
     #[param(max_length = 45)]
     series: Option<Uuid>,
     #[serde(default)]
+    #[param(max_items = 20, max_length = 45)]
+    series_any: Vec<Uuid>,
+    #[serde(default)]
     #[param(max_length = 45)]
     shelf: Option<Uuid>,
+    #[serde(default)]
+    #[param(max_items = 20, max_length = 45)]
+    shelf_any: Vec<Uuid>,
     #[serde(default)]
     #[param(max_items = 20)]
     tag: Vec<String>,

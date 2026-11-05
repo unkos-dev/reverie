@@ -223,17 +223,20 @@
 }
 
 /* ─── Cinematic mode ──────────────────────────────────────────────────
-   Press F on the Library page to dissolve the chrome. The hook
+   The Library toggle dissolves the chrome. The hook
    (hooks/useCinematicMode) sets data-cinematic / data-cursor-hidden on
    the document element; marked chrome (`[data-chrome]`) fades out and the
    cursor idles away, leaving the covers on a quiet field. */
 [data-chrome] {
-  transition: opacity var(--duration-slow) var(--ease-standard);
+  transition:
+    opacity var(--duration-slow) var(--ease-standard),
+    visibility var(--duration-slow);
 }
 
 [data-cinematic="on"] [data-chrome] {
   pointer-events: none;
   opacity: 0;
+  visibility: hidden;
 }
 
 [data-cinematic="on"][data-cursor-hidden="on"],
@@ -241,19 +244,12 @@
   cursor: none;
 }
 
-.cinema-hint {
+.cinema-control {
   position: fixed;
   bottom: 18px;
   left: 50%;
   z-index: 30;
   transform: translateX(-50%);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--duration-slow) var(--ease-standard);
-}
-
-[data-cinematic="on"] .cinema-hint {
-  opacity: 0.65;
 }
 
 /* Collapse the rails so the centre pane fills the screen (V5 cinematic).
@@ -294,7 +290,7 @@
 
   /* Cinematic chrome + hint snap instead of fading or sliding. */
   [data-chrome],
-  .cinema-hint,
+  .cinema-control,
   .cinematic-collapse,
   .cinematic-grid {
     transition: none;

@@ -8,7 +8,6 @@ import type { ReactElement } from "react";
 import { queryKeys } from "@/lib/query/keys";
 import type { User } from "@/api/users";
 import * as usersApi from "@/api/users";
-import { toast } from "sonner";
 
 import { UsersPage } from "@/pages/admin/UsersPage";
 
@@ -25,8 +24,6 @@ vi.mock("@/api/auth", () => ({
     password_max_length: 256,
   }),
 }));
-
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 vi.mock("@/api/users", { spy: true });
 
@@ -133,7 +130,6 @@ describe("UsersPage", () => {
     expect(await navigator.clipboard.readText()).toBe(
       `${window.location.origin}/set-password#test-link`,
     );
-    expect(toast.success).toHaveBeenCalledWith("Link copied.");
     await user.click(page.getByRole("button", { name: "Done" }));
     await expect.element(page.getByLabelText("Credential link")).not.toBeInTheDocument();
     await vi.waitFor(async () => {

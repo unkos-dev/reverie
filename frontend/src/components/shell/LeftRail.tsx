@@ -22,7 +22,7 @@ import { queryKeys } from "@/lib/query/keys";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import { cn } from "@/lib/utils";
 
-import { ADMIN_NAV, PLANNED_TOOLTIP, PRIMARY_NAV, type NavItem } from "./nav-items";
+import { ADMIN_NAV, PRIMARY_NAV, type NavItem } from "./nav-items";
 import { UserChip } from "./UserMenu";
 
 /** Max shelf rows in the rail before the "All shelves" overflow link. */
@@ -104,25 +104,17 @@ type RailItemProps = {
  * One primary-nav row. Live entries are `NavLink`s with the
  * surface-pill + gold slot-bar active treatment; disabled entries are
  * spec-S3 placeholders — visible, `aria-disabled`, out of tab order,
- * described by the "planned" tooltip (spec §9.4).
+ * accompanied by visible Planned status.
  */
 function RailItem({ item }: Readonly<RailItemProps>): ReactElement {
   if (item.disabled === true || item.to === undefined) {
-    const descId = `nav-planned-${item.label.toLowerCase()}`;
     return (
       <span
         aria-disabled="true"
-        aria-describedby={descId}
-        className={cn(ITEM_BASE, "text-fg-faint group cursor-default font-normal")}
+        className={cn(ITEM_BASE, "text-fg-muted cursor-default font-normal")}
       >
         {item.label}
-        <span
-          id={descId}
-          role="tooltip"
-          className="border-border bg-surface text-fg-muted pointer-events-none absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2 whitespace-nowrap rounded-sm border px-2 py-1 text-xs opacity-0 transition-opacity group-hover:opacity-100"
-        >
-          {PLANNED_TOOLTIP}
-        </span>
+        <span className="ml-auto font-mono text-xs">Planned</span>
       </span>
     );
   }

@@ -46,7 +46,7 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 /** Rail-bottom user chip; opens the account dropdown. */
 export function UserChip(): ReactElement | null {
   const { data: me } = useAuthMe();
-  const { preference, setPreference } = useTheme();
+  const { preference, failure, setPreference } = useTheme();
   if (me === undefined) return null;
 
   function handleSignOut(): void {
@@ -67,64 +67,71 @@ export function UserChip(): ReactElement | null {
   }
 
   return (
-    <DropdownMenu>
-      <Button
-        type="button"
-        className="data-hovered:bg-surface data-focus-visible:ring-accent flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors data-focus-visible:outline-none data-focus-visible:ring-2"
-      >
-        <span
-          aria-hidden="true"
-          className="bg-surface-2 text-fg-muted border-border flex size-7 shrink-0 items-center justify-center rounded-full border font-mono text-[0.65rem] tracking-wide"
+    <>
+      <DropdownMenu>
+        <Button
+          type="button"
+          className="data-hovered:bg-surface data-focus-visible:ring-accent flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors data-focus-visible:outline-none data-focus-visible:ring-2"
         >
-          {initials(me.display_name)}
-        </span>
-        <span className="text-fg min-w-0 truncate text-sm">{me.display_name}</span>
-      </Button>
-      <DropdownMenuContent placement="top start" className="w-56">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>
-            <span className="block">{me.display_name}</span>
-            {me.email !== null ? (
-              <span className="text-fg-faint block text-xs font-normal">{me.email}</span>
+          <span
+            aria-hidden="true"
+            className="bg-surface-2 text-fg-muted border-border flex size-7 shrink-0 items-center justify-center rounded-full border font-mono text-[0.65rem] tracking-wide"
+          >
+            {initials(me.display_name)}
+          </span>
+          <span className="text-fg min-w-0 truncate text-sm">{me.display_name}</span>
+        </Button>
+        <DropdownMenuContent placement="top start" className="w-56">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>
+              <span className="block">{me.display_name}</span>
+              {me.email !== null ? (
+                <span className="text-fg-faint block text-xs font-normal">{me.email}</span>
+              ) : null}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {me.role === "admin" ? (
+              <DropdownMenuItem href="/admin/settings">Settings</DropdownMenuItem>
             ) : null}
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {me.role === "admin" ? (
-            <DropdownMenuItem href="/admin/settings">Settings</DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem href="/account/email">Email address</DropdownMenuItem>
-          {me.has_local_password ? (
-            <DropdownMenuItem href="/account/password">Change password</DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem href="/tokens">API tokens</DropdownMenuItem>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuRadioGroup
-                selectionMode="single"
-                selectedKeys={[preference]}
-                onSelectionChange={(keys) => {
-                  if (keys === "all") return;
-                  const value = keys.values().next().value;
-                  // Narrow through the closed options list — the radio
-                  // group's payload type is `string` (no `as` casts).
-                  const opt = THEME_OPTIONS.find((o) => o.value === value);
-                  if (opt) void setPreference(opt.value);
-                }}
-              >
-                {THEME_OPTIONS.map((opt) => (
-                  <DropdownMenuRadioItem key={opt.value} id={opt.value}>
-                    {opt.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onAction={handleSignOut}>Sign out</DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+            <DropdownMenuItem href="/account/email">Email address</DropdownMenuItem>
+            {me.has_local_password ? (
+              <DropdownMenuItem href="/account/password">Change password</DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem href="/tokens">API tokens</DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup
+                  selectionMode="single"
+                  selectedKeys={[preference]}
+                  onSelectionChange={(keys) => {
+                    if (keys === "all") return;
+                    const value = keys.values().next().value;
+                    // Narrow through the closed options list — the radio
+                    // group's payload type is `string` (no `as` casts).
+                    const opt = THEME_OPTIONS.find((o) => o.value === value);
+                    if (opt) void setPreference(opt.value);
+                  }}
+                >
+                  {THEME_OPTIONS.map((opt) => (
+                    <DropdownMenuRadioItem key={opt.value} id={opt.value}>
+                      {opt.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onAction={handleSignOut}>Sign out</DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {failure ? (
+        <p role="alert" className="text-fg-muted px-2 pb-2 text-sm">
+          {failure}
+        </p>
+      ) : null}
+    </>
   );
 }
 
