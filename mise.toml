@@ -18,7 +18,7 @@ uv = "0.13.7"
 # against .vacuum.yaml.
 vacuum = "0.36.2"
 vale = "3.26.0"
-zizmor = "1.31.1"
+zizmor = "1.32.0"
 # The package manager, resolved through mise's aqua backend and so
 # checksum-verified. Two bootstraps need pnpm before any node_modules exists
 # and therefore cannot reach it through vp: `just install`, which populates a
