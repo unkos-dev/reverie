@@ -43,3 +43,5 @@ catalog:
 overrides:
   vite@*: "catalog:"
   form-data: "4.0.6"
+  "glob@13": "14.0.3"
+  "minimatch@10": "11.0.4"
