@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, source, field_name, new_value AS \"value!\", match_type, submitted_by FROM metadata_versions WHERE id = ANY($1) ORDER BY id",
+  "query": "SELECT id, source, field_name, CASE WHEN octet_length(new_value::text) <= $2 THEN new_value END AS value, match_type, submitted_by FROM metadata_versions WHERE id = ANY($1) ORDER BY id LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -38,14 +38,9 @@
       },
       {
         "ordinal": 3,
-        "name": "value!",
+        "name": "value",
         "type_info": "Jsonb",
-        "origin": {
-          "Table": {
-            "table": "metadata_versions",
-            "name": "new_value"
-          }
-        }
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
@@ -72,17 +67,19 @@
     ],
     "parameters": {
       "Left": [
-        "UuidArray"
+        "UuidArray",
+        "Int4",
+        "Int8"
       ]
     },
     "nullable": [
       false,
       false,
       false,
-      false,
+      null,
       false,
       true
     ]
   },
-  "hash": "0d9c2db8c3882ad52d2fb7a393b51fed3bb2f1fdc52dc7a84dac812e1ff16e59"
+  "hash": "8ca64ab0265330750e897094302412a2eb1e4736546f304bb6cbc975e933a63b"
 }

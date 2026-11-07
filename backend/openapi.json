@@ -1484,7 +1484,7 @@
             }
           },
           "422": {
-            "description": "No populated fields, ISBN/date parse failure, attempt to clear title, or reused save request identifier. Evaluated only after If-Match has matched, so a stale tag returns 412 instead",
+            "description": "No populated fields, ISBN/date parse failure, attempt to clear title, recorded save request identifier reuse, or browser Undo size/work limit. Evaluated only after If-Match has matched, so a stale tag returns 412 instead",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1634,7 +1634,7 @@
             }
           },
           "422": {
-            "description": "Select exactly one request or operation identifier",
+            "description": "Select exactly one request or operation identifier; operation evidence must fit the resource limit",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1812,7 +1812,7 @@
             }
           },
           "422": {
-            "description": "Operation unavailable",
+            "description": "Operation unavailable or Undo resource limit exceeded",
             "content": {
               "application/problem+json": {
                 "schema": {

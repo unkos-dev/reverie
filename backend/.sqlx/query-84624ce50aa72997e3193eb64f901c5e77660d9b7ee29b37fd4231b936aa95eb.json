@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM metadata_versions WHERE id = ANY($1) ORDER BY id FOR SHARE",
+  "query": "INSERT INTO metadata_versions(manifestation_id,source,field_name,new_value,value_hash,match_type,confidence_score) VALUES ($1,'opf','description',$2,$3,'opf',0.5) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -17,12 +17,14 @@
     ],
     "parameters": {
       "Left": [
-        "UuidArray"
+        "Uuid",
+        "Jsonb",
+        "Bytea"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "4aaa3be6224055dbce389f2e01e51bf397623bb3f9b805968a5aafad93554870"
+  "hash": "84624ce50aa72997e3193eb64f901c5e77660d9b7ee29b37fd4231b936aa95eb"
 }

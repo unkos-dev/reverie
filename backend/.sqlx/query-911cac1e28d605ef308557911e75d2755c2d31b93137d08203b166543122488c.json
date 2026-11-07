@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT coalesce(sum(octet_length(before_state::text)::bigint + octet_length(after_state::text)),0)::bigint AS \"bytes!\" FROM metadata_undo_operations WHERE user_id = $1 AND session_id = $2 AND manifestation_id = $3 AND (($4::uuid IS NOT NULL AND request_id = $4) OR ($5::uuid IS NOT NULL AND id = $5)) AND expires_at > clock_timestamp()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "911cac1e28d605ef308557911e75d2755c2d31b93137d08203b166543122488c"
+}

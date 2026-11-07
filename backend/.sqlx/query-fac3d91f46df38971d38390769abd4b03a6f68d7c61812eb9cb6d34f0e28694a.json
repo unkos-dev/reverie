@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT coalesce(jsonb_agg(to_jsonb(o) ORDER BY id),'[]'::jsonb) AS \"state!\" FROM metadata_undo_operations o WHERE manifestation_id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fac3d91f46df38971d38390769abd4b03a6f68d7c61812eb9cb6d34f0e28694a"
+}

@@ -2423,7 +2423,7 @@ async fn load_manifestation_identifiers(
         (status = 412, description = "If-Match does not match the manifestation's current metadata ETag", body = crate::openapi::ProblemDetails, content_type = "application/problem+json",
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
         (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance, the request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "No populated fields, ISBN/date parse failure, attempt to clear title, or reused save request identifier. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "No populated fields, ISBN/date parse failure, attempt to clear title, recorded save request identifier reuse, or browser Undo size/work limit. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -2445,7 +2445,8 @@ async fn update_book_metadata(
     let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
     // Extract contributors BEFORE populated() consumes the struct — it is
     // handled separately from the other (scalar) fields.
-    let browser_save = undo::browser_save(&current_user, &session, req_fields.request_id.take())?;
+    let mut browser_save =
+        undo::browser_save(&current_user, &session, req_fields.request_id.take())?;
     let contributors = req_fields.contributors.take();
     let genres = req_fields.genres.take();
     let moods = req_fields.moods.take();
@@ -2462,7 +2463,7 @@ async fn update_book_metadata(
     // Mirrors `revert_manifestation` — serialises concurrent edits and
     // gates RLS-hidden rows to 404 (the join through `manifestations`
     // applies the RLS predicate).
-    undo::require_save_session(&mut tx, browser_save.as_ref()).await?;
+    undo::require_save_session(&mut tx, browser_save.as_mut()).await?;
     let work_id = undo::lock_parents(&mut tx, manifestation_id).await?;
 
     // Compared under the row lock just taken above, so a concurrent editor
@@ -2964,14 +2965,20 @@ mod tests {
         let mut tx = crate::db::acquire_with_rls_read_committed(pool, user)
             .await
             .unwrap();
-        let captured = super::undo::capture(&mut tx, edition, work, fields)
-            .await
-            .unwrap();
+        let captured = super::undo::capture(
+            &mut tx,
+            edition,
+            work,
+            fields,
+            &mut super::undo::ResourceBudget::capture(),
+        )
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
         serde_json::to_value(captured.fields).unwrap()
     }
 
-    // Data corruption boundary: exact restoration and active enrichment claim ownership.
+    // Data corruption/authentication boundaries: exact state, atomic resource refusal, claim ownership and capture mode.
     // REV-REQ-0052 reversion/identifier jobs; REV-REQ-0072 AC2-4 and REV-REQ-0073 AC2-4.
     #[sqlx::test(migrations = "./migrations")]
     async fn metadata_undo_restores_exact_field_state(pool: sqlx::PgPool) {
@@ -3181,6 +3188,173 @@ mod tests {
             0
         );
 
+        let (large_work, large_edition) =
+            test_support::db::insert_work_and_manifestation(&ing, "undo-large").await;
+        let (overflow_work, overflow_edition) =
+            test_support::db::insert_work_and_manifestation(&ing, "undo-overflow").await;
+        let seed_authors = |work: Uuid, count: i32, marker: String| {
+            let ing = &ing;
+            async move {
+                sqlx::query!(
+                    "WITH inserted AS (INSERT INTO authors(name, sort_name) \
+                     SELECT 'Undo ' || $3 || g || repeat('x',480), 'undo-' || $3 || g \
+                     FROM generate_series(1,$2::int) g RETURNING id) \
+                     INSERT INTO work_authors(work_id,author_id,role,position) \
+                     SELECT $1,id,'author',(row_number() OVER (ORDER BY id)-1)::int FROM inserted",
+                    work,
+                    count,
+                    marker,
+                )
+                .execute(ing)
+                .await
+                .unwrap();
+            }
+        };
+        seed_authors(large_work, 129, "large".into()).await;
+        seed_authors(
+            overflow_work,
+            i32::try_from(super::undo::MAX_CAPTURE_ENTRIES + 1).unwrap(),
+            "overflow".into(),
+        )
+        .await;
+        sqlx::query!(
+            "WITH inserted AS (INSERT INTO genres(name) SELECT 'Undo large term ' || g \
+             FROM generate_series(1,65) g RETURNING id) \
+             INSERT INTO manifestation_genres(manifestation_id,genre_id) SELECT $1,id FROM inserted",
+            large_edition,
+        ).execute(&pool).await.unwrap();
+        let legacy_fields = vec!["contributors.author".into(), "genres".into()];
+        let original = captured_fields(&app, user, large_edition, large_work, &legacy_fields).await;
+        let saved = browser_patch(
+            &server,
+            large_edition,
+            &csrf,
+            serde_json::json!({"contributors":{"author":["Replacement"]},"genres":null}),
+        )
+        .await;
+        assert_eq!(saved.status_code(), StatusCode::OK, "{}", saved.text());
+        for operation in saved.json::<serde_json::Value>()["operations"]
+            .as_array()
+            .unwrap()
+        {
+            let current = server
+                .get(&format!("/api/v1/books/{large_edition}/metadata"))
+                .await;
+            let restored = browser_undo(
+                &server,
+                large_edition,
+                &csrf,
+                &operation["operation_id"],
+                current.header(axum::http::header::ETAG),
+            )
+            .await;
+            assert_eq!(
+                restored.status_code(),
+                StatusCode::OK,
+                "{}",
+                restored.text()
+            );
+        }
+        assert_eq!(
+            captured_fields(&app, user, large_edition, large_work, &legacy_fields).await,
+            original
+        );
+        let publisher = browser_patch(
+            &server,
+            overflow_edition,
+            &csrf,
+            serde_json::json!({"publisher":"Small change"}),
+        )
+        .await;
+        assert_eq!(
+            publisher.status_code(),
+            StatusCode::OK,
+            "{}",
+            publisher.text()
+        );
+        let operation_state =
+            |edition: Uuid| {
+                let pool = &pool;
+                async move {
+                    sqlx::query_scalar!(
+                    "SELECT coalesce(jsonb_agg(to_jsonb(o) ORDER BY id),'[]'::jsonb) AS \"state!\" \
+                     FROM metadata_undo_operations o WHERE manifestation_id=$1",edition,
+                ).fetch_one(pool).await.unwrap()
+                }
+            };
+        let before = review_mutation_state(&pool, overflow_edition).await;
+        let operations = operation_state(overflow_edition).await;
+        let refused = browser_patch(
+            &server,
+            overflow_edition,
+            &csrf,
+            serde_json::json!({"title":"Must roll back","contributors":{"author":["Replacement"]}}),
+        )
+        .await;
+        assert_eq!(
+            refused.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{}",
+            refused.text()
+        );
+        assert_eq!(review_mutation_state(&pool, overflow_edition).await, before);
+        assert_eq!(operation_state(overflow_edition).await, operations);
+        let old_description =
+            serde_json::Value::String("x".repeat(super::undo::MAX_CAPTURE_BYTES / 2 - 1024 * 1024));
+        let old_hash =
+            crate::services::enrichment::value_hash::value_hash("description", &old_description);
+        let version=sqlx::query_scalar!(
+            "INSERT INTO metadata_versions(manifestation_id,source,field_name,new_value,value_hash,match_type,confidence_score) \
+             VALUES ($1,'opf','description',$2,$3,'opf',0.5) RETURNING id",
+            large_edition,&old_description,&old_hash,
+        ).fetch_one(&ing).await.unwrap();
+        sqlx::query!(
+            "UPDATE works SET description=$2,description_version_id=$3 WHERE id=$1",
+            large_work,
+            old_description.as_str(),
+            version
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        drop(old_description);
+        let before = review_mutation_state(&pool, large_edition).await;
+        let operations = operation_state(large_edition).await;
+        let patch = serde_json::json!({"title":"Must roll back","description":"y".repeat(2 * 1024 * 1024 - 1024)});
+        let refused = browser_patch(&server, large_edition, &csrf, patch.clone()).await;
+        assert_eq!(
+            refused.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{}",
+            refused.text()
+        );
+        assert_eq!(review_mutation_state(&pool, large_edition).await, before);
+        assert_eq!(operation_state(large_edition).await, operations);
+        drop(before);
+        let (_, basic) =
+            test_support::db::create_adult_and_basic_auth(&app, "undo-budget-basic").await;
+        let basic_server = test_support::db::server_with_real_pools(&app, &ing);
+        let path = format!("/api/v1/books/{large_edition}/metadata");
+        let current = basic_server
+            .get(&path)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let saved = basic_server
+            .patch(&path)
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                current.header(axum::http::header::ETAG),
+            )
+            .json(&patch)
+            .await;
+        assert_eq!(saved.status_code(), StatusCode::OK, "{}", saved.text());
+        assert_eq!(
+            saved.json::<serde_json::Value>()["operations"],
+            serde_json::json!([])
+        );
+        assert_eq!(operation_state(large_edition).await, operations);
+
         for invalid in ["123", "0306406153", "1234567890128", "97X0306406157"] {
             sqlx::query!(
                 "UPDATE manifestations SET isbn_13 = $2 WHERE id = $1",
@@ -3205,7 +3379,7 @@ mod tests {
         }
     }
 
-    // Data loss boundary: selective history, aggregate freshness, locks and single consumption.
+    // Data loss boundary: selective history, freshness, locks, timed rollback and single consumption.
     #[sqlx::test(migrations = "./migrations")]
     async fn metadata_undo_checks_field_history_and_locks(pool: sqlx::PgPool) {
         let app = test_support::db::app_pool_for(&pool).await;
@@ -3431,6 +3605,69 @@ mod tests {
             .unwrap()
             .is_none()
         );
+
+        let initial = browser_patch(
+            &server,
+            edition,
+            &csrf,
+            serde_json::json!({"contributors":{"editor":["Timeout original"]}}),
+        )
+        .await;
+        assert_eq!(initial.status_code(), StatusCode::OK, "{}", initial.text());
+        let saved = browser_patch(
+            &server,
+            edition,
+            &csrf,
+            serde_json::json!({"contributors":{"editor":["Timeout replacement"]}}),
+        )
+        .await;
+        assert_eq!(saved.status_code(), StatusCode::OK, "{}", saved.text());
+        let operation = saved.json::<serde_json::Value>()["operations"][0]["operation_id"].clone();
+        let op_id: Uuid = serde_json::from_value(operation.clone()).unwrap();
+        let before = review_mutation_state(&pool, edition).await;
+        let mut blocker = pool.begin().await.unwrap();
+        sqlx::query!("SELECT id FROM authors WHERE name='Timeout original' FOR UPDATE")
+            .fetch_one(&mut *blocker)
+            .await
+            .unwrap();
+        let timed_out = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            browser_undo(
+                &server,
+                edition,
+                &csrf,
+                &operation,
+                saved.header(axum::http::header::ETAG),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(
+            timed_out.status_code().is_server_error(),
+            "{}",
+            timed_out.text()
+        );
+        blocker.rollback().await.unwrap();
+        assert_eq!(review_mutation_state(&pool, edition).await, before);
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT consumed_at FROM metadata_undo_operations WHERE id=$1",
+                op_id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .is_none()
+        );
+        let retried = browser_undo(
+            &server,
+            edition,
+            &csrf,
+            &operation,
+            saved.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(retried.status_code(), StatusCode::OK, "{}", retried.text());
     }
 
     // Authorisation/private-data boundaries; REV-REQ-0056 child 403/no-write and Undo 428/no-write.

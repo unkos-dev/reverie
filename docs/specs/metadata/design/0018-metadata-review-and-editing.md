@@ -236,6 +236,21 @@ independent `operations`. Basic and device-token writes return no operations. Ca
 save transaction. Structurally invalid ISBN before-values receive no capability. Exact repeats can reuse observation
 rows; different order, match method or submitter cannot overwrite their meaning.
 
+Browser capture reads only selected fields. Before and after snapshots share a 16 MiB accounted size limit and 10000
+entries. Each field frame, relation member and captured observation counts as an entry. Compact JSON encoding and a
+fixed allowance for field wrappers determine size. SQL bounds each collection, probes one extra entry and limits
+individual payloads before decoding. Incremental checks refuse overflow without truncating state. The 100-contributor
+and 50-term PATCH limits do not restrict restoration. An invalid ISBN before-state remains exempt from capture, and
+Basic/token writes have no Undo budget prerequisite.
+
+Undo and resolution have twice the capture allowance, 32 MiB and 20000 processing entries, for current-state reads,
+retained evidence and restoration-target checks. Browser save, Undo and resolution transactions have a five-second
+deadline activated before session and catalogue locks. Transaction-local PostgreSQL statement and transaction timeouts
+bound database work and lock holding, preserving stricter operator limits; encoding checks also enforce elapsed time.
+Size and entry overflow return 422 validation failures. An aborted save retains no canonical, journal, writeback or
+operation changes. A timed-out Undo retains its unconsumed operation and original expiry. Unacknowledged outcomes still
+require committed-evidence resolution. Unrelated fields do not count against the snapshot budget.
+
 `POST /api/v1/books/{id}/metadata/undo` accepts `operation_id` in its JSON body and requires an adult browser session,
 write scope, CSRF and a current strong `If-Match`. It locks the edition and work, checks aggregate freshness, then
 checks operation ownership, original expiry, selected field identity, field locks and recorded after-state. Source and

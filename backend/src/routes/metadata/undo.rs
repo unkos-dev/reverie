@@ -3,12 +3,15 @@
 //! THREAT: every lookup binds the operation to its live authenticated session, user and visible edition.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{self, Write};
+use std::time::{Duration, Instant};
 
 use axum::extract::State;
 use axum::http::header::{CACHE_CONTROL, ETAG};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
+use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
@@ -23,6 +26,148 @@ use crate::error::AppError;
 use crate::extract::{ApiJson, ApiPath};
 use crate::routes::etag::{if_match_mismatch, parse_if_match};
 use crate::state::AppState;
+
+pub(super) const MAX_CAPTURE_BYTES: usize = 16 * 1024 * 1024;
+pub(super) const MAX_CAPTURE_ENTRIES: usize = 10_000;
+const OPERATION_TIME: Duration = Duration::from_secs(5);
+
+pub(super) struct ResourceBudget {
+    bytes: usize,
+    entries: usize,
+    max_bytes: usize,
+    max_entries: usize,
+    started: Instant,
+}
+
+struct BoundedCounter {
+    used: usize,
+    remaining: usize,
+    exceeded: bool,
+}
+
+impl Write for BoundedCounter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() > self.remaining {
+            self.exceeded = true;
+            return Err(io::Error::other("Undo resource limit exceeded"));
+        }
+        self.used += bytes.len();
+        self.remaining -= bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl ResourceBudget {
+    pub(super) fn capture() -> Self {
+        Self {
+            bytes: 0,
+            entries: 0,
+            max_bytes: MAX_CAPTURE_BYTES,
+            max_entries: MAX_CAPTURE_ENTRIES,
+            started: Instant::now(),
+        }
+    }
+
+    fn restoration() -> Self {
+        Self {
+            max_bytes: 2 * MAX_CAPTURE_BYTES,
+            max_entries: 2 * MAX_CAPTURE_ENTRIES,
+            ..Self::capture()
+        }
+    }
+
+    fn refused() -> AppError {
+        AppError::Validation(
+            "This change is too large or took too long to prepare for Undo.".into(),
+        )
+    }
+
+    fn check(&self) -> Result<(), AppError> {
+        if self.started.elapsed() >= OPERATION_TIME {
+            return Err(Self::refused());
+        }
+        Ok(())
+    }
+
+    fn reserve(&mut self, bytes: usize, entries: usize) -> Result<(), AppError> {
+        self.check()?;
+        if bytes > self.max_bytes - self.bytes || entries > self.max_entries - self.entries {
+            return Err(Self::refused());
+        }
+        self.bytes += bytes;
+        self.entries += entries;
+        Ok(())
+    }
+
+    fn admit(&mut self, value: &impl Serialize, entries: usize) -> Result<(), AppError> {
+        self.check()?;
+        let mut counter = BoundedCounter {
+            used: 0,
+            remaining: self.max_bytes - self.bytes,
+            exceeded: false,
+        };
+        if let Err(error) = serde_json::to_writer(&mut counter, value) {
+            return Err(if counter.exceeded {
+                Self::refused()
+            } else {
+                internal(error)
+            });
+        }
+        self.reserve(counter.used + 1, entries)
+    }
+
+    fn limits(&self) -> Result<(i32, i64), AppError> {
+        self.check()?;
+        Ok((
+            i32::try_from(self.max_bytes - self.bytes).map_err(internal)?,
+            i64::try_from(self.max_entries - self.entries + 1).map_err(internal)?,
+        ))
+    }
+
+    async fn configure(&mut self, tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
+        let limit = i32::try_from(OPERATION_TIME.as_millis()).map_err(internal)?;
+        let current = sqlx::query!(
+            "SELECT s.setting::int AS \"statement!\", t.setting::int AS \"transaction!\" \
+             FROM pg_settings s CROSS JOIN pg_settings t \
+             WHERE s.name = 'statement_timeout' AND t.name = 'transaction_timeout'",
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(internal)?;
+        let statement = if current.statement > 0 {
+            current.statement.min(limit)
+        } else {
+            limit
+        };
+        let transaction = if current.transaction > 0 {
+            current.transaction.min(limit)
+        } else {
+            limit
+        };
+        if current.transaction > limit {
+            // PostgreSQL requires restarting an active transaction timer to shorten it.
+            sqlx::query!("SELECT set_config('transaction_timeout', '0', true)")
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(internal)?;
+        }
+        sqlx::query!(
+            "SELECT set_config('statement_timeout', $1, true) AS statement_limit, \
+             set_config('transaction_timeout', $2, true) AS transaction_limit",
+            statement.to_string(),
+            transaction.to_string(),
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(internal)?;
+        self.started = Instant::now();
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -112,9 +257,49 @@ pub(super) async fn capture(
     edition: Uuid,
     work: Uuid,
     fields: &[String],
+    budget: &mut ResourceBudget,
 ) -> Result<Capture, AppError> {
-    let owner = sqlx::query!(
-        "SELECT to_jsonb(w) AS \"work!\", to_jsonb(m) AS \"edition!\" \
+    let mut result = capture_stamps(tx, edition, work).await?;
+    let fields = capturable_fields(tx, edition, fields).await?;
+    let mut states = BTreeMap::new();
+    for field in &fields {
+        budget.reserve(128 + field.len(), 1)?;
+        let state = if field.starts_with("contributors.") {
+            FieldState::Contributors {
+                members: Vec::new(),
+            }
+        } else if matches!(field.as_str(), "genres" | "moods" | "tags") {
+            FieldState::Vocabulary {
+                members: Vec::new(),
+            }
+        } else if field.starts_with("identifiers.") {
+            FieldState::Identifier {
+                value: None,
+                version: None,
+            }
+        } else {
+            FieldState::Scalar {
+                value: Value::Null,
+                version: None,
+            }
+        };
+        states.insert(field.clone(), state);
+    }
+    capture_scalars(tx, edition, work, &fields, &mut states, budget).await?;
+    capture_contributors(tx, work, &fields, &mut states, budget).await?;
+    capture_terms(tx, edition, &fields, &mut states, budget).await?;
+    capture_identifiers(tx, edition, work, &fields, &mut states, budget).await?;
+    result.fields = attach_sources(tx, states, budget).await?;
+    Ok(result)
+}
+
+async fn capture_stamps(
+    tx: &mut Transaction<'_, Postgres>,
+    edition: Uuid,
+    work: Uuid,
+) -> Result<Capture, AppError> {
+    let row = sqlx::query!(
+        "SELECT w.metadata_field_revisions AS work, m.metadata_field_revisions AS edition \
          FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.id = $1 AND w.id = $2",
         edition,
         work,
@@ -122,90 +307,181 @@ pub(super) async fn capture(
     .fetch_one(&mut **tx)
     .await
     .map_err(internal)?;
-    let contributors = sqlx::query!(
-        "SELECT a.id, a.name, wa.role::text AS \"role!\", wa.position, wa.source_version_id \
-         FROM work_authors wa JOIN authors a ON a.id = wa.author_id \
-         WHERE wa.work_id = $1 ORDER BY wa.role, wa.position, a.id",
-        work,
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(internal)?;
-    let terms = sqlx::query!(
-        "SELECT 'genres' AS \"field!\", g.id AS \"id!\", g.name AS \"name!\", j.source_version_id \
-         FROM manifestation_genres j JOIN genres g ON g.id = j.genre_id WHERE j.manifestation_id = $1 \
-         UNION ALL SELECT 'moods', g.id, g.name, j.source_version_id \
-         FROM manifestation_moods j JOIN moods g ON g.id = j.mood_id WHERE j.manifestation_id = $1 \
-         UNION ALL SELECT 'tags', g.id, g.name, j.source_version_id \
-         FROM manifestation_tags j JOIN tags g ON g.id = j.tag_id WHERE j.manifestation_id = $1 \
-         ORDER BY 1, 2", edition,
-    ).fetch_all(&mut **tx).await.map_err(internal)?;
-    let identifiers = sqlx::query!(
-        "SELECT 'identifiers.work.' || scheme AS \"field!\", external_id AS \"value!\", source_version_id \
-         FROM work_external_identifiers WHERE work_id = $1 \
-         UNION ALL SELECT 'identifiers.manifestation.' || scheme, external_id, source_version_id \
-         FROM manifestation_external_identifiers WHERE manifestation_id = $2", work, edition,
-    ).fetch_all(&mut **tx).await.map_err(internal)?;
-    let mut states = BTreeMap::new();
-    for field in fields {
-        let state = if let Some(role) = field.strip_prefix("contributors.") {
-            FieldState::Contributors {
-                members: contributors
-                    .iter()
-                    .filter(|r| r.role == role)
-                    .map(|r| Contributor {
-                        id: r.id,
-                        name: r.name.clone(),
-                        position: r.position,
-                        version: r.source_version_id,
-                    })
-                    .collect(),
-            }
-        } else if matches!(field.as_str(), "genres" | "moods" | "tags") {
-            FieldState::Vocabulary {
-                members: terms
-                    .iter()
-                    .filter(|r| r.field == *field)
-                    .map(|r| Term {
-                        id: r.id,
-                        name: r.name.clone(),
-                        version: r.source_version_id,
-                    })
-                    .collect(),
-            }
-        } else if field.starts_with("identifiers.") {
-            let slot = identifiers.iter().find(|r| r.field == *field);
-            FieldState::Identifier {
-                value: slot.map(|r| r.value.clone()),
-                version: slot.and_then(|r| r.source_version_id),
-            }
-        } else {
-            let owner = if is_work_scoped_field(field) {
-                &owner.work
-            } else {
-                &owner.edition
-            };
-            let value = owner
-                .get(field)
-                .ok_or_else(|| internal(anyhow::anyhow!("unsupported captured metadata field")))?
-                .clone();
-            let version = serde_json::from_value(owner[format!("{field}_version_id")].clone())
-                .map_err(internal)?;
-            FieldState::Scalar { value, version }
-        };
-        states.insert(field.clone(), state);
-    }
-    let fields = attach_sources(tx, states).await?;
     Ok(Capture {
-        fields,
-        work_stamps: owner.work["metadata_field_revisions"].clone(),
-        edition_stamps: owner.edition["metadata_field_revisions"].clone(),
+        fields: BTreeMap::new(),
+        work_stamps: row.work,
+        edition_stamps: row.edition,
     })
+}
+
+async fn capturable_fields(
+    tx: &mut Transaction<'_, Postgres>,
+    edition: Uuid,
+    fields: &[String],
+) -> Result<Vec<String>, AppError> {
+    let row = sqlx::query!(
+        "SELECT CASE WHEN 'isbn_10' = ANY($2) THEN left(translate(isbn_10, '- ', ''), 14) END AS isbn_10, \
+         CASE WHEN 'isbn_13' = ANY($2) THEN left(translate(isbn_13, '- ', ''), 14) END AS isbn_13 \
+         FROM manifestations WHERE id = $1", edition, fields,
+    ).fetch_one(&mut **tx).await.map_err(internal)?;
+    let mut result = Vec::new();
+    for field in fields {
+        let candidate = match field.as_str() {
+            "isbn_10" => row.isbn_10.as_ref(),
+            "isbn_13" => row.isbn_13.as_ref(),
+            _ => None,
+        };
+        if candidate.is_some_and(|value| {
+            super::normalise_isbn_field(field, &Value::String(value.clone())).is_err()
+        }) {
+            continue;
+        }
+        result.push(field.clone());
+    }
+    Ok(result)
+}
+
+async fn capture_scalars(
+    tx: &mut Transaction<'_, Postgres>,
+    edition: Uuid,
+    work: Uuid,
+    fields: &[String],
+    states: &mut BTreeMap<String, FieldState>,
+    budget: &mut ResourceBudget,
+) -> Result<(), AppError> {
+    let (bytes, _) = budget.limits()?;
+    let mut rows = sqlx::query!(
+        "SELECT slot.field AS \"field!\", slot.version, \
+         CASE WHEN slot.raw IS NULL THEN 'null'::jsonb \
+              WHEN octet_length(slot.raw) > $4 THEN NULL \
+              WHEN octet_length(to_jsonb(slot.raw)::text) > $4 THEN NULL \
+              WHEN slot.field = 'pages' THEN to_jsonb(slot.raw::int) ELSE to_jsonb(slot.raw) END AS value \
+         FROM manifestations m JOIN works w ON w.id = m.work_id \
+         CROSS JOIN LATERAL (VALUES \
+           ('title', CASE WHEN 'title' = ANY($3) THEN w.title END, w.title_version_id), \
+           ('subtitle', CASE WHEN 'subtitle' = ANY($3) THEN w.subtitle END, w.subtitle_version_id), \
+           ('description', CASE WHEN 'description' = ANY($3) THEN w.description END, w.description_version_id), \
+           ('language', CASE WHEN 'language' = ANY($3) THEN w.language END, w.language_version_id), \
+           ('publisher', CASE WHEN 'publisher' = ANY($3) THEN m.publisher END, m.publisher_version_id), \
+           ('pub_date', CASE WHEN 'pub_date' = ANY($3) THEN m.pub_date END, m.pub_date_version_id), \
+           ('isbn_10', CASE WHEN 'isbn_10' = ANY($3) THEN m.isbn_10 END, m.isbn_10_version_id), \
+           ('isbn_13', CASE WHEN 'isbn_13' = ANY($3) THEN m.isbn_13 END, m.isbn_13_version_id), \
+           ('pages', CASE WHEN 'pages' = ANY($3) THEN m.pages::text END, m.pages_version_id), \
+           ('content_rating', CASE WHEN 'content_rating' = ANY($3) THEN m.content_rating::text END, m.content_rating_version_id) \
+         ) AS slot(field, raw, version) WHERE m.id = $1 AND w.id = $2 AND slot.field = ANY($3)",
+        edition, work, fields, bytes,
+    ).fetch(&mut **tx);
+    while let Some(row) = rows.try_next().await.map_err(internal)? {
+        let state = FieldState::Scalar {
+            value: row.value.ok_or_else(ResourceBudget::refused)?,
+            version: row.version,
+        };
+        budget.admit(&state, 0)?;
+        states.insert(row.field, state);
+    }
+    Ok(())
+}
+
+async fn capture_contributors(
+    tx: &mut Transaction<'_, Postgres>,
+    work: Uuid,
+    fields: &[String],
+    states: &mut BTreeMap<String, FieldState>,
+    budget: &mut ResourceBudget,
+) -> Result<(), AppError> {
+    let (bytes, limit) = budget.limits()?;
+    let mut rows = sqlx::query!(
+        "SELECT a.id, CASE WHEN octet_length(a.name) > $3 THEN NULL \
+         WHEN octet_length(to_jsonb(a.name)::text) > $3 THEN NULL ELSE a.name END AS name, \
+         'contributors.' || wa.role::text AS \"field!\", wa.position, wa.source_version_id \
+         FROM work_authors wa JOIN authors a ON a.id = wa.author_id WHERE wa.work_id = $1 \
+         AND 'contributors.' || wa.role::text = ANY($2) ORDER BY wa.role, wa.position, a.id LIMIT $4",
+        work, fields, bytes, limit,
+    ).fetch(&mut **tx);
+    while let Some(row) = rows.try_next().await.map_err(internal)? {
+        let member = Contributor {
+            id: row.id,
+            name: row.name.ok_or_else(ResourceBudget::refused)?,
+            position: row.position,
+            version: row.source_version_id,
+        };
+        budget.admit(&member, 1)?;
+        if let Some(FieldState::Contributors { members }) = states.get_mut(&row.field) {
+            members.push(member);
+        }
+    }
+    Ok(())
+}
+
+async fn capture_terms(
+    tx: &mut Transaction<'_, Postgres>,
+    edition: Uuid,
+    fields: &[String],
+    states: &mut BTreeMap<String, FieldState>,
+    budget: &mut ResourceBudget,
+) -> Result<(), AppError> {
+    let (bytes, limit) = budget.limits()?;
+    let mut rows = sqlx::query!(
+        "SELECT terms.field AS \"field!\", terms.id AS \"id!\", terms.source_version_id, \
+         CASE WHEN octet_length(terms.name) > $3 THEN NULL \
+         WHEN octet_length(to_jsonb(terms.name)::text) > $3 THEN NULL ELSE terms.name END AS name FROM ( \
+         SELECT 'genres' AS field, g.id, g.name, j.source_version_id FROM manifestation_genres j \
+         JOIN genres g ON g.id = j.genre_id WHERE j.manifestation_id = $1 AND 'genres' = ANY($2) \
+         UNION ALL SELECT 'moods', g.id, g.name, j.source_version_id FROM manifestation_moods j \
+         JOIN moods g ON g.id = j.mood_id WHERE j.manifestation_id = $1 AND 'moods' = ANY($2) \
+         UNION ALL SELECT 'tags', g.id, g.name, j.source_version_id FROM manifestation_tags j \
+         JOIN tags g ON g.id = j.tag_id WHERE j.manifestation_id = $1 AND 'tags' = ANY($2) \
+         ) terms ORDER BY terms.field, terms.id LIMIT $4", edition, fields, bytes, limit,
+    ).fetch(&mut **tx);
+    while let Some(row) = rows.try_next().await.map_err(internal)? {
+        let member = Term {
+            id: row.id,
+            name: row.name.ok_or_else(ResourceBudget::refused)?,
+            version: row.source_version_id,
+        };
+        budget.admit(&member, 1)?;
+        if let Some(FieldState::Vocabulary { members }) = states.get_mut(&row.field) {
+            members.push(member);
+        }
+    }
+    Ok(())
+}
+
+async fn capture_identifiers(
+    tx: &mut Transaction<'_, Postgres>,
+    edition: Uuid,
+    work: Uuid,
+    fields: &[String],
+    states: &mut BTreeMap<String, FieldState>,
+    budget: &mut ResourceBudget,
+) -> Result<(), AppError> {
+    let (bytes, limit) = budget.limits()?;
+    let mut rows = sqlx::query!(
+        "SELECT slots.field AS \"field!\", slots.source_version_id, \
+         CASE WHEN octet_length(slots.value) > $4 THEN NULL \
+         WHEN octet_length(to_jsonb(slots.value)::text) > $4 THEN NULL ELSE slots.value END AS value FROM ( \
+         SELECT 'identifiers.work.' || scheme AS field, external_id AS value, source_version_id \
+         FROM work_external_identifiers WHERE work_id = $1 AND 'identifiers.work.' || scheme = ANY($3) \
+         UNION ALL SELECT 'identifiers.manifestation.' || scheme, external_id, source_version_id \
+         FROM manifestation_external_identifiers WHERE manifestation_id = $2 \
+         AND 'identifiers.manifestation.' || scheme = ANY($3) ) slots ORDER BY slots.field LIMIT $5",
+        work, edition, fields, bytes, limit,
+    ).fetch(&mut **tx);
+    while let Some(row) = rows.try_next().await.map_err(internal)? {
+        let state = FieldState::Identifier {
+            value: Some(row.value.ok_or_else(ResourceBudget::refused)?),
+            version: row.source_version_id,
+        };
+        budget.admit(&state, 0)?;
+        states.insert(row.field, state);
+    }
+    Ok(())
 }
 
 async fn attach_sources(
     tx: &mut Transaction<'_, Postgres>,
     states: BTreeMap<String, FieldState>,
+    budget: &mut ResourceBudget,
 ) -> Result<BTreeMap<String, CapturedField>, AppError> {
     let pointers: Vec<Uuid> = states
         .values()
@@ -213,44 +489,59 @@ async fn attach_sources(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let sources = source_meanings(tx, &pointers).await?;
-    let fields = states
+    let sources: BTreeMap<Uuid, SourceMeaning> = source_meanings(tx, &pointers, budget)
+        .await?
         .into_iter()
-        .map(|(field, state)| {
-            let ids = state.pointers();
-            let sources = sources
-                .iter()
-                .filter(|s| ids.contains(&s.id))
-                .cloned()
-                .collect();
-            (field, CapturedField { state, sources })
-        })
+        .map(|s| (s.id, s))
         .collect();
+    let mut used = BTreeSet::new();
+    let mut fields = BTreeMap::new();
+    for (field, state) in states {
+        let mut meanings = Vec::new();
+        for id in state.pointers() {
+            if let Some(source) = sources.get(&id) {
+                if !used.insert(id) {
+                    budget.admit(source, 1)?;
+                }
+                meanings.push(source.clone());
+            }
+        }
+        fields.insert(
+            field,
+            CapturedField {
+                state,
+                sources: meanings,
+            },
+        );
+    }
     Ok(fields)
 }
 
 async fn source_meanings(
     tx: &mut Transaction<'_, Postgres>,
     ids: &[Uuid],
+    budget: &mut ResourceBudget,
 ) -> Result<Vec<SourceMeaning>, AppError> {
-    Ok(sqlx::query!(
-        "SELECT id, source, field_name, new_value AS \"value!\", match_type, submitted_by \
-         FROM metadata_versions WHERE id = ANY($1) ORDER BY id",
-        ids,
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(internal)?
-    .into_iter()
-    .map(|r| SourceMeaning {
-        id: r.id,
-        source: r.source,
-        field_name: r.field_name,
-        value: r.value,
-        match_type: r.match_type,
-        submitted_by: r.submitted_by,
-    })
-    .collect())
+    let (bytes, limit) = budget.limits()?;
+    let mut rows = sqlx::query!(
+        "SELECT id, source, field_name, CASE WHEN octet_length(new_value::text) <= $2 THEN new_value END AS value, \
+         match_type, submitted_by FROM metadata_versions WHERE id = ANY($1) ORDER BY id LIMIT $3",
+        ids, bytes, limit,
+    ).fetch(&mut **tx);
+    let mut result = Vec::new();
+    while let Some(row) = rows.try_next().await.map_err(internal)? {
+        let source = SourceMeaning {
+            id: row.id,
+            source: row.source,
+            field_name: row.field_name,
+            value: row.value.ok_or_else(ResourceBudget::refused)?,
+            match_type: row.match_type,
+            submitted_by: row.submitted_by,
+        };
+        budget.admit(&source, 1)?;
+        result.push(source);
+    }
+    Ok(result)
 }
 
 /// One saved field operation, bound to the issuing browser session and fixed expiry.
@@ -280,6 +571,7 @@ pub(super) struct BrowserSave {
     session: String,
     user: Uuid,
     request: Uuid,
+    budget: ResourceBudget,
 }
 
 pub(super) struct PreparedSave {
@@ -287,6 +579,7 @@ pub(super) struct PreparedSave {
     edition: Uuid,
     work: Uuid,
     before: Capture,
+    fields: Vec<String>,
 }
 
 pub(super) fn browser_save(
@@ -299,6 +592,7 @@ pub(super) fn browser_save(
             session: session.id().ok_or(AppError::UndoUnavailable)?.to_string(),
             user: user.user_id,
             request: request.unwrap_or_else(Uuid::new_v4),
+            budget: ResourceBudget::capture(),
         })),
         Err(AppError::Forbidden) => Ok(None),
         Err(error) => Err(error),
@@ -307,9 +601,10 @@ pub(super) fn browser_save(
 
 pub(super) async fn require_save_session(
     tx: &mut Transaction<'_, Postgres>,
-    browser: Option<&BrowserSave>,
+    browser: Option<&mut BrowserSave>,
 ) -> Result<(), AppError> {
     if let Some(browser) = browser {
+        browser.budget.configure(tx).await?;
         require_live_session(tx, &browser.session).await?;
     }
     Ok(())
@@ -322,16 +617,17 @@ pub(super) async fn begin_save(
     work: Uuid,
     fields: &[String],
 ) -> Result<Option<PreparedSave>, AppError> {
-    let Some(browser) = browser else {
+    let Some(mut browser) = browser else {
         return Ok(None);
     };
     require_new_request(tx, &browser.session, browser.request).await?;
-    let before = capture(tx, edition, work, fields).await?;
+    let before = capture(tx, edition, work, fields, &mut browser.budget).await?;
     Ok(Some(PreparedSave {
         browser,
         edition,
         work,
         before,
+        fields: fields.to_vec(),
     }))
 }
 
@@ -339,11 +635,18 @@ pub(super) async fn finish_save(
     tx: &mut Transaction<'_, Postgres>,
     save: Option<PreparedSave>,
 ) -> Result<(Option<Uuid>, Vec<UndoOperation>), AppError> {
-    let Some(save) = save else {
+    let Some(mut save) = save else {
         return Ok((None, Vec::new()));
     };
     let fields: Vec<String> = save.before.fields.keys().cloned().collect();
-    let after = capture(tx, save.edition, save.work, &fields).await?;
+    let after = capture(
+        tx,
+        save.edition,
+        save.work,
+        &fields,
+        &mut save.browser.budget,
+    )
+    .await?;
     let request = save.browser.request;
     let operations = capture_save(tx, save, after).await?;
     Ok((Some(request), operations))
@@ -359,18 +662,19 @@ async fn capture_save(
         edition,
         work,
         before,
+        fields,
     } = save;
     let BrowserSave {
         session,
         user,
         request,
+        budget,
     } = browser;
     let expires =
         sqlx::query_scalar!("SELECT clock_timestamp() + interval '1 hour' AS \"expires!\"")
             .fetch_one(&mut **tx)
             .await
             .map_err(internal)?;
-    let fields: Vec<String> = before.fields.keys().cloned().collect();
     sqlx::query!(
         "UPDATE metadata_undo_operations SET superseded_at = clock_timestamp() \
          WHERE user_id = $1 AND session_id = $2 AND manifestation_id = $3 AND field_name = ANY($4) \
@@ -394,7 +698,7 @@ async fn capture_save(
             .fields
             .get(&field)
             .ok_or_else(|| internal(anyhow::anyhow!("missing saved field memento")))?;
-        if &before == after_field || !valid_isbn_before(&field, &before.state) {
+        if &before == after_field {
             continue;
         }
         let id = Uuid::new_v4();
@@ -410,6 +714,7 @@ async fn capture_save(
             status: OperationStatus::Eligible,
         });
     }
+    budget.check()?;
     sqlx::query!(
         "INSERT INTO metadata_undo_operations \
          (id, user_id, session_id, manifestation_id, work_id, request_id, field_name, before_state, after_state, after_revision, expires_at) \
@@ -419,6 +724,7 @@ async fn capture_save(
         user, session, edition, work, request, expires, &ids, &fields,
         &before_states as &[Value], &after_states as &[Value], &revisions,
     ).execute(&mut **tx).await.map_err(internal)?;
+    budget.check()?;
     Ok(result)
 }
 
@@ -496,70 +802,11 @@ impl Targets {
 async fn load_targets(
     tx: &mut Transaction<'_, Postgres>,
     before: &[(&str, &CapturedField)],
+    budget: &mut ResourceBudget,
 ) -> Result<Targets, AppError> {
-    let sources: Vec<Uuid> = before
-        .iter()
-        .flat_map(|(_, f)| f.state.pointers())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    sqlx::query!(
-        "SELECT id FROM metadata_versions WHERE id = ANY($1) ORDER BY id FOR SHARE",
-        &sources
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(internal)?;
-    let sources = source_meanings(tx, &sources)
-        .await?
-        .into_iter()
-        .map(|s| (s.id, s))
-        .collect();
-    let ids: Vec<Uuid> = before
-        .iter()
-        .flat_map(|(_, f)| match &f.state {
-            FieldState::Contributors { members } => {
-                members.iter().map(|m| m.id).collect::<Vec<_>>()
-            }
-            _ => Vec::new(),
-        })
-        .collect();
-    let authors = sqlx::query!(
-        "SELECT id, name FROM authors WHERE id = ANY($1) ORDER BY id FOR SHARE",
-        &ids
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(internal)?
-    .into_iter()
-    .map(|r| (r.id, r.name))
-    .collect();
-    let ids: Vec<Uuid> = before
-        .iter()
-        .flat_map(|(_, f)| match &f.state {
-            FieldState::Vocabulary { members } => members.iter().map(|m| m.id).collect::<Vec<_>>(),
-            _ => Vec::new(),
-        })
-        .collect();
-    let terms = sqlx::query!(
-        "WITH locked_genres AS MATERIALIZED ( \
-             SELECT id, name FROM genres WHERE id = ANY($1) ORDER BY id FOR SHARE \
-         ), locked_moods AS MATERIALIZED ( \
-             SELECT id, name FROM moods WHERE id = ANY($1) ORDER BY id FOR SHARE \
-         ), locked_tags AS MATERIALIZED ( \
-             SELECT id, name FROM tags WHERE id = ANY($1) ORDER BY id FOR SHARE \
-         ) \
-         SELECT 'genres' AS \"field!\", id AS \"id!\", name AS \"name!\" FROM locked_genres \
-         UNION ALL SELECT 'moods', id, name FROM locked_moods \
-         UNION ALL SELECT 'tags', id, name FROM locked_tags",
-        &ids
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(internal)?
-    .into_iter()
-    .map(|r| ((r.field, r.id), r.name))
-    .collect();
+    let sources = target_sources(tx, before, budget).await?;
+    let authors = target_authors(tx, before, budget).await?;
+    let terms = target_terms(tx, before, budget).await?;
     let schemes: Vec<String> = before
         .iter()
         .filter(|(_, f)| matches!(f.state, FieldState::Identifier { .. }))
@@ -571,15 +818,214 @@ async fn load_targets(
     )
     .fetch_all(&mut **tx)
     .await
-    .map_err(internal)?
-    .into_iter()
-    .collect();
+    .map_err(internal)?;
+    for scheme in &schemes {
+        budget.admit(scheme, 1)?;
+    }
     Ok(Targets {
         sources,
         authors,
         terms,
-        schemes,
+        schemes: schemes.into_iter().collect(),
     })
+}
+
+async fn target_sources(
+    tx: &mut Transaction<'_, Postgres>,
+    before: &[(&str, &CapturedField)],
+    budget: &mut ResourceBudget,
+) -> Result<BTreeMap<Uuid, SourceMeaning>, AppError> {
+    let expected: Vec<&SourceMeaning> = before.iter().flat_map(|(_, f)| f.sources.iter()).collect();
+    let expected = serde_json::to_value(expected).map_err(internal)?;
+    let (_, limit) = budget.limits()?;
+    let mut rows = sqlx::query!(
+        "SELECT v.id, v.source, v.field_name, v.new_value AS \"value!\", v.match_type, v.submitted_by \
+         FROM metadata_versions v JOIN jsonb_to_recordset($1::jsonb) \
+         AS expected(id uuid, source text, field_name text, value jsonb, match_type text, submitted_by uuid) \
+         ON v.id = expected.id AND v.source = expected.source AND v.field_name = expected.field_name \
+         AND v.new_value = coalesce(expected.value, 'null'::jsonb) AND v.match_type = expected.match_type \
+         AND v.submitted_by IS NOT DISTINCT FROM expected.submitted_by \
+         ORDER BY v.id LIMIT $2 FOR SHARE OF v", expected, limit,
+    ).fetch(&mut **tx);
+    let mut result = BTreeMap::new();
+    while let Some(row) = rows.try_next().await.map_err(internal)? {
+        let source = SourceMeaning {
+            id: row.id,
+            source: row.source,
+            field_name: row.field_name,
+            value: row.value,
+            match_type: row.match_type,
+            submitted_by: row.submitted_by,
+        };
+        budget.admit(&source, 1)?;
+        result.insert(source.id, source);
+    }
+    Ok(result)
+}
+
+async fn target_authors(
+    tx: &mut Transaction<'_, Postgres>,
+    before: &[(&str, &CapturedField)],
+    budget: &mut ResourceBudget,
+) -> Result<BTreeMap<Uuid, String>, AppError> {
+    let mut ids = Vec::new();
+    let mut names = Vec::new();
+    for (_, field) in before {
+        if let FieldState::Contributors { members } = &field.state {
+            ids.extend(members.iter().map(|m| m.id));
+            names.extend(members.iter().map(|m| m.name.clone()));
+        }
+    }
+    let (_, limit) = budget.limits()?;
+    let rows = sqlx::query!(
+        "SELECT a.id, a.name FROM authors a JOIN UNNEST($1::uuid[], $2::text[]) expected(id, name) \
+         ON a.id = expected.id AND a.name = expected.name ORDER BY a.id LIMIT $3 FOR SHARE OF a",
+        &ids,
+        &names,
+        limit,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(internal)?;
+    let mut result = BTreeMap::new();
+    for row in rows {
+        budget.admit(&(row.id, &row.name), 1)?;
+        result.insert(row.id, row.name);
+    }
+    Ok(result)
+}
+
+async fn target_terms(
+    tx: &mut Transaction<'_, Postgres>,
+    before: &[(&str, &CapturedField)],
+    budget: &mut ResourceBudget,
+) -> Result<BTreeMap<(String, Uuid), String>, AppError> {
+    let mut fields = Vec::new();
+    let mut ids = Vec::new();
+    let mut names = Vec::new();
+    for (field, value) in before {
+        if let FieldState::Vocabulary { members } = &value.state {
+            fields.extend(members.iter().map(|_| (*field).to_owned()));
+            ids.extend(members.iter().map(|m| m.id));
+            names.extend(members.iter().map(|m| m.name.clone()));
+        }
+    }
+    let (_, limit) = budget.limits()?;
+    let rows = sqlx::query!(
+        "WITH expected AS MATERIALIZED (SELECT * FROM UNNEST($1::text[], $2::uuid[], $3::text[]) t(field, id, name)), \
+         locked_genres AS MATERIALIZED (SELECT g.id, g.name FROM genres g JOIN expected e \
+             ON e.field = 'genres' AND g.id = e.id AND g.name = e.name ORDER BY g.id FOR SHARE OF g), \
+         locked_moods AS MATERIALIZED (SELECT g.id, g.name FROM moods g JOIN expected e \
+             ON e.field = 'moods' AND g.id = e.id AND g.name = e.name ORDER BY g.id FOR SHARE OF g), \
+         locked_tags AS MATERIALIZED (SELECT g.id, g.name FROM tags g JOIN expected e \
+             ON e.field = 'tags' AND g.id = e.id AND g.name = e.name ORDER BY g.id FOR SHARE OF g) \
+         SELECT 'genres' AS \"field!\", id AS \"id!\", name AS \"name!\" FROM locked_genres \
+         UNION ALL SELECT 'moods', id, name FROM locked_moods \
+         UNION ALL SELECT 'tags', id, name FROM locked_tags LIMIT $4", &fields, &ids, &names, limit,
+    ).fetch_all(&mut **tx).await.map_err(internal)?;
+    let mut result = BTreeMap::new();
+    for row in rows {
+        budget.admit(&(&row.field, row.id, &row.name), 1)?;
+        result.insert((row.field, row.id), row.name);
+    }
+    Ok(result)
+}
+
+fn decode_memento(value: Value, budget: &mut ResourceBudget) -> Result<CapturedField, AppError> {
+    let captured: CapturedField = serde_json::from_value(value).map_err(internal)?;
+    let members = match &captured.state {
+        FieldState::Contributors { members } => members.len(),
+        FieldState::Vocabulary { members } => members.len(),
+        FieldState::Scalar { .. } | FieldState::Identifier { .. } => 0,
+    };
+    budget.admit(&captured, 1 + members + captured.sources.len())?;
+    Ok(captured)
+}
+
+async fn require_bounded_receipts(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    session: &str,
+    edition: Uuid,
+    request: Option<Uuid>,
+    operation: Option<Uuid>,
+) -> Result<(), AppError> {
+    let bytes = sqlx::query_scalar!(
+        "SELECT coalesce(sum(octet_length(before_state::text)::bigint + octet_length(after_state::text)),0)::bigint AS \"bytes!\" \
+         FROM metadata_undo_operations WHERE user_id = $1 AND session_id = $2 AND manifestation_id = $3 \
+         AND (($4::uuid IS NOT NULL AND request_id = $4) OR ($5::uuid IS NOT NULL AND id = $5)) \
+         AND expires_at > clock_timestamp()", user, session, edition, request, operation,
+    ).fetch_one(&mut **tx).await.map_err(internal)?;
+    // PostgreSQL adds whitespace to the compact JSON encoding charged during capture.
+    if bytes > i64::try_from(2 * MAX_CAPTURE_BYTES).map_err(internal)? {
+        return Err(ResourceBudget::refused());
+    }
+    Ok(())
+}
+
+struct ResolutionChecks {
+    before: BTreeMap<String, CapturedField>,
+    targets: Targets,
+    locked: BTreeSet<String>,
+}
+
+impl ResolutionChecks {
+    fn availability(
+        &self,
+        field: &str,
+        current: &Capture,
+        after: Value,
+        budget: &mut ResourceBudget,
+    ) -> Result<OperationStatus, AppError> {
+        let after = decode_memento(after, budget)?;
+        Ok(
+            if current.fields.get(field) != Some(&after)
+                || self
+                    .before
+                    .get(field)
+                    .is_none_or(|before| !self.targets.contains(field, before))
+            {
+                OperationStatus::Unavailable
+            } else if self.locked.contains(field) {
+                OperationStatus::Locked
+            } else {
+                OperationStatus::Eligible
+            },
+        )
+    }
+
+    async fn load(
+        tx: &mut Transaction<'_, Postgres>,
+        edition: Uuid,
+        user: Uuid,
+        fields: &[String],
+        states: impl Iterator<Item = (String, Value)>,
+        budget: &mut ResourceBudget,
+    ) -> Result<Self, AppError> {
+        let before: BTreeMap<String, CapturedField> = states
+            .map(|(field, value)| decode_memento(value, budget).map(|state| (field, state)))
+            .collect::<Result<_, _>>()?;
+        let targets = load_targets(
+            tx,
+            &before
+                .iter()
+                .filter(|(field, _)| fields.contains(field))
+                .map(|(field, before)| (field.as_str(), before))
+                .collect::<Vec<_>>(),
+            budget,
+        )
+        .await?;
+        let locked = match require_unlocked_fields(tx, edition, user, fields).await {
+            Ok(()) => BTreeSet::new(),
+            Err(AppError::FieldLocked(fields)) => fields.into_iter().collect(),
+            Err(error) => return Err(error),
+        };
+        Ok(Self {
+            before,
+            targets,
+            locked,
+        })
+    }
 }
 
 fn restoration_error(error: sqlx::Error) -> AppError {
@@ -764,8 +1210,9 @@ async fn restore(
     work: Uuid,
     field: &str,
     before: &CapturedField,
+    budget: &mut ResourceBudget,
 ) -> Result<(), AppError> {
-    if !load_targets(tx, &[(field, before)])
+    if !load_targets(tx, &[(field, before)], budget)
         .await?
         .contains(field, before)
     {
@@ -905,6 +1352,22 @@ enum OperationOutcome {
     Unknown,
 }
 
+impl OperationOutcome {
+    fn from_operations(operations: &[UndoOperation], single_operation: bool) -> Self {
+        if operations.is_empty() {
+            Self::Unknown
+        } else if single_operation
+            && operations
+                .iter()
+                .any(|op| matches!(op.status, OperationStatus::Consumed))
+        {
+            Self::Restored
+        } else {
+            Self::Saved
+        }
+    }
+}
+
 fn operation_response(
     values: BookMetadata,
     etag: HeaderValue,
@@ -949,7 +1412,7 @@ fn session_id(user: &CurrentUser, session: &Session) -> Result<String, AppError>
         (status = 404, description = "Edition missing or hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "Field locked or recorded after-state conflicts; operation not consumed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 412, description = "Aggregate metadata validator is stale", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("ETag" = String, description = "Current metadata validator"))),
-        (status = 422, description = "Operation unavailable", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Operation unavailable or Undo resource limit exceeded", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 428, description = "If-Match or CSRF token missing", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
@@ -965,9 +1428,11 @@ pub(super) async fn undo_metadata(
     user.require_not_child()?;
     let session = session_id(&user, &session)?;
     let supplied = parse_if_match(&headers)?.ok_or(AppError::IfMatchRequired)?;
+    let mut budget = ResourceBudget::restoration();
     let mut tx = db::acquire_with_rls_read_committed(&state.pool, user.user_id)
         .await
         .map_err(internal)?;
+    budget.configure(&mut tx).await?;
     require_live_session(&mut tx, &session).await?;
     let work = lock_parents(&mut tx, edition).await?;
     let current = load_book_metadata(&mut tx, edition)
@@ -977,6 +1442,15 @@ pub(super) async fn undo_metadata(
     if !supplied.matches(&tag) {
         return Ok(if_match_mismatch(&tag));
     }
+    require_bounded_receipts(
+        &mut tx,
+        user.user_id,
+        &session,
+        edition,
+        None,
+        Some(request.operation_id),
+    )
+    .await?;
     let op = sqlx::query!(
         "SELECT field_name, before_state, after_state, after_revision, expires_at \
          FROM metadata_undo_operations WHERE id = $1 AND user_id = $2 AND session_id = $3 \
@@ -993,18 +1467,20 @@ pub(super) async fn undo_metadata(
     .map_err(internal)?
     .ok_or(AppError::UndoUnavailable)?;
     let fields = vec![op.field_name.clone()];
-    let now = capture(&mut tx, edition, work, &fields).await?;
-    if now.revision(&op.field_name) != op.after_revision {
+    let stamps = capture_stamps(&mut tx, edition, work).await?;
+    if stamps.revision(&op.field_name) != op.after_revision {
         return Err(AppError::UndoUnavailable);
     }
+    let now = capture(&mut tx, edition, work, &fields, &mut budget).await?;
     require_unlocked_fields(&mut tx, edition, user.user_id, &fields).await?;
-    let before: CapturedField = serde_json::from_value(op.before_state).map_err(internal)?;
-    let after: CapturedField = serde_json::from_value(op.after_state).map_err(internal)?;
+    let before = decode_memento(op.before_state, &mut budget)?;
+    let after = decode_memento(op.after_state, &mut budget)?;
     if now.fields.get(&op.field_name) != Some(&after) {
         tracing::warn!("metadata Undo refused a recorded-state mismatch");
         return Err(AppError::UndoConflict);
     }
-    restore(&mut tx, edition, work, &op.field_name, &before).await?;
+    restore(&mut tx, edition, work, &op.field_name, &before, &mut budget).await?;
+    budget.check()?;
     let consumed = sqlx::query!(
         "UPDATE metadata_undo_operations SET consumed_at = clock_timestamp() \
          WHERE id = $1 AND expires_at > clock_timestamp() RETURNING id",
@@ -1020,6 +1496,7 @@ pub(super) async fn undo_metadata(
         .await?
         .ok_or(AppError::NotFound)?;
     let tag = confirmed.revision.etag()?;
+    budget.check()?;
     tx.commit().await.map_err(internal)?;
     Ok(operation_response(
         confirmed.values,
@@ -1047,7 +1524,7 @@ pub(super) async fn undo_metadata(
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Browser session and adult write scope required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Edition missing or hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Select exactly one request or operation identifier", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Select exactly one request or operation identifier; operation evidence must fit the resource limit", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 428, description = "CSRF token missing", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
@@ -1069,8 +1546,19 @@ pub(super) async fn resolve_metadata(
     let mut tx = db::acquire_with_rls_read_committed(&state.pool, user.user_id)
         .await
         .map_err(internal)?;
+    let mut budget = ResourceBudget::restoration();
+    budget.configure(&mut tx).await?;
     require_live_session(&mut tx, &session).await?;
     let work = lock_parents(&mut tx, edition).await?;
+    require_bounded_receipts(
+        &mut tx,
+        user.user_id,
+        &session,
+        edition,
+        request.request_id,
+        request.operation_id,
+    )
+    .await?;
     let rows = sqlx::query!(
         "SELECT id, field_name, after_revision, before_state, after_state, expires_at, consumed_at, superseded_at, work_id \
          FROM metadata_undo_operations WHERE user_id = $1 AND session_id = $2 AND manifestation_id = $3 \
@@ -1078,42 +1566,38 @@ pub(super) async fn resolve_metadata(
            AND expires_at > clock_timestamp() ORDER BY field_name LIMIT 144 FOR SHARE",
         user.user_id, session, edition, request.request_id, request.operation_id,
     ).fetch_all(&mut *tx).await.map_err(internal)?;
-    let fields: Vec<String> = rows.iter().map(|r| r.field_name.clone()).collect();
-    let now = capture(&mut tx, edition, work, &fields).await?;
-    let before: BTreeMap<String, CapturedField> = rows
+    let stamps = capture_stamps(&mut tx, edition, work).await?;
+    let fields: Vec<String> = rows
         .iter()
-        .map(|row| {
-            serde_json::from_value(row.before_state.clone())
-                .map(|state| (row.field_name.clone(), state))
-                .map_err(internal)
+        .filter(|r| {
+            r.consumed_at.is_none()
+                && r.superseded_at.is_none()
+                && r.work_id == work
+                && stamps.revision(&r.field_name) == r.after_revision
         })
-        .collect::<Result<_, _>>()?;
-    let targets = load_targets(
+        .map(|r| r.field_name.clone())
+        .collect();
+    let now = capture(&mut tx, edition, work, &fields, &mut budget).await?;
+    let checks = ResolutionChecks::load(
         &mut tx,
-        &before
-            .iter()
-            .map(|(field, before)| (field.as_str(), before))
-            .collect::<Vec<_>>(),
+        edition,
+        user.user_id,
+        &fields,
+        rows.iter()
+            .map(|row| (row.field_name.clone(), row.before_state.clone())),
+        &mut budget,
     )
     .await?;
-    let locked: BTreeSet<String> =
-        match require_unlocked_fields(&mut tx, edition, user.user_id, &fields).await {
-            Ok(()) => BTreeSet::new(),
-            Err(AppError::FieldLocked(fields)) => fields.into_iter().collect(),
-            Err(error) => return Err(error),
-        };
     let decision_time = sqlx::query_scalar!("SELECT clock_timestamp() AS \"now!\"")
         .fetch_one(&mut *tx)
         .await
         .map_err(internal)?;
     let mut operations = Vec::new();
-    let mut restored = false;
     for row in rows
         .into_iter()
         .filter(|row| row.expires_at > decision_time)
     {
         let status = if row.consumed_at.is_some() {
-            restored = true;
             OperationStatus::Consumed
         } else if row.superseded_at.is_some()
             || row.work_id != work
@@ -1121,18 +1605,7 @@ pub(super) async fn resolve_metadata(
         {
             OperationStatus::Unavailable
         } else {
-            let after: CapturedField = serde_json::from_value(row.after_state).map_err(internal)?;
-            if now.fields.get(&row.field_name) != Some(&after)
-                || before
-                    .get(&row.field_name)
-                    .is_none_or(|before| !targets.contains(&row.field_name, before))
-            {
-                OperationStatus::Unavailable
-            } else if locked.contains(&row.field_name) {
-                OperationStatus::Locked
-            } else {
-                OperationStatus::Eligible
-            }
+            checks.availability(&row.field_name, &now, row.after_state, &mut budget)?
         };
         operations.push(UndoOperation {
             operation_id: row.id,
@@ -1141,17 +1614,12 @@ pub(super) async fn resolve_metadata(
             status,
         });
     }
-    let outcome = if operations.is_empty() {
-        OperationOutcome::Unknown
-    } else if restored && request.operation_id.is_some() {
-        OperationOutcome::Restored
-    } else {
-        OperationOutcome::Saved
-    };
+    let outcome = OperationOutcome::from_operations(&operations, request.operation_id.is_some());
     let current = load_book_metadata(&mut tx, edition)
         .await?
         .ok_or(AppError::NotFound)?;
     let tag = current.revision.etag()?;
+    budget.check()?;
     tx.commit().await.map_err(internal)?;
     Ok(operation_response(current.values, tag, outcome, operations))
 }

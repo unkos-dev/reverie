@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH expected AS MATERIALIZED (SELECT * FROM UNNEST($1::text[], $2::uuid[], $3::text[]) t(field, id, name)), locked_genres AS MATERIALIZED (SELECT g.id, g.name FROM genres g JOIN expected e ON e.field = 'genres' AND g.id = e.id AND g.name = e.name ORDER BY g.id FOR SHARE OF g), locked_moods AS MATERIALIZED (SELECT g.id, g.name FROM moods g JOIN expected e ON e.field = 'moods' AND g.id = e.id AND g.name = e.name ORDER BY g.id FOR SHARE OF g), locked_tags AS MATERIALIZED (SELECT g.id, g.name FROM tags g JOIN expected e ON e.field = 'tags' AND g.id = e.id AND g.name = e.name ORDER BY g.id FOR SHARE OF g) SELECT 'genres' AS \"field!\", id AS \"id!\", name AS \"name!\" FROM locked_genres UNION ALL SELECT 'moods', id, name FROM locked_moods UNION ALL SELECT 'tags', id, name FROM locked_tags LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "UuidArray",
+        "TextArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "7590411c453bf480782f7c8334e803a6d224a05a6307f754c5686f6756145837"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name FROM authors WHERE id = ANY($1) ORDER BY id FOR SHARE",
+  "query": "SELECT a.id, a.name FROM authors a JOIN UNNEST($1::uuid[], $2::text[]) expected(id, name) ON a.id = expected.id AND a.name = expected.name ORDER BY a.id LIMIT $3 FOR SHARE OF a",
   "describe": {
     "columns": [
       {
@@ -28,7 +28,9 @@
     ],
     "parameters": {
       "Left": [
-        "UuidArray"
+        "UuidArray",
+        "TextArray",
+        "Int8"
       ]
     },
     "nullable": [
@@ -36,5 +38,5 @@
       false
     ]
   },
-  "hash": "c171d6104d0259c65874e4b2fa07167faa84a465ce5e61ea7958cd83299da279"
+  "hash": "c4e27effe511a53561221b4823505d5f79553a287299bb3056552a1630fbf401"
 }
