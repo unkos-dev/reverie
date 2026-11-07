@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.metadata_field_revisions AS work, m.metadata_field_revisions AS edition FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.id = $1 AND w.id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "work",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "metadata_field_revisions"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "edition",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "metadata_field_revisions"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "665ad1d5dfb425dea0fdd28edfbb82910d10263e796149b1eeb84da1af2d425f"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH inserted AS (INSERT INTO authors(name, sort_name) SELECT 'Undo ' || $3 || g || repeat('x',480), 'undo-' || $3 || g FROM generate_series(1,$2::int) g RETURNING id) INSERT INTO work_authors(work_id,author_id,role,position) SELECT $1,id,'author',(row_number() OVER (ORDER BY id)-1)::int FROM inserted",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "362b2142429e96395107862bdc50dae11244b6d282d73c5f4f886763795a278a"
+}

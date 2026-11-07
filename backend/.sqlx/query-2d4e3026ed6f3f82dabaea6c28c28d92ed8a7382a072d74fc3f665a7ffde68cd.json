@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT terms.field AS \"field!\", terms.id AS \"id!\", terms.source_version_id, CASE WHEN octet_length(terms.name) > $3 THEN NULL WHEN octet_length(to_jsonb(terms.name)::text) > $3 THEN NULL ELSE terms.name END AS name FROM ( SELECT 'genres' AS field, g.id, g.name, j.source_version_id FROM manifestation_genres j JOIN genres g ON g.id = j.genre_id WHERE j.manifestation_id = $1 AND 'genres' = ANY($2) UNION ALL SELECT 'moods', g.id, g.name, j.source_version_id FROM manifestation_moods j JOIN moods g ON g.id = j.mood_id WHERE j.manifestation_id = $1 AND 'moods' = ANY($2) UNION ALL SELECT 'tags', g.id, g.name, j.source_version_id FROM manifestation_tags j JOIN tags g ON g.id = j.tag_id WHERE j.manifestation_id = $1 AND 'tags' = ANY($2) ) terms ORDER BY terms.field, terms.id LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_version_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2d4e3026ed6f3f82dabaea6c28c28d92ed8a7382a072d74fc3f665a7ffde68cd"
+}

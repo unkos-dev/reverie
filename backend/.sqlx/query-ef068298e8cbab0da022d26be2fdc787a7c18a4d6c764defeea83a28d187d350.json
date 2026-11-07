@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE metadata_undo_operations SET expires_at = clock_timestamp() - interval '1 second' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ef068298e8cbab0da022d26be2fdc787a7c18a4d6c764defeea83a28d187d350"
+}

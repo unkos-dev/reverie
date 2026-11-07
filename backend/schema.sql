@@ -396,6 +396,23 @@ $$;
 ALTER FUNCTION public.advance_metadata_revisions(affected jsonb) OWNER TO reverie_migrator;
 
 --
+-- Name: assign_metadata_observation_key(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
+--
+
+CREATE FUNCTION public.assign_metadata_observation_key() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    NEW.observation_key := public.metadata_observation_key(NEW.new_value, NEW.match_type, NEW.submitted_by);
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.assign_metadata_observation_key() OWNER TO reverie_migrator;
+
+--
 -- Name: immutable_unaccent(text); Type: FUNCTION; Schema: public; Owner: reverie_migrator
 --
 
@@ -422,6 +439,20 @@ CREATE FUNCTION public.immutable_unaccent_like(text) RETURNS text
 ALTER FUNCTION public.immutable_unaccent_like(text) OWNER TO reverie_migrator;
 
 --
+-- Name: metadata_observation_key(jsonb, text, uuid); Type: FUNCTION; Schema: public; Owner: reverie_migrator
+--
+
+CREATE FUNCTION public.metadata_observation_key(value jsonb, method text, submitter uuid) RETURNS bytea
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'pg_catalog'
+    AS $$
+    SELECT sha256(convert_to(jsonb_build_array(value, method, submitter)::text, 'UTF8'));
+$$;
+
+
+ALTER FUNCTION public.metadata_observation_key(value jsonb, method text, submitter uuid) OWNER TO reverie_migrator;
+
+--
 -- Name: metadata_provenance_revision(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
 --
 
@@ -435,9 +466,9 @@ DECLARE
 BEGIN
     SELECT array_agg(o.id ORDER BY o.id) INTO changed_ids
     FROM old_rows o JOIN new_rows n USING (id)
-    WHERE (o.manifestation_id, o.source, o.field_name, o.new_value, o.confidence_score, o.match_type, o.resolved_by)
+    WHERE (o.manifestation_id, o.source, o.field_name, o.new_value, o.confidence_score, o.match_type, o.submitted_by)
         IS DISTINCT FROM
-          (n.manifestation_id, n.source, n.field_name, n.new_value, n.confidence_score, n.match_type, n.resolved_by);
+          (n.manifestation_id, n.source, n.field_name, n.new_value, n.confidence_score, n.match_type, n.submitted_by);
     IF changed_ids IS NULL THEN
         RETURN NULL;
     END IF;
@@ -652,6 +683,26 @@ $$;
 
 
 ALTER FUNCTION public.notify_settings_changed() OWNER TO reverie_migrator;
+
+--
+-- Name: reclaim_metadata_undo(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
+--
+
+CREATE FUNCTION public.reclaim_metadata_undo() RETURNS bigint
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+    WITH expired AS (
+        SELECT id FROM public.metadata_undo_operations
+        WHERE expires_at <= clock_timestamp() ORDER BY expires_at, id LIMIT 1000
+    ), removed AS (
+        DELETE FROM public.metadata_undo_operations
+        WHERE expires_at <= clock_timestamp() AND id IN (SELECT id FROM expired) RETURNING id
+    ) SELECT count(*) FROM removed;
+$$;
+
+
+ALTER FUNCTION public.reclaim_metadata_undo() OWNER TO reverie_migrator;
 
 --
 -- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
@@ -1326,6 +1377,33 @@ CREATE TABLE public.metadata_sources (
 ALTER TABLE public.metadata_sources OWNER TO reverie_migrator;
 
 --
+-- Name: metadata_undo_operations; Type: TABLE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TABLE public.metadata_undo_operations (
+    id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    session_id text NOT NULL,
+    manifestation_id uuid NOT NULL,
+    work_id uuid NOT NULL,
+    request_id uuid NOT NULL,
+    field_name text NOT NULL,
+    before_state jsonb NOT NULL,
+    after_state jsonb NOT NULL,
+    after_revision bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    expires_at timestamp with time zone DEFAULT (clock_timestamp() + '01:00:00'::interval) NOT NULL,
+    consumed_at timestamp with time zone,
+    superseded_at timestamp with time zone,
+    CONSTRAINT metadata_undo_operations_after_revision_check CHECK ((after_revision >= 0))
+);
+
+ALTER TABLE ONLY public.metadata_undo_operations FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.metadata_undo_operations OWNER TO reverie_migrator;
+
+--
 -- Name: metadata_versions; Type: TABLE; Schema: public; Owner: reverie_migrator
 --
 
@@ -1346,6 +1424,8 @@ CREATE TABLE public.metadata_versions (
     first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     observation_count integer DEFAULT 1 NOT NULL,
+    submitted_by uuid,
+    observation_key bytea NOT NULL,
     CONSTRAINT metadata_versions_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT metadata_versions_first_seen_at_ts_decode_range CHECK (((first_seen_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (first_seen_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT metadata_versions_last_seen_at_ts_decode_range CHECK (((last_seen_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (last_seen_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
@@ -2136,11 +2216,27 @@ ALTER TABLE ONLY public.metadata_sources
 
 
 --
--- Name: metadata_versions metadata_versions_mfs_hash_unique; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+-- Name: metadata_undo_operations metadata_undo_operations_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.metadata_undo_operations
+    ADD CONSTRAINT metadata_undo_operations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: metadata_undo_operations metadata_undo_operations_user_id_session_id_manifestation_i_key; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.metadata_undo_operations
+    ADD CONSTRAINT metadata_undo_operations_user_id_session_id_manifestation_i_key UNIQUE (user_id, session_id, manifestation_id, request_id, field_name);
+
+
+--
+-- Name: metadata_versions metadata_versions_observation_unique; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
 ALTER TABLE ONLY public.metadata_versions
-    ADD CONSTRAINT metadata_versions_mfs_hash_unique UNIQUE (manifestation_id, source, field_name, value_hash);
+    ADD CONSTRAINT metadata_versions_observation_unique UNIQUE (manifestation_id, source, field_name, observation_key);
 
 
 --
@@ -3025,6 +3121,20 @@ CREATE INDEX idx_writeback_jobs_queue ON public.writeback_jobs USING btree (last
 
 
 --
+-- Name: metadata_undo_expiry; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX metadata_undo_expiry ON public.metadata_undo_operations USING btree (expires_at);
+
+
+--
+-- Name: metadata_undo_latest; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE UNIQUE INDEX metadata_undo_latest ON public.metadata_undo_operations USING btree (user_id, session_id, manifestation_id, field_name) WHERE ((consumed_at IS NULL) AND (superseded_at IS NULL));
+
+
+--
 -- Name: session_expiry_date_idx; Type: INDEX; Schema: tower_sessions; Owner: reverie_migrator
 --
 
@@ -3141,6 +3251,13 @@ CREATE TRIGGER manifestation_tags_metadata_update AFTER UPDATE ON public.manifes
 --
 
 CREATE TRIGGER manifestations_metadata_scalar BEFORE INSERT OR UPDATE ON public.manifestations FOR EACH ROW EXECUTE FUNCTION public.metadata_scalar_revision('{"publisher":["publisher","publisher_version_id"]}', '{"pub_date":["pub_date","pub_date_version_id"]}', '{"isbn_10":["isbn_10","isbn_10_version_id"]}', '{"isbn_13":["isbn_13","isbn_13_version_id"]}', '{"pages":["pages","pages_version_id"]}', '{"content_rating":["content_rating","content_rating_version_id"]}', '{"cover":["cover_path","cover_sha256","cover_size_bytes","cover_source","cover_version_id"]}', '{"work":["work_id"]}');
+
+
+--
+-- Name: metadata_versions metadata_observation_identity; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER metadata_observation_identity BEFORE INSERT ON public.metadata_versions FOR EACH ROW EXECUTE FUNCTION public.assign_metadata_observation_key();
 
 
 --
@@ -3612,6 +3729,38 @@ ALTER TABLE ONLY public.manifestations
 
 
 --
+-- Name: metadata_undo_operations metadata_undo_operations_manifestation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.metadata_undo_operations
+    ADD CONSTRAINT metadata_undo_operations_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: metadata_undo_operations metadata_undo_operations_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.metadata_undo_operations
+    ADD CONSTRAINT metadata_undo_operations_session_id_fkey FOREIGN KEY (session_id) REFERENCES tower_sessions.session(id) ON DELETE CASCADE;
+
+
+--
+-- Name: metadata_undo_operations metadata_undo_operations_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.metadata_undo_operations
+    ADD CONSTRAINT metadata_undo_operations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: metadata_undo_operations metadata_undo_operations_work_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.metadata_undo_operations
+    ADD CONSTRAINT metadata_undo_operations_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE CASCADE;
+
+
+--
 -- Name: metadata_versions metadata_versions_manifestation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -3633,6 +3782,14 @@ ALTER TABLE ONLY public.metadata_versions
 
 ALTER TABLE ONLY public.metadata_versions
     ADD CONSTRAINT metadata_versions_source_fk FOREIGN KEY (source) REFERENCES public.metadata_sources(id);
+
+
+--
+-- Name: metadata_versions metadata_versions_submitted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.metadata_versions
+    ADD CONSTRAINT metadata_versions_submitted_by_fkey FOREIGN KEY (submitted_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -4205,6 +4362,26 @@ CREATE POLICY manifestations_update_system ON public.manifestations FOR UPDATE T
 
 
 --
+-- Name: metadata_undo_operations metadata_undo_expired_maintenance; Type: POLICY; Schema: public; Owner: reverie_migrator
+--
+
+CREATE POLICY metadata_undo_expired_maintenance ON public.metadata_undo_operations TO reverie_migrator USING ((expires_at <= clock_timestamp()));
+
+
+--
+-- Name: metadata_undo_operations; Type: ROW SECURITY; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE public.metadata_undo_operations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: metadata_undo_operations metadata_undo_owner; Type: POLICY; Schema: public; Owner: reverie_migrator
+--
+
+CREATE POLICY metadata_undo_owner ON public.metadata_undo_operations USING ((user_id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid)) WITH CHECK ((user_id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid));
+
+
+--
 -- Name: reading_sessions; Type: ROW SECURITY; Schema: public; Owner: reverie_migrator
 --
 
@@ -4330,6 +4507,13 @@ REVOKE ALL ON FUNCTION public.advance_metadata_revisions(affected jsonb) FROM PU
 
 
 --
+-- Name: FUNCTION assign_metadata_observation_key(); Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+REVOKE ALL ON FUNCTION public.assign_metadata_observation_key() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION metadata_provenance_revision(); Type: ACL; Schema: public; Owner: reverie_migrator
 --
 
@@ -4355,6 +4539,14 @@ REVOKE ALL ON FUNCTION public.metadata_relation_revision() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION public.metadata_scalar_revision() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reclaim_metadata_undo(); Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+REVOKE ALL ON FUNCTION public.reclaim_metadata_undo() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.reclaim_metadata_undo() TO reverie_app;
 
 
 --
@@ -4902,12 +5094,67 @@ GRANT SELECT ON TABLE public.metadata_sources TO reverie_readonly;
 
 
 --
+-- Name: TABLE metadata_undo_operations; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.metadata_undo_operations TO reverie_app;
+
+
+--
 -- Name: TABLE metadata_versions; Type: ACL; Schema: public; Owner: reverie_migrator
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.metadata_versions TO reverie_app;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.metadata_versions TO reverie_ingestion;
+GRANT SELECT,INSERT,DELETE ON TABLE public.metadata_versions TO reverie_app;
+GRANT SELECT,INSERT,DELETE ON TABLE public.metadata_versions TO reverie_ingestion;
 GRANT SELECT ON TABLE public.metadata_versions TO reverie_readonly;
+
+
+--
+-- Name: COLUMN metadata_versions.status; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT UPDATE(status) ON TABLE public.metadata_versions TO reverie_app;
+GRANT UPDATE(status) ON TABLE public.metadata_versions TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN metadata_versions.confidence_score; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT UPDATE(confidence_score) ON TABLE public.metadata_versions TO reverie_app;
+GRANT UPDATE(confidence_score) ON TABLE public.metadata_versions TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN metadata_versions.resolved_at; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT UPDATE(resolved_at) ON TABLE public.metadata_versions TO reverie_app;
+GRANT UPDATE(resolved_at) ON TABLE public.metadata_versions TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN metadata_versions.resolved_by; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT UPDATE(resolved_by) ON TABLE public.metadata_versions TO reverie_app;
+GRANT UPDATE(resolved_by) ON TABLE public.metadata_versions TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN metadata_versions.last_seen_at; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT UPDATE(last_seen_at) ON TABLE public.metadata_versions TO reverie_app;
+GRANT UPDATE(last_seen_at) ON TABLE public.metadata_versions TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN metadata_versions.observation_count; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT UPDATE(observation_count) ON TABLE public.metadata_versions TO reverie_app;
+GRANT UPDATE(observation_count) ON TABLE public.metadata_versions TO reverie_ingestion;
 
 
 --

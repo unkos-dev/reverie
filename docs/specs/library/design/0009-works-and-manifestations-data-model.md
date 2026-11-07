@@ -217,6 +217,12 @@ its three vocabulary junctions.
 
 ## Data and state
 
+Observation identity uses edition, source, field and an exact insertion key over value, order, match method and
+submission author. The normalised value hash serves enrichment comparisons separately. Submission authorship and mutable
+review actor data have separate columns. Confidence remains a current assessment; a change on a currently referenced
+observation advances its affected field stamps. Exact Undo preserves original entity and source-pointer identities,
+including null and mixed relation attribution.
+
 ### Metadata change identity
 
 Works and manifestations each store a `metadata_revision` of zero or greater and a `metadata_field_revisions` JSON
@@ -243,14 +249,14 @@ within a transaction; field stamps reuse these revisions and have no independent
 | Vocabulary replacement, clear or source pointer | Each vocabulary junction's INSERT, UPDATE and DELETE statement triggers |
 | Work or edition identifier upsert, delete or source pointer | Identifier relation triggers, keyed by owning level and scheme |
 | Enrichment canonical batches | The same scalar and relation triggers inside the fenced catalogue transaction |
-| Referenced journal meaning change | Source, origin edition, field, value, confidence, match type or resolving user changes stamp every current reference |
+| Referenced journal meaning change | Source, origin edition, field, value, confidence, match type or submission author changes stamp every current reference |
 | Version deletion | Existing SET NULL actions run scalar or relation triggers without clearing canonical values |
 | Shared author names and sort names | Author reference trigger stamps every linked contributor role |
 | Shared genre, mood or tag names | Name reference triggers stamp linked editions only when stored names differ |
 | Identifier scheme display names | Scheme reference trigger stamps every linked identifier slot |
 | Author or vocabulary deletion | Existing link cascades run relation DELETE triggers on surviving parents |
 | Changing the parent work | Manifestation scalar trigger and owner identities in the aggregate tag |
-| Unattached proposals, observation counts, last-seen times and review status | Excluded unless a currently referenced meaning column also changes |
+| Unattached proposals, observation counts, last-seen times and review activity | Excluded unless a currently referenced meaning column also changes |
 | Edition field lock and unlock | Excluded; manual routes check locks separately |
 | Reading state | Excluded; caller-specific full-state reading hash |
 | Writeback file hashes, file size, file location and embedded-cover bookkeeping | Excluded operational columns |

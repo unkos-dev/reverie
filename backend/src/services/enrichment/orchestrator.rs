@@ -402,6 +402,21 @@ pub(super) async fn run_queued_with_sources(
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(ClaimLost)?;
+        if results.iter().any(|run| {
+            run.outcome.as_ref().is_ok_and(|outcome| {
+                outcome
+                    .fields
+                    .iter()
+                    .any(|field| is_work_field(&field.field_name))
+            })
+        }) {
+            sqlx::query_scalar!(
+                "SELECT id FROM works WHERE id = $1 FOR UPDATE",
+                snapshot.work_id
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+        }
         let (per_field, failures) =
             apply_journal_batch(&mut tx, manifestation_id, &results).await?;
         limit_statement(&mut tx, deadline.saturating_duration_since(Instant::now())).await?;
@@ -1151,9 +1166,8 @@ async fn upsert_journal_row(
         "INSERT INTO metadata_versions \
              (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) \
          VALUES ($1, $2, $3, $4, $5, $6, $7) \
-         ON CONFLICT (manifestation_id, source, field_name, value_hash) \
-         DO UPDATE SET new_value = EXCLUDED.new_value, \
-                       last_seen_at = now(), \
+         ON CONFLICT (manifestation_id, source, field_name, observation_key) \
+         DO UPDATE SET last_seen_at = now(), \
                        observation_count = metadata_versions.observation_count + 1 \
          RETURNING id",
         manifestation_id,

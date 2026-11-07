@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET enrichment_status = CASE WHEN $2 THEN 'in_progress'::enrichment_status ELSE 'complete'::enrichment_status END, enrichment_rerun_requested = FALSE, enrichment_claim_seq = 7, enrichment_attempt_count = 2, enrichment_attempted_at = clock_timestamp() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e228419cbb4ae94b532b75ba46880a3887ff73d9ecbb77e9984bc000a1151202"
+}

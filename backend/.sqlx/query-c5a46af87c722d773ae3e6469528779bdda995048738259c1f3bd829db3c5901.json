@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.setting::int AS \"statement!\", t.setting::int AS \"transaction!\" FROM pg_settings s CROSS JOIN pg_settings t WHERE s.name = 'statement_timeout' AND t.name = 'transaction_timeout'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "statement!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "transaction!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "c5a46af87c722d773ae3e6469528779bdda995048738259c1f3bd829db3c5901"
+}

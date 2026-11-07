@@ -208,6 +208,11 @@ requires the capability field in its Zod schema rather than assuming it when abs
 
 ## Runtime behaviour
 
+The hourly sweep also reclaims expired metadata Undo rows in batches of at most 1000 through the narrow database expiry
+function. Requests enforce fixed operation expiry independently of cleanup. Deleting or rotating the persisted session
+cascades its capabilities; a session renewal cannot extend an operation's original one-hour deadline. Consumed and
+superseded rows remain available for outcome resolution until that deadline.
+
 **Establishing a session at sign-in**, after any live anonymous cohort has been won, for either of the two call sites
 (`local_login` or the OIDC callback in `backend/src/routes/auth.rs`), once the credential has already been verified:
 

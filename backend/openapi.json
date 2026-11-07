@@ -1484,7 +1484,7 @@
             }
           },
           "422": {
-            "description": "No populated fields, ISBN/date parse failure, or attempt to clear title. Evaluated only after If-Match has matched, so a stale tag returns 412 instead",
+            "description": "No populated fields, ISBN/date parse failure, attempt to clear title, recorded save request identifier reuse, or browser Undo size/work limit. Evaluated only after If-Match has matched, so a stale tag returns 412 instead",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1517,6 +1517,324 @@
           },
           {
             "opds_basic": [
+              "write"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/books/{id}/metadata/operations/resolve": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Resolve a metadata operation outcome",
+        "description": "Returns current paired metadata and session-owned committed evidence for one save request or field operation. An absent receipt means unknown, never proof of rollback. This read does not restore or replay a write.",
+        "operationId": "resolve_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "maxLength": 45
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Current metadata and operation evidence",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Metadata validator matching the returned values"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed body or path",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser session and adult write scope required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Edition missing or hidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Select exactly one request or operation identifier; operation evidence must fit the resource limit",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "CSRF token missing",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/books/{id}/metadata/undo": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Undo one saved metadata field",
+        "description": "Restores the exact captured field state once for its issuing browser session. Requires current aggregate If-Match and an eligible, unlocked field. Confidence changes retain field-identity invalidation. No write is replayed automatically.",
+        "operationId": "undo_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "maxLength": 45
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Current quoted 128-bit metadata entity-tag returned by a matched response. Other well-formed tags return 412",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 24
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UndoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Exact field restoration committed",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Metadata validator matching the returned values"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed body, path or If-Match",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser session and adult write scope required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Edition missing or hidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Field locked or recorded after-state conflicts; operation not consumed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Aggregate metadata validator is stale",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current metadata validator"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Operation unavailable or Undo resource limit exceeded",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match or CSRF token missing",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
               "write"
             ]
           }
@@ -11518,6 +11836,52 @@
           }
         }
       },
+      "OperationOutcome": {
+        "type": "string",
+        "description": "Evidence of a save or restoration, independent of apparent value equality.",
+        "enum": [
+          "saved",
+          "restored",
+          "unknown"
+        ]
+      },
+      "OperationResponse": {
+        "type": "object",
+        "description": "Confirmed current metadata and session-owned operation evidence.",
+        "required": [
+          "values",
+          "outcome",
+          "operations"
+        ],
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UndoOperation"
+            },
+            "description": "Bounded field operations belonging to the selected save or operation.",
+            "maxItems": 144
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/OperationOutcome",
+            "description": "Whether the selected save or restoration has committed evidence. Absence remains unknown."
+          },
+          "values": {
+            "$ref": "#/components/schemas/BookMetadata",
+            "description": "Complete canonical metadata paired with the response `ETag`."
+          }
+        }
+      },
+      "OperationStatus": {
+        "type": "string",
+        "description": "Server-confirmed availability or committed consumption of a saved operation.",
+        "enum": [
+          "eligible",
+          "locked",
+          "unavailable",
+          "consumed"
+        ]
+      },
       "PreferenceDefaults": {
         "type": "object",
         "description": "The installation defaults, echoed alongside the overrides.",
@@ -11889,6 +12253,31 @@
             "description": "New shelf display name (non-empty after trim)."
           }
         }
+      },
+      "ResolveRequest": {
+        "type": "object",
+        "description": "Resolve a save or a single operation without replaying a write.",
+        "properties": {
+          "operation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Saved-field handle; mutually exclusive with `request_id`.",
+            "maxLength": 45
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Client UUID supplied with the original save; mutually exclusive with `operation_id`.",
+            "maxLength": 45
+          }
+        },
+        "additionalProperties": false
       },
       "RetryFailuresRequest": {
         "type": "object",
@@ -12748,6 +13137,52 @@
           }
         }
       },
+      "UndoOperation": {
+        "type": "object",
+        "description": "One saved field operation, bound to the issuing browser session and fixed expiry.",
+        "required": [
+          "operation_id",
+          "field_name",
+          "expires_at",
+          "status"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Original deadline, unchanged by resolution or lock refusal."
+          },
+          "field_name": {
+            "type": "string",
+            "description": "Canonical field key selected by this operation."
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Opaque restoration handle; send it in an operation request body."
+          },
+          "status": {
+            "$ref": "#/components/schemas/OperationStatus",
+            "description": "Current server decision for this operation."
+          }
+        }
+      },
+      "UndoRequest": {
+        "type": "object",
+        "description": "Select one opaque saved-field operation.",
+        "required": [
+          "operation_id"
+        ],
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Handle returned by a browser save or operation resolution.",
+            "maxLength": 45
+          }
+        },
+        "additionalProperties": false
+      },
       "UpdateChildStatusRequest": {
         "type": "object",
         "description": "Body for `PUT /api/v1/users/{id}/child-status`.",
@@ -12878,6 +13313,15 @@
             ],
             "description": "New publisher. Absent = unchanged; `null` clears."
           },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Client-generated save identifier for resolution; an already recorded identifier is refused.",
+            "maxLength": 45
+          },
           "subtitle": {
             "type": [
               "string",
@@ -12927,6 +13371,7 @@
         "type": "object",
         "description": "Response body for `PATCH /api/v1/books/{id}/metadata`.",
         "required": [
+          "operations",
           "values",
           "fields"
         ],
@@ -12941,6 +13386,22 @@
               "type": "string"
             },
             "maxProperties": 144
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UndoOperation"
+            },
+            "description": "Independent exact field operations issued to the authenticated browser session.",
+            "maxItems": 144
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Save identifier for session-bound outcome resolution; absent for non-browser credentials."
           },
           "values": {
             "$ref": "#/components/schemas/BookMetadata",

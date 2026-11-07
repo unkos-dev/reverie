@@ -12,9 +12,9 @@ governed-by:
 ## Statement
 
 WHEN the caller is a child account, the system MUST refuse any request that would accept, reject or revert a metadata
-proposal, set or clear a metadata field lock, patch catalogue metadata, set or clear an external identifier, or trigger
-an enrichment run, whatever scope the caller's credential carries. A refused request MUST leave catalogue metadata,
-canonical pointers, proposals, field locks and writeback jobs unchanged.
+proposal, set or clear a metadata field lock, patch or undo catalogue metadata, set or clear an external identifier, or
+trigger an enrichment run, whatever scope the caller's credential carries. A refused request MUST leave catalogue
+metadata, canonical pointers, proposals, field locks and writeback jobs unchanged.
 
 ## Rationale
 
@@ -26,6 +26,9 @@ relies on.
 
 ## Acceptance criteria
 
+- A write-scoped child browser session cannot restore a saved metadata field. It receives 403 without canonical,
+  pointer, proposal, lock or writeback changes. A non-administrator adult browser session can restore its eligible
+  operation. Checked by `metadata_undo_binds_receipts_to_session` in `backend/src/routes/metadata.rs`.
 - A child account's request to accept a pending metadata proposal returns 403 without writes. Checked by
   `accept_child_account_forbidden_without_writes` in `backend/src/routes/metadata.rs`.
 - A child account's request to reject a pending metadata proposal returns 403 without writes. Checked by

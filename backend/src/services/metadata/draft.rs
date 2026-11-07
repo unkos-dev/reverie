@@ -221,7 +221,7 @@ async fn insert_draft(
         "INSERT INTO metadata_versions \
              (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) \
          VALUES ($1, 'opf', $2, $3, $4, $5, $6) \
-         ON CONFLICT (manifestation_id, source, field_name, value_hash) \
+         ON CONFLICT (manifestation_id, source, field_name, observation_key) \
          DO UPDATE SET last_seen_at = now(), \
                        observation_count = metadata_versions.observation_count + 1 \
          RETURNING id",

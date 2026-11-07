@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT CASE WHEN 'isbn_10' = ANY($2) THEN left(translate(isbn_10, '- ', ''), 14) END AS isbn_10, CASE WHEN 'isbn_13' = ANY($2) THEN left(translate(isbn_13, '- ', ''), 14) END AS isbn_13 FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "isbn_10",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "isbn_13",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "6fee892e65fb389365f94291e6d18a8ea2885ef9a1d24b533635cdfee483b72d"
+}

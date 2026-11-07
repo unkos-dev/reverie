@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE metadata_versions SET confidence_score = 0.8 WHERE id = (SELECT publisher_version_id FROM manifestations WHERE id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4229d6ab8cf9af9c329b3f040ee5d4d9e1b30b60cb8ce98eca84e02fb853fdea"
+}

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO work_authors (work_id, author_id, role, position, source_version_id) SELECT $1, id, ($2::text)::author_role, position, version FROM UNNEST($3::uuid[], $4::int[], $5::uuid[]) AS m(id, position, version)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "UuidArray",
+        "Int4Array",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9266415b2e50217736eee3acef4c23e81550add502a5562ed8d218284170da7d"
+}

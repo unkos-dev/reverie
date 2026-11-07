@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT clock_timestamp() + interval '1 hour' AS \"expires!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "expires!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7f7c1dbb78a1bf134f5aa02be24de4c08cf6f94c576548778b4088d923c97514"
+}
