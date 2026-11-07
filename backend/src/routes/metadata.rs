@@ -1600,7 +1600,7 @@ async fn delete_vocabulary_rows(
 /// Find-or-create every term and link it to the manifestation, carrying the
 /// journal pointer onto each junction row. Set-based: one statement per call.
 /// The `ON CONFLICT ((lower(name))) DO UPDATE` leg returns ids for existing
-/// terms too, with last-writer-wins display casing.
+/// terms too, preserving their stored display spelling.
 ///
 /// The `DISTINCT ON (lower(name)) .. ORDER BY lower(name)` source does two
 /// jobs: it guards the single-statement upsert against case collisions the
@@ -1623,7 +1623,7 @@ async fn insert_vocabulary_rows(
                      SELECT DISTINCT ON (lower(name)) name \
                        FROM unnest($2::text[]) AS t(name) \
                       ORDER BY lower(name) \
-                     ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
+                     ON CONFLICT ((lower(name))) DO UPDATE SET name = genres.name \
                      RETURNING id \
                  ) \
                  INSERT INTO manifestation_genres (manifestation_id, genre_id, source_version_id) \
@@ -1643,7 +1643,7 @@ async fn insert_vocabulary_rows(
                      SELECT DISTINCT ON (lower(name)) name \
                        FROM unnest($2::text[]) AS t(name) \
                       ORDER BY lower(name) \
-                     ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
+                     ON CONFLICT ((lower(name))) DO UPDATE SET name = moods.name \
                      RETURNING id \
                  ) \
                  INSERT INTO manifestation_moods (manifestation_id, mood_id, source_version_id) \
@@ -1663,7 +1663,7 @@ async fn insert_vocabulary_rows(
                      SELECT DISTINCT ON (lower(name)) name \
                        FROM unnest($2::text[]) AS t(name) \
                       ORDER BY lower(name) \
-                     ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
+                     ON CONFLICT ((lower(name))) DO UPDATE SET name = tags.name \
                      RETURNING id \
                  ) \
                  INSERT INTO manifestation_tags (manifestation_id, tag_id, source_version_id) \
@@ -2509,6 +2509,19 @@ async fn update_book_metadata(
         })?;
     let new_etag = hash_etag(&new_metadata)?;
 
+    for (field, values) in [
+        ("genres", &new_metadata.genres),
+        ("moods", &new_metadata.moods),
+        ("tags", &new_metadata.tags),
+    ] {
+        if let Some(change) = response_fields.get_mut(field)
+            && change.value.is_some()
+        {
+            change.value =
+                Some(serde_json::to_value(values).map_err(|e| AppError::Internal(e.into()))?);
+        }
+    }
+
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -2778,6 +2791,138 @@ mod tests {
     use crate::test_support;
     use axum::http::StatusCode;
     use uuid::Uuid;
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn shared_vocabulary_edit_preserves_other_books(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &pool);
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_, original) = test_support::db::insert_work_and_manifestation(&pool, &marker).await;
+        let (_, edited) =
+            test_support::db::insert_work_and_manifestation(&pool, &format!("{marker}-edited"))
+                .await;
+
+        for field in [
+            super::VocabularyField::Genres,
+            super::VocabularyField::Moods,
+            super::VocabularyField::Tags,
+        ] {
+            let stored = format!("Original-{marker}");
+            let added = format!("New-{marker}");
+            let original_version = insert_version(
+                &pool,
+                original,
+                field.field_name(),
+                serde_json::json!([stored]),
+            )
+            .await;
+            let edited_version = insert_version(
+                &pool,
+                edited,
+                field.field_name(),
+                serde_json::json!([stored.to_uppercase(), added]),
+            )
+            .await;
+            let mut tx = pool.begin().await.unwrap();
+            super::insert_vocabulary_rows(
+                &mut tx,
+                original,
+                field,
+                std::slice::from_ref(&stored),
+                original_version,
+            )
+            .await
+            .unwrap();
+            super::insert_vocabulary_rows(
+                &mut tx,
+                edited,
+                field,
+                &[stored.to_uppercase(), added.clone(), stored.to_lowercase()],
+                edited_version,
+            )
+            .await
+            .unwrap();
+
+            let rows = match field {
+                super::VocabularyField::Genres => sqlx::query!(
+                    "SELECT j.manifestation_id, j.genre_id AS term_id, t.name, j.source_version_id \
+                     FROM manifestation_genres j JOIN genres t ON t.id = j.genre_id \
+                     WHERE j.manifestation_id = ANY($1)",
+                    &[original, edited],
+                )
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|r| (r.manifestation_id, r.term_id, r.name, r.source_version_id))
+                .collect::<Vec<_>>(),
+                super::VocabularyField::Moods => sqlx::query!(
+                    "SELECT j.manifestation_id, j.mood_id AS term_id, t.name, j.source_version_id \
+                     FROM manifestation_moods j JOIN moods t ON t.id = j.mood_id \
+                     WHERE j.manifestation_id = ANY($1)",
+                    &[original, edited],
+                )
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|r| (r.manifestation_id, r.term_id, r.name, r.source_version_id))
+                .collect::<Vec<_>>(),
+                super::VocabularyField::Tags => sqlx::query!(
+                    "SELECT j.manifestation_id, j.tag_id AS term_id, t.name, j.source_version_id \
+                     FROM manifestation_tags j JOIN tags t ON t.id = j.tag_id \
+                     WHERE j.manifestation_id = ANY($1)",
+                    &[original, edited],
+                )
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|r| (r.manifestation_id, r.term_id, r.name, r.source_version_id))
+                .collect::<Vec<_>>(),
+            };
+            let original_rows: Vec<_> = rows.iter().filter(|r| r.0 == original).collect();
+            assert_eq!(original_rows.len(), 1);
+            let original_row = original_rows[0];
+            assert_eq!(original_row.2, stored);
+            assert_eq!(original_row.3, Some(original_version));
+            let edited_rows: Vec<_> = rows.iter().filter(|r| r.0 == edited).collect();
+            assert_eq!(edited_rows.len(), 2);
+            assert!(
+                edited_rows
+                    .iter()
+                    .any(|r| r.1 == original_row.1 && r.2 == stored)
+            );
+            assert!(edited_rows.iter().any(|r| r.2 == added));
+            assert!(edited_rows.iter().all(|r| r.3 == Some(edited_version)));
+            tx.commit().await.unwrap();
+
+            let initial = server
+                .get(&format!("/api/v1/books/{edited}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .await;
+            assert_eq!(initial.status_code(), StatusCode::OK);
+            let response = server
+                .patch(&format!("/api/v1/books/{edited}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag_value(initial.headers())).unwrap(),
+                )
+                .json(&serde_json::json!({
+                    (field.field_name()): [stored.to_uppercase(), added],
+                }))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+            let body: serde_json::Value = response.json();
+            assert_eq!(
+                body["fields"][field.field_name()]["value"],
+                serde_json::json!([added, stored]),
+            );
+        }
+    }
 
     // REV-REQ-0072 AC1-4; REV-REQ-0073 AC2-4.
     #[sqlx::test(migrations = "./migrations")]
