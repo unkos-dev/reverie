@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestation_external_identifiers SET source_version_id = $2 WHERE manifestation_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "46dc482d508d8977c9986fc16ecbf0b7ec436819dc11284d8cbfe623a6c3b6d8"
+}

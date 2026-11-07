@@ -28,7 +28,7 @@ use crate::models::external_identifier::{
     upsert_manifestation_identifier, upsert_work_identifier,
 };
 use crate::models::work;
-use crate::routes::etag::{hash_etag, if_match_mismatch, parse_if_match};
+use crate::routes::etag::{MetadataRevision, if_match_mismatch, parse_if_match};
 use crate::routes::library::{
     load_genres_for_manifestations, load_moods_for_manifestations, load_tags_for_manifestations,
 };
@@ -408,6 +408,17 @@ async fn reject_manifestation(
         .map_err(|e| AppError::Internal(e.into()))?;
 
     lock_version_review(&mut tx, payload.version_id).await?;
+
+    let work_id: Option<Uuid> = sqlx::query_scalar!(
+        "SELECT m.work_id FROM manifestations m \
+         JOIN works w ON w.id = m.work_id \
+         WHERE m.id = $1 FOR UPDATE OF m, w",
+        manifestation_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    work_id.ok_or(AppError::NotFound)?;
 
     let rows = sqlx::query!(
         "UPDATE metadata_versions \
@@ -1970,6 +1981,8 @@ pub(crate) struct FieldVersionChange {
 /// Response body for `PATCH /api/v1/books/{id}/metadata`.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 struct UpdateMetadataResponse {
+    /// Complete canonical metadata confirmed by this write and its response `ETag`.
+    values: BookMetadata,
     /// Keyed by patched field name, including `contributors.<role>` keys.
     /// Bounded by [`FIXED_EDITABLE_FIELD_COUNT`] plus up to
     /// `MAX_IDENTIFIERS_PER_LEVEL` keys per identifier level.
@@ -2126,20 +2139,21 @@ fn book_metadata_manifestation_identifiers_schema() -> utoipa::openapi::schema::
         .build()
 }
 
-/// Load the editable metadata span for one manifestation, in exactly the
-/// shape [`get_book_metadata`] serves and [`update_book_metadata`] hashes.
-/// Sharing this assembly means the precondition check, the post-write
-/// `ETag`, and the matched `GET` all hash the identical representation
-/// through one code path rather than three independently maintained ones.
-///
-/// `Ok(None)` when the manifestation or its parent work does not exist.
+struct MetadataSnapshot {
+    values: BookMetadata,
+    revision: MetadataRevision,
+}
+
+/// Loads editable values and their owner revisions within the caller's snapshot or parent locks.
 async fn load_book_metadata(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
-) -> Result<Option<BookMetadata>, AppError> {
+) -> Result<Option<MetadataSnapshot>, AppError> {
     let Some(core) = sqlx::query!(
         r#"
         SELECT w.id             AS "work_id!",
+               w.metadata_revision AS "work_revision!",
+               m.metadata_revision AS "manifestation_revision!",
                w.title          AS "title!",
                w.subtitle       AS subtitle,
                w.description    AS description,
@@ -2171,37 +2185,45 @@ async fn load_book_metadata(
     let work_identifiers = load_work_identifiers(tx, core.work_id).await?;
     let manifestation_identifiers = load_manifestation_identifiers(tx, manifestation_id).await?;
 
-    Ok(Some(BookMetadata {
-        title: core.title,
-        subtitle: core.subtitle,
-        description: core.description,
-        language: core.language,
-        publisher: core.publisher,
-        pub_date: core.pub_date,
-        isbn_mismatch: match (core.isbn_10.as_deref(), core.isbn_13.as_deref()) {
-            (Some(ten), Some(thirteen)) => match (
-                ten.parse::<isbn::Isbn10>(),
-                thirteen.parse::<isbn::Isbn13>(),
-            ) {
-                (Ok(ten), Ok(thirteen)) => {
-                    let compact = thirteen.to_string();
-                    (compact.starts_with("978") || compact.starts_with("979"))
-                        && isbn::Isbn13::from(ten) != thirteen
-                }
+    Ok(Some(MetadataSnapshot {
+        revision: MetadataRevision {
+            work_id: core.work_id,
+            manifestation_id,
+            work_revision: core.work_revision,
+            manifestation_revision: core.manifestation_revision,
+        },
+        values: BookMetadata {
+            title: core.title,
+            subtitle: core.subtitle,
+            description: core.description,
+            language: core.language,
+            publisher: core.publisher,
+            pub_date: core.pub_date,
+            isbn_mismatch: match (core.isbn_10.as_deref(), core.isbn_13.as_deref()) {
+                (Some(ten), Some(thirteen)) => match (
+                    ten.parse::<isbn::Isbn10>(),
+                    thirteen.parse::<isbn::Isbn13>(),
+                ) {
+                    (Ok(ten), Ok(thirteen)) => {
+                        let compact = thirteen.to_string();
+                        (compact.starts_with("978") || compact.starts_with("979"))
+                            && isbn::Isbn13::from(ten) != thirteen
+                    }
+                    _ => false,
+                },
                 _ => false,
             },
-            _ => false,
+            isbn_10: core.isbn_10,
+            isbn_13: core.isbn_13,
+            pages: core.pages,
+            content_rating: core.content_rating,
+            genres: genres.remove(&manifestation_id).unwrap_or_default(),
+            moods: moods.remove(&manifestation_id).unwrap_or_default(),
+            tags: tags.remove(&manifestation_id).unwrap_or_default(),
+            contributors,
+            work_identifiers,
+            manifestation_identifiers,
         },
-        isbn_10: core.isbn_10,
-        isbn_13: core.isbn_13,
-        pages: core.pages,
-        content_rating: core.content_rating,
-        genres: genres.remove(&manifestation_id).unwrap_or_default(),
-        moods: moods.remove(&manifestation_id).unwrap_or_default(),
-        tags: tags.remove(&manifestation_id).unwrap_or_default(),
-        contributors,
-        work_identifiers,
-        manifestation_identifiers,
     }))
 }
 
@@ -2225,7 +2247,7 @@ async fn load_book_metadata(
     params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     responses(
         (status = 200, description = "The editable metadata span, matching what PATCH accepts", body = BookMetadata,
-         headers(("ETag" = String, description = "Strong entity-tag hashing this response body. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"))),
+         headers(("ETag" = String, description = "Strong entity-tag covering work and edition identities and their metadata revisions. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -2238,14 +2260,14 @@ async fn get_book_metadata(
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_not_child()?;
 
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+    let mut tx = db::acquire_with_rls_snapshot(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
     let metadata = load_book_metadata(&mut tx, manifestation_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    let etag = hash_etag(&metadata)?;
+    let etag = metadata.revision.etag()?;
 
     tx.commit()
         .await
@@ -2253,7 +2275,7 @@ async fn get_book_metadata(
 
     let mut headers = HeaderMap::new();
     headers.insert(ETAG, etag);
-    Ok((headers, axum::Json(metadata)))
+    Ok((headers, axum::Json(metadata.values)))
 }
 
 /// Author/editor/translator names for a work, each ordered by stored
@@ -2381,8 +2403,8 @@ async fn load_manifestation_identifiers(
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
         (status = 409, description = "A requested metadata field is locked on this edition; locked_fields lists the refused keys and no changes are applied", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 200, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field", body = UpdateMetadataResponse,
-         headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"))),
+        (status = 200, description = "Manual edit committed with complete canonical values and matching ETag, plus per-field version acknowledgements", body = UpdateMetadataResponse,
+         headers(("ETag" = String, description = "Strong entity-tag covering work and edition identities and their metadata revisions after this write"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -2446,7 +2468,7 @@ async fn update_book_metadata(
                 "load_book_metadata returned None for a manifestation just locked"
             ))
         })?;
-    let current_etag = hash_etag(&current)?;
+    let current_etag = current.revision.etag()?;
     if !if_match.matches(&current_etag) {
         return Ok(if_match_mismatch(&current_etag));
     }
@@ -2604,12 +2626,12 @@ async fn update_book_metadata(
                 "load_book_metadata returned None for a manifestation just written"
             ))
         })?;
-    let new_etag = hash_etag(&new_metadata)?;
+    let new_etag = new_metadata.revision.etag()?;
 
     for (field, values) in [
-        ("genres", &new_metadata.genres),
-        ("moods", &new_metadata.moods),
-        ("tags", &new_metadata.tags),
+        ("genres", &new_metadata.values.genres),
+        ("moods", &new_metadata.values.moods),
+        ("tags", &new_metadata.values.tags),
     ] {
         if let Some(change) = response_fields.get_mut(field)
             && change.value.is_some()
@@ -2629,6 +2651,7 @@ async fn update_book_metadata(
         StatusCode::OK,
         headers,
         axum::Json(UpdateMetadataResponse {
+            values: new_metadata.values,
             fields: response_fields,
         }),
     )
@@ -2873,6 +2896,430 @@ mod tests {
     use crate::test_support;
     use axum::http::StatusCode;
     use uuid::Uuid;
+
+    async fn metadata_identity(pool: &sqlx::PgPool, edition: Uuid) -> serde_json::Value {
+        sqlx::query_scalar!(
+            "SELECT jsonb_build_object(\
+                 'work', jsonb_build_object('revision', w.metadata_revision, 'fields', w.metadata_field_revisions), \
+                 'manifestation', jsonb_build_object('revision', m.metadata_revision, 'fields', m.metadata_field_revisions)\
+             ) AS \"identity!\" FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.id = $1",
+            edition,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    fn assert_metadata_fields_advanced(
+        before: &serde_json::Value,
+        after: &serde_json::Value,
+        work_fields: &[&str],
+        manifestation_fields: &[&str],
+    ) {
+        for (owner, fields) in [
+            ("work", work_fields),
+            ("manifestation", manifestation_fields),
+        ] {
+            if fields.is_empty() {
+                continue;
+            }
+            assert!(
+                after[owner]["revision"].as_i64().unwrap()
+                    > before[owner]["revision"].as_i64().unwrap()
+            );
+            for field in fields {
+                assert!(
+                    after[owner]["fields"][field].as_i64().unwrap()
+                        > before[owner]["fields"][field].as_i64().unwrap_or(0),
+                    "{owner}.{field}: {before} -> {after}"
+                );
+            }
+        }
+    }
+
+    // Data loss boundary: canonical and referenced-attribution writers cannot retain stale field identities.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn metadata_revisions_follow_representation_writers(pool: sqlx::PgPool) {
+        let app = test_support::db::app_pool_for(&pool).await;
+        let ing = test_support::db::ingestion_pool_for(&pool).await;
+        let (user, basic) = test_support::db::create_admin_and_basic_auth(&app).await;
+        let (work, edition) =
+            test_support::db::insert_work_and_manifestation(&ing, "revisions").await;
+        let sibling = insert_sibling_manifestation(&ing, work).await;
+        let server = test_support::db::server_with_real_pools(&app, &ing);
+        let url = format!("/api/v1/books/{edition}/metadata");
+        let initial = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let before = metadata_identity(&pool, edition).await;
+        assert_eq!(before["work"]["revision"], 0);
+        assert_eq!(before["manifestation"]["revision"], 0);
+        let sibling_initial = server
+            .get(&format!("/api/v1/books/{sibling}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            initial.json::<serde_json::Value>(),
+            sibling_initial.json::<serde_json::Value>()
+        );
+        assert_ne!(
+            initial.header(axum::http::header::ETAG),
+            sibling_initial.header(axum::http::header::ETAG)
+        );
+        let (other_work, other_edition) =
+            test_support::db::insert_work_and_manifestation(&ing, "other-owner").await;
+        sqlx::query!(
+            "UPDATE manifestations SET work_id = $2 WHERE id = $1",
+            edition,
+            other_work
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let reparented = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            initial.json::<serde_json::Value>(),
+            reparented.json::<serde_json::Value>()
+        );
+        assert_ne!(
+            initial.header(axum::http::header::ETAG),
+            reparented.header(axum::http::header::ETAG)
+        );
+        assert_metadata_fields_advanced(
+            &before,
+            &metadata_identity(&pool, edition).await,
+            &[],
+            &["work"],
+        );
+        sqlx::query!(
+            "UPDATE manifestations SET work_id = $2 WHERE id = $1",
+            edition,
+            work
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let initial = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let before = metadata_identity(&pool, edition).await;
+        let patch = server.patch(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .add_header(axum::http::header::IF_MATCH, initial.header(axum::http::header::ETAG))
+            .json(&serde_json::json!({
+                "title": "Revision title", "subtitle": "Original subtitle", "description": "Description",
+                "language": "en", "publisher": "Publisher", "pub_date": "2026-11",
+                "isbn_10": "0306406152", "isbn_13": "9780306406157", "pages": 123,
+                "content_rating": "everyone", "genres": ["Revision genre"], "moods": ["Revision mood"],
+                "tags": ["Revision tag"],
+                "contributors": {"author": ["Revision author"], "editor": ["Revision editor"], "translator": ["Revision translator"]},
+                "work_identifiers": {"openlibrary": "OL123W"},
+                "manifestation_identifiers": {"asin": "B004GXAX8C"}
+            })).await;
+        assert_eq!(patch.status_code(), StatusCode::OK, "{}", patch.text());
+        let confirmed = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            patch.header(axum::http::header::ETAG),
+            confirmed.header(axum::http::header::ETAG)
+        );
+        assert_eq!(
+            patch.json::<serde_json::Value>()["values"],
+            confirmed.json::<serde_json::Value>()
+        );
+        let work_fields = [
+            "title",
+            "subtitle",
+            "description",
+            "language",
+            "contributors.author",
+            "contributors.editor",
+            "contributors.translator",
+            "identifiers.work.openlibrary",
+        ];
+        let manifestation_fields = [
+            "publisher",
+            "pub_date",
+            "isbn_10",
+            "isbn_13",
+            "pages",
+            "content_rating",
+            "genres",
+            "moods",
+            "tags",
+            "identifiers.manifestation.asin",
+        ];
+        let after = metadata_identity(&pool, edition).await;
+        assert_metadata_fields_advanced(&before, &after, &work_fields, &manifestation_fields);
+
+        sqlx::query!(
+            "UPDATE works SET subtitle = 'Intervening subtitle' WHERE id = $1",
+            work
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE works SET subtitle = 'Original subtitle' WHERE id = $1",
+            work
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let restored = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            restored.json::<serde_json::Value>(),
+            confirmed.json::<serde_json::Value>()
+        );
+        assert_ne!(
+            restored.header(axum::http::header::ETAG),
+            confirmed.header(axum::http::header::ETAG)
+        );
+        assert_metadata_fields_advanced(
+            &after,
+            &metadata_identity(&pool, edition).await,
+            &["subtitle"],
+            &[],
+        );
+
+        let version =
+            insert_version(&ing, edition, "title", serde_json::json!("Revision title")).await;
+        let before = metadata_identity(&pool, edition).await;
+        sqlx::query!(
+            "UPDATE works SET title_version_id = $2 WHERE id = $1",
+            work,
+            version
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET publisher_version_id = $2 WHERE id = $1",
+            edition,
+            version
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE work_authors SET source_version_id = $2 WHERE work_id = $1",
+            work,
+            version
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE work_external_identifiers SET source_version_id = $2 WHERE work_id = $1",
+            work,
+            version
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        sqlx::query!("UPDATE manifestation_external_identifiers SET source_version_id = $2 WHERE manifestation_id = $1", edition, version).execute(&ing).await.unwrap();
+        sqlx::query!(
+            "UPDATE manifestation_genres SET source_version_id = $2 WHERE manifestation_id = $1",
+            edition,
+            version
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE manifestation_moods SET source_version_id = $2 WHERE manifestation_id = $1",
+            edition,
+            version
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE manifestation_tags SET source_version_id = $2 WHERE manifestation_id = $1",
+            edition,
+            version
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let attributed_work = [
+            "title",
+            "contributors.author",
+            "contributors.editor",
+            "contributors.translator",
+            "identifiers.work.openlibrary",
+        ];
+        let attributed_edition = [
+            "publisher",
+            "genres",
+            "moods",
+            "tags",
+            "identifiers.manifestation.asin",
+        ];
+        let after = metadata_identity(&pool, edition).await;
+        assert_metadata_fields_advanced(&before, &after, &attributed_work, &attributed_edition);
+        let before = after;
+        let before_values = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            before_values.json::<serde_json::Value>(),
+            restored.json::<serde_json::Value>()
+        );
+        assert_ne!(
+            before_values.header(axum::http::header::ETAG),
+            restored.header(axum::http::header::ETAG)
+        );
+        sqlx::query!("UPDATE metadata_versions SET confidence_score = 0.8, new_value = to_jsonb('Revised source observation'::text) WHERE id = $1", version).execute(&ing).await.unwrap();
+        let after = metadata_identity(&pool, edition).await;
+        assert_metadata_fields_advanced(&before, &after, &attributed_work, &attributed_edition);
+        let after_values = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            before_values.json::<serde_json::Value>(),
+            after_values.json::<serde_json::Value>()
+        );
+        assert_ne!(
+            before_values.header(axum::http::header::ETAG),
+            after_values.header(axum::http::header::ETAG)
+        );
+
+        let before = metadata_identity(&pool, edition).await;
+        sqlx::query!("DELETE FROM metadata_versions WHERE id = $1", version)
+            .execute(&ing)
+            .await
+            .unwrap();
+        assert_metadata_fields_advanced(
+            &before,
+            &metadata_identity(&pool, edition).await,
+            &attributed_work,
+            &attributed_edition,
+        );
+        let cleared_attribution = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            cleared_attribution.json::<serde_json::Value>(),
+            before_values.json::<serde_json::Value>()
+        );
+
+        let other_url = format!("/api/v1/books/{other_edition}/metadata");
+        let other = server
+            .get(&other_url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let other_patch = server.patch(&other_url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .add_header(axum::http::header::IF_MATCH, other.header(axum::http::header::ETAG))
+            .json(&serde_json::json!({
+                "contributors": {"author": ["Revision author"], "editor": ["Revision editor"], "translator": ["Revision translator"]},
+                "genres": ["Revision genre"], "moods": ["Revision mood"], "tags": ["Revision tag"],
+                "work_identifiers": {"openlibrary": "OL456W"},
+                "manifestation_identifiers": {"asin": "B004GXAX8D"}
+            })).await;
+        assert_eq!(
+            other_patch.status_code(),
+            StatusCode::OK,
+            "{}",
+            other_patch.text()
+        );
+        let other_before = metadata_identity(&pool, other_edition).await;
+        let before = metadata_identity(&pool, edition).await;
+        sqlx::query!("UPDATE authors SET name = name || ' renamed' WHERE id IN (SELECT author_id FROM work_authors WHERE work_id = $1)", work).execute(&ing).await.unwrap();
+        sqlx::query!("UPDATE genres SET name = name || ' renamed' WHERE id IN (SELECT genre_id FROM manifestation_genres WHERE manifestation_id = $1)", edition).execute(&ing).await.unwrap();
+        sqlx::query!("UPDATE moods SET name = name || ' renamed' WHERE id IN (SELECT mood_id FROM manifestation_moods WHERE manifestation_id = $1)", edition).execute(&ing).await.unwrap();
+        sqlx::query!("UPDATE tags SET name = name || ' renamed' WHERE id IN (SELECT tag_id FROM manifestation_tags WHERE manifestation_id = $1)", edition).execute(&ing).await.unwrap();
+        sqlx::query!("UPDATE identifier_schemes SET display_name = display_name || ' renamed' WHERE id IN ('openlibrary', 'asin')").execute(&pool).await.unwrap();
+        assert_metadata_fields_advanced(
+            &before,
+            &metadata_identity(&pool, edition).await,
+            &[
+                "contributors.author",
+                "contributors.editor",
+                "contributors.translator",
+                "identifiers.work.openlibrary",
+            ],
+            &["genres", "moods", "tags", "identifiers.manifestation.asin"],
+        );
+
+        assert_metadata_fields_advanced(
+            &other_before,
+            &metadata_identity(&pool, other_edition).await,
+            &[
+                "contributors.author",
+                "contributors.editor",
+                "contributors.translator",
+                "identifiers.work.openlibrary",
+            ],
+            &["genres", "moods", "tags", "identifiers.manifestation.asin"],
+        );
+
+        let before = metadata_identity(&pool, edition).await;
+        sqlx::query!("UPDATE genres SET name = name WHERE id IN (SELECT genre_id FROM manifestation_genres WHERE manifestation_id = $1)", edition).execute(&ing).await.unwrap();
+        sqlx::query!("UPDATE moods SET name = name WHERE id IN (SELECT mood_id FROM manifestation_moods WHERE manifestation_id = $1)", edition).execute(&ing).await.unwrap();
+        sqlx::query!("UPDATE tags SET name = name WHERE id IN (SELECT tag_id FROM manifestation_tags WHERE manifestation_id = $1)", edition).execute(&ing).await.unwrap();
+        sqlx::query!("UPDATE manifestations SET current_file_hash = 'writeback-only', enrichment_claim_seq = enrichment_claim_seq + 1, has_embedded_cover = TRUE WHERE id = $1", edition).execute(&ing).await.unwrap();
+        sqlx::query!("UPDATE metadata_versions SET observation_count = observation_count + 1, last_seen_at = now(), status = 'rejected' WHERE manifestation_id = $1", edition).execute(&ing).await.unwrap();
+        assert_eq!(before, metadata_identity(&pool, edition).await);
+
+        let before = metadata_identity(&pool, edition).await;
+        sqlx::query!("DELETE FROM authors WHERE id IN (SELECT author_id FROM work_authors WHERE work_id = $1 AND role = 'editor')", work).execute(&ing).await.unwrap();
+        sqlx::query!("DELETE FROM genres WHERE id IN (SELECT genre_id FROM manifestation_genres WHERE manifestation_id = $1)", edition).execute(&ing).await.unwrap();
+        sqlx::query!("DELETE FROM moods WHERE id IN (SELECT mood_id FROM manifestation_moods WHERE manifestation_id = $1)", edition).execute(&ing).await.unwrap();
+        sqlx::query!("DELETE FROM tags WHERE id IN (SELECT tag_id FROM manifestation_tags WHERE manifestation_id = $1)", edition).execute(&ing).await.unwrap();
+        sqlx::query!(
+            "DELETE FROM work_external_identifiers WHERE work_id = $1",
+            work
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "DELETE FROM manifestation_external_identifiers WHERE manifestation_id = $1",
+            edition
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        assert_metadata_fields_advanced(
+            &before,
+            &metadata_identity(&pool, edition).await,
+            &["contributors.editor", "identifiers.work.openlibrary"],
+            &["genres", "moods", "tags", "identifiers.manifestation.asin"],
+        );
+        let sibling_read = server
+            .get(&format!("/api/v1/books/{sibling}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            sibling_read.json::<serde_json::Value>()["title"],
+            "Revision title"
+        );
+
+        let mut tx = crate::db::acquire_with_rls(&app, user).await.unwrap();
+        let forgery = sqlx::query!(
+            "UPDATE manifestations SET metadata_revision = 0 WHERE id = $1",
+            edition
+        )
+        .execute(&mut *tx)
+        .await;
+        assert!(forgery.is_err());
+        tx.rollback().await.unwrap();
+    }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn manual_metadata_locks_are_atomic_and_edition_scoped(pool: sqlx::PgPool) {

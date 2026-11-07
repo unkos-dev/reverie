@@ -1,10 +1,9 @@
-//! Shared hash-based `ETag` mechanics for optimistic-concurrency endpoints.
+//! Strong `ETag` mechanics for optimistic-concurrency endpoints.
 //!
 //! Distinct from [`crate::routes::shelves`], whose entity-tag is the shelf's
 //! `updated_at` and whose `If-Match` parsing is its own. Endpoints in this
-//! module hash a caller-supplied serde representation of the fields a PATCH
-//! can modify, so the tag changes exactly when that representation does and
-//! never leaks a raw timestamp.
+//! module hash fixed-order resource state or database-owned revisions. Metadata
+//! revisions also distinguish intervening and provenance-only changes.
 //!
 //! Also distinct from the static-resource cache validators `tower-http`
 //! serves for the frontend dist tree, under `/assets` and through the
@@ -24,6 +23,21 @@ use sha2::{Digest, Sha256};
 
 use crate::error::AppError;
 
+/// Metadata owner identities and their monotonic aggregate revisions.
+#[derive(Debug, Serialize)]
+pub(crate) struct MetadataRevision {
+    pub work_id: uuid::Uuid,
+    pub manifestation_id: uuid::Uuid,
+    pub work_revision: i64,
+    pub manifestation_revision: i64,
+}
+
+impl MetadataRevision {
+    pub(crate) fn etag(&self) -> Result<HeaderValue, AppError> {
+        hash_etag(self)
+    }
+}
+
 /// SHA-256 digest bytes kept after truncation, before base64url encoding.
 /// 16 bytes (128 bits) is enough collision resistance for a concurrency
 /// check between the same handful of concurrent editors and keeps the
@@ -33,8 +47,8 @@ const ETAG_HASH_BYTES: usize = 16;
 /// Hash a canonical serde representation of a resource's editable state into
 /// a quoted strong entity-tag (RFC 9110 §8.8.3).
 ///
-/// `state` must be a dedicated struct with a fixed field order covering at
-/// least every field the paired PATCH endpoint can modify, never the raw
+/// `state` has a fixed field order and covers either editable values or
+/// identities and revisions maintained by every canonical writer, never a raw
 /// `updated_at` column. Serialises via `serde_json`, SHA-256s the bytes,
 /// truncates to `ETAG_HASH_BYTES`, and base64url-encodes without padding.
 ///

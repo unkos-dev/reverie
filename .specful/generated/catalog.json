@@ -513,6 +513,13 @@
       "title": "Durable job queue: restart-bounded reclaim with fenced enrichment rescue"
     },
     {
+      "id": "REV-ADR-0069",
+      "kind": "adr",
+      "path": "docs/adr/0069-metadata-change-identity-and-short-lived-exact-undo.md",
+      "status": "accepted",
+      "title": "Metadata change identity and short-lived exact Undo"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0062",
@@ -606,7 +613,8 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0011"
+        "REV-ADR-0011",
+        "REV-ADR-0069"
       ],
       "id": "REV-DESIGN-0007",
       "kind": "design",
@@ -635,6 +643,7 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0069",
         "REV-ADR-0067",
         "REV-ADR-0051",
         "REV-ADR-0052"
@@ -803,6 +812,7 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0069",
         "REV-ADR-0066",
         "REV-ADR-0019",
         "REV-ADR-0037",

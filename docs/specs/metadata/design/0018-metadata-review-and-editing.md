@@ -145,8 +145,8 @@ field-lock foreign-key write as an internal error.
   scheme against the level (`external_id::validate_scheme_level`) before writing anything to the journal, so an unknown
   scheme or a wrong-level address produces no journal row on either the set or the clear path.
 - `load_book_metadata` is the one assembly function `get_book_metadata`, `update_book_metadata`'s precondition check,
-  and its post-write re-hash all share, so the `ETag` a `GET` returns, the tag a `PATCH`'s `If-Match` is checked
-  against, and the tag a successful `PATCH` echoes are all hashes of the identical representation.
+  and its post-write read all share. It pairs complete values with owner identities and revisions;
+  `MetadataRevision::etag` produces the same validator for GET, PATCH comparison and the confirmed PATCH response.
 - On the client, `frontend/src/api/metadata.ts` wraps `accept`/`reject`/`revert` under the legacy
   `/api/v1/manifestations/` prefix; `frontend/src/api/books.ts` wraps `getBookMetadata`/`updateBookMetadata` under
   `/api/v1/books/`. Both prefixes address the same `manifestations.id`. `VersionsTab.tsx` groups
@@ -234,9 +234,9 @@ field section outside removable draft rows. Pending, clear-confirmation and succ
 3. `update_book_metadata` parses `If-Match` (`parse_if_match`), requiring it present (`428` otherwise), then opens
    `acquire_with_rls_read_committed` and takes `SELECT ... FOR UPDATE OF m, w` on the manifestation and its work: `404`
    if RLS hides or the id does not exist.
-4. Under that lock, `load_book_metadata` + `hash_etag` recompute the current tag and compare it to `If-Match`; a
-   mismatch returns `412` with the current tag before anything else is checked, per RFC 9110 §13.2.1 precondition
-   ordering.
+4. Under that lock, `load_book_metadata` + `MetadataRevision::etag` recompute the current tag and compare it to
+   `If-Match`; a mismatch returns `412` with the current tag before anything else is checked, per RFC 9110 §13.2.1
+   precondition ordering.
 5. Once the precondition holds, the handler rejects an entirely-empty body (`422`) and collects every touched scalar,
    vocabulary, contributor-role and identifier key. It checks those keys against the target edition's locks in one
    query, using `is_work_scoped_field` for ownership. Any matching lock returns `409` `field-locked` with all refused
@@ -249,9 +249,9 @@ field section outside removable draft rows. Pending, clear-confirmation and succ
    applies, `apply_contributors_patch` journals one `contributors.<role>` version per role touched but calls
    `enqueue_writeback` once for `contributors` after its role loop, and the identifier family never enqueues.
 6. If an ISBN field was touched, `work::rematch_on_isbn_change` runs before the response is assembled.
-7. `load_book_metadata` + `hash_etag` run again, inside the same transaction, to compute the tag the response's `ETag`
-   header carries; the transaction commits; the response carries the applied value, new version id, and previous version
-   id per touched field.
+7. `load_book_metadata` loads the confirmed snapshot inside the transaction. `MetadataRevision::etag` computes its tag
+   before commit. The response carries complete canonical `values` with that ETag and retains the applied value, new
+   version id and previous version id per touched key in `fields`.
 8. The edit sheet invalidates the book detail and editable-metadata queries after a successful save. It awaits the
    metadata refresh before closing, so reopening seeds the fields from the saved representation.
 
@@ -261,7 +261,9 @@ field section outside removable draft rows. Pending, clear-confirmation and succ
    ID in the metadata-review namespace before accessing the version. Acceptance reads eligibility in a subsequent
    statement, so a rejection committed while it waits is visible. The lock lasts through commit or rollback; it
    serialises these two endpoints for one version, not metadata updates generally. If acceptance commits first,
-   subsequent rejection still succeeds without undoing the canonical value or its queued writeback.
+   subsequent rejection still succeeds without undoing the canonical value or its queued writeback. Rejection locks the
+   visible manifestation and its work before updating the journal, as manual PATCH does. A changed resolving user on a
+   currently referenced version advances that field's provenance identity; review status alone does not.
 2. `accept_manifestation` selects only a `pending` version for the requested manifestation and locks the manifestation
    and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or already-rejected version returns `404`:
    none identifies an eligible draft for this operation. The Versions tab refreshes book details after failed acceptance

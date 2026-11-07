@@ -9,6 +9,7 @@ satisfies:
   - "REV-REQ-0020"
 governed-by:
   - "REV-ADR-0011"
+  - "REV-ADR-0069"
 ---
 
 # Conditional requests and optimistic concurrency
@@ -57,15 +58,20 @@ accept `If-Match`; shelf endpoints do neither.
 `backend/src/routes/etag.rs` is the shared mechanism, consumed by `backend/src/routes/reading.rs`,
 `backend/src/routes/metadata.rs` and `backend/src/routes/settings/mod.rs`. `hash_etag<T: Serialize>` serialises `state`
 to JSON, SHA-256s the bytes, truncates the digest to 16 bytes, base64url-encodes it without padding, and wraps the
-result in double quotes. Its doc comment states the contract every caller must satisfy: `state` must be a dedicated
-struct with a fixed field order covering at least every field the paired `PATCH` can modify, never the raw `updated_at`
-column, so the tag changes exactly when the covered representation does and never leaks a timestamp. `reading.rs`
-satisfies this with `ReadingEtagFields`, a private struct distinct from the wire type `ReadingState` (built to borrow
-`notes` as `&str` rather than clone it). `metadata.rs` satisfies it differently: `load_book_metadata` returns the same
-`BookMetadata` struct that both `get_book_metadata` serves as the response body and `update_book_metadata` feeds into
-`hash_etag`, a deliberate choice recorded on `load_book_metadata`'s own doc comment ("Sharing this assembly means the
-precondition check, the post-write `ETag`, and the matched `GET` all hash the identical representation through one code
-path rather than three independently maintained ones") rather than an accidental byproduct of unrelated reuse.
+result in double quotes. Reading hashes all editable state through the fixed-order `ReadingEtagFields`, including notes
+and timestamps. Its all-null default gives an absent row the same validator as matched reading GET.
+
+Metadata hashes `MetadataRevision`, containing the work identity, manifestation identity and both aggregate revisions of
+zero or greater. The data-model triggers advance revisions for canonical and provenance-relevant changes, including
+changes away and back. `load_book_metadata` returns `MetadataSnapshot`, pairing complete `BookMetadata` values with
+those owner revisions. Matched GET assembles that snapshot in a read-only REPEATABLE READ RLS transaction. PATCH
+compares the tag under its manifestation and work locks and loads the post-write snapshot before commit. Its response
+retains per-field `fields` acknowledgements and adds complete `values`; GET serves the same values type directly.
+
+List rows carry `metadata_etag` and `reading_etag`. Their projected values, revisions, relation batches and complete
+reading hash inputs come from one read-only REPEATABLE READ transaction. The list keeps its compact projection and omits
+reading notes from the body.
+
 `settings/mod.rs` hashes `SettingsEtagFields`, a private struct holding only the settings row's `revision`, which every
 write to the row increments, so the tag changes exactly when any setting does; both `GET` and `PUT /api/v1/settings`
 emit it. The `GET` body is a function of that row alone, so one tag never covers two different bodies. Process state
@@ -153,12 +159,13 @@ is reachable when an ETag-priming fetch loses a race against a very fast concurr
 
 ## Data and state
 
-No entity-tag is stored. Every server-side tag is derived on demand, inside the request's own transaction, from the
-database row the request already locked for its own write:
+Entity-tags are derived inside the request transaction. Metadata revisions and field stamps live on their owning rows;
+tags themselves are not stored. Writes compare under their resource locks, while matched metadata and list reads share
+an explicit database snapshot:
 
 | Endpoint family | Constructor | Hash/comparison input |
 | --------------- | ----------- | --------------------- |
-| `GET`/`PATCH .../metadata` | `hash_etag` | `BookMetadata` (also the wire response body) |
+| `GET`/`PATCH .../metadata` and list rows | `MetadataRevision::etag` | Work and manifestation identities and aggregate revisions |
 | `GET`/`PATCH .../reading` | `hash_etag` | `ReadingEtagFields<'a>` (private, distinct from wire type `ReadingState`) |
 | `GET`/`PUT /api/v1/settings` | `hash_etag` | `SettingsEtagFields` (the row's `revision` only) |
 
@@ -188,10 +195,10 @@ so a fresh page load starts with an empty cache; the next `GET` of either resour
 4. `update_book_metadata` checks `require_scope`/`require_not_child`, then `parse_if_match` (well-formed, so parsing
    succeeds), then acquires an RLS transaction and row-locks the manifestation and its work — the point at which a
    missing or RLS-hidden manifestation would answer `404`, ahead of the tag comparison.
-5. `load_book_metadata` reads the current `BookMetadata` under that same lock; `hash_etag(&current)` recomputes its tag,
-   so no concurrent writer can slip a change in between this comparison and the lock. `StrongEntityTag::matches` finds
-   the caller's cached tag does not match the fresh one; the handler returns `if_match_mismatch(&current_etag)` — `412`,
-   carrying the fresh tag — without ever inspecting the request body.
+5. `load_book_metadata` reads the current values and owner revisions under those locks. `MetadataRevision::etag`
+   recomputes the tag before any canonical writer can commit an intervening change. `StrongEntityTag::matches` finds the
+   caller's cached tag does not match the fresh one. The handler returns `if_match_mismatch(&current_etag)`, a 412 with
+   the current tag, before processing the request body.
 6. `apiFetch` calls `captureEtag` on this `412` response, overwriting `metadata:{id}` with the fresh tag. The caller's
    own recovery path (checked with `isIfMatchMismatch`) reloads and retries; the retried `PATCH` carries the tag the
    cache just refreshed, with no follow-up `GET` needed.

@@ -13,6 +13,166 @@ use uuid::Uuid;
 use crate::error::problems;
 use crate::test_support;
 
+// Data loss boundary: a concurrent write cannot detach list or matched values from their validators.
+#[sqlx::test(migrations = "./migrations")]
+async fn matched_list_baselines_share_one_snapshot(pool: PgPool) {
+    use axum::http::header::ETAG;
+
+    let app = test_support::db::app_pool_for(&pool).await;
+    let ing = test_support::db::ingestion_pool_for(&pool).await;
+    let (user, basic) = test_support::db::create_admin_and_basic_auth(&app).await;
+    let (work, edition) = insert_book(&ing, "snapshots", "Before title").await;
+    let (_, unread) = insert_book(&ing, "snapshots-unread", "Unread book").await;
+    let server = test_support::db::server_with_real_pools(&app, &ing);
+    let metadata_url = format!("/api/v1/books/{edition}/metadata");
+    let initial = server
+        .get(&metadata_url)
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    let patch = server
+        .patch(&metadata_url)
+        .add_header(AUTHORIZATION, basic.clone())
+        .add_header(axum::http::header::IF_MATCH, initial.header(ETAG))
+        .json(
+            &serde_json::json!({"tags": ["Before tag"], "genres": ["Before genre"],
+            "moods": ["Before mood"], "contributors": {"author": ["Before author"]},
+            "work_identifiers": {"openlibrary": "OL123W"}}),
+        )
+        .await;
+    assert_eq!(patch.status_code(), StatusCode::OK, "{}", patch.text());
+    sqlx::query!("INSERT INTO reading_state (user_id, manifestation_id, status, rating, notes, progress_pct, started_at, finished_at, last_read_at) VALUES ($1, $2, 'reading', 3, 'Before notes', 25, now(), now(), now())", user, edition).execute(&pool).await.unwrap();
+    let before_metadata = server
+        .get(&metadata_url)
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    let before_reading = server
+        .get(&format!("/api/v1/books/{edition}/reading"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    let unread_reading = server
+        .get(&format!("/api/v1/books/{unread}/reading"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    let before_list = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await
+        .json::<serde_json::Value>();
+    let before_row = before_list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == edition.to_string())
+        .unwrap();
+    assert_eq!(
+        before_row["metadata_etag"],
+        before_metadata.header(ETAG).to_str().unwrap()
+    );
+    assert_eq!(
+        before_row["reading_etag"],
+        before_reading.header(ETAG).to_str().unwrap()
+    );
+    let unread_row = before_list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == unread.to_string())
+        .unwrap();
+    assert!(unread_row["reading_state"].is_null());
+    assert_eq!(
+        unread_row["reading_etag"],
+        unread_reading.header(ETAG).to_str().unwrap()
+    );
+
+    let mut writer = pool.begin().await.unwrap();
+    sqlx::query!("LOCK TABLE manifestation_tags IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    let list = async {
+        server
+            .get("/api/v1/books")
+            .add_header(AUTHORIZATION, basic.clone())
+            .await
+    };
+    let matched = async {
+        server
+            .get(&metadata_url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await
+    };
+    tokio::pin!(list, matched);
+    tokio::select! {
+        response = &mut list => panic!("list did not reach the relation barrier: {}", response.text()),
+        response = &mut matched => panic!("metadata did not reach the relation barrier: {}", response.text()),
+        () = test_support::wait_for_blocked_query(&pool, "%FROM manifestation_tags%", 2) => {}
+    }
+    sqlx::query!("UPDATE works SET title = 'After title' WHERE id = $1", work)
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    sqlx::query!("UPDATE authors SET name = 'After author' WHERE id IN (SELECT author_id FROM work_authors WHERE work_id = $1)", work).execute(&mut *writer).await.unwrap();
+    sqlx::query!("UPDATE tags SET name = 'After tag' WHERE id IN (SELECT tag_id FROM manifestation_tags WHERE manifestation_id = $1)", edition).execute(&mut *writer).await.unwrap();
+    sqlx::query!(
+        "UPDATE work_external_identifiers SET external_id = 'OL456W' WHERE work_id = $1",
+        work
+    )
+    .execute(&mut *writer)
+    .await
+    .unwrap();
+    sqlx::query!("UPDATE reading_state SET rating = 5, notes = 'After notes', progress_pct = 75, last_read_at = now() WHERE user_id = $1 AND manifestation_id = $2", user, edition).execute(&mut *writer).await.unwrap();
+    writer.commit().await.unwrap();
+    let (list, matched) = tokio::join!(list, matched);
+    assert_eq!(list.status_code(), StatusCode::OK, "{}", list.text());
+    assert_eq!(matched.status_code(), StatusCode::OK, "{}", matched.text());
+    let list = list.json::<serde_json::Value>();
+    let row = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == edition.to_string())
+        .unwrap();
+    assert_eq!(row, before_row);
+    assert_eq!(
+        matched.json::<serde_json::Value>(),
+        before_metadata.json::<serde_json::Value>()
+    );
+    assert_eq!(matched.header(ETAG), before_metadata.header(ETAG));
+
+    let after_metadata = server
+        .get(&metadata_url)
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    let after_reading = server
+        .get(&format!("/api/v1/books/{edition}/reading"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    let after_list = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await
+        .json::<serde_json::Value>();
+    let after_row = after_list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == edition.to_string())
+        .unwrap();
+    assert_eq!(after_row["title"], "After title");
+    assert_eq!(after_row["authors"], serde_json::json!(["After author"]));
+    assert_eq!(after_row["tags"], serde_json::json!(["After tag"]));
+    assert_eq!(
+        after_row["metadata_etag"],
+        after_metadata.header(ETAG).to_str().unwrap()
+    );
+    assert_eq!(
+        after_row["reading_etag"],
+        after_reading.header(ETAG).to_str().unwrap()
+    );
+    assert_ne!(after_row["metadata_etag"], before_row["metadata_etag"]);
+    assert_ne!(after_row["reading_etag"], before_row["reading_etag"]);
+}
+
 /// Build a real-pool test server with a custom OPDS `page_size`.
 /// Mirrors [`test_support::db::server_with_real_pools`] but overrides
 /// the page-size knob so pagination-overflow tests can drive small

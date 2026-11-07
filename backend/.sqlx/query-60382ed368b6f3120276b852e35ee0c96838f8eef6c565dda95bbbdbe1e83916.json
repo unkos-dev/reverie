@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE work_external_identifiers SET external_id = 'OL456W' WHERE work_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "60382ed368b6f3120276b852e35ee0c96838f8eef6c565dda95bbbdbe1e83916"
+}

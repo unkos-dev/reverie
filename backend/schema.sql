@@ -339,6 +339,63 @@ CREATE TYPE public.writeback_status AS ENUM (
 ALTER TYPE public.writeback_status OWNER TO reverie_migrator;
 
 --
+-- Name: advance_metadata_revisions(jsonb); Type: FUNCTION; Schema: public; Owner: reverie_migrator
+--
+
+CREATE FUNCTION public.advance_metadata_revisions(affected jsonb) RETURNS void
+    LANGUAGE plpgsql STRICT SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM m.id FROM public.manifestations m
+    WHERE m.id IN (
+        SELECT owner_id
+        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
+        WHERE owner_kind = 'manifestation'
+    )
+    ORDER BY m.id FOR UPDATE OF m;
+    PERFORM w.id FROM public.works w
+    WHERE w.id IN (
+        SELECT owner_id
+        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
+        WHERE owner_kind = 'work'
+    )
+    ORDER BY w.id FOR UPDATE OF w;
+
+    WITH changed AS (
+        SELECT owner_id, array_agg(DISTINCT field_name ORDER BY field_name) AS fields
+        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
+        WHERE owner_kind = 'manifestation'
+        GROUP BY owner_id
+    )
+    UPDATE public.manifestations AS m
+    SET metadata_revision = m.metadata_revision + 1,
+        metadata_field_revisions = m.metadata_field_revisions || (
+            SELECT jsonb_object_agg(field_name, m.metadata_revision + 1)
+            FROM unnest(changed.fields) AS field_name
+        )
+    FROM changed WHERE m.id = changed.owner_id;
+
+    WITH changed AS (
+        SELECT owner_id, array_agg(DISTINCT field_name ORDER BY field_name) AS fields
+        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
+        WHERE owner_kind = 'work'
+        GROUP BY owner_id
+    )
+    UPDATE public.works AS w
+    SET metadata_revision = w.metadata_revision + 1,
+        metadata_field_revisions = w.metadata_field_revisions || (
+            SELECT jsonb_object_agg(field_name, w.metadata_revision + 1)
+            FROM unnest(changed.fields) AS field_name
+        )
+    FROM changed WHERE w.id = changed.owner_id;
+END;
+$$;
+
+
+ALTER FUNCTION public.advance_metadata_revisions(affected jsonb) OWNER TO reverie_migrator;
+
+--
 -- Name: immutable_unaccent(text); Type: FUNCTION; Schema: public; Owner: reverie_migrator
 --
 
@@ -363,6 +420,222 @@ CREATE FUNCTION public.immutable_unaccent_like(text) RETURNS text
 
 
 ALTER FUNCTION public.immutable_unaccent_like(text) OWNER TO reverie_migrator;
+
+--
+-- Name: metadata_provenance_revision(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
+--
+
+CREATE FUNCTION public.metadata_provenance_revision() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    changed_ids uuid[];
+    affected jsonb;
+BEGIN
+    SELECT array_agg(o.id ORDER BY o.id) INTO changed_ids
+    FROM old_rows o JOIN new_rows n USING (id)
+    WHERE (o.manifestation_id, o.source, o.field_name, o.new_value, o.confidence_score, o.match_type, o.resolved_by)
+        IS DISTINCT FROM
+          (n.manifestation_id, n.source, n.field_name, n.new_value, n.confidence_score, n.match_type, n.resolved_by);
+    IF changed_ids IS NULL THEN
+        RETURN NULL;
+    END IF;
+    SELECT jsonb_agg(to_jsonb(field)) INTO affected FROM (
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'publisher' AS field_name
+        FROM public.manifestations WHERE publisher_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'pub_date' AS field_name
+        FROM public.manifestations WHERE pub_date_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'isbn_10' AS field_name
+        FROM public.manifestations WHERE isbn_10_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'isbn_13' AS field_name
+        FROM public.manifestations WHERE isbn_13_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'pages' AS field_name
+        FROM public.manifestations WHERE pages_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'content_rating' AS field_name
+        FROM public.manifestations WHERE content_rating_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'cover' AS field_name
+        FROM public.manifestations WHERE cover_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work' AS owner_kind, id AS owner_id, 'title' AS field_name
+        FROM public.works WHERE title_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work' AS owner_kind, id AS owner_id, 'subtitle' AS field_name
+        FROM public.works WHERE subtitle_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work' AS owner_kind, id AS owner_id, 'description' AS field_name
+        FROM public.works WHERE description_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work' AS owner_kind, id AS owner_id, 'language' AS field_name
+        FROM public.works WHERE language_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work', work_id, 'contributors.' || role::text
+        FROM public.work_authors WHERE source_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work', work_id, 'identifiers.work.' || scheme
+        FROM public.work_external_identifiers WHERE source_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation', manifestation_id, 'identifiers.manifestation.' || scheme
+        FROM public.manifestation_external_identifiers WHERE source_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation', manifestation_id, 'genres'
+        FROM public.manifestation_genres WHERE source_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation', manifestation_id, 'moods'
+        FROM public.manifestation_moods WHERE source_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation', manifestation_id, 'tags'
+        FROM public.manifestation_tags WHERE source_version_id = ANY(changed_ids)
+    ) AS field;
+    PERFORM public.advance_metadata_revisions(affected);
+    RETURN NULL;
+END;
+$$;
+
+
+ALTER FUNCTION public.metadata_provenance_revision() OWNER TO reverie_migrator;
+
+--
+-- Name: metadata_reference_revision(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
+--
+
+CREATE FUNCTION public.metadata_reference_revision() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    changed_ids uuid[];
+    changed_schemes text[];
+    affected jsonb;
+BEGIN
+    IF TG_TABLE_NAME = 'identifier_schemes' THEN
+        SELECT array_agg(o.id ORDER BY o.id) INTO changed_schemes
+        FROM old_rows o JOIN new_rows n USING (id)
+        WHERE o.display_name IS DISTINCT FROM n.display_name;
+        SELECT jsonb_agg(to_jsonb(field)) INTO affected FROM (
+            SELECT 'manifestation' AS owner_kind, manifestation_id AS owner_id,
+                   'identifiers.manifestation.' || scheme AS field_name
+            FROM public.manifestation_external_identifiers WHERE scheme = ANY(changed_schemes)
+            UNION ALL
+            SELECT 'work', work_id, 'identifiers.work.' || scheme
+            FROM public.work_external_identifiers WHERE scheme = ANY(changed_schemes)
+        ) AS field;
+    ELSE
+        SELECT array_agg(o.id ORDER BY o.id) INTO changed_ids
+        FROM old_rows o JOIN new_rows n USING (id)
+        WHERE o.name IS DISTINCT FROM n.name
+           OR (TG_TABLE_NAME = 'authors' AND to_jsonb(o) -> 'sort_name' IS DISTINCT FROM to_jsonb(n) -> 'sort_name');
+        CASE TG_TABLE_NAME
+            WHEN 'authors' THEN
+                SELECT jsonb_agg(jsonb_build_object(
+                    'owner_kind', 'work', 'owner_id', work_id, 'field_name', 'contributors.' || role::text
+                )) INTO affected FROM public.work_authors WHERE author_id = ANY(changed_ids);
+            WHEN 'genres' THEN
+                SELECT jsonb_agg(jsonb_build_object(
+                    'owner_kind', 'manifestation', 'owner_id', manifestation_id, 'field_name', 'genres'
+                )) INTO affected FROM public.manifestation_genres WHERE genre_id = ANY(changed_ids);
+            WHEN 'moods' THEN
+                SELECT jsonb_agg(jsonb_build_object(
+                    'owner_kind', 'manifestation', 'owner_id', manifestation_id, 'field_name', 'moods'
+                )) INTO affected FROM public.manifestation_moods WHERE mood_id = ANY(changed_ids);
+            WHEN 'tags' THEN
+                SELECT jsonb_agg(jsonb_build_object(
+                    'owner_kind', 'manifestation', 'owner_id', manifestation_id, 'field_name', 'tags'
+                )) INTO affected FROM public.manifestation_tags WHERE tag_id = ANY(changed_ids);
+        END CASE;
+    END IF;
+    PERFORM public.advance_metadata_revisions(affected);
+    RETURN NULL;
+END;
+$$;
+
+
+ALTER FUNCTION public.metadata_reference_revision() OWNER TO reverie_migrator;
+
+--
+-- Name: metadata_relation_revision(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
+--
+
+CREATE FUNCTION public.metadata_relation_revision() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    changed_rows jsonb;
+    affected jsonb;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        SELECT jsonb_agg(to_jsonb(row_value)) INTO changed_rows FROM new_rows AS row_value;
+    ELSIF TG_OP = 'DELETE' THEN
+        SELECT jsonb_agg(to_jsonb(row_value)) INTO changed_rows FROM old_rows AS row_value;
+    ELSE
+        SELECT jsonb_agg(to_jsonb(row_value)) INTO changed_rows
+        FROM (
+            (SELECT * FROM old_rows EXCEPT SELECT * FROM new_rows)
+            UNION ALL
+            (SELECT * FROM new_rows EXCEPT SELECT * FROM old_rows)
+        ) AS row_value;
+    END IF;
+    SELECT jsonb_agg(jsonb_build_object(
+        'owner_kind', TG_ARGV[0], 'owner_id', row_value ->> TG_ARGV[1],
+        'field_name', CASE TG_ARGV[2]
+            WHEN 'contributors' THEN 'contributors.' || (row_value ->> 'role')
+            WHEN 'identifiers' THEN 'identifiers.' || TG_ARGV[0] || '.' || (row_value ->> 'scheme')
+            ELSE TG_ARGV[2]
+        END
+    )) INTO affected
+    FROM jsonb_array_elements(changed_rows) AS row_value;
+    PERFORM public.advance_metadata_revisions(affected);
+    RETURN NULL;
+END;
+$$;
+
+
+ALTER FUNCTION public.metadata_relation_revision() OWNER TO reverie_migrator;
+
+--
+-- Name: metadata_scalar_revision(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
+--
+
+CREATE FUNCTION public.metadata_scalar_revision() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    changed_fields text[];
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        NEW.metadata_revision := 0;
+        NEW.metadata_field_revisions := '{}'::jsonb;
+        RETURN NEW;
+    END IF;
+
+    SELECT array_agg(field.key ORDER BY field.key) INTO changed_fields
+    FROM unnest(TG_ARGV) AS specification
+    CROSS JOIN LATERAL jsonb_each(specification::jsonb) AS field
+    WHERE EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text(field.value) AS column_name
+        WHERE to_jsonb(OLD) -> column_name IS DISTINCT FROM to_jsonb(NEW) -> column_name
+    );
+    IF changed_fields IS NOT NULL THEN
+        NEW.metadata_revision := OLD.metadata_revision + 1;
+        NEW.metadata_field_revisions := OLD.metadata_field_revisions || (
+            SELECT jsonb_object_agg(field_name, NEW.metadata_revision)
+            FROM unnest(changed_fields) AS field_name
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.metadata_scalar_revision() OWNER TO reverie_migrator;
 
 --
 -- Name: notify_settings_changed(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
@@ -995,10 +1268,13 @@ CREATE TABLE public.manifestations (
     enrichment_failures jsonb DEFAULT '[]'::jsonb NOT NULL,
     enrichment_retry_not_before timestamp with time zone,
     enrichment_claim_seq bigint DEFAULT 0 NOT NULL,
+    metadata_revision bigint DEFAULT 0 NOT NULL,
+    metadata_field_revisions jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT manifestations_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_enrichment_attempted_at_ts_decode_range CHECK (((enrichment_attempted_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (enrichment_attempted_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_enrichment_failures_check CHECK ((jsonb_typeof(enrichment_failures) = 'array'::text)),
     CONSTRAINT manifestations_enrichment_retry_not_before_ts_decode_range CHECK (((enrichment_retry_not_before >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (enrichment_retry_not_before < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT manifestations_metadata_revision_check CHECK ((metadata_revision >= 0)),
     CONSTRAINT manifestations_pages_positive CHECK (((pages IS NULL) OR (pages > 0))),
     CONSTRAINT manifestations_relative_file_path_check CHECK (((file_path <> ''::text) AND ("left"(file_path, 1) <> '/'::text) AND ("right"(file_path, 1) <> '/'::text) AND (file_path !~~ '%//%'::text) AND (strpos(file_path, chr(92)) = 0) AND (file_path !~ '^[A-Za-z]:'::text) AND (file_path !~ '(^|/)[.]{1,2}(/|$)'::text))),
     CONSTRAINT manifestations_relocation_destination_check CHECK (((relocation_destination_path <> ''::text) AND (relocation_destination_path !~ '(^/|/$|//|\\|^[A-Za-z]:|(^|/)[.]{1,2}(/|$))'::text))),
@@ -1526,7 +1802,10 @@ CREATE TABLE public.works (
     subtitle text,
     subtitle_version_id uuid,
     first_author_sort_name text,
+    metadata_revision bigint DEFAULT 0 NOT NULL,
+    metadata_field_revisions jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT works_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT works_metadata_revision_check CHECK ((metadata_revision >= 0)),
     CONSTRAINT works_updated_at_ts_decode_range CHECK (((updated_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (updated_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
 );
 
@@ -2753,6 +3032,132 @@ CREATE INDEX session_expiry_date_idx ON tower_sessions.session USING btree (expi
 
 
 --
+-- Name: authors authors_metadata_reference; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER authors_metadata_reference AFTER UPDATE ON public.authors REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_reference_revision();
+
+
+--
+-- Name: genres genres_metadata_reference; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER genres_metadata_reference AFTER UPDATE ON public.genres REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_reference_revision();
+
+
+--
+-- Name: identifier_schemes identifier_schemes_metadata_reference; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER identifier_schemes_metadata_reference AFTER UPDATE ON public.identifier_schemes REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_reference_revision();
+
+
+--
+-- Name: manifestation_external_identifiers manifestation_external_identifiers_metadata_delete; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_external_identifiers_metadata_delete AFTER DELETE ON public.manifestation_external_identifiers REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'identifiers');
+
+
+--
+-- Name: manifestation_external_identifiers manifestation_external_identifiers_metadata_insert; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_external_identifiers_metadata_insert AFTER INSERT ON public.manifestation_external_identifiers REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'identifiers');
+
+
+--
+-- Name: manifestation_external_identifiers manifestation_external_identifiers_metadata_update; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_external_identifiers_metadata_update AFTER UPDATE ON public.manifestation_external_identifiers REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'identifiers');
+
+
+--
+-- Name: manifestation_genres manifestation_genres_metadata_delete; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_genres_metadata_delete AFTER DELETE ON public.manifestation_genres REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'genres');
+
+
+--
+-- Name: manifestation_genres manifestation_genres_metadata_insert; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_genres_metadata_insert AFTER INSERT ON public.manifestation_genres REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'genres');
+
+
+--
+-- Name: manifestation_genres manifestation_genres_metadata_update; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_genres_metadata_update AFTER UPDATE ON public.manifestation_genres REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'genres');
+
+
+--
+-- Name: manifestation_moods manifestation_moods_metadata_delete; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_moods_metadata_delete AFTER DELETE ON public.manifestation_moods REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'moods');
+
+
+--
+-- Name: manifestation_moods manifestation_moods_metadata_insert; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_moods_metadata_insert AFTER INSERT ON public.manifestation_moods REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'moods');
+
+
+--
+-- Name: manifestation_moods manifestation_moods_metadata_update; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_moods_metadata_update AFTER UPDATE ON public.manifestation_moods REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'moods');
+
+
+--
+-- Name: manifestation_tags manifestation_tags_metadata_delete; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_tags_metadata_delete AFTER DELETE ON public.manifestation_tags REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'tags');
+
+
+--
+-- Name: manifestation_tags manifestation_tags_metadata_insert; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_tags_metadata_insert AFTER INSERT ON public.manifestation_tags REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'tags');
+
+
+--
+-- Name: manifestation_tags manifestation_tags_metadata_update; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestation_tags_metadata_update AFTER UPDATE ON public.manifestation_tags REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('manifestation', 'manifestation_id', 'tags');
+
+
+--
+-- Name: manifestations manifestations_metadata_scalar; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER manifestations_metadata_scalar BEFORE INSERT OR UPDATE ON public.manifestations FOR EACH ROW EXECUTE FUNCTION public.metadata_scalar_revision('{"publisher":["publisher","publisher_version_id"]}', '{"pub_date":["pub_date","pub_date_version_id"]}', '{"isbn_10":["isbn_10","isbn_10_version_id"]}', '{"isbn_13":["isbn_13","isbn_13_version_id"]}', '{"pages":["pages","pages_version_id"]}', '{"content_rating":["content_rating","content_rating_version_id"]}', '{"cover":["cover_path","cover_sha256","cover_size_bytes","cover_source","cover_version_id"]}', '{"work":["work_id"]}');
+
+
+--
+-- Name: metadata_versions metadata_versions_metadata_reference; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER metadata_versions_metadata_reference AFTER UPDATE ON public.metadata_versions REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_provenance_revision();
+
+
+--
+-- Name: moods moods_metadata_reference; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER moods_metadata_reference AFTER UPDATE ON public.moods REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_reference_revision();
+
+
+--
 -- Name: settings settings_changed_trigger; Type: TRIGGER; Schema: public; Owner: reverie_migrator
 --
 
@@ -2764,6 +3169,13 @@ CREATE TRIGGER settings_changed_trigger AFTER UPDATE ON public.settings FOR EACH
 --
 
 CREATE TRIGGER shelves_set_updated_at BEFORE UPDATE ON public.shelves FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: tags tags_metadata_reference; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER tags_metadata_reference AFTER UPDATE ON public.tags REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_reference_revision();
 
 
 --
@@ -2820,6 +3232,55 @@ CREATE TRIGGER trg_works_search_vector BEFORE INSERT OR UPDATE OF title, descrip
 --
 
 CREATE TRIGGER trg_works_updated_at BEFORE UPDATE ON public.works FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: work_authors work_authors_metadata_delete; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER work_authors_metadata_delete AFTER DELETE ON public.work_authors REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('work', 'work_id', 'contributors');
+
+
+--
+-- Name: work_authors work_authors_metadata_insert; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER work_authors_metadata_insert AFTER INSERT ON public.work_authors REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('work', 'work_id', 'contributors');
+
+
+--
+-- Name: work_authors work_authors_metadata_update; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER work_authors_metadata_update AFTER UPDATE ON public.work_authors REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('work', 'work_id', 'contributors');
+
+
+--
+-- Name: work_external_identifiers work_external_identifiers_metadata_delete; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER work_external_identifiers_metadata_delete AFTER DELETE ON public.work_external_identifiers REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('work', 'work_id', 'identifiers');
+
+
+--
+-- Name: work_external_identifiers work_external_identifiers_metadata_insert; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER work_external_identifiers_metadata_insert AFTER INSERT ON public.work_external_identifiers REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('work', 'work_id', 'identifiers');
+
+
+--
+-- Name: work_external_identifiers work_external_identifiers_metadata_update; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER work_external_identifiers_metadata_update AFTER UPDATE ON public.work_external_identifiers REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.metadata_relation_revision('work', 'work_id', 'identifiers');
+
+
+--
+-- Name: works works_metadata_scalar; Type: TRIGGER; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TRIGGER works_metadata_scalar BEFORE INSERT OR UPDATE ON public.works FOR EACH ROW EXECUTE FUNCTION public.metadata_scalar_revision('{"title":["title","title_version_id","sort_title"]}', '{"subtitle":["subtitle","subtitle_version_id"]}', '{"description":["description","description_version_id"]}', '{"language":["language","language_version_id"]}', '{"contributors.author":["first_author_sort_name"]}');
 
 
 --
@@ -3862,6 +4323,41 @@ GRANT USAGE ON SCHEMA tower_sessions TO reverie_readonly;
 
 
 --
+-- Name: FUNCTION advance_metadata_revisions(affected jsonb); Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+REVOKE ALL ON FUNCTION public.advance_metadata_revisions(affected jsonb) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION metadata_provenance_revision(); Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+REVOKE ALL ON FUNCTION public.metadata_provenance_revision() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION metadata_reference_revision(); Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+REVOKE ALL ON FUNCTION public.metadata_reference_revision() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION metadata_relation_revision(); Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+REVOKE ALL ON FUNCTION public.metadata_relation_revision() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION metadata_scalar_revision(); Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+REVOKE ALL ON FUNCTION public.metadata_scalar_revision() FROM PUBLIC;
+
+
+--
 -- Name: TABLE _sqlx_migrations; Type: ACL; Schema: public; Owner: reverie_migrator
 --
 
@@ -4055,9 +4551,345 @@ GRANT SELECT ON TABLE public.manifestation_tags TO reverie_readonly;
 -- Name: TABLE manifestations; Type: ACL; Schema: public; Owner: reverie_migrator
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.manifestations TO reverie_app;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.manifestations TO reverie_ingestion;
+GRANT SELECT,DELETE ON TABLE public.manifestations TO reverie_app;
+GRANT SELECT,DELETE ON TABLE public.manifestations TO reverie_ingestion;
 GRANT SELECT ON TABLE public.manifestations TO reverie_readonly;
+
+
+--
+-- Name: COLUMN manifestations.id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(id),UPDATE(id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(id),UPDATE(id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.work_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(work_id),UPDATE(work_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(work_id),UPDATE(work_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.isbn_10; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(isbn_10),UPDATE(isbn_10) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(isbn_10),UPDATE(isbn_10) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.isbn_13; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(isbn_13),UPDATE(isbn_13) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(isbn_13),UPDATE(isbn_13) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.publisher; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(publisher),UPDATE(publisher) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(publisher),UPDATE(publisher) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.pub_date; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(pub_date),UPDATE(pub_date) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(pub_date),UPDATE(pub_date) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.format; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(format),UPDATE(format) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(format),UPDATE(format) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.file_path; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(file_path),UPDATE(file_path) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(file_path),UPDATE(file_path) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.ingestion_file_hash; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(ingestion_file_hash),UPDATE(ingestion_file_hash) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(ingestion_file_hash),UPDATE(ingestion_file_hash) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.file_size_bytes; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(file_size_bytes),UPDATE(file_size_bytes) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(file_size_bytes),UPDATE(file_size_bytes) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.validation_status; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(validation_status),UPDATE(validation_status) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(validation_status),UPDATE(validation_status) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.ingestion_status; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(ingestion_status),UPDATE(ingestion_status) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(ingestion_status),UPDATE(ingestion_status) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.created_at; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(created_at),UPDATE(created_at) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(created_at),UPDATE(created_at) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.updated_at; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(updated_at),UPDATE(updated_at) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(updated_at),UPDATE(updated_at) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.accessibility_metadata; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(accessibility_metadata),UPDATE(accessibility_metadata) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(accessibility_metadata),UPDATE(accessibility_metadata) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.publisher_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(publisher_version_id),UPDATE(publisher_version_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(publisher_version_id),UPDATE(publisher_version_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.pub_date_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(pub_date_version_id),UPDATE(pub_date_version_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(pub_date_version_id),UPDATE(pub_date_version_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.isbn_10_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(isbn_10_version_id),UPDATE(isbn_10_version_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(isbn_10_version_id),UPDATE(isbn_10_version_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.isbn_13_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(isbn_13_version_id),UPDATE(isbn_13_version_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(isbn_13_version_id),UPDATE(isbn_13_version_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.cover_path; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(cover_path),UPDATE(cover_path) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(cover_path),UPDATE(cover_path) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.cover_sha256; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(cover_sha256),UPDATE(cover_sha256) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(cover_sha256),UPDATE(cover_sha256) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.cover_size_bytes; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(cover_size_bytes),UPDATE(cover_size_bytes) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(cover_size_bytes),UPDATE(cover_size_bytes) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.cover_source; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(cover_source),UPDATE(cover_source) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(cover_source),UPDATE(cover_source) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.cover_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(cover_version_id),UPDATE(cover_version_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(cover_version_id),UPDATE(cover_version_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.suspected_duplicate_work_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(suspected_duplicate_work_id),UPDATE(suspected_duplicate_work_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(suspected_duplicate_work_id),UPDATE(suspected_duplicate_work_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.enrichment_status; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(enrichment_status),UPDATE(enrichment_status) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(enrichment_status),UPDATE(enrichment_status) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.enrichment_attempted_at; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(enrichment_attempted_at),UPDATE(enrichment_attempted_at) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(enrichment_attempted_at),UPDATE(enrichment_attempted_at) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.enrichment_attempt_count; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(enrichment_attempt_count),UPDATE(enrichment_attempt_count) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(enrichment_attempt_count),UPDATE(enrichment_attempt_count) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.enrichment_error; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(enrichment_error),UPDATE(enrichment_error) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(enrichment_error),UPDATE(enrichment_error) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.current_file_hash; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(current_file_hash),UPDATE(current_file_hash) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(current_file_hash),UPDATE(current_file_hash) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.pages; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(pages),UPDATE(pages) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(pages),UPDATE(pages) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.pages_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(pages_version_id),UPDATE(pages_version_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(pages_version_id),UPDATE(pages_version_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.content_rating; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(content_rating),UPDATE(content_rating) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(content_rating),UPDATE(content_rating) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.content_rating_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(content_rating_version_id),UPDATE(content_rating_version_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(content_rating_version_id),UPDATE(content_rating_version_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.enrichment_rerun_requested; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(enrichment_rerun_requested),UPDATE(enrichment_rerun_requested) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(enrichment_rerun_requested),UPDATE(enrichment_rerun_requested) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.has_embedded_cover; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(has_embedded_cover),UPDATE(has_embedded_cover) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(has_embedded_cover),UPDATE(has_embedded_cover) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.library_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(library_id),UPDATE(library_id) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(library_id),UPDATE(library_id) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.relocation_source_path; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(relocation_source_path),UPDATE(relocation_source_path) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(relocation_source_path),UPDATE(relocation_source_path) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.relocation_destination_path; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(relocation_destination_path),UPDATE(relocation_destination_path) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(relocation_destination_path),UPDATE(relocation_destination_path) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.enrichment_failures; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(enrichment_failures),UPDATE(enrichment_failures) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(enrichment_failures),UPDATE(enrichment_failures) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.enrichment_retry_not_before; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(enrichment_retry_not_before),UPDATE(enrichment_retry_not_before) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(enrichment_retry_not_before),UPDATE(enrichment_retry_not_before) ON TABLE public.manifestations TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN manifestations.enrichment_claim_seq; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(enrichment_claim_seq),UPDATE(enrichment_claim_seq) ON TABLE public.manifestations TO reverie_app;
+GRANT INSERT(enrichment_claim_seq),UPDATE(enrichment_claim_seq) ON TABLE public.manifestations TO reverie_ingestion;
 
 
 --
@@ -4256,9 +5088,121 @@ GRANT SELECT ON TABLE public.work_external_identifiers TO reverie_readonly;
 -- Name: TABLE works; Type: ACL; Schema: public; Owner: reverie_migrator
 --
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.works TO reverie_app;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.works TO reverie_ingestion;
+GRANT SELECT,DELETE ON TABLE public.works TO reverie_app;
+GRANT SELECT,DELETE ON TABLE public.works TO reverie_ingestion;
 GRANT SELECT ON TABLE public.works TO reverie_readonly;
+
+
+--
+-- Name: COLUMN works.id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(id),UPDATE(id) ON TABLE public.works TO reverie_app;
+GRANT INSERT(id),UPDATE(id) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.title; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(title),UPDATE(title) ON TABLE public.works TO reverie_app;
+GRANT INSERT(title),UPDATE(title) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.sort_title; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(sort_title),UPDATE(sort_title) ON TABLE public.works TO reverie_app;
+GRANT INSERT(sort_title),UPDATE(sort_title) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.description; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(description),UPDATE(description) ON TABLE public.works TO reverie_app;
+GRANT INSERT(description),UPDATE(description) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.language; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(language),UPDATE(language) ON TABLE public.works TO reverie_app;
+GRANT INSERT(language),UPDATE(language) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.created_at; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(created_at),UPDATE(created_at) ON TABLE public.works TO reverie_app;
+GRANT INSERT(created_at),UPDATE(created_at) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.updated_at; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(updated_at),UPDATE(updated_at) ON TABLE public.works TO reverie_app;
+GRANT INSERT(updated_at),UPDATE(updated_at) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.search_vector; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(search_vector),UPDATE(search_vector) ON TABLE public.works TO reverie_app;
+GRANT INSERT(search_vector),UPDATE(search_vector) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.title_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(title_version_id),UPDATE(title_version_id) ON TABLE public.works TO reverie_app;
+GRANT INSERT(title_version_id),UPDATE(title_version_id) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.description_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(description_version_id),UPDATE(description_version_id) ON TABLE public.works TO reverie_app;
+GRANT INSERT(description_version_id),UPDATE(description_version_id) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.language_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(language_version_id),UPDATE(language_version_id) ON TABLE public.works TO reverie_app;
+GRANT INSERT(language_version_id),UPDATE(language_version_id) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.subtitle; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(subtitle),UPDATE(subtitle) ON TABLE public.works TO reverie_app;
+GRANT INSERT(subtitle),UPDATE(subtitle) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.subtitle_version_id; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(subtitle_version_id),UPDATE(subtitle_version_id) ON TABLE public.works TO reverie_app;
+GRANT INSERT(subtitle_version_id),UPDATE(subtitle_version_id) ON TABLE public.works TO reverie_ingestion;
+
+
+--
+-- Name: COLUMN works.first_author_sort_name; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT INSERT(first_author_sort_name),UPDATE(first_author_sort_name) ON TABLE public.works TO reverie_app;
+GRANT INSERT(first_author_sort_name),UPDATE(first_author_sort_name) ON TABLE public.works TO reverie_ingestion;
 
 
 --

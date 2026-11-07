@@ -23,7 +23,7 @@ use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
 use crate::extract::{ApiJson, ApiPath};
-use crate::models::reading_state::ReadingState;
+use crate::models::reading_state::{ReadingState, ReadingStateSummary};
 use crate::models::reading_status::ReadingStatus;
 use crate::routes::etag::{hash_etag, if_match_mismatch, parse_if_match};
 use crate::state::AppState;
@@ -62,14 +62,26 @@ async fn ensure_manifestation_visible(
 /// PATCH pre-write lock). `Default` gives the all-null "unread" shape for a
 /// missing row.
 #[derive(Debug, Default, Clone)]
-struct ReadingStateRow {
-    status: Option<ReadingStatus>,
-    rating: Option<i16>,
-    notes: Option<String>,
-    progress_pct: Option<f32>,
-    started_at: Option<DateTime<Utc>>,
-    finished_at: Option<DateTime<Utc>>,
-    last_read_at: Option<DateTime<Utc>>,
+pub(crate) struct ReadingStateRow {
+    pub status: Option<ReadingStatus>,
+    pub rating: Option<i16>,
+    pub notes: Option<String>,
+    pub progress_pct: Option<f32>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub last_read_at: Option<DateTime<Utc>>,
+}
+
+impl From<&ReadingStateRow> for ReadingStateSummary {
+    fn from(r: &ReadingStateRow) -> Self {
+        Self {
+            status: r.status,
+            rating: r.rating,
+            progress_pct: r.progress_pct,
+            started_at: r.started_at,
+            finished_at: r.finished_at,
+        }
+    }
 }
 
 impl From<ReadingStateRow> for ReadingState {
@@ -103,7 +115,7 @@ struct ReadingEtagFields<'a> {
 }
 
 impl ReadingStateRow {
-    fn etag(&self) -> Result<axum::http::HeaderValue, AppError> {
+    pub(crate) fn etag(&self) -> Result<axum::http::HeaderValue, AppError> {
         hash_etag(&ReadingEtagFields {
             status: self.status,
             rating: self.rating,

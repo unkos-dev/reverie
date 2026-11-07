@@ -123,9 +123,21 @@ pub async fn acquire_with_rls_read_committed(
     acquire_with_rls_inner(pool, user_id, RlsIsolation::ReadCommitted).await
 }
 
+/// Opens a read-only RLS transaction whose statements share one database snapshot.
+///
+/// # Errors
+/// Returns database errors from transaction setup.
+pub async fn acquire_with_rls_snapshot(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, sqlx::Error> {
+    acquire_with_rls_inner(pool, user_id, RlsIsolation::Snapshot).await
+}
+
 enum RlsIsolation {
     Inherited,
     ReadCommitted,
+    Snapshot,
 }
 
 async fn acquire_with_rls_inner(
@@ -134,10 +146,13 @@ async fn acquire_with_rls_inner(
     isolation: RlsIsolation,
 ) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, sqlx::Error> {
     let mut tx = pool.begin().await?;
-    if matches!(isolation, RlsIsolation::ReadCommitted) {
-        sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
-            .execute(&mut *tx)
-            .await?;
+    let setup = match isolation {
+        RlsIsolation::Inherited => None,
+        RlsIsolation::ReadCommitted => Some("SET TRANSACTION ISOLATION LEVEL READ COMMITTED"),
+        RlsIsolation::Snapshot => Some("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"),
+    };
+    if let Some(setup) = setup {
+        sqlx::query(setup).execute(&mut *tx).await?;
     }
     sqlx::query("SELECT set_config('app.current_user_id', $1::text, true)")
         .bind(user_id.to_string())

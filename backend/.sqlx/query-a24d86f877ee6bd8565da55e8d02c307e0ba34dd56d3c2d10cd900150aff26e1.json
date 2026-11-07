@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT w.id             AS \"work_id!\",\n               w.title          AS \"title!\",\n               w.subtitle       AS subtitle,\n               w.description    AS description,\n               w.language       AS language,\n               m.publisher      AS publisher,\n               m.pub_date       AS pub_date,\n               m.isbn_10        AS isbn_10,\n               m.isbn_13        AS isbn_13,\n               m.pages          AS pages,\n               m.content_rating AS \"content_rating: ContentRating\"\n          FROM manifestations m\n          JOIN works w ON w.id = m.work_id\n         WHERE m.id = $1\n        ",
+  "query": "\n        SELECT w.id             AS \"work_id!\",\n               w.metadata_revision AS \"work_revision!\",\n               m.metadata_revision AS \"manifestation_revision!\",\n               w.title          AS \"title!\",\n               w.subtitle       AS subtitle,\n               w.description    AS description,\n               w.language       AS language,\n               m.publisher      AS publisher,\n               m.pub_date       AS pub_date,\n               m.isbn_10        AS isbn_10,\n               m.isbn_13        AS isbn_13,\n               m.pages          AS pages,\n               m.content_rating AS \"content_rating: ContentRating\"\n          FROM manifestations m\n          JOIN works w ON w.id = m.work_id\n         WHERE m.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,28 @@
       },
       {
         "ordinal": 1,
+        "name": "work_revision!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "metadata_revision"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "manifestation_revision!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "metadata_revision"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "title!",
         "type_info": "Text",
         "origin": {
@@ -26,7 +48,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 4,
         "name": "subtitle",
         "type_info": "Text",
         "origin": {
@@ -37,7 +59,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 5,
         "name": "description",
         "type_info": "Text",
         "origin": {
@@ -48,7 +70,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "language",
         "type_info": "Text",
         "origin": {
@@ -59,7 +81,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "publisher",
         "type_info": "Text",
         "origin": {
@@ -70,7 +92,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "pub_date",
         "type_info": "Text",
         "origin": {
@@ -81,7 +103,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "isbn_10",
         "type_info": "Text",
         "origin": {
@@ -92,7 +114,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "isbn_13",
         "type_info": "Text",
         "origin": {
@@ -103,7 +125,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 11,
         "name": "pages",
         "type_info": "Int4",
         "origin": {
@@ -114,7 +136,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "content_rating: ContentRating",
         "type_info": {
           "Custom": {
@@ -146,6 +168,8 @@
     "nullable": [
       false,
       false,
+      false,
+      false,
       true,
       true,
       true,
@@ -157,5 +181,5 @@
       true
     ]
   },
-  "hash": "e84ba935e41a4726edfb0fc03509fc354949860f1d13c73bbc8e7707ffa8606d"
+  "hash": "a24d86f877ee6bd8565da55e8d02c307e0ba34dd56d3c2d10cd900150aff26e1"
 }

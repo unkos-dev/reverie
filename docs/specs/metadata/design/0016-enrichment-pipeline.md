@@ -215,6 +215,15 @@ ambient path and has no production caller.
 
 ## Data and state
 
+Canonical scalar, relation and source-pointer changes advance metadata aggregate revisions and the affected field stamps
+through the data-model triggers. A referenced journal row's value, source, origin edition, field, confidence, match type
+or resolving user change also advances its current references. An unattached proposal, repeated observation count,
+last-seen time or review-status change does not. No application-level revision call is required.
+
+These triggers remain inside the existing catalogue transaction. The manifestation claim-sequence lock still precedes
+work locks and canonical writes, and the attempt retains transaction ownership through commit or acknowledged rollback.
+Queue claims, rescue, retries and status updates do not advance metadata revisions.
+
 Pending raster names use `{manifestation_id}-{version_id_short}.{ext}`, with the first eight version UUID characters
 after removing dashes. The dormant download helper is the staging writer; the dormant writeback cover branch promotes a
 sidecar within the same library. Neither has a live production input. Staging does not write

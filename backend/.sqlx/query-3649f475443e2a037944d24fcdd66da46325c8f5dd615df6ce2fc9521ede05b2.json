@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE authors SET name = 'After author' WHERE id IN (SELECT author_id FROM work_authors WHERE work_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3649f475443e2a037944d24fcdd66da46325c8f5dd615df6ce2fc9521ede05b2"
+}

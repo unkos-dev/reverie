@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reading_state SET rating = 5, notes = 'After notes', progress_pct = 75, last_read_at = now() WHERE user_id = $1 AND manifestation_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7626a675cd40fb986ba1c63256e7af493b8775e9d46c76e3e5a456a2685ac2ef"
+}

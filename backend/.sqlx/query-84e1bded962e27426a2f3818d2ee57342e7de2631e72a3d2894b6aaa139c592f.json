@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO reading_state (user_id, manifestation_id, status, rating, notes, progress_pct, started_at, finished_at, last_read_at) VALUES ($1, $2, 'reading', 3, 'Before notes', 25, now(), now(), now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "84e1bded962e27426a2f3818d2ee57342e7de2631e72a3d2894b6aaa139c592f"
+}

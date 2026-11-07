@@ -112,6 +112,12 @@ pub struct BookListRow {
     /// `works.id` of the parent work. Lets the client navigate to
     /// `/api/v1/works/{work_id}` from a list row without an extra fetch.
     pub work_id: Uuid,
+    /// Metadata validator from the same snapshot as this row's canonical values.
+    #[schema(max_length = 128)]
+    pub metadata_etag: String,
+    /// Reading validator covering the caller's full state, including omitted notes and dates.
+    #[schema(max_length = 128)]
+    pub reading_etag: String,
     /// `works.title` of the parent work.
     pub title: String,
     /// `works.subtitle`, when declared.

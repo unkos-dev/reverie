@@ -100,6 +100,11 @@ application-role DSN is never substituted. One-shot administrative commands reta
 
 ## Data and state
 
+Work and manifestation inserts initialise metadata revisions and field stamps at zero. Stub upgrades, canonical source
+pointer wiring, contributors and identifier writes advance the affected identities through the data-model triggers in
+the same registration transaction. Draft insertion alone does not advance a revision. Ingestion input observations,
+publication evidence, path claims and job bookkeeping remain outside metadata identity.
+
 `ingestion_inputs` stores a byte-preserving ingestion-relative path, full source fingerprint, generation, current
 status, reason, rejection classes, optional work link, the manifestation a duplicate matched, observation and
 retry-reset times, the time its retries were exhausted, completion time and removal cause. The rejection classes are a
