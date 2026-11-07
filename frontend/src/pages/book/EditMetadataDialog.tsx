@@ -245,6 +245,10 @@ function EditMetadataFields({
   const touched = useRef(new Set<keyof UpdateBookMetadataFields>());
   const [pendingClearConfirm, setPendingClearConfirm] = useState(false);
   const formId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  function formValues(form: HTMLFormElement): Record<string, string> {
+    return z.record(z.string(), z.string()).parse(Object.fromEntries(new FormData(form)));
+  }
   function reconcile(snapshot: MetadataSnapshot): void {
     queryClient.setQueryData(queryKeys.books.metadata(manifestationId), snapshot);
     void queryClient.invalidateQueries({ queryKey: ["books", "list"] });
@@ -254,13 +258,18 @@ function EditMetadataFields({
       predicate: (query) => query.queryKey.length === 3 && query.queryKey[2] !== manifestationId,
     });
   }
-  async function complete(snapshot: MetadataSnapshot): Promise<void> {
+  async function complete(
+    snapshot: MetadataSnapshot,
+    submitted: UpdateBookMetadataFields,
+  ): Promise<void> {
     reconcile(snapshot);
     await queryClient.invalidateQueries({
       queryKey: queryKeys.books.metadata(manifestationId),
       exact: true,
     });
-    onDone();
+    const form = formRef.current;
+    if (form !== null && JSON.stringify(buildBody(formValues(form))) === JSON.stringify(submitted))
+      onDone();
   }
   const mutation = useMutation({
     mutationFn: async ({
@@ -285,7 +294,7 @@ function EditMetadataFields({
         throw error;
       }
     },
-    onSuccess: complete,
+    onSuccess: (snapshot, { body }) => complete(snapshot, body),
   });
   const uncertain =
     mutation.isError &&
@@ -301,15 +310,16 @@ function EditMetadataFields({
       mutation.variables?.requestId,
     ],
     queryFn: async ({ signal }) => {
-      const requestId = mutation.variables?.requestId;
-      if (requestId === undefined) throw new Error("No save to resolve.");
+      const submission = mutation.variables;
+      if (submission === undefined) throw new Error("No save to resolve.");
+      const requestId = submission.requestId;
       const response = await resolveMetadataOperation(
         manifestationId,
         { request_id: requestId },
         signal,
       );
       signal.throwIfAborted();
-      if (response.outcome === "saved") await complete(response);
+      if (response.outcome === "saved") await complete(response, submission.body);
       else reconcile(response);
       return response;
     },
@@ -368,11 +378,14 @@ function EditMetadataFields({
             : crypto.randomUUID();
         attempt.current = { body, requestId };
         await mutation.mutateAsync({ body, requestId });
-        return { values, error: null };
+        return {
+          values: formRef.current === null ? values : formValues(formRef.current),
+          error: null,
+        };
       } catch (err) {
         const errors = err instanceof ApiError ? err.errors : undefined;
         return {
-          values,
+          values: formRef.current === null ? values : formValues(formRef.current),
           error:
             isIfMatchMismatch(err) || Object.keys(errors ?? {}).length > 0
               ? null
@@ -384,9 +397,11 @@ function EditMetadataFields({
     { values: {}, error: null },
   );
 
+  const saveConfirmed = mutation.isSuccess || resolution.data?.outcome === "saved";
   return (
     <>
       <Form
+        ref={formRef}
         id={formId}
         action={action}
         onSubmit={(event) => {
@@ -429,13 +444,18 @@ function EditMetadataFields({
             </p>
           ) : null}
         </div>
-        {state.error ? <FieldError>{state.error}</FieldError> : null}
+        {state.error && !saveConfirmed ? <FieldError>{state.error}</FieldError> : null}
         {mutation.isPaused || resolution.fetchStatus === "paused" ? (
           <p role="status" className="text-fg-muted text-sm">
             Connection problem. Your entered edits are retained.
           </p>
         ) : null}
-        {uncertain && resolution.data?.outcome !== "unknown" ? (
+        {saveConfirmed ? (
+          <p role="status" className="text-fg-muted text-sm">
+            Save confirmed. Your newer edits are retained.
+          </p>
+        ) : null}
+        {uncertain && !saveConfirmed && resolution.data?.outcome !== "unknown" ? (
           <p role="status" className="text-fg-muted text-sm">
             {resolution.isFetching
               ? "Checking whether your save completed…"

@@ -10,6 +10,7 @@ import {
   updateBookMetadata,
   type BookMetadata,
   type MetadataSnapshot,
+  type OperationResponse,
   resolveMetadataOperation,
 } from "@/api";
 
@@ -223,6 +224,58 @@ test("awaits save, retains publication-date errors and other edits, and closes a
   await vi.waitFor(() => {
     expect(automatic.onOpenChange).toHaveBeenCalledWith(false);
   });
+  await automatic.unmount();
+  let confirmEarlier: (value: OperationResponse) => void = () => {};
+  const earlierReceipt = new Promise<OperationResponse>((resolve) => {
+    confirmEarlier = resolve;
+  });
+  let rejectPending: (error: Error) => void = () => {};
+  vi.mocked(updateBookMetadata).mockReturnValueOnce(
+    new Promise((_resolve, reject) => {
+      rejectPending = reject;
+    }),
+  );
+  vi.mocked(resolveMetadataOperation).mockReset().mockReturnValueOnce(earlierReceipt);
+  const newerDraft = await renderDialog();
+  await submitEdit();
+  await expect.element(page.getByRole("button", { name: "Save" })).toHaveAttribute("data-pending");
+  await page.getByLabelText("Subtitle").fill("Newer unsaved input");
+  rejectPending(new TypeError("Lost acknowledgement"));
+  await vi.waitFor(() => {
+    expect(resolveMetadataOperation).toHaveBeenCalledTimes(1);
+  });
+  await expect
+    .element(page.getByRole("button", { name: "Save" }))
+    .not.toHaveAttribute("data-pending");
+  const earlierAutomatic = vi.mocked(updateBookMetadata).mock.calls.at(-1);
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Newer unsaved input");
+  const confirmed = {
+    ...metadataFixture({ subtitle: "Updated Subtitle" }),
+    etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
+  };
+  vi.mocked(getBookMetadata).mockResolvedValue(confirmed);
+  confirmEarlier({ ...confirmed, outcome: "saved", operations: [] });
+  await expect
+    .element(page.getByText("Save confirmed. Your newer edits are retained.", { exact: true }))
+    .toBeInTheDocument();
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Newer unsaved input");
+  expect(newerDraft.onOpenChange).not.toHaveBeenCalled();
+  vi.mocked(updateBookMetadata).mockRejectedValueOnce(
+    new ApiError(412, "/if-match-mismatch", "Precondition failed", "Changed"),
+  );
+  vi.mocked(resolveMetadataOperation).mockResolvedValueOnce({
+    ...confirmed,
+    outcome: "unknown",
+    operations: [],
+  });
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
+  await expect
+    .element(page.getByRole("button", { name: "Discard edits and reload" }))
+    .toBeInTheDocument();
+  expect(vi.mocked(updateBookMetadata).mock.lastCall?.[2]).toBe(earlierAutomatic?.[2]);
+  expect(vi.mocked(updateBookMetadata).mock.lastCall?.[3]).not.toBe(earlierAutomatic?.[3]);
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Newer unsaved input");
+  expect(newerDraft.onOpenChange).not.toHaveBeenCalled();
 });
 
 test("cancelling a populated-field clear keeps the edit and sends nothing; confirmation saves null", async () => {

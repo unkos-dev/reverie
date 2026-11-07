@@ -816,105 +816,74 @@ async fn apply_version(
             .as_str()
             .map_or_else(|| value.to_string(), str::to_owned)
     };
-    match field {
-        "title" => sqlx::query!(
+    let update = match field {
+        "title" => Some(sqlx::query!(
             "UPDATE works \
              SET title = $1, sort_title = lower($1), title_version_id = $2 \
              WHERE id = $3",
             str_val,
             version_id,
             work_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "description" => sqlx::query!(
+        )),
+        "description" => Some(sqlx::query!(
             "UPDATE works SET description = $1, description_version_id = $2 \
              WHERE id = $3",
             str_val,
             version_id,
             work_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "language" => sqlx::query!(
+        )),
+        "language" => Some(sqlx::query!(
             "UPDATE works SET language = $1, language_version_id = $2 \
              WHERE id = $3",
             str_val,
             version_id,
             work_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "subtitle" => sqlx::query!(
+        )),
+        "subtitle" => Some(sqlx::query!(
             "UPDATE works SET subtitle = $1, subtitle_version_id = $2 \
              WHERE id = $3",
             str_val,
             version_id,
             work_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
+        )),
         "pages" => {
             let pages = value
                 .as_i64()
                 .and_then(|n| i32::try_from(n).ok())
                 .filter(|n| *n > 0)
                 .ok_or_else(|| AppError::Validation("pages must be a positive integer".into()))?;
-            sqlx::query!(
+            Some(sqlx::query!(
                 "UPDATE manifestations SET pages = $1, pages_version_id = $2 \
                  WHERE id = $3",
                 pages,
                 version_id,
                 manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+            ))
         }
-        "publisher" => sqlx::query!(
+        "publisher" => Some(sqlx::query!(
             "UPDATE manifestations \
              SET publisher = $1, publisher_version_id = $2 \
              WHERE id = $3",
             str_val,
             version_id,
             manifestation_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "isbn_10" => sqlx::query!(
+        )),
+        "isbn_10" => Some(sqlx::query!(
             "UPDATE manifestations \
              SET isbn_10 = $1, isbn_10_version_id = $2 \
              WHERE id = $3",
             str_val,
             version_id,
             manifestation_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "isbn_13" => sqlx::query!(
+        )),
+        "isbn_13" => Some(sqlx::query!(
             "UPDATE manifestations \
              SET isbn_13 = $1, isbn_13_version_id = $2 \
              WHERE id = $3",
             str_val,
             version_id,
             manifestation_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
+        )),
         "pub_date" => {
             let date = crate::services::metadata::publication_date::normalise(&str_val)
                 .and_then(|value| value.ok_or(crate::services::metadata::publication_date::PublicationDateError::Malformed))
@@ -925,17 +894,14 @@ async fn apply_version(
                         errors: std::collections::BTreeMap::from([("pub_date".into(), message)]),
                     }
                 })?;
-            sqlx::query!(
+            Some(sqlx::query!(
                 "UPDATE manifestations \
                  SET pub_date = $1, pub_date_version_id = $2 \
                  WHERE id = $3",
                 date,
                 version_id,
                 manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+            ))
         }
         "content_rating" => {
             let rating: ContentRating = serde_json::from_value(value.clone()).map_err(|_| {
@@ -943,17 +909,14 @@ async fn apply_version(
                     "content_rating must be one of everyone, teen, mature, adult, explicit".into(),
                 )
             })?;
-            sqlx::query!(
+            Some(sqlx::query!(
                 "UPDATE manifestations \
                  SET content_rating = $1, content_rating_version_id = $2 \
                  WHERE id = $3",
                 rating as ContentRating,
                 version_id,
                 manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+            ))
         }
         "genres" | "moods" | "tags" => {
             let vocab = VocabularyField::from_field_name(field).ok_or_else(|| {
@@ -965,6 +928,7 @@ async fn apply_version(
             let trimmed = validated_vocabulary_terms(field, &names)?;
             delete_vocabulary_rows(tx, manifestation_id, vocab).await?;
             insert_vocabulary_rows(tx, manifestation_id, vocab, &trimmed, version_id).await?;
+            None
         }
         _ if field.starts_with("contributors.") => {
             let role = &field["contributors.".len()..];
@@ -997,6 +961,7 @@ async fn apply_version(
                     .await
                     .map_err(|e| AppError::Internal(e.into()))?;
             }
+            None
         }
         _ if field.starts_with("identifiers.") => {
             let (level, scheme) = parse_identifier_field(field)?;
@@ -1032,12 +997,19 @@ async fn apply_version(
                     .map_err(|e| AppError::Internal(e.into()))?;
                 }
             }
+            None
         }
         other => {
             return Err(AppError::Validation(format!(
                 "unsupported auto-apply field '{other}' (list/complex fields must be accepted via their dedicated routes)"
             )));
         }
+    };
+    if let Some(update) = update {
+        update
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
     }
     // External identifiers are never written back to the source file, so an
     // identifier apply (manual set, accept, or revert) must not enqueue an
@@ -1089,103 +1061,68 @@ async fn clear_field(
     manifestation_id: Uuid,
     work_id: Uuid,
 ) -> Result<(), AppError> {
-    match field {
+    let update = match field {
         "title" => {
             return Err(AppError::Validation(
                 "cannot clear title — revert to a specific version instead".into(),
             ));
         }
-        "description" => sqlx::query!(
+        "description" => Some(sqlx::query!(
             "UPDATE works SET description = NULL, description_version_id = NULL \
              WHERE id = $1",
             work_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "language" => sqlx::query!(
+        )),
+        "language" => Some(sqlx::query!(
             "UPDATE works SET language = NULL, language_version_id = NULL \
              WHERE id = $1",
             work_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "subtitle" => sqlx::query!(
+        )),
+        "subtitle" => Some(sqlx::query!(
             "UPDATE works SET subtitle = NULL, subtitle_version_id = NULL \
              WHERE id = $1",
             work_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "pages" => sqlx::query!(
+        )),
+        "pages" => Some(sqlx::query!(
             "UPDATE manifestations SET pages = NULL, pages_version_id = NULL \
              WHERE id = $1",
             manifestation_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "publisher" => sqlx::query!(
+        )),
+        "publisher" => Some(sqlx::query!(
             "UPDATE manifestations \
              SET publisher = NULL, publisher_version_id = NULL \
              WHERE id = $1",
             manifestation_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "pub_date" => sqlx::query!(
+        )),
+        "pub_date" => Some(sqlx::query!(
             "UPDATE manifestations \
              SET pub_date = NULL, pub_date_version_id = NULL \
              WHERE id = $1",
             manifestation_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "isbn_10" => sqlx::query!(
+        )),
+        "isbn_10" => Some(sqlx::query!(
             "UPDATE manifestations \
              SET isbn_10 = NULL, isbn_10_version_id = NULL \
              WHERE id = $1",
             manifestation_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "isbn_13" => sqlx::query!(
+        )),
+        "isbn_13" => Some(sqlx::query!(
             "UPDATE manifestations \
              SET isbn_13 = NULL, isbn_13_version_id = NULL \
              WHERE id = $1",
             manifestation_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
-        "content_rating" => sqlx::query!(
+        )),
+        "content_rating" => Some(sqlx::query!(
             "UPDATE manifestations \
              SET content_rating = NULL, content_rating_version_id = NULL \
              WHERE id = $1",
             manifestation_id,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))
-        .map(|_| ())?,
+        )),
         "genres" | "moods" | "tags" => {
             let vocab = VocabularyField::from_field_name(field).ok_or_else(|| {
                 AppError::Validation(format!("unsupported vocabulary field '{field}'"))
             })?;
             delete_vocabulary_rows(tx, manifestation_id, vocab).await?;
+            None
         }
         _ if field.starts_with("contributors.") => {
             let role = &field["contributors.".len()..];
@@ -1208,6 +1145,7 @@ async fn clear_field(
                     )));
                 }
             }
+            None
         }
         _ if field.starts_with("identifiers.") => {
             let (level, scheme) = parse_identifier_field(field)?;
@@ -1223,10 +1161,17 @@ async fn clear_field(
                         .map_err(|e| AppError::Internal(e.into()))?;
                 }
             }
+            None
         }
         other => {
             return Err(AppError::Validation(format!("unsupported field '{other}'")));
         }
+    };
+    if let Some(update) = update {
+        update
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
     }
     // Identifier clears mirror identifier applies: no OPF writeback.
     if !field.starts_with("identifiers.") {

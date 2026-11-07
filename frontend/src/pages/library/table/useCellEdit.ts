@@ -69,6 +69,7 @@ function isReadingColumnKey(key: EditableColumnKey): key is ReadingColumnKey {
 }
 
 type UndoEntry = {
+  context: CellEditContext;
   operation: UndoOperation;
   row: BookListItem;
   columnKey: MetadataColumnKey;
@@ -460,6 +461,7 @@ export function useCellEdit({
         Date.parse(operation.expires_at) > Date.now()
       ) {
         entries.push({
+          context,
           operation,
           row: context.row,
           columnKey,
@@ -516,7 +518,9 @@ export function useCellEdit({
   });
 
   const undoMutation = useMutation({
-    mutationFn: async (entry: UndoEntry) => {
+    mutationKey: cellEditKey(userId),
+    onMutate: ({ context }) => cancelRecoveryReads(client, context),
+    mutationFn: async ({ entry }: { entry: UndoEntry; context: CellEditContext }) => {
       try {
         return await undoMetadataOperation(entry.row.id, entry.operation.operation_id, entry.etag);
       } catch (error) {
@@ -559,12 +563,13 @@ export function useCellEdit({
         return undoMetadataOperation(entry.row.id, entry.operation.operation_id, resolution.etag);
       }
     },
-    onSuccess: (response, entry) => {
+    onSuccess: (response, { entry, context }) => {
+      retireCellFailures(client, context);
       reconcileMetadata(client, entry.row, entry.listKey, response);
       drop(entry.operation.operation_id);
       setUndoOutcome(`${COLUMN_LABELS[entry.columnKey]} for “${entry.row.title}” restored.`);
     },
-    onError: (error, entry) => {
+    onError: (error, { entry }) => {
       if (
         error instanceof ApiError &&
         (error.problemSlug === "undo-unavailable" || error.problemSlug === "undo-conflict")
@@ -578,7 +583,8 @@ export function useCellEdit({
 
   const errors = records.flatMap((record) => {
     const context = record.context;
-    if (record.status !== "error" || context === undefined) return [];
+    if (record.status !== "error" || context === undefined || context.operation !== "save")
+      return [];
     return [
       {
         ...record,
@@ -627,6 +633,13 @@ export function useCellEdit({
     let message = formatError(record.error);
     if (isIfMatchMismatch(record.error) || isIfMatchRequired(record.error))
       message = "This book changed elsewhere. Reload the latest values before editing again.";
+    else if (
+      context.columnKey === "isbn_13" &&
+      record.error instanceof ApiError &&
+      record.error.status === 422 &&
+      record.error.errors?.isbn_13 !== undefined
+    )
+      message = "ISBN-13 wasn’t saved. Check the 13-digit number; spaces and hyphens are allowed.";
     if (read.isError) message += " Connection problem. Your input is retained. Try Reload again.";
     return [
       {
@@ -702,11 +715,12 @@ export function useCellEdit({
         : [],
     ),
   );
-  const latest = undoMutation.isPending ? undoMutation.variables : owner.entries.at(-1);
+  const latest = undoMutation.isPending ? undoMutation.variables.entry : owner.entries.at(-1);
   const undoAvailable =
     enabled && latest !== undefined && pendingCells.size === 0 && !undoMutation.isPending;
   function undo(): void {
-    if (undoAvailable) undoMutation.mutate(latest);
+    if (undoAvailable)
+      undoMutation.mutate({ entry: latest, context: { ...latest.context, operation: "undo" } });
   }
   const { keyboardProps } = useKeyboard({
     onKeyDown: (event) => {

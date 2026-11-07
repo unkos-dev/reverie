@@ -188,21 +188,21 @@ alone: nobody else browsing the same library sees them, and they never touch the
 
 ### Undo
 
-The **Undo last edit** button beside table Help names the book and field it will restore. `⌘Z` / `Ctrl Z` while focus is
-in the table uses the same history; text fields keep their own native Undo. The table remembers your last ten edits, so
-using Undo repeatedly steps back through them in order. Switching away from the table ends access to that history.
+The **Undo last edit** button beside table Help names the book and field it will restore. `⌘Z` or `Ctrl Z` while focus
+is in the table invokes the same action when no editor is active. Editors retain their native typing Undo and Redo.
 
-Undo works differently depending on what you edited. Title, subtitle, ISBN-13, pages, and author edits undo by restoring
-whichever metadata version was current immediately before your edit, the same version history the book page's Versions
-tab reads from. Status and rating have no version history behind them, so undoing one of those just writes your previous
-value back.
+Undo reverses the newest eligible saved metadata field, restoring its exact previous state while leaving unrelated
+changes intact. The table retains up to ten independent field operations. A newer save to the same field replaces its
+older operation. Status and rating have no saved Undo, and the book view offers no saved-edit Undo.
 
-### Why edits are staged, not overwritten
+Operations survive sorting, filtering, loading, empty results and the details drawer. The target can be a hidden book;
+the outcome names it. Leaving Library or switching away from table editing clears the context. Each operation expires
+one hour after its save, and expired entries disappear quietly.
 
-The table records a canonical metadata edit as a new entry in the same version history the Versions tab shows, rather
-than overwriting the row. That is what makes undo possible: the value you had before is still there to restore. It also
-means a run of quick edits across a dense table stays reviewable afterward on the book page, not just the value that
-happens to be current.
+While Undo is pending, its target stays fixed and the button keeps focus. A locked field retains its operation for retry
+after unlocking. An unavailable or conflicting operation is removed. A stale aggregate validator permits one retry only
+after the server confirms that the same operation remains eligible and unlocked. No refusal automatically undoes the
+next entry.
 
 ### While a write is in flight
 
@@ -212,10 +212,10 @@ hyphens, for example, comes back normalised. On failure the cell keeps its saved
 identifies the book and field, shows the submitted value, and offers **Reload** to read the latest server value.
 Feedback can remain visible when the table is replaced by grid, empty or loading results.
 
-Failure feedback is temporary and held in memory. It can expire five minutes after the table is removed, or after a
-later save or Undo replaces that request. Expiry removes its displayed submitted value and **Reload** action; it does
-not change saved server data. This is not a countdown from when the error appears, and some messages remain longer while
-they are the latest request in the table. Reloading the app also clears this feedback.
+Failure feedback is temporary and held in memory. It can expire five minutes after leaving Library, or after a later
+save or Undo replaces that request. Expiry removes its displayed submitted value and **Reload** action; it does not
+change saved server data. This is not a countdown from when the error appears, and some messages remain longer while
+they are the latest request in Library. Reloading the app also clears this feedback.
 
 A refused ISBN-13 edit keeps the saved cell value and shows: "ISBN-13 wasn’t saved. Check the 13-digit number; spaces
 and hyphens are allowed." Correct the number by editing the cell again.
@@ -230,6 +230,9 @@ refresh.
 Edit metadata shows invalid ISBN feedback beside the named field and retains your submitted values for correction. Only
 edited fields are saved, and clearing a saved value requires confirmation. Each ISBN stays independent; a successful
 formatted edit displays the compact number returned by the server.
+
+A lost save response triggers an automatic outcome check. Confirmation preserves newer input in the open dialog. If
+those edits conflict with the saved metadata, **Discard edits and reload** replaces them with the latest values.
 
 ## Cinematic mode
 

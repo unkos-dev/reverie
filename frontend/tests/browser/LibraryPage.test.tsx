@@ -480,6 +480,9 @@ test("metadata Undo survives table refreshes", async () => {
   let requestId = "";
   let undoCalls = 0;
   let resolvingSave = false;
+  let isbnRequestId = "";
+  let isbnRecoveryReads = 0;
+  const staleRecovery = deferredResponse();
   const pendingUndo = deferredResponse();
   const values = () => ({
     title: current.title,
@@ -531,6 +534,20 @@ test("metadata Undo survives table refreshes", async () => {
           }),
         );
       }
+      if ("isbn_13" in body) {
+        isbnRequestId = body.request_id;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              type: "/validation",
+              status: 422,
+              title: "Invalid ISBN",
+              errors: { isbn_13: "Invalid ISBN" },
+            }),
+            { status: 422, headers: { "Content-Type": "application/problem+json" } },
+          ),
+        );
+      }
       requestId = body.request_id;
       expect(new Headers(init.headers).get("If-Match")).toBe(current.metadata_etag);
       current = { ...current, title: "Saved title", metadata_etag: '"cccccccccccccccccccccc"' };
@@ -538,6 +555,17 @@ test("metadata Undo survives table refreshes", async () => {
       return Promise.reject(new TypeError("Lost acknowledgement"));
     }
     if (path.endsWith("/operations/resolve")) {
+      const identity = parseJsonBody(init?.body);
+      if (
+        typeof identity === "object" &&
+        identity !== null &&
+        "request_id" in identity &&
+        identity.request_id === isbnRequestId
+      ) {
+        isbnRecoveryReads += 1;
+        if (isbnRecoveryReads === 1) return staleRecovery.promise;
+        return Promise.resolve(response({ values: values(), outcome: "unknown", operations: [] }));
+      }
       if (resolvingSave) {
         expect(parseJsonBody(init?.body)).toEqual({ request_id: requestId });
         resolvingSave = false;
@@ -615,6 +643,21 @@ test("metadata Undo survives table refreshes", async () => {
   expect(undoCalls).toBe(0);
   await expect.element(page.getByRole("group", { name: "Rating", exact: true })).toHaveFocus();
   await userEvent.keyboard("{Escape}");
+  await userEvent.click(page.getByRole("gridcell", { name: "9780374528379", exact: true }));
+  await userEvent.keyboard("{F2}");
+  await findLibraryTable().getByRole("textbox").fill("bad");
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => {
+    expect(isbnRecoveryReads).toBe(1);
+  });
+  await expect
+    .element(
+      page.getByText(
+        /ISBN-13 wasn’t saved. Check the 13-digit number; spaces and hyphens are allowed./,
+      ),
+    )
+    .toBeInTheDocument();
+  const oldSnapshot = response({ values: values(), outcome: "unknown", operations: [] });
   await userEvent.fill(page.getByRole("searchbox"), "missing");
   await expect.element(findLibraryTable()).not.toBeInTheDocument();
   await expect.element(undo).toBeEnabled();
@@ -647,6 +690,15 @@ test("metadata Undo survives table refreshes", async () => {
     expect(
       client.getQueryData<InfiniteData<BookListResponse>>(originKey)?.pages[0]?.items[0]?.title,
     ).toBe(current.title);
+  });
+  staleRecovery.resolve(oldSnapshot);
+  await vi.waitFor(() => {
+    expect(isbnRecoveryReads).toBe(2);
+    expect(client.isFetching()).toBe(0);
+    const restoredRow =
+      client.getQueryData<InfiniteData<BookListResponse>>(originKey)?.pages[0]?.items[0];
+    expect(restoredRow?.title).toBe(current.title);
+    expect(restoredRow?.metadata_etag).toBe(current.metadata_etag);
   });
   fetchSpy.mockRestore();
   await cleanup();
