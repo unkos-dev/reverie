@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE works SET subtitle = 'Intervening subtitle' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fcf2da31e2a3de11e766a7f8b9cf9aeab5e8ca2e0d898c4eb3cbe5b29fc970ac"
+}

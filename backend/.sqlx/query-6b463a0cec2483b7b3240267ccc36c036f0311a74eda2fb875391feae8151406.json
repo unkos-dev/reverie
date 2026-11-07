@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE genres SET name = name || ' renamed' WHERE id IN (SELECT genre_id FROM manifestation_genres WHERE manifestation_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b463a0cec2483b7b3240267ccc36c036f0311a74eda2fb875391feae8151406"
+}

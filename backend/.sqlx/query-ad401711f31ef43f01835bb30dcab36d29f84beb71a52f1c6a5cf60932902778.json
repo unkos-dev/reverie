@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tags SET name = name || ' renamed' WHERE id IN (SELECT tag_id FROM manifestation_tags WHERE manifestation_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad401711f31ef43f01835bb30dcab36d29f84beb71a52f1c6a5cf60932902778"
+}

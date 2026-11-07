@@ -118,6 +118,11 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
 
 ## Data and state
 
+Work and manifestation revision state belongs to database triggers. Runtime writer roles retain column grants for
+canonical and operational data but cannot assign revisions or field stamps. Definer trigger functions advance only the
+owners referenced by the original permitted change. This fan-out does not widen the request's canonical write or read
+scope; the RLS Design owns its grant and execution details.
+
 - **Scope values** are stored only on a `device_tokens` row (`scopes: Vec<Scope>`), written once at mint by
   `create_token` and never rewritten; no endpoint edits an existing token's scopes. A session stores no scope set; it
   derives one on each request from the caller's current role through `Scope::for_role`.

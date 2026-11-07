@@ -102,6 +102,11 @@ inputs list, `library/mod.rs`, `library/search.rs`, `metadata.rs`, the `opds` ha
 `series`, `shelves` and `suggest`) each call `db::acquire_with_rls` with `CurrentUser::user_id` before their first
 query.
 
+`acquire_with_rls_read_committed` explicitly selects READ COMMITTED before setting the user context. Manual metadata
+writes and edition-lock actions use it so a lock committed while the request waits becomes visible. The metadata matched
+GET and books list instead use `acquire_with_rls_snapshot`, which selects read-only REPEATABLE READ before the context
+query. Every statement in that transaction shares one snapshot, including set-based relation and reading batches.
+
 ### Catalogue visibility
 
 `works`, `authors`, `work_authors`, `series` and `series_works` have no row-level security policy.
@@ -183,10 +188,17 @@ two checks are independent. Seven tables have no policy and are granted to `reve
 password material, the missing `reverie_readonly` grant is the whole boundary against a reporting connection; there is
 no policy on those tables to narrow or widen.
 
-`reverie_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table it is granted except nine: `SELECT` only on
-`libraries`, `identifier_schemes`, `metadata_sources`, `rating_sources`, `manifestation_external_ratings` and the
+`reverie_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table it is granted except eleven: `SELECT` only
+on `libraries`, `identifier_schemes`, `metadata_sources`, `rating_sources`, `manifestation_external_ratings` and the
 migration history table `_sqlx_migrations`; `SELECT` and `UPDATE` on `settings`; `SELECT` and `INSERT` on
-`instance_bootstrap`; and everything except `DELETE` on `user_preferences`.
+`instance_bootstrap`; and everything except `DELETE` on `user_preferences`. Works and manifestations retain SELECT and
+DELETE table grants, with INSERT and UPDATE granted only on non-revision columns to both `reverie_app` and
+`reverie_ingestion`. Neither runtime role can assign aggregate revisions or field stamps. Revision trigger functions
+have a fixed `pg_catalog, public, pg_temp` search path and no PUBLIC or runtime EXECUTE grant. Installed relation and
+reference triggers run as their migration owner and update only affected parent identities, including references outside
+the writer's RLS view. The temporary schema is last to prevent object masking, following
+[PostgreSQL's definer-function guidance](https://www.postgresql.org/docs/18/sql-createfunction.html#SQL-CREATEFUNCTION-SECURITY).
+They do not grant access to those canonical values or broaden the original statement's policies.
 
 Library identities have no row-level policy: they contain only a UUID and a configuration key. All three runtime roles
 hold SELECT only; migration ownership controls their mutation. Manifestation access remains subject to its existing

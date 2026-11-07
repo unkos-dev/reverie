@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestation_tags SET source_version_id = $2 WHERE manifestation_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c636c4c9eb88c661ce3ffb62bb3caa40af8f89abc6288c8eb6a75292e0b3f8d0"
+}

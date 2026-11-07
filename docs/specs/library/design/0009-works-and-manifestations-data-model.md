@@ -10,6 +10,7 @@ satisfies:
   - "REV-REQ-0028"
   - "REV-REQ-0065"
 governed-by:
+  - "REV-ADR-0069"
   - "REV-ADR-0067"
   - "REV-ADR-0051"
   - "REV-ADR-0052"
@@ -208,12 +209,61 @@ the shared `backend/src/routes/sort_spec.rs` and `cursor.rs` modules they import
 `backend/src/routes/shelves/mod.rs`), `backend/src/routes/series/mod.rs`, `backend/src/routes/opds/` (the OPDS catalogue
 subject), and `backend/src/routes/suggest.rs` and `backend/src/routes/library/search.rs` (vocabulary and text search).
 
-The migration grants `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table in this model to `reverie_app` and
-`reverie_ingestion`, and `SELECT` alone to `reverie_readonly`, except that path claims have no readonly grant; the
-Design "Row-level security and database context" is the authority on that grant boundary and on the policies that
-further narrow `manifestations` and its three vocabulary junctions.
+The migration grants `SELECT` and `DELETE` on works and manifestations to both runtime writer roles, with `INSERT` and
+`UPDATE` limited to columns other than revision state. Other model tables retain table-level write grants and
+`reverie_readonly` retains SELECT, except that path claims have no readonly grant; the Design "Row-level security and
+database context" is the authority on that grant boundary and on the policies that further narrow `manifestations` and
+its three vocabulary junctions.
 
 ## Data and state
+
+### Metadata change identity
+
+Works and manifestations each store a `metadata_revision` of zero or greater and a `metadata_field_revisions` JSON
+object. Each object's key is a canonical field name and its value is the owner's revision at that field's last change.
+Missing keys have initial identity zero. Work keys include scalar names, `contributors.<role>` and
+`identifiers.work.<scheme>`; edition keys include scalar names, vocabulary names and
+`identifiers.manifestation.<scheme>`. Changing the parent work also stamps the edition's `work` key. Aggregate tags
+include both owner identities, so equal counters on different works remain distinct.
+
+`metadata_scalar_revision` initialises new rows and advances changed scalar keys before update. It compares values and
+source pointers together. Relation statement triggers compare transition tables, collect distinct owner-field pairs and
+advance each parent once per statement. `advance_metadata_revisions` updates manifestations in UUID order, then works in
+UUID order. Referenced-name and provenance triggers use the same parent ordering. Revisions can advance several times
+within a transaction; field stamps reuse these revisions and have no independent sequence.
+
+| Writer or action | Revision coverage |
+| ---------------- | ----------------- |
+| Manual PATCH, Accept, Clear and historical revert | Work and manifestation scalar values and version-pointer triggers |
+| Work stub creation and upgrade; ingestion registration | Initial revision zero; scalar and relation triggers on canonical wiring |
+| Contributor replacement, order, membership or source pointer | `work_authors` INSERT, UPDATE and DELETE statement triggers, keyed by role |
+| First-author sort refresh | Work scalar trigger stamps `contributors.author` |
+| Vocabulary replacement, clear or source pointer | Each vocabulary junction's INSERT, UPDATE and DELETE statement triggers |
+| Work or edition identifier upsert, delete or source pointer | Identifier relation triggers, keyed by owning level and scheme |
+| Enrichment canonical batches | The same scalar and relation triggers inside the fenced catalogue transaction |
+| Referenced journal meaning change | Source, origin edition, field, value, confidence, match type or resolving user changes stamp every current reference |
+| Version deletion | Existing SET NULL actions run scalar or relation triggers without clearing canonical values |
+| Shared author names and sort names | Author reference trigger stamps every linked contributor role |
+| Shared genre, mood or tag names | Name reference triggers stamp linked editions only when stored names differ |
+| Identifier scheme display names | Scheme reference trigger stamps every linked identifier slot |
+| Author or vocabulary deletion | Existing link cascades run relation DELETE triggers on surviving parents |
+| Changing the parent work | Manifestation scalar trigger and owner identities in the aggregate tag |
+| Unattached proposals, observation counts, last-seen times and review status | Excluded unless a currently referenced meaning column also changes |
+| Edition field lock and unlock | Excluded; manual routes check locks separately |
+| Reading state | Excluded; caller-specific full-state reading hash |
+| Writeback file hashes, file size, file location and embedded-cover bookkeeping | Excluded operational columns |
+| Enrichment queue status, claims, attempt times, retries and rescue | Excluded operational columns; claim fencing remains authoritative |
+| Suspected-duplicate work bookkeeping | Excluded; changing the actual parent work is covered |
+
+Canonical cover data and its source pointer stamp `cover`; embedded-cover bookkeeping remains excluded. Series
+membership, external ratings and accessibility data do not belong to the editable metadata representation. The list
+loads these projection-only values in the same snapshot without treating them as editable metadata fields.
+
+Runtime roles cannot insert or update revision columns directly. Trigger helpers have fixed search paths and no PUBLIC
+or runtime EXECUTE grant. Only the installed triggers elevate to update the exact referencing owners, including siblings
+outside the original writer's row visibility. Original canonical writes retain their existing grants and RLS checks.
+
+### Bibliographic state
 
 `manifestations.pub_date` stores nullable bibliographic text at the supplied precision. Its canonical attribution stays
 in `pub_date_version_id`, referencing the existing metadata journal. The text migration renders existing date values as

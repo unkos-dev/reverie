@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE authors SET name = name || ' renamed' WHERE id IN (SELECT author_id FROM work_authors WHERE work_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d2211b65d16ab040986f33987d58dcef59ef9328172e4680207136da340438ed"
+}

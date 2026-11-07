@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestation_genres SET source_version_id = $2 WHERE manifestation_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "05af7409ab59b04275c4e3bb11ff57767a9b03eb78bd5d7a2be3c5145aee7917"
+}

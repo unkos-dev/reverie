@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM work_external_identifiers WHERE work_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8363927e8e9da8ce9a9cdce7ec1d00dfd2dd25fda2aea78a1c17b18860c447b7"
+}

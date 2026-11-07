@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE metadata_versions SET observation_count = observation_count + 1, last_seen_at = now(), status = 'rejected' WHERE manifestation_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "590273fbebf899388b21663295f9fca9d2a27b5bce951f6c5b6d1938e155daf5"
+}

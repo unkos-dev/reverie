@@ -9,6 +9,7 @@ satisfies:
   - "REV-REQ-0058"
   - "REV-REQ-0059"
 governed-by:
+  - "REV-ADR-0069"
   - "REV-ADR-0066"
   - "REV-ADR-0019"
   - "REV-ADR-0037"
@@ -191,11 +192,11 @@ variant.
 The `list` handler runs its checks in a fixed order before it ever opens a transaction: `Query<ListParams>` decode,
 `filters::validate`, `SortSpec::parse` (a parse error maps to `AppError::Validation`, the `422` class of a filter
 bound), the filter fingerprint, then `SortCursor::parse_for` against that spec and fingerprint. Only once all of that
-has succeeded does it call `db::acquire_with_rls` and build the query: a fixed `SELECT` naming every column the response
-needs plus a `LEFT JOIN LATERAL` that picks at most one series per work (lowest position, `NULLS LAST`, then series id,
-so a work in several series always reports the same one across pages), `filters::push_filter_predicates`, the general
-keyset predicate, the `ORDER BY`, and `LIMIT page_size + 1` — one extra row fetched so `split_page` can tell whether a
-further page exists without a second query.
+has succeeded does it call `db::acquire_with_rls_snapshot` and build the query: a fixed `SELECT` naming every column the
+response needs plus a `LEFT JOIN LATERAL` that picks at most one series per work (lowest position, `NULLS LAST`, then
+series id, so a work in several series always reports the same one across pages), `filters::push_filter_predicates`, the
+general keyset predicate, the `ORDER BY`, and `LIMIT page_size + 1` — one extra row fetched so `split_page` can tell
+whether a further page exists without a second query.
 
 `push_cursor_predicate` builds the keyset "advance past the boundary" clause for an arbitrary sort stack as one
 `OR`-chain of per-level branches: level `i`'s branch requires exact equality on every level before it
@@ -241,6 +242,12 @@ Timestamp bounds are canonical UTC instants in the fingerprint, so equivalent RF
 filter identity. A different instant changes the fingerprint even if the local calendar date is unchanged.
 
 ## Data and state
+
+Each `BookListRow` carries `metadata_etag` and `reading_etag` alongside its projected values. The core query selects
+work and manifestation revisions; metadata tags cover both owner identities and revisions. All relation loaders run in
+the same read-only REPEATABLE READ RLS transaction. The reading batch also loads notes and `last_read_at` for the
+existing full-state hash without adding them to the response. A missing reading row uses the same all-null hash input as
+matched GET. No per-row query or pre-edit GET supplies these validators.
 
 Nothing here is durable. `ListParams`, the parsed `SortSpec`, the filter fingerprint and the decoded `SortCursor` are
 all built fresh from one request's query string and discarded once that request's response is written; the server holds

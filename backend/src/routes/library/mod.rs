@@ -54,6 +54,8 @@ use crate::models::reading_state::ReadingStateSummary;
 use crate::models::reading_status::ReadingStatus;
 use crate::models::validation_status::ValidationStatus;
 use crate::routes::cursor::{CursorValue, SortCursor};
+use crate::routes::etag::MetadataRevision;
+use crate::routes::reading::ReadingStateRow;
 use crate::routes::sort_spec::{SortColumn, SortDirection, SortSpec};
 use crate::state::AppState;
 
@@ -346,13 +348,15 @@ async fn list(
         None => None,
     };
 
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+    let mut tx = db::acquire_with_rls_snapshot(&state.pool, current_user.user_id)
         .await
         .inspect_err(|e| tracing::error!(error = %e, "list: acquire_with_rls failed"))
         .map_err(|e| AppError::Internal(e.into()))?;
 
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.work_id, m.created_at, m.isbn_13, m.pages, \
+                w.metadata_revision AS work_metadata_revision, \
+                m.metadata_revision AS manifestation_metadata_revision, \
                 m.content_rating, \
                 m.ingestion_status::text AS ingestion_status, \
                 m.validation_status, \
@@ -424,9 +428,29 @@ async fn list(
         let series = series_ref_from_row(r)?;
         let ingestion_raw: String = r.get("ingestion_status");
         let enrichment_raw: String = r.get("enrichment_status");
+        let reading = reading_by_manifestation.get(&m_id);
+        let reading_etag = match reading {
+            Some(reading) => reading.etag()?,
+            None => ReadingStateRow::default().etag()?,
+        };
+        let metadata_etag = MetadataRevision {
+            work_id,
+            manifestation_id: m_id,
+            work_revision: r.get("work_metadata_revision"),
+            manifestation_revision: r.get("manifestation_metadata_revision"),
+        }
+        .etag()?;
         items.push(BookListRow {
             id: m_id,
             work_id,
+            metadata_etag: metadata_etag
+                .to_str()
+                .map_err(|e| AppError::Internal(e.into()))?
+                .to_owned(),
+            reading_etag: reading_etag
+                .to_str()
+                .map_err(|e| AppError::Internal(e.into()))?
+                .to_owned(),
             title: r.get("title"),
             subtitle: r.get("subtitle"),
             authors: authors_by_work.get(&work_id).cloned().unwrap_or_default(),
@@ -468,7 +492,7 @@ async fn list(
                 ))
             })?,
             enrichment_status: parse_enrichment(&enrichment_raw)?,
-            reading_state: reading_by_manifestation.get(&m_id).cloned(),
+            reading_state: reading.map(ReadingStateSummary::from),
             external_ids: merge_external_ids(&ids_by_work, &ids_by_manifestation, work_id, m_id),
             external_ratings: ratings_by_manifestation
                 .get(&m_id)
@@ -873,8 +897,8 @@ pub(crate) async fn load_contributors_for_works(
 pub(crate) async fn load_reading_state_for_manifestations(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     manifestation_ids: &[Uuid],
-) -> Result<std::collections::HashMap<Uuid, ReadingStateSummary>, AppError> {
-    let mut out: std::collections::HashMap<Uuid, ReadingStateSummary> =
+) -> Result<std::collections::HashMap<Uuid, ReadingStateRow>, AppError> {
+    let mut out: std::collections::HashMap<Uuid, ReadingStateRow> =
         std::collections::HashMap::new();
     if manifestation_ids.is_empty() {
         return Ok(out);
@@ -885,7 +909,7 @@ pub(crate) async fn load_reading_state_for_manifestations(
     // caller's own rows.
     let rows = sqlx::query!(
         r#"SELECT manifestation_id, status AS "status?: ReadingStatus", rating,
-                  progress_pct, started_at, finished_at
+                  notes, progress_pct, started_at, finished_at, last_read_at
              FROM reading_state WHERE manifestation_id = ANY($1::uuid[])"#,
         manifestation_ids,
     )
@@ -895,12 +919,14 @@ pub(crate) async fn load_reading_state_for_manifestations(
     for r in rows {
         out.insert(
             r.manifestation_id,
-            ReadingStateSummary {
+            ReadingStateRow {
                 status: r.status,
                 rating: r.rating,
+                notes: r.notes,
                 progress_pct: r.progress_pct,
                 started_at: r.started_at,
                 finished_at: r.finished_at,
+                last_read_at: r.last_read_at,
             },
         );
     }

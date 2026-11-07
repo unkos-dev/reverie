@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM authors WHERE id IN (SELECT author_id FROM work_authors WHERE work_id = $1 AND role = 'editor')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "76b2a40c681b4c70008e3a14154ce0e76f55589dc394ccb40234b56b9989aab9"
+}

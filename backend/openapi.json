@@ -1266,7 +1266,7 @@
                 "schema": {
                   "type": "string"
                 },
-                "description": "Strong entity-tag hashing this response body. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"
+                "description": "Strong entity-tag covering work and edition identities and their metadata revisions. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"
               }
             },
             "content": {
@@ -1378,7 +1378,7 @@
         },
         "responses": {
           "200": {
-            "description": "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field",
+            "description": "Manual edit committed with complete canonical values and matching ETag, plus per-field version acknowledgements",
             "headers": {
               "ETag": {
                 "schema": {
@@ -9805,6 +9805,8 @@
         "required": [
           "id",
           "work_id",
+          "metadata_etag",
+          "reading_etag",
           "title",
           "authors",
           "contributors",
@@ -9895,6 +9897,11 @@
             ],
             "description": "`manifestations.isbn_13`, when known."
           },
+          "metadata_etag": {
+            "type": "string",
+            "description": "Metadata validator from the same snapshot as this row's canonical values.",
+            "maxLength": 128
+          },
           "moods": {
             "type": "array",
             "items": {
@@ -9909,6 +9916,11 @@
             ],
             "format": "int32",
             "description": "`manifestations.pages`, when known."
+          },
+          "reading_etag": {
+            "type": "string",
+            "description": "Reading validator covering the caller's full state, including omitted notes and dates.",
+            "maxLength": 128
           },
           "reading_state": {
             "oneOf": [
@@ -12915,6 +12927,7 @@
         "type": "object",
         "description": "Response body for `PATCH /api/v1/books/{id}/metadata`.",
         "required": [
+          "values",
           "fields"
         ],
         "properties": {
@@ -12928,6 +12941,10 @@
               "type": "string"
             },
             "maxProperties": 144
+          },
+          "values": {
+            "$ref": "#/components/schemas/BookMetadata",
+            "description": "Complete canonical metadata confirmed by this write and its response `ETag`."
           }
         }
       },

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE moods SET name = name || ' renamed' WHERE id IN (SELECT mood_id FROM manifestation_moods WHERE manifestation_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c5bbe45de4bdd8d317db3205ce5a3a8b38541d872de8ebd2b4d988589fcc998"
+}

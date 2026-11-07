@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT jsonb_build_object('work', jsonb_build_object('revision', w.metadata_revision, 'fields', w.metadata_field_revisions), 'manifestation', jsonb_build_object('revision', m.metadata_revision, 'fields', m.metadata_field_revisions)) AS \"identity!\" FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "identity!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "aa7a6828171fd85be862788b343492f0520eb0f31312030086e0d26cc2306ae1"
+}
