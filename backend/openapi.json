@@ -1384,7 +1384,7 @@
                 "schema": {
                   "type": "string"
                 },
-                "description": "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"
+                "description": "Strong entity-tag covering work and edition identities and their metadata revisions after this write"
               }
             },
             "content": {

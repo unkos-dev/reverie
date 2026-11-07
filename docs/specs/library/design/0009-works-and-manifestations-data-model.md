@@ -228,8 +228,10 @@ include both owner identities, so equal counters on different works remain disti
 
 `metadata_scalar_revision` initialises new rows and advances changed scalar keys before update. It compares values and
 source pointers together. Relation statement triggers compare transition tables, collect distinct owner-field pairs and
-advance each parent once per statement. `advance_metadata_revisions` updates manifestations in UUID order, then works in
-UUID order. Referenced-name and provenance triggers use the same parent ordering. Revisions can advance several times
+advance each parent once per statement. `advance_metadata_revisions` locks affected manifestations in UUID order, then
+affected works in UUID order, before applying one grouped `UPDATE` per owner table. Referenced-name and provenance
+triggers use the same parent ordering. Scalar provenance lookups use the individual version-pointer indexes; relation
+lookups use their source-version indexes. Empty meaning changes skip these lookups. Revisions can advance several times
 within a transaction; field stamps reuse these revisions and have no independent sequence.
 
 | Writer or action | Revision coverage |

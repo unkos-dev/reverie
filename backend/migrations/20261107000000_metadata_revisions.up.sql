@@ -37,38 +37,50 @@ $$;
 
 -- THREAT: Only installed triggers may advance identities across policy-hidden sibling editions.
 CREATE FUNCTION public.advance_metadata_revisions(affected jsonb) RETURNS void
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-DECLARE
-    parent record;
+LANGUAGE plpgsql STRICT SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
-    FOR parent IN
+    PERFORM m.id FROM public.manifestations m
+    WHERE m.id IN (
+        SELECT owner_id
+        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
+        WHERE owner_kind = 'manifestation'
+    )
+    ORDER BY m.id FOR UPDATE OF m;
+    PERFORM w.id FROM public.works w
+    WHERE w.id IN (
+        SELECT owner_id
+        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
+        WHERE owner_kind = 'work'
+    )
+    ORDER BY w.id FOR UPDATE OF w;
+
+    WITH changed AS (
         SELECT owner_id, array_agg(DISTINCT field_name ORDER BY field_name) AS fields
         FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
         WHERE owner_kind = 'manifestation'
-        GROUP BY owner_id ORDER BY owner_id
-    LOOP
-        UPDATE public.manifestations AS m
-        SET metadata_revision = m.metadata_revision + 1,
-            metadata_field_revisions = m.metadata_field_revisions || (
-                SELECT jsonb_object_agg(field_name, m.metadata_revision + 1)
-                FROM unnest(parent.fields) AS field_name
-            )
-        WHERE m.id = parent.owner_id;
-    END LOOP;
-    FOR parent IN
+        GROUP BY owner_id
+    )
+    UPDATE public.manifestations AS m
+    SET metadata_revision = m.metadata_revision + 1,
+        metadata_field_revisions = m.metadata_field_revisions || (
+            SELECT jsonb_object_agg(field_name, m.metadata_revision + 1)
+            FROM unnest(changed.fields) AS field_name
+        )
+    FROM changed WHERE m.id = changed.owner_id;
+
+    WITH changed AS (
         SELECT owner_id, array_agg(DISTINCT field_name ORDER BY field_name) AS fields
         FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
         WHERE owner_kind = 'work'
-        GROUP BY owner_id ORDER BY owner_id
-    LOOP
-        UPDATE public.works AS w
-        SET metadata_revision = w.metadata_revision + 1,
-            metadata_field_revisions = w.metadata_field_revisions || (
-                SELECT jsonb_object_agg(field_name, w.metadata_revision + 1)
-                FROM unnest(parent.fields) AS field_name
-            )
-        WHERE w.id = parent.owner_id;
-    END LOOP;
+        GROUP BY owner_id
+    )
+    UPDATE public.works AS w
+    SET metadata_revision = w.metadata_revision + 1,
+        metadata_field_revisions = w.metadata_field_revisions || (
+            SELECT jsonb_object_agg(field_name, w.metadata_revision + 1)
+            FROM unnest(changed.fields) AS field_name
+        )
+    FROM changed WHERE w.id = changed.owner_id;
 END;
 $$;
 
@@ -163,24 +175,42 @@ BEGIN
     WHERE (o.manifestation_id, o.source, o.field_name, o.new_value, o.confidence_score, o.match_type, o.resolved_by)
         IS DISTINCT FROM
           (n.manifestation_id, n.source, n.field_name, n.new_value, n.confidence_score, n.match_type, n.resolved_by);
+    IF changed_ids IS NULL THEN
+        RETURN NULL;
+    END IF;
     SELECT jsonb_agg(to_jsonb(field)) INTO affected FROM (
-        SELECT 'manifestation' AS owner_kind, m.id AS owner_id, scalar.field_name
-        FROM public.manifestations m
-        CROSS JOIN LATERAL (VALUES
-            ('publisher', m.publisher_version_id), ('pub_date', m.pub_date_version_id),
-            ('isbn_10', m.isbn_10_version_id), ('isbn_13', m.isbn_13_version_id),
-            ('pages', m.pages_version_id), ('content_rating', m.content_rating_version_id),
-            ('cover', m.cover_version_id)
-        ) AS scalar(field_name, version_id)
-        WHERE scalar.version_id = ANY(changed_ids)
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'publisher' AS field_name
+        FROM public.manifestations WHERE publisher_version_id = ANY(changed_ids)
         UNION ALL
-        SELECT 'work', w.id, scalar.field_name
-        FROM public.works w
-        CROSS JOIN LATERAL (VALUES
-            ('title', w.title_version_id), ('subtitle', w.subtitle_version_id),
-            ('description', w.description_version_id), ('language', w.language_version_id)
-        ) AS scalar(field_name, version_id)
-        WHERE scalar.version_id = ANY(changed_ids)
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'pub_date' AS field_name
+        FROM public.manifestations WHERE pub_date_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'isbn_10' AS field_name
+        FROM public.manifestations WHERE isbn_10_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'isbn_13' AS field_name
+        FROM public.manifestations WHERE isbn_13_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'pages' AS field_name
+        FROM public.manifestations WHERE pages_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'content_rating' AS field_name
+        FROM public.manifestations WHERE content_rating_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'manifestation' AS owner_kind, id AS owner_id, 'cover' AS field_name
+        FROM public.manifestations WHERE cover_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work' AS owner_kind, id AS owner_id, 'title' AS field_name
+        FROM public.works WHERE title_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work' AS owner_kind, id AS owner_id, 'subtitle' AS field_name
+        FROM public.works WHERE subtitle_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work' AS owner_kind, id AS owner_id, 'description' AS field_name
+        FROM public.works WHERE description_version_id = ANY(changed_ids)
+        UNION ALL
+        SELECT 'work' AS owner_kind, id AS owner_id, 'language' AS field_name
+        FROM public.works WHERE language_version_id = ANY(changed_ids)
         UNION ALL
         SELECT 'work', work_id, 'contributors.' || role::text
         FROM public.work_authors WHERE source_version_id = ANY(changed_ids)
