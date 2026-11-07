@@ -261,7 +261,9 @@ field section outside removable draft rows. Pending, clear-confirmation and succ
    ID in the metadata-review namespace before accessing the version. Acceptance reads eligibility in a subsequent
    statement, so a rejection committed while it waits is visible. The lock lasts through commit or rollback; it
    serialises these two endpoints for one version, not metadata updates generally. If acceptance commits first,
-   subsequent rejection still succeeds without undoing the canonical value or its queued writeback.
+   subsequent rejection still succeeds without undoing the canonical value or its queued writeback. Rejection locks the
+   visible manifestation and its work before updating the journal, as manual PATCH does. A changed resolving user on a
+   currently referenced version advances that field's provenance identity; review status alone does not.
 2. `accept_manifestation` selects only a `pending` version for the requested manifestation and locks the manifestation
    and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or already-rejected version returns `404`:
    none identifies an eligible draft for this operation. The Versions tab refreshes book details after failed acceptance

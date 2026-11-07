@@ -409,6 +409,17 @@ async fn reject_manifestation(
 
     lock_version_review(&mut tx, payload.version_id).await?;
 
+    let work_id: Option<Uuid> = sqlx::query_scalar!(
+        "SELECT m.work_id FROM manifestations m \
+         JOIN works w ON w.id = m.work_id \
+         WHERE m.id = $1 FOR UPDATE OF m, w",
+        manifestation_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    work_id.ok_or(AppError::NotFound)?;
+
     let rows = sqlx::query!(
         "UPDATE metadata_versions \
          SET status = 'rejected', resolved_by = $1, resolved_at = now() \
@@ -3259,7 +3270,7 @@ mod tests {
         );
         let sibling_read = server
             .get(&format!("/api/v1/books/{sibling}/metadata"))
-            .add_header(AUTHORIZATION, basic)
+            .add_header(AUTHORIZATION, basic.clone())
             .await;
         assert_eq!(
             sibling_read.json::<serde_json::Value>()["title"],
@@ -3275,6 +3286,85 @@ mod tests {
         .await;
         assert!(forgery.is_err());
         tx.rollback().await.unwrap();
+
+        let (reviewer, reviewer_basic) =
+            test_support::db::create_adult_and_basic_auth(&app, "revision-reviewer").await;
+        let current = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let seeded = server
+            .patch(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                current.header(axum::http::header::ETAG),
+            )
+            .json(&serde_json::json!({"title": "Revision title"}))
+            .await;
+        assert_eq!(seeded.status_code(), StatusCode::OK, "{}", seeded.text());
+        let version: Uuid = serde_json::from_value(
+            seeded.json::<serde_json::Value>()["fields"]["title"]["version_id"].clone(),
+        )
+        .unwrap();
+        let before = metadata_identity(&pool, edition).await;
+        let mut barrier = pool.begin().await.unwrap();
+        sqlx::query!("LOCK TABLE field_locks IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *barrier)
+            .await
+            .unwrap();
+        let save = async {
+            server
+                .patch(&url)
+                .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    seeded.header(axum::http::header::ETAG),
+                )
+                .json(&serde_json::json!({"title": "Revision title"}))
+                .await
+        };
+        tokio::pin!(save);
+        tokio::select! {
+            response = &mut save => panic!("save bypassed the field-lock barrier: {}", response.text()),
+            () = test_support::wait_for_blocked_query(&pool, "SELECT field_name FROM field_locks%", 1) => {}
+        }
+        let rejection = async {
+            server
+                .post(&format!("/api/v1/manifestations/{edition}/metadata/reject"))
+                .add_header(AUTHORIZATION, reviewer_basic)
+                .json(&serde_json::json!({"version_id": version}))
+                .await
+        };
+        tokio::pin!(rejection);
+        tokio::select! {
+            response = &mut save => panic!("save bypassed the field-lock barrier: {}", response.text()),
+            response = &mut rejection => panic!("rejection bypassed the parent lock: {}", response.text()),
+            () = test_support::wait_for_blocked_query(&pool, "%", 2) => {}
+        }
+        barrier.commit().await.unwrap();
+        let (save, rejection) = tokio::join!(save, rejection);
+        assert_eq!(save.status_code(), StatusCode::OK, "{}", save.text());
+        assert_eq!(
+            rejection.status_code(),
+            StatusCode::OK,
+            "{}",
+            rejection.text()
+        );
+        let resolved_by = sqlx::query_scalar!(
+            "SELECT resolved_by FROM metadata_versions WHERE id = $1",
+            version
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(resolved_by, Some(reviewer));
+        assert_metadata_fields_advanced(
+            &before,
+            &metadata_identity(&pool, edition).await,
+            &["title"],
+            &[],
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
