@@ -215,10 +215,15 @@ ambient path and has no production caller.
 
 ## Data and state
 
+Journal upsert conflicts use the exact observation key and change only observation bookkeeping. A distinct raw
+representation or match method retains a distinct observation, even when normalised hashes agree. Quorum and
+disagreement continue to use `value_hash`. Confidence recalculation changes the current assessment without rewriting
+observation meaning. These rules apply to all observations, including those held only by a live Undo memento.
+
 Canonical scalar, relation and source-pointer changes advance metadata aggregate revisions and the affected field stamps
 through the data-model triggers. A referenced journal row's value, source, origin edition, field, confidence, match type
-or resolving user change also advances its current references. An unattached proposal, repeated observation count,
-last-seen time or review-status change does not. No application-level revision call is required.
+or submission author change also advances its current references. An unattached proposal, repeated observation count,
+last-seen time or review-activity change does not. No application-level revision call is required.
 
 These triggers remain inside the existing catalogue transaction. The manifestation claim-sequence lock still precedes
 work locks and canonical writes, and the attempt retains transaction ownership through commit or acknowledged rollback.
@@ -240,8 +245,8 @@ sidecar within the same library. Neither has a live production input. Staging do
   apply is represented purely by a `*_version_id` column on `works`/`manifestations` pointing at the journal row's `id`,
   never by a status transition: the row that supplied the canonical value stays `pending` alongside any sibling
   observation from another source that agreed or disagreed. A four-column unique constraint (manifestation, source,
-  field name, value hash) is what lets a repeated identical observation bump `observation_count` instead of duplicating
-  a row.
+  field name, exact observation key) is what lets a repeated identical observation bump `observation_count` instead of
+  duplicating a row.
 - `api_cache` rows carry a per-kind expiry (`hit`/`miss`/`error`, each with its own configured `TTL`) computed in Rust
   at write time. `cache::read` exists and is exercised by its own tests, but every production call into
   `MetadataSource::lookup` passes `LookupCtx { cached: None, .. }` (`orchestrator::fan_out`, the only production
@@ -303,8 +308,9 @@ compatibility path.
    its own transaction, resolved before another phase starts. An ordinary cache error is logged and does not discard
    provider results. The dry-run entry point uses the shared fan-out without a whole-run deadline and retains its
    ordinary cache writes.
-3. `apply_journal_batch` upserts one `metadata_versions` row per field observation and groups the resulting
-   `(source_id, PolicyInputRow)` pairs by field name.
+3. The claimed manifestation lock precedes a work lock when the results contain work fields. `apply_journal_batch` then
+   upserts one `metadata_versions` row per field observation and groups the resulting `(source_id, PolicyInputRow)`
+   pairs by field name.
 4. `apply_canonical_batch` locks the manifestation row `FOR UPDATE` and rereads its scalar values, then locks and
    rereads the work row when any observation is work-scoped. Scalar reads are batched per owning row. The locks remain
    held through commit, protecting both the emptiness decision and subsequent apply. `canonical_empty_under_lock` uses

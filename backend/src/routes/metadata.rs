@@ -4,6 +4,8 @@
 //! transaction, `SELECT ... FOR UPDATE` on the owning entity, apply the change,
 //! and commit.
 
+pub(crate) mod undo;
+
 use std::collections::BTreeMap;
 
 use axum::extract::State;
@@ -59,6 +61,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(lock_field))
         .routes(routes!(unlock_field))
         .routes(routes!(get_book_metadata, update_book_metadata))
+        .routes(routes!(undo::undo_metadata))
+        .routes(routes!(undo::resolve_metadata))
 }
 
 /// One `metadata_versions` row in the review queue view.
@@ -1798,6 +1802,9 @@ async fn apply_vocabulary_patch(
 )]
 #[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
 struct UpdateMetadataFields {
+    /// Client-generated save identifier for resolution; an already recorded identifier is refused.
+    #[schema(max_length = 45)]
+    request_id: Option<Uuid>,
     /// New title. Absent = unchanged; `null` is rejected (canonical title
     /// is NOT NULL).
     #[serde(default, with = "::serde_with::rust::double_option")]
@@ -1981,6 +1988,11 @@ pub(crate) struct FieldVersionChange {
 /// Response body for `PATCH /api/v1/books/{id}/metadata`.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 struct UpdateMetadataResponse {
+    /// Save identifier for session-bound outcome resolution; absent for non-browser credentials.
+    request_id: Option<Uuid>,
+    /// Independent exact field operations issued to the authenticated browser session.
+    #[schema(max_items = 144)]
+    operations: Vec<undo::UndoOperation>,
     /// Complete canonical metadata confirmed by this write and its response `ETag`.
     values: BookMetadata,
     /// Keyed by patched field name, including `contributors.<role>` keys.
@@ -2411,7 +2423,7 @@ async fn load_manifestation_identifiers(
         (status = 412, description = "If-Match does not match the manifestation's current metadata ETag", body = crate::openapi::ProblemDetails, content_type = "application/problem+json",
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
         (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance, the request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "No populated fields, ISBN/date parse failure, attempt to clear title, or reused save request identifier. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -2423,6 +2435,7 @@ async fn load_manifestation_identifiers(
 async fn update_book_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
+    session: tower_sessions::Session,
     ApiPath(manifestation_id): ApiPath<Uuid>,
     headers_in: HeaderMap,
     ApiJson(mut req_fields): ApiJson<UpdateMetadataFields>,
@@ -2432,6 +2445,7 @@ async fn update_book_metadata(
     let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
     // Extract contributors BEFORE populated() consumes the struct — it is
     // handled separately from the other (scalar) fields.
+    let browser_save = undo::browser_save(&current_user, &session, req_fields.request_id.take())?;
     let contributors = req_fields.contributors.take();
     let genres = req_fields.genres.take();
     let moods = req_fields.moods.take();
@@ -2448,16 +2462,8 @@ async fn update_book_metadata(
     // Mirrors `revert_manifestation` — serialises concurrent edits and
     // gates RLS-hidden rows to 404 (the join through `manifestations`
     // applies the RLS predicate).
-    let work_id: Option<Uuid> = sqlx::query_scalar!(
-        "SELECT m.work_id FROM manifestations m \
-         JOIN works w ON w.id = m.work_id \
-         WHERE m.id = $1 FOR UPDATE OF m, w",
-        manifestation_id,
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-    let work_id = work_id.ok_or(AppError::NotFound)?;
+    undo::require_save_session(&mut tx, browser_save.as_ref()).await?;
+    let work_id = undo::lock_parents(&mut tx, manifestation_id).await?;
 
     // Compared under the row lock just taken above, so a concurrent editor
     // cannot slip a change in between this check and the writes below.
@@ -2548,15 +2554,20 @@ async fn update_book_metadata(
     )
     .await?;
 
+    let before = undo::begin_save(
+        &mut tx,
+        browser_save,
+        manifestation_id,
+        work_id,
+        &touched_fields,
+    )
+    .await?;
+
     let mut response_fields: BTreeMap<String, FieldVersionChange> = BTreeMap::new();
-    let mut touched_isbn = false;
+    let touched_isbn = fields
+        .iter()
+        .any(|(field, _)| matches!(*field, "isbn_10" | "isbn_13"));
     for (field, maybe_value) in fields {
-        // ISBN edits — set OR clear — change the matching surface.
-        // Rematch is read-only on rejection so it's safe to gate on
-        // the column name alone without inspecting the new value.
-        if field == "isbn_10" || field == "isbn_13" {
-            touched_isbn = true;
-        }
         let change = apply_scalar_patch_field(
             &mut tx,
             manifestation_id,
@@ -2641,16 +2652,24 @@ async fn update_book_metadata(
         }
     }
 
+    let (request_id, operations) = undo::finish_save(&mut tx, before).await?;
+
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
     let mut headers = HeaderMap::new();
     headers.insert(ETAG, new_etag);
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
     Ok((
         StatusCode::OK,
         headers,
         axum::Json(UpdateMetadataResponse {
+            request_id,
+            operations,
             values: new_metadata.values,
             fields: response_fields,
         }),
@@ -2826,20 +2845,7 @@ async fn apply_identifier_patch(
     }
 }
 
-/// Insert one `metadata_versions` row with `source='manual'`, returning
-/// its id. `value_hash` is the SHA-256 of the field-normalised
-/// canonical-JSON value — same shape as the enrichment pipeline emits, so duplicate
-/// manual saves of the same value collide on the existing
-/// `(manifestation, source, field, value_hash)` unique. We surface
-/// that collision as a no-op by bumping `last_seen_at` /
-/// `observation_count` on the existing row and re-recording who
-/// touched it last.
-///
-/// `resolved_by` + `resolved_at` here denote the *author* of the
-/// manual entry, not a resolution action — the row stays
-/// `status = 'pending'` after insert so the accept/reject machinery
-/// can still operate on it. The accountability use of these columns
-/// is project-local and documented in the manual-edit ADR.
+/// Record an exact manual observation, retaining its submission author on repeat saves.
 async fn insert_manual_version(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -2847,32 +2853,15 @@ async fn insert_manual_version(
     field: &str,
     value: &Value,
 ) -> Result<Uuid, AppError> {
-    // Hash via the shared canonical normaliser (same call the enrichment
-    // pipeline uses) so whitespace-equivalent values — e.g. a publisher
-    // with stray leading/trailing space — produce an identical `value_hash`
-    // regardless of entry path, restoring journal dedup.
     let hash = value_hash::value_hash(field, value);
-
-    // `status` is reset to `pending` on conflict so a previously-
-    // rejected manual entry of the same value is re-offered for
-    // promotion rather than left stranded as `rejected`. Without this
-    // reset, `apply_version` could write a canonical pointer to a row
-    // still flagged rejected, leaving the journal internally
-    // inconsistent.
-    //
-    // `new_value` is refreshed on conflict: the hash identifies the value
-    // only up to normalisation (contributor arrays hash order-insensitively),
-    // so a reorder collides with the original row and the journal must
-    // record the latest representation, not the first one seen.
     let id: Uuid = sqlx::query_scalar!(
         "INSERT INTO metadata_versions \
             (manifestation_id, source, field_name, new_value, value_hash, \
-             match_type, confidence_score, status, resolved_by, resolved_at) \
+             match_type, confidence_score, status, submitted_by, resolved_by, resolved_at) \
          VALUES ($1, 'manual', $2, $3, $4, 'manual', 1.0, \
-                 'pending'::metadata_review_status, $5, now()) \
-         ON CONFLICT (manifestation_id, source, field_name, value_hash) \
-         DO UPDATE SET new_value = EXCLUDED.new_value, \
-                       last_seen_at = now(), \
+                 'pending'::metadata_review_status, $5, $5, now()) \
+         ON CONFLICT (manifestation_id, source, field_name, observation_key) \
+         DO UPDATE SET last_seen_at = now(), \
                        observation_count = metadata_versions.observation_count + 1, \
                        status = 'pending'::metadata_review_status, \
                        resolved_by = $5, \
@@ -2896,6 +2885,731 @@ mod tests {
     use crate::test_support;
     use axum::http::StatusCode;
     use uuid::Uuid;
+
+    async fn undo_browser(
+        app: &sqlx::PgPool,
+        ing: &sqlx::PgPool,
+        name: &str,
+    ) -> (Uuid, axum_test::TestServer, String) {
+        let email = format!("{name}@example.test");
+        let user = test_support::db::create_adult_with_password(
+            app,
+            name,
+            &email,
+            test_support::mail::PASSWORD,
+        )
+        .await;
+        let mut server = test_support::db::server_with_real_pools(app, ing);
+        server.save_cookies();
+        let csrf = test_support::mail::login(&server, &email, test_support::mail::PASSWORD).await;
+        (user, server, csrf)
+    }
+
+    async fn browser_patch(
+        server: &axum_test::TestServer,
+        edition: Uuid,
+        csrf: &str,
+        body: serde_json::Value,
+    ) -> axum_test::TestResponse {
+        let path = format!("/api/v1/books/{edition}/metadata");
+        let current = server.get(&path).await;
+        assert_eq!(current.status_code(), StatusCode::OK, "{}", current.text());
+        server
+            .patch(&path)
+            .add_header(
+                test_support::mail::csrf(csrf).0,
+                test_support::mail::csrf(csrf).1,
+            )
+            .add_header(
+                axum::http::header::IF_MATCH,
+                current.header(axum::http::header::ETAG),
+            )
+            .json(&body)
+            .await
+    }
+
+    async fn browser_undo(
+        server: &axum_test::TestServer,
+        edition: Uuid,
+        csrf: &str,
+        operation: &serde_json::Value,
+        tag: axum::http::HeaderValue,
+    ) -> axum_test::TestResponse {
+        server
+            .post(&format!("/api/v1/books/{edition}/metadata/undo"))
+            .add_header(
+                test_support::mail::csrf(csrf).0,
+                test_support::mail::csrf(csrf).1,
+            )
+            .add_header(axum::http::header::IF_MATCH, tag)
+            .json(&serde_json::json!({"operation_id": operation}))
+            .await
+    }
+
+    async fn captured_fields(
+        pool: &sqlx::PgPool,
+        user: Uuid,
+        edition: Uuid,
+        work: Uuid,
+        fields: &[String],
+    ) -> serde_json::Value {
+        let mut tx = crate::db::acquire_with_rls_read_committed(pool, user)
+            .await
+            .unwrap();
+        let captured = super::undo::capture(&mut tx, edition, work, fields)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        serde_json::to_value(captured.fields).unwrap()
+    }
+
+    // Data corruption boundary; REV-REQ-0052 reversion/identifier jobs, REV-REQ-0072 AC2-4 and REV-REQ-0073 AC2-4.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn metadata_undo_restores_exact_field_state(pool: sqlx::PgPool) {
+        let app = test_support::db::app_pool_for(&pool).await;
+        let ing = test_support::db::ingestion_pool_for(&pool).await;
+        let (user, server, csrf) = undo_browser(&app, &ing, "undo-exact").await;
+        let (_, other, other_csrf) = undo_browser(&app, &ing, "undo-other").await;
+        let (work, edition) =
+            test_support::db::insert_work_and_manifestation(&ing, "undo-exact").await;
+        let initial = browser_patch(&server, edition, &csrf, serde_json::json!({
+            "title":"Original", "subtitle":"Original subtitle", "description":null, "language":"en",
+            "publisher":"Original Press", "pub_date":"2024-01-15T00:00:00.123456789+05:30",
+            "isbn_10":"0306406152", "isbn_13":"9780140328721", "pages":321, "content_rating":"teen",
+            "genres":["Fantasy","Mystery"], "moods":["Calm"], "tags":["Read"],
+            "contributors":{"author":["Alice","Bob"],"editor":["Editor"],"translator":["Translator"]},
+            "work_identifiers":{"openlibrary":"OL123W"}, "manifestation_identifiers":{"googlebooks":"Volume_123"}
+        })).await;
+        assert_eq!(initial.status_code(), StatusCode::OK, "{}", initial.text());
+        sqlx::query!(
+            "UPDATE work_authors SET source_version_id = NULL WHERE work_id = $1 AND position = 0",
+            work
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_10 = '0-306-40615-2' WHERE id = $1",
+            edition
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let fields: Vec<String> = [
+            "title",
+            "subtitle",
+            "description",
+            "language",
+            "publisher",
+            "pub_date",
+            "isbn_10",
+            "isbn_13",
+            "pages",
+            "content_rating",
+            "genres",
+            "moods",
+            "tags",
+            "contributors.author",
+            "contributors.editor",
+            "contributors.translator",
+            "identifiers.work.openlibrary",
+            "identifiers.manifestation.googlebooks",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        let before = captured_fields(&app, user, edition, work, &fields).await;
+        let response = browser_patch(&other, edition, &other_csrf, serde_json::json!({
+            "title":"Original", "subtitle":null, "description":"New", "language":null,
+            "publisher":null, "pub_date":"2025", "isbn_10":null, "isbn_13":"9780306406157", "pages":null,
+            "content_rating":"everyone", "genres":["Science"], "moods":null, "tags":["Unread"],
+            "contributors":{"author":["Bob","Alice"],"editor":null,"translator":["Another translator"]},
+            "work_identifiers":{"openlibrary":null}, "manifestation_identifiers":{"googlebooks":"Volume_456"}
+        })).await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "{}",
+            response.text()
+        );
+        let body: serde_json::Value = response.json();
+        let operations = body["operations"].as_array().unwrap();
+        assert_eq!(operations.len(), fields.len());
+        for op in operations {
+            let field = op["field_name"].as_str().unwrap();
+            let jobs_before = sqlx::query_scalar!(
+                "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+                edition
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let current = other
+                .get(&format!("/api/v1/books/{edition}/metadata"))
+                .await;
+            let restored = browser_undo(
+                &other,
+                edition,
+                &other_csrf,
+                &op["operation_id"],
+                current.header(axum::http::header::ETAG),
+            )
+            .await;
+            assert_eq!(
+                restored.status_code(),
+                StatusCode::OK,
+                "{field}: {}",
+                restored.text()
+            );
+            let jobs_after = sqlx::query_scalar!(
+                "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+                edition
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                jobs_after - jobs_before,
+                i64::from(!field.starts_with("identifiers."))
+            );
+        }
+        assert_eq!(
+            captured_fields(&app, user, edition, work, &fields).await,
+            before
+        );
+        let authors = vec!["contributors.author".to_owned()];
+        let original = captured_fields(&app, user, edition, work, &authors).await;
+        let reordered = browser_patch(
+            &server,
+            edition,
+            &csrf,
+            serde_json::json!({"contributors":{"author":["Bob","Alice"]}}),
+        )
+        .await;
+        assert_eq!(
+            reordered.status_code(),
+            StatusCode::OK,
+            "{}",
+            reordered.text()
+        );
+        let reorder: serde_json::Value = reordered.json();
+        let op = &reorder["operations"][0]["operation_id"];
+        let result = browser_undo(
+            &server,
+            edition,
+            &csrf,
+            op,
+            reordered.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(result.status_code(), StatusCode::OK, "{}", result.text());
+        assert_eq!(
+            captured_fields(&app, user, edition, work, &authors).await,
+            original
+        );
+
+        let (stub_work, stub) =
+            test_support::db::insert_work_and_manifestation(&ing, "undo-stub").await;
+        let populated = browser_patch(
+            &server,
+            stub,
+            &csrf,
+            serde_json::json!({"contributors":{"author":["New author"]}}),
+        )
+        .await;
+        assert_eq!(
+            populated.status_code(),
+            StatusCode::OK,
+            "{}",
+            populated.text()
+        );
+        let op = populated.json::<serde_json::Value>()["operations"][0]["operation_id"].clone();
+        let result = browser_undo(
+            &server,
+            stub,
+            &csrf,
+            &op,
+            populated.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(result.status_code(), StatusCode::OK, "{}", result.text());
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) AS \"count!\" FROM work_authors WHERE work_id = $1",
+                stub_work
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            0
+        );
+
+        for invalid in ["123", "0306406153", "1234567890128", "97X0306406157"] {
+            sqlx::query!(
+                "UPDATE manifestations SET isbn_13 = $2 WHERE id = $1",
+                stub,
+                invalid
+            )
+            .execute(&ing)
+            .await
+            .unwrap();
+            let valid = browser_patch(
+                &server,
+                stub,
+                &csrf,
+                serde_json::json!({"isbn_13":"9780306406157"}),
+            )
+            .await;
+            assert_eq!(valid.status_code(), StatusCode::OK, "{}", valid.text());
+            assert_eq!(
+                valid.json::<serde_json::Value>()["operations"],
+                serde_json::json!([])
+            );
+        }
+    }
+
+    // Data loss boundary: selective history, aggregate freshness, locks and single consumption.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn metadata_undo_checks_field_history_and_locks(pool: sqlx::PgPool) {
+        let app = test_support::db::app_pool_for(&pool).await;
+        let ing = test_support::db::ingestion_pool_for(&pool).await;
+        let (_, server, csrf) = undo_browser(&app, &ing, "undo-history").await;
+        let (_, edition) =
+            test_support::db::insert_work_and_manifestation(&ing, "undo-history").await;
+        let path = format!("/api/v1/books/{edition}/metadata");
+        let saved = browser_patch(
+            &server,
+            edition,
+            &csrf,
+            serde_json::json!({"title":"Saved","subtitle":"Saved subtitle"}),
+        )
+        .await;
+        assert_eq!(saved.status_code(), StatusCode::OK, "{}", saved.text());
+        let ops = saved.json::<serde_json::Value>();
+        let title = ops["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|op| op["field_name"] == "title")
+            .unwrap()["operation_id"]
+            .clone();
+        let subtitle = ops["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|op| op["field_name"] == "subtitle")
+            .unwrap()["operation_id"]
+            .clone();
+        let unrelated = browser_patch(
+            &server,
+            edition,
+            &csrf,
+            serde_json::json!({"publisher":"Keep this"}),
+        )
+        .await;
+        assert_eq!(unrelated.status_code(), StatusCode::OK);
+        let baseline = review_mutation_state(&pool, edition).await;
+        let stale = browser_undo(
+            &server,
+            edition,
+            &csrf,
+            &title,
+            saved.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(stale.status_code(), StatusCode::PRECONDITION_FAILED);
+        assert_eq!(review_mutation_state(&pool, edition).await, baseline);
+        let locked = server
+            .post(&format!("/api/v1/manifestations/{edition}/metadata/lock"))
+            .add_header(
+                test_support::mail::csrf(&csrf).0,
+                test_support::mail::csrf(&csrf).1,
+            )
+            .json(&serde_json::json!({"field_name":"title", "entity_type":"work"}))
+            .await;
+        assert_eq!(
+            locked.status_code(),
+            StatusCode::CREATED,
+            "{}",
+            locked.text()
+        );
+        let current = server.get(&path).await;
+        let locked = browser_undo(
+            &server,
+            edition,
+            &csrf,
+            &title,
+            current.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(
+            locked.status_code(),
+            StatusCode::CONFLICT,
+            "{}",
+            locked.text()
+        );
+        assert_eq!(
+            locked.json::<serde_json::Value>()["locked_fields"],
+            serde_json::json!(["title"])
+        );
+        let unlocked = server
+            .post(&format!("/api/v1/manifestations/{edition}/metadata/unlock"))
+            .add_header(
+                test_support::mail::csrf(&csrf).0,
+                test_support::mail::csrf(&csrf).1,
+            )
+            .json(&serde_json::json!({"field_name":"title", "entity_type":"work"}))
+            .await;
+        assert_eq!(
+            unlocked.status_code(),
+            StatusCode::OK,
+            "{}",
+            unlocked.text()
+        );
+        let restored = browser_undo(
+            &server,
+            edition,
+            &csrf,
+            &title,
+            current.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(
+            restored.status_code(),
+            StatusCode::OK,
+            "{}",
+            restored.text()
+        );
+        assert_eq!(
+            restored.json::<serde_json::Value>()["values"]["publisher"],
+            "Keep this"
+        );
+        let twice = browser_undo(
+            &server,
+            edition,
+            &csrf,
+            &title,
+            restored.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(twice.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        for value in ["Away", "Saved subtitle"] {
+            let response = browser_patch(
+                &server,
+                edition,
+                &csrf,
+                serde_json::json!({"subtitle":value}),
+            )
+            .await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+        }
+        let current = server.get(&path).await;
+        let invalidated = browser_undo(
+            &server,
+            edition,
+            &csrf,
+            &subtitle,
+            current.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(invalidated.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            invalidated.header(axum::http::header::CONTENT_TYPE),
+            "application/problem+json"
+        );
+        assert!(
+            invalidated.json::<serde_json::Value>()["type"]
+                .as_str()
+                .unwrap()
+                .ends_with("undo-unavailable")
+        );
+        let saved = browser_patch(
+            &server,
+            edition,
+            &csrf,
+            serde_json::json!({"publisher":"A new publisher"}),
+        )
+        .await;
+        assert_eq!(saved.status_code(), StatusCode::OK);
+        let op: Uuid = serde_json::from_value(
+            saved.json::<serde_json::Value>()["operations"][0]["operation_id"].clone(),
+        )
+        .unwrap();
+        sqlx::query!("UPDATE metadata_versions SET confidence_score = 0.8 WHERE id = (SELECT publisher_version_id FROM manifestations WHERE id = $1)", edition).execute(&ing).await.unwrap();
+        let current = server.get(&path).await;
+        assert_eq!(
+            browser_undo(
+                &server,
+                edition,
+                &csrf,
+                &serde_json::json!(op),
+                current.header(axum::http::header::ETAG)
+            )
+            .await
+            .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let saved = browser_patch(
+            &server,
+            edition,
+            &csrf,
+            serde_json::json!({"description":"Description"}),
+        )
+        .await;
+        assert_eq!(saved.status_code(), StatusCode::OK);
+        let op: Uuid = serde_json::from_value(
+            saved.json::<serde_json::Value>()["operations"][0]["operation_id"].clone(),
+        )
+        .unwrap();
+        sqlx::query!("UPDATE metadata_undo_operations SET after_state = jsonb_set(after_state, '{state,value}', '\"divergent\"'::jsonb) WHERE id = $1", op).execute(&pool).await.unwrap();
+        let before = review_mutation_state(&pool, edition).await;
+        let conflict = browser_undo(
+            &server,
+            edition,
+            &csrf,
+            &serde_json::json!(op),
+            saved.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(
+            conflict.status_code(),
+            StatusCode::CONFLICT,
+            "{}",
+            conflict.text()
+        );
+        assert!(
+            conflict.json::<serde_json::Value>()["type"]
+                .as_str()
+                .unwrap()
+                .ends_with("undo-conflict")
+        );
+        assert_eq!(review_mutation_state(&pool, edition).await, before);
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT consumed_at FROM metadata_undo_operations WHERE id = $1",
+                op
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .is_none()
+        );
+    }
+
+    // Authorisation/private-data boundaries; REV-REQ-0056 child 403/no-write and Undo 428/no-write.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn metadata_undo_binds_receipts_to_session(pool: sqlx::PgPool) {
+        let app = test_support::db::app_pool_for(&pool).await;
+        let ing = test_support::db::ingestion_pool_for(&pool).await;
+        let (user, server, csrf) = undo_browser(&app, &ing, "undo-session").await;
+        let (_, edition) =
+            test_support::db::insert_work_and_manifestation(&ing, "undo-session").await;
+        let (_, other_edition) =
+            test_support::db::insert_work_and_manifestation(&ing, "undo-target").await;
+        let path = format!("/api/v1/books/{edition}/metadata");
+        let request = Uuid::new_v4();
+        let saved = browser_patch(
+            &server,
+            edition,
+            &csrf,
+            serde_json::json!({"title":"Session title","request_id":request}),
+        )
+        .await;
+        assert_eq!(saved.status_code(), StatusCode::OK, "{}", saved.text());
+        assert_eq!(saved.header(axum::http::header::CACHE_CONTROL), "no-store");
+        let op: Uuid = serde_json::from_value(
+            saved.json::<serde_json::Value>()["operations"][0]["operation_id"].clone(),
+        )
+        .unwrap();
+        let resolve = format!("{path}/operations/resolve");
+        let receipt = server
+            .post(&resolve)
+            .add_header(
+                test_support::mail::csrf(&csrf).0,
+                test_support::mail::csrf(&csrf).1,
+            )
+            .json(&serde_json::json!({"request_id":request}))
+            .await;
+        assert_eq!(receipt.status_code(), StatusCode::OK, "{}", receipt.text());
+        assert_eq!(receipt.json::<serde_json::Value>()["outcome"], "saved");
+        let missing = server
+            .post(&resolve)
+            .add_header(
+                test_support::mail::csrf(&csrf).0,
+                test_support::mail::csrf(&csrf).1,
+            )
+            .json(&serde_json::json!({"request_id":Uuid::new_v4()}))
+            .await;
+        assert_eq!(missing.json::<serde_json::Value>()["outcome"], "unknown");
+        let before = review_mutation_state(&pool, edition).await;
+        let no_csrf = server
+            .post(&format!("{path}/undo"))
+            .json(&serde_json::json!({"operation_id":op}))
+            .await;
+        assert_eq!(no_csrf.status_code(), StatusCode::PRECONDITION_REQUIRED);
+        let no_match = server
+            .post(&format!("{path}/undo"))
+            .add_header(
+                test_support::mail::csrf(&csrf).0,
+                test_support::mail::csrf(&csrf).1,
+            )
+            .json(&serde_json::json!({"operation_id":op}))
+            .await;
+        assert_eq!(no_match.status_code(), StatusCode::PRECONDITION_REQUIRED);
+        let mut second = test_support::db::server_with_real_pools(&app, &ing);
+        second.save_cookies();
+        let second_csrf = test_support::mail::login(
+            &second,
+            "undo-session@example.test",
+            test_support::mail::PASSWORD,
+        )
+        .await;
+        let wrong_session = browser_undo(
+            &second,
+            edition,
+            &second_csrf,
+            &serde_json::json!(op),
+            saved.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(
+            wrong_session.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let current = server
+            .get(&format!("/api/v1/books/{other_edition}/metadata"))
+            .await;
+        assert_eq!(
+            browser_undo(
+                &server,
+                other_edition,
+                &csrf,
+                &serde_json::json!(op),
+                current.header(axum::http::header::ETAG)
+            )
+            .await
+            .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(review_mutation_state(&pool, edition).await, before);
+        let child = test_support::db::create_adult_with_password(
+            &app,
+            "undo-child",
+            "undo-child@example.test",
+            test_support::mail::PASSWORD,
+        )
+        .await;
+        sqlx::query!(
+            "UPDATE users SET role = 'child', is_child = TRUE WHERE id = $1",
+            child
+        )
+        .execute(&app)
+        .await
+        .unwrap();
+        let shelf = test_support::db::create_shelf(&app, child, "undo-child").await;
+        test_support::db::add_to_shelf(&app, shelf, edition).await;
+        let mut child_server = test_support::db::server_with_real_pools(&app, &ing);
+        child_server.save_cookies();
+        let child_csrf = test_support::mail::login(
+            &child_server,
+            "undo-child@example.test",
+            test_support::mail::PASSWORD,
+        )
+        .await;
+        let child_result = browser_undo(
+            &child_server,
+            edition,
+            &child_csrf,
+            &serde_json::json!(op),
+            saved.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(child_result.status_code(), StatusCode::FORBIDDEN);
+        assert_eq!(review_mutation_state(&pool, edition).await, before);
+        let success = browser_undo(
+            &server,
+            edition,
+            &csrf,
+            &serde_json::json!(op),
+            saved.header(axum::http::header::ETAG),
+        )
+        .await;
+        assert_eq!(success.status_code(), StatusCode::OK, "{}", success.text());
+        let receipt = server
+            .post(&resolve)
+            .add_header(
+                test_support::mail::csrf(&csrf).0,
+                test_support::mail::csrf(&csrf).1,
+            )
+            .json(&serde_json::json!({"operation_id":op}))
+            .await;
+        assert_eq!(receipt.json::<serde_json::Value>()["outcome"], "restored");
+        let saved = browser_patch(
+            &server,
+            edition,
+            &csrf,
+            serde_json::json!({"publisher":"Expiring"}),
+        )
+        .await;
+        assert_eq!(saved.status_code(), StatusCode::OK);
+        let expiring: Uuid = serde_json::from_value(
+            saved.json::<serde_json::Value>()["operations"][0]["operation_id"].clone(),
+        )
+        .unwrap();
+        sqlx::query!("UPDATE metadata_undo_operations SET expires_at = clock_timestamp() - interval '1 second' WHERE id = $1",expiring).execute(&pool).await.unwrap();
+        let before = review_mutation_state(&pool, edition).await;
+        assert_eq!(
+            browser_undo(
+                &server,
+                edition,
+                &csrf,
+                &serde_json::json!(expiring),
+                saved.header(axum::http::header::ETAG)
+            )
+            .await
+            .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(review_mutation_state(&pool, edition).await, before);
+        let expired_receipt = server
+            .post(&resolve)
+            .add_header(
+                test_support::mail::csrf(&csrf).0,
+                test_support::mail::csrf(&csrf).1,
+            )
+            .json(&serde_json::json!({"operation_id":expiring}))
+            .await;
+        assert_eq!(expired_receipt.status_code(), StatusCode::OK);
+        assert_eq!(
+            expired_receipt.json::<serde_json::Value>()["outcome"],
+            "unknown"
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT reclaim_metadata_undo() AS \"removed!\"")
+                .fetch_one(&app)
+                .await
+                .unwrap(),
+            1
+        );
+        server
+            .post("/auth/logout")
+            .add_header(
+                test_support::mail::csrf(&csrf).0,
+                test_support::mail::csrf(&csrf).1,
+            )
+            .await
+            .assert_status_no_content();
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) AS \"count!\" FROM metadata_undo_operations WHERE user_id = $1",
+                user
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            0
+        );
+    }
 
     async fn metadata_identity(pool: &sqlx::PgPool, edition: Uuid) -> serde_json::Value {
         sqlx::query_scalar!(
@@ -3181,7 +3895,13 @@ mod tests {
             before_values.header(axum::http::header::ETAG),
             restored.header(axum::http::header::ETAG)
         );
-        sqlx::query!("UPDATE metadata_versions SET confidence_score = 0.8, new_value = to_jsonb('Revised source observation'::text) WHERE id = $1", version).execute(&ing).await.unwrap();
+        sqlx::query!(
+            "UPDATE metadata_versions SET confidence_score = 0.8 WHERE id = $1",
+            version
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
         let after = metadata_identity(&pool, edition).await;
         assert_metadata_fields_advanced(&before, &after, &attributed_work, &attributed_edition);
         let after_values = server
@@ -3494,7 +4214,7 @@ mod tests {
         });
         tokio::select! {
             response = &mut saving => panic!("save bypassed barrier: {:?}", response.unwrap().status_code()),
-            () = test_support::wait_for_blocked_query(&pool, "SELECT m.work_id FROM manifestations m%", 1) => {}
+            () = test_support::wait_for_blocked_query(&pool, "SELECT work_id FROM manifestations WHERE id = $1 FOR UPDATE", 1) => {}
         }
         barrier.commit().await.unwrap();
         assert_eq!(locking.await.unwrap().status_code(), StatusCode::CREATED);

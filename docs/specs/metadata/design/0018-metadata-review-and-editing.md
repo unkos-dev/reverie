@@ -16,13 +16,13 @@ governed-by:
 # Metadata review and editing
 
 This Design covers how an operator reviews, accepts, rejects, reverts, locks and manually edits a manifestation's or
-work's bibliographic metadata: the `metadata_versions` journal and its canonical-pointer promotion mechanism, the
-review-queue reads, the accept/reject/revert/lock/unlock routes, the manual `PATCH` surface with its per-field
+work's bibliographic metadata: the observation journal, exact field mementos and canonical-pointer promotion mechanism,
+the review-queue reads, the accept/reject/revert/lock/unlock routes, the manual `PATCH` surface with its per-field
 apply/clear dispatch and external-identifier editing, and the client's edit dialog and Versions tab that drive them.
 
 ## Purpose and boundaries
 
-This subject owns `backend/src/routes/metadata.rs` end to end: the review-queue reads
+This subject owns `backend/src/routes/metadata.rs` and its `metadata/undo.rs` child module: the review-queue reads
 (`GET /api/v1/manifestations/{id}/metadata`, `GET /api/v1/works/{id}/metadata`), the accept, reject, revert, lock and
 unlock routes, the matched `GET`/`PATCH` pair at `/api/v1/books/{id}/metadata` that an operator edits through, the
 field-dispatch helpers those routes share (`apply_version`, `clear_field`, `apply_contributors_patch`,
@@ -124,9 +124,9 @@ field-lock foreign-key write as an internal error.
 
 ### Component relationships
 
-- `router()` makes eight `.routes(...)` calls, the last of which registers a `GET` and a `PATCH` together, for nine
-  operations total on `AppState`: the two review-queue `GET`s, `accept`, `reject`, `revert`, `lock`, `unlock`, and the
-  `get`/`update` pair at `/api/v1/books/{id}/metadata`.
+- `router()` registers the matched metadata pair, exact Undo and operation resolution alongside the review operations:
+  the two review-queue `GET`s, `accept`, `reject`, `revert`, `lock`, `unlock`, and the `get`/`update` pair at
+  `/api/v1/books/{id}/metadata`.
 - `apply_version` and `clear_field` are the two field-dispatch cores every promotion or clear routes through: one
   `match` arm per supported canonical field, each doing the type-specific parse (ISBN checksum, `content_rating` enum,
   `pub_date` via `publication_date::normalise`), the `UPDATE ... RETURNING` that swaps the pointer and returns what it
@@ -190,8 +190,20 @@ field-lock foreign-key write as an internal error.
 
 ## Data and state
 
+`metadata_versions.submitted_by` identifies the manual submitter separately from `resolved_by` and `resolved_at`, which
+record mutable review activity. The exact insertion-time `observation_key` hashes the JSONB value, including array
+order, match method and submitting user. Edition, source and field complete uniqueness. `value_hash` retains normalised
+value comparison for enrichment. Runtime UPDATE grants exclude observation meaning and its key. Account deletion can
+clear the submission reference without recomputing the insertion key; Undo refuses a captured attribution whose target
+has disappeared. An unknown historical submitter remains null.
+
+`metadata_undo_operations` retains typed before and after field state, original source meaning, owner identities,
+last-change stamp, save request UUID, actual session, user, edition and fixed one-hour expiry. Only the latest saved
+operation per session and field remains eligible. Superseded and consumed rows retain committed evidence until expiry.
+Session, user, work and edition deletion cascade the corresponding capabilities.
+
 - **`metadata_versions`.** One row per observed (manifestation, source, field, value) combination, with duplicates
-  suppressed on `(manifestation_id, source, field_name, value_hash)`. `status` is a two-value enum, `pending` or
+  suppressed on `(manifestation_id, source, field_name, observation_key)`. `status` is a two-value enum, `pending` or
   `rejected`; there is no `applied`/`accepted` value. A row promoted to canonical keeps `status = 'pending'`: promotion
   is recorded solely by a `*_version_id` pointer column (or a junction row's `source_version_id`) referencing the row's
   id, never by the enum. Rows accumulate without limit; nothing in this subject deletes one. The table carries no
@@ -211,6 +223,37 @@ field-lock foreign-key write as an internal error.
   flag is set (see Runtime behaviour for why the row itself is left alone).
 
 ## Runtime behaviour
+
+### Exact saved-field Undo
+
+A reused save request identifier returns 422 without repeating the save.
+
+Browser PATCH accepts an optional `request_id` and returns complete `values`, its matching ETag, legacy `fields` and
+independent `operations`. Basic and device-token writes return no operations. Capture and issuance share the canonical
+save transaction. Structurally invalid ISBN before-values receive no capability. Exact repeats can reuse observation
+rows; different order, match method or submitter cannot overwrite their meaning.
+
+`POST /api/v1/books/{id}/metadata/undo` accepts `operation_id` in its JSON body and requires an adult browser session,
+write scope, CSRF and a current strong `If-Match`. It locks the edition and work, checks aggregate freshness, then
+checks operation ownership, original expiry, selected field identity, field locks and recorded after-state. Source and
+relation target locks protect exact restoration. Canonical values, membership, stored positions and null or mixed source
+pointers restore directly. A stub that previously had no authors can restore its empty role. Derived author sort, ISBN
+mismatch and rematch use current canonical data. Writeback and consumption commit with the restored field; identifiers
+enqueue no writeback.
+
+`POST /api/v1/books/{id}/metadata/operations/resolve` accepts exactly one `request_id` or `operation_id`. It returns
+fresh paired values and server-confirmed eligible, locked, unavailable or consumed descriptors. Save evidence reports
+`saved`; consumed-operation evidence reports `restored`. Absence reports `unknown`, never rollback. Resolution reads
+relations, locks and provenance in batches and never replays a write.
+
+Stale aggregate tags return 412 with the current ETag. Invalidated, expired, consumed or foreign-session restoration
+requests return non-enumerating 422 `undo-unavailable`. Missing required targets also return 422 without recreating
+identities. A field lock returns non-consuming 409 `field-locked`; equal identity with divergent recorded after-state
+returns non-consuming 409 `undo-conflict`. Current confidence remains mutable and outside restoration, but a change to a
+currently referenced observation still advances field identity and can invalidate Undo. Observation counts, timestamps
+and review activity are never rewound. Capability-bearing success responses are `Cache-Control: no-store`.
+
+### Metadata review and ordinary editing
 
 `pub_date` is nullable bibliographic text. PATCH, accept and revert validate through the shared publication-date
 validator before canonical writes. Reads preserve the accepted precision and spelling. An omitted PATCH key retains its
@@ -232,8 +275,8 @@ field section outside removable draft rows. Pending, clear-confirmation and succ
 2. On submit, `updateBookMetadata` sends the touched-only body; `apiFetch` auto-echoes the captured tag as `If-Match`
    since the caller set none.
 3. `update_book_metadata` parses `If-Match` (`parse_if_match`), requiring it present (`428` otherwise), then opens
-   `acquire_with_rls_read_committed` and takes `SELECT ... FOR UPDATE OF m, w` on the manifestation and its work: `404`
-   if RLS hides or the id does not exist.
+   `acquire_with_rls_read_committed` and locks the manifestation and then its work: `404` if RLS hides or the id does
+   not exist.
 4. Under that lock, `load_book_metadata` + `MetadataRevision::etag` recompute the current tag and compare it to
    `If-Match`; a mismatch returns `412` with the current tag before anything else is checked, per RFC 9110 §13.2.1
    precondition ordering.
@@ -262,8 +305,8 @@ field section outside removable draft rows. Pending, clear-confirmation and succ
    statement, so a rejection committed while it waits is visible. The lock lasts through commit or rollback; it
    serialises these two endpoints for one version, not metadata updates generally. If acceptance commits first,
    subsequent rejection still succeeds without undoing the canonical value or its queued writeback. Rejection locks the
-   visible manifestation and its work before updating the journal, as manual PATCH does. A changed resolving user on a
-   currently referenced version advances that field's provenance identity; review status alone does not.
+   visible manifestation and its work before updating the journal, as manual PATCH does. Submission attribution and
+   current confidence participate in field identity; review actor and status changes do not.
 2. `accept_manifestation` selects only a `pending` version for the requested manifestation and locks the manifestation
    and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or already-rejected version returns `404`:
    none identifies an eligible draft for this operation. The Versions tab refreshes book details after failed acceptance

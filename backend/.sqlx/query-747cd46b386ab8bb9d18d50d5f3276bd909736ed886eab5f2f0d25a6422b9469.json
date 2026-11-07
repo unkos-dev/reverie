@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE metadata_undo_operations SET after_state = jsonb_set(after_state, '{state,value}', '\"divergent\"'::jsonb) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "747cd46b386ab8bb9d18d50d5f3276bd909736ed886eab5f2f0d25a6422b9469"
+}

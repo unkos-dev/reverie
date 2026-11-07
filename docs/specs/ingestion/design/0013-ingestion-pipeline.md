@@ -100,6 +100,11 @@ application-role DSN is never substituted. One-shot administrative commands reta
 
 ## Data and state
 
+OPF observations use the shared exact observation identity. A repeat with identical value, array order and match method
+reuses its row and increments observation bookkeeping. The normalised `value_hash` remains available for cross-source
+enrichment comparisons. Runtime writes preserve each observation's semantic columns even after current canonical
+pointers move away, so active Undo mementos can retain truthful original source pointers.
+
 Work and manifestation inserts initialise metadata revisions and field stamps at zero. Stub upgrades, canonical source
 pointer wiring, contributors and identifier writes advance the affected identities through the data-model triggers in
 the same registration transaction. Draft insertion alone does not advance a revision. Ingestion input observations,

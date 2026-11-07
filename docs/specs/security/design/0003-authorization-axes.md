@@ -136,6 +136,11 @@ scope; the RLS Design owns its grant and execution details.
 
 ## Runtime behaviour
 
+Exact metadata Undo and operation resolution require adult browser-session credentials with write scope. Capability
+lookups bind the actual persisted session, user and target edition; knowledge of an operation UUID alone grants no
+access. Basic and device-token metadata saves remain supported without issuing Undo capabilities. Child refusal occurs
+before catalogue writes, independently of the credential's write scope.
+
 **A credential one scope level below an operation's requirement**, as the matrix exercises it for
 `POST /api/v1/shelves`, which requires `write`:
 

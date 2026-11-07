@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE work_authors SET source_version_id = NULL WHERE work_id = $1 AND position = 0",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5e88584e1c7000ef8cc1407bfb1988fb8694a6751f901a2acc49dbb3df650bd1"
+}

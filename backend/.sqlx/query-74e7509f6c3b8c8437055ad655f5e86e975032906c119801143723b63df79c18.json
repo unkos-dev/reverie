@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO manifestation_tags (manifestation_id, tag_id, source_version_id) SELECT $1, id, version FROM UNNEST($2::uuid[], $3::uuid[]) AS m(id, version)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "74e7509f6c3b8c8437055ad655f5e86e975032906c119801143723b63df79c18"
+}

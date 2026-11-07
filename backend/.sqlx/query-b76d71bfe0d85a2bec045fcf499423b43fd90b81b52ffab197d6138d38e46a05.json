@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 'identifiers.work.' || scheme AS \"field!\", external_id AS \"value!\", source_version_id FROM work_external_identifiers WHERE work_id = $1 UNION ALL SELECT 'identifiers.manifestation.' || scheme, external_id, source_version_id FROM manifestation_external_identifiers WHERE manifestation_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_version_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b76d71bfe0d85a2bec045fcf499423b43fd90b81b52ffab197d6138d38e46a05"
+}
