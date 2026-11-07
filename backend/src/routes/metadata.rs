@@ -2775,7 +2775,16 @@ async fn apply_identifier_patches(
         }
     }
     if touched {
-        sqlx::query!(
+        requeue_identifier_enrichment(tx, manifestation_id).await?;
+    }
+    Ok(())
+}
+
+async fn requeue_identifier_enrichment(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query!(
             "UPDATE manifestations \
              SET enrichment_rerun_requested = (enrichment_status = 'in_progress'), \
                  enrichment_status = CASE WHEN enrichment_status = 'in_progress' \
@@ -2797,7 +2806,6 @@ async fn apply_identifier_patches(
         .execute(&mut **tx)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    }
     Ok(())
 }
 
@@ -2963,7 +2971,8 @@ mod tests {
         serde_json::to_value(captured.fields).unwrap()
     }
 
-    // Data corruption boundary; REV-REQ-0052 reversion/identifier jobs, REV-REQ-0072 AC2-4 and REV-REQ-0073 AC2-4.
+    // Data corruption boundary: exact restoration and active enrichment claim ownership.
+    // REV-REQ-0052 reversion/identifier jobs; REV-REQ-0072 AC2-4 and REV-REQ-0073 AC2-4.
     #[sqlx::test(migrations = "./migrations")]
     async fn metadata_undo_restores_exact_field_state(pool: sqlx::PgPool) {
         let app = test_support::db::app_pool_for(&pool).await;
@@ -3037,6 +3046,16 @@ mod tests {
         assert_eq!(operations.len(), fields.len());
         for op in operations {
             let field = op["field_name"].as_str().unwrap();
+            let identifier = field.starts_with("identifiers.");
+            let active_enrichment = field == "identifiers.manifestation.googlebooks";
+            if identifier {
+                sqlx::query!(
+                    "UPDATE manifestations SET enrichment_status = CASE WHEN $2 THEN 'in_progress'::enrichment_status \
+                     ELSE 'complete'::enrichment_status END, enrichment_rerun_requested = FALSE, \
+                     enrichment_claim_seq = 7, enrichment_attempt_count = 2, enrichment_attempted_at = clock_timestamp() \
+                     WHERE id = $1", edition, active_enrichment,
+                ).execute(&pool).await.unwrap();
+            }
             let jobs_before = sqlx::query_scalar!(
                 "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
                 edition
@@ -3068,10 +3087,28 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-            assert_eq!(
-                jobs_after - jobs_before,
-                i64::from(!field.starts_with("identifiers."))
-            );
+            assert_eq!(jobs_after - jobs_before, i64::from(!identifier));
+            if identifier {
+                let enrichment = sqlx::query!(
+                    "SELECT enrichment_status::text AS \"status!\", enrichment_rerun_requested, \
+                     enrichment_claim_seq, enrichment_attempt_count FROM manifestations WHERE id = $1",
+                    edition,
+                ).fetch_one(&pool).await.unwrap();
+                assert_eq!(
+                    enrichment.status,
+                    if active_enrichment {
+                        "in_progress"
+                    } else {
+                        "pending"
+                    }
+                );
+                assert_eq!(enrichment.enrichment_rerun_requested, active_enrichment);
+                assert_eq!(enrichment.enrichment_claim_seq, 7);
+                assert_eq!(
+                    enrichment.enrichment_attempt_count,
+                    if active_enrichment { 2 } else { 0 }
+                );
+            }
         }
         assert_eq!(
             captured_fields(&app, user, edition, work, &fields).await,

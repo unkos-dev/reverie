@@ -105,8 +105,8 @@ dependency of the Library table cell editing and undo subject on this one.
   transaction as the move. The Design "Writeback pipeline" owns every other writer and every reader of this table.
 - The manifestation's `enrichment_status`, `enrichment_rerun_requested`, `enrichment_attempt_count`,
   `enrichment_attempted_at`, `enrichment_retry_not_before` and `enrichment_error` columns: conditionally reset by
-  `apply_identifier_patches` when an identifier map is touched (see Runtime behaviour); the enrichment worker is the
-  other writer of these columns, out of this subject's scope.
+  `requeue_identifier_enrichment` after manual identifier writes and exact identifier restoration (see Runtime
+  behaviour); the enrichment worker is the other writer of these columns, out of this subject's scope.
 - `works.first_author_sort_name`: recomputed by `work::refresh_first_author_sort`, called whenever an `author`-role edit
   touches `work_authors` (both `apply_version`'s contributors arm and `apply_contributors_patch`, gated on
   `author_touched`).
@@ -226,7 +226,10 @@ Session, user, work and edition deletion cascade the corresponding capabilities.
 
 ### Exact saved-field Undo
 
-A reused save request identifier returns 422 without repeating the save.
+A save request UUID correlates retained field operations; it is not an idempotency key. Reuse returns 422 when that
+session already has committed operation evidence for the identifier. A save that issues no operation leaves no receipt,
+so resolution reports `unknown` even if the save committed. The client retains uncertainty and never replays the write
+automatically.
 
 Browser PATCH accepts an optional `request_id` and returns complete `values`, its matching ETag, legacy `fields` and
 independent `operations`. Basic and device-token writes return no operations. Capture and issuance share the canonical
@@ -238,8 +241,8 @@ write scope, CSRF and a current strong `If-Match`. It locks the edition and work
 checks operation ownership, original expiry, selected field identity, field locks and recorded after-state. Source and
 relation target locks protect exact restoration. Canonical values, membership, stored positions and null or mixed source
 pointers restore directly. A stub that previously had no authors can restore its empty role. Derived author sort, ISBN
-mismatch and rematch use current canonical data. Writeback and consumption commit with the restored field; identifiers
-enqueue no writeback.
+mismatch and rematch use current canonical data. Writeback and consumption commit with the restored field. Identifier
+restoration queues enrichment again through the existing claim-preserving transition and enqueues no writeback.
 
 `POST /api/v1/books/{id}/metadata/operations/resolve` accepts exactly one `request_id` or `operation_id`. It returns
 fresh paired values and server-confirmed eligible, locked, unavailable or consumed descriptors. Save evidence reports
@@ -360,12 +363,12 @@ the server-normalised value to the displayed rows' source query.
 
 **A manual identifier edit while enrichment is `in_progress`, for the same manifestation.**
 
-`apply_identifier_patches` inspects the manifestation's current `enrichment_status` in the same `UPDATE` that resets it.
-An `in_progress` row is never flipped back to `pending` here: the active worker still owns its claim, and making the row
-newly eligible would let a second worker start against the same manifestation concurrently. Instead only
-`enrichment_rerun_requested` is set; the worker's own completion bookkeeping (owned by the Design "Enrichment pipeline")
-is what turns that flag into a fresh eligible row once the in-flight run finishes, since that run's lookup keys, read
-once at the start, may already be stale against the edit.
+`apply_identifier_patches` delegates to `requeue_identifier_enrichment`, which inspects the manifestation's current
+`enrichment_status` in the same `UPDATE` that resets it. An `in_progress` row is never flipped back to `pending` here:
+the active worker still owns its claim, and making the row newly eligible would let a second worker start against the
+same manifestation concurrently. Instead only `enrichment_rerun_requested` is set; the worker's own completion
+bookkeeping (owned by the Design "Enrichment pipeline") is what turns that flag into a fresh eligible row once the
+in-flight run finishes, since that run's lookup keys, read once at the start, may already be stale against the edit.
 
 **Locking or unlocking a field** (`POST .../metadata/lock` or `POST .../metadata/unlock`) opens an
 `acquire_with_rls_read_committed` transaction, takes `SELECT id FROM manifestations WHERE id = $1 FOR UPDATE`, and

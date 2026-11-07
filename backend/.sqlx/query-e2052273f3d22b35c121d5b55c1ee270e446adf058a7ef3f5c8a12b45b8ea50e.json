@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE metadata_undo_operations SET superseded_at = clock_timestamp() WHERE user_id = $1 AND session_id = $2 AND manifestation_id = $3 AND field_name = ANY($4) AND consumed_at IS NULL AND superseded_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e2052273f3d22b35c121d5b55c1ee270e446adf058a7ef3f5c8a12b45b8ea50e"
+}

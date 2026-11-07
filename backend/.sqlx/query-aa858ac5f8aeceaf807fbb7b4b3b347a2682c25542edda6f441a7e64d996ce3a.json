@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metadata_undo_operations (id, user_id, session_id, manifestation_id, work_id, request_id, field_name, before_state, after_state, after_revision, expires_at) SELECT id, $1, $2, $3, $4, $5, field, before_state, after_state, revision, $6 FROM UNNEST($7::uuid[], $8::text[], $9::jsonb[], $10::jsonb[], $11::bigint[]) AS operation(id, field, before_state, after_state, revision)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz",
+        "UuidArray",
+        "TextArray",
+        "JsonbArray",
+        "JsonbArray",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aa858ac5f8aeceaf807fbb7b4b3b347a2682c25542edda6f441a7e64d996ce3a"
+}

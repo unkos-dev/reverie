@@ -370,20 +370,26 @@ async fn capture_save(
             .fetch_one(&mut **tx)
             .await
             .map_err(internal)?;
+    let fields: Vec<String> = before.fields.keys().cloned().collect();
+    sqlx::query!(
+        "UPDATE metadata_undo_operations SET superseded_at = clock_timestamp() \
+         WHERE user_id = $1 AND session_id = $2 AND manifestation_id = $3 AND field_name = ANY($4) \
+           AND consumed_at IS NULL AND superseded_at IS NULL",
+        user,
+        session,
+        edition,
+        &fields,
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(internal)?;
     let mut result = Vec::new();
+    let mut ids = Vec::new();
+    let mut fields = Vec::new();
+    let mut before_states = Vec::new();
+    let mut after_states = Vec::new();
+    let mut revisions = Vec::new();
     for (field, before) in before.fields {
-        sqlx::query!(
-            "UPDATE metadata_undo_operations SET superseded_at = clock_timestamp() \
-             WHERE user_id = $1 AND session_id = $2 AND manifestation_id = $3 AND field_name = $4 \
-               AND consumed_at IS NULL AND superseded_at IS NULL",
-            user,
-            session,
-            edition,
-            field,
-        )
-        .execute(&mut **tx)
-        .await
-        .map_err(internal)?;
         let after_field = after
             .fields
             .get(&field)
@@ -392,15 +398,11 @@ async fn capture_save(
             continue;
         }
         let id = Uuid::new_v4();
-        let before_json = serde_json::to_value(&before).map_err(internal)?;
-        let after_json = serde_json::to_value(after_field).map_err(internal)?;
-        let revision = after.revision(&field);
-        sqlx::query!(
-            "INSERT INTO metadata_undo_operations \
-             (id, user_id, session_id, manifestation_id, work_id, request_id, field_name, before_state, after_state, after_revision, expires_at) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-            id, user, session, edition, work, request, field, before_json, after_json, revision, expires,
-        ).execute(&mut **tx).await.map_err(internal)?;
+        ids.push(id);
+        fields.push(field.clone());
+        before_states.push(serde_json::to_value(&before).map_err(internal)?);
+        after_states.push(serde_json::to_value(after_field).map_err(internal)?);
+        revisions.push(after.revision(&field));
         result.push(UndoOperation {
             operation_id: id,
             field_name: field,
@@ -408,6 +410,15 @@ async fn capture_save(
             status: OperationStatus::Eligible,
         });
     }
+    sqlx::query!(
+        "INSERT INTO metadata_undo_operations \
+         (id, user_id, session_id, manifestation_id, work_id, request_id, field_name, before_state, after_state, after_revision, expires_at) \
+         SELECT id, $1, $2, $3, $4, $5, field, before_state, after_state, revision, $6 \
+         FROM UNNEST($7::uuid[], $8::text[], $9::jsonb[], $10::jsonb[], $11::bigint[]) \
+         AS operation(id, field, before_state, after_state, revision)",
+        user, session, edition, work, request, expires, &ids, &fields,
+        &before_states as &[Value], &after_states as &[Value], &revisions,
+    ).execute(&mut **tx).await.map_err(internal)?;
     Ok(result)
 }
 
@@ -530,37 +541,25 @@ async fn load_targets(
             _ => Vec::new(),
         })
         .collect();
-    let mut terms = BTreeMap::new();
-    for row in sqlx::query!(
-        "SELECT id, name FROM genres WHERE id = ANY($1) ORDER BY id FOR SHARE",
+    let terms = sqlx::query!(
+        "WITH locked_genres AS MATERIALIZED ( \
+             SELECT id, name FROM genres WHERE id = ANY($1) ORDER BY id FOR SHARE \
+         ), locked_moods AS MATERIALIZED ( \
+             SELECT id, name FROM moods WHERE id = ANY($1) ORDER BY id FOR SHARE \
+         ), locked_tags AS MATERIALIZED ( \
+             SELECT id, name FROM tags WHERE id = ANY($1) ORDER BY id FOR SHARE \
+         ) \
+         SELECT 'genres' AS \"field!\", id AS \"id!\", name AS \"name!\" FROM locked_genres \
+         UNION ALL SELECT 'moods', id, name FROM locked_moods \
+         UNION ALL SELECT 'tags', id, name FROM locked_tags",
         &ids
     )
     .fetch_all(&mut **tx)
     .await
     .map_err(internal)?
-    {
-        terms.insert(("genres".to_owned(), row.id), row.name);
-    }
-    for row in sqlx::query!(
-        "SELECT id, name FROM moods WHERE id = ANY($1) ORDER BY id FOR SHARE",
-        &ids
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(internal)?
-    {
-        terms.insert(("moods".to_owned(), row.id), row.name);
-    }
-    for row in sqlx::query!(
-        "SELECT id, name FROM tags WHERE id = ANY($1) ORDER BY id FOR SHARE",
-        &ids
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(internal)?
-    {
-        terms.insert(("tags".to_owned(), row.id), row.name);
-    }
+    .into_iter()
+    .map(|r| ((r.field, r.id), r.name))
+    .collect();
     let schemes: Vec<String> = before
         .iter()
         .filter(|(_, f)| matches!(f.state, FieldState::Identifier { .. }))
@@ -664,74 +663,51 @@ async fn restore_scalar(
     if is_work_scoped_field(field) {
         return restore_work_scalar(tx, work, field, value, version).await;
     }
-    match field {
-        "publisher" => {
-            let value: Option<String> = restored_value(value)?;
-            sqlx::query!(
+    let query = if field == "pages" {
+        let value: Option<i32> = restored_value(value)?;
+        sqlx::query!(
+            "UPDATE manifestations SET pages = $1, pages_version_id = $2 WHERE id = $3",
+            value,
+            version,
+            edition
+        )
+    } else {
+        let value: Option<String> = restored_value(value)?;
+        match field {
+            "publisher" => sqlx::query!(
                 "UPDATE manifestations SET publisher = $1, publisher_version_id = $2 WHERE id = $3",
                 value,
                 version,
                 edition
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(restoration_error)?;
-        }
-        "pub_date" => {
-            let value: Option<String> = restored_value(value)?;
-            sqlx::query!(
+            ),
+            "pub_date" => sqlx::query!(
                 "UPDATE manifestations SET pub_date = $1, pub_date_version_id = $2 WHERE id = $3",
                 value,
                 version,
                 edition
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(restoration_error)?;
-        }
-        "isbn_10" => {
-            let value: Option<String> = restored_value(value)?;
-            sqlx::query!(
+            ),
+            "isbn_10" => sqlx::query!(
                 "UPDATE manifestations SET isbn_10 = $1, isbn_10_version_id = $2 WHERE id = $3",
                 value,
                 version,
                 edition
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(restoration_error)?;
-        }
-        "isbn_13" => {
-            let value: Option<String> = restored_value(value)?;
-            sqlx::query!(
+            ),
+            "isbn_13" => sqlx::query!(
                 "UPDATE manifestations SET isbn_13 = $1, isbn_13_version_id = $2 WHERE id = $3",
                 value,
                 version,
                 edition
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(restoration_error)?;
-        }
-        "pages" => {
-            let value: Option<i32> = restored_value(value)?;
-            sqlx::query!(
-                "UPDATE manifestations SET pages = $1, pages_version_id = $2 WHERE id = $3",
+            ),
+            "content_rating" => sqlx::query!(
+                "UPDATE manifestations SET content_rating = $1::text::content_rating, content_rating_version_id = $2 WHERE id = $3",
                 value,
                 version,
                 edition
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(restoration_error)?;
+            ),
+            _ => return Err(AppError::UndoUnavailable),
         }
-        "content_rating" => {
-            let value: Option<String> = restored_value(value)?;
-            sqlx::query!("UPDATE manifestations SET content_rating = $1::text::content_rating, content_rating_version_id = $2 WHERE id = $3", value, version, edition)
-                .execute(&mut **tx).await.map_err(restoration_error)?;
-        }
-        _ => return Err(AppError::UndoUnavailable),
-    }
+    };
+    query.execute(&mut **tx).await.map_err(restoration_error)?;
     Ok(())
 }
 
@@ -779,7 +755,7 @@ async fn restore_identifier(
             .map_err(restoration_error)?;
         }
     }
-    Ok(())
+    super::requeue_identifier_enrichment(tx, edition).await
 }
 
 async fn restore(
