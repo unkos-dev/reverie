@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT work_id FROM manifestations WHERE id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "work_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "work_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d96715571ab42e842d84be0b3747c82482adbefbf24149accd96b3749ff4035b"
+}

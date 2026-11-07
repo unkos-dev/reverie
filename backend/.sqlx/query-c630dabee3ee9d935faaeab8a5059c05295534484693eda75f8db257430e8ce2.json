@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT reclaim_metadata_undo() AS \"removed!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "removed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c630dabee3ee9d935faaeab8a5059c05295534484693eda75f8db257430e8ce2"
+}

@@ -235,6 +235,16 @@ table.
 
 ## Data and state
 
+`metadata_undo_operations` forces RLS and permits runtime access only to rows matching `app.current_user_id`.
+`reverie_app` has capability DML access; ingestion and read-only roles have none. Handlers additionally check the actual
+browser session and visible edition. The expiry function runs as `reverie_migrator` with a fixed search path and an
+expired-row-only maintenance policy. Its only runtime grant is execution by the application role; it returns a deletion
+count, never mementos. It deletes at most 1000 expired rows per call using SELECT and DELETE privileges.
+
+Observation UPDATE grants permit current confidence, review and observation bookkeeping. Source, owning edition, field,
+value, match method, submission author and insertion key cannot be reassigned by runtime writes. Native account-deletion
+foreign-key actions can clear attribution, advancing current references through the provenance trigger.
+
 The settings this subject uses exist only in the session memory of a PostgreSQL connection; no table stores them.
 `app.current_user_id` is local to the transaction `acquire_with_rls` opened: it takes effect for that transaction only
 and ends when the transaction commits or rolls back, so a later borrower of the same pooled connection starts without

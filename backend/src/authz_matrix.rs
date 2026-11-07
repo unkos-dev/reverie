@@ -236,6 +236,10 @@ fn body_for(method: &str, path: &str) -> Option<Value> {
         ("PATCH", "/api/v1/books/{id}/metadata") => {
             Some(serde_json::json!({"title": "Matrix Title"}))
         }
+        (
+            "POST",
+            "/api/v1/books/{id}/metadata/undo" | "/api/v1/books/{id}/metadata/operations/resolve",
+        ) => Some(serde_json::json!({"operation_id": "00000000-0000-0000-0000-000000000000"})),
         ("PUT", "/api/v1/settings") => Some(serde_json::json!({"enrichment_enabled": true})),
         ("POST", "/api/v1/users") => Some(serde_json::json!({
             "email": "matrix-test@example.com",

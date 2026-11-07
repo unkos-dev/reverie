@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT v.id, v.source, v.field_name, v.new_value AS \"value!\", v.match_type, v.submitted_by FROM metadata_versions v JOIN jsonb_to_recordset($1::jsonb) AS expected(id uuid, source text, field_name text, value jsonb, match_type text, submitted_by uuid) ON v.id = expected.id AND v.source = expected.source AND v.field_name = expected.field_name AND v.new_value = coalesce(expected.value, 'null'::jsonb) AND v.match_type = expected.match_type AND v.submitted_by IS NOT DISTINCT FROM expected.submitted_by ORDER BY v.id LIMIT $2 FOR SHARE OF v",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "field_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "field_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "value!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "new_value"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "match_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "match_type"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "submitted_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "submitted_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e06e45ef5460496b33c1355ef22ca1c2189659d97726bf90cadb70c0e0306f0e"
+}

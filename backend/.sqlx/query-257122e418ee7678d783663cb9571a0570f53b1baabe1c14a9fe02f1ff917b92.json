@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE metadata_undo_operations SET consumed_at = clock_timestamp() WHERE id = $1 AND expires_at > clock_timestamp() RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "metadata_undo_operations",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "257122e418ee7678d783663cb9571a0570f53b1baabe1c14a9fe02f1ff917b92"
+}

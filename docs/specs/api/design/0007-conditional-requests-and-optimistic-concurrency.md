@@ -143,6 +143,11 @@ is reachable when an ETag-priming fetch loses a race against a very fast concurr
 
 ## Interfaces and dependencies
 
+Exact metadata Undo uses the same strong aggregate precondition as PATCH. It requires `If-Match` before database writes
+and compares it under edition and work locks. Selected-field eligibility is an additional decision, independent of
+aggregate freshness. Operation resolution supplies current complete metadata and its matching ETag without replaying
+writes. It cannot authorise an ordinary save from retained draft values.
+
 - `hash_etag<T: Serialize>(state: &T) -> Result<HeaderValue, AppError>` and
   `parse_if_match(headers: &HeaderMap) -> Result<Option<StrongEntityTag>, AppError>` build and read a tag;
   `StrongEntityTag::matches(&self, current: &HeaderValue) -> bool` compares one, and

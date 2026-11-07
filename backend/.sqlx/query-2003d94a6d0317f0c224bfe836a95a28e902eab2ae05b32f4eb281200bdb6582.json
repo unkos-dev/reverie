@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT field_name, before_state, after_state, after_revision, expires_at FROM metadata_undo_operations WHERE id = $1 AND user_id = $2 AND session_id = $3 AND manifestation_id = $4 AND work_id = $5 AND expires_at > clock_timestamp() AND consumed_at IS NULL AND superseded_at IS NULL FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_undo_operations",
+            "name": "field_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "before_state",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_undo_operations",
+            "name": "before_state"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "after_state",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_undo_operations",
+            "name": "after_state"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "after_revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "metadata_undo_operations",
+            "name": "after_revision"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "metadata_undo_operations",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2003d94a6d0317f0c224bfe836a95a28e902eab2ae05b32f4eb281200bdb6582"
+}

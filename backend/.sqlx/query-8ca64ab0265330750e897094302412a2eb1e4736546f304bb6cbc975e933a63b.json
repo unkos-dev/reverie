@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, source, field_name, CASE WHEN octet_length(new_value::text) <= $2 THEN new_value END AS value, match_type, submitted_by FROM metadata_versions WHERE id = ANY($1) ORDER BY id LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "field_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "field_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "value",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "match_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "match_type"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "submitted_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "submitted_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false,
+      true
+    ]
+  },
+  "hash": "8ca64ab0265330750e897094302412a2eb1e4736546f304bb6cbc975e933a63b"
+}

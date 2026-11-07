@@ -80,6 +80,19 @@ async fn sweep_pass(
             }
         }
     }
+    while !cancel.is_cancelled() {
+        match sqlx::query_scalar!("SELECT reclaim_metadata_undo() AS \"removed!\"")
+            .fetch_one(pool)
+            .await
+        {
+            Ok(removed) if removed < 1000 => break,
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "metadata Undo sweep failed; retrying next tick");
+                break;
+            }
+        }
+    }
     sweep_throttles(pool, cancel).await;
     sweep_mail(pool, cancel).await;
 }

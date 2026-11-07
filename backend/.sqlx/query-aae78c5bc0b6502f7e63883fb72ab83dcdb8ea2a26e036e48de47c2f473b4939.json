@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH inserted AS (INSERT INTO genres(name) SELECT 'Undo large term ' || g FROM generate_series(1,65) g RETURNING id) INSERT INTO manifestation_genres(manifestation_id,genre_id) SELECT $1,id FROM inserted",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aae78c5bc0b6502f7e63883fb72ab83dcdb8ea2a26e036e48de47c2f473b4939"
+}

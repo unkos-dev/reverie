@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE metadata_versions SET confidence_score = 0.8 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cedb96f58b2f22d1336cc7db19e280b8c9fb35f32ccadf61edb85180ed752dbc"
+}

@@ -140,6 +140,12 @@ pub fn problem_type(slug: &str) -> String {
     format!("{PROBLEM_BASE}/{slug}")
 }
 
+/// An exact metadata operation cannot be used. HTTP 422.
+pub const UNDO_UNAVAILABLE: &str = "undo-unavailable";
+
+/// Recorded after-state disagrees with an otherwise eligible field operation. HTTP 409.
+pub const UNDO_CONFLICT: &str = "undo-conflict";
+
 #[cfg(test)]
 mod tests {
     use super::*;

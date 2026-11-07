@@ -257,6 +257,11 @@ without attempting to parse the body, and `problemToApiError` falls back entirel
 
 ## Failure and recovery
 
+Exact metadata restoration registers `undo-unavailable` at 422 for expired, consumed, invalidated or otherwise
+unavailable session operations, and `undo-conflict` at 409 for a recorded after-state mismatch despite equal field
+identity. Neither reveals another session's operation. A locked selected field retains the `field-locked` response and
+its operation. Stale aggregate preconditions retain 412 and the current ETag.
+
 - Every `AppError` variant serialises as `application/problem+json` with a stable `type` slug drawn from `problems.rs`:
   the exhaustive, wildcard-free match in `AppError::into_response` guarantees this for the enum itself
   (`internal_returns_500_without_leaking_details` and the sibling per-variant tests in `error/mod.rs` pin the shape for

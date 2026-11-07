@@ -238,6 +238,12 @@ writeback. There is no EXDEV fallback, replay or `cover_path` rewrite for this s
 
 ## Runtime behaviour
 
+Exact field Undo restores canonical state and inserts its field-tagged writeback job in the same transaction as
+operation consumption. Contributor Undo restores one role's exact links and order and queues one job for that action.
+ISBN restoration preserves the exact structurally valid stored before-value and leaves the counterpart unchanged.
+External identifier restoration queues no file writeback. No Undo handler performs file I/O or rewinds journal review
+and observation bookkeeping.
+
 A queued `pub_date` job derives Set(text) or Clear from the latest canonical value when it executes. Every other job,
 including a generic job without `field_name`, leaves publication metadata unchanged. The job carries field identity,
 never a captured publication value that could overwrite a later edit. The existing queue, claim owner and

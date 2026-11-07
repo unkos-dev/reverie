@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT slots.field AS \"field!\", slots.source_version_id, CASE WHEN octet_length(slots.value) > $4 THEN NULL WHEN octet_length(to_jsonb(slots.value)::text) > $4 THEN NULL ELSE slots.value END AS value FROM ( SELECT 'identifiers.work.' || scheme AS field, external_id AS value, source_version_id FROM work_external_identifiers WHERE work_id = $1 AND 'identifiers.work.' || scheme = ANY($3) UNION ALL SELECT 'identifiers.manifestation.' || scheme, external_id, source_version_id FROM manifestation_external_identifiers WHERE manifestation_id = $2 AND 'identifiers.manifestation.' || scheme = ANY($3) ) slots ORDER BY slots.field LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "source_version_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "value",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "0d9f240194ce503a4a72b3761dea764cd70b5889fefbd7406dc3ccbc4dc3005d"
+}

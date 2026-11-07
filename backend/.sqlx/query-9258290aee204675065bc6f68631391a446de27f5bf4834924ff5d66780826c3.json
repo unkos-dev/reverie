@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT slot.field AS \"field!\", slot.version, CASE WHEN slot.raw IS NULL THEN 'null'::jsonb WHEN octet_length(slot.raw) > $4 THEN NULL WHEN octet_length(to_jsonb(slot.raw)::text) > $4 THEN NULL WHEN slot.field = 'pages' THEN to_jsonb(slot.raw::int) ELSE to_jsonb(slot.raw) END AS value FROM manifestations m JOIN works w ON w.id = m.work_id CROSS JOIN LATERAL (VALUES ('title', CASE WHEN 'title' = ANY($3) THEN w.title END, w.title_version_id), ('subtitle', CASE WHEN 'subtitle' = ANY($3) THEN w.subtitle END, w.subtitle_version_id), ('description', CASE WHEN 'description' = ANY($3) THEN w.description END, w.description_version_id), ('language', CASE WHEN 'language' = ANY($3) THEN w.language END, w.language_version_id), ('publisher', CASE WHEN 'publisher' = ANY($3) THEN m.publisher END, m.publisher_version_id), ('pub_date', CASE WHEN 'pub_date' = ANY($3) THEN m.pub_date END, m.pub_date_version_id), ('isbn_10', CASE WHEN 'isbn_10' = ANY($3) THEN m.isbn_10 END, m.isbn_10_version_id), ('isbn_13', CASE WHEN 'isbn_13' = ANY($3) THEN m.isbn_13 END, m.isbn_13_version_id), ('pages', CASE WHEN 'pages' = ANY($3) THEN m.pages::text END, m.pages_version_id), ('content_rating', CASE WHEN 'content_rating' = ANY($3) THEN m.content_rating::text END, m.content_rating_version_id) ) AS slot(field, raw, version) WHERE m.id = $1 AND w.id = $2 AND slot.field = ANY($3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "value",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9258290aee204675065bc6f68631391a446de27f5bf4834924ff5d66780826c3"
+}
