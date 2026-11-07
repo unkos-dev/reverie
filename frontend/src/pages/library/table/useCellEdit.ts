@@ -700,7 +700,10 @@ export function useCellEdit({
   }
   feedback.push(
     ...records.flatMap((record) =>
-      record.status === "pending" && record.paused && record.context !== undefined
+      record.status === "pending" &&
+      record.paused &&
+      record.context !== undefined &&
+      record.context.operation === "save"
         ? [
             {
               id: record.id,
