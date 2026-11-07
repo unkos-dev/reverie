@@ -516,7 +516,7 @@
       "id": "REV-ADR-0069",
       "kind": "adr",
       "path": "docs/adr/0069-metadata-change-identity-and-short-lived-exact-undo.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Metadata change identity and short-lived exact Undo"
     },
     {

@@ -3,8 +3,9 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0069"
 title: "Metadata change identity and short-lived exact Undo"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-11-07"
+decided-on: "2026-11-07"
 decision-makers:
   - "John Unkovich"
 ---
