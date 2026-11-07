@@ -78,6 +78,29 @@ pub async fn is_locked_tx(
     Ok(hit.is_some())
 }
 
+/// Load matching edition locks for bounded sets of canonical field names.
+///
+/// # Errors
+/// Returns database errors from the lookup.
+pub async fn locked_fields_tx(
+    conn: &mut PgConnection,
+    manifestation_id: Uuid,
+    work_fields: &[String],
+    manifestation_fields: &[String],
+) -> sqlx::Result<Vec<String>> {
+    sqlx::query_scalar!(
+        "SELECT field_name FROM field_locks WHERE manifestation_id = $1 \
+         AND ((entity_type = 'work' AND field_name = ANY($2)) \
+           OR (entity_type = 'manifestation' AND field_name = ANY($3))) \
+         ORDER BY field_name",
+        manifestation_id,
+        work_fields,
+        manifestation_fields,
+    )
+    .fetch_all(conn)
+    .await
+}
+
 /// Insert a lock on the caller's connection; duplicate locks are ignored.
 ///
 /// The caller owns the manifestation visibility check and transaction.

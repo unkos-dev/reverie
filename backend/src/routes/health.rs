@@ -83,6 +83,7 @@ pub async fn ready(State(state): State<AppState>) -> Result<&'static str, Proble
                 detail: "Database unreachable.".to_owned(),
                 instance: None,
                 errors: None,
+                locked_fields: None,
             }
         })?;
     Ok("ok")

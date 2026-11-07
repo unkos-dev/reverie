@@ -274,6 +274,7 @@ fn lock_entity_type_schema() -> utoipa::openapi::schema::Object {
     params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
+        (status = 409, description = "A requested metadata field is locked on this edition; locked_fields lists the refused keys and no changes are applied", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 200, description = "Version promoted to canonical; accepted ISBN changes refresh the possible-duplicate pointer"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -318,6 +319,14 @@ async fn accept_manifestation(
     let field_name = row.field_name;
     let new_value = row.new_value;
     let work_id = row.work_id;
+
+    require_unlocked_fields(
+        &mut tx,
+        manifestation_id,
+        current_user.user_id,
+        std::slice::from_ref(&field_name),
+    )
+    .await?;
 
     // Accept promotes the version to canonical; the caller has no use for
     // the prior pointer (that's the revert/undo surface's concern).
@@ -442,6 +451,7 @@ async fn reject_manifestation(
     params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     request_body = RevertPayload,
     responses(
+        (status = 409, description = "A requested metadata field is locked on this edition; locked_fields lists the refused keys and no changes are applied", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 200, description = "Field reverted to the given version, or cleared when version_id is null"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -458,7 +468,7 @@ async fn revert_manifestation(
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
 
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+    let mut tx = db::acquire_with_rls_read_committed(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
@@ -475,6 +485,14 @@ async fn revert_manifestation(
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
     let work_id = work_id.ok_or(AppError::NotFound)?;
+
+    require_unlocked_fields(
+        &mut tx,
+        manifestation_id,
+        current_user.user_id,
+        std::slice::from_ref(&payload.field_name),
+    )
+    .await?;
 
     match payload.version_id {
         Some(vid) => {
@@ -527,7 +545,7 @@ async fn revert_manifestation(
 }
 
 /// `POST /api/v1/manifestations/{id}/metadata/lock` — lock a field
-/// against future enrichment writes.
+/// against manual canonical and automated enrichment writes.
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is a child account.
@@ -540,7 +558,7 @@ async fn revert_manifestation(
     post,
     path = "/api/v1/manifestations/{id}/metadata/lock",
     summary = "Lock a metadata field",
-    description = "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only.",
+    description = "Locks an edition-specific metadata field against manual canonical and automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
@@ -562,7 +580,7 @@ async fn lock_field(
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let entity = parse_entity(&payload.entity_type)?;
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+    let mut tx = db::acquire_with_rls_read_committed(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     lock_visible_manifestation(&mut tx, manifestation_id).await?;
@@ -595,7 +613,7 @@ async fn lock_field(
     post,
     path = "/api/v1/manifestations/{id}/metadata/unlock",
     summary = "Unlock a metadata field",
-    description = "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only.",
+    description = "Removes a lock on a metadata field, allowing manual canonical and automated enrichment writes to resume. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
@@ -617,7 +635,7 @@ async fn unlock_field(
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let entity = parse_entity(&payload.entity_type)?;
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+    let mut tx = db::acquire_with_rls_read_committed(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     lock_visible_manifestation(&mut tx, manifestation_id).await?;
@@ -667,6 +685,28 @@ fn is_work_scoped_field(field_name: &str) -> bool {
         "title" | "subtitle" | "description" | "language"
     ) || field_name.starts_with("contributors.")
         || field_name.starts_with("identifiers.work.")
+}
+
+async fn require_unlocked_fields(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    user_id: Uuid,
+    fields: &[String],
+) -> Result<(), AppError> {
+    // THREAT: The caller holds the edition row lock so lock changes cannot race this decision.
+    let (work_fields, manifestation_fields): (Vec<_>, Vec<_>) = fields
+        .iter()
+        .cloned()
+        .partition(|field| is_work_scoped_field(field));
+    let locked =
+        field_lock::locked_fields_tx(tx, manifestation_id, &work_fields, &manifestation_fields)
+            .await
+            .map_err(|error| AppError::Internal(error.into()))?;
+    if locked.is_empty() {
+        return Ok(());
+    }
+    tracing::info!(%user_id, %manifestation_id, "metadata write refused by field locks");
+    Err(AppError::FieldLocked(locked))
 }
 
 /// Split a canonical `identifiers.<level>.<scheme>` field name into its level
@@ -2340,6 +2380,7 @@ async fn load_manifestation_identifiers(
     ),
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
+        (status = 409, description = "A requested metadata field is locked on this edition; locked_fields lists the refused keys and no changes are applied", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 200, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field", body = UpdateMetadataResponse,
          headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -2376,7 +2417,7 @@ async fn update_book_metadata(
     let manifestation_identifiers = req_fields.manifestation_identifiers.take();
     let fields = req_fields.populated();
 
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+    let mut tx = db::acquire_with_rls_read_committed(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
@@ -2428,6 +2469,59 @@ async fn update_book_metadata(
     {
         return Err(AppError::Validation("no fields".into()));
     }
+
+    let mut touched_fields: Vec<String> = fields
+        .iter()
+        .map(|(field, _)| (*field).to_owned())
+        .collect();
+    for (field, touched) in [
+        ("genres", genres.is_some()),
+        ("moods", moods.is_some()),
+        ("tags", tags.is_some()),
+    ] {
+        if touched {
+            touched_fields.push(field.to_owned());
+        }
+    }
+    if let Some(patch) = &contributors {
+        for (role, touched) in [
+            ("author", patch.as_ref().is_none_or(|p| p.author.is_some())),
+            ("editor", patch.as_ref().is_none_or(|p| p.editor.is_some())),
+            (
+                "translator",
+                patch.as_ref().is_none_or(|p| p.translator.is_some()),
+            ),
+        ] {
+            if touched {
+                touched_fields.push(format!("contributors.{role}"));
+            }
+        }
+    }
+    for (level, identifiers) in [
+        (IdentifierLevel::Work, &work_identifiers),
+        (IdentifierLevel::Manifestation, &manifestation_identifiers),
+    ] {
+        if let Some(identifiers) = identifiers {
+            if identifiers.len() > MAX_IDENTIFIERS_PER_LEVEL {
+                return Err(AppError::Validation(format!(
+                    "{}-level identifiers exceed {MAX_IDENTIFIERS_PER_LEVEL} entries",
+                    level.as_str()
+                )));
+            }
+            touched_fields.extend(
+                identifiers
+                    .keys()
+                    .map(|scheme| level.canonical_field(scheme)),
+            );
+        }
+    }
+    require_unlocked_fields(
+        &mut tx,
+        manifestation_id,
+        current_user.user_id,
+        &touched_fields,
+    )
+    .await?;
 
     let mut response_fields: BTreeMap<String, FieldVersionChange> = BTreeMap::new();
     let mut touched_isbn = false;
@@ -2615,21 +2709,6 @@ async fn apply_identifier_patches(
     manifestation_identifiers: Option<BTreeMap<String, Option<String>>>,
     response_fields: &mut BTreeMap<String, FieldVersionChange>,
 ) -> Result<(), AppError> {
-    // Checked before any per-entry work so an oversized map never reaches the
-    // scheme registry lookup in `apply_identifier_patch`.
-    for (level, map) in [
-        (IdentifierLevel::Work, &work_identifiers),
-        (IdentifierLevel::Manifestation, &manifestation_identifiers),
-    ] {
-        if let Some(map) = map
-            && map.len() > MAX_IDENTIFIERS_PER_LEVEL
-        {
-            return Err(AppError::Validation(format!(
-                "{}-level identifiers exceed {MAX_IDENTIFIERS_PER_LEVEL} entries",
-                level.as_str()
-            )));
-        }
-    }
     let mut touched = false;
     for (level, map) in [
         (IdentifierLevel::Work, work_identifiers),
@@ -2791,6 +2870,192 @@ mod tests {
     use crate::test_support;
     use axum::http::StatusCode;
     use uuid::Uuid;
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn manual_metadata_locks_are_atomic_and_edition_scoped(pool: sqlx::PgPool) {
+        let app = test_support::db::app_pool_for(&pool).await;
+        let ing = test_support::db::ingestion_pool_for(&pool).await;
+        let (_, basic) = test_support::db::create_admin_and_basic_auth(&app).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work, edition) = test_support::db::insert_work_and_manifestation(&ing, &marker).await;
+        let sibling = insert_sibling_manifestation(&ing, work).await;
+        let version =
+            insert_version(&ing, edition, "subtitle", serde_json::json!("Proposal")).await;
+        let server = test_support::db::server_with_real_pools(&app, &ing);
+        let locked = [
+            ("work", "subtitle"),
+            ("manifestation", "publisher"),
+            ("manifestation", "genres"),
+            ("manifestation", "moods"),
+            ("manifestation", "tags"),
+            ("work", "contributors.editor"),
+            ("work", "identifiers.work.openlibrary"),
+            ("manifestation", "identifiers.manifestation.asin"),
+        ];
+        for (entity, field) in locked {
+            let response = server
+                .post(&format!("/api/v1/manifestations/{edition}/metadata/lock"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&serde_json::json!({"entity_type": entity, "field_name": field}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::CREATED);
+        }
+        let before = review_mutation_state(&pool, edition).await;
+        let initial = server
+            .get(&format!("/api/v1/books/{edition}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+        let response = server
+            .patch(&format!("/api/v1/books/{edition}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
+            .json(&serde_json::json!({
+                "title": "Must not change",
+                "subtitle": "Blocked",
+                "publisher": "Blocked",
+                "genres": ["Blocked"],
+                "moods": ["Blocked"],
+                "tags": ["Blocked"],
+                "contributors": {"editor": ["Blocked"]},
+                "work_identifiers": {"openlibrary": "OL123W"},
+                "manifestation_identifiers": {"asin": "B004GXAX8C"},
+            }))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::CONFLICT,
+            "{}",
+            response.text()
+        );
+        test_support::assert_problem(&response, "field-locked", StatusCode::CONFLICT);
+        let body: serde_json::Value = response.json();
+        let mut expected: Vec<_> = locked.into_iter().map(|(_, field)| field).collect();
+        expected.sort_unstable();
+        assert_eq!(body["locked_fields"], serde_json::json!(expected));
+        assert_eq!(review_mutation_state(&pool, edition).await, before);
+
+        let response = server
+            .patch(&format!("/api/v1/books/{edition}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
+            .json(&serde_json::json!({"contributors": null}))
+            .await;
+        test_support::assert_problem(&response, "field-locked", StatusCode::CONFLICT);
+        assert_eq!(
+            response.json::<serde_json::Value>()["locked_fields"],
+            serde_json::json!(["contributors.editor"])
+        );
+        assert_eq!(review_mutation_state(&pool, edition).await, before);
+
+        for (action, payload) in [
+            ("accept", serde_json::json!({"version_id": version})),
+            (
+                "revert",
+                serde_json::json!({"field_name": "subtitle", "version_id": version}),
+            ),
+            (
+                "revert",
+                serde_json::json!({"field_name": "subtitle", "version_id": null}),
+            ),
+        ] {
+            let response = server
+                .post(&format!(
+                    "/api/v1/manifestations/{edition}/metadata/{action}"
+                ))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&payload)
+                .await;
+            test_support::assert_problem(&response, "field-locked", StatusCode::CONFLICT);
+            assert_eq!(
+                response.json::<serde_json::Value>()["locked_fields"],
+                serde_json::json!(["subtitle"])
+            );
+            assert_eq!(review_mutation_state(&pool, edition).await, before);
+        }
+        let response = server
+            .post(&format!("/api/v1/manifestations/{edition}/metadata/reject"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"version_id": version}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let after_reject = review_mutation_state(&pool, edition).await;
+        assert_eq!(after_reject["work"], before["work"]);
+        assert_eq!(after_reject["jobs"], before["jobs"]);
+
+        let initial = server
+            .get(&format!("/api/v1/books/{sibling}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let response = server
+            .patch(&format!("/api/v1/books/{sibling}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_value(initial.headers())).unwrap(),
+            )
+            .json(&serde_json::json!({"subtitle": "Sibling edit"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        assert_eq!(
+            review_mutation_state(&pool, sibling).await["work"]["subtitle"],
+            "Sibling edit"
+        );
+
+        let initial = server
+            .get(&format!("/api/v1/books/{sibling}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+        let before = review_mutation_state(&pool, sibling).await;
+        let mut barrier = pool.begin().await.unwrap();
+        super::lock_visible_manifestation(&mut barrier, sibling)
+            .await
+            .unwrap();
+        let lock_server = test_support::db::server_with_real_pools(&app, &ing);
+        let lock_basic = basic.clone();
+        let mut locking = tokio::spawn(async move {
+            lock_server
+                .post(&format!("/api/v1/manifestations/{sibling}/metadata/lock"))
+                .add_header(AUTHORIZATION, lock_basic)
+                .json(&serde_json::json!({"entity_type": "work", "field_name": "subtitle"}))
+                .await
+        });
+        tokio::select! {
+            response = &mut locking => panic!("lock bypassed barrier: {:?}", response.unwrap().status_code()),
+            () = test_support::wait_for_blocked_query(&pool, "SELECT id FROM manifestations WHERE id = $1 FOR UPDATE", 1) => {}
+        }
+        let mut saving = tokio::spawn(async move {
+            server
+                .patch(&format!("/api/v1/books/{sibling}/metadata"))
+                .add_header(AUTHORIZATION, basic)
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag).unwrap(),
+                )
+                .json(&serde_json::json!({"subtitle": "Racing edit"}))
+                .await
+        });
+        tokio::select! {
+            response = &mut saving => panic!("save bypassed barrier: {:?}", response.unwrap().status_code()),
+            () = test_support::wait_for_blocked_query(&pool, "SELECT m.work_id FROM manifestations m%", 1) => {}
+        }
+        barrier.commit().await.unwrap();
+        assert_eq!(locking.await.unwrap().status_code(), StatusCode::CREATED);
+        let response = saving.await.unwrap();
+        test_support::assert_problem(&response, "field-locked", StatusCode::CONFLICT);
+        let after = review_mutation_state(&pool, sibling).await;
+        for key in ["work", "manifestation", "versions", "jobs"] {
+            assert_eq!(after[key], before[key]);
+        }
+        assert_eq!(after["locks"].as_array().unwrap().len(), 1);
+    }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn shared_vocabulary_edit_preserves_other_books(pool: sqlx::PgPool) {
@@ -3807,6 +4072,15 @@ mod tests {
             assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
             assert_eq!(review_mutation_state(pool, m_id).await, before);
         }
+        if matches!(action, "accept" | "revert") {
+            let response = server
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/unlock"))
+                .add_header(AUTHORIZATION, adult_auth.clone())
+                .json(&serde_json::json!({"entity_type": "work", "field_name": "subtitle"}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+        }
+        let before = review_mutation_state(pool, m_id).await;
         let response = server
             .post(&url)
             .add_header(AUTHORIZATION, adult_auth)

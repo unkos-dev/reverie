@@ -62,6 +62,9 @@ pub const IF_MATCH_MISMATCH: &str = "if-match-mismatch";
 /// renamed or deleted. HTTP 409 Conflict.
 pub const SYSTEM_SHELF_IMMUTABLE: &str = "system-shelf-immutable";
 
+/// A requested canonical metadata field is locked on the target edition. HTTP 409.
+pub const FIELD_LOCKED: &str = "field-locked";
+
 /// A query-string parameter failed to deserialize (e.g. a malformed
 /// UUID in `?author=`, `?series=`, `?shelf=`).
 ///
