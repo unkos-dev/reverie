@@ -282,12 +282,13 @@ exact `name`, `EXCLUDED.name` is always identical to the stored value on a repea
 only to make `RETURNING` return the existing row's `id` on a conflict, not to change anything; `sort_name`, absent from
 the `SET` list entirely, stays at whatever the first insert supplied even if a later observation would compute it
 differently. The vocabulary tables' upsert, `insert_vocabulary_rows` in `metadata.rs`, conflicts on `lower(name)`
-instead: an incoming name that differs only in casing from an existing term still matches, and its
-`ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name` then does change the stored row, so the display casing
-from the most recent write replaces the term's stored form. The `work_authors` insert in `work.rs`, and the
-`insert_role_rows` helper behind `apply_contributors_patch` in `metadata.rs`, use a third pattern,
-`ON CONFLICT (work_id, author_id, role) DO NOTHING`: a duplicate role-author pairing on a work is silently skipped
-rather than erroring or updating.
+instead: an incoming name that differs only in casing from an existing term still matches. Its conflict update assigns
+the stored name to itself and returns the existing ID, preserving the spelling displayed by every linked manifestation.
+The set-based source removes duplicate terms and orders them by `lower(name)` before insertion, so PostgreSQL case
+folding cannot produce repeated updates to one row and overlapping requests acquire term locks in the same order. The
+`work_authors` insert in `work.rs`, and the `insert_role_rows` helper behind `apply_contributors_patch` in
+`metadata.rs`, use a third pattern, `ON CONFLICT (work_id, author_id, role) DO NOTHING`: a duplicate role-author pairing
+on a work is silently skipped rather than erroring or updating.
 
 **The unique constraints on `manifestations` are a database-level backstop**, independent of whatever dedup check an
 upstream caller already ran: a second `INSERT` naming an existing library/path pair or global ingestion hash is rejected

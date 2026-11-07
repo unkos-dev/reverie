@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT j.manifestation_id, j.mood_id AS term_id, t.name, j.source_version_id FROM manifestation_moods j JOIN moods t ON t.id = j.mood_id WHERE j.manifestation_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifestation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestation_moods",
+            "name": "manifestation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "term_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestation_moods",
+            "name": "mood_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "moods",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestation_moods",
+            "name": "source_version_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "3a407b26c5c68b9d42e878da94c36bd31dae41d510e59e9e06e6add1565da180"
+}

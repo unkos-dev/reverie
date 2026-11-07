@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT j.manifestation_id, j.tag_id AS term_id, t.name, j.source_version_id FROM manifestation_tags j JOIN tags t ON t.id = j.tag_id WHERE j.manifestation_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifestation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestation_tags",
+            "name": "manifestation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "term_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestation_tags",
+            "name": "tag_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestation_tags",
+            "name": "source_version_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8852bc427ab7114a8a85ef76a5022fabe5ea4cf665fa77f645c9bc7a9df229cf"
+}
