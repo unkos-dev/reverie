@@ -2397,6 +2397,7 @@ async fn load_manifestation_identifiers(
     clippy::too_many_lines,
     reason = "sequential dispatch across the six patchable field families (scalars, vocabularies, contributors, identifiers, ISBN rematch, response assembly); each family already delegates to its own helper"
 )]
+#[warn(clippy::cognitive_complexity)]
 async fn update_book_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -2474,28 +2475,30 @@ async fn update_book_metadata(
         .iter()
         .map(|(field, _)| (*field).to_owned())
         .collect();
-    for (field, touched) in [
-        ("genres", genres.is_some()),
-        ("moods", moods.is_some()),
-        ("tags", tags.is_some()),
-    ] {
-        if touched {
-            touched_fields.push(field.to_owned());
-        }
-    }
+    touched_fields.extend(
+        [
+            ("genres", genres.is_some()),
+            ("moods", moods.is_some()),
+            ("tags", tags.is_some()),
+        ]
+        .into_iter()
+        .filter(|(_, touched)| *touched)
+        .map(|(field, _)| field.to_owned()),
+    );
     if let Some(patch) = &contributors {
-        for (role, touched) in [
-            ("author", patch.as_ref().is_none_or(|p| p.author.is_some())),
-            ("editor", patch.as_ref().is_none_or(|p| p.editor.is_some())),
-            (
-                "translator",
-                patch.as_ref().is_none_or(|p| p.translator.is_some()),
-            ),
-        ] {
-            if touched {
-                touched_fields.push(format!("contributors.{role}"));
-            }
-        }
+        touched_fields.extend(
+            [
+                ("author", patch.as_ref().is_none_or(|p| p.author.is_some())),
+                ("editor", patch.as_ref().is_none_or(|p| p.editor.is_some())),
+                (
+                    "translator",
+                    patch.as_ref().is_none_or(|p| p.translator.is_some()),
+                ),
+            ]
+            .into_iter()
+            .filter(|(_, touched)| *touched)
+            .map(|(role, _)| format!("contributors.{role}")),
+        );
     }
     for (level, identifiers) in [
         (IdentifierLevel::Work, &work_identifiers),
