@@ -132,6 +132,10 @@ DTO omits `errors` when absent. `ProblemDetailsSchema` decodes supplied field me
 them unchanged; responses without the object have no field map. Publication refusals use `errors.pub_date`. Publication
 values in generated API contracts are nullable strings without `date` or `date-time` coercion.
 
+`AppError::FieldLocked` returns registered type `field-locked` with status 409 and optional `locked_fields`, a list of
+canonical field keys refused by edition-specific locks. Other problem classes omit the member. Metadata PATCH, Accept
+and revert document the refusal; the shared runtime DTO supplies both its wire representation and OpenAPI schema.
+
 - The wire contract: every error response is `application/problem+json` with `type` (`{PROBLEM_BASE}/{slug}`), `title`,
   `status`, `detail`, and an optional `instance`. `type` and `title` are stable per problem class; `detail` and
   `instance` vary per occurrence. Nullable/omitted-field conventions for success bodies follow the same wire conventions

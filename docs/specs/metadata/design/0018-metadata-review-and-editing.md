@@ -43,17 +43,17 @@ orchestrator, which decides which incoming observation auto-applies and, separat
 (`backend/src/services/enrichment/orchestrator.rs`), nor the `field_locks` CRUD and lookup functions themselves
 (`backend/src/services/enrichment/field_lock.rs`), nor the automatic-apply decision that consumes a lock flag computed
 in advance (`backend/src/services/enrichment/policy.rs`); all three belong to the Design "Enrichment pipeline". This
-subject's `lock`/`unlock` routes are thin callers of that module's `lock`/`unlock` functions, and its own manual-edit
-path never consults a lock (see Security and operations). It does not own the FRBR data model (`works`,
-`manifestations`, authors, or the ISBN-triggered work-rematch algorithm in `backend/src/models/work.rs`), which is the
-Design "Works and manifestations data model"; this subject calls `work::rematch_on_isbn_change`,
-`work::find_or_create_author` and `work::refresh_first_author_sort` without describing their internals. It does not own
-the two-level external-identifier registry's provider-visibility or rating-cache concerns
-(`backend/src/models/external_identifier.rs`, `backend/src/services/metadata/external_id.rs`); this subject owns only
-the *editing* path onto that registry (the canonical `identifiers.<level>.<scheme>` field addressing, validation, and
-journal-integrated apply/clear), not the registry's storage model or read-side visibility filtering. `cover` is out of
-scope: neither `apply_version` nor `clear_field` dispatches on it, and `UpdateMetadataFields` carries no `cover` key,
-even though a `cover_version_id` canonical-pointer column exists on `manifestations` for another subject to fill.
+subject's `lock`/`unlock` routes call that module's `lock_tx`/`unlock_tx` functions. Canonical manual writes use its
+batch `locked_fields_tx` lookup before mutation. It does not own the FRBR data model (`works`, `manifestations`,
+authors, or the ISBN-triggered work-rematch algorithm in `backend/src/models/work.rs`), which is the Design "Works and
+manifestations data model"; this subject calls `work::rematch_on_isbn_change`, `work::find_or_create_author` and
+`work::refresh_first_author_sort` without describing their internals. It does not own the two-level external-identifier
+registry's provider-visibility or rating-cache concerns (`backend/src/models/external_identifier.rs`,
+`backend/src/services/metadata/external_id.rs`); this subject owns only the *editing* path onto that registry (the
+canonical `identifiers.<level>.<scheme>` field addressing, validation, and journal-integrated apply/clear), not the
+registry's storage model or read-side visibility filtering. `cover` is out of scope: neither `apply_version` nor
+`clear_field` dispatches on it, and `UpdateMetadataFields` carries no `cover` key, even though a `cover_version_id`
+canonical-pointer column exists on `manifestations` for another subject to fill.
 
 Depends on: `crate::db::acquire_with_rls` and the `manifestations`/`works` row-level-security policies (Design
 "Row-level security and database context") for every route; `CurrentUser::require_not_child` and `require_scope` (Design
@@ -232,19 +232,22 @@ field section outside removable draft rows. Pending, clear-confirmation and succ
 2. On submit, `updateBookMetadata` sends the touched-only body; `apiFetch` auto-echoes the captured tag as `If-Match`
    since the caller set none.
 3. `update_book_metadata` parses `If-Match` (`parse_if_match`), requiring it present (`428` otherwise), then opens
-   `acquire_with_rls` and takes `SELECT ... FOR UPDATE OF m, w` on the manifestation and its work: `404` if RLS hides or
-   the id does not exist.
+   `acquire_with_rls_read_committed` and takes `SELECT ... FOR UPDATE OF m, w` on the manifestation and its work: `404`
+   if RLS hides or the id does not exist.
 4. Under that lock, `load_book_metadata` + `hash_etag` recompute the current tag and compare it to `If-Match`; a
    mismatch returns `412` with the current tag before anything else is checked, per RFC 9110 §13.2.1 precondition
    ordering.
-5. Only once the precondition holds does the handler reject an entirely-empty body (`422`). It then dispatches each
-   touched family in turn: scalars through `apply_scalar_patch_field` (ISBN fields normalise and checksum-validate
-   first), vocabularies through `apply_vocabulary_patch`, contributors through `apply_contributors_patch`, and
-   identifiers through `apply_identifier_patches`. Every family journals via `insert_manual_version` before it applies
-   or clears, so the journal row exists even if a subsequent family in the same request fails and rolls the whole
-   transaction back. Writeback enqueue granularity differs by family: each scalar and each vocabulary field enqueues its
-   own job as it applies, `apply_contributors_patch` journals one `contributors.<role>` version per role touched but
-   calls `enqueue_writeback` once for `contributors` after its role loop, and the identifier family never enqueues.
+5. Once the precondition holds, the handler rejects an entirely-empty body (`422`) and collects every touched scalar,
+   vocabulary, contributor-role and identifier key. It checks those keys against the target edition's locks in one
+   query, using `is_work_scoped_field` for ownership. Any matching lock returns `409` `field-locked` with all refused
+   `locked_fields`, before journal, canonical or writeback writes. It then dispatches each touched family in turn:
+   scalars through `apply_scalar_patch_field` (ISBN fields normalise and checksum-validate first), vocabularies through
+   `apply_vocabulary_patch`, contributors through `apply_contributors_patch`, and identifiers through
+   `apply_identifier_patches`. Every family journals via `insert_manual_version` before it applies or clears, so the
+   journal row exists even if a subsequent family in the same request fails and rolls the whole transaction back.
+   Writeback enqueue granularity differs by family: each scalar and each vocabulary field enqueues its own job as it
+   applies, `apply_contributors_patch` journals one `contributors.<role>` version per role touched but calls
+   `enqueue_writeback` once for `contributors` after its role loop, and the identifier family never enqueues.
 6. If an ISBN field was touched, `work::rematch_on_isbn_change` runs before the response is assembled.
 7. `load_book_metadata` + `hash_etag` run again, inside the same transaction, to compute the tag the response's `ETag`
    header carries; the transaction commits; the response carries the applied value, new version id, and previous version
@@ -264,15 +267,20 @@ field section outside removable draft rows. Pending, clear-confirmation and succ
    none identifies an eligible draft for this operation. The Versions tab refreshes book details after failed acceptance
    to reconcile stale drafts. Acceptance leaves review status `pending`; canonical pointers record promotion. Repeated
    acceptance remains allowed and enqueues another writeback job for file-backed fields.
-3. `apply_version` rejects the row outright if its `new_value` is JSON `null` (a manual-clear audit row, never a draft
-   eligible for promotion), `422`. ISBN promotion parses the supplied format through the `isbn` crate, requires a `978`
-   or `979` prefix for ISBN-13, and normalises the value before the `UPDATE ... RETURNING` swaps the pointer. Invalid
-   values return field-keyed `FieldValidation`; accepting or reverting a raw provider observation uses the same gate.
+3. The target edition's field lock is checked before promotion, including for a field owned by the shared work. A
+   matching lock refuses the action with `409` `field-locked`. `apply_version` rejects the row outright if its
+   `new_value` is JSON `null` (a manual-clear audit row, never a draft eligible for promotion), `422`. ISBN promotion
+   parses the supplied format through the `isbn` crate, requires a `978` or `979` prefix for ISBN-13, and normalises the
+   value before the `UPDATE ... RETURNING` swaps the pointer. Invalid values return field-keyed `FieldValidation`;
+   accepting or reverting a raw provider observation uses the same gate.
 4. Because the field is an ISBN, `work::rematch_on_isbn_change` runs before commit to refresh the possible-duplicate
    pointer while preserving work membership.
 5. `enqueue_writeback` inserts a `writeback_jobs` row in the same transaction the pointer moved in.
 
 **Reverting a field, to a specific version versus to null.**
+
+Both branches acquire a Read Committed RLS transaction, lock the target manifestation and work, and check the field
+against that edition's locks before any mutation. A matching lock refuses either branch with `409` `field-locked`.
 
 - **Revert-to-version** (`RevertPayload.version_id = Some(vid)`): the same-manifestation match is used unless
   `is_work_scoped_field` says the field is work-scoped, in which case a version journaled under any sibling
@@ -314,14 +322,17 @@ newly eligible would let a second worker start against the same manifestation co
 is what turns that flag into a fresh eligible row once the in-flight run finishes, since that run's lookup keys, read
 once at the start, may already be stale against the edit.
 
-**Locking or unlocking a field** (`POST .../metadata/lock` or `POST .../metadata/unlock`) opens an `acquire_with_rls`
-transaction, takes `SELECT id FROM manifestations WHERE id = $1 FOR UPDATE`, and returns `404` when the manifestation is
-missing or hidden by the caller's RLS policy. It then calls `field_lock::{lock_tx,unlock_tx}` on the same transaction
-before committing. Lock insertion remains idempotent (`ON CONFLICT DO NOTHING`); unlock reports `404` when the visible
-manifestation has no matching lock.
+**Locking or unlocking a field** (`POST .../metadata/lock` or `POST .../metadata/unlock`) opens an
+`acquire_with_rls_read_committed` transaction, takes `SELECT id FROM manifestations WHERE id = $1 FOR UPDATE`, and
+returns `404` when the manifestation is missing or hidden by the caller's RLS policy. It then calls
+`field_lock::{lock_tx,unlock_tx}` on the same transaction before committing. Lock insertion remains idempotent
+(`ON CONFLICT DO NOTHING`); unlock reports `404` when the visible manifestation has no matching lock.
 
 ## Failure and recovery
 
+- `AppError::FieldLocked` (`409`) reports canonical keys in `locked_fields` when the target edition protects any touched
+  field. The entire request is refused before journal, canonical or writeback mutation. PATCH preconditions are checked
+  first; Accept still requires an eligible pending version, and Reject remains permitted.
 - `AppError::IfMatchRequired` (`428`) when `PATCH /api/v1/books/{id}/metadata` carries no `If-Match`; a malformed or
   policy-refused header (wildcard, weak tag, tag list, repeated header) is `AppError::MalformedHeader` (`400`); a
   non-matching tag is `AppError::IfMatchMismatch` (`412`, carrying the current tag). All three are evaluated before
@@ -348,9 +359,12 @@ manifestation has no matching lock.
   row it is marking `rejected` is the field's current canonical pointer. Canonical state is carried entirely by the
   pointer columns and junction `source_version_id`s, never by this enum, so a pointer can reference a
   `metadata_versions` row whose `status` reads `rejected`.
-- A `field_locks` row constrains only the enrichment policy engine's automatic apply decision; the manual `PATCH`
-  surface in this subject never reads `field_locks`, so a manual edit overwrites a locked field the same as an unlocked
-  one.
+- A `field_locks` row protects the target edition against PATCH, Accept, Clear and historical revert as well as
+  automatic enrichment. A sibling edition's lock does not prohibit a shared-work edit through another edition. Reject
+  changes only proposal review state and remains permitted. Lock/unlock and canonical manual decisions hold the same
+  manifestation row lock through commit or rollback. Read Committed lookups see a lock committed while a writer waits.
+  `manual_metadata_locks_are_atomic_and_edition_scoped` in `backend/src/routes/metadata.rs` proves atomic refusal, field
+  ownership and the concurrent lock route.
 
 ## Security and operations
 
@@ -368,7 +382,8 @@ The five `*_child_account_forbidden_without_writes` tests cover accept, reject, 
 write-scoped child credentials. Each compares the complete canonical records, metadata journal, field locks and
 writeback jobs before and after the 403 response, then exercises the same request as a non-administrator adult and
 checks its state change. Fixtures include a child-visible manifestation, populated canonical metadata, pending proposals
-and an existing field lock.
+and an existing field lock. Accept and revert adult controls unlock the field after the child refusal, before exercising
+the successful adult mutation.
 
 `metadata_versions` and `field_locks` carry no row-level-security policy of their own: neither table appears in either
 migration that enables row-level security. This subject's visibility rests on two things instead: `require_not_child` on

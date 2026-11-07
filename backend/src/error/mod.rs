@@ -128,6 +128,9 @@ pub enum AppError {
     /// [`problems::IF_MATCH_MISMATCH`]. HTTP 412 Precondition Failed.
     #[error("If-Match precondition failed")]
     IfMatchMismatch,
+    /// Requested canonical fields are locked on the target edition. HTTP 409.
+    #[error("metadata fields are locked")]
+    FieldLocked(Vec<String>),
     /// Mutation attempt on a system-managed shelf (`is_system =
     /// TRUE`). RFC 9457 `type` [`problems::SYSTEM_SHELF_IMMUTABLE`].
     /// HTTP 409 Conflict.
@@ -259,6 +262,10 @@ impl IntoResponse for AppError {
             Self::FieldValidation { errors, .. } => Some(errors.clone()),
             _ => None,
         };
+        let locked_fields = match &self {
+            Self::FieldLocked(fields) => Some(fields.clone()),
+            _ => None,
+        };
         let (status, slug, title, detail) = match self {
             Self::NotFound => (
                 StatusCode::NOT_FOUND,
@@ -322,6 +329,12 @@ impl IntoResponse for AppError {
                 problems::SYSTEM_SHELF_IMMUTABLE,
                 "Conflict",
                 "System shelves cannot be renamed or deleted.".to_owned(),
+            ),
+            Self::FieldLocked(_) => (
+                StatusCode::CONFLICT,
+                problems::FIELD_LOCKED,
+                "Conflict",
+                "A requested metadata field is locked.".to_owned(),
             ),
             Self::MalformedQuery(msg) => (
                 StatusCode::BAD_REQUEST,
@@ -410,6 +423,7 @@ impl IntoResponse for AppError {
             detail,
             instance: None,
             errors: errors.map(Box::new),
+            locked_fields: locked_fields.map(Box::new),
         }
         .into_response();
 

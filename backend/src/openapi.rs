@@ -188,6 +188,10 @@ pub struct ProblemDetails {
     /// Validation messages associated with named request fields.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Box<std::collections::BTreeMap<String, String>>>,
+    /// Canonical field keys refused because the target edition has matching locks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Vec<String>>, max_items = 144)]
+    pub locked_fields: Option<Box<Vec<String>>>,
 }
 
 struct ExtractorResponses;

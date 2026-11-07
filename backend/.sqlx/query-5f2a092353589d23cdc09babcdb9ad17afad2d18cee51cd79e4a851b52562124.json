@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT field_name FROM field_locks WHERE manifestation_id = $1 AND ((entity_type = 'work' AND field_name = ANY($2)) OR (entity_type = 'manifestation' AND field_name = ANY($3))) ORDER BY field_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "field_locks",
+            "name": "field_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5f2a092353589d23cdc09babcdb9ad17afad2d18cee51cd79e4a851b52562124"
+}

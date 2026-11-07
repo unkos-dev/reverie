@@ -1435,6 +1435,16 @@
               }
             }
           },
+          "409": {
+            "description": "A requested metadata field is locked on this edition; locked_fields lists the refused keys and no changes are applied",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "412": {
             "description": "If-Match does not match the manifestation's current metadata ETag",
             "headers": {
@@ -3111,6 +3121,16 @@
               }
             }
           },
+          "409": {
+            "description": "A requested metadata field is locked on this edition; locked_fields lists the refused keys and no changes are applied",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "413": {
             "description": "The request body is too large",
             "content": {
@@ -3167,7 +3187,7 @@
           "metadata"
         ],
         "summary": "Lock a metadata field",
-        "description": "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only.",
+        "description": "Locks an edition-specific metadata field against manual canonical and automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only.",
         "operationId": "lock_field",
         "parameters": [
           {
@@ -3486,6 +3506,16 @@
               }
             }
           },
+          "409": {
+            "description": "A requested metadata field is locked on this edition; locked_fields lists the refused keys and no changes are applied",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "413": {
             "description": "The request body is too large",
             "content": {
@@ -3542,7 +3572,7 @@
           "metadata"
         ],
         "summary": "Unlock a metadata field",
-        "description": "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only.",
+        "description": "Removes a lock on a metadata field, allowing manual canonical and automated enrichment writes to resume. Available to adult accounts only.",
         "operationId": "unlock_field",
         "parameters": [
           {
@@ -11606,6 +11636,17 @@
               "null"
             ],
             "description": "URI reference identifying the specific request, when available.\nOmitted (RFC 9457 §3.1 permits this) outside an HTTP request."
+          },
+          "locked_fields": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Canonical field keys refused because the target edition has matching locks.",
+            "maxItems": 144
           },
           "status": {
             "type": "integer",
