@@ -454,6 +454,7 @@ struct Targets {
     sources: BTreeMap<Uuid, SourceMeaning>,
     authors: BTreeMap<Uuid, String>,
     terms: BTreeMap<(String, Uuid), String>,
+    schemes: BTreeSet<String>,
 }
 
 impl Targets {
@@ -474,18 +475,20 @@ impl Targets {
             FieldState::Vocabulary { members } => members
                 .iter()
                 .all(|m| self.terms.get(&(field.to_owned(), m.id)) == Some(&m.name)),
-            _ => true,
+            FieldState::Identifier { .. } => super::parse_identifier_field(field)
+                .is_ok_and(|(_, scheme)| self.schemes.contains(scheme)),
+            FieldState::Scalar { .. } => true,
         }
     }
 }
 
 async fn load_targets(
     tx: &mut Transaction<'_, Postgres>,
-    before: &[&CapturedField],
+    before: &[(&str, &CapturedField)],
 ) -> Result<Targets, AppError> {
     let sources: Vec<Uuid> = before
         .iter()
-        .flat_map(|f| f.state.pointers())
+        .flat_map(|(_, f)| f.state.pointers())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -503,7 +506,7 @@ async fn load_targets(
         .collect();
     let ids: Vec<Uuid> = before
         .iter()
-        .flat_map(|f| match &f.state {
+        .flat_map(|(_, f)| match &f.state {
             FieldState::Contributors { members } => {
                 members.iter().map(|m| m.id).collect::<Vec<_>>()
             }
@@ -522,7 +525,7 @@ async fn load_targets(
     .collect();
     let ids: Vec<Uuid> = before
         .iter()
-        .flat_map(|f| match &f.state {
+        .flat_map(|(_, f)| match &f.state {
             FieldState::Vocabulary { members } => members.iter().map(|m| m.id).collect::<Vec<_>>(),
             _ => Vec::new(),
         })
@@ -558,10 +561,25 @@ async fn load_targets(
     {
         terms.insert(("tags".to_owned(), row.id), row.name);
     }
+    let schemes: Vec<String> = before
+        .iter()
+        .filter(|(_, f)| matches!(f.state, FieldState::Identifier { .. }))
+        .map(|(field, _)| super::parse_identifier_field(field).map(|(_, scheme)| scheme.to_owned()))
+        .collect::<Result<_, _>>()?;
+    let schemes = sqlx::query_scalar!(
+        "SELECT id FROM identifier_schemes WHERE id = ANY($1)",
+        &schemes
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(internal)?
+    .into_iter()
+    .collect();
     Ok(Targets {
         sources,
         authors,
         terms,
+        schemes,
     })
 }
 
@@ -771,7 +789,10 @@ async fn restore(
     field: &str,
     before: &CapturedField,
 ) -> Result<(), AppError> {
-    if !load_targets(tx, &[before]).await?.contains(field, before) {
+    if !load_targets(tx, &[(field, before)])
+        .await?
+        .contains(field, before)
+    {
         return Err(AppError::UndoUnavailable);
     }
     if !valid_isbn_before(field, &before.state) {
@@ -1091,7 +1112,14 @@ pub(super) async fn resolve_metadata(
                 .map_err(internal)
         })
         .collect::<Result<_, _>>()?;
-    let targets = load_targets(&mut tx, &before.values().collect::<Vec<_>>()).await?;
+    let targets = load_targets(
+        &mut tx,
+        &before
+            .iter()
+            .map(|(field, before)| (field.as_str(), before))
+            .collect::<Vec<_>>(),
+    )
+    .await?;
     let locked: BTreeSet<String> =
         match require_unlocked_fields(&mut tx, edition, user.user_id, &fields).await {
             Ok(()) => BTreeSet::new(),
