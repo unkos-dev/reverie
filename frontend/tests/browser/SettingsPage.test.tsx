@@ -6,7 +6,6 @@ import { RouterProvider, createMemoryRouter, type RouteObject } from "react-rout
 import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __resetEtagCacheForTesting } from "@/api/etags";
 import { queryClient as appQueryClient } from "@/lib/query/client";
 
 import { adminSettingsRoute } from "@/routes/production";
@@ -197,7 +196,6 @@ async function rendered(locator: Locator): Promise<HTMLElement | SVGElement> {
 
 beforeEach(() => {
   server = newServer();
-  __resetEtagCacheForTesting();
   installFetch();
 });
 

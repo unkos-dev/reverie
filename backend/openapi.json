@@ -1378,7 +1378,7 @@
         },
         "responses": {
           "200": {
-            "description": "Manual edit committed with complete canonical values and matching ETag, plus per-field version acknowledgements",
+            "description": "Manual edit committed with complete canonical values and matching ETag, and per-field Undo operations",
             "headers": {
               "ETag": {
                 "schema": {
@@ -11179,31 +11179,6 @@
           }
         }
       },
-      "FieldVersionChange": {
-        "type": "object",
-        "description": "One field's outcome from `PATCH /api/v1/books/{id}/metadata`.\n\n`pub(crate)`: registered explicitly in `crate::openapi`'s `components`\nlist (see the comment there for why).",
-        "properties": {
-          "previous_version_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid",
-            "description": "Version pointer that was canonical before this patch (null when the\nfield was previously unset, or when no pointer exists for the field\nkind)."
-          },
-          "value": {
-            "description": "Canonical value as applied, after server normalization (null when the\nfield was cleared)."
-          },
-          "version_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid",
-            "description": "Journal row now wired as canonical (null when the field was cleared\nto no version)."
-          }
-        }
-      },
       "ForgotPasswordRequest": {
         "type": "object",
         "description": "Request body for `POST /auth/forgot-password`.",
@@ -13372,21 +13347,9 @@
         "description": "Response body for `PATCH /api/v1/books/{id}/metadata`.",
         "required": [
           "operations",
-          "values",
-          "fields"
+          "values"
         ],
         "properties": {
-          "fields": {
-            "type": "object",
-            "description": "Keyed by patched field name, including `contributors.<role>` keys.",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/FieldVersionChange"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "maxProperties": 144
-          },
           "operations": {
             "type": "array",
             "items": {
@@ -13405,7 +13368,7 @@
           },
           "values": {
             "$ref": "#/components/schemas/BookMetadata",
-            "description": "Complete canonical metadata confirmed by this write and its response `ETag`."
+            "description": "Complete canonical metadata paired with the response `ETag`."
           }
         }
       },

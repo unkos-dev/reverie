@@ -1135,7 +1135,7 @@
       "id": "REV-REQ-0019",
       "kind": "req",
       "path": "docs/specs/api/requirements/0019-the-browser-client-echoes-a-resource-s-last-etag-as-if-match-on.md",
-      "title": "The browser client echoes a resource's last ETag as If-Match on its PATCH"
+      "title": "Browser edits retain the validator belonging to their values"
     },
     {
       "governed-by": [

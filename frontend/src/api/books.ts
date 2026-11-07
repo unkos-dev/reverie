@@ -22,7 +22,7 @@
  */
 import { z } from "zod";
 
-import { apiFetch } from "./fetch";
+import { apiFetch, apiFetchWithHeaders } from "./fetch";
 
 const IngestionStatusSchema = z.enum(["pending", "processing", "complete", "failed", "skipped"]);
 /** Ingestion lifecycle state. Matches `backend/src/models/ingestion_status.rs`. */
@@ -86,7 +86,11 @@ const ReadingStateSummarySchema = z.object({
  */
 export type ReadingStateSummary = z.infer<typeof ReadingStateSummarySchema>;
 
+export const ResourceEtagSchema = z.string().regex(/^"[A-Za-z0-9_-]{22}"$/);
+
 const BookListItemSchema = z.object({
+  metadata_etag: ResourceEtagSchema,
+  reading_etag: ResourceEtagSchema,
   id: z.string(),
   work_id: z.string(),
   title: z.string(),
@@ -409,33 +413,6 @@ export type UpdateBookMetadataFields = z.infer<typeof UpdateBookMetadataFieldsSc
 
 export { UpdateBookMetadataFieldsSchema };
 
-const FieldVersionChangeSchema = z.object({
-  value: z.unknown().nullable(),
-  version_id: z.uuid().nullable(),
-  previous_version_id: z.uuid().nullable(),
-});
-/**
- * One field's outcome from a metadata PATCH. `value` is the canonical
- * value as applied, after server-side normalization (e.g. ISBN
- * checksum), null when the field was cleared. `version_id` is the
- * journal row now wired as canonical, null when cleared to no
- * version. `previous_version_id` is the pointer that was canonical
- * before this patch, null when the field was previously unset or has
- * no version pointer of its own (vocabulary fields).
- */
-export type FieldVersionChange = z.infer<typeof FieldVersionChangeSchema>;
-
-export const UpdateMetadataResponseSchema = z.object({
-  fields: z.record(z.string(), FieldVersionChangeSchema),
-});
-/**
- * `PATCH /api/v1/books/{id}/metadata` response body. Keyed by patched
- * field name, including `contributors.<role>` style keys, so a
- * caller can diff the edited column and drive undo without a
- * positional lookup. Mirrors `UpdateMetadataResponse` on the wire.
- */
-export type UpdateMetadataResponse = z.infer<typeof UpdateMetadataResponseSchema>;
-
 const BookMetadataContributorsSchema = z.object({
   author: z.array(z.string()),
   editor: z.array(z.string()),
@@ -470,55 +447,91 @@ export type BookMetadata = z.infer<typeof BookMetadataSchema>;
 
 export { BookMetadataSchema };
 
-/**
- * Fetch the editable metadata span for one book (manifestation) — the
- * matched-pair read for {@link updateBookMetadata}, same URI and id key.
- * Callers that need a fresh representation before editing (an edit dialog
- * opening, a grid cell entering edit mode) should call this rather than
- * seed from a cached list/detail projection, since only this response's
- * `ETag` is guaranteed current for the following `PATCH`'s `If-Match`.
- *
- * Throws an `ApiError` with `status === 404` when the manifestation is
- * missing or RLS-hidden (existence-not-leaked).
- */
-export async function getBookMetadata(id: string, signal?: AbortSignal): Promise<BookMetadata> {
-  const body = await apiFetch(
+export type MetadataSnapshot = { values: BookMetadata; etag: string };
+
+const UndoOperationSchema = z.object({
+  operation_id: z.uuid(),
+  field_name: z.string(),
+  expires_at: z.iso.datetime(),
+  status: z.enum(["eligible", "locked", "unavailable", "consumed"]),
+});
+export type UndoOperation = z.infer<typeof UndoOperationSchema>;
+
+export const UpdateMetadataResponseSchema = z.object({
+  values: BookMetadataSchema,
+  request_id: z.uuid().nullable(),
+  operations: z.array(UndoOperationSchema),
+});
+export type UpdateMetadataResponse = z.infer<typeof UpdateMetadataResponseSchema> & {
+  etag: string;
+};
+
+const OperationResponseSchema = z.object({
+  values: BookMetadataSchema,
+  outcome: z.enum(["saved", "restored", "unknown"]),
+  operations: z.array(UndoOperationSchema),
+});
+export type OperationResponse = z.infer<typeof OperationResponseSchema> & { etag: string };
+
+export async function getBookMetadata(id: string, signal?: AbortSignal): Promise<MetadataSnapshot> {
+  const { body, headers } = await apiFetchWithHeaders(
     `/api/v1/books/${encodeURIComponent(id)}/metadata`,
-    signal ? { method: "GET", signal } : { method: "GET" },
+    { signal },
   );
-  return BookMetadataSchema.parse(body);
+  const values = BookMetadataSchema.parse(body);
+  return { values, etag: ResourceEtagSchema.parse(headers.get("ETag")) };
 }
 
-/**
- * Manually edit canonical metadata for a book. Each touched field
- * lands as a new `metadata_versions` row (`source = 'manual'`) and the
- * canonical pointer is rewired in the same transaction. Pending AI/OPF
- * drafts on the same field are NOT auto-rejected; operators can
- * revert to them later via `revertField`.
- *
- * Throws an `ApiError` with `status === 422` when the body has no
- * populated fields, or with `status === 403` for child accounts.
- *
- * The request body is a bare RFC 7396 JSON Merge Patch, no `{fields}`
- * envelope. On success the server returns 200 with the per-field
- * applied values and version ids; callers that only need the
- * side-effect can ignore the return value. Callers should still
- * invalidate the `["books", "detail", id]` query key so the Versions
- * tab + canonical fields refetch.
- */
 export async function updateBookMetadata(
   id: string,
   fields: UpdateBookMetadataFields,
+  baseline: string,
+  requestId: string,
   signal?: AbortSignal,
 ): Promise<UpdateMetadataResponse> {
-  const init: RequestInit = {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(fields),
-    ...(signal ? { signal } : {}),
-  };
-  const body = await apiFetch(`/api/v1/books/${encodeURIComponent(id)}/metadata`, init);
-  return UpdateMetadataResponseSchema.parse(body);
+  const { body, headers } = await apiFetchWithHeaders(
+    `/api/v1/books/${encodeURIComponent(id)}/metadata`,
+    {
+      method: "PATCH",
+      headers: { "If-Match": ResourceEtagSchema.parse(baseline) },
+      body: JSON.stringify({ ...fields, request_id: z.uuid().parse(requestId) }),
+      signal,
+    },
+  );
+  const response = UpdateMetadataResponseSchema.parse(body);
+  if (response.request_id !== requestId)
+    throw new Error("The save acknowledgement did not match the request.");
+  return { ...response, etag: ResourceEtagSchema.parse(headers.get("ETag")) };
+}
+
+export async function resolveMetadataOperation(
+  id: string,
+  identity: { request_id: string } | { operation_id: string },
+  signal?: AbortSignal,
+): Promise<OperationResponse> {
+  const { body, headers } = await apiFetchWithHeaders(
+    `/api/v1/books/${encodeURIComponent(id)}/metadata/operations/resolve`,
+    { method: "POST", body: JSON.stringify(identity), signal },
+  );
+  const response = OperationResponseSchema.parse(body);
+  return { ...response, etag: ResourceEtagSchema.parse(headers.get("ETag")) };
+}
+
+export async function undoMetadataOperation(
+  id: string,
+  operationId: string,
+  baseline: string,
+): Promise<OperationResponse> {
+  const { body, headers } = await apiFetchWithHeaders(
+    `/api/v1/books/${encodeURIComponent(id)}/metadata/undo`,
+    {
+      method: "POST",
+      headers: { "If-Match": ResourceEtagSchema.parse(baseline) },
+      body: JSON.stringify({ operation_id: operationId }),
+    },
+  );
+  const response = OperationResponseSchema.parse(body);
+  return { ...response, etag: ResourceEtagSchema.parse(headers.get("ETag")) };
 }
 
 /**

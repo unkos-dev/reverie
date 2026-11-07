@@ -16,8 +16,7 @@ governed-by:
 
 This Design covers how Reverie protects a read-modify-write cycle against a lost update: the strong entity-tag grammar
 and comparison, the shared hash-based module that produces a tag, the `If-Match` precondition contract every protected
-endpoint applies in the same relative order, and the client's capture and replay of the tag between a resource's
-GET/PATCH pair.
+endpoint applies in the same relative order, and the client's ownership of validated values and their matching tag.
 
 ## Purpose and boundaries
 
@@ -26,8 +25,8 @@ them; the shared hash-based tag constructor and `If-Match` parser in `backend/sr
 `StrongEntityTag`, `parse_if_match`, `if_match_mismatch`); the precondition contract common to every protected endpoint
 (missing header returns `428`, a mismatched tag returns `412`, a malformed or policy-refused header is rejected before
 either) and the point in each handler where that contract is evaluated relative to the existence check and the request
-body's own semantic validation; and the client-side capture and replay in `frontend/src/api/etags.ts` and
-`frontend/src/api/fetch.ts`.
+body's own semantic validation; and the explicit client baselines in `frontend/src/api/books.ts`, `reading.ts` and
+`fetch.ts`.
 
 It does not own the business logic of any endpoint that uses this contract: what fields
 `PATCH /api/v1/books/{id}/reading` may change and its transition-stamp rules (the Design "Reading state"), the per-field
@@ -113,16 +112,16 @@ only once the precondition holds: an empty patch, an out-of-range rating, or set
 provider-key registry check. RFC 9110 §13.2.1 places precondition evaluation after the normal request checks and before
 the request content is processed, so a caller holding a stale representation learns that first and refetches.
 
-### The client's capture and replay
+### Client editing baselines
 
-`frontend/src/api/etags.ts` holds a module-level `Map<string, string>` keyed by resource identity, with two key
-families: `reading:{id}` and `metadata:{id}`, resolved from a request path by `etagKeyForPath`. It is the client
-counterpart to the metadata and reading endpoint families; every other path, including the shelf endpoints, resolves to
-no key and is never touched by this cache. `frontend/src/api/fetch.ts`'s `apiFetch` calls `captureEtag` on every
-response it receives, for every status code: when the response carries an `ETag` header and its path resolves to a key,
-`rememberEtag` overwrites that key's value. `sendRequest`, the single-attempt request builder `apiFetch` calls,
-auto-echoes a cached tag as `If-Match` only for a `PATCH` request whose caller did not already set that header, so a
-caller-supplied header always wins over the cache.
+`apiFetchWithHeaders` returns a decoded body and response headers without retaining entity-tags. Metadata and reading
+adapters validate the complete body and require the matching strong response ETag before publishing one snapshot. List
+rows carry `metadata_etag` and `reading_etag` from the same database snapshot as their values.
+
+Table commits capture the displayed row's tag, input and source query key. Dialog drafts retain the snapshot from which
+their fields were seeded, including through background refresh and field errors. Every write sends that explicit
+baseline. The transport's CSRF retry retains the same body and precondition. A 412 header alone never replaces a draft
+baseline or permits another save. Only a matched reset or new editing decision adopts fresh values and their tag.
 
 Settings retain each tag with its validated values. `apiFetchWithHeaders` exposes the decoded body and response headers
 without caching settings tags. `getSettings` and `updateSettings` validate the body and require a non-empty response
@@ -138,8 +137,7 @@ pristine editor follows the shared snapshot.
 
 `frontend/src/api/errors.ts` exposes `isIfMatchMismatch` and `isIfMatchRequired`, both scoped to the shared module's two
 problem-type slugs (`if-match-mismatch`, `if-match-required`) and their statuses (`412`, `428`); its doc comment treats
-a `428` the same as a `412` for recovery purposes, since the remedy — reload, then retry — is identical, and notes `428`
-is reachable when an ETag-priming fetch loses a race against a very fast concurrent commit.
+a `428` the same as a `412` for recovery purposes: reload a matched representation before a new editing decision.
 
 ## Interfaces and dependencies
 
@@ -157,10 +155,8 @@ writes. It cannot authorise an ordinary save from retained draft values.
   operations this contract protects; each declares its `If-Match` requirement and the `400`/`412`/`428` response set in
   its own `#[utoipa::path]` block, which this Design does not restate (Design "API error contract and OpenAPI" owns the
   generated shape).
-- `etagKeyForPath`, `rememberEtag`, `getRememberedEtag` (`frontend/src/api/etags.ts`) and the `captureEtag`/ auto-echo
-  logic inside `apiFetch`/`sendRequest` (`frontend/src/api/fetch.ts`) are the client's capture-and-replay surface for
-  the two shared-module resource families. `isIfMatchMismatch`/`isIfMatchRequired` (`frontend/src/api/errors.ts`) are
-  the typed checks callers use to branch on the two precondition failures.
+- Metadata and reading adapters expose matched snapshots and require explicit write baselines. `isIfMatchMismatch` and
+  `isIfMatchRequired` in `frontend/src/api/errors.ts` identify precondition refusals.
 
 ## Data and state
 
@@ -182,31 +178,23 @@ handful of concurrent editors, traded against header compactness, not a cryptogr
 hostile party (the server always recomputes the tag from its own row rather than trusting a client-supplied hash as
 data).
 
-On the client, `etags.ts`'s cache is the only persisted (page-lifetime) state this subject owns. It has exactly one
-writer, `captureEtag`, called from `apiFetch` after every response regardless of status, and one reader, the
-`PATCH`-only branch of `sendRequest`. It holds no more than two live keys per manifestation id at a time (the `reading:`
-and `metadata:` families) and nothing for shelves. Nothing mirrors it to `localStorage` or any other longer-lived store,
-so a fresh page load starts with an empty cache; the next `GET` of either resource re-seeds its key.
+Client editing snapshots live in Query and the owning draft. A retained dialog draft owns its initial snapshot until an
+explicit matched reset. The Library table-editing owner holds at most ten field operations in memory. Leaving Library or
+table editing clears them; filtering, sorting, loading, empty results and the details drawer preserve them.
 
 ## Runtime behaviour
 
-**A metadata `PATCH` riding a stale `ETag`:**
+A metadata save carries a client request UUID and its editing baseline. A stale aggregate precondition returns 412
+before request-reuse checking. After a lost acknowledgement, unchanged dialog input reuses its original request UUID,
+patch and baseline. A committed resend therefore receives 412, then resolves the original request before conflict
+feedback. Changed input starts a fresh UUID against the retained baseline. The table resolves uncertain saves through
+Query and exposes Reload, followed by a new edit. Neither flow automatically replays a save or infers success from equal
+values. A saved resolution adopts complete values and the matching ETag; table resolutions retain eligible operations.
 
-1. The edit dialog opens by calling `getBookMetadata`, whose `GET` response carries an `ETag`; `captureEtag` stores it
-   under `metadata:{id}`.
-2. A second client's `PATCH` commits first, changing the manifestation's editable fields.
-3. The dialog submits its own `PATCH`. `sendRequest` finds no caller-set `If-Match`, resolves `metadata:{id}`, and
-   echoes the cached tag as `If-Match`, which the second client's commit has made stale.
-4. `update_book_metadata` checks `require_scope`/`require_not_child`, then `parse_if_match` (well-formed, so parsing
-   succeeds), then acquires an RLS transaction and row-locks the manifestation and its work — the point at which a
-   missing or RLS-hidden manifestation would answer `404`, ahead of the tag comparison.
-5. `load_book_metadata` reads the current values and owner revisions under those locks. `MetadataRevision::etag`
-   recomputes the tag before any canonical writer can commit an intervening change. `StrongEntityTag::matches` finds the
-   caller's cached tag does not match the fresh one. The handler returns `if_match_mismatch(&current_etag)`, a 412 with
-   the current tag, before processing the request body.
-6. `apiFetch` calls `captureEtag` on this `412` response, overwriting `metadata:{id}` with the fresh tag. The caller's
-   own recovery path (checked with `isIfMatchMismatch`) reloads and retries; the retried `PATCH` carries the tag the
-   cache just refreshed, with no follow-up `GET` needed.
+Undo sends one operation and its retained aggregate validator. After 412, Query resolves that same operation and retries
+once only when the server confirms it eligible and unlocked. The retry uses the matched response's ETag. A restored
+resolution confirms an already committed Undo. Lock or unresolved recovery retains the entry; unavailable or conflicting
+operations leave the local collection. No refusal executes the next entry.
 
 **A metadata or reading `PATCH` with a malformed `If-Match`:**
 
@@ -219,24 +207,12 @@ handler body executes at all). The response is `400`, problem type `.../malforme
 
 ## Failure and recovery
 
-- **Missing `If-Match`.** All three protected endpoints return `AppError::IfMatchRequired` (`428`,
-  `.../if-match-required`) when the header is absent, checked before any database work. The client treats this the same
-  as a `412`: `isIfMatchRequired` exists alongside `isIfMatchMismatch` precisely because the two share a recovery path
-  (reload, then retry), and the frontend's own doc names the mechanism by which a genuine caller can reach `428` in
-  practice — an ETag-priming fetch losing a race against a very fast concurrent commit that already advanced the
-  resource past the tag the priming fetch was about to return.
-- **Stale `If-Match`.** `AppError::IfMatchMismatch` (`412`) from `update_book_metadata`, `patch_reading` or
-  `put_settings` carries the resource's current `ETag` on the response, via `if_match_mismatch`. For metadata and
-  reading, `captureEtag` refreshes the client cache from the failure response itself and a retry needs no extra round
-  trip. For settings, a `412` leaves the held snapshot and tag unchanged. The editor obtains a validated `GET` snapshot
-  before reconciling changes; only a validated `GET` or `PUT` result replaces its values and tag.
-- **Malformed, weak, wildcard, or list-form `If-Match`.** Rejected as satisfying nothing on all three endpoints, so a
-  caller can never use one of these forms to bypass the freshness check. The shared module answers `400`,
-  `.../malformed-header`, from `update_book_metadata`, `patch_reading` and `put_settings`, and rejects a repeated
-  `If-Match` header instance as a list form.
-- **`hash_etag`'s own encoding failure.** It returns `AppError::Internal` (`500`) if serialising the hash input or
-  formatting the header value fails. Neither is reachable in ordinary operation: every hash input type is a plain,
-  always-serialisable struct, and the base64url output is always valid `HeaderValue` byte content.
+- Missing `If-Match` returns 428 before database work. A stale supplied precondition returns 412 with the current tag.
+  Ordinary saves retain input and require a matched read before a new editing decision; they never automatically retry.
+- Missing or malformed acknowledgement values or tags leave the edit uncertain. Metadata resolution uses committed
+  request evidence through Query retry and reconnect. Reading recovery uses a matched read. A failed read retains input.
+- Undo refuses locked fields with 409 and retains the entry until its original expiry. A 422 `undo-unavailable` or 409
+  `undo-conflict` removes it. Expiry removes entries quietly, without extending their deadlines.
 
 ## Security and operations
 

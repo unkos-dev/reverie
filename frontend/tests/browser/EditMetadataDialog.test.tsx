@@ -4,13 +4,26 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { ViewTransition, type ReactElement } from "react";
 import { beforeEach, expect, test, vi } from "vite-plus/test";
 
-import { ApiError, getBookMetadata, updateBookMetadata, type BookMetadata } from "@/api";
+import {
+  ApiError,
+  getBookMetadata,
+  updateBookMetadata,
+  type BookMetadata,
+  type MetadataSnapshot,
+  resolveMetadataOperation,
+} from "@/api";
 
+import { queryKeys } from "@/lib/query/keys";
 import { EditMetadataDialog, type EditableField } from "@/pages/book/EditMetadataDialog";
 
 vi.mock("@/api", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
-  return { ...original, getBookMetadata: vi.fn(), updateBookMetadata: vi.fn() };
+  return {
+    ...original,
+    getBookMetadata: vi.fn(),
+    updateBookMetadata: vi.fn(),
+    resolveMetadataOperation: vi.fn(),
+  };
 });
 
 beforeEach(() => {
@@ -19,26 +32,29 @@ beforeEach(() => {
 
 const FIELDS: readonly EditableField[] = [{ name: "subtitle", label: "Subtitle" }];
 
-function metadataFixture(overrides: Partial<BookMetadata> = {}): BookMetadata {
+function metadataFixture(overrides: Partial<BookMetadata> = {}): MetadataSnapshot {
   return {
-    title: "Original Title",
-    subtitle: "Original Subtitle",
-    description: null,
-    language: null,
-    publisher: null,
-    pub_date: null,
-    isbn_10: null,
-    isbn_mismatch: false,
-    isbn_13: null,
-    pages: null,
-    content_rating: null,
-    genres: [],
-    moods: [],
-    tags: [],
-    contributors: { author: [], editor: [], translator: [] },
-    work_identifiers: {},
-    manifestation_identifiers: {},
-    ...overrides,
+    etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
+    values: {
+      title: "Original Title",
+      subtitle: "Original Subtitle",
+      description: null,
+      language: null,
+      publisher: null,
+      pub_date: null,
+      isbn_10: null,
+      isbn_mismatch: false,
+      isbn_13: null,
+      pages: null,
+      content_rating: null,
+      genres: [],
+      moods: [],
+      tags: [],
+      contributors: { author: [], editor: [], translator: [] },
+      work_identifiers: {},
+      manifestation_identifiers: {},
+      ...overrides,
+    },
   };
 }
 
@@ -83,14 +99,18 @@ test("seeds from metadata GET and reopens with saved values inside the cache fre
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
   });
-  let finishRefresh: (value: BookMetadata) => void = () => {};
-  const refreshedMetadata = new Promise<BookMetadata>((resolve) => {
+  let finishRefresh: (value: MetadataSnapshot) => void = () => {};
+  const refreshedMetadata = new Promise<MetadataSnapshot>((resolve) => {
     finishRefresh = resolve;
   });
   vi.mocked(getBookMetadata)
     .mockResolvedValueOnce(metadataFixture({ subtitle: "Fetched Subtitle" }))
     .mockReturnValueOnce(refreshedMetadata);
-  vi.mocked(updateBookMetadata).mockResolvedValue({ fields: {} });
+  vi.mocked(updateBookMetadata).mockResolvedValue({
+    ...metadataFixture(),
+    request_id: null,
+    operations: [],
+  });
   const { onOpenChange, unmount } = await renderDialog(FIELDS, client);
 
   await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Fetched Subtitle");
@@ -120,7 +140,7 @@ test("awaits save, retains publication-date errors and other edits, and closes a
       reject = fail;
     }),
   );
-  const { onOpenChange } = await renderDialog([
+  const { onOpenChange, client, unmount } = await renderDialog([
     ...FIELDS,
     { name: "pub_date", label: "Publication date" },
   ]);
@@ -146,21 +166,72 @@ test("awaits save, retains publication-date errors and other edits, and closes a
   await expect
     .element(page.getByRole("button", { name: "Save" }))
     .not.toHaveAttribute("data-pending");
-  vi.mocked(updateBookMetadata).mockResolvedValueOnce({ fields: {} });
+  const firstRequest = vi.mocked(updateBookMetadata).mock.calls[0];
+  const newer = {
+    ...metadataFixture({ subtitle: "Background" }),
+    etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
+  };
+  client.setQueryData(queryKeys.books.metadata("book-1"), newer);
+  vi.mocked(updateBookMetadata).mockRejectedValueOnce(new TypeError("Connection lost"));
+  vi.mocked(resolveMetadataOperation).mockRejectedValueOnce(new TypeError("Offline"));
   await page.getByLabelText("Publication date").fill("2024-06");
+  await userEvent.click(page.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => {
+    expect(resolveMetadataOperation).toHaveBeenCalled();
+  });
+  const retainedRequest = vi.mocked(updateBookMetadata).mock.calls[1];
+  expect(retainedRequest[2]).toBe(firstRequest[2]);
+  expect(retainedRequest[3]).not.toBe(firstRequest[3]);
+  vi.mocked(updateBookMetadata).mockRejectedValueOnce(
+    new ApiError(
+      412,
+      "https://reverie.example/probs/if-match-mismatch",
+      "Precondition failed",
+      "Changed",
+    ),
+  );
+  vi.mocked(resolveMetadataOperation).mockResolvedValueOnce({
+    ...metadataFixture({ subtitle: "Updated Subtitle", pub_date: "2024-06" }),
+    outcome: "saved",
+    operations: [],
+  });
   await userEvent.click(page.getByRole("button", { name: "Save" }));
   await vi.waitFor(() => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
-  expect(updateBookMetadata).toHaveBeenLastCalledWith("book-1", {
-    subtitle: "Updated Subtitle",
-    pub_date: "2024-06",
+  expect(vi.mocked(updateBookMetadata).mock.calls[2]?.[3]).toBe(retainedRequest[3]);
+  expect(updateBookMetadata).toHaveBeenLastCalledWith(
+    "book-1",
+    {
+      subtitle: "Updated Subtitle",
+      pub_date: "2024-06",
+    },
+    '"aaaaaaaaaaaaaaaaaaaaaa"',
+    expect.any(String),
+  );
+  await unmount();
+  vi.mocked(updateBookMetadata).mockRejectedValueOnce(new TypeError("Lost acknowledgement"));
+  vi.mocked(resolveMetadataOperation)
+    .mockReset()
+    .mockResolvedValueOnce({
+      ...metadataFixture({ subtitle: "Updated Subtitle" }),
+      outcome: "saved",
+      operations: [],
+    });
+  const automatic = await renderDialog();
+  await submitEdit();
+  await vi.waitFor(() => {
+    expect(automatic.onOpenChange).toHaveBeenCalledWith(false);
   });
 });
 
 test("cancelling a populated-field clear keeps the edit and sends nothing; confirmation saves null", async () => {
   vi.mocked(getBookMetadata).mockResolvedValue(metadataFixture());
-  vi.mocked(updateBookMetadata).mockResolvedValue({ fields: {} });
+  vi.mocked(updateBookMetadata).mockResolvedValue({
+    ...metadataFixture(),
+    request_id: null,
+    operations: [],
+  });
   await renderDialog();
   const input = page.getByLabelText("Subtitle");
   await expect.element(input).toHaveValue("Original Subtitle");
@@ -175,6 +246,11 @@ test("cancelling a populated-field clear keeps the edit and sends nothing; confi
   await userEvent.click(page.getByRole("button", { name: "Save" }));
   await userEvent.click(confirmation.getByRole("button", { name: "Clear and save" }));
   await vi.waitFor(() => {
-    expect(updateBookMetadata).toHaveBeenCalledExactlyOnceWith("book-1", { subtitle: null });
+    expect(updateBookMetadata).toHaveBeenCalledExactlyOnceWith(
+      "book-1",
+      { subtitle: null },
+      '"aaaaaaaaaaaaaaaaaaaaaa"',
+      expect.any(String),
+    );
   });
 });

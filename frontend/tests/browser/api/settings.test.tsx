@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __resetEtagCacheForTesting } from "@/api/etags";
 import { getSettings, updateSettings } from "@/api/settings";
 
 const VALUES = {
@@ -39,9 +38,7 @@ function json(body: unknown, headers: Record<string, string> = {}, status = 200)
   });
 }
 
-beforeEach(() => {
-  __resetEtagCacheForTesting();
-});
+beforeEach(() => {});
 
 afterEach(() => {
   vi.restoreAllMocks();

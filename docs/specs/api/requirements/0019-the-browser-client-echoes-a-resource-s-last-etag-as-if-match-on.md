@@ -2,40 +2,28 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0019"
-title: "The browser client echoes a resource's last ETag as If-Match on its PATCH"
+title: "Browser edits retain the validator belonging to their values"
 ---
 
-# The browser client echoes a resource's last ETag as If-Match on its PATCH
+# Browser edits retain the validator belonging to their values
 
 ## Statement
 
-WHEN the browser client sends a `PATCH` request for a book's metadata or for a book's reading state and the caller did
-not already set an `If-Match` header on that request, the client MUST send the last `ETag` value it received for that
-resource as `If-Match`, and MUST send no `If-Match` header when it holds no such value for that resource.
+WHEN the browser client saves book metadata or reading state, it MUST send the `If-Match` validator belonging to the
+validated values from which that edit began. It MUST retain that baseline through errors and CSRF retry until a new
+editing decision adopts validated values and their matching validator together.
 
 ## Rationale
 
-[RFC 9110 §13.1.1](https://www.rfc-editor.org/rfc/rfc9110#section-13.1.1) defines `If-Match` as a precondition the
-client attaches to guard a write against a change it has not seen; the client can only supply a value it captured from a
-prior response. Automating the capture and replay removes the need for every call site that issues a `PATCH` to thread
-the header by hand, so a call site cannot forget to protect a write it has the means to protect, while a caller that
-explicitly sets its own `If-Match` is never overridden.
+A validator from another response can authorise an overwrite of values the reader never saw. Keeping the validator with
+the editing values prevents unrelated reads, background refresh and error responses from advancing a retained draft's
+write precondition.
 
 ## Acceptance criteria
 
-- A `PATCH` for a resource follows a `GET` of that same resource: the `PATCH` request carries the `ETag` value the `GET`
-  response carried, as `If-Match`. Checked by `a GET response's ETag is echoed as If-Match on that resource's PATCH` in
-  `frontend/tests/browser/api/fetch.test.tsx`.
-- After a successful `PATCH` on a resource, a further `PATCH` on that same resource carries the `ETag` value the
-  successful `PATCH`'s own response carried, not the one from an earlier response. Checked by
-  `a successful PATCH's own ETag replaces the retained tag for the next PATCH` in
-  `frontend/tests/browser/api/fetch.test.tsx`.
-- After a `412` response on a resource, a further `PATCH` on that same resource carries the current `ETag` value the
-  `412` response carried, not the stale value that caused the mismatch. Checked by
-  `a 412's current ETag replaces the stale retained tag` in `frontend/tests/browser/api/fetch.test.tsx`.
-- A `PATCH` for a resource for which the client holds no retained `ETag` carries no `If-Match` header at all. Checked by
-  `a resource with no retained tag PATCHes without If-Match` in `frontend/tests/browser/api/fetch.test.tsx`.
-- A last-seen `ETag` for one resource is never sent as `If-Match` on a `PATCH` to a different resource, even when both
-  are in flight in the same session. Checked by
-  `a retained tag for one resource is never sent on another resource's PATCH` in
-  `frontend/tests/browser/api/fetch.test.tsx`.
+- Metadata and reading saves send the validator belonging to their editing values, including across a CSRF retry.
+- A read of another resource, a background refresh or a 412 response does not replace a retained edit's validator.
+- Missing or malformed values or validators do not publish a replacement editing baseline or authorise another write.
+- A new editing decision adopts validated values and their matching validator together.
+
+Checked by `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.

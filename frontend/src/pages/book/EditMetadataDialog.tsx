@@ -1,7 +1,7 @@
 /**
  * Manual metadata edit sheet.
  *
- * Mounted as a controlled shadcn `<Sheet>` from [`VersionsTab`]. Each
+ * Mounted as a controlled sheet from [`VersionsTab`]. Each
  * field tracks a `touched` flag; only touched keys land in the
  * `PATCH /api/v1/books/{id}/metadata` body so the RFC 7396 sparse-update
  * semantics on the server see exactly the operator's intent.
@@ -14,9 +14,8 @@
  *
  * On open, the form fetches `GET /api/v1/books/{id}/metadata` itself
  * rather than seeding from the list/detail cache the caller may be
- * holding: only that response's `ETag` (captured by `apiFetch`) is
- * guaranteed current for the submit's `If-Match`, so a stale cached
- * canonical value would both seed the form wrong and risk a spurious 412.
+ * holding. The draft retains that validated snapshot and its ETag through
+ * background refresh, field errors and uncertain acknowledgements.
  *
  * A confirmation `<AlertDialog>` interposes when the change would
  * clear an already-populated field, mirroring the per-row Clear
@@ -44,6 +43,8 @@ import {
   isIfMatchMismatch,
   updateBookMetadata,
   type BookMetadata,
+  type MetadataSnapshot,
+  resolveMetadataOperation,
   type UpdateBookMetadataFields,
 } from "@/api";
 import {
@@ -224,7 +225,7 @@ type EditMetadataFieldsProps = {
   reloadError: boolean;
   manifestationId: string;
   fields: readonly EditableField[];
-  metadata: BookMetadata;
+  metadata: MetadataSnapshot;
   onDone: () => void;
 };
 
@@ -234,30 +235,87 @@ function EditMetadataFields({
   reloadError,
   manifestationId,
   fields,
-  metadata,
+  metadata: incoming,
   onDone,
 }: Readonly<EditMetadataFieldsProps>): ReactElement {
   const queryClient = useQueryClient();
+  const [baseline] = useState(incoming);
+  const metadata = baseline.values;
+  const attempt = useRef<{ body: UpdateBookMetadataFields; requestId: string } | null>(null);
   const touched = useRef(new Set<keyof UpdateBookMetadataFields>());
   const [pendingClearConfirm, setPendingClearConfirm] = useState(false);
   const formId = useId();
+  function reconcile(snapshot: MetadataSnapshot): void {
+    queryClient.setQueryData(queryKeys.books.metadata(manifestationId), snapshot);
+    void queryClient.invalidateQueries({ queryKey: ["books", "list"] });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.books.detailsAll });
+    void queryClient.invalidateQueries({
+      queryKey: ["books", "metadata"],
+      predicate: (query) => query.queryKey.length === 3 && query.queryKey[2] !== manifestationId,
+    });
+  }
+  async function complete(snapshot: MetadataSnapshot): Promise<void> {
+    reconcile(snapshot);
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.books.metadata(manifestationId),
+      exact: true,
+    });
+    onDone();
+  }
   const mutation = useMutation({
-    mutationFn: (body: UpdateBookMetadataFields) => updateBookMetadata(manifestationId, body),
-    onSuccess: async () => {
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.books.detail(manifestationId),
-      });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.books.metadata(manifestationId),
-      });
-      onDone();
-    },
-    onError: (err: unknown) => {
-      console.error("[EditMetadataDialog.updateBookMetadata] mutation failed", err);
-      if (isIfMatchMismatch(err)) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.books.detail(manifestationId) });
+    mutationFn: async ({
+      body,
+      requestId,
+    }: {
+      body: UpdateBookMetadataFields;
+      requestId: string;
+    }) => {
+      try {
+        return await updateBookMetadata(manifestationId, body, baseline.etag, requestId);
+      } catch (error) {
+        if (!isIfMatchMismatch(error)) throw error;
+        const response = await queryClient.query({
+          queryKey: [...queryKeys.books.metadata(manifestationId), "save-resolution", requestId],
+          queryFn: ({ signal }) =>
+            resolveMetadataOperation(manifestationId, { request_id: requestId }, signal),
+          staleTime: 0,
+        });
+        if (response.outcome === "saved") return response;
+        reconcile(response);
+        throw error;
       }
     },
+    onSuccess: complete,
+  });
+  const uncertain =
+    mutation.isError &&
+    !(
+      mutation.error instanceof ApiError &&
+      mutation.error.status >= 400 &&
+      mutation.error.status < 500
+    );
+  const resolution = useQuery({
+    queryKey: [
+      ...queryKeys.books.metadata(manifestationId),
+      "save-resolution",
+      mutation.variables?.requestId,
+    ],
+    queryFn: async ({ signal }) => {
+      const requestId = mutation.variables?.requestId;
+      if (requestId === undefined) throw new Error("No save to resolve.");
+      const response = await resolveMetadataOperation(
+        manifestationId,
+        { request_id: requestId },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (response.outcome === "saved") await complete(response);
+      else reconcile(response);
+      return response;
+    },
+    enabled: (query) => uncertain && query.state.data?.outcome !== "saved",
+    staleTime: 0,
+    refetchOnWindowFocus: false,
   });
 
   function buildBody(values: Record<string, string>): UpdateBookMetadataFields {
@@ -303,7 +361,13 @@ function EditMetadataFields({
       }
       setPendingClearConfirm(false);
       try {
-        await mutation.mutateAsync(body);
+        const previous = attempt.current;
+        const requestId =
+          previous !== null && JSON.stringify(previous.body) === JSON.stringify(body)
+            ? previous.requestId
+            : crypto.randomUUID();
+        attempt.current = { body, requestId };
+        await mutation.mutateAsync({ body, requestId });
         return { values, error: null };
       } catch (err) {
         const errors = err instanceof ApiError ? err.errors : undefined;
@@ -366,10 +430,24 @@ function EditMetadataFields({
           ) : null}
         </div>
         {state.error ? <FieldError>{state.error}</FieldError> : null}
-        {mutation.isError && isIfMatchMismatch(mutation.error) ? (
+        {mutation.isPaused || resolution.fetchStatus === "paused" ? (
+          <p role="status" className="text-fg-muted text-sm">
+            Connection problem. Your entered edits are retained.
+          </p>
+        ) : null}
+        {uncertain && resolution.data?.outcome !== "unknown" ? (
+          <p role="status" className="text-fg-muted text-sm">
+            {resolution.isFetching
+              ? "Checking whether your save completed…"
+              : "Connection problem. Your edits are retained. Save retries the same request."}
+          </p>
+        ) : null}
+        {(mutation.isError && isIfMatchMismatch(mutation.error)) ||
+        resolution.data?.outcome === "unknown" ? (
           <div className="space-y-2 py-2">
             <FieldError>
-              This book&apos;s metadata changed elsewhere. Your edits have not been saved.
+              Reload the latest metadata before another editing decision. Your entered edits are
+              retained.
             </FieldError>
             <p className="text-fg-muted text-sm">
               Reloading replaces your entered edits with the latest metadata.

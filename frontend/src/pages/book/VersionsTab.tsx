@@ -158,7 +158,7 @@ function FieldGroup({
   const clearPending = pending && submitted?.action === "clear";
   const invalidate = () =>
     queryClient.invalidateQueries({
-      queryKey: queryKeys.books.detail(manifestationId),
+      queryKey: queryKeys.books.all,
     });
 
   const mutationKey = [...fieldActionKey(manifestationId), field];

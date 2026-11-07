@@ -1,12 +1,13 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { BookListItem } from "@/api";
-import type { FieldVersionChange } from "@/api/books";
 
 import { EDIT_ROUTES } from "./edit-routing";
 
 function rowFixture(overrides: Partial<BookListItem> = {}): BookListItem {
   return {
+    metadata_etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
+    reading_etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
     id: "book-1",
     work_id: "work-1",
     title: "Original Title",
@@ -36,14 +37,6 @@ function rowFixture(overrides: Partial<BookListItem> = {}): BookListItem {
   };
 }
 
-function fieldChange(value: unknown): FieldVersionChange {
-  return {
-    value,
-    version_id: "11111111-1111-1111-1111-111111111111",
-    previous_version_id: "00000000-0000-0000-0000-000000000000",
-  };
-}
-
 describe("title route", () => {
   test("toPatch sends only the title field", () => {
     const route = EDIT_ROUTES.title;
@@ -61,32 +54,6 @@ describe("subtitle route", () => {
     const row = rowFixture();
     const draft = rowFixture({ subtitle: null });
     expect(route.toPatch(row, draft)).toEqual({ subtitle: null });
-  });
-});
-
-describe("isbn_13 route", () => {
-  test("applyToRow applies the server-normalized ISBN, not the draft", () => {
-    const route = EDIT_ROUTES.isbn_13;
-    if (route.pipeline !== "metadata") throw new Error("expected metadata pipeline");
-    const row = rowFixture();
-    // Draft carries hyphenated input; the server echoes back the
-    // checksum-normalized canonical value, which is what must win.
-    const draft = rowFixture({ isbn_13: "978-0-00-000000-1" });
-    expect(route.toPatch(row, draft)).toEqual({ isbn_13: "978-0-00-000000-1" });
-    const applied = route.applyToRow(row, fieldChange("9780000000001"));
-    expect(applied.isbn_13).toBe("9780000000001");
-  });
-});
-
-describe("pages route", () => {
-  test("toPatch and applyToRow round-trip a number", () => {
-    const route = EDIT_ROUTES.pages;
-    if (route.pipeline !== "metadata") throw new Error("expected metadata pipeline");
-    const row = rowFixture();
-    const draft = rowFixture({ pages: 250 });
-    expect(route.toPatch(row, draft)).toEqual({ pages: 250 });
-    const applied = route.applyToRow(row, fieldChange(250));
-    expect(applied.pages).toBe(250);
   });
 });
 
