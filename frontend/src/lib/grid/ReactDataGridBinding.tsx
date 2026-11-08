@@ -340,7 +340,7 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
         aria-label={label}
         columns={rdgColumns}
         rows={rows}
-        rowKeyGetter={rowKey}
+        getRowKey={rowKey}
         sortColumns={sortColumns}
         onSortColumnsChange={handleSortColumnsChange}
         onActivePositionChange={({ row, rowIdx, column }) => {
