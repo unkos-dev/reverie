@@ -293,6 +293,7 @@ Metadata fields remain read-only while Save is pending or its outcome remains un
 selected. After the request settles, Save can resend the unchanged draft with its original request ID and baseline.
 Confirmed saves await the matched refresh and close the dialog. Expected refusals retain submitted values for
 correction; unknown outcomes retain the existing Reload recovery. Offline recovery shows one connection message.
+Confirmation closes only its originating mounted form. Cache reconciliation continues after dismissal.
 
 **A manual `PATCH`: an operator edits publisher, clears pub_date, and sets a work identifier from the edit dialog.**
 

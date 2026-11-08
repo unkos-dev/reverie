@@ -260,7 +260,6 @@ function EditMetadataFields({
       queryKey: queryKeys.books.metadata(manifestationId),
       exact: true,
     });
-    onDone();
   }
   const mutation = useMutation({
     mutationFn: async ({
@@ -309,8 +308,11 @@ function EditMetadataFields({
         signal,
       );
       signal.throwIfAborted();
-      if (response.outcome === "saved") await complete(response);
-      else reconcile(response);
+      if (response.outcome === "saved") {
+        await complete(response);
+        signal.throwIfAborted();
+        onDone();
+      } else reconcile(response);
       return response;
     },
     enabled: (query) => uncertain && query.state.data?.outcome !== "saved",
@@ -367,7 +369,7 @@ function EditMetadataFields({
             ? previous.requestId
             : crypto.randomUUID();
         attempt.current = { body, requestId };
-        await mutation.mutateAsync({ body, requestId });
+        await mutation.mutateAsync({ body, requestId }, { onSuccess: onDone });
         return { values, error: null };
       } catch (err) {
         const errors = err instanceof ApiError ? err.errors : undefined;

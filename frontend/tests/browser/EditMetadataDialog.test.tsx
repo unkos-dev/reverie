@@ -274,10 +274,27 @@ test("awaits save, retains publication-date errors and other edits, and closes a
   });
   await expect.element(page.getByLabelText("Subtitle")).toHaveAttribute("readonly");
   expect(retainedDraft.onOpenChange).not.toHaveBeenCalled();
+  await retainedDraft.unmount();
   finishConfirmation(confirmed);
+  let finishDismissed: (value: Awaited<ReturnType<typeof updateBookMetadata>>) => void = () => {};
+  vi.mocked(updateBookMetadata).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finishDismissed = resolve;
+    }),
+  );
+  const dismissed = await renderDialog();
+  await submitEdit();
+  expect(retainedDraft.onOpenChange).not.toHaveBeenCalled();
+  await dismissed.unmount();
+  await renderDialog(FIELDS, dismissed.client);
+  await page.getByLabelText("Subtitle").fill("Draft from reopened dialog");
+  vi.mocked(getBookMetadata).mockResolvedValue(confirmed);
+  finishDismissed({ ...confirmed, request_id: null, operations: [] });
   await vi.waitFor(() => {
-    expect(retainedDraft.onOpenChange).toHaveBeenCalledWith(false);
+    expect(dismissed.client.getMutationCache().getAll().at(-1)?.state.status).toBe("success");
   });
+  expect(dismissed.onOpenChange).not.toHaveBeenCalled();
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Draft from reopened dialog");
 });
 
 test("cancelling a populated-field clear keeps the edit and sends nothing; confirmation saves null", async () => {
