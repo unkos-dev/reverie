@@ -289,9 +289,10 @@ failures appear inline; structured field refusals use native field feedback. Ord
 the changed content and local feedback. ETag conflicts remain beside the refused inputs. Discard edits and reload
 explicitly replaces them with a fresh metadata read; a failed reload retains the draft. Review failures stay in their
 field section outside removable draft rows. Pending, clear-confirmation and successful closure retain their owners.
-Confirmation of an earlier save retains any newer draft input and reports the confirmed outcome inline. Closure follows
-the awaited matched refresh only while the current draft still matches that submission. Action completion returns the
-live form values as the uncontrolled fields' defaults, retaining edits entered while the save was pending.
+Metadata fields remain read-only while Save is pending or its outcome remains unresolved. Their values can still be
+selected. After the request settles, Save can resend the unchanged draft with its original request ID and baseline.
+Confirmed saves await the matched refresh and close the dialog. Expected refusals retain submitted values for
+correction; unknown outcomes retain the existing Reload recovery. Offline recovery shows one connection message.
 
 **A manual `PATCH`: an operator edits publisher, clears pub_date, and sets a work identifier from the edit dialog.**
 

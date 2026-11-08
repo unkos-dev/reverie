@@ -150,6 +150,8 @@ test("awaits save, retains publication-date errors and other edits, and closes a
   await expect.element(page.getByRole("button", { name: "Save" })).toHaveAttribute("data-pending");
   await expect.element(page.getByRole("button", { name: "Cancel" })).toBeDisabled();
   await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
+  await expect.element(page.getByLabelText("Subtitle")).toHaveAttribute("readonly");
+  await expect.element(page.getByLabelText("Publication date")).toHaveAttribute("readonly");
   expect(onOpenChange).not.toHaveBeenCalled();
   reject(
     new ApiError(422, null, "Validation Error", "Invalid publication date.", {
@@ -163,6 +165,7 @@ test("awaits save, retains publication-date errors and other edits, and closes a
     .element(page.getByLabelText("Publication date"))
     .toHaveAccessibleDescription(/Use YYYY-MM-DD or YYYY\. Leave empty if unknown\./);
   await expect.element(page.getByLabelText("Publication date")).toHaveValue("unknown");
+  await expect.element(page.getByLabelText("Publication date")).not.toHaveAttribute("readonly");
   await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
   await expect
     .element(page.getByRole("button", { name: "Save" }))
@@ -181,6 +184,8 @@ test("awaits save, retains publication-date errors and other edits, and closes a
     expect(resolveMetadataOperation).toHaveBeenCalled();
   });
   const retainedRequest = vi.mocked(updateBookMetadata).mock.calls[1];
+  await expect.element(page.getByLabelText("Subtitle")).toHaveAttribute("readonly");
+  await expect.element(page.getByRole("button", { name: "Save" })).toBeEnabled();
   expect(retainedRequest[2]).toBe(firstRequest[2]);
   expect(retainedRequest[3]).not.toBe(firstRequest[3]);
   vi.mocked(updateBookMetadata).mockRejectedValueOnce(
@@ -236,10 +241,12 @@ test("awaits save, retains publication-date errors and other edits, and closes a
     }),
   );
   vi.mocked(resolveMetadataOperation).mockReset().mockReturnValueOnce(earlierReceipt);
-  const newerDraft = await renderDialog();
+  const retainedDraft = await renderDialog();
   await submitEdit();
   await expect.element(page.getByRole("button", { name: "Save" })).toHaveAttribute("data-pending");
-  await page.getByLabelText("Subtitle").fill("Newer unsaved input");
+  await expect.element(page.getByLabelText("Subtitle")).toHaveAttribute("readonly");
+  await userEvent.type(page.getByLabelText("Subtitle"), "Newer unsaved input");
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
   rejectPending(new TypeError("Lost acknowledgement"));
   await vi.waitFor(() => {
     expect(resolveMetadataOperation).toHaveBeenCalledTimes(1);
@@ -247,35 +254,30 @@ test("awaits save, retains publication-date errors and other edits, and closes a
   await expect
     .element(page.getByRole("button", { name: "Save" }))
     .not.toHaveAttribute("data-pending");
-  const earlierAutomatic = vi.mocked(updateBookMetadata).mock.calls.at(-1);
-  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Newer unsaved input");
+  await expect.element(page.getByLabelText("Subtitle")).toHaveAttribute("readonly");
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
+  await expect.element(page.getByRole("button", { name: "Save" })).toBeEnabled();
   const confirmed = {
     ...metadataFixture({ subtitle: "Updated Subtitle" }),
     etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
   };
-  vi.mocked(getBookMetadata).mockResolvedValue(confirmed);
-  confirmEarlier({ ...confirmed, outcome: "saved", operations: [] });
-  await expect
-    .element(page.getByText("Save confirmed. Your newer edits are retained.", { exact: true }))
-    .toBeInTheDocument();
-  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Newer unsaved input");
-  expect(newerDraft.onOpenChange).not.toHaveBeenCalled();
-  vi.mocked(updateBookMetadata).mockRejectedValueOnce(
-    new ApiError(412, "/if-match-mismatch", "Precondition failed", "Changed"),
+  let finishConfirmation: (value: MetadataSnapshot) => void = () => {};
+  vi.mocked(getBookMetadata).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finishConfirmation = resolve;
+    }),
   );
-  vi.mocked(resolveMetadataOperation).mockResolvedValueOnce({
-    ...confirmed,
-    outcome: "unknown",
-    operations: [],
+  const reads = vi.mocked(getBookMetadata).mock.calls.length;
+  confirmEarlier({ ...confirmed, outcome: "saved", operations: [] });
+  await vi.waitFor(() => {
+    expect(getBookMetadata).toHaveBeenCalledTimes(reads + 1);
   });
-  await userEvent.click(page.getByRole("button", { name: "Save" }));
-  await expect
-    .element(page.getByRole("button", { name: "Discard edits and reload" }))
-    .toBeInTheDocument();
-  expect(vi.mocked(updateBookMetadata).mock.lastCall?.[2]).toBe(earlierAutomatic?.[2]);
-  expect(vi.mocked(updateBookMetadata).mock.lastCall?.[3]).not.toBe(earlierAutomatic?.[3]);
-  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Newer unsaved input");
-  expect(newerDraft.onOpenChange).not.toHaveBeenCalled();
+  await expect.element(page.getByLabelText("Subtitle")).toHaveAttribute("readonly");
+  expect(retainedDraft.onOpenChange).not.toHaveBeenCalled();
+  finishConfirmation(confirmed);
+  await vi.waitFor(() => {
+    expect(retainedDraft.onOpenChange).toHaveBeenCalledWith(false);
+  });
 });
 
 test("cancelling a populated-field clear keeps the edit and sends nothing; confirmation saves null", async () => {

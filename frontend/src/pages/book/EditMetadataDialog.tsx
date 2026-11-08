@@ -245,10 +245,6 @@ function EditMetadataFields({
   const touched = useRef(new Set<keyof UpdateBookMetadataFields>());
   const [pendingClearConfirm, setPendingClearConfirm] = useState(false);
   const formId = useId();
-  const formRef = useRef<HTMLFormElement>(null);
-  function formValues(form: HTMLFormElement): Record<string, string> {
-    return z.record(z.string(), z.string()).parse(Object.fromEntries(new FormData(form)));
-  }
   function reconcile(snapshot: MetadataSnapshot): void {
     queryClient.setQueryData(queryKeys.books.metadata(manifestationId), snapshot);
     void queryClient.invalidateQueries({ queryKey: ["books", "list"] });
@@ -258,18 +254,13 @@ function EditMetadataFields({
       predicate: (query) => query.queryKey.length === 3 && query.queryKey[2] !== manifestationId,
     });
   }
-  async function complete(
-    snapshot: MetadataSnapshot,
-    submitted: UpdateBookMetadataFields,
-  ): Promise<void> {
+  async function complete(snapshot: MetadataSnapshot): Promise<void> {
     reconcile(snapshot);
     await queryClient.invalidateQueries({
       queryKey: queryKeys.books.metadata(manifestationId),
       exact: true,
     });
-    const form = formRef.current;
-    if (form !== null && JSON.stringify(buildBody(formValues(form))) === JSON.stringify(submitted))
-      onDone();
+    onDone();
   }
   const mutation = useMutation({
     mutationFn: async ({
@@ -294,7 +285,7 @@ function EditMetadataFields({
         throw error;
       }
     },
-    onSuccess: (snapshot, { body }) => complete(snapshot, body),
+    onSuccess: complete,
   });
   const uncertain =
     mutation.isError &&
@@ -310,16 +301,15 @@ function EditMetadataFields({
       mutation.variables?.requestId,
     ],
     queryFn: async ({ signal }) => {
-      const submission = mutation.variables;
-      if (submission === undefined) throw new Error("No save to resolve.");
-      const requestId = submission.requestId;
+      const requestId = mutation.variables?.requestId;
+      if (requestId === undefined) throw new Error("No save to resolve.");
       const response = await resolveMetadataOperation(
         manifestationId,
         { request_id: requestId },
         signal,
       );
       signal.throwIfAborted();
-      if (response.outcome === "saved") await complete(response, submission.body);
+      if (response.outcome === "saved") await complete(response);
       else reconcile(response);
       return response;
     },
@@ -378,14 +368,11 @@ function EditMetadataFields({
             : crypto.randomUUID();
         attempt.current = { body, requestId };
         await mutation.mutateAsync({ body, requestId });
-        return {
-          values: formRef.current === null ? values : formValues(formRef.current),
-          error: null,
-        };
+        return { values, error: null };
       } catch (err) {
         const errors = err instanceof ApiError ? err.errors : undefined;
         return {
-          values: formRef.current === null ? values : formValues(formRef.current),
+          values,
           error:
             isIfMatchMismatch(err) || Object.keys(errors ?? {}).length > 0
               ? null
@@ -397,11 +384,9 @@ function EditMetadataFields({
     { values: {}, error: null },
   );
 
-  const saveConfirmed = mutation.isSuccess || resolution.data?.outcome === "saved";
   return (
     <>
       <Form
-        ref={formRef}
         id={formId}
         action={action}
         onSubmit={(event) => {
@@ -433,6 +418,7 @@ function EditMetadataFields({
               field={field}
               hasCanonicalValue={canonicalValue(metadata, field.name) !== null}
               defaultValue={state.values[field.name] ?? canonicalValue(metadata, field.name) ?? ""}
+              isReadOnly={pending || mutation.isPending || uncertain}
               onChange={() => {
                 touched.current.add(field.name);
               }}
@@ -444,18 +430,15 @@ function EditMetadataFields({
             </p>
           ) : null}
         </div>
-        {state.error && !saveConfirmed ? <FieldError>{state.error}</FieldError> : null}
+        {state.error && !pending && !uncertain ? <FieldError>{state.error}</FieldError> : null}
         {mutation.isPaused || resolution.fetchStatus === "paused" ? (
           <p role="status" className="text-fg-muted text-sm">
             Connection problem. Your entered edits are retained.
           </p>
         ) : null}
-        {saveConfirmed ? (
-          <p role="status" className="text-fg-muted text-sm">
-            Save confirmed. Your newer edits are retained.
-          </p>
-        ) : null}
-        {uncertain && !saveConfirmed && resolution.data?.outcome !== "unknown" ? (
+        {uncertain &&
+        resolution.fetchStatus !== "paused" &&
+        resolution.data?.outcome !== "unknown" ? (
           <p role="status" className="text-fg-muted text-sm">
             {resolution.isFetching
               ? "Checking whether your save completed…"
@@ -547,6 +530,7 @@ type FieldRowProps = {
   field: EditableField;
   hasCanonicalValue: boolean;
   defaultValue: string;
+  isReadOnly: boolean;
   onChange: () => void;
 };
 
@@ -554,6 +538,7 @@ function FieldRow({
   field,
   hasCanonicalValue,
   defaultValue,
+  isReadOnly,
   onChange,
 }: Readonly<FieldRowProps>): ReactElement {
   const useTextarea = FIELDS_AS_TEXTAREA.has(field.name);
@@ -561,6 +546,7 @@ function FieldRow({
     <TextField
       name={field.name}
       defaultValue={defaultValue}
+      isReadOnly={isReadOnly}
       onChange={onChange}
       className="space-y-1.5"
     >

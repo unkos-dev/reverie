@@ -69,6 +69,10 @@ Actions stay pending until the awaited mutation and its completion work settle. 
 and allow correction or retry. Successful submission preserves each screen's navigation, reset or dialog closure
 behaviour. Token receipt values use read-only TextFields with associated Labels and styled Inputs.
 
+Metadata edit fields use native read-only state while Save is pending or its outcome remains unresolved, preserving
+selection and their values in FormData. After the request settles, Save permits unchanged-draft resend. Confirmation
+awaits the matched refresh before closing. Offline recovery reports the connection problem once.
+
 Settings saves use the router's default transitions. Navigation requested during a save remains pending until the action
 settles. A successful save proceeds through the blocked navigation; a failed save keeps the draft and presents the
 leave-or-stay prompt.

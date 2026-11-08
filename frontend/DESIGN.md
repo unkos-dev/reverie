@@ -540,9 +540,12 @@ Metadata saves carry a client request ID and their own baseline. Lost acknowledg
 Query retry and reconnect. Offline input stays with connection feedback. The table exposes Reload and a fresh edit,
 without a resend control. In the metadata dialog, Save on an unchanged retained draft reuses its original baseline and
 request ID. A 412 then resolves that request before conflict feedback. Changed drafts use a fresh ID against the same
-baseline. Unknown resolution retains input for ordinary conflict recovery; equal values never establish success. The
-book view offers no saved Undo. The dialog retains Save and Cancel, and reading status and rating retain matched-read
-recovery without saved Undo.
+baseline when correction is available after a definitive refusal. Metadata fields remain read-only during pending or
+unresolved saves. Their values can still be selected. Save can resend the unchanged draft after the request settles,
+including during recovery. Confirmation awaits the matched refresh and closes the dialog. Offline recovery shows one
+connection message. Unknown resolution retains input for ordinary conflict recovery; equal values never establish
+success. The book view offers no saved Undo. The dialog retains Save and Cancel, and reading status and rating retain
+matched-read recovery without saved Undo.
 
 The table is a dense catalogue surface using the same canvas, text and accent roles as the rest of the application. Its
 header uses surface-2, row hover uses surface, and selected rows use accent-soft. Cells use the inherited body face at

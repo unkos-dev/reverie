@@ -576,7 +576,7 @@ export function useCellEdit({
       )
         drop(entry.operation.operation_id);
       setUndoOutcome(
-        `Undo ${COLUMN_LABELS[entry.columnKey]} for “${entry.row.title}”: ${formatError(error)} Try Undo again if it remains available.`,
+        `Undo ${COLUMN_LABELS[entry.columnKey]} for “${entry.row.title}”: ${formatError(error)}`,
       );
     },
   });

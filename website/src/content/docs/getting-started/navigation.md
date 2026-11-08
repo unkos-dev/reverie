@@ -191,18 +191,11 @@ alone: nobody else browsing the same library sees them, and they never touch the
 The **Undo last edit** button beside table Help names the book and field it will restore. `⌘Z` or `Ctrl Z` while focus
 is in the table invokes the same action when no editor is active. Editors retain their native typing Undo and Redo.
 
-Undo reverses the newest eligible saved metadata field, restoring its exact previous state while leaving unrelated
-changes intact. The table retains up to ten independent field operations. A newer save to the same field replaces its
-older operation. Status and rating have no saved Undo, and the book view offers no saved-edit Undo.
+Undo restores the latest saved metadata field while leaving unrelated changes intact. Repeated Undo steps through
+earlier edits, newest first. Status and rating have no saved Undo, and the book view offers no saved-edit Undo.
 
-Operations survive sorting, filtering, loading, empty results and the details drawer. The target can be a hidden book;
-the outcome names it. Leaving Library or switching away from table editing clears the context. Each operation expires
-one hour after its save, and expired entries disappear quietly.
-
-While Undo is pending, its target stays fixed and the button keeps focus. A locked field retains its operation for retry
-after unlocking. An unavailable or conflicting operation is removed. A stale aggregate validator permits one retry only
-after the server confirms that the same operation remains eligible and unlocked. No refusal automatically undoes the
-next entry.
+Undo remains available through sorting, filtering and loading. It can restore a book hidden by the current filter; the
+outcome names the book and field. Leaving Library or switching away from table editing clears the available edits.
 
 ### While a write is in flight
 
@@ -211,11 +204,6 @@ settles on the value the server stored, which can differ slightly from what you 
 hyphens, for example, comes back normalised. On failure the cell keeps its saved value. Local feedback above the results
 identifies the book and field, shows the submitted value, and offers **Reload** to read the latest server value.
 Feedback can remain visible when the table is replaced by grid, empty or loading results.
-
-Failure feedback is temporary and held in memory. It can expire five minutes after leaving Library, or after a later
-save or Undo replaces that request. Expiry removes its displayed submitted value and **Reload** action; it does not
-change saved server data. This is not a countdown from when the error appears, and some messages remain longer while
-they are the latest request in Library. Reloading the app also clears this feedback.
 
 A refused ISBN-13 edit keeps the saved cell value and shows: "ISBN-13 wasn’t saved. Check the 13-digit number; spaces
 and hyphens are allowed." Correct the number by editing the cell again.
@@ -231,8 +219,9 @@ Edit metadata shows invalid ISBN feedback beside the named field and retains you
 edited fields are saved, and clearing a saved value requires confirmation. Each ISBN stays independent; a successful
 formatted edit displays the compact number returned by the server.
 
-A lost save response triggers an automatic outcome check. Confirmation preserves newer input in the open dialog. If
-those edits conflict with the saved metadata, **Discard edits and reload** replaces them with the latest values.
+While saving or checking a lost response, the fields are read-only. You can still select their text. After the request
+settles, Save can retry the unchanged draft. A confirmed save closes the dialog. If the book changed elsewhere,
+**Discard edits and reload** replaces the draft with the latest values.
 
 ## Cinematic mode
 
