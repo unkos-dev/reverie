@@ -133,6 +133,10 @@ API cursors remain page parameters; changing intent starts another list key, so 
 Selection clears at filter, sort or view intent and when the displayed source key changes. Paging within the same query
 retains selection.
 
+The Library page owns metadata Undo above conditional results rendering. Entries and their original source query keys
+survive sorting, filtering, temporary loading and empty results, retained results and the details drawer. Leaving
+Library or switching away from table editing clears this context. There is no exit confirmation.
+
 Uniform Escape, close and outside dismissal retains published edits and returns focus through native overlay handling.
 Closure creates no separate commit or rollback transaction.
 

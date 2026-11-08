@@ -34,10 +34,10 @@ mechanism (canonical pointers, junction `source_version_id`s) and the manual-edi
 canonical columns it promotes into (see the state-writer census).
 
 It does not own the `If-Match` precondition grammar, the strong entity-tag hashing (`hash_etag`), the `428`/`412`
-contract, or the client's ETag capture-and-replay: that is the Design "Conditional requests and optimistic concurrency",
-and this subject only states where its own routes plug into it. It does not own the background flush of an applied
-canonical value into the on-disk `EPUB` file: that is the Design "Writeback pipeline"; this subject only enqueues a
-`writeback_jobs` row (`enqueue_writeback`) and never touches the file itself. It does not own the enrichment
+contract, or the client's editing-baseline ownership: that is the Design "Conditional requests and optimistic
+concurrency", and this subject only states where its own routes plug into it. It does not own the background flush of an
+applied canonical value into the on-disk `EPUB` file: that is the Design "Writeback pipeline"; this subject only
+enqueues a `writeback_jobs` row (`enqueue_writeback`) and never touches the file itself. It does not own the enrichment
 orchestrator, which decides which incoming observation auto-applies and, separately from this subject's own
 `apply_version`/`clear_field`, runs its own canonical-column and pointer writes when one does
 (`backend/src/services/enrichment/orchestrator.rs`), nor the `field_locks` CRUD and lookup functions themselves
@@ -129,18 +129,18 @@ field-lock foreign-key write as an internal error.
   `/api/v1/books/{id}/metadata`.
 - `apply_version` and `clear_field` are the two field-dispatch cores every promotion or clear routes through: one
   `match` arm per supported canonical field, each doing the type-specific parse (ISBN checksum, `content_rating` enum,
-  `pub_date` via `publication_date::normalise`), the `UPDATE ... RETURNING` that swaps the pointer and returns what it
-  replaced, and, for every field but an `identifiers.*` one, a call to `enqueue_writeback`. `is_work_scoped_field`
-  decides whether a version journaled under one manifestation is a legitimate revert target for a sibling manifestation
-  of the same work (`title`/`subtitle`/`description`/`language`, every `contributors.*` role, and `identifiers.work.*`);
-  the per-manifestation fields (`genres`/`moods`/`tags`, `identifiers.manifestation.*`) are not. `accept_manifestation`
+  `pub_date` via `publication_date::normalise`), the `UPDATE` that swaps the pointer, and, for every field but an
+  `identifiers.*` one, a call to `enqueue_writeback`. `is_work_scoped_field` decides whether a version journaled under
+  one manifestation is a legitimate revert target for a sibling manifestation of the same work
+  (`title`/`subtitle`/`description`/`language`, every `contributors.*` role, and `identifiers.work.*`); the
+  per-manifestation fields (`genres`/`moods`/`tags`, `identifiers.manifestation.*`) are not. `accept_manifestation`
   never extends this sibling allowance: its row lookup matches only `mv.manifestation_id = $2`, so accepting a
   work-scoped draft is possible only from the exact manifestation that observed it, while reverting to the same version
   id from a sibling manifestation of the same work succeeds.
 - `apply_contributors_patch` and `apply_vocabulary_patch` are the manual-`PATCH`-only counterparts of the
   `contributors.*` and vocabulary arms inside `apply_version`/`clear_field`: they additionally call
-  `insert_manual_version` themselves (accept/revert apply a version that was already journaled) and return a
-  `FieldVersionChange` per touched key for the response body.
+  `insert_manual_version` themselves (accept/revert apply a version that was already journaled) without returning
+  journal pointers to the client.
 - `apply_identifier_patch(es)` is the manual-`PATCH` counterpart for `identifiers.<level>.<scheme>`: it validates the
   scheme against the level (`external_id::validate_scheme_level`) before writing anything to the journal, so an unknown
   scheme or a wrong-level address produces no journal row on either the set or the clear path.
@@ -231,10 +231,10 @@ session already has committed operation evidence for the identifier. A save that
 so resolution reports `unknown` even if the save committed. The client retains uncertainty and never replays the write
 automatically.
 
-Browser PATCH accepts an optional `request_id` and returns complete `values`, its matching ETag, legacy `fields` and
-independent `operations`. Basic and device-token writes return no operations. Capture and issuance share the canonical
-save transaction. Structurally invalid ISBN before-values receive no capability. Exact repeats can reuse observation
-rows; different order, match method or submitter cannot overwrite their meaning.
+Browser PATCH accepts an optional `request_id` and returns complete `values`, its matching ETag and independent
+`operations`. Basic and device-token writes return no operations. Capture and issuance share the canonical save
+transaction. Structurally invalid ISBN before-values receive no capability. Exact repeats can reuse observation rows;
+different order, match method or submitter cannot overwrite their meaning.
 
 Browser capture reads only selected fields. Before and after snapshots share a 16 MiB accounted size limit and 10000
 entries. Each field frame, relation member and captured observation counts as an entry. Compact JSON encoding and a
@@ -271,6 +271,11 @@ returns non-consuming 409 `undo-conflict`. Current confidence remains mutable an
 currently referenced observation still advances field identity and can invalidate Undo. Observation counts, timestamps
 and review activity are never rewound. Capability-bearing success responses are `Cache-Control: no-store`.
 
+The client exposes saved Undo only in Library table editing. The owner retains server operations above conditional
+results. Known newer same-field table saves replace older entries, including shared work fields. Dialog operations
+support lost-acknowledgement resolution without a book-view Undo control. Metadata and reading snapshots retain explicit
+baselines; current value equality cannot confirm a metadata save.
+
 ### Metadata review and ordinary editing
 
 `pub_date` is nullable bibliographic text. PATCH, accept and revert validate through the shared publication-date
@@ -284,6 +289,11 @@ failures appear inline; structured field refusals use native field feedback. Ord
 the changed content and local feedback. ETag conflicts remain beside the refused inputs. Discard edits and reload
 explicitly replaces them with a fresh metadata read; a failed reload retains the draft. Review failures stay in their
 field section outside removable draft rows. Pending, clear-confirmation and successful closure retain their owners.
+Metadata fields remain read-only while Save is pending or its outcome remains unresolved. Their values can still be
+selected. After the request settles, Save can resend the unchanged draft with its original request ID and baseline.
+Confirmed saves await the matched refresh and close the dialog. Expected refusals retain submitted values for
+correction; unknown outcomes retain the existing Reload recovery. Offline recovery shows one connection message.
+Confirmation closes only its originating mounted form. Cache reconciliation continues after dismissal.
 
 **A manual `PATCH`: an operator edits publisher, clears pub_date, and sets a work identifier from the edit dialog.**
 
@@ -311,10 +321,10 @@ field section outside removable draft rows. Pending, clear-confirmation and succ
    `enqueue_writeback` once for `contributors` after its role loop, and the identifier family never enqueues.
 6. If an ISBN field was touched, `work::rematch_on_isbn_change` runs before the response is assembled.
 7. `load_book_metadata` loads the confirmed snapshot inside the transaction. `MetadataRevision::etag` computes its tag
-   before commit. The response carries complete canonical `values` with that ETag and retains the applied value, new
-   version id and previous version id per touched key in `fields`.
-8. The edit sheet invalidates the book detail and editable-metadata queries after a successful save. It awaits the
-   metadata refresh before closing, so reopening seeds the fields from the saved representation.
+   before commit. The response carries complete canonical `values`, matching ETag, request ID and exact field
+   operations.
+8. The edit sheet reconciles complete values and invalidates affected lists, details and editable snapshots, including
+   siblings. It awaits the metadata refresh before closing. Review actions invalidate those same book query families.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 

@@ -16,7 +16,7 @@
  * react-data-grid at the pinned tag implements F2-open only, so Escape or
  * Enter are the close paths.
  */
-import type { ReactElement } from "react";
+import type { ReactElement, Ref } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -109,11 +109,14 @@ export function GridShortcutsDialog({
 /** Toolbar affordance that opens {@link GridShortcutsDialog}. */
 export function GridShortcutsTrigger({
   onOpenChange,
+  buttonRef,
 }: Readonly<{
   onOpenChange: (open: boolean) => void;
+  buttonRef?: Ref<HTMLButtonElement>;
 }>): ReactElement {
   return (
     <Button
+      ref={buttonRef}
       type="button"
       variant="ghost"
       size="icon-sm"

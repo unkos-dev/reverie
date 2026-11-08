@@ -135,10 +135,7 @@ impl Modify for SecurityAddon {
     ),
     modifiers(&SecurityAddon),
     security(("session_cookie" = [])),
-    // `FieldVersionChange` is registered explicitly: its only reference is
-    // inside `UpdateMetadataResponse::fields`'s hand-built bounded-map
-    // schema, which the normal derive traversal never walks into.
-    components(schemas(ProblemDetails, crate::routes::metadata::FieldVersionChange)),
+    components(schemas(ProblemDetails)),
     tags(
         (name = "health", description = "Liveness and readiness probes."),
         (name = "library", description = "Books, works, and full-text search."),

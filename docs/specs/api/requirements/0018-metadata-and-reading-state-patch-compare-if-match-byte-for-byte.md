@@ -23,8 +23,8 @@ MUST answer `412 Precondition Failed` when any octet differs; the `412` response
 entity-tags match only when both are strong and their opaque content is identical octet for octet. A comparison that
 normalised or case-folded the opaque content could treat two representations as equal when the issuing server did not
 intend them to be, defeating the purpose of a strong validator in an optimistic-concurrency check. Carrying the current
-`ETag` on the `412` lets a caller holding a stale representation recover and retry in one round trip instead of issuing
-a follow-up `GET`.
+`ETag` on the `412` identifies the current representation. A retained edit still needs a matched read before a new
+editing decision can adopt that validator.
 
 ## Acceptance criteria
 

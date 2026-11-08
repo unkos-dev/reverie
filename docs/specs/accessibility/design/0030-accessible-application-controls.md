@@ -69,6 +69,10 @@ Actions stay pending until the awaited mutation and its completion work settle. 
 and allow correction or retry. Successful submission preserves each screen's navigation, reset or dialog closure
 behaviour. Token receipt values use read-only TextFields with associated Labels and styled Inputs.
 
+Metadata edit fields use native read-only state while Save is pending or its outcome remains unresolved, preserving
+selection and their values in FormData. After the request settles, Save permits unchanged-draft resend. Confirmation
+awaits the matched refresh before closing. Offline recovery reports the connection problem once.
+
 Settings saves use the router's default transitions. Navigation requested during a save remains pending until the action
 settles. A successful save proceeds through the blocked navigation; a failed save keeps the draft and presents the
 leave-or-stay prompt.
@@ -126,37 +130,23 @@ confirmation; a refused save leaves the sheet open with the entered values and e
 opens the confirmation before the action runs, including for implicit submission. The confirmation button allows the
 next submission through to the action.
 
-Table-load recovery belongs to the Library results region and is described in the Library state Design. Cell failures
-also render in that region, outside conditional table rendering, from account-scoped TanStack mutation state. Each
-mutation captures its book, field, submitted value and displayed source query. Mutation lifecycle handlers apply
-confirmed results even after table replacement; the existing synchronous grid adapter supplies pending-cell protection.
-A successful save or Undo removes earlier failed mutations for the same book and field from the account's cache. A
-failure arriving after a newer cached success for that cell is removed on delivery. Removed failures stay retired after
-the correcting success is collected. Targeted metadata and reading-state queries re-read the affected resource
-independently of list membership. They read on initial recovery, reconnect and explicit Reload, without another read on
-window focus. Fresh reads update the captured source and reconcile matching failures without repeating writes or
-creating Undo provenance. A matching read disables further recovery reads for that operation; its cached confirmation
-stays resolved across later edits. Mutation-cache retention is in-memory, not a durable operation ledger.
+Table-load recovery belongs to the Library results region. Cell failures retain their book, field, submitted value and
+source query in account-scoped Query mutation state, outside conditional table rendering. Metadata resolution reads
+committed request evidence through ordinary retry and reconnect; current value equality cannot confirm a save. Reading
+recovery retains matched-read confirmation. Reload never replays a write. Recovery waits for conflicting writes and uses
+cancellation signals to prevent obsolete reads from applying values.
 
-Before a cell write starts, its mutation lifecycle cancels conflicting recovery queries through TanStack and their
-transport AbortSignal. Recovery waits while a write affects the same resource; a work-scoped metadata write also
-coordinates recovery for sibling editions. Reading writes and unrelated resources remain independent. Reload retains
-native pending behaviour during that wait. The subscribed mutation snapshot supplies a literal disabled state while
-blocked. After settlement, the native observer sees that transition and automatically resumes unresolved recovery.
-Aborted reads cannot apply stale resource or list values or replace a newer response's ETag.
+Table Undo remains beside Help and labels the newest retained field and book, including hidden rows. Its native pending
+state retains focus, fixes the target and suppresses repeated activation. React Aria `useKeyboard` handles Ctrl/Cmd+Z
+inside the table area, leaving active editors and other keys to their native controls. When focused Undo becomes
+unavailable, focus moves to Help; completion never moves focus after the user leaves the button. Results name the field
+and book in Edit outcomes, without a toast. Expiry quietly removes the entry and label. The book view has no saved Undo.
 
 Failed mutations use TanStack's native retention: they remain while observed, then become eligible for collection five
-minutes after their last mutation observer detaches. The initiating hook's next request or table removal detaches that
+minutes after their last mutation observer detaches. The initiating hook's next request or Library exit detaches that
 observer; `useMutationState` does not extend the lifetime. Collection removes the failure message, displayed submitted
 value, Reload action and reconnect recovery. The interval starts at detachment, not when feedback appears. No separate
 feedback timer, extended cache lifetime or Dismiss control applies.
-
-The table owns a bounded, ten-entry sequential Undo history. Undo last edit and the table-scoped Control/Meta+Z shortcut
-use the same latest valid entry; native text-input Undo remains available in editors. The visible button names its field
-and book, retains focus while pending and waits for in-flight cell operations. Metadata Undo preserves the response's
-previous-version pointer or required counter-patch; reading Undo applies its own server response. Failed Undo retains
-its entry for correction or retry. Removing the table ends access to this history. Shared controls do not change the
-grid's editing model. The application uses local feedback without a notification runtime.
 
 ## Security and operations
 

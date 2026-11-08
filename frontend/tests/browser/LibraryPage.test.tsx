@@ -36,6 +36,8 @@ afterEach(async () => {
 
 function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
   return {
+    metadata_etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
+    reading_etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
     id: "11111111-1111-1111-1111-111111111111",
     work_id: "22222222-2222-2222-2222-222222222222",
     title: "The Brothers Karamazov",
@@ -467,4 +469,320 @@ test("a successful empty response replaces placeholders", async () => {
       ?.pages[0].items,
   ).toEqual([]);
   fetchSpy.mockRestore();
+});
+
+// Data loss boundary: exact operations, source routing, acknowledgement recovery and input Undo ownership.
+test("metadata Undo survives table refreshes", async () => {
+  let current = bookFixture({ pages: 100 });
+  const originKey = queryKeys.books.list({});
+  const op = "33333333-3333-4333-8333-333333333333";
+  const pagesOp = "44444444-4444-4444-8444-444444444444";
+  let requestId = "";
+  let undoCalls = 0;
+  let resolvingSave = false;
+  let isbnRequestId = "";
+  let isbnRecoveryReads = 0;
+  const staleRecovery = deferredResponse();
+  const pendingUndo = deferredResponse();
+  const values = () => ({
+    title: current.title,
+    subtitle: current.subtitle,
+    description: null,
+    language: null,
+    publisher: null,
+    pub_date: null,
+    isbn_10: null,
+    isbn_13: current.isbn_13,
+    isbn_mismatch: false,
+    pages: current.pages,
+    content_rating: null,
+    genres: [],
+    moods: [],
+    tags: [],
+    contributors: { author: current.authors, editor: [], translator: [] },
+    work_identifiers: {},
+    manifestation_identifiers: {},
+  });
+  const operation = {
+    operation_id: op,
+    field_name: "title",
+    expires_at: new Date(Date.now() + 3600000).toISOString(),
+    status: "eligible",
+  };
+  const response = (body: unknown) =>
+    new Response(JSON.stringify(body), {
+      headers: { "Content-Type": "application/json", ETag: current.metadata_etag },
+    });
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const path = input instanceof Request ? input.url : input.toString();
+    if (path.endsWith("/metadata") && init?.method === "PATCH") {
+      const body = parseJsonBody(init.body);
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        !("request_id" in body) ||
+        typeof body.request_id !== "string"
+      )
+        throw new Error("missing request identity");
+      if ("pages" in body) {
+        current = { ...current, pages: 250, metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
+        return Promise.resolve(
+          response({
+            values: values(),
+            request_id: body.request_id,
+            operations: [{ ...operation, field_name: "pages", operation_id: pagesOp }],
+          }),
+        );
+      }
+      if ("isbn_13" in body) {
+        isbnRequestId = body.request_id;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              type: "/validation",
+              status: 422,
+              title: "Invalid ISBN",
+              errors: { isbn_13: "Invalid ISBN" },
+            }),
+            { status: 422, headers: { "Content-Type": "application/problem+json" } },
+          ),
+        );
+      }
+      requestId = body.request_id;
+      expect(new Headers(init.headers).get("If-Match")).toBe(current.metadata_etag);
+      current = { ...current, title: "Saved title", metadata_etag: '"cccccccccccccccccccccc"' };
+      resolvingSave = true;
+      return Promise.reject(new TypeError("Lost acknowledgement"));
+    }
+    if (path.endsWith("/operations/resolve")) {
+      const identity = parseJsonBody(init?.body);
+      if (
+        typeof identity === "object" &&
+        identity !== null &&
+        "request_id" in identity &&
+        identity.request_id === isbnRequestId
+      ) {
+        isbnRecoveryReads += 1;
+        if (isbnRecoveryReads === 1) return staleRecovery.promise;
+        return Promise.resolve(response({ values: values(), outcome: "unknown", operations: [] }));
+      }
+      if (resolvingSave) {
+        expect(parseJsonBody(init?.body)).toEqual({ request_id: requestId });
+        resolvingSave = false;
+      } else expect(parseJsonBody(init?.body)).toEqual({ operation_id: op });
+      return Promise.resolve(
+        response({ values: values(), outcome: "saved", operations: [operation] }),
+      );
+    }
+    if (path.endsWith("/metadata/undo")) {
+      if (JSON.stringify(parseJsonBody(init?.body)) === JSON.stringify({ operation_id: pagesOp })) {
+        current = { ...current, pages: 100, metadata_etag: '"ffffffffffffffffffffff"' };
+        return Promise.resolve(response({ values: values(), outcome: "restored", operations: [] }));
+      }
+      undoCalls += 1;
+      expect(parseJsonBody(init?.body)).toEqual({ operation_id: op });
+      if (undoCalls === 1)
+        return Promise.resolve(
+          new Response(JSON.stringify({ type: "/if-match-mismatch", status: 412 }), {
+            status: 412,
+            headers: { "Content-Type": "application/problem+json" },
+          }),
+        );
+      expect(new Headers(init?.headers).get("If-Match")).toBe(current.metadata_etag);
+      return pendingUndo.promise;
+    }
+    if (path.includes("/api/v1/books"))
+      return Promise.resolve(booksResponse(path.includes("missing") ? [] : [current]));
+    if (path.includes(PREFERENCES_PATH))
+      return Promise.resolve(preferencesResponse(preferencesFixture({ view: "table" })));
+    throw new Error(`Unexpected request ${path}`);
+  });
+  const { client } = await renderLibrary({
+    items: [current],
+    nextCursor: null,
+    visit: { view: "table" },
+  });
+  await expect.element(findLibraryTable()).toBeInTheDocument();
+  const titleCell = page.getByRole("gridcell").filter({ hasText: "The Brothers Karamazov" });
+  await userEvent.click(titleCell, { position: { x: 3, y: 3 } });
+  await userEvent.keyboard("{F2}");
+  const editor = findLibraryTable().getByRole("textbox");
+  await userEvent.type(editor, "Draft");
+  await userEvent.keyboard("{Control>}z{/Control}");
+  await expect.element(editor).toHaveValue("The Brothers Karamazov");
+  expect(undoCalls).toBe(0);
+  expect(requestId).toBe("");
+  await editor.fill("Saved title");
+  await userEvent.keyboard("{Enter}");
+  const undo = page.getByRole("button", { name: "Undo last edit" });
+  await expect.element(undo).toBeEnabled();
+  await expect
+    .element(page.getByText("Title for “The Brothers Karamazov”", { exact: true }))
+    .toBeInTheDocument();
+  const pagesCell = page.getByRole("gridcell", { name: "100", exact: true });
+  await userEvent.click(pagesCell);
+  await userEvent.keyboard("{F2}");
+  await findLibraryTable().getByRole("textbox").fill("250");
+  await userEvent.keyboard("{Enter}");
+  await expect
+    .element(page.getByText("Pages for “Saved title”", { exact: true }))
+    .toBeInTheDocument();
+  await userEvent.click(undo);
+  await expect
+    .element(page.getByText("Title for “The Brothers Karamazov”", { exact: true }))
+    .toBeInTheDocument();
+  const ratingCell = page
+    .getByRole("row")
+    .filter({ hasText: "Saved title" })
+    .getByRole("gridcell")
+    .nth(9);
+  await userEvent.click(ratingCell);
+  await userEvent.keyboard("{F2}");
+  await expect.element(page.getByRole("group", { name: "Rating", exact: true })).toHaveFocus();
+  await userEvent.keyboard("{Control>}z{/Control}");
+  expect(undoCalls).toBe(0);
+  await expect.element(page.getByRole("group", { name: "Rating", exact: true })).toHaveFocus();
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(page.getByRole("gridcell", { name: "9780374528379", exact: true }));
+  await userEvent.keyboard("{F2}");
+  await findLibraryTable().getByRole("textbox").fill("bad");
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => {
+    expect(isbnRecoveryReads).toBe(1);
+  });
+  await expect
+    .element(
+      page.getByText(
+        /ISBN-13 wasn’t saved. Check the 13-digit number; spaces and hyphens are allowed./,
+      ),
+    )
+    .toBeInTheDocument();
+  const oldSnapshot = response({ values: values(), outcome: "unknown", operations: [] });
+  await userEvent.fill(page.getByRole("searchbox"), "missing");
+  await expect.element(findLibraryTable()).not.toBeInTheDocument();
+  await expect.element(undo).toBeEnabled();
+  await userEvent.click(undo);
+  await vi.waitFor(() => {
+    expect(undoCalls).toBe(2);
+  });
+  await expect.element(undo).toHaveAttribute("data-pending");
+  await expect.element(undo).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  expect(undoCalls).toBe(2);
+  current = {
+    ...current,
+    title: "The Brothers Karamazov",
+    metadata_etag: '"dddddddddddddddddddddd"',
+  };
+  pendingUndo.resolve(
+    response({
+      values: values(),
+      outcome: "restored",
+      operations: [{ ...operation, status: "consumed" }],
+    }),
+  );
+  await expect
+    .element(page.getByText(/Title for “The Brothers Karamazov” restored/))
+    .toBeInTheDocument();
+  await expect.element(undo).toBeDisabled();
+  await expect.element(page.getByRole("button", { name: "Keyboard shortcuts" })).toHaveFocus();
+  await vi.waitFor(() => {
+    expect(
+      client.getQueryData<InfiniteData<BookListResponse>>(originKey)?.pages[0]?.items[0]?.title,
+    ).toBe(current.title);
+  });
+  staleRecovery.resolve(oldSnapshot);
+  await vi.waitFor(() => {
+    expect(isbnRecoveryReads).toBe(2);
+    expect(client.isFetching()).toBe(0);
+    const restoredRow =
+      client.getQueryData<InfiniteData<BookListResponse>>(originKey)?.pages[0]?.items[0];
+    expect(restoredRow?.title).toBe(current.title);
+    expect(restoredRow?.metadata_etag).toBe(current.metadata_etag);
+  });
+  fetchSpy.mockRestore();
+  await cleanup();
+  client.clear();
+  const other = bookFixture({
+    id: "55555555-5555-4555-8555-555555555555",
+    work_id: "66666666-6666-4666-8666-666666666666",
+    title: "Another book",
+    pages: 300,
+  });
+  const readingTitle = current.title;
+  const recoveryReads = new Map<string, number>();
+  const firstRecovery = deferredResponse();
+  const correctingSave = deferredResponse();
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const path = input instanceof Request ? input.url : input.toString();
+    if (path.endsWith("/metadata") && init?.method === "PATCH") {
+      const body = parseJsonBody(init.body);
+      if (
+        typeof body === "object" &&
+        body !== null &&
+        "pages" in body &&
+        "request_id" in body &&
+        typeof body.request_id === "string"
+      ) {
+        requestId = body.request_id;
+        return correctingSave.promise;
+      }
+      return Promise.reject(new TypeError("Lost acknowledgement"));
+    }
+    if (path.endsWith("/operations/resolve")) {
+      const id = path.includes(other.id) ? other.id : current.id;
+      const count = (recoveryReads.get(id) ?? 0) + 1;
+      recoveryReads.set(id, count);
+      if (id === current.id && count === 1) return firstRecovery.promise;
+      if (count > 3) throw new Error("Recovery did not settle");
+      return Promise.resolve(
+        response({
+          values: { ...values(), title: id === other.id ? other.title : current.title },
+          outcome: "unknown",
+          operations: [],
+        }),
+      );
+    }
+    if (path.includes("/api/v1/books")) return Promise.resolve(booksResponse([current, other]));
+    throw new Error(`Unexpected request ${path}`);
+  });
+  const recovered = await renderLibrary({
+    items: [current, other],
+    nextCursor: null,
+    visit: { view: "table" },
+  });
+  const edit = async (title: string, text: string) => {
+    await userEvent.click(page.getByRole("gridcell").filter({ hasText: title }), {
+      position: { x: 3, y: 3 },
+    });
+    await userEvent.keyboard("{F2}");
+    await findLibraryTable().getByRole("textbox").fill(text);
+    await userEvent.keyboard("{Enter}");
+  };
+  await edit(readingTitle, "Unconfirmed title");
+  await vi.waitFor(() => {
+    expect(recoveryReads.get(current.id)).toBe(1);
+  });
+  await userEvent.click(page.getByRole("gridcell", { name: "100", exact: true }));
+  await userEvent.keyboard("{F2}");
+  await findLibraryTable().getByRole("textbox").fill("251");
+  await userEvent.keyboard("{Enter}");
+  current = { ...current, pages: 251 };
+  firstRecovery.resolve(response({ values: values(), outcome: "unknown", operations: [] }));
+  correctingSave.resolve(response({ values: values(), request_id: requestId, operations: [] }));
+  await vi.waitFor(() => {
+    expect(recoveryReads.get(current.id)).toBe(2);
+  });
+  await edit(other.title, "Another unconfirmed title");
+  await vi.waitFor(() => {
+    expect(recoveryReads.get(current.id)).toBe(2);
+    expect(recoveryReads.get(other.id)).toBe(1);
+    expect(recovered.client.isFetching()).toBe(0);
+  });
+  await expect
+    .element(page.getByText("Submitted value: Unconfirmed title", { exact: true }))
+    .toBeInTheDocument();
+  await expect
+    .element(page.getByText("Submitted value: Another unconfirmed title", { exact: true }))
+    .toBeInTheDocument();
 });

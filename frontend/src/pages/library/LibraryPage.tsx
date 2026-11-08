@@ -14,6 +14,8 @@ import {
   Suspense,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
+  useRef,
   useMemo,
   useState,
   type CSSProperties,
@@ -53,7 +55,8 @@ import {
   type LibraryView,
 } from "@/routes/library-params";
 
-import { useCellEditFeedback } from "./table/useCellEdit";
+import { useCellEdit, type UseCellEditResult } from "./table/useCellEdit";
+import { GridShortcutsDialog, GridShortcutsTrigger } from "./table/GridShortcutsDialog";
 import { FieldError } from "@/components/ui/field";
 import { BatchBar } from "./BatchBar";
 import { BookDetailDrawer } from "./BookDetailDrawer";
@@ -178,10 +181,15 @@ function useLibraryBooks(listKey: BooksListKey, eligible: boolean, sortPending: 
   };
 }
 
-function CellEditOutcomes(): ReactElement | null {
-  const editFeedback = useCellEditFeedback();
-  return editFeedback.length > 0 ? (
+function CellEditOutcomes({ edits }: { edits: UseCellEditResult }): ReactElement | null {
+  const editFeedback = edits.feedback;
+  return editFeedback.length > 0 || edits.undoOutcome !== null ? (
     <section aria-label="Edit outcomes" className="mb-4 space-y-3">
+      {edits.undoOutcome !== null ? (
+        <p role="status" className="text-fg-muted text-sm">
+          {edits.undoOutcome}
+        </p>
+      ) : null}
       {editFeedback.map((feedback) => (
         <div key={feedback.id} className="space-y-2">
           <FieldError>
@@ -201,6 +209,35 @@ function CellEditOutcomes(): ReactElement | null {
       ))}
     </section>
   ) : null;
+}
+
+function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElement {
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [undoFocused, setUndoFocused] = useState(false);
+  const helpRef = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (!edits.undoAvailable && !edits.undoPending && undoFocused) helpRef.current?.focus();
+  }, [edits.undoAvailable, edits.undoPending, undoFocused]);
+  return (
+    <div className="mb-2 flex items-center justify-end gap-4" {...edits.keyboardProps}>
+      {edits.undoLabel !== undefined ? (
+        <span className="text-fg-muted text-sm">{edits.undoLabel}</span>
+      ) : null}
+      <Button
+        onFocusChange={setUndoFocused}
+        type="button"
+        variant="outline"
+        size="sm"
+        onPress={edits.undo}
+        isPending={edits.undoPending}
+        isDisabled={!edits.undoAvailable && !edits.undoPending}
+      >
+        Undo last edit
+      </Button>
+      <GridShortcutsTrigger buttonRef={helpRef} onOpenChange={setShortcutsOpen} />
+      <GridShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+    </div>
+  );
 }
 
 export function LibraryPage(): ReactElement {
@@ -236,6 +273,7 @@ export function LibraryPage(): ReactElement {
     isFetchingNextPage,
     isFetchNextPageError,
   } = useLibraryBooks(listKey, eligible, sortPending);
+  const edits = useCellEdit({ listKey: displayedKey, enabled: viewMode === "table" });
   const selectionToken = JSON.stringify([queryToken, displayedKey]);
   const [syncedSelectionToken, setSyncedSelectionToken] = useState(selectionToken);
   if (selectionToken !== syncedSelectionToken) {
@@ -321,7 +359,8 @@ export function LibraryPage(): ReactElement {
           <FilterChips filters={filterState} onRemove={commitAll} onClearAll={clearAll} />
           <Separator className="mb-8" />
 
-          <CellEditOutcomes />
+          <CellEditOutcomes edits={edits} />
+          {viewMode === "table" ? <TableEditControls edits={edits} /> : null}
           <LibraryBooks
             items={items}
             filtered={hasActiveFilterState(filterState)}
@@ -347,7 +386,7 @@ export function LibraryPage(): ReactElement {
                   onLoadMore={() => {
                     void fetchNextPage();
                   }}
-                  listQueryKey={displayedKey}
+                  edits={edits}
                   density={density}
                   hiddenColumns={hiddenColumns}
                   selectedIds={selectedIds}

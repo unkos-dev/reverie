@@ -31,15 +31,15 @@ editors that write it.
 
 It does not own the row-level-security mechanism itself: the `app.current_user_id` setting and `acquire_with_rls` are
 the Design "Row-level security and database context", which this subject relies on for every read and write. It does not
-own entity-tag mechanics: the strong entity-tag grammar, `hash_etag`, the `428`/`412` contract, and the client's ETag
-capture-and-replay belong to the Design "Conditional requests and optimistic concurrency", which already documents
-`patch_reading`'s own seed-then-lock sequence and the relative order in which it evaluates scope, the header, existence,
-the precondition, and body validation. This subject supplies only its own hash input (`ReadingEtagFields`) and the
-handler code that sequence runs against; it does not restate that Design's general contract. It does not own the scope
-and role authorisation model that `require_scope` enforces; that is the Design "Authorization axes". It does not own the
-`ApiPath`/`ApiJson` request extractors or the `AppError`-to-Problem-Details mapping; that is the Design "API error
-contract and OpenAPI". It does not own the generic library-table cell-edit orchestration (pending-cell state, the
-bounded undo stack and local conflict recovery) in `frontend/src/pages/library/table/useCellEdit.ts` and
+own entity-tag mechanics: the strong entity-tag grammar, `hash_etag`, the `428`/`412` contract, and the client's
+editing-baseline ownership belong to the Design "Conditional requests and optimistic concurrency", which already
+documents `patch_reading`'s own seed-then-lock sequence and the relative order in which it evaluates scope, the header,
+existence, the precondition, and body validation. This subject supplies only its own hash input (`ReadingEtagFields`)
+and the handler code that sequence runs against; it does not restate that Design's general contract. It does not own the
+scope and role authorisation model that `require_scope` enforces; that is the Design "Authorization axes". It does not
+own the `ApiPath`/`ApiJson` request extractors or the `AppError`-to-Problem-Details mapping; that is the Design "API
+error contract and OpenAPI". It does not own the generic library-table cell-edit orchestration (pending-cell state, the
+metadata operation collection and local conflict recovery) in `frontend/src/pages/library/table/useCellEdit.ts` and
 `edit-routing.ts`, which applies identically to the metadata pipeline and is the Library table cell editing and undo
 subject; this subject owns only the two editor controls that orchestration routes commits through.
 
@@ -90,7 +90,7 @@ conflict detection.
   controls a reader interacts with: a native `<select>` that commits immediately on a chosen option, and a keyboard- and
   pointer-operable star group that commits on a digit key, a star click, or Enter after staging a draft with the arrow
   keys. These two components are the whole of this subject's client-side UI surface — everything downstream of a commit
-  (building the patch, patching the list cache, undo, conflict recovery) is the library table's generic cell-edit
+  (building the patch, patching the list cache and conflict recovery) is the library table's generic cell-edit
   orchestration named in Purpose and boundaries. `frontend/src/api/reading.ts` above is this subject's wire boundary,
   not a UI control.
 
@@ -103,9 +103,9 @@ conflict detection.
   runs inside; its settings contract and the `reading_state_owner` policy's predicate belong to the Design "Row-level
   security and database context".
 - The shared entity-tag mechanics — `hash_etag`, `StrongEntityTag`, `parse_if_match`, `if_match_mismatch`
-  (`backend/src/routes/etag.rs`) and their client counterpart (`frontend/src/api/etags.ts`, the capture-and-replay in
-  `frontend/src/api/fetch.ts`) — belong to the Design "Conditional requests and optimistic concurrency". This subject
-  supplies only `ReadingEtagFields` as the hash input and consumes the shared grammar and comparison.
+  (`backend/src/routes/etag.rs`) and explicit client baselines in `frontend/src/api/reading.ts` — belong to the Design
+  "Conditional requests and optimistic concurrency". This subject supplies only `ReadingEtagFields` as the hash input
+  and consumes the shared grammar and comparison.
 - `GET /api/v1/books` (`backend/src/routes/library/mod.rs`) embeds a `ReadingStateSummary` on every row via
   `load_reading_state_for_manifestations`; that endpoint's own filter, sort and cursor contract belongs to the Design
   "Books list query contract".
@@ -113,6 +113,10 @@ conflict detection.
   and `ReadingStateSummarySchema`, validated as part of `BookListItemSchema`.
 
 ## Data and state
+
+Reading adapters return complete values and their matching ETag together. Table edits retain the displayed row's
+`reading_etag` through CSRF retry and failure. Confirmed saves and matched recovery reads reconcile that pair. Reading
+status and rating have no saved Undo; active inputs retain native typing Undo and Redo.
 
 - **The `reading_state` row.** One per `(user_id, manifestation_id)`, created only by a `PATCH` — never by `GET`, which
   returns the all-null default when no row exists. That all-null shape is the "unread" domain state itself, not an

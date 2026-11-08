@@ -519,10 +519,33 @@ success; inline errors are not repeated in a toast.
 ### Library Table
 
 The table's Undo last edit button sits beside Help and names the next field and book to reverse. It uses the existing
-bounded history sequentially and becomes unavailable when the table is removed. Native pending state preserves focus and
-suppresses repeated activation. Cell failures retain the submitted value and named target in the Library results region
-outside the table, with native Reload and ordinary Query recovery. They remain readable when loading, empty, blocked or
-grid results replace the table. No toast runtime supplies feedback.
+bounded collection of exact server field operations, newest first. Entries survive sorting, filtering, retained results,
+loading, empty results and the details drawer. Leaving Library or table editing clears them. Native pending state
+preserves focus and suppresses repeated activation. Cell failures retain the submitted value and named target in the
+Library results region outside the table, with native Reload and ordinary Query recovery. They remain readable when
+loading, empty, blocked or grid results replace the table. No toast runtime supplies feedback.
+
+Ctrl/Cmd+Z within the table area invokes the same Undo action when no editor is active. Editors keep native typing Undo
+and Redo. Pending Undo fixes its target and retains focus. If focused Undo becomes unavailable, focus moves to Help;
+completion leaves focus alone when the reader has moved elsewhere. With no entries, Undo is disabled and its label is
+hidden. No history list, field picker, cell menu, expiry text, countdown or exit confirmation appears.
+
+Successful Undo reconciles complete returned values and their ETag, removes the entry and names the next target. After
+412, Query refreshes and retries the same operation once only if the server confirms eligibility and an unlocked field.
+Locked or unresolved recovery keeps the entry and uses Undo as the retry. A 422 `undo-unavailable` or 409
+`undo-conflict` removes the entry; no refusal automatically executes the next one. Original deadlines expire quietly.
+Outcome messages name the field and book, including a book hidden by filters, in Edit outcomes outside the table.
+
+Metadata saves carry a client request ID and their own baseline. Lost acknowledgements resolve automatically through
+Query retry and reconnect. Offline input stays with connection feedback. The table exposes Reload and a fresh edit,
+without a resend control. In the metadata dialog, Save on an unchanged retained draft reuses its original baseline and
+request ID. A 412 then resolves that request before conflict feedback. Changed drafts use a fresh ID against the same
+baseline when correction is available after a definitive refusal. Metadata fields remain read-only during pending or
+unresolved saves. Their values can still be selected. Save can resend the unchanged draft after the request settles,
+including during recovery. Confirmation awaits the matched refresh and closes the dialog. Offline recovery shows one
+connection message. Unknown resolution retains input for ordinary conflict recovery; equal values never establish
+success. The book view offers no saved Undo. The dialog retains Save and Cancel, and reading status and rating retain
+matched-read recovery without saved Undo.
 
 The table is a dense catalogue surface using the same canvas, text and accent roles as the rest of the application. Its
 header uses surface-2, row hover uses surface, and selected rows use accent-soft. Cells use the inherited body face at

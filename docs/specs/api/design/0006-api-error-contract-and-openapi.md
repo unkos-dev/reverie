@@ -120,9 +120,9 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   parses), `problemFromResponse`/`problemToApiError` (assemble the `ApiError`, falling back to `response.statusText` and
   empty strings for fields a non-conforming body omits), and `decodeSuccess` (the shared 2xx/error decoder used by both
   the first attempt and the CSRF-retry attempt, described by the Design "CSRF protection"; it returns `undefined` for a
-  `204` or `205` without reading a body). CSRF token injection and retry, and `ETag` capture/replay, live in the same
-  file but are owned by their own Designs; this Design covers only the request/response mechanics every code path shares
-  regardless of which of those two other concerns fired.
+  `204` or `205` without reading a body). CSRF token injection and retry live in the same file but are owned by their
+  own Designs; this Design covers only the request/response mechanics every code path shares regardless of which of
+  those two other concerns fired.
 
 ## Interfaces and dependencies
 
@@ -185,7 +185,9 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
   crate's own release-managed version, so a release does not by itself force a spec regeneration.
 - On the client, `ApiError` instances are ephemeral: each is constructed and thrown per failed request and carries no
   state beyond its status and decoded problem fields. `apiFetch` itself holds no module-level state; the CSRF token
-  cache and the `ETag` map live in their own modules, owned by their own Designs.
+  cache lives in its own module. Metadata and reading adapters validate complete response values and their ETag before
+  publishing a matched snapshot. PATCH returns `values`, `request_id` and `operations`; its generated schema exposes no
+  partial journal acknowledgement.
 
 ## Runtime behaviour
 

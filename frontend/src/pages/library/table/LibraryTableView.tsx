@@ -2,9 +2,7 @@
  * Editable table view of the library: the production face of the grid
  * adapter. Presentational per the container split for data fetching:
  * `LibraryContent` owns the infinite query and hands loaded rows plus the
- * query's cache key down. Cell-edit orchestration (`useCellEdit`) lives
- * here as the table's own concern instead, since it is scoped entirely to
- * this view's columns and has no bearing on how the page fetches rows.
+ * editing owner down. The Library page owns edits above conditional results.
  * Paging is fetch-on-scroll over the keyset cursor, so the grid always
  * operates on the loaded window: the scrollbar, Ctrl+End, and the row count
  * all reflect rows fetched so far, never a pretend 50K extent. Sorting is a
@@ -13,30 +11,20 @@
  * filter rail's sort section edits, via `onSortChange`.
  */
 import { Loader2, PanelRight } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useState,
-  type ReactElement,
-  type ReactNode,
-  type UIEvent,
-} from "react";
+import { useMemo, useState, type ReactElement, type ReactNode, type UIEvent } from "react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 
 import {
   MAX_SORT_LEVELS,
-  getBookMetadata,
   type BookListItem,
   type Density,
   type SortField,
   type SortLevelParam,
 } from "@/api";
-import { getReadingState } from "@/api/reading";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
-import type { BooksListKey } from "@/lib/query/keys";
 import type { GridColumn, GridEditorProps, SortState } from "@/lib/grid/types";
 
 import { LOCKED_COLUMN_KEYS, MOBILE_COLUMN_KEYS, TABLE_MOBILE_MEDIA_QUERY } from "../table-columns";
@@ -45,8 +33,7 @@ import { AuthorsCellEditor } from "./editors/AuthorsCellEditor";
 import { RatingCellEditor } from "./editors/RatingCellEditor";
 import { StatusCellEditor } from "./editors/StatusCellEditor";
 import { TextCellEditor } from "./editors/TextCellEditor";
-import { GridShortcutsDialog, GridShortcutsTrigger } from "./GridShortcutsDialog";
-import { pendingKey, useCellEdit } from "./useCellEdit";
+import { pendingKey, type UseCellEditResult } from "./useCellEdit";
 
 const EMPTY_CELL = "—";
 
@@ -75,37 +62,9 @@ const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
   finished_at: null,
 };
 
-/**
- * Warms the If-Match ETag cache the moment a protected cell's editor
- * mounts, so the eventual commit's PATCH already carries a fresh tag
- * instead of racing the row's first keystroke. Renders nothing; errors are
- * logged rather than surfaced, since the PATCH's own 412 handling is
- * already the correctness backstop when priming fails or loses a race to a
- * concurrent write elsewhere.
- */
-function MetadataEtagPrimer({ manifestationId }: { manifestationId: string }): null {
-  useEffect(() => {
-    getBookMetadata(manifestationId).catch((err: unknown) => {
-      console.error("[LibraryTableView] metadata ETag priming failed", err);
-    });
-  }, [manifestationId]);
-  return null;
-}
-
-/** Reading-column counterpart to {@link MetadataEtagPrimer}. */
-function ReadingEtagPrimer({ manifestationId }: { manifestationId: string }): null {
-  useEffect(() => {
-    getReadingState(manifestationId).catch((err: unknown) => {
-      console.error("[LibraryTableView] reading ETag priming failed", err);
-    });
-  }, [manifestationId]);
-  return null;
-}
-
 function renderTitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   return (
     <>
-      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
       <TextCellEditor
         value={editorProps.row.title}
         kind="text"
@@ -121,7 +80,6 @@ function renderTitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactE
 function renderSubtitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   return (
     <>
-      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
       <TextCellEditor
         value={editorProps.row.subtitle}
         kind="text"
@@ -136,7 +94,6 @@ function renderSubtitleEditCell(editorProps: GridEditorProps<BookListItem>): Rea
 function renderIsbnEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   return (
     <>
-      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
       <TextCellEditor
         value={editorProps.row.isbn_13}
         kind="text"
@@ -152,7 +109,6 @@ function renderPagesEditCell(editorProps: GridEditorProps<BookListItem>): ReactE
   const { pages } = editorProps.row;
   return (
     <>
-      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
       <TextCellEditor
         value={pages === null ? null : String(pages)}
         kind="positive-int"
@@ -170,7 +126,6 @@ function renderPagesEditCell(editorProps: GridEditorProps<BookListItem>): ReactE
 function renderAuthorsEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   return (
     <>
-      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
       <AuthorsCellEditor
         authors={editorProps.row.authors}
         onCommit={(authors) => {
@@ -186,7 +141,6 @@ function renderStatusEditCell(editorProps: GridEditorProps<BookListItem>): React
   const readingState = editorProps.row.reading_state ?? EMPTY_READING_STATE;
   return (
     <>
-      <ReadingEtagPrimer manifestationId={editorProps.row.id} />
       <StatusCellEditor
         value={readingState.status}
         onCommit={(status) => {
@@ -201,7 +155,6 @@ function renderRatingEditCell(editorProps: GridEditorProps<BookListItem>): React
   const readingState = editorProps.row.reading_state ?? EMPTY_READING_STATE;
   return (
     <>
-      <ReadingEtagPrimer manifestationId={editorProps.row.id} />
       <RatingCellEditor
         value={readingState.rating}
         onCommit={(rating) => {
@@ -545,7 +498,7 @@ type Props = {
   onLoadMore: () => void;
   /** Exact key of the page's suspense list query (cursor stripped); cell
    *  edits patch this same cache slot rather than triggering a refetch. */
-  listQueryKey: BooksListKey;
+  edits: UseCellEditResult;
   /** Row density; drives row height and whether the cover mark renders. */
   density: Density;
   /** User-hidden column keys; locked columns are exempt (see LOCKED_COLUMN_KEYS). */
@@ -565,20 +518,15 @@ export function LibraryTableView({
   isFetchingNextPage,
   isFetchNextPageError,
   onLoadMore,
-  listQueryKey,
+  edits,
   density,
   hiddenColumns,
   selectedIds,
   onSelectionChange,
   onRowActivate,
 }: Readonly<Props>): ReactElement {
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
-  const { pendingCells, onCellEdit, onGridKeyDown, undo, undoPending, undoAvailable, undoLabel } =
-    useCellEdit({
-      listKey: listQueryKey,
-      columns: BASE_COLUMNS,
-    });
+  const { pendingCells, onCellEdit, keyboardProps } = edits;
   const columns = useComposedColumns(pendingCells, hiddenColumns, density, isMobile, onRowActivate);
 
   const sortState: SortState = sort.map((level) => ({
@@ -608,26 +556,7 @@ export function LibraryTableView({
   }
 
   return (
-    // onKeyDown here (not window) is the Ctrl+Z undo trigger: it only fires
-    // while focus sits somewhere inside the table, and bubbles up from the
-    // grid's own cells and any open editor without needing a ref.
-    <div data-testid="library-table" onKeyDown={onGridKeyDown}>
-      <div className="mb-2 flex items-center justify-end gap-4">
-        {undoLabel !== undefined ? (
-          <span className="text-fg-muted text-sm">{undoLabel}</span>
-        ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onPress={undo}
-          isPending={undoPending}
-          isDisabled={!undoAvailable && !undoPending}
-        >
-          Undo last edit
-        </Button>
-        <GridShortcutsTrigger onOpenChange={setShortcutsOpen} />
-      </div>
+    <div data-testid="library-table" {...keyboardProps}>
       {/* Sort-stack announcements come from LibraryPage's always-mounted
           live region; the grid carries no sort-summary association of its
           own. */}
@@ -665,7 +594,6 @@ export function LibraryTableView({
           onLoadMore={onLoadMore}
         />
       </div>
-      <GridShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </div>
   );
 }

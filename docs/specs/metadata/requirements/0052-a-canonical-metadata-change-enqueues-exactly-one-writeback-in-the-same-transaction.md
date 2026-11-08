@@ -41,8 +41,8 @@ carries, so a job for one would waste an attempt on a field the file has nowhere
   `backend/src/routes/metadata.rs`.
 - A manual edit that touches one or more contributor roles enqueues exactly one writeback job for the contributor group,
   and one that touches none enqueues no job for it. The no-job case is checked by
-  `patch_contributors_empty_object_enqueues_no_writeback` in `backend/src/routes/metadata.rs`; no automated check
-  asserts the single-job count for a multi-role edit.
+  `patch_contributors_empty_object_enqueues_no_writeback`; the multi-role single-job count is checked by
+  `patch_contributors_replace_sets_names_in_order`, both in `backend/src/routes/metadata.rs`.
 - Two independent accepts against the same manifestation enqueue two separate jobs; a new job is never collapsed into
   one already queued for the same manifestation. Checked by `double_accept_enqueues_two_jobs` in
   `backend/src/routes/metadata.rs`.

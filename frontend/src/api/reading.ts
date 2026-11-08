@@ -9,8 +9,8 @@
  */
 import { z } from "zod";
 
-import { ReadingStatusSchema, type ReadingStatus } from "./books";
-import { apiFetch } from "./fetch";
+import { ResourceEtagSchema, ReadingStatusSchema, type ReadingStatus } from "./books";
+import { apiFetchWithHeaders } from "./fetch";
 
 export const ReadingStateSchema = z.object({
   status: ReadingStatusSchema.nullable(),
@@ -40,49 +40,32 @@ export type UpdateReadingFields = {
   notes?: string | null;
 };
 
-/**
- * Fetch the caller's reading state for one book. All-null fields mean
- * unread (no row yet). Callers that need a fresh representation before
- * editing (a grid cell entering edit mode) should call this rather than
- * rely on a cached row, since only this response's `ETag` is guaranteed
- * current for a following `PATCH`'s `If-Match`.
- *
- * Throws an `ApiError` with `status === 404` when the manifestation is
- * missing or RLS-hidden (existence-not-leaked).
- */
-export async function getReadingState(id: string, signal?: AbortSignal): Promise<ReadingState> {
-  const body = await apiFetch(
+export type ReadingSnapshot = { values: ReadingState; etag: string };
+
+export async function getReadingState(id: string, signal?: AbortSignal): Promise<ReadingSnapshot> {
+  const { body, headers } = await apiFetchWithHeaders(
     `/api/v1/books/${encodeURIComponent(id)}/reading`,
-    signal ? { method: "GET", signal } : { method: "GET" },
+    { signal },
   );
-  return ReadingStateSchema.parse(body);
+  const values = ReadingStateSchema.parse(body);
+  return { values, etag: ResourceEtagSchema.parse(headers.get("ETag")) };
 }
 
-/**
- * Update the caller's reading state for one book. The body is a bare
- * RFC 7396 merge patch, no envelope, matching the wire shape of
- * `UpdateReadingRequest` on the backend.
- *
- * Throws an `ApiError` with `status === 422` when the body has no
- * populated fields, `rating` is outside `1..=5`, or `notes` exceeds
- * 10000 characters; `status === 404` when the manifestation is
- * missing or RLS-hidden (existence-not-leaked).
- *
- * On success the server returns 200 with the full post-merge row,
- * including any transition-stamp side effects (e.g. `started_at` set
- * on first `reading` status).
- */
 export async function updateReadingState(
   id: string,
   fields: UpdateReadingFields,
+  baseline: string,
   signal?: AbortSignal,
-): Promise<ReadingState> {
-  const init: RequestInit = {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(fields),
-    ...(signal ? { signal } : {}),
-  };
-  const body = await apiFetch(`/api/v1/books/${encodeURIComponent(id)}/reading`, init);
-  return ReadingStateSchema.parse(body);
+): Promise<ReadingSnapshot> {
+  const { body, headers } = await apiFetchWithHeaders(
+    `/api/v1/books/${encodeURIComponent(id)}/reading`,
+    {
+      method: "PATCH",
+      headers: { "If-Match": ResourceEtagSchema.parse(baseline) },
+      body: JSON.stringify(fields),
+      signal,
+    },
+  );
+  const values = ReadingStateSchema.parse(body);
+  return { values, etag: ResourceEtagSchema.parse(headers.get("ETag")) };
 }

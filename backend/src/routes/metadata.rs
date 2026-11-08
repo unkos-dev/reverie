@@ -334,7 +334,7 @@ async fn accept_manifestation(
 
     // Accept promotes the version to canonical; the caller has no use for
     // the prior pointer (that's the revert/undo surface's concern).
-    let _ = apply_version(
+    apply_version(
         &mut tx,
         &field_name,
         &new_value,
@@ -532,7 +532,7 @@ async fn revert_manifestation(
             let new_value = new_value.ok_or(AppError::NotFound)?;
             // Revert-to-version restores canonical state; the review UI
             // does not surface the prior pointer from this endpoint today.
-            let _ = apply_version(
+            apply_version(
                 &mut tx,
                 &payload.field_name,
                 &new_value,
@@ -543,7 +543,7 @@ async fn revert_manifestation(
             .await?;
         }
         None => {
-            let _ = clear_field(&mut tx, &payload.field_name, manifestation_id, work_id).await?;
+            clear_field(&mut tx, &payload.field_name, manifestation_id, work_id).await?;
         }
     }
 
@@ -779,10 +779,6 @@ fn normalise_isbn_field(field: &str, value: &Value) -> Result<String, AppError> 
 
 /// Apply a specific version to its canonical column + pointer.
 /// Reused by `/accept` and `/revert`.
-///
-/// Returns the pointer that was canonical for this field before the write
-/// (`None` when the field was previously unset, or when the field kind has
-/// no single-pointer concept, e.g. the vocabulary junctions).
 //
 // Field-dispatch with one `sqlx::query!` per supported field; macro-form
 // expansion pushed this just past clippy's 100-line threshold.
@@ -797,7 +793,7 @@ async fn apply_version(
     version_id: Uuid,
     manifestation_id: Uuid,
     work_id: Uuid,
-) -> Result<Option<Uuid>, AppError> {
+) -> Result<(), AppError> {
     // Refuse to promote a null-valued audit row to canonical. Manual
     // clears (PATCH `{field}: null`) write a `'null'::jsonb` audit row
     // with `status = 'pending'` so operators can revert to them; the
@@ -820,114 +816,74 @@ async fn apply_version(
             .as_str()
             .map_or_else(|| value.to_string(), str::to_owned)
     };
-    let previous_version_id: Option<Uuid> = match field {
-        "title" => sqlx::query_scalar!(
-            "WITH old AS (SELECT title_version_id FROM works WHERE id = $3) \
-             UPDATE works \
+    let update = match field {
+        "title" => Some(sqlx::query!(
+            "UPDATE works \
              SET title = $1, sort_title = lower($1), title_version_id = $2 \
-             WHERE id = $3 \
-             RETURNING (SELECT title_version_id FROM old) AS previous_version_id",
+             WHERE id = $3",
             str_val,
             version_id,
             work_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "description" => sqlx::query_scalar!(
-            "WITH old AS (SELECT description_version_id FROM works WHERE id = $3) \
-             UPDATE works SET description = $1, description_version_id = $2 \
-             WHERE id = $3 \
-             RETURNING (SELECT description_version_id FROM old) AS previous_version_id",
+        )),
+        "description" => Some(sqlx::query!(
+            "UPDATE works SET description = $1, description_version_id = $2 \
+             WHERE id = $3",
             str_val,
             version_id,
             work_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "language" => sqlx::query_scalar!(
-            "WITH old AS (SELECT language_version_id FROM works WHERE id = $3) \
-             UPDATE works SET language = $1, language_version_id = $2 \
-             WHERE id = $3 \
-             RETURNING (SELECT language_version_id FROM old) AS previous_version_id",
+        )),
+        "language" => Some(sqlx::query!(
+            "UPDATE works SET language = $1, language_version_id = $2 \
+             WHERE id = $3",
             str_val,
             version_id,
             work_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "subtitle" => sqlx::query_scalar!(
-            "WITH old AS (SELECT subtitle_version_id FROM works WHERE id = $3) \
-             UPDATE works SET subtitle = $1, subtitle_version_id = $2 \
-             WHERE id = $3 \
-             RETURNING (SELECT subtitle_version_id FROM old) AS previous_version_id",
+        )),
+        "subtitle" => Some(sqlx::query!(
+            "UPDATE works SET subtitle = $1, subtitle_version_id = $2 \
+             WHERE id = $3",
             str_val,
             version_id,
             work_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
+        )),
         "pages" => {
             let pages = value
                 .as_i64()
                 .and_then(|n| i32::try_from(n).ok())
                 .filter(|n| *n > 0)
                 .ok_or_else(|| AppError::Validation("pages must be a positive integer".into()))?;
-            sqlx::query_scalar!(
-                "WITH old AS (SELECT pages_version_id FROM manifestations WHERE id = $3) \
-                 UPDATE manifestations SET pages = $1, pages_version_id = $2 \
-                 WHERE id = $3 \
-                 RETURNING (SELECT pages_version_id FROM old) AS previous_version_id",
+            Some(sqlx::query!(
+                "UPDATE manifestations SET pages = $1, pages_version_id = $2 \
+                 WHERE id = $3",
                 pages,
                 version_id,
                 manifestation_id,
-            )
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?
+            ))
         }
-        "publisher" => sqlx::query_scalar!(
-            "WITH old AS (SELECT publisher_version_id FROM manifestations WHERE id = $3) \
-             UPDATE manifestations \
+        "publisher" => Some(sqlx::query!(
+            "UPDATE manifestations \
              SET publisher = $1, publisher_version_id = $2 \
-             WHERE id = $3 \
-             RETURNING (SELECT publisher_version_id FROM old) AS previous_version_id",
+             WHERE id = $3",
             str_val,
             version_id,
             manifestation_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "isbn_10" => sqlx::query_scalar!(
-            "WITH old AS (SELECT isbn_10_version_id FROM manifestations WHERE id = $3) \
-             UPDATE manifestations \
+        )),
+        "isbn_10" => Some(sqlx::query!(
+            "UPDATE manifestations \
              SET isbn_10 = $1, isbn_10_version_id = $2 \
-             WHERE id = $3 \
-             RETURNING (SELECT isbn_10_version_id FROM old) AS previous_version_id",
+             WHERE id = $3",
             str_val,
             version_id,
             manifestation_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "isbn_13" => sqlx::query_scalar!(
-            "WITH old AS (SELECT isbn_13_version_id FROM manifestations WHERE id = $3) \
-             UPDATE manifestations \
+        )),
+        "isbn_13" => Some(sqlx::query!(
+            "UPDATE manifestations \
              SET isbn_13 = $1, isbn_13_version_id = $2 \
-             WHERE id = $3 \
-             RETURNING (SELECT isbn_13_version_id FROM old) AS previous_version_id",
+             WHERE id = $3",
             str_val,
             version_id,
             manifestation_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
+        )),
         "pub_date" => {
             let date = crate::services::metadata::publication_date::normalise(&str_val)
                 .and_then(|value| value.ok_or(crate::services::metadata::publication_date::PublicationDateError::Malformed))
@@ -938,19 +894,14 @@ async fn apply_version(
                         errors: std::collections::BTreeMap::from([("pub_date".into(), message)]),
                     }
                 })?;
-            sqlx::query_scalar!(
-                "WITH old AS (SELECT pub_date_version_id FROM manifestations WHERE id = $3) \
-                 UPDATE manifestations \
+            Some(sqlx::query!(
+                "UPDATE manifestations \
                  SET pub_date = $1, pub_date_version_id = $2 \
-                 WHERE id = $3 \
-                 RETURNING (SELECT pub_date_version_id FROM old) AS previous_version_id",
+                 WHERE id = $3",
                 date,
                 version_id,
                 manifestation_id,
-            )
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?
+            ))
         }
         "content_rating" => {
             let rating: ContentRating = serde_json::from_value(value.clone()).map_err(|_| {
@@ -958,19 +909,14 @@ async fn apply_version(
                     "content_rating must be one of everyone, teen, mature, adult, explicit".into(),
                 )
             })?;
-            sqlx::query_scalar!(
-                "WITH old AS (SELECT content_rating_version_id FROM manifestations WHERE id = $3) \
-                 UPDATE manifestations \
+            Some(sqlx::query!(
+                "UPDATE manifestations \
                  SET content_rating = $1, content_rating_version_id = $2 \
-                 WHERE id = $3 \
-                 RETURNING (SELECT content_rating_version_id FROM old) AS previous_version_id",
+                 WHERE id = $3",
                 rating as ContentRating,
                 version_id,
                 manifestation_id,
-            )
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?
+            ))
         }
         "genres" | "moods" | "tags" => {
             let vocab = VocabularyField::from_field_name(field).ok_or_else(|| {
@@ -995,7 +941,6 @@ async fn apply_version(
                 AppError::Validation(format!("{field} must be an array of strings"))
             })?;
             let trimmed = validated_role_names(role, &names)?;
-            let previous_version_id = capture_role_pointer(tx, work_id, role).await?;
             delete_role_rows(tx, work_id, role).await?;
             insert_role_rows(tx, work_id, role, &trimmed, version_id).await?;
             if role == "author" {
@@ -1016,7 +961,7 @@ async fn apply_version(
                     .await
                     .map_err(|e| AppError::Internal(e.into()))?;
             }
-            previous_version_id
+            None
         }
         _ if field.starts_with("identifiers.") => {
             let (level, scheme) = parse_identifier_field(field)?;
@@ -1030,16 +975,6 @@ async fn apply_version(
                 external_id::parse_external_id(level, scheme, raw).map_err(AppError::Validation)?;
             match level {
                 IdentifierLevel::Work => {
-                    let previous: Option<Uuid> = sqlx::query_scalar!(
-                        "SELECT source_version_id FROM work_external_identifiers \
-                         WHERE work_id = $1 AND scheme = $2",
-                        work_id,
-                        scheme,
-                    )
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(|e| AppError::Internal(e.into()))?
-                    .flatten();
                     upsert_work_identifier(
                         &mut **tx,
                         work_id,
@@ -1049,19 +984,8 @@ async fn apply_version(
                     )
                     .await
                     .map_err(|e| AppError::Internal(e.into()))?;
-                    previous
                 }
                 IdentifierLevel::Manifestation => {
-                    let previous: Option<Uuid> = sqlx::query_scalar!(
-                        "SELECT source_version_id FROM manifestation_external_identifiers \
-                         WHERE manifestation_id = $1 AND scheme = $2",
-                        manifestation_id,
-                        scheme,
-                    )
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(|e| AppError::Internal(e.into()))?
-                    .flatten();
                     upsert_manifestation_identifier(
                         &mut **tx,
                         manifestation_id,
@@ -1071,9 +995,9 @@ async fn apply_version(
                     )
                     .await
                     .map_err(|e| AppError::Internal(e.into()))?;
-                    previous
                 }
             }
+            None
         }
         other => {
             return Err(AppError::Validation(format!(
@@ -1081,13 +1005,19 @@ async fn apply_version(
             )));
         }
     };
+    if let Some(update) = update {
+        update
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+    }
     // External identifiers are never written back to the source file, so an
     // identifier apply (manual set, accept, or revert) must not enqueue an
     // OPF writeback job.
     if !field.starts_with("identifiers.") {
         enqueue_writeback(tx, manifestation_id, field).await?;
     }
-    Ok(previous_version_id)
+    Ok(())
 }
 
 /// Insert a writeback job in the caller's tx.  Shared by `apply_version`
@@ -1130,108 +1060,63 @@ async fn clear_field(
     field: &str,
     manifestation_id: Uuid,
     work_id: Uuid,
-) -> Result<Option<Uuid>, AppError> {
-    let previous_version_id: Option<Uuid> = match field {
+) -> Result<(), AppError> {
+    let update = match field {
         "title" => {
             return Err(AppError::Validation(
                 "cannot clear title — revert to a specific version instead".into(),
             ));
         }
-        "description" => sqlx::query_scalar!(
-            "WITH old AS (SELECT description_version_id FROM works WHERE id = $1) \
-             UPDATE works SET description = NULL, description_version_id = NULL \
-             WHERE id = $1 \
-             RETURNING (SELECT description_version_id FROM old) AS previous_version_id",
+        "description" => Some(sqlx::query!(
+            "UPDATE works SET description = NULL, description_version_id = NULL \
+             WHERE id = $1",
             work_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "language" => sqlx::query_scalar!(
-            "WITH old AS (SELECT language_version_id FROM works WHERE id = $1) \
-             UPDATE works SET language = NULL, language_version_id = NULL \
-             WHERE id = $1 \
-             RETURNING (SELECT language_version_id FROM old) AS previous_version_id",
+        )),
+        "language" => Some(sqlx::query!(
+            "UPDATE works SET language = NULL, language_version_id = NULL \
+             WHERE id = $1",
             work_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "subtitle" => sqlx::query_scalar!(
-            "WITH old AS (SELECT subtitle_version_id FROM works WHERE id = $1) \
-             UPDATE works SET subtitle = NULL, subtitle_version_id = NULL \
-             WHERE id = $1 \
-             RETURNING (SELECT subtitle_version_id FROM old) AS previous_version_id",
+        )),
+        "subtitle" => Some(sqlx::query!(
+            "UPDATE works SET subtitle = NULL, subtitle_version_id = NULL \
+             WHERE id = $1",
             work_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "pages" => sqlx::query_scalar!(
-            "WITH old AS (SELECT pages_version_id FROM manifestations WHERE id = $1) \
-             UPDATE manifestations SET pages = NULL, pages_version_id = NULL \
-             WHERE id = $1 \
-             RETURNING (SELECT pages_version_id FROM old) AS previous_version_id",
+        )),
+        "pages" => Some(sqlx::query!(
+            "UPDATE manifestations SET pages = NULL, pages_version_id = NULL \
+             WHERE id = $1",
             manifestation_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "publisher" => sqlx::query_scalar!(
-            "WITH old AS (SELECT publisher_version_id FROM manifestations WHERE id = $1) \
-             UPDATE manifestations \
+        )),
+        "publisher" => Some(sqlx::query!(
+            "UPDATE manifestations \
              SET publisher = NULL, publisher_version_id = NULL \
-             WHERE id = $1 \
-             RETURNING (SELECT publisher_version_id FROM old) AS previous_version_id",
+             WHERE id = $1",
             manifestation_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "pub_date" => sqlx::query_scalar!(
-            "WITH old AS (SELECT pub_date_version_id FROM manifestations WHERE id = $1) \
-             UPDATE manifestations \
+        )),
+        "pub_date" => Some(sqlx::query!(
+            "UPDATE manifestations \
              SET pub_date = NULL, pub_date_version_id = NULL \
-             WHERE id = $1 \
-             RETURNING (SELECT pub_date_version_id FROM old) AS previous_version_id",
+             WHERE id = $1",
             manifestation_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "isbn_10" => sqlx::query_scalar!(
-            "WITH old AS (SELECT isbn_10_version_id FROM manifestations WHERE id = $1) \
-             UPDATE manifestations \
+        )),
+        "isbn_10" => Some(sqlx::query!(
+            "UPDATE manifestations \
              SET isbn_10 = NULL, isbn_10_version_id = NULL \
-             WHERE id = $1 \
-             RETURNING (SELECT isbn_10_version_id FROM old) AS previous_version_id",
+             WHERE id = $1",
             manifestation_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "isbn_13" => sqlx::query_scalar!(
-            "WITH old AS (SELECT isbn_13_version_id FROM manifestations WHERE id = $1) \
-             UPDATE manifestations \
+        )),
+        "isbn_13" => Some(sqlx::query!(
+            "UPDATE manifestations \
              SET isbn_13 = NULL, isbn_13_version_id = NULL \
-             WHERE id = $1 \
-             RETURNING (SELECT isbn_13_version_id FROM old) AS previous_version_id",
+             WHERE id = $1",
             manifestation_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
-        "content_rating" => sqlx::query_scalar!(
-            "WITH old AS (SELECT content_rating_version_id FROM manifestations WHERE id = $1) \
-             UPDATE manifestations \
+        )),
+        "content_rating" => Some(sqlx::query!(
+            "UPDATE manifestations \
              SET content_rating = NULL, content_rating_version_id = NULL \
-             WHERE id = $1 \
-             RETURNING (SELECT content_rating_version_id FROM old) AS previous_version_id",
+             WHERE id = $1",
             manifestation_id,
-        )
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?,
+        )),
         "genres" | "moods" | "tags" => {
             let vocab = VocabularyField::from_field_name(field).ok_or_else(|| {
                 AppError::Validation(format!("unsupported vocabulary field '{field}'"))
@@ -1252,9 +1137,7 @@ async fn clear_field(
                     ));
                 }
                 "editor" | "translator" => {
-                    let previous_version_id = capture_role_pointer(tx, work_id, role).await?;
                     delete_role_rows(tx, work_id, role).await?;
-                    previous_version_id
                 }
                 other => {
                     return Err(AppError::Validation(format!(
@@ -1262,53 +1145,39 @@ async fn clear_field(
                     )));
                 }
             }
+            None
         }
         _ if field.starts_with("identifiers.") => {
             let (level, scheme) = parse_identifier_field(field)?;
             match level {
                 IdentifierLevel::Work => {
-                    let previous: Option<Uuid> = sqlx::query_scalar!(
-                        "SELECT source_version_id FROM work_external_identifiers \
-                         WHERE work_id = $1 AND scheme = $2",
-                        work_id,
-                        scheme,
-                    )
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(|e| AppError::Internal(e.into()))?
-                    .flatten();
                     delete_work_identifier(&mut **tx, work_id, scheme)
                         .await
                         .map_err(|e| AppError::Internal(e.into()))?;
-                    previous
                 }
                 IdentifierLevel::Manifestation => {
-                    let previous: Option<Uuid> = sqlx::query_scalar!(
-                        "SELECT source_version_id FROM manifestation_external_identifiers \
-                         WHERE manifestation_id = $1 AND scheme = $2",
-                        manifestation_id,
-                        scheme,
-                    )
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(|e| AppError::Internal(e.into()))?
-                    .flatten();
                     delete_manifestation_identifier(&mut **tx, manifestation_id, scheme)
                         .await
                         .map_err(|e| AppError::Internal(e.into()))?;
-                    previous
                 }
             }
+            None
         }
         other => {
             return Err(AppError::Validation(format!("unsupported field '{other}'")));
         }
     };
+    if let Some(update) = update {
+        update
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+    }
     // Identifier clears mirror identifier applies: no OPF writeback.
     if !field.starts_with("identifiers.") {
         enqueue_writeback(tx, manifestation_id, field).await?;
     }
-    Ok(previous_version_id)
+    Ok(())
 }
 
 /// Maximum length (in `char`s) for a manually-entered contributor name.
@@ -1348,33 +1217,6 @@ fn validated_role_names(role: &str, names: &[String]) -> Result<Vec<String>, App
         }
     }
     Ok(trimmed)
-}
-
-/// Capture the version pointer a contributor role's `work_authors` rows
-/// currently carry, before a rebuild replaces them.
-///
-/// Returns `Some(id)` only when every row for the role stamps the same
-/// `source_version_id`; an empty role or a role whose rows disagree (mixed
-/// stamps, e.g. from edits made before this column was wired) has no single
-/// "previous version" to revert to, so both cases return `None`.
-async fn capture_role_pointer(
-    tx: &mut Transaction<'_, Postgres>,
-    work_id: Uuid,
-    role: &str,
-) -> Result<Option<Uuid>, AppError> {
-    let distinct: Vec<Option<Uuid>> = sqlx::query_scalar!(
-        "SELECT DISTINCT source_version_id FROM work_authors \
-         WHERE work_id = $1 AND role = ($2::text)::author_role",
-        work_id,
-        role,
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-    match distinct.as_slice() {
-        [single] => Ok(*single),
-        _ => Ok(None),
-    }
 }
 
 async fn delete_role_rows(
@@ -1443,7 +1285,7 @@ async fn apply_contributors_patch(
     work_id: Uuid,
     user_id: Uuid,
     patch: Option<ContributorsPatch>,
-) -> Result<BTreeMap<String, FieldVersionChange>, AppError> {
+) -> Result<(), AppError> {
     let (author, editor, translator) = match patch {
         None => (Some(None), Some(None), Some(None)),
         Some(p) => (p.author, p.editor, p.translator),
@@ -1461,7 +1303,6 @@ async fn apply_contributors_patch(
 
     let mut author_touched = false;
     let mut touched = false;
-    let mut changes: BTreeMap<String, FieldVersionChange> = BTreeMap::new();
 
     for (role, maybe_names) in [
         ("author", author),
@@ -1479,17 +1320,10 @@ async fn apply_contributors_patch(
         let names = names.filter(|v| !v.is_empty());
 
         let key = format!("contributors.{role}");
-        // Captured before `delete_role_rows` clears the role's `work_authors`
-        // rows, mirroring the `apply_version` contributors arm so a manual
-        // PATCH's undo pointer is as reliable as the accept/revert path's.
-        let previous_version_id = capture_role_pointer(tx, work_id, role).await?;
-        let (value, version_id) = match names {
+        match names {
             None => {
-                let version_id =
-                    insert_manual_version(tx, manifestation_id, user_id, &key, &Value::Null)
-                        .await?;
+                insert_manual_version(tx, manifestation_id, user_id, &key, &Value::Null).await?;
                 delete_role_rows(tx, work_id, role).await?;
-                (None, version_id)
             }
             Some(names) => {
                 let trimmed = validated_role_names(role, &names)?;
@@ -1499,17 +1333,8 @@ async fn apply_contributors_patch(
                     insert_manual_version(tx, manifestation_id, user_id, &key, &json).await?;
                 delete_role_rows(tx, work_id, role).await?;
                 insert_role_rows(tx, work_id, role, &trimmed, version_id).await?;
-                (Some(json), version_id)
             }
-        };
-        changes.insert(
-            key,
-            FieldVersionChange {
-                value,
-                version_id: Some(version_id),
-                previous_version_id,
-            },
-        );
+        }
     }
 
     if author_touched {
@@ -1541,7 +1366,7 @@ async fn apply_contributors_patch(
     if touched {
         enqueue_writeback(tx, manifestation_id, "contributors").await?;
     }
-    Ok(changes)
+    Ok(())
 }
 
 // ── vocabulary junction fields (genres / moods / tags) ────────────────────
@@ -1754,16 +1579,14 @@ async fn apply_vocabulary_patch(
     user_id: Uuid,
     field: VocabularyField,
     maybe_names: Option<Vec<String>>,
-) -> Result<FieldVersionChange, AppError> {
+) -> Result<(), AppError> {
     let key = field.field_name();
     // Empty array ≡ null: both clear the field.
     let names = maybe_names.filter(|v| !v.is_empty());
-    let (value, version_id) = match names {
+    match names {
         None => {
-            let version_id =
-                insert_manual_version(tx, manifestation_id, user_id, key, &Value::Null).await?;
+            insert_manual_version(tx, manifestation_id, user_id, key, &Value::Null).await?;
             delete_vocabulary_rows(tx, manifestation_id, field).await?;
-            (None, version_id)
         }
         Some(names) => {
             let trimmed = validated_vocabulary_terms(key, &names)?;
@@ -1772,15 +1595,10 @@ async fn apply_vocabulary_patch(
                 insert_manual_version(tx, manifestation_id, user_id, key, &json).await?;
             delete_vocabulary_rows(tx, manifestation_id, field).await?;
             insert_vocabulary_rows(tx, manifestation_id, field, &trimmed, version_id).await?;
-            (Some(json), version_id)
         }
-    };
+    }
     enqueue_writeback(tx, manifestation_id, key).await?;
-    Ok(FieldVersionChange {
-        value,
-        version_id: Some(version_id),
-        previous_version_id: None,
-    })
+    Ok(())
 }
 
 // ── manual metadata edit (RFC 7396 JSON Merge Patch) ──────────────────────
@@ -1967,24 +1785,6 @@ struct ContributorsPatch {
     translator: Option<Option<Vec<String>>>,
 }
 
-/// One field's outcome from `PATCH /api/v1/books/{id}/metadata`.
-///
-/// `pub(crate)`: registered explicitly in `crate::openapi`'s `components`
-/// list (see the comment there for why).
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct FieldVersionChange {
-    /// Canonical value as applied, after server normalization (null when the
-    /// field was cleared).
-    value: Option<serde_json::Value>,
-    /// Journal row now wired as canonical (null when the field was cleared
-    /// to no version).
-    version_id: Option<Uuid>,
-    /// Version pointer that was canonical before this patch (null when the
-    /// field was previously unset, or when no pointer exists for the field
-    /// kind).
-    previous_version_id: Option<Uuid>,
-}
-
 /// Response body for `PATCH /api/v1/books/{id}/metadata`.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 struct UpdateMetadataResponse {
@@ -1993,34 +1793,8 @@ struct UpdateMetadataResponse {
     /// Independent exact field operations issued to the authenticated browser session.
     #[schema(max_items = 144)]
     operations: Vec<undo::UndoOperation>,
-    /// Complete canonical metadata confirmed by this write and its response `ETag`.
+    /// Complete canonical metadata paired with the response `ETag`.
     values: BookMetadata,
-    /// Keyed by patched field name, including `contributors.<role>` keys.
-    /// Bounded by [`FIXED_EDITABLE_FIELD_COUNT`] plus up to
-    /// `MAX_IDENTIFIERS_PER_LEVEL` keys per identifier level.
-    #[schema(schema_with = update_metadata_response_fields_schema)]
-    fields: BTreeMap<String, FieldVersionChange>,
-}
-
-/// Scalar fields (10, from [`UpdateMetadataFields::populated`]) plus
-/// vocabulary fields (3: genres/moods/tags) plus contributor roles (3:
-/// author/editor/translator): the editable response keys independent of the
-/// identifier maps.
-const FIXED_EDITABLE_FIELD_COUNT: usize = 16;
-
-fn update_metadata_response_fields_schema() -> utoipa::openapi::schema::Object {
-    use utoipa::openapi::schema::{ObjectBuilder, Ref, Type};
-    ObjectBuilder::new()
-        .schema_type(Type::Object)
-        .description(Some(
-            "Keyed by patched field name, including `contributors.<role>` keys.",
-        ))
-        .additional_properties(Some(Ref::from_schema_name("FieldVersionChange")))
-        .property_names(Some(string_property_names()))
-        .max_properties(Some(
-            FIXED_EDITABLE_FIELD_COUNT + 2 * MAX_IDENTIFIERS_PER_LEVEL,
-        ))
-        .build()
 }
 
 impl UpdateMetadataFields {
@@ -2378,8 +2152,7 @@ async fn load_manifestation_identifiers(
 /// canonical column via [`clear_field`] (when the value is `null`). The
 /// pending AI/OPF drafts on the same field stay `status = 'pending'`, so the
 /// operator can revert to one of them later. The response carries the
-/// applied (normalized) value plus the new and previous version pointers
-/// per field, so a caller can offer undo without a follow-up read.
+/// complete canonical values, their matching validator and independent exact field operations.
 ///
 /// # Errors
 /// - [`AppError::Validation`] when the body has no populated fields,
@@ -2415,7 +2188,7 @@ async fn load_manifestation_identifiers(
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
         (status = 409, description = "A requested metadata field is locked on this edition; locked_fields lists the refused keys and no changes are applied", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 200, description = "Manual edit committed with complete canonical values and matching ETag, plus per-field version acknowledgements", body = UpdateMetadataResponse,
+        (status = 200, description = "Manual edit committed with complete canonical values and matching ETag, and per-field Undo operations", body = UpdateMetadataResponse,
          headers(("ETag" = String, description = "Strong entity-tag covering work and edition identities and their metadata revisions after this write"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -2564,12 +2337,11 @@ async fn update_book_metadata(
     )
     .await?;
 
-    let mut response_fields: BTreeMap<String, FieldVersionChange> = BTreeMap::new();
     let touched_isbn = fields
         .iter()
         .any(|(field, _)| matches!(*field, "isbn_10" | "isbn_13"));
     for (field, maybe_value) in fields {
-        let change = apply_scalar_patch_field(
+        apply_scalar_patch_field(
             &mut tx,
             manifestation_id,
             work_id,
@@ -2578,7 +2350,6 @@ async fn update_book_metadata(
             maybe_value,
         )
         .await?;
-        response_fields.insert(field.to_string(), change);
     }
 
     for (vocab, patch) in [
@@ -2587,7 +2358,7 @@ async fn update_book_metadata(
         (VocabularyField::Tags, tags),
     ] {
         if let Some(maybe_names) = patch {
-            let change = apply_vocabulary_patch(
+            apply_vocabulary_patch(
                 &mut tx,
                 manifestation_id,
                 current_user.user_id,
@@ -2595,12 +2366,11 @@ async fn update_book_metadata(
                 maybe_names,
             )
             .await?;
-            response_fields.insert(vocab.field_name().to_string(), change);
         }
     }
 
     if let Some(patch) = contributors {
-        let changes = apply_contributors_patch(
+        apply_contributors_patch(
             &mut tx,
             manifestation_id,
             work_id,
@@ -2608,7 +2378,6 @@ async fn update_book_metadata(
             patch,
         )
         .await?;
-        response_fields.extend(changes);
     }
 
     apply_identifier_patches(
@@ -2618,7 +2387,6 @@ async fn update_book_metadata(
         current_user.user_id,
         work_identifiers,
         manifestation_identifiers,
-        &mut response_fields,
     )
     .await?;
 
@@ -2640,19 +2408,6 @@ async fn update_book_metadata(
         })?;
     let new_etag = new_metadata.revision.etag()?;
 
-    for (field, values) in [
-        ("genres", &new_metadata.values.genres),
-        ("moods", &new_metadata.values.moods),
-        ("tags", &new_metadata.values.tags),
-    ] {
-        if let Some(change) = response_fields.get_mut(field)
-            && change.value.is_some()
-        {
-            change.value =
-                Some(serde_json::to_value(values).map_err(|e| AppError::Internal(e.into()))?);
-        }
-    }
-
     let (request_id, operations) = undo::finish_save(&mut tx, before).await?;
 
     tx.commit()
@@ -2672,7 +2427,6 @@ async fn update_book_metadata(
             request_id,
             operations,
             values: new_metadata.values,
-            fields: response_fields,
         }),
     )
         .into_response())
@@ -2681,8 +2435,7 @@ async fn update_book_metadata(
 /// Journal + apply one scalar field from the manual PATCH surface.
 /// A set (`Some`) journals the value and wires the canonical pointer via
 /// `apply_version`; a clear (`None`) journals an accountability row and
-/// nulls the canonical via `clear_field`. Returns the field's applied value
-/// alongside its new and previous version pointers for the PATCH response.
+/// nulls the canonical via `clear_field`.
 async fn apply_scalar_patch_field(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -2690,20 +2443,14 @@ async fn apply_scalar_patch_field(
     user_id: Uuid,
     field: &str,
     maybe_value: Option<serde_json::Value>,
-) -> Result<FieldVersionChange, AppError> {
+) -> Result<(), AppError> {
     if let Some(value) = maybe_value {
         let json = match field {
             "isbn_10" | "isbn_13" => Value::String(normalise_isbn_field(field, &value)?),
             _ => value,
         };
         let version_id = insert_manual_version(tx, manifestation_id, user_id, field, &json).await?;
-        let previous_version_id =
-            apply_version(tx, field, &json, version_id, manifestation_id, work_id).await?;
-        Ok(FieldVersionChange {
-            value: Some(json),
-            version_id: Some(version_id),
-            previous_version_id,
-        })
+        apply_version(tx, field, &json, version_id, manifestation_id, work_id).await?;
     } else {
         // Audit-trail row: source='manual', new_value=null,
         // resolved_by = caller. `clear_field` does NOT wire a
@@ -2718,13 +2465,9 @@ async fn apply_scalar_patch_field(
             &serde_json::Value::Null,
         )
         .await?;
-        let previous_version_id = clear_field(tx, field, manifestation_id, work_id).await?;
-        Ok(FieldVersionChange {
-            value: None,
-            version_id: None,
-            previous_version_id,
-        })
+        clear_field(tx, field, manifestation_id, work_id).await?;
     }
+    Ok(())
 }
 
 /// `identifier_schemes` seeds 10 rows (`backend/migrations/20260810000000_initial_schema.up.sql`);
@@ -2753,7 +2496,6 @@ async fn apply_identifier_patches(
     user_id: Uuid,
     work_identifiers: Option<BTreeMap<String, Option<String>>>,
     manifestation_identifiers: Option<BTreeMap<String, Option<String>>>,
-    response_fields: &mut BTreeMap<String, FieldVersionChange>,
 ) -> Result<(), AppError> {
     let mut touched = false;
     for (level, map) in [
@@ -2761,7 +2503,7 @@ async fn apply_identifier_patches(
         (IdentifierLevel::Manifestation, manifestation_identifiers),
     ] {
         for (scheme, maybe_value) in map.into_iter().flatten() {
-            let change = apply_identifier_patch(
+            apply_identifier_patch(
                 tx,
                 manifestation_id,
                 work_id,
@@ -2772,7 +2514,6 @@ async fn apply_identifier_patches(
             )
             .await?;
             touched = true;
-            response_fields.insert(level.canonical_field(&scheme), change);
         }
     }
     if touched {
@@ -2824,7 +2565,7 @@ async fn apply_identifier_patch(
     level: IdentifierLevel,
     scheme: &str,
     maybe_value: Option<String>,
-) -> Result<FieldVersionChange, AppError> {
+) -> Result<(), AppError> {
     // Validate the address before journaling so an unknown scheme or a
     // wrong-level address never produces a journal row, on the clear path
     // included.
@@ -2836,22 +2577,12 @@ async fn apply_identifier_patch(
         let json = Value::String(canonical);
         let version_id =
             insert_manual_version(tx, manifestation_id, user_id, &field, &json).await?;
-        let previous_version_id =
-            apply_version(tx, &field, &json, version_id, manifestation_id, work_id).await?;
-        Ok(FieldVersionChange {
-            value: Some(json),
-            version_id: Some(version_id),
-            previous_version_id,
-        })
+        apply_version(tx, &field, &json, version_id, manifestation_id, work_id).await?;
     } else {
         insert_manual_version(tx, manifestation_id, user_id, &field, &Value::Null).await?;
-        let previous_version_id = clear_field(tx, &field, manifestation_id, work_id).await?;
-        Ok(FieldVersionChange {
-            value: None,
-            version_id: None,
-            previous_version_id,
-        })
+        clear_field(tx, &field, manifestation_id, work_id).await?;
     }
+    Ok(())
 }
 
 /// Record an exact manual observation, retaining its submission author on repeat saves.
@@ -4627,7 +4358,7 @@ mod tests {
             assert_eq!(response.status_code(), StatusCode::OK);
             let body: serde_json::Value = response.json();
             assert_eq!(
-                body["fields"][field.field_name()]["value"],
+                body["values"][field.field_name()],
                 serde_json::json!([added, stored]),
             );
         }
@@ -4910,7 +4641,7 @@ mod tests {
         );
         let body: serde_json::Value = response.json();
         assert_eq!(
-            body["fields"]["isbn_13"]["value"],
+            body["values"]["isbn_13"],
             serde_json::json!("9780306406157"),
             "response must echo the normalized value, not the raw hyphenated input"
         );
@@ -4958,13 +4689,6 @@ mod tests {
         .expect("insert sibling manifestation")
     }
 
-    fn version_id_of(body: &serde_json::Value, field: &str) -> String {
-        body["fields"][field]["version_id"]
-            .as_str()
-            .unwrap_or_else(|| panic!("expected a version_id for field '{field}' in {body}"))
-            .to_string()
-    }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn revert_pages_rejects_version_journaled_under_sibling_manifestation(
         pool: sqlx::PgPool,
@@ -4994,8 +4718,14 @@ mod tests {
             .json(&serde_json::json!({"pages": 250}))
             .await;
         assert_eq!(patch_a.status_code(), StatusCode::OK);
-        let body_a: serde_json::Value = patch_a.json();
-        let version_a = version_id_of(&body_a, "pages");
+        let version_a = sqlx::query_scalar!(
+            "SELECT pages_version_id FROM manifestations WHERE id = $1",
+            m_a
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .unwrap()
+        .unwrap();
 
         // Revert on B with A's version id must 404: pages is
         // manifestation-scoped, so a sibling's journal row must not be
@@ -5341,17 +5071,7 @@ mod tests {
 
         let version_id = row.title_version_id.expect("title_version_id wired");
         assert_eq!(
-            body["fields"]["title"]["version_id"],
-            serde_json::json!(version_id),
-            "response version_id must equal the new canonical pointer"
-        );
-        assert_eq!(
-            body["fields"]["title"]["previous_version_id"],
-            serde_json::Value::Null,
-            "a freshly created work has no prior title pointer"
-        );
-        assert_eq!(
-            body["fields"]["title"]["value"],
+            body["values"]["title"],
             serde_json::json!(new_title),
             "response must echo the applied title"
         );
@@ -5941,7 +5661,7 @@ mod tests {
                 axum::http::header::IF_MATCH,
                 axum::http::HeaderValue::from_str(&etag).unwrap(),
             )
-            .json(&serde_json::json!({"contributors": {"author": [name_a, name_b]}}))
+            .json(&serde_json::json!({"contributors": {"author": [name_a, name_b], "editor": ["Editor"], "translator": ["Translator"]}}))
             .await;
         assert_eq!(
             response.status_code(),
@@ -6325,7 +6045,7 @@ mod tests {
         );
         let body: serde_json::Value = clear.json();
         assert_eq!(
-            body["fields"]["identifiers.manifestation.asin"]["value"],
+            body["values"]["manifestation_identifiers"]["asin"],
             serde_json::Value::Null
         );
 
