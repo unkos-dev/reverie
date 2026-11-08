@@ -191,8 +191,8 @@ alone: nobody else browsing the same library sees them, and they never touch the
 The **Undo last edit** button beside table Help names the book and field it will restore. `⌘Z` or `Ctrl Z` while focus
 is in the table invokes the same action when no editor is active. Editors retain their native typing Undo and Redo.
 
-Undo restores the latest saved metadata field while leaving unrelated changes intact. Repeated Undo steps through
-earlier edits, newest first. Status and rating have no saved Undo, and the book view offers no saved-edit Undo.
+Undo restores the latest saved change to a metadata field while leaving unrelated changes intact. Saving the same field
+again replaces its earlier Undo. Status and rating have no saved Undo, and the book view offers no saved-edit Undo.
 
 Undo remains available through sorting, filtering and loading. It can restore a book hidden by the current filter; the
 outcome names the book and field. Leaving Library or switching away from table editing clears the available edits.
