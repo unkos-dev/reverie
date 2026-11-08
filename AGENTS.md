@@ -85,6 +85,7 @@ These are absolute invariants for the Reverie repository.
   trailers in code review. Review changes to DCO enforcement itself when included in the diff.
 - A request for a new test or assertion must cite a Rule 5 anchor; otherwise it is not a finding. Flag any test the diff
   adds or changes that has no anchor, for deletion. Tests outside the diff belong to the test audit, not the review.
+- User-visible state, copy or controls absent from the governing design artefact are a finding.
 
 <security_reference>
 
