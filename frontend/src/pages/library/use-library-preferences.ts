@@ -91,6 +91,9 @@ export type LibraryPreferences = {
    * device with no override mirrored.
    */
   sortLevels: readonly SortLevelParam[];
+  /** The installation default sort stack from the response's `defaults`;
+   *  empty before the first response. */
+  defaultSortLevels: readonly SortLevelParam[];
   /** True when the effective sort is the inherited installation stack, which
    *  is what disables the sort reset control. */
   sortInherited: boolean;
@@ -228,6 +231,10 @@ export function useLibraryPreferences(): LibraryPreferences {
   // while the wire omits what the server would apply anyway.
   const effectiveSort = sortOverride !== "" ? sortOverride : (data?.defaults.sort_stack ?? "");
   const sortLevels = useMemo(() => parseSortParam(effectiveSort), [effectiveSort]);
+  const defaultSortLevels = useMemo(
+    () => parseSortParam(data?.defaults.sort_stack ?? ""),
+    [data?.defaults.sort_stack],
+  );
 
   const hiddenColumns = useMemo(() => new Set(columnKeys), [columnKeys]);
 
@@ -295,6 +302,7 @@ export function useLibraryPreferences(): LibraryPreferences {
     view,
     sortOverride,
     sortLevels,
+    defaultSortLevels,
     sortInherited: sortOverride === "",
     canResetColumns: columnsOverridden,
     setDensity,

@@ -1,17 +1,17 @@
 /**
  * Autofocused single-line editor for text and positive-integer metadata
  * columns (title, subtitle, isbn_13, pages). Enter/Escape commit or discard
- * at the grid binding's editor container, not here: this component's only
- * job is staging a valid draft via `onDraft` and refusing to stage an
- * invalid one.
+ * at RDG's editor container, not here: this component's only job is staging
+ * a valid draft via `onDraft` and refusing to stage an invalid one.
  *
- * Invalid-block mechanism: the binding's Enter handler always commits
- * whatever row the last `onDraft` call staged (`update()` in
- * `GridEditorProps`). To block a bad commit without adding an Enter/Escape
- * handler of its own, this editor simply skips the `onDraft` call while the
- * current text fails validation. The staged row stays at its last valid
- * value, so Enter commits that instead of the invalid text still visible
- * in the input. `aria-invalid` surfaces the mismatch in the meantime.
+ * Invalid-block mechanism: RDG's Enter handler always commits whatever row
+ * the last `onDraft` call staged through `onRowChange(row)`, and its Tab
+ * check commits the same way from this sole input. To block a bad commit
+ * without adding an Enter/Escape handler of its own, this editor simply
+ * skips the `onDraft` call while the current text fails validation. The
+ * staged row stays at its last valid value, so Enter commits that instead of
+ * the invalid text still visible in the input. `aria-invalid` surfaces the
+ * mismatch in the meantime.
  */
 import { useEffect, useRef, useState, type ChangeEvent, type ReactElement } from "react";
 
@@ -83,7 +83,6 @@ export function TextCellEditor({
       aria-required={required || undefined}
       className={cn(
         "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none",
-        "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
         "aria-invalid:border-danger aria-invalid:ring-3 aria-invalid:ring-danger/20",
       )}
     />

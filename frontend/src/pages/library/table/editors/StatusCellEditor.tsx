@@ -1,7 +1,7 @@
 /**
  * Native `<select>` editor for the per-user reading-status column. A native
  * element, not the Radix-based `Select` primitive, so the editor never
- * grows a portal: the grid binding's Tab-to-next-cell check requires the
+ * grows a portal: RDG's Tab-to-next-cell check requires the
  * `.rdg-editor-container` to hold exactly one input/select/textarea.
  * Selecting an option commits immediately (select-and-done); there is no
  * draft to stage, so Enter/Escape at the container have nothing further to
@@ -10,7 +10,6 @@
 import { useEffect, useRef, type ChangeEvent, type ReactElement } from "react";
 
 import type { ReadingStatus } from "@/api/books";
-import { cn } from "@/lib/utils";
 
 type StatusCellEditorProps = {
   value: ReadingStatus | null;
@@ -54,10 +53,7 @@ export function StatusCellEditor({
       aria-label="Reading status"
       defaultValue={value ?? ""}
       onChange={handleChange}
-      className={cn(
-        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none",
-        "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
-      )}
+      className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none"
     >
       <option value="">-</option>
       {STATUS_OPTIONS.map((option) => (

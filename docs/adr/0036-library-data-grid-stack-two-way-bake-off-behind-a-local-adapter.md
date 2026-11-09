@@ -3,11 +3,13 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0036"
 title: "Library data-grid stack: two-way bake-off behind a local adapter"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-05"
 decided-on: "2026-07-04"
 decision-makers:
   - "John Unkovich"
+superseded-by:
+  - "REV-ADR-0070"
 ---
 
 # Library data-grid stack: two-way bake-off behind a local adapter
