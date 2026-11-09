@@ -359,6 +359,8 @@ function useCellEditRecords(): CellEditRecord[] {
 
 type CellEditFeedback = {
   id: number;
+  rowId: string;
+  columnKey: string;
   bookTitle: string;
   field: string;
   submitted: string;
@@ -645,6 +647,8 @@ export function useCellEdit({
     return [
       {
         id: record.id,
+        rowId: context.row.id,
+        columnKey: context.columnKey,
         bookTitle: context.bookTitle,
         field: COLUMN_LABELS[context.columnKey],
         submitted: context.display,
@@ -708,6 +712,8 @@ export function useCellEdit({
         ? [
             {
               id: record.id,
+              rowId: record.context.row.id,
+              columnKey: record.context.columnKey,
               bookTitle: record.context.bookTitle,
               field: COLUMN_LABELS[record.context.columnKey],
               submitted: record.context.display,
