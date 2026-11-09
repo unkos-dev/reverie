@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [React Aria transition cancellation](2026-11-09-react-aria-transition-cancellation.md): lifts when a released React
+  Aria version includes the upstream cancellation fix and the Settings browser tests pass without the local patch.
 - [Licence checker glob overrides](2026-11-05-licence-checker-glob-overrides.md): lifts when the licence checker's
   dependency graph resolves patched versions without either override and passes the licence checks.
 - [Frontend CI Ubuntu mirror selection](2026-10-26-frontend-ci-ubuntu-mirror.md): lifts when the runner image fixes slow

@@ -23,6 +23,9 @@ overrides:
   glob@13: 14.0.3
   minimatch@10: 11.0.4
 
+patchedDependencies:
+  react-aria@3.53.1: e7c6e8d01c533392b9fcea2b975f61c199ad1b8c9acc0493318b746db6620348
+
 importers:
 
   .:
@@ -74,7 +77,7 @@ importers:
         version: 19.3.1
       react-aria:
         specifier: 3.53.1
-        version: 3.53.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 3.53.1(patch_hash=e7c6e8d01c533392b9fcea2b975f61c199ad1b8c9acc0493318b746db6620348)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react-aria-components:
         specifier: 1.22.1
         version: 1.22.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -104,7 +107,7 @@ importers:
         specifier: ^4.12.1
         version: 4.14.0(playwright-core@1.65.0)
       '@playwright/test':
-        specifier: ^1.61.1
+        specifier: 1.65.0
         version: 1.65.0
       '@radix-ui/colors':
         specifier: 3.0.0
@@ -143,7 +146,7 @@ importers:
         specifier: 1.65.0
         version: 1.65.0
       playwright-core:
-        specifier: ^1.61.1
+        specifier: 1.65.0
         version: 1.65.0
       stylelint:
         specifier: ^18.0.0
@@ -7604,12 +7607,12 @@ snapshots:
       '@swc/helpers': 0.5.24
       client-only: 0.0.1
       react: 19.3.1
-      react-aria: 3.53.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      react-aria: 3.53.1(patch_hash=e7c6e8d01c533392b9fcea2b975f61c199ad1b8c9acc0493318b746db6620348)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react-dom: 19.3.1(react@19.3.1)
       react-stately: 3.51.0(react@19.3.1)
       use-sync-external-store: 1.7.0(react@19.3.1)
 
-  react-aria@3.53.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+  react-aria@3.53.1(patch_hash=e7c6e8d01c533392b9fcea2b975f61c199ad1b8c9acc0493318b746db6620348)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       '@internationalized/date': 3.12.4
       '@internationalized/number': 3.6.9
