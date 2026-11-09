@@ -49,7 +49,12 @@
 
 /* The active cell's inset outline is the grid's one focus indicator: RDG hands
  * focus to a control inside the cell, whose global ring would be a second one,
- * and the cell keeps its active state after focus leaves the grid. */
+ * and the cell keeps its active state after focus leaves the grid. The global
+ * rule's outward offset would otherwise win on a keyboard-focused cell. */
+.rv-grid .rdg-cell[aria-selected="true"] {
+  outline-offset: calc(var(--rdg-selection-width) * -1);
+}
+
 .rv-grid .rdg-cell :focus-visible {
   outline: none;
 }
