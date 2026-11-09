@@ -49,9 +49,8 @@
 
 /* The active cell's inset outline is the grid's one focus indicator: RDG hands
  * focus to a control inside the cell, whose global ring would be a second one,
- * and the cell keeps its active state after focus leaves the grid. An editing
- * cell keeps its input's ring. */
-.rv-grid .rdg-cell:not(.rdg-editor-container) :focus-visible {
+ * and the cell keeps its active state after focus leaves the grid. */
+.rv-grid .rdg-cell :focus-visible {
   outline: none;
 }
 
