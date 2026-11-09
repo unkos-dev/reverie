@@ -61,8 +61,9 @@ small cover beside each title) and compact ones. The **Columns** popover shows o
 put because every row needs its anchor. Both are personal display preferences, and so are your view choice and your
 sort: they belong to your account rather than to one browser, so they follow you to a second machine and survive signing
 out and back in. Filters and search belong to the current Library visit and do not travel in shared links. Column widths
-are not saved: drag a header's edge to resize a column until the next reload, and titles and author lists wrap rather
-than being cut off, so their row grows to fit.
+are not saved: drag a header's edge to resize a column until the next reload, and titles and author lists wrap between
+words rather than being cut off, so their row grows to fit. A single word too long for its column is cut off at the
+column's edge.
 
 **Reset to default** at the foot of the Columns popover clears your column choice rather than merely showing everything,
 so the table goes back to whatever this installation ships as its default and stays with that default if it later

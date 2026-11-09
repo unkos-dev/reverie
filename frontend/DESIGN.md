@@ -552,10 +552,12 @@ header uses surface-2, row hover uses surface, and selected rows use accent-soft
 14px; titles have medium weight.
 
 - **Density:** comfortable rows are at least 64px and compact rows at least 44px; headers stay 42px. Comfortable rows
-  carry a 30px by 42px cover or typographic fallback mark. Title and Authors wrap to show their full text, 20px per
-  line: a row is 24px plus 20px per line of its longer Title or Authors text, or its density's base height when that is
-  taller.
-- **Columns:** data columns resize by dragging a header edge, and Title keeps at least 160px. Widths reset on reload.
+  carry a 30px by 42px cover or typographic fallback mark. Title and Authors wrap between words, 20px per line at the
+  default text size: a row is 24px plus the height of its taller Title or Authors text, or its density's base height
+  when that is taller. On narrow screens the Title text counts the author line under it.
+- **Columns:** data columns resize by dragging a header edge. Title keeps at least 160px, and Subtitle, Authors and
+  Series at least 96px, about 12 characters. A word wider than its column is clipped at the cell edge. Widths reset on
+  reload.
 - **Controls:** density and view selectors use a bordered native toggle group with a soft accent fill on the selected
   option. Removable filter tags and the mounted empty state sit below the toolbar.
 - **Interaction:** the table supports cell editing, row selection, sorting and a details drawer. Pending edits appear

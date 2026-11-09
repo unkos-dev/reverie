@@ -60,13 +60,22 @@ import { AuthorsCellEditor } from "./editors/AuthorsCellEditor";
 import { RatingCellEditor } from "./editors/RatingCellEditor";
 import { StatusCellEditor } from "./editors/StatusCellEditor";
 import { TextCellEditor } from "./editors/TextCellEditor";
-import { rowHeightFor } from "./row-height";
+import {
+  resolveRowHeight,
+  rowHeightFor,
+  useRowMeasurement,
+  type MeasureLayout,
+  type MeasureRef,
+} from "./row-height";
 import { pendingKey, type UseCellEditResult } from "./useCellEdit";
 
 const EMPTY_CELL = "—";
 
-/** Title and Authors show their full text: the row grows to fit it (see `row-height.ts`). */
-const WRAPPED_TEXT = "text-sm leading-5 break-words whitespace-normal";
+/** Title and Authors wrap between words and the row grows to fit (see `row-height.ts`); a longer word is clipped. */
+const WRAPPED_TEXT = "text-sm leading-5 whitespace-normal";
+
+/** About 12 characters of 14px Satoshi plus the cell's 17px inset. */
+const TEXT_COLUMN_MIN_WIDTH = 96;
 
 const TABLE_HEADER_HEIGHT = 42;
 
@@ -258,6 +267,7 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "subtitle",
     name: "Subtitle",
+    minWidth: TEXT_COLUMN_MIN_WIDTH,
     resizable: true,
     sortable: false,
     renderCell: ({ row }) => row.subtitle ?? EMPTY_CELL,
@@ -266,19 +276,16 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "authors",
     name: "Authors",
+    minWidth: TEXT_COLUMN_MIN_WIDTH,
     resizable: true,
     sortable: true,
-    renderCell: ({ row }) => (
-      <div className={WRAPPED_TEXT}>
-        {row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL}
-      </div>
-    ),
     renderEditCell: renderAuthorsEditCell,
     editorOptions: { commitOnOutsideClick: false },
   },
   {
     key: "series",
     name: "Series",
+    minWidth: TEXT_COLUMN_MIN_WIDTH,
     resizable: true,
     sortable: false,
     renderCell: ({ row }) => {
@@ -390,6 +397,7 @@ function composeColumns(
   isMobile: boolean,
   defaultSort: readonly SortLevelParam[],
   onRowActivate: (book: BookListItem) => void,
+  measure: MeasureRef,
 ): readonly Column<BookListItem>[] {
   const descendingFirst = new Set(
     defaultSort.filter((level) => level.desc).map((level) => COLUMN_BY_FIELD[level.field]),
@@ -401,6 +409,16 @@ function composeColumns(
   });
   const withTitleCell = visible.map((col): Column<BookListItem> => {
     const base = descendingFirst.has(col.key) ? { ...col, sortDescendingFirst: true } : col;
+    if (col.key === "authors") {
+      return {
+        ...base,
+        renderCell: ({ row }) => (
+          <div className={WRAPPED_TEXT} ref={measure(row.id, "authors")}>
+            {row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL}
+          </div>
+        ),
+      };
+    }
     if (col.key !== "title") return base;
     const renderCell = ({ row, tabIndex }: RenderCellContentProps<BookListItem>): ReactNode => (
       <div className="flex min-w-0 items-center gap-3">
@@ -416,10 +434,13 @@ function composeColumns(
               WRAPPED_TEXT,
             )}
           >
-            {row.title}
+            <span ref={measure(row.id, "title")}>{row.title}</span>
           </Link>
           {isMobile && density === "comfortable" ? (
-            <div className="text-fg-muted text-xs leading-5 break-words whitespace-normal">
+            <div
+              className="text-fg-muted text-xs leading-5 whitespace-normal"
+              ref={measure(row.id, "authorLine")}
+            >
               {row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL}
             </div>
           ) : null}
@@ -467,30 +488,33 @@ function useComposedColumns(
   isMobile: boolean,
   defaultSort: readonly SortLevelParam[],
   onRowActivate: (book: BookListItem) => void,
+  measure: MeasureRef,
 ): readonly Column<BookListItem>[] {
   return useMemo(
     () =>
-      composeColumns(hiddenColumns, density, isMobile, defaultSort, onRowActivate).map((col) => {
-        if (col.renderEditCell == null) return col;
-        const renderFinal = col.renderCell ?? renderValue;
-        const renderCell = (props: RenderCellContentProps<BookListItem>): ReactNode => {
-          const draft = pendingCells.get(pendingKey(props.row.id, col.key));
-          if (draft === undefined) return renderFinal(props);
-          return (
-            <span aria-busy="true" className="text-fg-muted italic">
-              {draft}
-            </span>
-          );
-        };
-        return {
-          ...col,
-          editable: (row: BookListItem) => !pendingCells.has(pendingKey(row.id, col.key)),
-          renderCell,
-        };
-      }),
+      composeColumns(hiddenColumns, density, isMobile, defaultSort, onRowActivate, measure).map(
+        (col) => {
+          if (col.renderEditCell == null) return col;
+          const renderFinal = col.renderCell ?? renderValue;
+          const renderCell = (props: RenderCellContentProps<BookListItem>): ReactNode => {
+            const draft = pendingCells.get(pendingKey(props.row.id, col.key));
+            if (draft === undefined) return renderFinal(props);
+            return (
+              <span aria-busy="true" className="text-fg-muted italic">
+                {draft}
+              </span>
+            );
+          };
+          return {
+            ...col,
+            editable: (row: BookListItem) => !pendingCells.has(pendingKey(row.id, col.key)),
+            renderCell,
+          };
+        },
+      ),
     // onRowActivate is a stable prop-drilled callback identity-wise only if
     // the container memoizes it; include it so a changed handler is honored.
-    [pendingCells, hiddenColumns, density, isMobile, defaultSort, onRowActivate],
+    [pendingCells, hiddenColumns, density, isMobile, defaultSort, onRowActivate, measure],
   );
 }
 
@@ -599,6 +623,7 @@ export function LibraryTableView({
 }: Readonly<Props>): ReactElement {
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const { pendingCells, onCellEdit, keyboardProps } = edits;
+  const { measure, read, applyLayout } = useRowMeasurement();
   const columns = useComposedColumns(
     pendingCells,
     hiddenColumns,
@@ -606,6 +631,7 @@ export function LibraryTableView({
     isMobile,
     defaultSort,
     onRowActivate,
+    measure,
   );
 
   // Widths live only here, so a reload restores the defaults.
@@ -626,11 +652,27 @@ export function LibraryTableView({
   const authorsWidth = columns.some((col) => col.key === "authors")
     ? columnWidths.get("authors")?.width
     : null;
-  // RDG computes every row's height whenever this identity changes, so it changes only with layout.
+  const measureLayout = useMemo(
+    (): MeasureLayout => ({
+      key: `${density}|${String(isMobile)}|${String(titleWidth)}|${String(authorsWidth)}`,
+      density,
+      expectsAuthorLine: isMobile && density === "comfortable",
+      expectsAuthors: authorsWidth !== null,
+    }),
+    [density, isMobile, titleWidth, authorsWidth],
+  );
+  useEffect(() => {
+    applyLayout(measureLayout);
+  }, [applyLayout, measureLayout]);
+  // RDG computes every row's height whenever this identity changes, so it changes only with layout or a measurement.
   const rowHeight = useCallback(
     (row: BookListItem) =>
-      rowHeightFor(row, { density, isMobile, titleWidth, authorsWidth, fontFamily, fontsLoaded }),
-    [density, isMobile, titleWidth, authorsWidth, fontFamily, fontsLoaded],
+      resolveRowHeight(
+        rowHeightFor(row, { density, isMobile, titleWidth, authorsWidth, fontFamily, fontsLoaded }),
+        read(row.id, measureLayout.key),
+        measureLayout,
+      ),
+    [density, isMobile, titleWidth, authorsWidth, fontFamily, fontsLoaded, read, measureLayout],
   );
 
   const sortColumns: readonly SortColumn[] = sort.map((level) => ({
