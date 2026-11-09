@@ -76,6 +76,7 @@ WORKDIR /build
 # drift from a pin it exists to satisfy.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/
+COPY frontend/patches/ frontend/patches/
 COPY website/package.json website/
 # Installed once here so both stages below inherit one runtime from this layer
 # rather than provisioning it twice.

@@ -1,0 +1,45 @@
+diff --git a/dist/private/utils/runAfterTransition.cjs b/dist/private/utils/runAfterTransition.cjs
+index 1055c6467df5e5ca66578711d7220dec31d1d142..71b1f0cf57e2da49809a029c78a216f6ef977159 100644
+--- a/dist/private/utils/runAfterTransition.cjs
++++ b/dist/private/utils/runAfterTransition.cjs
+@@ -41,9 +41,7 @@ function $f09fbd1748f346a7$var$onTransitionStart(e) {
+         // The transitioncancel event must be registered on the element itself, rather than as a global
+         // event. This enables us to handle when the node is deleted from the document while it is transitioning.
+         // In that case, the cancel event would have nowhere to bubble to so we need to handle it directly.
+-        eventTarget.addEventListener('transitioncancel', $f09fbd1748f346a7$var$onTransitionEnd, {
+-            once: true
+-        });
++        eventTarget.addEventListener('transitioncancel', $f09fbd1748f346a7$var$onTransitionEnd);
+     }
+     transitions.add(e.propertyName);
+ }
+diff --git a/dist/private/utils/runAfterTransition.js b/dist/private/utils/runAfterTransition.js
+index 74e655daec734f3f16aa56359fd3246fb1a49228..604351a5c8b979aff0bb4e2cdbf09f633afe8a60 100644
+--- a/dist/private/utils/runAfterTransition.js
++++ b/dist/private/utils/runAfterTransition.js
+@@ -35,9 +35,7 @@ function $aa33e9569e5401d5$var$onTransitionStart(e) {
+         // The transitioncancel event must be registered on the element itself, rather than as a global
+         // event. This enables us to handle when the node is deleted from the document while it is transitioning.
+         // In that case, the cancel event would have nowhere to bubble to so we need to handle it directly.
+-        eventTarget.addEventListener('transitioncancel', $aa33e9569e5401d5$var$onTransitionEnd, {
+-            once: true
+-        });
++        eventTarget.addEventListener('transitioncancel', $aa33e9569e5401d5$var$onTransitionEnd);
+     }
+     transitions.add(e.propertyName);
+ }
+diff --git a/dist/private/utils/runAfterTransition.mjs b/dist/private/utils/runAfterTransition.mjs
+index 8926928278cde4ee3fb092e21e13e381bf779cff..0c415cbe32d9c4edd20381bf4b0c078babe14910 100644
+--- a/dist/private/utils/runAfterTransition.mjs
++++ b/dist/private/utils/runAfterTransition.mjs
+@@ -35,9 +35,7 @@ function $081cb5757e08788e$var$onTransitionStart(e) {
+         // The transitioncancel event must be registered on the element itself, rather than as a global
+         // event. This enables us to handle when the node is deleted from the document while it is transitioning.
+         // In that case, the cancel event would have nowhere to bubble to so we need to handle it directly.
+-        eventTarget.addEventListener('transitioncancel', $081cb5757e08788e$var$onTransitionEnd, {
+-            once: true
+-        });
++        eventTarget.addEventListener('transitioncancel', $081cb5757e08788e$var$onTransitionEnd);
+     }
+     transitions.add(e.propertyName);
+ }
