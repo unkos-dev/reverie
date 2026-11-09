@@ -1087,7 +1087,7 @@ pub mod oidc_mock {
         EndUserEmail, EndUserName, IssuerUrl, JsonWebKeyId, JsonWebKeySetUrl, LocalizedClaim,
         Nonce as OidcNonce, ResponseTypes, StandardClaims, SubjectIdentifier, TokenUrl,
     };
-    use rsa::RsaPrivateKey;
+    use rsa::PrivateKey;
     use rsa::pkcs1::EncodeRsaPrivateKey;
     use rsa::pkcs1::LineEnding;
     use rsa::traits::PublicKeyParts;
@@ -1141,14 +1141,14 @@ pub mod oidc_mock {
         }
 
         fn signing_material(kid: &str) -> (String, CoreJsonWebKeySet) {
-            let private_key = RsaPrivateKey::new(&mut rand_core_06::OsRng, 2048).unwrap();
+            let private_key = PrivateKey::new(&mut rand::rngs::SysRng, 2048).unwrap();
             let pem = private_key
                 .to_pkcs1_pem(LineEnding::LF)
                 .unwrap()
                 .to_string();
             let key = CoreJsonWebKey::new_rsa(
-                private_key.n().to_bytes_be(),
-                private_key.e().to_bytes_be(),
+                private_key.n_bytes().into_vec(),
+                private_key.e_bytes().into_vec(),
                 Some(JsonWebKeyId::new(kid.to_owned())),
             );
             (pem, CoreJsonWebKeySet::new(vec![key]))

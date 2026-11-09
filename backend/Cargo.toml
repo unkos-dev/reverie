@@ -137,8 +137,7 @@ isbn = "0.8"
 tempfile = "3.27.0"
 tokio = { version = "1.52.3", features = ["test-util"] }
 axum-test = "21.0.0"
-rand_core_06 = { package = "rand_core", version = "0.6", features = ["std", "getrandom"] }
-rsa = { version = "0.9.10", features = ["pem"] }
+rsa = "0.10.0"
 wiremock = "0.6.5"
 
 [lints.rust]

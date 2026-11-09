@@ -7,7 +7,7 @@ reason = "accepted for assessed OIDC signature-verification-only use; affected c
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2023-0071"
-reason = "No patched rsa release. Production uses rsa only for public-key signature verification, and private-key operations happen only in tests; deny.toml ignores it on the same grounds."
+reason = "rsa 0.10 fixes this advisory, but openidconnect 4.1 requires rsa 0.9; production uses rsa only for public-key signature verification, and private-key operations remain confined to tests. Remove when the resolved graph has no affected rsa. deny.toml ignores it on the same grounds."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0436"
