@@ -31,6 +31,7 @@
   --rdg-row-hover-background-color: var(--surface);
   --rdg-row-selected-background-color: var(--accent-soft);
   --rdg-border-color: var(--border);
+  --rdg-selection-color: var(--focus-ring);
 
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -44,6 +45,18 @@
    * optimization buys nothing; disabling it removes the stale paint cache.
    */
   content-visibility: visible;
+}
+
+/* The active cell's inset outline is the grid's one focus indicator: RDG hands
+ * focus to a control inside the cell, whose global ring would be a second one,
+ * and the cell keeps its active state after focus leaves the grid. An editing
+ * cell keeps its input's ring. */
+.rv-grid .rdg-cell:not(.rdg-editor-container) :focus-visible {
+  outline: none;
+}
+
+.rv-grid .rdg:not(:focus-within) .rdg-cell[aria-selected="true"] {
+  outline: none;
 }
 
 [data-theme="light"] .rv-grid .rdg {

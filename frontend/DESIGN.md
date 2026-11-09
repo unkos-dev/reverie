@@ -557,6 +557,9 @@ header uses surface-2, row hover uses surface, and selected rows use accent-soft
   option. Removable filter tags and the mounted empty state sit below the toolbar.
 - **Interaction:** the table supports cell editing, row selection, sorting and a details drawer. Pending edits appear
   muted and italic. Keyboard shortcuts have a dedicated help dialog.
+- **Focus:** the active cell carries the table's one focus indicator, a 2px `accent-text` outline inset inside the cell,
+  after a click or a key. A control inside it paints no ring of its own. The outline clears while focus is outside the
+  table.
 - **Paging:** the table scrolls through loaded rows and fetches more near the bottom. Loading, retry, load-more and
   end-of-list states share a footer.
 
