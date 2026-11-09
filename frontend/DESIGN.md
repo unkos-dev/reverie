@@ -551,8 +551,11 @@ The table is a dense catalogue surface using the same canvas, text and accent ro
 header uses surface-2, row hover uses surface, and selected rows use accent-soft. Cells use the inherited body face at
 14px; titles have medium weight.
 
-- **Density:** comfortable rows are 64px and compact rows are 44px; headers stay 42px. Comfortable rows carry a 30px by
-  42px cover or typographic fallback mark.
+- **Density:** comfortable rows are at least 64px and compact rows at least 44px; headers stay 42px. Comfortable rows
+  carry a 30px by 42px cover or typographic fallback mark. Title and Authors wrap to show their full text, 20px per
+  line: a row is 24px plus 20px per line of its longer Title or Authors text, or its density's base height when that is
+  taller.
+- **Columns:** data columns resize by dragging a header edge, and Title keeps at least 160px. Widths reset on reload.
 - **Controls:** density and view selectors use a bordered native toggle group with a soft accent fill on the selected
   option. Removable filter tags and the mounted empty state sit below the toolbar.
 - **Interaction:** the table supports cell editing, row selection, sorting and a details drawer. Pending edits appear

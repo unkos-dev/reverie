@@ -13,6 +13,8 @@
  */
 import { Loader2, PanelRight } from "lucide-react";
 import {
+  useCallback,
+  useEffect,
   useMemo,
   useState,
   type Key,
@@ -28,6 +30,7 @@ import {
   renderSortIcon,
   renderValue,
   type Column,
+  type ColumnWidths,
   type RenderCellContentProps,
   type RenderCellProps,
   type RenderCheckboxProps,
@@ -49,6 +52,7 @@ import {
 } from "@/api";
 import "@/lib/grid/grid-theme.css";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
+import { cn } from "@/lib/utils";
 
 import { LOCKED_COLUMN_KEYS, MOBILE_COLUMN_KEYS, TABLE_MOBILE_MEDIA_QUERY } from "../table-columns";
 
@@ -56,12 +60,14 @@ import { AuthorsCellEditor } from "./editors/AuthorsCellEditor";
 import { RatingCellEditor } from "./editors/RatingCellEditor";
 import { StatusCellEditor } from "./editors/StatusCellEditor";
 import { TextCellEditor } from "./editors/TextCellEditor";
+import { rowHeightFor } from "./row-height";
 import { pendingKey, type UseCellEditResult } from "./useCellEdit";
 
 const EMPTY_CELL = "—";
 
-/** Row heights per density; the header stays fixed across both. */
-const ROW_HEIGHT_BY_DENSITY: Record<Density, number> = { comfortable: 64, compact: 44 };
+/** Title and Authors show their full text: the row grows to fit it (see `row-height.ts`). */
+const WRAPPED_TEXT = "text-sm leading-5 break-words whitespace-normal";
+
 const TABLE_HEADER_HEIGHT = 42;
 
 const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
@@ -243,6 +249,8 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "title",
     name: "Title",
+    minWidth: 160,
+    resizable: true,
     sortable: true,
     renderCell: ({ row }) => row.title,
     renderEditCell: renderTitleEditCell,
@@ -250,6 +258,7 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "subtitle",
     name: "Subtitle",
+    resizable: true,
     sortable: false,
     renderCell: ({ row }) => row.subtitle ?? EMPTY_CELL,
     renderEditCell: renderSubtitleEditCell,
@@ -257,14 +266,20 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "authors",
     name: "Authors",
+    resizable: true,
     sortable: true,
-    renderCell: ({ row }) => (row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL),
+    renderCell: ({ row }) => (
+      <div className={WRAPPED_TEXT}>
+        {row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL}
+      </div>
+    ),
     renderEditCell: renderAuthorsEditCell,
     editorOptions: { commitOnOutsideClick: false },
   },
   {
     key: "series",
     name: "Series",
+    resizable: true,
     sortable: false,
     renderCell: ({ row }) => {
       if (row.series === null) return EMPTY_CELL;
@@ -275,6 +290,7 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "isbn_13",
     name: "ISBN",
+    resizable: true,
     sortable: false,
     width: 140,
     renderCell: ({ row }) => row.isbn_13 ?? EMPTY_CELL,
@@ -283,6 +299,7 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "pages",
     name: "Pages",
+    resizable: true,
     sortable: true,
     width: 80,
     renderCell: ({ row }) => (row.pages === null ? EMPTY_CELL : String(row.pages)),
@@ -291,6 +308,7 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "status",
     name: "Status",
+    resizable: true,
     sortable: false,
     width: 120,
     renderCell: ({ row }) => {
@@ -302,6 +320,7 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "rating",
     name: "Rating",
+    resizable: true,
     sortable: false,
     width: 173,
     renderCell: ({ row }) => {
@@ -316,6 +335,7 @@ const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "added",
     name: "Added",
+    resizable: true,
     sortable: true,
     width: 120,
     renderCell: ({ row }) => formatAddedDate(row.created_at),
@@ -391,12 +411,15 @@ function composeColumns(
           <Link
             to={`/b/${row.id}`}
             tabIndex={tabIndex}
-            className="text-fg hover:text-accent inline-flex min-h-6 max-w-full items-center truncate font-medium"
+            className={cn(
+              "text-fg hover:text-accent inline-flex min-h-6 max-w-full items-center font-medium",
+              WRAPPED_TEXT,
+            )}
           >
             {row.title}
           </Link>
           {isMobile && density === "comfortable" ? (
-            <div className="text-fg-muted truncate text-xs">
+            <div className="text-fg-muted text-xs leading-5 break-words whitespace-normal">
               {row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL}
             </div>
           ) : null}
@@ -585,6 +608,31 @@ export function LibraryTableView({
     onRowActivate,
   );
 
+  // Widths live only here, so a reload restores the defaults.
+  const [columnWidths, setColumnWidths] = useState((): ColumnWidths => new Map());
+  const [fontsLoaded, setFontsLoaded] = useState(false);
+  useEffect(() => {
+    let stale = false;
+    void document.fonts.ready.then(() => {
+      if (!stale) setFontsLoaded(true);
+    });
+    return () => {
+      stale = true;
+    };
+  }, []);
+  // The grid inherits the body face; the family string stays the same when the web font swaps in.
+  const fontFamily = useMemo(() => getComputedStyle(document.body).fontFamily, []);
+  const titleWidth = columnWidths.get("title")?.width;
+  const authorsWidth = columns.some((col) => col.key === "authors")
+    ? columnWidths.get("authors")?.width
+    : null;
+  // RDG computes every row's height whenever this identity changes, so it changes only with layout.
+  const rowHeight = useCallback(
+    (row: BookListItem) =>
+      rowHeightFor(row, { density, isMobile, titleWidth, authorsWidth, fontFamily, fontsLoaded }),
+    [density, isMobile, titleWidth, authorsWidth, fontFamily, fontsLoaded],
+  );
+
   const sortColumns: readonly SortColumn[] = sort.map((level) => ({
     columnKey: COLUMN_BY_FIELD[level.field],
     direction: level.desc ? "DESC" : "ASC",
@@ -631,7 +679,9 @@ export function LibraryTableView({
           onScroll={handleScroll}
           selectedRows={selectedIds}
           onSelectedRowsChange={onSelectionChange}
-          rowHeight={ROW_HEIGHT_BY_DENSITY[density]}
+          rowHeight={rowHeight}
+          columnWidths={columnWidths}
+          onColumnWidthsChange={setColumnWidths}
           headerRowHeight={TABLE_HEADER_HEIGHT}
           renderers={{ renderCell, renderSortStatus, renderCheckbox }}
         />
