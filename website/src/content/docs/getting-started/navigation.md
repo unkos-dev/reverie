@@ -118,11 +118,14 @@ direction, reorder levels, or remove one; none of it needs a modifier key. The g
 always shows the full stack, whichever surface built it. In the table, only the active sort shows a direction indicator
 on its header, so a glance at the header row tells you what orders the list without decoding every column.
 
-The table keeps its faster gesture on top. Click a column header to sort by that column; a second click reverses it, and
-a third returns to the library's default order. `⌘-click` / `Ctrl-click` a header adds it as another sort level instead
-of replacing the current one, so you can sort by author and then, within each author, by newest first. A plain click on
-any header resets the sort back down to that single column; the drawer's Sort section is the recovery surface when a
-stray click collapses a stack you built.
+The table keeps its faster gesture on top. Clicking a header steps that column through its sort cycle: an unsorted
+column sorts in its first direction, the next click reverses it, and the click after that returns to the library's
+default order. A column that is already sorting continues from where it stands, so in the default order a click on Added
+reverses it straight away. `⌘-click` / `Ctrl-click` a header to add it as another sort level instead of replacing the
+current one, so you can sort by author and then, within each author, by newest first. On a column already in the sort,
+`⌘-click` / `Ctrl-click` steps only that level, reversing or removing it. A plain click replaces the whole sort with
+that one column, or returns to the default order when it ends that column's cycle; the drawer's Sort section is the
+recovery surface when a stray click collapses a stack you built.
 
 Books with nothing to sort on, no page count, no author yet, always sort to the end, whichever direction you're sorting
 in.
