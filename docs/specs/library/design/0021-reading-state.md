@@ -26,8 +26,8 @@ This subject owns the `reading_state` table and the specific row-level-security 
 (`reading_state_owner`); the `get_reading` and `patch_reading` handlers in `backend/src/routes/reading.rs`; the
 `ReadingState` and `ReadingStateSummary` wire types in `backend/src/models/reading_state.rs` and the `ReadingStatus`
 enum in `backend/src/models/reading_status.rs`; the merge-patch and status-transition-stamp rules `apply_patch` applies;
-the seed-then-lock sequence that protects a first write; and the client's reading-state API client and the two grid
-editors that write it.
+the seed-then-lock sequence that protects a first write; and the client's reading-state API client and the two Library
+table cells that write it.
 
 It does not own the row-level-security mechanism itself: the `app.current_user_id` setting and `acquire_with_rls` are
 the Design "Row-level security and database context", which this subject relies on for every read and write. It does not
@@ -41,7 +41,7 @@ own the `ApiPath`/`ApiJson` request extractors or the `AppError`-to-Problem-Deta
 error contract and OpenAPI". It does not own the generic library-table cell-edit orchestration (pending-cell state, the
 metadata operation collection and local conflict recovery) in `frontend/src/pages/library/table/useCellEdit.ts` and
 `edit-routing.ts`, which applies identically to the metadata pipeline and is the Library table cell editing and undo
-subject; this subject owns only the two editor controls that orchestration routes commits through.
+subject; this subject owns only the two cell controls that orchestration routes commits through.
 
 Depends on: `crate::db::acquire_with_rls` for the RLS-scoped transaction every query in this subject runs inside; the
 `manifestations` table's own row-level-security policies, which `ensure_manifestation_visible` relies on for its
@@ -86,13 +86,14 @@ conflict detection.
   production readers.
 - `frontend/src/api/reading.ts` is the client's wire boundary: `ReadingStateSchema`, `getReadingState` and
   `updateReadingState`, each documented against the endpoint it wraps.
-- `frontend/src/pages/library/table/editors/StatusCellEditor.tsx` and `RatingCellEditor.tsx` are the two reading
-  controls a reader interacts with: a native `<select>` that commits immediately on a chosen option, and a keyboard- and
-  pointer-operable star group that commits on a digit key, a star click, or Enter after staging a draft with the arrow
-  keys. These two components are the whole of this subject's client-side UI surface — everything downstream of a commit
-  (building the patch, patching the list cache and conflict recovery) is the library table's generic cell-edit
-  orchestration named in Purpose and boundaries. `frontend/src/api/reading.ts` above is this subject's wire boundary,
-  not a UI control.
+- `StatusCell` and `RatingCell` in `frontend/src/pages/library/table/cells.tsx` are the two reading controls a reader
+  interacts with. `StatusCell` opens a React Aria `ListBox` of the five statuses and "No status", and choosing one
+  commits it. `RatingCell` commits from the cell itself: a press on a star sets that rating, a press on the current
+  rating clears it, digit keys 1 to 5 set it, and 0, Delete or Backspace clear it. Enter or F2 opens a five-star
+  `ToggleButtonGroup` with a Clear button. These two components are the whole of this subject's client-side UI surface —
+  everything downstream of a commit (building the patch, patching the list cache and conflict recovery) is the library
+  table's generic cell-edit orchestration named in Purpose and boundaries. `frontend/src/api/reading.ts` above is this
+  subject's wire boundary, not a UI control.
 
 ## Interfaces and dependencies
 
