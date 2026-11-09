@@ -248,7 +248,8 @@ export function LibraryPage(): ReactElement {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [hasRenderedControls, setHasRenderedControls] = useState(false);
   const preferences = useLibraryPreferences();
-  const { density, hiddenColumns, sortOverride, sortLevels, setSortLevels } = preferences;
+  const { density, hiddenColumns, sortOverride, sortLevels, defaultSortLevels, setSortLevels } =
+    preferences;
 
   const viewMode: LibraryView = owner.view ?? preferences.view;
   const params = filterStateToParams(filterState);
@@ -379,6 +380,7 @@ export function LibraryPage(): ReactElement {
                 <LibraryTableView
                   items={items}
                   sort={sortLevels}
+                  defaultSort={defaultSortLevels}
                   onSortChange={handleSortChange}
                   hasNextPage={canLoadMore}
                   isFetchingNextPage={isFetchingNextPage}

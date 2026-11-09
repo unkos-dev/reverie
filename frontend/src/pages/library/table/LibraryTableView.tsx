@@ -1,6 +1,7 @@
 /**
- * Editable table view of the library: the production face of the grid
- * adapter. Presentational per the container split for data fetching:
+ * Editable table view of the library, rendered directly on react-data-grid
+ * with its own column, editor, sort and selection types. Presentational per
+ * the container split for data fetching:
  * `LibraryContent` owns the infinite query and hands loaded rows plus the
  * editing owner down. The Library page owns edits above conditional results.
  * Paging is fetch-on-scroll over the keyset cursor, so the grid always
@@ -11,7 +12,30 @@
  * filter rail's sort section edits, via `onSortChange`.
  */
 import { Loader2, PanelRight } from "lucide-react";
-import { useMemo, useState, type ReactElement, type ReactNode, type UIEvent } from "react";
+import {
+  useMemo,
+  useState,
+  type Key,
+  type ReactElement,
+  type ReactNode,
+  type UIEvent,
+} from "react";
+import {
+  Cell,
+  DataGrid,
+  SelectColumn,
+  renderCheckbox as renderRdgCheckbox,
+  renderSortIcon,
+  renderValue,
+  type Column,
+  type RenderCellContentProps,
+  type RenderCellProps,
+  type RenderCheckboxProps,
+  type RenderEditCellContentProps,
+  type RenderSortStatusProps,
+  type SortColumn,
+} from "react-data-grid";
+import "react-data-grid/lib/styles.css";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -23,9 +47,8 @@ import {
   type SortField,
   type SortLevelParam,
 } from "@/api";
-import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
+import "@/lib/grid/grid-theme.css";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
-import type { GridColumn, GridEditorProps, SortState } from "@/lib/grid/types";
 
 import { LOCKED_COLUMN_KEYS, MOBILE_COLUMN_KEYS, TABLE_MOBILE_MEDIA_QUERY } from "../table-columns";
 
@@ -41,19 +64,6 @@ const EMPTY_CELL = "—";
 const ROW_HEIGHT_BY_DENSITY: Record<Density, number> = { comfortable: 64, compact: 44 };
 const TABLE_HEADER_HEIGHT = 42;
 
-/**
- * Header tooltip for a work-scoped column (title/subtitle/authors): a
- * committed edit fans out to every loaded sibling edition of the same work.
- * Carried as a hoverable, dismissable info control beside the header text.
- * The control's label reads as a suffix on the column's accessible name
- * ("Title (all editions)"), matching what the header previously spelled out
- * in visible text.
- */
-const WORK_SCOPED_TOOLTIP = {
-  label: "(all editions)",
-  content: "Edits apply to all editions of the work",
-};
-
 const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
   status: null,
   rating: null,
@@ -62,59 +72,71 @@ const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
   finished_at: null,
 };
 
-function renderTitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+function renderTitleEditCell({
+  row,
+  onRowChange,
+}: RenderEditCellContentProps<BookListItem>): ReactElement {
   return (
     <>
       <TextCellEditor
-        value={editorProps.row.title}
+        value={row.title}
         kind="text"
         required
         onDraft={(value) => {
-          editorProps.update({ ...editorProps.row, title: value ?? editorProps.row.title });
+          onRowChange({ ...row, title: value ?? row.title });
         }}
       />
     </>
   );
 }
 
-function renderSubtitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+function renderSubtitleEditCell({
+  row,
+  onRowChange,
+}: RenderEditCellContentProps<BookListItem>): ReactElement {
   return (
     <>
       <TextCellEditor
-        value={editorProps.row.subtitle}
+        value={row.subtitle}
         kind="text"
         onDraft={(value) => {
-          editorProps.update({ ...editorProps.row, subtitle: value });
+          onRowChange({ ...row, subtitle: value });
         }}
       />
     </>
   );
 }
 
-function renderIsbnEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+function renderIsbnEditCell({
+  row,
+  onRowChange,
+}: RenderEditCellContentProps<BookListItem>): ReactElement {
   return (
     <>
       <TextCellEditor
-        value={editorProps.row.isbn_13}
+        value={row.isbn_13}
         kind="text"
         onDraft={(value) => {
-          editorProps.update({ ...editorProps.row, isbn_13: value });
+          onRowChange({ ...row, isbn_13: value });
         }}
       />
     </>
   );
 }
 
-function renderPagesEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
-  const { pages } = editorProps.row;
+function renderPagesEditCell({
+  row,
+  onRowChange,
+}: RenderEditCellContentProps<BookListItem>): ReactElement {
+  const { pages } = row;
   return (
     <>
       <TextCellEditor
         value={pages === null ? null : String(pages)}
         kind="positive-int"
         onDraft={(value) => {
-          editorProps.update({
-            ...editorProps.row,
+          onRowChange({
+            ...row,
             pages: value === null ? null : Number(value),
           });
         }}
@@ -123,42 +145,52 @@ function renderPagesEditCell(editorProps: GridEditorProps<BookListItem>): ReactE
   );
 }
 
-function renderAuthorsEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+function renderAuthorsEditCell({
+  row,
+  onRowChange,
+  onClose,
+}: RenderEditCellContentProps<BookListItem>): ReactElement {
   return (
     <>
       <AuthorsCellEditor
-        authors={editorProps.row.authors}
+        authors={row.authors}
         onCommit={(authors) => {
-          editorProps.commit({ ...editorProps.row, authors });
+          onRowChange({ ...row, authors }, true);
         }}
-        onCancel={editorProps.cancel}
+        onCancel={onClose}
       />
     </>
   );
 }
 
-function renderStatusEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
-  const readingState = editorProps.row.reading_state ?? EMPTY_READING_STATE;
+function renderStatusEditCell({
+  row,
+  onRowChange,
+}: RenderEditCellContentProps<BookListItem>): ReactElement {
+  const readingState = row.reading_state ?? EMPTY_READING_STATE;
   return (
     <>
       <StatusCellEditor
         value={readingState.status}
         onCommit={(status) => {
-          editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, status } });
+          onRowChange({ ...row, reading_state: { ...readingState, status } }, true);
         }}
       />
     </>
   );
 }
 
-function renderRatingEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
-  const readingState = editorProps.row.reading_state ?? EMPTY_READING_STATE;
+function renderRatingEditCell({
+  row,
+  onRowChange,
+}: RenderEditCellContentProps<BookListItem>): ReactElement {
+  const readingState = row.reading_state ?? EMPTY_READING_STATE;
   return (
     <>
       <RatingCellEditor
         value={readingState.rating}
         onCommit={(rating) => {
-          editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, rating } });
+          onRowChange({ ...row, reading_state: { ...readingState, rating } }, true);
         }}
       />
     </>
@@ -181,7 +213,7 @@ const COLUMN_BY_FIELD: Record<SortField, string> = {
 /**
  * Grid column key to wire sort field, the reverse of {@link COLUMN_BY_FIELD}.
  * Derived rather than hand-maintained so the two maps cannot drift; lossless
- * because every value in `COLUMN_BY_FIELD` is distinct. `handleSortChange`
+ * because every value in `COLUMN_BY_FIELD` is distinct. `handleSortColumnsChange`
  * reads this to translate RDG's column-keyed sort back to wire fields.
  */
 const FIELD_BY_COLUMN: Partial<Record<string, SortField>> = Object.fromEntries(
@@ -189,48 +221,6 @@ const FIELD_BY_COLUMN: Partial<Record<string, SortField>> = Object.fromEntries(
     ([field, column]) => [column, field] as const,
   ),
 );
-
-/**
- * Two-state header sorting over react-data-grid's native three-state cycle.
- * The grid's third press removes a column from the sort, but the library
- * has no unsorted state (the list always carries a total order), so a
- * header press only ever toggles direction: a removal the grid reports is
- * reinterpreted as a wrap back to ascending. Removing a level for real is
- * the rail's stack editor's job.
- *
- * Two removal shapes reach this function. A press on the only descending
- * column empties the stack (the grid's single-sort replace semantics drop
- * the other levels too); the wrap resurrects that column alone, ascending,
- * which is exactly what the press means under a two-state cycle. A
- * ctrl-press on a descending level inside a multi-level stack drops just
- * that level with the rest intact; the wrap flips it to ascending in
- * place. Any other shape (replacing the stack with a new column, a plain
- * direction toggle) passes through untouched. With several descending
- * levels the emptied-stack shape cannot name which was pressed; the first
- * descending level is taken, which is the primary in every ordinary case.
- */
-function withTwoStateWrap(
-  current: readonly SortLevelParam[],
-  next: readonly SortLevelParam[],
-): readonly SortLevelParam[] {
-  if (next.length === 0) {
-    const pressed = current.find((level) => level.desc) ?? current.at(0);
-    return pressed === undefined ? next : [{ field: pressed.field, desc: false }];
-  }
-  if (next.length === current.length - 1) {
-    const missing = current.filter((level) => !next.some((n) => n.field === level.field));
-    const directionsKept = next.every((n) =>
-      current.some((level) => level.field === n.field && level.desc === n.desc),
-    );
-    if (missing.length === 1 && directionsKept && missing[0].desc) {
-      const at = current.findIndex((level) => level.field === missing[0].field);
-      const wrapped = [...next];
-      wrapped.splice(at, 0, { field: missing[0].field, desc: false });
-      return wrapped;
-    }
-  }
-  return next;
-}
 
 /** Renders the `created_at` RFC 3339 timestamp as a locale date for the
  *  read-only "Added" column and its plain-text export projection. */
@@ -244,36 +234,31 @@ function formatAddedDate(iso: string): string {
 }
 
 /**
- * Base column defs: accessor projections, sort wiring, and per-column
- * editors. `editable`/`renderCell` are layered on top per render in
- * {@link useEditableColumns} once pending-cell state exists to gate them;
- * `accessor` here stays the export-safe plain-text projection either way.
+ * Base column defs: cell text, sort wiring, and per-column editors.
+ * `editable` and the pending-draft `renderCell` are layered on top per
+ * render in {@link useComposedColumns} once pending-cell state exists to
+ * gate them.
  */
-const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
+const BASE_COLUMNS: readonly Column<BookListItem>[] = [
   {
     key: "title",
     name: "Title",
-    headerTooltip: WORK_SCOPED_TOOLTIP,
     sortable: true,
-    accessor: (row) => row.title,
-    // renderCell is layered per render (cover mark, mobile author stack)
-    // in `composeColumns`; the accessor stays the plain-text projection.
+    renderCell: ({ row }) => row.title,
     renderEditCell: renderTitleEditCell,
   },
   {
     key: "subtitle",
     name: "Subtitle",
-    headerTooltip: WORK_SCOPED_TOOLTIP,
     sortable: false,
-    accessor: (row) => row.subtitle ?? EMPTY_CELL,
+    renderCell: ({ row }) => row.subtitle ?? EMPTY_CELL,
     renderEditCell: renderSubtitleEditCell,
   },
   {
     key: "authors",
     name: "Authors",
-    headerTooltip: WORK_SCOPED_TOOLTIP,
     sortable: true,
-    accessor: (row) => (row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL),
+    renderCell: ({ row }) => (row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL),
     renderEditCell: renderAuthorsEditCell,
     editorOptions: { commitOnOutsideClick: false },
   },
@@ -281,7 +266,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
     key: "series",
     name: "Series",
     sortable: false,
-    accessor: (row) => {
+    renderCell: ({ row }) => {
       if (row.series === null) return EMPTY_CELL;
       if (row.series.position === null) return row.series.name;
       return `${row.series.name} · #${String(row.series.position)}`;
@@ -292,7 +277,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
     name: "ISBN",
     sortable: false,
     width: 140,
-    accessor: (row) => row.isbn_13 ?? EMPTY_CELL,
+    renderCell: ({ row }) => row.isbn_13 ?? EMPTY_CELL,
     renderEditCell: renderIsbnEditCell,
   },
   {
@@ -300,7 +285,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
     name: "Pages",
     sortable: true,
     width: 80,
-    accessor: (row) => (row.pages === null ? EMPTY_CELL : String(row.pages)),
+    renderCell: ({ row }) => (row.pages === null ? EMPTY_CELL : String(row.pages)),
     renderEditCell: renderPagesEditCell,
   },
   {
@@ -308,7 +293,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
     name: "Status",
     sortable: false,
     width: 120,
-    accessor: (row) => {
+    renderCell: ({ row }) => {
       const status = row.reading_state?.status ?? null;
       return status === null ? EMPTY_CELL : status.replaceAll("_", " ");
     },
@@ -319,7 +304,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
     name: "Rating",
     sortable: false,
     width: 173,
-    accessor: (row) => {
+    renderCell: ({ row }) => {
       const rating = row.reading_state?.rating ?? null;
       // Guarding below 1 here rather than in the zod schema: a schema bound
       // would fail the whole page parse over one bad row, while this degrades
@@ -333,7 +318,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
     name: "Added",
     sortable: true,
     width: 120,
-    accessor: (row) => formatAddedDate(row.created_at),
+    renderCell: ({ row }) => formatAddedDate(row.created_at),
   },
 ];
 
@@ -373,24 +358,31 @@ function TitleCellMark({ row }: Readonly<{ row: BookListItem }>): ReactElement {
 /**
  * Composes the render-time column set from the base defs: applies the
  * user's hidden-column preference (desktop) or the fixed mobile trim,
- * layers the rich title cell (cover mark, link, mobile author stack), and
- * prepends the details column: the guaranteed drawer path that survives
- * any visibility or density configuration.
+ * starts each column the installation default sorts descending at
+ * descending, layers the rich title cell (cover mark, link, mobile author
+ * stack), and prepends the selection column and the details column: the
+ * guaranteed drawer path that survives any visibility or density
+ * configuration.
  */
 function composeColumns(
   hiddenColumns: ReadonlySet<string>,
   density: Density,
   isMobile: boolean,
+  defaultSort: readonly SortLevelParam[],
   onRowActivate: (book: BookListItem) => void,
-): readonly GridColumn<BookListItem>[] {
+): readonly Column<BookListItem>[] {
+  const descendingFirst = new Set(
+    defaultSort.filter((level) => level.desc).map((level) => COLUMN_BY_FIELD[level.field]),
+  );
   const visible = BASE_COLUMNS.filter((col) => {
     if (LOCKED_COLUMN_KEYS.has(col.key)) return true;
     if (isMobile) return MOBILE_COLUMN_KEYS.has(col.key);
     return !hiddenColumns.has(col.key);
   });
-  const withTitleCell = visible.map((col) => {
-    if (col.key !== "title") return col;
-    const renderCell = (row: BookListItem, tabIndex: number): ReactNode => (
+  const withTitleCell = visible.map((col): Column<BookListItem> => {
+    const base = descendingFirst.has(col.key) ? { ...col, sortDescendingFirst: true } : col;
+    if (col.key !== "title") return base;
+    const renderCell = ({ row, tabIndex }: RenderCellContentProps<BookListItem>): ReactNode => (
       <div className="flex min-w-0 items-center gap-3">
         {density === "comfortable" ? <TitleCellMark row={row} /> : null}
         <div className="min-w-0">
@@ -411,15 +403,14 @@ function composeColumns(
         </div>
       </div>
     );
-    return { ...col, renderCell };
+    return { ...base, renderCell };
   });
-  const detailsColumn: GridColumn<BookListItem> = {
+  const detailsColumn: Column<BookListItem> = {
     key: "details",
     name: "",
     sortable: false,
     width: 44,
-    accessor: () => "",
-    renderCell: (row, tabIndex) => (
+    renderCell: ({ row, tabIndex }) => (
       <Button
         type="button"
         excludeFromTabOrder={tabIndex === -1}
@@ -435,7 +426,7 @@ function composeColumns(
       </Button>
     ),
   };
-  return [detailsColumn, ...withTitleCell];
+  return [SelectColumn, detailsColumn, ...withTitleCell];
 }
 
 /**
@@ -443,24 +434,25 @@ function composeColumns(
  * is blocked from re-opening its editor while its own commit is in flight,
  * and renders the in-flight draft (muted, `aria-busy`) instead of the
  * cached value until the server confirms. Memoized so a fresh array does
- * not invalidate the binding's own `toRdgColumns` memo on every unrelated
- * re-render (scroll, sort) at up to 50K loaded rows.
+ * not make RDG recompute its columns on every unrelated re-render (scroll,
+ * sort) at up to 50K loaded rows.
  */
 function useComposedColumns(
   pendingCells: ReadonlyMap<string, string>,
   hiddenColumns: ReadonlySet<string>,
   density: Density,
   isMobile: boolean,
+  defaultSort: readonly SortLevelParam[],
   onRowActivate: (book: BookListItem) => void,
-): readonly GridColumn<BookListItem>[] {
+): readonly Column<BookListItem>[] {
   return useMemo(
     () =>
-      composeColumns(hiddenColumns, density, isMobile, onRowActivate).map((col) => {
-        if (col.renderEditCell === undefined) return col;
-        const renderFinal = col.renderCell ?? col.accessor;
-        const renderCell = (row: BookListItem, tabIndex: number): ReactNode => {
-          const draft = pendingCells.get(pendingKey(row.id, col.key));
-          if (draft === undefined) return renderFinal(row, tabIndex);
+      composeColumns(hiddenColumns, density, isMobile, defaultSort, onRowActivate).map((col) => {
+        if (col.renderEditCell == null) return col;
+        const renderFinal = col.renderCell ?? renderValue;
+        const renderCell = (props: RenderCellContentProps<BookListItem>): ReactNode => {
+          const draft = pendingCells.get(pendingKey(props.row.id, col.key));
+          if (draft === undefined) return renderFinal(props);
           return (
             <span aria-busy="true" className="text-fg-muted italic">
               {draft}
@@ -475,7 +467,7 @@ function useComposedColumns(
       }),
     // onRowActivate is a stable prop-drilled callback identity-wise only if
     // the container memoizes it; include it so a changed handler is honored.
-    [pendingCells, hiddenColumns, density, isMobile, onRowActivate],
+    [pendingCells, hiddenColumns, density, isMobile, defaultSort, onRowActivate],
   );
 }
 
@@ -488,9 +480,65 @@ function isAtBottom({ currentTarget }: UIEvent<HTMLDivElement>): boolean {
   return currentTarget.scrollTop + 10 >= currentTarget.scrollHeight - currentTarget.clientHeight;
 }
 
+/**
+ * Overrides RDG's default sort-status renderer to add an accessible label
+ * next to the bare priority number: the vendor's own render leaves the
+ * digit unlabeled, so a screen reader announces "2" with no indication
+ * it names a sort priority.
+ */
+function renderSortStatus({ sortDirection, priority }: RenderSortStatusProps): ReactNode {
+  return (
+    <>
+      {renderSortIcon({ sortDirection })}
+      {priority === undefined ? null : (
+        <span>
+          {priority}
+          <span className="sr-only">{` sort level ${String(priority)}`}</span>
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * RDG's checkbox with the header select-all control renamed. Select-all
+ * covers loaded rows only (keyset paging has no "all matching the filter"
+ * client-side), and the label says so. The header instance is the only one
+ * handed `indeterminate`.
+ */
+function renderCheckbox(props: RenderCheckboxProps): ReactNode {
+  return renderRdgCheckbox(
+    props.indeterminate === undefined
+      ? props
+      : { ...props, "aria-label": "Select all loaded books" },
+  );
+}
+
+function renderCell<R>(key: Key, props: RenderCellProps<R, unknown>): ReactNode {
+  return (
+    <Cell
+      key={key}
+      {...props}
+      // React Aria's usePress stops left-button mousedown, so RDG never activates the cell of a pressed cell button.
+      onMouseDownCapture={(event) => {
+        if (
+          event.button !== 0 ||
+          !(event.target instanceof Element) ||
+          event.target.closest("button") === null
+        )
+          return;
+        props.setActivePosition({ rowIdx: props.rowIdx, idx: props.column.idx });
+      }}
+    />
+  );
+}
+
 type Props = {
   items: readonly BookListItem[];
   sort: readonly SortLevelParam[];
+  /** The installation default sort stack; a column it sorts descending
+   *  starts descending on its first header press. */
+  defaultSort: readonly SortLevelParam[];
   onSortChange: (levels: readonly SortLevelParam[]) => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
@@ -513,6 +561,7 @@ type Props = {
 export function LibraryTableView({
   items,
   sort,
+  defaultSort,
   onSortChange,
   hasNextPage,
   isFetchingNextPage,
@@ -527,14 +576,21 @@ export function LibraryTableView({
 }: Readonly<Props>): ReactElement {
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const { pendingCells, onCellEdit, keyboardProps } = edits;
-  const columns = useComposedColumns(pendingCells, hiddenColumns, density, isMobile, onRowActivate);
+  const columns = useComposedColumns(
+    pendingCells,
+    hiddenColumns,
+    density,
+    isMobile,
+    defaultSort,
+    onRowActivate,
+  );
 
-  const sortState: SortState = sort.map((level) => ({
+  const sortColumns: readonly SortColumn[] = sort.map((level) => ({
     columnKey: COLUMN_BY_FIELD[level.field],
-    direction: level.desc ? "desc" : "asc",
+    direction: level.desc ? "DESC" : "ASC",
   }));
 
-  function handleSortChange(next: SortState): void {
+  function handleSortColumnsChange(next: SortColumn[]): void {
     const levels: SortLevelParam[] = [];
     for (const entry of next) {
       const field = FIELD_BY_COLUMN[entry.columnKey];
@@ -542,9 +598,9 @@ export function LibraryTableView({
         console.error("[LibraryTableView] sortable column has no wire mapping", entry.columnKey);
         continue;
       }
-      levels.push({ field, desc: entry.direction === "desc" });
+      levels.push({ field, desc: entry.direction === "DESC" });
     }
-    onSortChange(withTwoStateWrap(sort, levels).slice(0, MAX_SORT_LEVELS));
+    onSortChange(levels.slice(0, MAX_SORT_LEVELS));
   }
 
   function handleScroll(event: UIEvent<HTMLDivElement>): void {
@@ -560,28 +616,26 @@ export function LibraryTableView({
       {/* Sort-stack announcements come from LibraryPage's always-mounted
           live region; the grid carries no sort-summary association of its
           own. */}
-      <ReactDataGridBinding<BookListItem>
-        rows={items}
-        columns={columns}
-        label="Library books"
-        sort={sortState}
-        onSortChange={handleSortChange}
-        onCellFocus={() => undefined}
-        onCellEdit={onCellEdit}
-        onRowActivate={onRowActivate}
-        selection={{
-          selectedKeys: selectedIds,
-          onSelectionChange,
-          // Select-all covers loaded rows only (keyset paging has no "all
-          // matching the filter" client-side); the label says so.
-          selectAllLabel: "Select all loaded books",
-        }}
-        onScroll={handleScroll}
-        rowKey={(row) => row.id}
-        rowHeight={ROW_HEIGHT_BY_DENSITY[density]}
-        headerRowHeight={TABLE_HEADER_HEIGHT}
-        className="h-[calc(100dvh-22rem)] min-h-96"
-      />
+      <div className="rv-grid h-[calc(100dvh-22rem)] min-h-96">
+        <DataGrid
+          aria-label="Library books"
+          columns={columns}
+          rows={items}
+          getRowKey={(row) => row.id}
+          sortColumns={sortColumns}
+          onSortColumnsChange={handleSortColumnsChange}
+          onRowsChange={(nextRows, { indexes, column }) => {
+            const index = indexes[0];
+            onCellEdit({ row: nextRows[index], previousRow: items[index], columnKey: column.key });
+          }}
+          onScroll={handleScroll}
+          selectedRows={selectedIds}
+          onSelectedRowsChange={onSelectionChange}
+          rowHeight={ROW_HEIGHT_BY_DENSITY[density]}
+          headerRowHeight={TABLE_HEADER_HEIGHT}
+          renderers={{ renderCell, renderSortStatus, renderCheckbox }}
+        />
+      </div>
       {/* Single owner of every paging state in table mode; the page-level
           Load-more block stays out of table view so a failure or fetch is
           announced exactly once. */}

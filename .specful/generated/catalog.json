@@ -255,7 +255,10 @@
       "id": "REV-ADR-0036",
       "kind": "adr",
       "path": "docs/adr/0036-library-data-grid-stack-two-way-bake-off-behind-a-local-adapter.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0070"
+      ],
       "title": "Library data-grid stack: two-way bake-off behind a local adapter"
     },
     {
@@ -518,6 +521,16 @@
       "path": "docs/adr/0069-metadata-change-identity-and-short-lived-exact-undo.md",
       "status": "accepted",
       "title": "Metadata change identity and short-lived exact Undo"
+    },
+    {
+      "id": "REV-ADR-0070",
+      "kind": "adr",
+      "path": "docs/adr/0070-library-table-uses-react-data-grid-directly.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0036"
+      ],
+      "title": "Library table uses react-data-grid directly"
     },
     {
       "governed-by": [

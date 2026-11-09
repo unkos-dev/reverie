@@ -1,7 +1,7 @@
 /**
  * Native `<select>` editor for the per-user reading-status column. A native
  * element, not the Radix-based `Select` primitive, so the editor never
- * grows a portal: the grid binding's Tab-to-next-cell check requires the
+ * grows a portal: RDG's Tab-to-next-cell check requires the
  * `.rdg-editor-container` to hold exactly one input/select/textarea.
  * Selecting an option commits immediately (select-and-done); there is no
  * draft to stage, so Enter/Escape at the container have nothing further to

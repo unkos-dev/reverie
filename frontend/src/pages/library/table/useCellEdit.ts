@@ -33,7 +33,6 @@ import {
   type ReadingSnapshot,
   type UpdateReadingFields,
 } from "@/api/reading";
-import type { CellEditReport } from "@/lib/grid/types";
 import { queryKeys, type BooksListKey } from "@/lib/query/keys";
 
 import { EDIT_ROUTES, type EditableColumnKey } from "./edit-routing";
@@ -368,9 +367,11 @@ type CellEditFeedback = {
   reload: () => void;
 };
 
+export type CellEditReport = { row: BookListItem; previousRow: BookListItem; columnKey: string };
+
 export type UseCellEditResult = {
   pendingCells: ReadonlyMap<string, string>;
-  onCellEdit: (report: CellEditReport<BookListItem>) => void;
+  onCellEdit: (report: CellEditReport) => void;
   keyboardProps: ReturnType<typeof useKeyboard>["keyboardProps"];
   undo: () => void;
   undoPending: boolean;
@@ -656,7 +657,7 @@ export function useCellEdit({
     ];
   });
 
-  function onCellEdit({ row, previousRow, columnKey }: CellEditReport<BookListItem>): void {
+  function onCellEdit({ row, previousRow, columnKey }: CellEditReport): void {
     if (!enabled || !isEditableColumnKey(columnKey)) return;
     setUndoOutcome(null);
     const route = EDIT_ROUTES[columnKey];
