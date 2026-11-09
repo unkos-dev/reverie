@@ -28,12 +28,7 @@ yanked = "warn"
 # osv-scanner.toml applies these rulings to OpenSSF Scorecard's OSV scan, which
 # cannot read this file; change the two together.
 ignore = [
-  { id = "RUSTSEC-2026-0387", reason = "accepted for assessed OIDC signature-verification-only use; affected crypto-bigint arithmetic remains reachable and timing leakage is not ruled out. Remove when the graph has no affected crypto-bigint; reassess immediately for signing, ECDH, other secret-integer use or contrary exploit evidence. Review by 2026-11-08 is documented, not automatically enforced; see debt/2026-10-25-crypto-bigint-verification-only.md" },
   { id = "RUSTSEC-2023-0071", reason = "rsa 0.10 fixes this advisory, but openidconnect 4.1 requires rsa 0.9; production uses rsa only for public-key signature verification, and private-key operations remain confined to tests. Remove when the resolved graph has no affected rsa" },
-  # rand — soundness issue (aliased &mut via log + thread_rng). rand 0.8.x is
-  # pulled in transitively by sqlx 0.8; the ecosystem has not yet released a
-  # sqlx 0.9 / rand-0.9-compatible version. Revisit when sqlx 0.9 goes stable.
-  { id = "RUSTSEC-2026-0097", reason = "rand 0.8.x pulled transitively by sqlx 0.8; no sqlx 0.9 / rand-0.9 release yet — revisit when sqlx 0.9 is stable" },
 ]
 
 [licenses]
