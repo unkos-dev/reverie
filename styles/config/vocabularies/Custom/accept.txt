@@ -225,6 +225,7 @@ googlebooks
 Grafana
 Greptile
 Guin
+gzip
 gzipped
 Hadolint
 handoff
@@ -308,6 +309,10 @@ matcher
 math
 maxcountryman
 MDN
+memoisation
+memoise
+memoised
+memoising
 Menlo
 metacharacter
 microtext
@@ -389,6 +394,7 @@ prefs
 preinstalls
 preload
 Prettier
+profiler
 proxied
 PRs
 pub_date
