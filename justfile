@@ -204,9 +204,11 @@ gate-status:
     scripts/gate-run.sh --status
 
 # Worktree root. Override with WORKTREE_ROOT to keep checkouts elsewhere; the
-# default is a sibling of the repo so it inherits the same filesystem and
-# backup rules without ever nesting inside the checkout.
-worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_directory()) / "worktrees")
+# default, resolved in the `worktree` recipe, is a sibling of the main checkout
+# so it inherits the same filesystem and backup rules without ever nesting
+# inside a checkout. It comes from git's common directory rather than this
+# justfile's, because a linked worktree's justfile would nest it.
+worktree_root := env_var_or_default("WORKTREE_ROOT", "")
 
 # Worktrees live outside the checkout: nested ones put every other branch
 # inside the Docker build context, cargo workspace discovery, and file
@@ -248,7 +250,11 @@ worktree branch base="":
     branch="$1"
     base="${2:-}"
     slug="$(printf '%s' "$branch" | tr '/' '-')"
-    dest={{ quote(worktree_root) }}"/reverie/${slug}"
+    root={{ quote(worktree_root) }}
+    if [ -z "$root" ]; then
+        root="$(dirname "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")/worktrees"
+    fi
+    dest="${root}/reverie/${slug}"
     parent="$(dirname "$dest")"
     mkdir -p "$parent"
     # scripts/require-disk-backed.sh centralizes the tmpfs/ramfs filesystem
@@ -560,21 +566,61 @@ _worktree-install path:
         exit 1
     fi
 
-# Remove a worktree by branch name, then prune the administrative state that
-# a plain `rm -rf` would strand in .git/worktrees. Same "$@" handling as
-# `worktree` above, for the same injection reason.
+# Finds the worktree by the branch it has checked out, so it works whatever the
+# worktree's directory is called, prunes .git/worktrees, then deletes the branch
+# with -D: squash merges leave merged branches looking unmerged, so the printed
+# tip is the recovery point. Refuses the main worktree and the worktree it runs
+# from; git itself refuses one with uncommitted or untracked changes. When git
+# unregisters the worktree but cannot delete every file, such as a cache a
+# running dev server rewrote, the branch is still deleted and the leftover
+# directory is named. Same "$@" handling as `worktree` above, for the same
+# injection reason.
 #
-# Remove the worktree for BRANCH.
+# Remove the worktree that has BRANCH checked out, then delete the branch.
 [group('git')]
 [positional-arguments]
 worktree-rm branch:
     #!/usr/bin/env bash
-    set -ueo pipefail
+    set -euo pipefail
     branch="$1"
-    slug="$(printf '%s' "$branch" | tr '/' '-')"
-    git worktree remove {{ quote(worktree_root) }}"/reverie/${slug}"
+    ref="refs/heads/${branch}"
+    porcelain="$(git worktree list --porcelain)"
+    main="$(printf '%s\n' "$porcelain" | awk '/^worktree /{ print substr($0, 10); exit }')"
+    path="$(printf '%s\n' "$porcelain" | awk -v ref="$ref" '/^worktree /{ p = substr($0, 10) } $0 == "branch " ref { print p; exit }')"
+    if [ -z "$path" ]; then
+        if git show-ref --verify --quiet "$ref"; then
+            echo "no worktree has ${branch} checked out; the branch exists without one" >&2
+        else
+            echo "no branch named ${branch}" >&2
+        fi
+        exit 1
+    fi
+    if [ "$path" = "$main" ]; then
+        echo "refusing to remove the main worktree: ${path}" >&2
+        exit 1
+    fi
+    caller="$(realpath {{ quote(invocation_directory()) }})"
+    target="$(realpath "$path")"
+    case "${caller}/" in
+        "${target}/"*)
+            echo "refusing to remove ${target}: the command is running from inside it" >&2
+            exit 1
+            ;;
+    esac
+    tip="$(git rev-parse "$ref")"
+    leftover=""
+    if ! git worktree remove "$path"; then
+        if grep -Fxq "worktree ${path}" <<<"$(git worktree list --porcelain)"; then
+            exit 1
+        fi
+        leftover="$path"
+    fi
     git worktree prune
-    echo "removed worktree for ${branch}"
+    git branch -D "$branch" >/dev/null
+    echo "removed worktree ${path} and branch ${branch} (was ${tip})"
+    if [ -n "$leftover" ]; then
+        echo "git unregistered the worktree but could not delete everything in ${leftover}; files written during removal remain there" >&2
+    fi
 
 # Start (or create) the local dev Postgres.
 [group('db')]
