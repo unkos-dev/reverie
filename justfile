@@ -564,8 +564,11 @@ _worktree-install path:
 # worktree's directory is called, prunes .git/worktrees, then deletes the branch
 # with -D: squash merges leave merged branches looking unmerged, so the printed
 # tip is the recovery point. Refuses the main worktree and the worktree it runs
-# from; git itself refuses one with uncommitted or untracked changes. Same "$@"
-# handling as `worktree` above, for the same injection reason.
+# from; git itself refuses one with uncommitted or untracked changes. When git
+# unregisters the worktree but cannot delete every file, such as a cache a
+# running dev server rewrote, the branch is still deleted and the leftover
+# directory is named. Same "$@" handling as `worktree` above, for the same
+# injection reason.
 #
 # Remove the worktree that has BRANCH checked out, then delete the branch.
 [group('git')]
@@ -599,10 +602,19 @@ worktree-rm branch:
             ;;
     esac
     tip="$(git rev-parse "$ref")"
-    git worktree remove "$path"
+    leftover=""
+    if ! git worktree remove "$path"; then
+        if grep -Fxq "worktree ${path}" <<<"$(git worktree list --porcelain)"; then
+            exit 1
+        fi
+        leftover="$path"
+    fi
     git worktree prune
     git branch -D "$branch" >/dev/null
     echo "removed worktree ${path} and branch ${branch} (was ${tip})"
+    if [ -n "$leftover" ]; then
+        echo "git unregistered the worktree but could not delete everything in ${leftover}; files written during removal remain there" >&2
+    fi
 
 # Start (or create) the local dev Postgres.
 [group('db')]
