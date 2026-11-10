@@ -563,10 +563,11 @@ secondary columns use muted text, and the Reading status has medium weight.
 - **Controls:** density and view selectors use a bordered native toggle group with a soft accent fill on the selected
   option. Removable filter tags and the mounted empty state sit below the toolbar.
 - **Editing:** pressing a cell opens its editor in a popover anchored to the cell. Text editors cover the cell, with ✓
-  to save and ✕ to cancel. Authors edit as removable chips with an "Add an author" field, the hint "Enter adds a name,
-  then saves.", Cancel and a gold-filled Save. Status opens a list. Rating is set by pressing a star in the cell, with a
-  hover preview. The title link opens the book; a pencil shown on row hover, F2 or typing edits the title. Enter or a
-  click outside saves; Escape discards.
+  to save and ✕ to cancel. Authors edit as removable chips, each with a grip for dragging it to a new place, followed by
+  an "Add an author" field, Cancel and a gold-filled Save. A gold bar marks where a dragged chip will land, and the
+  first chip is the primary author. Status opens a list. Rating is set by pressing a star in the cell, with a hover
+  preview. The title link opens the book; a pencil shown on row hover, F2 or typing edits the title. Enter or a click
+  outside saves; Escape discards.
 - **Edit states:** a saving value shows a moving gold line under it, which stays still under reduced motion. A failed
   save shows an alert icon in its cell.
 - **Sorting:** pressing a header sorts by that column, and Shift adds it as a further level. Each sortable header has a

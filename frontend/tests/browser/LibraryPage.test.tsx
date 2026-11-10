@@ -135,6 +135,7 @@ async function renderLibrary({
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
+  client.setQueryData(queryKeys.auth.me(), null);
   client.setQueryData(queryKeys.shelves.list(), []);
   if (visit?.filters?.series !== undefined)
     client.setQueryData(queryKeys.series.resolve(visit.filters.series), seriesLabels);
@@ -745,6 +746,15 @@ test("metadata Undo survives table refreshes", async () => {
     items: [current, other],
     nextCursor: null,
     visit: { view: "table" },
+  });
+  recovered.client.setQueryData(queryKeys.auth.me(), {
+    id: "77777777-7777-4777-8777-777777777777",
+    display_name: "Cataloguer",
+    email: "cataloguer@example.test",
+    role: "admin",
+    is_child: false,
+    has_local_password: true,
+    theme_preference: "dark",
   });
   const edit = async (title: string, text: string) => {
     await userEvent.click(page.getByRole("button", { name: `Edit title of ${title}` }));

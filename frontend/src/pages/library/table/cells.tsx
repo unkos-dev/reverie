@@ -1,21 +1,23 @@
-import { CircleAlert, Check, PanelRight, PenLine, Star, X } from "lucide-react";
+import { CircleAlert, Check, GripVertical, PanelRight, PenLine, Star, X } from "lucide-react";
 import { useRef, useState, type ReactElement, type ReactNode, type RefObject } from "react";
 import {
   Button as AriaButton,
   Dialog,
+  DropIndicator,
   FieldError,
   Form,
+  GridList,
+  GridListItem,
   Input,
   Link,
   ListBox,
   ListBoxItem,
   Popover,
-  Tag,
-  TagGroup,
-  TagList,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  useDragAndDrop,
+  useListData,
   type KeyboardEvent,
   type PressEvent,
 } from "react-aria-components";
@@ -547,19 +549,35 @@ function AuthorsEditor({
   onCommit,
   onCancel,
 }: Readonly<AuthorsEditorProps>): ReactElement {
-  const [names, setNames] = useState<AuthorDraft[]>(() =>
-    authors.map((name, index) => ({ id: `author-${String(index)}`, name })),
-  );
+  const list = useListData<AuthorDraft>({
+    initialItems: authors.map((name, index) => ({ id: `author-${String(index)}`, name })),
+  });
   const [draft, setDraft] = useState(seed ?? "");
   const [problem, setProblem] = useState<string | null>(null);
   const nextId = useRef(authors.length);
+  const { dragAndDropHooks } = useDragAndDrop<AuthorDraft>({
+    getItems: (_keys, items) => items.map((entry) => ({ "text/plain": entry.name })),
+    renderDropIndicator: (target) => (
+      <DropIndicator
+        target={target}
+        className="data-drop-target:bg-accent mx-0.5 w-0.5 self-stretch rounded-full outline-none"
+      />
+    ),
+    onReorder(event) {
+      if (event.target.dropPosition === "before") {
+        list.moveBefore(event.target.key, event.keys);
+      } else if (event.target.dropPosition === "after") {
+        list.moveAfter(event.target.key, event.keys);
+      }
+    },
+  });
 
   function add(): boolean {
     const name = draft.trim();
     if (name === "") return false;
     const id = `author-${String(nextId.current)}`;
     nextId.current += 1;
-    setNames((current) => [...current, { id, name }]);
+    list.append({ id, name });
     setDraft("");
     setProblem(null);
     return true;
@@ -569,7 +587,7 @@ function AuthorsEditor({
     <Form
       action={() => {
         const pending = draft.trim();
-        const final = names.map((entry) => entry.name);
+        const final = list.items.map((entry) => entry.name);
         if (pending !== "") final.push(pending);
         if (final.length === 0) {
           setProblem("Add at least one author.");
@@ -579,35 +597,40 @@ function AuthorsEditor({
       }}
       className="flex flex-col gap-3 p-3"
     >
-      <TagGroup
+      <GridList
         aria-label="Authors"
-        onRemove={(keys) => {
-          setNames((current) => current.filter((entry) => !keys.has(entry.id)));
-        }}
+        items={list.items}
+        dragAndDropHooks={dragAndDropHooks}
+        renderEmptyState={() => <span className="text-fg-muted text-sm">No authors yet.</span>}
+        layout="grid"
+        keyboardNavigationBehavior="tab"
+        className="flex flex-wrap gap-x-1 gap-y-1.5 outline-none"
       >
-        <TagList
-          items={names}
-          renderEmptyState={() => <span className="text-fg-muted text-sm">No authors yet.</span>}
-          className="flex flex-wrap gap-1.5 outline-none"
-        >
-          {(entry) => (
-            <Tag
-              id={entry.id}
-              textValue={entry.name}
-              className="bg-surface-2 text-fg border-border-strong data-focus-visible:outline-accent-text inline-flex items-center gap-1 rounded-full border py-0.5 pr-0.5 pl-3 text-sm outline-none data-focus-visible:outline-2 data-focus-visible:outline-offset-1"
+        {(entry) => (
+          <GridListItem
+            id={entry.id}
+            textValue={entry.name}
+            className="bg-surface-2 text-fg border-border-strong data-focus-visible:outline-accent-text data-dragging:opacity-50 inline-flex items-center gap-0.5 rounded-full border py-0.5 pr-0.5 pl-0.5 text-sm outline-none data-focus-visible:outline-2 data-focus-visible:outline-offset-1"
+          >
+            <AriaButton
+              slot="drag"
+              className="text-fg-muted data-focus-visible:outline-accent-text flex size-6 cursor-grab items-center justify-center rounded outline-none data-focus-visible:outline-2"
             >
-              {entry.name}
-              <AriaButton
-                slot="remove"
-                aria-label={`Remove ${entry.name}`}
-                className="text-fg-muted data-hovered:bg-surface-3 data-hovered:text-fg flex size-6 items-center justify-center rounded-full outline-none"
-              >
-                <X className="size-3.5" aria-hidden="true" />
-              </AriaButton>
-            </Tag>
-          )}
-        </TagList>
-      </TagGroup>
+              <GripVertical className="size-3.5" aria-hidden="true" />
+            </AriaButton>
+            <span className="min-w-0">{entry.name}</span>
+            <AriaButton
+              aria-label={`Remove ${entry.name}`}
+              onPress={() => {
+                list.remove(entry.id);
+              }}
+              className="text-fg-muted data-hovered:bg-surface-3 data-hovered:text-fg data-focus-visible:outline-accent-text flex size-6 items-center justify-center rounded-full outline-none data-focus-visible:outline-2"
+            >
+              <X className="size-3.5" aria-hidden="true" />
+            </AriaButton>
+          </GridListItem>
+        )}
+      </GridList>
       <TextField
         aria-label="Add an author"
         value={draft}
@@ -621,9 +644,10 @@ function AuthorsEditor({
             if (add() || event.key === ",") event.preventDefault();
             return;
           }
-          if (event.key === "Backspace" && draft === "" && names.length > 0) {
+          const last = list.items.at(-1);
+          if (event.key === "Backspace" && draft === "" && last !== undefined) {
             event.preventDefault();
-            setNames((current) => current.slice(0, -1));
+            list.remove(last.id);
             return;
           }
           event.continuePropagation();
@@ -639,16 +663,13 @@ function AuthorsEditor({
           {problem}
         </p>
       )}
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-fg-muted text-xs leading-4">Enter adds a name, then saves.</p>
-        <div className="flex shrink-0 gap-1.5">
-          <Button type="button" variant="ghost" size="sm" onPress={onCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" size="sm">
-            Save
-          </Button>
-        </div>
+      <div className="flex justify-end gap-1.5">
+        <Button type="button" variant="ghost" size="sm" onPress={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" size="sm">
+          Save
+        </Button>
       </div>
     </Form>
   );

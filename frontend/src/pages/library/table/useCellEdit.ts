@@ -11,7 +11,7 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useKeyboard } from "react-aria";
-import type { AuthMe } from "@/hooks/useAuthMe";
+import { useAuthMe } from "@/hooks/useAuthMe";
 
 import {
   ApiError,
@@ -342,9 +342,7 @@ function applyRecoveryRead(
   }
 }
 
-function useCellEditRecords(): CellEditRecord[] {
-  const client = useQueryClient();
-  const userId = client.getQueryData<AuthMe>(queryKeys.auth.me())?.id ?? null;
+function useCellEditRecords(userId: string | null): CellEditRecord[] {
   return useMutationState<CellEditRecord, Mutation<unknown, Error, { context: CellEditContext }>>({
     filters: { mutationKey: cellEditKey(userId) },
     select: (mutation) => ({
@@ -391,7 +389,7 @@ export function useCellEdit({
   enabled: boolean;
 }): UseCellEditResult {
   const client = useQueryClient();
-  const userId = client.getQueryData<AuthMe>(queryKeys.auth.me())?.id ?? null;
+  const userId = useAuthMe().data?.id ?? null;
   const [owner, setOwner] = useState({ enabled, context: {}, entries: [] as UndoEntry[] });
   const [undoOutcome, setUndoOutcome] = useState<string | null>(null);
   if (enabled !== owner.enabled) {
@@ -400,7 +398,7 @@ export function useCellEdit({
   }
   const contextOwner = owner.context;
   const [pendingCells, setPendingCells] = useState<ReadonlyMap<string, string>>(new Map());
-  const records = useCellEditRecords();
+  const records = useCellEditRecords(userId);
 
   function drop(operationId: string): void {
     setOwner((current) => ({
@@ -669,6 +667,7 @@ export function useCellEdit({
     let display = JSON.stringify(value);
     if (value === null) display = "unset";
     else if (typeof value === "string") display = value;
+    else if (Array.isArray(value)) display = value.join(", ");
     const context: CellEditContext = {
       userId,
       operation: "save",
