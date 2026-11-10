@@ -204,9 +204,11 @@ gate-status:
     scripts/gate-run.sh --status
 
 # Worktree root. Override with WORKTREE_ROOT to keep checkouts elsewhere; the
-# default is a sibling of the repo so it inherits the same filesystem and
-# backup rules without ever nesting inside the checkout.
-worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_directory()) / "worktrees")
+# default, resolved in the `worktree` recipe, is a sibling of the main checkout
+# so it inherits the same filesystem and backup rules without ever nesting
+# inside a checkout. It comes from git's common directory rather than this
+# justfile's, because a linked worktree's justfile would nest it.
+worktree_root := env_var_or_default("WORKTREE_ROOT", "")
 
 # Worktrees live outside the checkout: nested ones put every other branch
 # inside the Docker build context, cargo workspace discovery, and file
@@ -248,7 +250,11 @@ worktree branch base="":
     branch="$1"
     base="${2:-}"
     slug="$(printf '%s' "$branch" | tr '/' '-')"
-    dest={{ quote(worktree_root) }}"/reverie/${slug}"
+    root={{ quote(worktree_root) }}
+    if [ -z "$root" ]; then
+        root="$(dirname "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")/worktrees"
+    fi
+    dest="${root}/reverie/${slug}"
     parent="$(dirname "$dest")"
     mkdir -p "$parent"
     # scripts/require-disk-backed.sh centralizes the tmpfs/ramfs filesystem
