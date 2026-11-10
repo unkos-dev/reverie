@@ -59,7 +59,7 @@ does not justify keeping it when the chosen tool meets the requirement.
   only when its value drives other UI or needs realtime validation.
 - **Client state:** Start with `useState` in the owning component, then composition, then lifting to the nearest common
   ancestor. Use Context only for low-frequency values such as theme and auth.
-- **Memoisation:** The React Compiler lint rules are on and the compiler transform is off. Add `memo`, `useMemo` or
+- **Memoisation:** The React Compiler lint rules and the compiler transform are both on. Add `memo`, `useMemo` or
   `useCallback` only for a measured performance need, reference stability or an API contract. Leave existing memoisation
   in place unless you test the removal.
 - **Logging:** No production `console.log` or `console.debug`. `console.error` belongs to error boundaries and degraded

@@ -17,7 +17,7 @@ const DEV_CSP = buildDevCsp(process.env.REVERIE_DEV_HOSTS);
 export default defineConfig({
   // fmt + lint are defined in the root vite.config.ts; this file is frontend
   // build/server/test config only.
-  plugins: lazyPlugins(() => [react(), tailwindcss(), cspHashPlugin()]),
+  plugins: lazyPlugins(() => [react({ compiler: true }), tailwindcss(), cspHashPlugin()]),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
@@ -72,7 +72,7 @@ export default defineConfig({
             "react-dom/client",
           ],
         },
-        plugins: lazyPlugins(() => [react(), tailwindcss()]),
+        plugins: lazyPlugins(() => [react({ compiler: true }), tailwindcss()]),
         resolve: { alias: { "@": path.resolve(__dirname, "src") } },
         test: {
           name: "components-chromium",

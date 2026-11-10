@@ -546,6 +546,13 @@
       "title": "Library table uses React Aria Table"
     },
     {
+      "id": "REV-ADR-0072",
+      "kind": "adr",
+      "path": "docs/adr/0072-compile-the-frontend-with-the-react-compiler-through-oxc.md",
+      "status": "accepted",
+      "title": "Compile the frontend with the React Compiler through oxc"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0062",
