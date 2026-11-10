@@ -560,21 +560,49 @@ _worktree-install path:
         exit 1
     fi
 
-# Remove a worktree by branch name, then prune the administrative state that
-# a plain `rm -rf` would strand in .git/worktrees. Same "$@" handling as
-# `worktree` above, for the same injection reason.
+# Finds the worktree by the branch it has checked out, so it works whatever the
+# worktree's directory is called, prunes .git/worktrees, then deletes the branch
+# with -D: squash merges leave merged branches looking unmerged, so the printed
+# tip is the recovery point. Refuses the main worktree and the worktree it runs
+# from; git itself refuses one with uncommitted or untracked changes. Same "$@"
+# handling as `worktree` above, for the same injection reason.
 #
-# Remove the worktree for BRANCH.
+# Remove the worktree that has BRANCH checked out, then delete the branch.
 [group('git')]
 [positional-arguments]
 worktree-rm branch:
     #!/usr/bin/env bash
-    set -ueo pipefail
+    set -euo pipefail
     branch="$1"
-    slug="$(printf '%s' "$branch" | tr '/' '-')"
-    git worktree remove {{ quote(worktree_root) }}"/reverie/${slug}"
+    ref="refs/heads/${branch}"
+    porcelain="$(git worktree list --porcelain)"
+    main="$(printf '%s\n' "$porcelain" | awk '/^worktree /{ print substr($0, 10); exit }')"
+    path="$(printf '%s\n' "$porcelain" | awk -v ref="$ref" '/^worktree /{ p = substr($0, 10) } $0 == "branch " ref { print p; exit }')"
+    if [ -z "$path" ]; then
+        if git show-ref --verify --quiet "$ref"; then
+            echo "no worktree has ${branch} checked out; the branch exists without one" >&2
+        else
+            echo "no branch named ${branch}" >&2
+        fi
+        exit 1
+    fi
+    if [ "$path" = "$main" ]; then
+        echo "refusing to remove the main worktree: ${path}" >&2
+        exit 1
+    fi
+    caller="$(realpath {{ quote(invocation_directory()) }})"
+    target="$(realpath "$path")"
+    case "${caller}/" in
+        "${target}/"*)
+            echo "refusing to remove ${target}: the command is running from inside it" >&2
+            exit 1
+            ;;
+    esac
+    tip="$(git rev-parse "$ref")"
+    git worktree remove "$path"
     git worktree prune
-    echo "removed worktree for ${branch}"
+    git branch -D "$branch" >/dev/null
+    echo "removed worktree ${path} and branch ${branch} (was ${tip})"
 
 # Start (or create) the local dev Postgres.
 [group('db')]
