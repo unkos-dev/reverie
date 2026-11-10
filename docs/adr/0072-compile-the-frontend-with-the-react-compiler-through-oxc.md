@@ -14,7 +14,7 @@ decision-makers:
 
 ## Context and problem statement
 
-The frontend caches a value or a component between renders only where a developer writes `memo`, `useMemo` or
+The frontend memoises a value or a component between renders only where a developer writes `memo`, `useMemo` or
 `useCallback` by hand. The Library table shows the cost. Its cells read one context, and the table built that context
 value afresh on every render, so every visible cell rendered again whenever the table did. React Aria's `Table` skips
 rendering a row whose inputs are unchanged, and the new context value counted as a change every time. Static analysis
@@ -24,11 +24,11 @@ flagged the context value, and the same pattern can appear in any component.
 the React Compiler's rules as lint errors, so the code follows the rules a compiler needs. It left enabling the compiler
 transform as a follow-up.
 
-Should the React Compiler add this caching to the frontend, and if so, through which implementation?
+Should the React Compiler add this memoisation to the frontend, and if so, through which implementation?
 
 ## Decision drivers
 
-- Caching follows the code's data flow without a developer maintaining dependency lists.
+- Memoisation follows the code's data flow without a developer maintaining dependency lists.
 - The app build, the dev server and every test project compile components the same way.
 - The frontend keeps to the oxc and VoidZero toolchain it already runs on, as recorded in
   [Adopt the Vite+ (vp) monorepo toolchain](./0033-adopt-the-vite-vp-monorepo-toolchain.md).
@@ -45,29 +45,29 @@ Should the React Compiler add this caching to the frontend, and if so, through w
 
 Chosen option: **oxc's Rust React Compiler**, because it comes from the oxc and VoidZero toolchain that already supplies
 Vite+, oxlint and oxfmt, and it plugs into the React plugin the frontend already calls. It adds one optional peer
-dependency and no Babel pass. The compiler caches the Library table's context value, its callbacks, and the hook results
-they depend on.
+dependency and no Babel pass. The compiler memoises the Library table's context value, its callbacks, and the hook
+results they depend on.
 
 Existing hand-written `memo`, `useMemo` and `useCallback` stay in place, as the React Compiler adoption guidance
 advises.
 
 ### Consequences
 
-- Positive: the compiler caches values, callbacks and JSX in components and hooks by default, including values that
+- Positive: the compiler memoises values, callbacks and JSX in components and hooks by default, including values that
   hand-written `useMemo` and `useCallback` missed.
 - Positive: the lint rules and the transform now come from the same compiler model, so code that passes lint compiles.
 - Negative: `@vitejs/plugin-react` labels its native compiler support experimental.
 - Negative: the shipped and served JavaScript differs from the source. Debugging relies on source maps, and a stack
-  trace can point into compiler-generated cache code.
+  trace can point into compiler-generated memoisation code.
 - Negative: the production JavaScript grows. On the commit that adopted the compiler, the build's JavaScript went from
   1,450.87 kB to 1,603.46 kB raw (+10.5%) and from 457.78 kB to 520.23 kB gzipped (+13.6%). The entry chunk grew by 3.27
   kB gzipped, and the Library route's two largest chunks grew by 21.13 kB gzipped between them. Build time did not
   change measurably.
 - Negative: `@vitejs/plugin-react` accepts only a narrow range of `oxc-transform-react` versions, which trails oxc's
   weekly releases. The compiler can update only within that range until the plugin widens it.
-- Negative: a component the compiler cannot optimise compiles without caching and without a warning, because the plugin
-  reports recoverable diagnostics only when `logDiagnostics` is set. The root `App` component is one, because it passes
-  the `useHref` hook from React Router to the React Aria `RouterProvider` as a value.
+- Negative: a component the compiler cannot optimise compiles without memoisation and without a warning, because the
+  plugin reports recoverable diagnostics only when `logDiagnostics` is set. The root `App` component is one, because it
+  passes the `useHref` hook from React Router to the React Aria `RouterProvider` as a value.
 
 ## Pros and cons of the options
 
