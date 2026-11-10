@@ -148,12 +148,12 @@ non-file entry or another contained-open error fails the operation.
 - On the client, `CoverArtwork` is a pure decorative component with no data dependency on the cover pipeline; each of
   its two call sites (`LibraryPage.tsx`'s `BookCard`, `BookPage.tsx`'s `DetailCover`) pairs it with its own `<img>`
   element and its own `useState` boolean, set by that `<img>`'s `onError` handler. Two further `cover_url` consumers
-  (`BookDetailDrawer.tsx`, `LibraryTableView.tsx`'s `TitleCellMark`) each implement the same pattern with their own,
-  independent title-initials fallback instead of calling `CoverArtwork`; a fifth consumer, `SeriesPage.tsx`, attaches no
-  failure handler to its `<img>` at all. Runtime behaviour below states each consumer's fallback fact. There is no
-  shared state across the four consumers that track a load failure, no failure tracking in the fifth, and no cache layer
-  of the client's own over cover bytes; the browser's native HTTP cache, partitioned by the response's `Vary` header, is
-  the only client-side cache.
+  (`BookDetailDrawer.tsx`, `cells.tsx`'s `CoverMark`) each implement the same pattern with their own, independent
+  title-initials fallback instead of calling `CoverArtwork`; a fifth consumer, `SeriesPage.tsx`, attaches no failure
+  handler to its `<img>` at all. Runtime behaviour below states each consumer's fallback fact. There is no shared state
+  across the four consumers that track a load failure, no failure tracking in the fifth, and no cache layer of the
+  client's own over cover bytes; the browser's native HTTP cache, partitioned by the response's `Vary` header, is the
+  only client-side cache.
 
 ## Interfaces and dependencies
 
@@ -249,12 +249,12 @@ empty-string check on it is not exercised by any response shape this API's book-
 row's `cover_url` is unconditionally populated regardless of whether the manifestation has a cover the endpoints can
 serve. Four surfaces attach an `onError` handler to the `<img>` that fires on any failed load, whether a `404`, a `500`,
 or a network failure, and sets a `useState` boolean on first failure: `LibraryPage.tsx`'s `BookCard` and
-`BookPage.tsx`'s `DetailCover` fall back to the generated `CoverArtwork` spine; `BookDetailDrawer.tsx` and
-`LibraryTableView.tsx`'s `TitleCellMark` each fall back to their own title-initials `<span>` instead of `CoverArtwork`.
-`SeriesPage.tsx` attaches no `onError` handler and holds no failure state: its only conditional is whether the
-manifestation returned a `cover_url` at all, so a present `cover_url` whose image request fails renders the browser's
-own broken-image glyph rather than a fallback this subject or the page supplies. Each of the four surfaces that tracks a
-load failure does so independently, so a failure on one does not affect another.
+`BookPage.tsx`'s `DetailCover` fall back to the generated `CoverArtwork` spine; `BookDetailDrawer.tsx` and `cells.tsx`'s
+`CoverMark` each fall back to their own title-initials `<span>` instead of `CoverArtwork`. `SeriesPage.tsx` attaches no
+`onError` handler and holds no failure state: its only conditional is whether the manifestation returned a `cover_url`
+at all, so a present `cover_url` whose image request fails renders the browser's own broken-image glyph rather than a
+fallback this subject or the page supplies. Each of the four surfaces that tracks a load failure does so independently,
+so a failure on one does not affect another.
 
 **A Layer 5 cover-usability check calling back into this subject**, at ingestion, in the opposite direction from every
 path above: the Design "EPUB validation and repair" describes that check, which calls this subject's `rasterize_svg`

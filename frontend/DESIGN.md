@@ -548,23 +548,40 @@ success. The book view offers no saved Undo. The dialog retains Save and Cancel,
 matched-read recovery without saved Undo.
 
 The table is a dense catalogue surface using the same canvas, text and accent roles as the rest of the application. Its
-header uses surface-2, row hover uses surface, and selected rows use accent-soft. Cells use the inherited body face at
-14px; titles have medium weight.
+header uses surface-2, row hover uses surface, and selected rows use accent-soft. Rows are divided by horizontal rules
+only, with no vertical lines between columns. Cells use the inherited body face at 14px; titles have medium weight,
+secondary columns use muted text, and the Reading status has medium weight.
 
-- **Density:** comfortable rows are 64px and compact rows are 44px; headers stay 42px. Comfortable rows carry a 30px by
-  42px cover or typographic fallback mark.
+- **Density:** comfortable rows are at least 64px and compact rows at least 44px; headers stay 42px. Title and Authors
+  wrap between words and each row grows to fit them. Comfortable rows carry a 30px by 42px cover or typographic fallback
+  mark.
+- **Columns:** data columns share the table's width as fractions, with minimums of 160px for Title and 96px for
+  Subtitle, Authors and Series. Columns resize from the header edge, or from Resize column in the header menu; widths
+  reset on reload. At 899px and below, Added shows a two-digit year.
+- **Cells:** an empty cell is blank and shows "Add" and the field name on hover. Dates read as day, short month and
+  year, such as 21 Oct 2026.
 - **Controls:** density and view selectors use a bordered native toggle group with a soft accent fill on the selected
   option. Removable filter tags and the mounted empty state sit below the toolbar.
+- **Editing:** pressing a cell opens its editor in a popover anchored to the cell. Text editors cover the cell, with ✓
+  to save and ✕ to cancel. Authors edit as removable chips with an "Add an author" field, the hint "Enter adds a name,
+  then saves.", Cancel and a gold-filled Save. Status opens a list. Rating is set by pressing a star in the cell, with a
+  hover preview. The title link opens the book; a pencil shown on row hover, F2 or typing edits the title. Enter or a
+  click outside saves; Escape discards.
+- **Edit states:** a saving value shows a moving gold line under it, which stays still under reduced motion. A failed
+  save shows an alert icon in its cell.
+- **Sorting:** pressing a header sorts by that column, and Shift adds it as a further level. Each sortable header has a
+  menu to sort, add a level, remove the column from the sort, resize or hide it. The menu is hidden at 899px and below.
+- **Details:** the details button sits at the trailing edge of each row and shows on row hover, focus or selection, and
+  always on touch screens. Pressing a row, or Enter on a row, also opens the details drawer.
 - **Interaction:** the table supports cell editing, row selection, sorting and a details drawer. Pending edits appear
   muted and italic. Keyboard shortcuts have a dedicated help dialog.
-- **Focus:** the active cell carries the table's one focus indicator, a 2px `accent-text` outline inset inside the cell,
-  after a click or a key. A control inside it, including an open editor's input, paints no ring of its own. The outline
-  clears while focus is outside the table.
-- **Paging:** the table scrolls through loaded rows and fetches more near the bottom. Loading, retry, load-more and
-  end-of-list states share a footer.
+- **Focus:** the focused row, cell or header carries the table's one focus indicator, a 2px `focus-ring` outline inset
+  inside it, after keyboard use only. A control inside a cell paints no ring of its own.
+- **Paging:** the table scrolls through loaded rows and fetches more near the bottom. The footer shows how many books
+  are loaded, with Load more, loading, retry and end-of-list states.
 
-Source: [LibraryTableView](src/pages/library/table/LibraryTableView.tsx) and the
-[grid theme](src/lib/grid/grid-theme.css).
+Source: [LibraryTable](src/pages/library/table/LibraryTable.tsx), [cells](src/pages/library/table/cells.tsx) and the
+[table styles](src/pages/library/table/library-table.css).
 
 Shelf filters use a native multiple ListBox with visible options and section Clear. Series filters use a searchable
 multiple ComboBox with removable tags. Both match any selected value, with no synthetic All option. Removing one chip

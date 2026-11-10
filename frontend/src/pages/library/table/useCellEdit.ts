@@ -141,7 +141,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
     tag === "TEXTAREA" ||
     tag === "SELECT" ||
     target.isContentEditable ||
-    target.closest(".rdg-editor-container") !== null
+    target.closest('[role="dialog"]') !== null
   );
 }
 
