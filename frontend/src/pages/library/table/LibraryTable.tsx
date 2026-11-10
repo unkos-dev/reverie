@@ -334,6 +334,37 @@ type HeaderContentProps = {
   onHide: () => void;
 };
 
+function sortLevelOf(
+  column: TableColumn,
+  sort: readonly SortLevelParam[],
+): { level: SortLevelParam | undefined; index: number } {
+  const index =
+    column.field === undefined ? -1 : sort.findIndex((level) => level.field === column.field);
+  return { level: index >= 0 ? sort[index] : undefined, index };
+}
+
+function SortIndicator({
+  level,
+  index,
+  levelCount,
+}: Readonly<{ level: SortLevelParam; index: number; levelCount: number }>): ReactElement {
+  return (
+    <span className="text-fg flex shrink-0 items-center">
+      {level.desc ? (
+        <ArrowDown aria-hidden="true" className="size-3.5" />
+      ) : (
+        <ArrowUp aria-hidden="true" className="size-3.5" />
+      )}
+      {levelCount > 1 ? (
+        <span className="text-fg-muted font-mono text-xs leading-none tabular-nums">
+          {index + 1}
+          <span className="sr-only">{`, sort level ${String(index + 1)}`}</span>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function HeaderContent({
   column,
   render,
@@ -343,31 +374,7 @@ function HeaderContent({
   onSort,
   onHide,
 }: Readonly<HeaderContentProps>): ReactElement {
-  const menuRef = useRef<HTMLButtonElement>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const field = column.field;
-  const levelIndex = field === undefined ? -1 : sort.findIndex((level) => level.field === field);
-  const level = levelIndex >= 0 ? sort[levelIndex] : undefined;
-  const words = field === undefined ? undefined : SORT_WORDS[field];
-  const othersSorted = sort.some((entry) => entry.field !== field);
-
-  function act(key: Key): void {
-    setMenuOpen(false);
-    if (!isHeaderMenuAction(key)) return;
-    if (key === "resize") {
-      render.startResize();
-      return;
-    }
-    if (key === "hide") {
-      onHide();
-      return;
-    }
-    if (field === undefined) return;
-    if (key === "remove") onSort(field, false, "remove");
-    else if (key === "asc" || key === "desc") onSort(field, key === "desc", "primary");
-    else onSort(field, key === "then-desc", "then");
-  }
-
+  const { level, index } = sortLevelOf(column, sort);
   return (
     <div
       className={cn(
@@ -384,89 +391,17 @@ function HeaderContent({
         {column.name}
       </span>
       {level === undefined ? null : (
-        <span className="text-fg flex shrink-0 items-center">
-          {level.desc ? (
-            <ArrowDown aria-hidden="true" className="size-3.5" />
-          ) : (
-            <ArrowUp aria-hidden="true" className="size-3.5" />
-          )}
-          {sort.length > 1 ? (
-            <span className="text-fg-muted font-mono text-xs leading-none tabular-nums">
-              {levelIndex + 1}
-              <span className="sr-only">{`, sort level ${String(levelIndex + 1)}`}</span>
-            </span>
-          ) : null}
-        </span>
+        <SortIndicator level={level} index={index} levelCount={sort.length} />
       )}
       {showMenu ? (
-        <>
-          <AriaButton
-            ref={menuRef}
-            aria-label={`${column.name} column options`}
-            onPress={() => {
-              setMenuOpen(true);
-            }}
-            className={cn(
-              "text-fg-muted data-hovered:bg-surface-3 data-hovered:text-fg flex size-6 shrink-0 items-center justify-center rounded-md outline-none",
-              "opacity-0 transition-opacity duration-150 group-hover/header:opacity-100 data-focus-visible:opacity-100 pointer-coarse:opacity-100",
-              menuOpen && "opacity-100",
-              column.align === "end" ? "mr-auto" : "ml-auto",
-            )}
-          >
-            <ChevronDown aria-hidden="true" className="size-3.5" />
-          </AriaButton>
-          <Popover
-            triggerRef={menuRef}
-            isOpen={menuOpen}
-            onOpenChange={setMenuOpen}
-            placement="bottom end"
-            className="bg-surface text-fg border-border-strong min-w-52 rounded-lg border p-1 shadow-md outline-none"
-          >
-            <Menu
-              aria-label={`${column.name} column options`}
-              autoFocus="first"
-              onAction={act}
-              className="outline-none"
-            >
-              {words === undefined ? null : (
-                <MenuSection>
-                  <MenuItem id="asc" className={MENU_ITEM}>
-                    Sort {words.asc}
-                  </MenuItem>
-                  <MenuItem id="desc" className={MENU_ITEM}>
-                    Sort {words.desc}
-                  </MenuItem>
-                  {othersSorted ? (
-                    <>
-                      <MenuItem id="then-asc" className={MENU_ITEM}>
-                        Then by {column.name.toLowerCase()}, {words.asc}
-                      </MenuItem>
-                      <MenuItem id="then-desc" className={MENU_ITEM}>
-                        Then by {column.name.toLowerCase()}, {words.desc}
-                      </MenuItem>
-                    </>
-                  ) : null}
-                  {level === undefined ? null : (
-                    <MenuItem id="remove" className={MENU_ITEM}>
-                      Remove from sort
-                    </MenuItem>
-                  )}
-                </MenuSection>
-              )}
-              {words === undefined ? null : <Separator className="bg-border -mx-1 my-1 h-px" />}
-              <MenuSection>
-                <MenuItem id="resize" className={MENU_ITEM}>
-                  Resize column
-                </MenuItem>
-                {canHide ? (
-                  <MenuItem id="hide" className={MENU_ITEM}>
-                    Hide column
-                  </MenuItem>
-                ) : null}
-              </MenuSection>
-            </Menu>
-          </Popover>
-        </>
+        <ColumnMenu
+          column={column}
+          render={render}
+          sort={sort}
+          canHide={canHide}
+          onSort={onSort}
+          onHide={onHide}
+        />
       ) : null}
       <ColumnResizer
         aria-label={`Resize ${column.name}`}
@@ -477,6 +412,132 @@ function HeaderContent({
         )}
       />
     </div>
+  );
+}
+
+function ColumnMenu({
+  column,
+  render,
+  sort,
+  canHide,
+  onSort,
+  onHide,
+}: Readonly<Omit<HeaderContentProps, "showMenu">>): ReactElement {
+  const menuRef = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const field = column.field;
+  const { level } = sortLevelOf(column, sort);
+  const words = field === undefined ? undefined : SORT_WORDS[field];
+  const othersSorted = sort.some((entry) => entry.field !== field);
+
+  function act(key: Key): void {
+    setMenuOpen(false);
+    if (!isHeaderMenuAction(key)) return;
+    if (key === "resize") render.startResize();
+    else if (key === "hide") onHide();
+    else if (field !== undefined) onSort(field, ...SORT_ACTIONS[key]);
+  }
+
+  return (
+    <>
+      <AriaButton
+        ref={menuRef}
+        aria-label={`${column.name} column options`}
+        onPress={() => {
+          setMenuOpen(true);
+        }}
+        className={cn(
+          "text-fg-muted data-hovered:bg-surface-3 data-hovered:text-fg flex size-6 shrink-0 items-center justify-center rounded-md outline-none",
+          "opacity-0 transition-opacity duration-150 group-hover/header:opacity-100 data-focus-visible:opacity-100 pointer-coarse:opacity-100",
+          menuOpen && "opacity-100",
+          column.align === "end" ? "mr-auto" : "ml-auto",
+        )}
+      >
+        <ChevronDown aria-hidden="true" className="size-3.5" />
+      </AriaButton>
+      <Popover
+        triggerRef={menuRef}
+        isOpen={menuOpen}
+        onOpenChange={setMenuOpen}
+        placement="bottom end"
+        className="bg-surface text-fg border-border-strong min-w-52 rounded-lg border p-1 shadow-md outline-none"
+      >
+        <Menu
+          aria-label={`${column.name} column options`}
+          autoFocus="first"
+          onAction={act}
+          className="outline-none"
+        >
+          {words === undefined ? null : (
+            <SortMenuSection
+              name={column.name}
+              words={words}
+              othersSorted={othersSorted}
+              sorted={level !== undefined}
+            />
+          )}
+          {words === undefined ? null : <Separator className="bg-border -mx-1 my-1 h-px" />}
+          <MenuSection>
+            <MenuItem id="resize" className={MENU_ITEM}>
+              Resize column
+            </MenuItem>
+            {canHide ? (
+              <MenuItem id="hide" className={MENU_ITEM}>
+                Hide column
+              </MenuItem>
+            ) : null}
+          </MenuSection>
+        </Menu>
+      </Popover>
+    </>
+  );
+}
+
+const SORT_ACTIONS: Readonly<
+  Record<Exclude<HeaderMenuAction, "resize" | "hide">, [desc: boolean, mode: SortMode]>
+> = {
+  asc: [false, "primary"],
+  desc: [true, "primary"],
+  "then-asc": [false, "then"],
+  "then-desc": [true, "then"],
+  remove: [false, "remove"],
+};
+
+function SortMenuSection({
+  name,
+  words,
+  othersSorted,
+  sorted,
+}: Readonly<{
+  name: string;
+  words: { asc: string; desc: string };
+  othersSorted: boolean;
+  sorted: boolean;
+}>): ReactElement {
+  return (
+    <MenuSection>
+      <MenuItem id="asc" className={MENU_ITEM}>
+        Sort {words.asc}
+      </MenuItem>
+      <MenuItem id="desc" className={MENU_ITEM}>
+        Sort {words.desc}
+      </MenuItem>
+      {othersSorted ? (
+        <>
+          <MenuItem id="then-asc" className={MENU_ITEM}>
+            Then by {name.toLowerCase()}, {words.asc}
+          </MenuItem>
+          <MenuItem id="then-desc" className={MENU_ITEM}>
+            Then by {name.toLowerCase()}, {words.desc}
+          </MenuItem>
+        </>
+      ) : null}
+      {sorted ? (
+        <MenuItem id="remove" className={MENU_ITEM}>
+          Remove from sort
+        </MenuItem>
+      ) : null}
+    </MenuSection>
   );
 }
 
