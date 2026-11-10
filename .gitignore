@@ -21,9 +21,7 @@ dist/
 
 # IDE
 .idea/
-.vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
+.vscode
 *.swp
 *.swo
 
