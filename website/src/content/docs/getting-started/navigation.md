@@ -185,9 +185,10 @@ that column, so it never opens an editor.
 Click a cell, or press `Enter` or `F2` on it, to open its editor beside the cell; on a text cell you can also start
 typing. `Enter`, the ✓ button or a click outside saves; `Escape` or ✕ discards your change and leaves the cell as it
 was. The title is a link to the book, so edit it with the pencil that appears when you hover the row, with `F2`, or by
-typing. Authors edit as a list of names: `Enter` adds the name you typed, and **Save** stores the list. Status opens a
-list of states, and choosing one saves it. Set a rating by clicking a star in the cell or pressing `1` to `5`; `0`
-clears it.
+typing. Authors edit as a list of names: `Enter` adds the name you typed, and **Save** stores the list. Drag a name by
+its grip to change the order, or press `Enter` on the grip, move it with the arrow keys and press `Enter` again. The
+first author is the book's primary author. Status opens a list of states, and choosing one saves it. Set a rating by
+clicking a star in the cell or pressing `1` to `5`; `0` clears it.
 
 Title, subtitle, and authors describe the work rather than one edition of it, so editing any of them from one row
 updates every edition of that work currently loaded in the table, not just the row you touched. ISBN-13 and pages

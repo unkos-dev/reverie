@@ -39,8 +39,10 @@ Buttons handle activation through `onPress`; navigation links retain link semant
 Library table cells hold React Aria controls: a `Link` for the title, a `Button` that opens each cell's editor, and the
 details `Button`. React Aria's `Table` moves focus between rows, cells and the controls inside a cell with the arrow
 keys, and Tab leaves the table. Each editor opens in a `Popover` and `Dialog` anchored to its cell: text fields are a
-`Form` with one `TextField`, Authors is a `TagGroup` followed by a `TextField`, Status is a `ListBox` and Rating is a
-`ToggleButtonGroup`.
+`Form` with one `TextField`, Authors is a `GridList` followed by a `TextField`, Status is a `ListBox` and Rating is a
+`ToggleButtonGroup`. The Authors `GridList` reorders through `useDragAndDrop`: each author has a drag `Button`, Tab
+moves into an author's drag and remove buttons, and Enter on the drag button starts a keyboard drag that the arrow keys
+move and Enter drops.
 
 Submit forms use React Aria `Form` and the React `action` prop. Actions await API mutations. Named fields supply
 FormData, and domain validators parse that input before requests. The React Aria `validationErrors` contract associates
