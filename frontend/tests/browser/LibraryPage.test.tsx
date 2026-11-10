@@ -777,3 +777,42 @@ test("metadata Undo survives table refreshes", async () => {
     .element(page.getByText("Submitted value: Another unconfirmed title", { exact: true }))
     .toBeInTheDocument();
 });
+
+// Data loss boundary: a draft saves against the version its editor opened on, not one a refresh delivered.
+test("a table edit keeps the validator its editor opened with", async () => {
+  const opened = bookFixture();
+  const ifMatch: (string | null)[] = [];
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const path = input instanceof Request ? input.url : input.toString();
+    if (path.endsWith("/metadata") && init?.method === "PATCH") {
+      ifMatch.push(new Headers(init.headers).get("If-Match"));
+      return new Promise<Response>(() => {});
+    }
+    if (path.includes("/api/v1/books")) return Promise.resolve(booksResponse([opened]));
+    if (path.includes(PREFERENCES_PATH))
+      return Promise.resolve(preferencesResponse(preferencesFixture({ view: "table" })));
+    throw new Error(`Unexpected request ${path}`);
+  });
+  const { client } = await renderLibrary({
+    items: [opened],
+    nextCursor: null,
+    visit: { view: "table" },
+  });
+  await userEvent.click(page.getByRole("button", { name: "Edit title of The Brothers Karamazov" }));
+  await page.getByRole("dialog").getByRole("textbox").fill("Draft title");
+  const refreshed = {
+    ...opened,
+    subtitle: "Edited elsewhere",
+    metadata_etag: '"cccccccccccccccccccccc"',
+  };
+  client.setQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({}), {
+    pages: [{ items: [refreshed], next_cursor: null }],
+    pageParams: [undefined],
+  });
+  await expect.element(page.getByText("Edited elsewhere")).toBeInTheDocument();
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => {
+    expect(ifMatch).toEqual([opened.metadata_etag]);
+  });
+  fetchSpy.mockRestore();
+});

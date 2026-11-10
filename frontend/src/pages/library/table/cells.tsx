@@ -19,6 +19,7 @@ import {
   type KeyboardEvent,
   type PressEvent,
 } from "react-aria-components";
+import { z } from "zod";
 
 import type { BookListItem, Density } from "@/api";
 import type { ReadingStatus } from "@/api/books";
@@ -70,17 +71,27 @@ function isReadingStatus(key: unknown): key is ReadingStatus {
   return typeof key === "string" && key in STATUS_LABELS;
 }
 
-type Opening = { seed: string | undefined; height: number };
+type Opening<T> = {
+  seed: string | undefined;
+  height: number;
+  commit: ((value: T) => void) | undefined;
+};
 
-function useCellEditor(anchor: RefObject<HTMLElement | null>) {
-  const [opening, setOpening] = useState<Opening | null>(null);
+function useCellEditor<T>(anchor: RefObject<HTMLElement | null>, onCommit?: (value: T) => void) {
+  const [opening, setOpening] = useState<Opening<T> | null>(null);
   return {
     opening,
     open: (seed?: string): void => {
-      setOpening({ seed, height: anchor.current?.offsetHeight ?? 0 });
+      setOpening({ seed, height: anchor.current?.offsetHeight ?? 0, commit: onCommit });
     },
     close: (): void => {
       setOpening(null);
+    },
+    // Commits against the row captured at open, so a refresh while editing cannot pair the draft with a newer validator.
+    commit: (value: T): void => {
+      const commit = opening?.commit;
+      setOpening(null);
+      commit?.(value);
     },
   };
 }
@@ -118,7 +129,7 @@ function editKeys(
 
 type CellPopoverProps = {
   anchor: RefObject<HTMLElement | null>;
-  opening: Opening | null;
+  opening: Pick<Opening<never>, "height"> | null;
   label: string;
   overlay: boolean;
   onClose: () => void;
@@ -302,8 +313,7 @@ function TextEditor({
   return (
     <Form
       action={(data) => {
-        const raw = data.get("value");
-        const trimmed = typeof raw === "string" ? raw.trim() : "";
+        const trimmed = z.string().parse(data.get("value")).trim();
         onCommit(trimmed === "" ? null : trimmed);
       }}
       className="flex items-start gap-1 p-1"
@@ -365,7 +375,7 @@ export function TextCell({
   onCommit,
 }: Readonly<TextCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const editor = useCellEditor(triggerRef);
+  const editor = useCellEditor(triggerRef, onCommit);
   return (
     <>
       <Trigger
@@ -399,10 +409,7 @@ export function TextCell({
           seed={editor.opening?.seed}
           kind={kind}
           required={required}
-          onCommit={(next) => {
-            editor.close();
-            onCommit(next);
-          }}
+          onCommit={editor.commit}
           onCancel={editor.close}
         />
       </CellPopover>
@@ -452,7 +459,7 @@ export function TitleCell({
   onCommit,
 }: Readonly<TitleCellProps>): ReactElement {
   const anchorRef = useRef<HTMLDivElement>(null);
-  const editor = useCellEditor(anchorRef);
+  const editor = useCellEditor(anchorRef, onCommit);
   const authors = book.authors.join(", ");
   return (
     <div
@@ -515,8 +522,8 @@ export function TitleCell({
           kind="text"
           required
           onCommit={(next) => {
-            editor.close();
-            if (next !== null) onCommit(next);
+            if (next === null) editor.close();
+            else editor.commit(next);
           }}
           onCancel={editor.close}
         />
@@ -661,7 +668,7 @@ export function AuthorsCell({
   onCommit,
 }: Readonly<AuthorsCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const editor = useCellEditor(triggerRef);
+  const editor = useCellEditor(triggerRef, onCommit);
   const text = book.authors.join(", ");
   return (
     <>
@@ -688,10 +695,7 @@ export function AuthorsCell({
         <AuthorsEditor
           authors={book.authors}
           seed={editor.opening?.seed}
-          onCommit={(authors) => {
-            editor.close();
-            onCommit(authors);
-          }}
+          onCommit={editor.commit}
           onCancel={editor.close}
         />
       </CellPopover>
