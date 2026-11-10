@@ -34,6 +34,7 @@ import {
 
 import {
   MAX_SORT_LEVELS,
+  PageCountInputSchema,
   type BookListItem,
   type Density,
   type SortField,
@@ -276,7 +277,10 @@ function BookCell({
           align="end"
           state={state}
           onCommit={(pages) => {
-            commit(book, "pages", { ...book, pages: pages === null ? null : Number(pages) });
+            commit(book, "pages", {
+              ...book,
+              pages: pages === null ? null : PageCountInputSchema.parse(pages),
+            });
           }}
         />
       );

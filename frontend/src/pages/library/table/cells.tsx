@@ -21,7 +21,7 @@ import {
 } from "react-aria-components";
 import { z } from "zod";
 
-import type { BookListItem, Density } from "@/api";
+import { PageCountInputSchema, type BookListItem, type Density } from "@/api";
 import type { ReadingStatus } from "@/api/books";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -296,7 +296,7 @@ function validateText(
 ): string | null {
   const trimmed = value.trim();
   if (required && trimmed === "") return `A ${field} is required.`;
-  if (kind === "pages" && trimmed !== "" && !/^[1-9]\d*$/.test(trimmed))
+  if (kind === "pages" && trimmed !== "" && !PageCountInputSchema.safeParse(trimmed).success)
     return "Enter a whole number of pages.";
   return null;
 }

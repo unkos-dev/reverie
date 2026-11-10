@@ -380,6 +380,15 @@ const ContributorsPatchSchema = z.strictObject({
   translator: z.array(z.string()).nullable().optional(),
 });
 
+const PageCountSchema = z.number().int().positive();
+
+/** A page count typed as text: digits only, then the page count rule the metadata endpoint accepts. */
+export const PageCountInputSchema = z
+  .string()
+  .regex(/^\d+$/)
+  .transform(Number)
+  .pipe(PageCountSchema);
+
 const UpdateBookMetadataFieldsSchema = z.object({
   title: z.string().nullable().optional(),
   subtitle: z.string().nullable().optional(),
@@ -389,7 +398,7 @@ const UpdateBookMetadataFieldsSchema = z.object({
   pub_date: z.string().nullable().optional(),
   isbn_10: z.string().nullable().optional(),
   isbn_13: z.string().nullable().optional(),
-  pages: z.number().int().positive().nullable().optional(),
+  pages: PageCountSchema.nullable().optional(),
   contributors: ContributorsPatchSchema.nullable().optional(),
 });
 /**
