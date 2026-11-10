@@ -603,10 +603,8 @@ test("metadata Undo survives table refreshes", async () => {
     visit: { view: "table" },
   });
   await expect.element(findLibraryTable()).toBeInTheDocument();
-  const titleCell = page.getByRole("gridcell").filter({ hasText: "The Brothers Karamazov" });
-  await userEvent.click(titleCell, { position: { x: 3, y: 3 } });
-  await userEvent.keyboard("{F2}");
-  const editor = findLibraryTable().getByRole("textbox");
+  await userEvent.click(page.getByRole("button", { name: "Edit title of The Brothers Karamazov" }));
+  const editor = page.getByRole("dialog").getByRole("textbox");
   await userEvent.type(editor, "Draft");
   await userEvent.keyboard("{Control>}z{/Control}");
   await expect.element(editor).toHaveValue("The Brothers Karamazov");
@@ -619,10 +617,8 @@ test("metadata Undo survives table refreshes", async () => {
   await expect
     .element(page.getByText("Title for “The Brothers Karamazov”", { exact: true }))
     .toBeInTheDocument();
-  const pagesCell = page.getByRole("gridcell", { name: "100", exact: true });
-  await userEvent.click(pagesCell);
-  await userEvent.keyboard("{F2}");
-  await findLibraryTable().getByRole("textbox").fill("250");
+  await userEvent.click(page.getByRole("button", { name: "100, edit pages", exact: true }));
+  await page.getByRole("dialog").getByRole("textbox").fill("250");
   await userEvent.keyboard("{Enter}");
   await expect
     .element(page.getByText("Pages for “Saved title”", { exact: true }))
@@ -631,21 +627,20 @@ test("metadata Undo survives table refreshes", async () => {
   await expect
     .element(page.getByText("Title for “The Brothers Karamazov”", { exact: true }))
     .toBeInTheDocument();
-  const ratingCell = page
-    .getByRole("row")
-    .filter({ hasText: "Saved title" })
-    .getByRole("gridcell")
-    .nth(9);
-  await userEvent.click(ratingCell);
+  const ratingButton = page.getByRole("button", { name: "Add rating", exact: true });
+  await expect.element(ratingButton).toBeInTheDocument();
+  (ratingButton.element() as HTMLElement).focus();
   await userEvent.keyboard("{F2}");
-  await expect.element(page.getByRole("group", { name: "Rating", exact: true })).toHaveFocus();
+  const firstStar = page.getByRole("radiogroup", { name: "Rating" }).getByRole("radio").first();
+  await expect.element(firstStar).toHaveFocus();
   await userEvent.keyboard("{Control>}z{/Control}");
   expect(undoCalls).toBe(0);
-  await expect.element(page.getByRole("group", { name: "Rating", exact: true })).toHaveFocus();
+  await expect.element(firstStar).toHaveFocus();
   await userEvent.keyboard("{Escape}");
-  await userEvent.click(page.getByRole("gridcell", { name: "9780374528379", exact: true }));
-  await userEvent.keyboard("{F2}");
-  await findLibraryTable().getByRole("textbox").fill("bad");
+  await userEvent.click(
+    page.getByRole("button", { name: "9780374528379, edit ISBN", exact: true }),
+  );
+  await page.getByRole("dialog").getByRole("textbox").fill("bad");
   await userEvent.keyboard("{Enter}");
   await vi.waitFor(() => {
     expect(isbnRecoveryReads).toBe(1);
@@ -752,20 +747,16 @@ test("metadata Undo survives table refreshes", async () => {
     visit: { view: "table" },
   });
   const edit = async (title: string, text: string) => {
-    await userEvent.click(page.getByRole("gridcell").filter({ hasText: title }), {
-      position: { x: 3, y: 3 },
-    });
-    await userEvent.keyboard("{F2}");
-    await findLibraryTable().getByRole("textbox").fill(text);
+    await userEvent.click(page.getByRole("button", { name: `Edit title of ${title}` }));
+    await page.getByRole("dialog").getByRole("textbox").fill(text);
     await userEvent.keyboard("{Enter}");
   };
   await edit(readingTitle, "Unconfirmed title");
   await vi.waitFor(() => {
     expect(recoveryReads.get(current.id)).toBe(1);
   });
-  await userEvent.click(page.getByRole("gridcell", { name: "100", exact: true }));
-  await userEvent.keyboard("{F2}");
-  await findLibraryTable().getByRole("textbox").fill("251");
+  await userEvent.click(page.getByRole("button", { name: "100, edit pages", exact: true }));
+  await page.getByRole("dialog").getByRole("textbox").fill("251");
   await userEvent.keyboard("{Enter}");
   current = { ...current, pages: 251 };
   firstRecovery.resolve(response({ values: values(), outcome: "unknown", operations: [] }));
@@ -785,4 +776,43 @@ test("metadata Undo survives table refreshes", async () => {
   await expect
     .element(page.getByText("Submitted value: Another unconfirmed title", { exact: true }))
     .toBeInTheDocument();
+});
+
+// Data loss boundary: a draft saves against the version its editor opened on, not one a refresh delivered.
+test("a table edit keeps the validator its editor opened with", async () => {
+  const opened = bookFixture();
+  const ifMatch: (string | null)[] = [];
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const path = input instanceof Request ? input.url : input.toString();
+    if (path.endsWith("/metadata") && init?.method === "PATCH") {
+      ifMatch.push(new Headers(init.headers).get("If-Match"));
+      return new Promise<Response>(() => {});
+    }
+    if (path.includes("/api/v1/books")) return Promise.resolve(booksResponse([opened]));
+    if (path.includes(PREFERENCES_PATH))
+      return Promise.resolve(preferencesResponse(preferencesFixture({ view: "table" })));
+    throw new Error(`Unexpected request ${path}`);
+  });
+  const { client } = await renderLibrary({
+    items: [opened],
+    nextCursor: null,
+    visit: { view: "table" },
+  });
+  await userEvent.click(page.getByRole("button", { name: "Edit title of The Brothers Karamazov" }));
+  await page.getByRole("dialog").getByRole("textbox").fill("Draft title");
+  const refreshed = {
+    ...opened,
+    subtitle: "Edited elsewhere",
+    metadata_etag: '"cccccccccccccccccccccc"',
+  };
+  client.setQueryData<InfiniteData<BookListResponse>>(queryKeys.books.list({}), {
+    pages: [{ items: [refreshed], next_cursor: null }],
+    pageParams: [undefined],
+  });
+  await expect.element(page.getByText("Edited elsewhere")).toBeInTheDocument();
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => {
+    expect(ifMatch).toEqual([opened.metadata_etag]);
+  });
+  fetchSpy.mockRestore();
 });

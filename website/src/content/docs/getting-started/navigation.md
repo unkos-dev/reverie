@@ -52,15 +52,20 @@ the toolbar. Grid is for recognising books by cover; the table is for managing t
 place, and acting on many books at once. Filters, search, and sort belong to the query, not the view, so switching views
 never changes which books you're looking at, only how they're drawn.
 
-The table carries a full keyboard model: arrow keys move cell by cell, `Home` and `End` jump within a row, `Ctrl Home`
-and `Ctrl End` jump to the first and last loaded row, and `PageUp`/`PageDown` move a viewport at a time. Use the table's
-**Help** control for the complete shortcut list.
+The table carries a full keyboard model: arrow keys move between rows, cells and the controls inside a cell, `Home` and
+`End` jump to the first or last cell of a row (or, from a row, to the first or last loaded row), `Ctrl Home` and
+`Ctrl End` jump to the first and last loaded row, and `PageUp`/`PageDown` move a screen at a time. `Tab` leaves the
+table. Use the table's **Help** control for the complete shortcut list.
 
 Two toolbar controls shape the table to your taste. The **density toggle** switches between comfortable rows (with a
 small cover beside each title) and compact ones. The **Columns** popover shows or hides individual columns; Title stays
 put because every row needs its anchor. Both are personal display preferences, and so are your view choice and your
 sort: they belong to your account rather than to one browser, so they follow you to a second machine and survive signing
 out and back in. Filters and search belong to the current Library visit and do not travel in shared links.
+
+Columns share the table's width. Drag a column header's edge, or choose **Resize column** from its menu, to make it
+wider or narrower; widths go back to their defaults when you reload. Titles and author lists wrap between words, and
+each row grows to show them in full.
 
 **Reset to default** at the foot of the Columns popover clears your column choice rather than merely showing everything,
 so the table goes back to whatever this installation ships as its default and stays with that default if it later
@@ -81,12 +86,13 @@ visits, on this machine or any other; a shared link carries no view override.
 
 ## Book details without leaving the list
 
-Each table row starts with a details control; pressing it opens the book's details in a drawer from the right edge:
-cover, facts, and real actions, **View full record** and **Add to shelf**. `Escape` closes it and puts focus back where
-you were. The drawer exists so a triage pass over many books doesn't cost a round trip through the book page for each
-one; the grid keeps its different habit, where a card click goes straight to the full record, because browsing covers
-ends in reading, not managing. The filter drawer and the details drawer share the right edge and never stack: opening
-one closes the other.
+Each table row ends with a details control, shown when you hover, focus or select the row and always on touch screens.
+Pressing it, or pressing the row itself, opens the book's details in a drawer from the right edge: cover, facts, and
+real actions, **View full record** and **Add to shelf**. `Escape` closes it and puts focus back where you were. The
+drawer exists so a triage pass over many books doesn't cost a round trip through the book page for each one; the grid
+keeps its different habit, where a card click goes straight to the full record, because browsing covers ends in reading,
+not managing. The filter drawer and the details drawer share the right edge and never stack: opening one closes the
+other.
 
 Closing the drawer does not cancel a submitted shelf addition. Reopening the same book shows any retained progress,
 result or **Try again** action. This feedback is temporary and can expire five minutes after you close the drawer.
@@ -97,12 +103,12 @@ you return to the book. Returning does not repeat an action. A failed Clear keep
 
 ## Selecting books and acting on them
 
-Table rows carry checkboxes. Select a few (shift-click selects a range; `Shift Space` toggles the current row) and a bar
-rises from the bottom with the count and the actions that exist today: **Add to shelf** and **Clear selection**. The
-header checkbox selects the **loaded** rows, and says so: with a large library the rows still streaming in can't be part
-of a selection, and a control that silently meant "everything matching the filter" would be worse than one that names
-its limit. Changing the query (filters, search, sort) or switching views clears the selection, because acting on rows
-you can no longer see is the kind of surprise a management surface exists to prevent.
+Table rows carry checkboxes. Select a few (shift-click selects a range; `Space` toggles the current row) and a bar rises
+from the bottom with the count and the actions that exist today: **Add to shelf** and **Clear selection**. The header
+checkbox selects the **loaded** rows, and says so: with a large library the rows still streaming in can't be part of a
+selection, and a control that silently meant "everything matching the filter" would be worse than one that names its
+limit. Changing the query (filters, search, sort) or switching views clears the selection, because acting on rows you
+can no longer see is the kind of surprise a management surface exists to prevent.
 
 A submitted batch keeps the books and shelf you chose. Its progress, result and **Retry failed books** action remain
 available if you switch views or clear the selection. Retry sends only the books that could not be added.
@@ -118,14 +124,13 @@ direction, reorder levels, or remove one; none of it needs a modifier key. The g
 always shows the full stack, whichever surface built it. In the table, only the active sort shows a direction indicator
 on its header, so a glance at the header row tells you what orders the list without decoding every column.
 
-The table keeps its faster gesture on top. Clicking a header steps that column through its sort cycle: an unsorted
-column sorts in its first direction, the next click reverses it, and the click after that returns to the library's
-default order. A column that is already sorting continues from where it stands, so in the default order a click on Added
-reverses it straight away. `⌘-click` / `Ctrl-click` a header to add it as another sort level instead of replacing the
-current one, so you can sort by author and then, within each author, by newest first. On a column already in the sort,
-`⌘-click` / `Ctrl-click` steps only that level, reversing or removing it. A plain click replaces the whole sort with
-that one column, or returns to the default order when it ends that column's cycle; the drawer's Sort section is the
-recovery surface when a stray click collapses a stack you built.
+The table keeps its faster gesture on top. Clicking a header replaces the sort with that column; clicking the column
+that leads the sort reverses it and keeps any further levels. A column that is already sorting continues from where it
+stands, so in the default order a click on Added reverses it straight away. `Shift-click` a header to add it as another
+sort level instead of replacing the current one, so you can sort by author and then, within each author, by newest
+first; on a column already in the sort, `Shift-click` reverses only that level. Each header also has a menu that does
+the same without a modifier key: sort either way, add the column as a further level, or remove it from the sort. The
+drawer's Sort section is the recovery surface when a stray click collapses a stack you built.
 
 Books with nothing to sort on, no page count, no author yet, always sort to the end, whichever direction you're sorting
 in.
@@ -177,10 +182,12 @@ Most cells in the table edit in place. Title, subtitle, ISBN-13, pages, and auth
 metadata; reading status and rating write to your own reading state. Series stays read-only: no metadata field backs
 that column, so it never opens an editor.
 
-Press `Enter`, press `F2`, or start typing while a cell is selected to open its editor. `Enter` commits whatever you
-typed; `Escape` discards it and leaves the cell as it was. `F2` only opens the editor here; it does not also close one
-the way the WAI-ARIA grid pattern describes. The grid library Reverie is built on doesn't implement that half of the
-toggle, so `Escape` or `Enter` are what close an editor regardless of how you opened it.
+Click a cell, or press `Enter` or `F2` on it, to open its editor beside the cell; on a text cell you can also start
+typing. `Enter`, the ✓ button or a click outside saves; `Escape` or ✕ discards your change and leaves the cell as it
+was. The title is a link to the book, so edit it with the pencil that appears when you hover the row, with `F2`, or by
+typing. Authors edit as a list of names: `Enter` adds the name you typed, and **Save** stores the list. Status opens a
+list of states, and choosing one saves it. Set a rating by clicking a star in the cell or pressing `1` to `5`; `0`
+clears it.
 
 Title, subtitle, and authors describe the work rather than one edition of it, so editing any of them from one row
 updates every edition of that work currently loaded in the table, not just the row you touched. ISBN-13 and pages

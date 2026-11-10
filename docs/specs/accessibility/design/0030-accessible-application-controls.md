@@ -27,7 +27,8 @@ semantic HTML. React Router Links use `buttonVariants` when they need button sty
 
 Radix Colors and `src/styles/themes/primitives.generated.css` supply colour primitives independently of the interaction
 library. Existing controls consume compatibility aliases bound to the canonical palette. The Radix UI runtime is not
-installed. The grid engine owns its editing, sorting and loading lifecycle separately from shared controls.
+installed. The Library table composes React Aria's `Table` and owns its cell editing, multi-level sorting and paging
+separately from shared controls.
 
 ## Interfaces and dependencies
 
@@ -35,8 +36,11 @@ React Aria exposes native state through `isSelected`, `isReadOnly`, `isDisabled`
 data attributes for styling. Label and description associations belong to the parent field or overlay composition.
 Buttons handle activation through `onPress`; navigation links retain link semantics and Router integration.
 
-Grid cell renderers receive the engine's child tab index. Title links forward it, and details buttons translate it to
-React Aria's `excludeFromTabOrder`, so keyboard entry returns to the active cell and arrow keys reach its controls.
+Library table cells hold React Aria controls: a `Link` for the title, a `Button` that opens each cell's editor, and the
+details `Button`. React Aria's `Table` moves focus between rows, cells and the controls inside a cell with the arrow
+keys, and Tab leaves the table. Each editor opens in a `Popover` and `Dialog` anchored to its cell: text fields are a
+`Form` with one `TextField`, Authors is a `TagGroup` followed by a `TextField`, Status is a `ListBox` and Rating is a
+`ToggleButtonGroup`.
 
 Submit forms use React Aria `Form` and the React `action` prop. Actions await API mutations. Named fields supply
 FormData, and domain validators parse that input before requests. The React Aria `validationErrors` contract associates
@@ -46,7 +50,8 @@ field errors and moves focus to the first invalid field on a blocked submission.
 
 Uncontrolled submit fields take initial and returned values through `defaultValue`. `useActionState` carries submitted
 values and expected errors across action completion, so the successful React action reset does not discard refused
-input. Controlled values remain appropriate where edits drive other UI, including settings drafts and grid editors.
+input. Controlled values remain appropriate where edits drive other UI, including settings drafts and the Authors cell
+editor.
 
 Create-user role and token expiry are named, uncontrolled Selects. Failed requests retain their choices; reopening a
 closed dialog restores defaults. Settings owns drafts, dirty patches and concurrency handling. Its actions are disabled

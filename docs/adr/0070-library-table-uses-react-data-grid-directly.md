@@ -3,13 +3,15 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0070"
 title: "Library table uses react-data-grid directly"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-11-09"
 decided-on: "2026-11-09"
 decision-makers:
   - "John Unkovich"
 supersedes:
   - "REV-ADR-0036"
+superseded-by:
+  - "REV-ADR-0071"
 ---
 
 # Library table uses react-data-grid directly

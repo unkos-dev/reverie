@@ -71,8 +71,8 @@ import { useLibraryPreferences } from "./use-library-preferences";
  * browsing never pays its bundle cost, and the chunk stays out of the
  * route's critical path.
  */
-const LibraryTableView = lazy(() =>
-  import("./table/LibraryTableView").then((m) => ({ default: m.LibraryTableView })),
+const LibraryTable = lazy(() =>
+  import("./table/LibraryTable").then((m) => ({ default: m.LibraryTable })),
 );
 
 /** The library's one overlay slot: filters or one book's details, never both. */
@@ -377,7 +377,7 @@ export function LibraryPage(): ReactElement {
               }}
             >
               <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                <LibraryTableView
+                <LibraryTable
                   items={items}
                   sort={sortLevels}
                   defaultSort={defaultSortLevels}
@@ -391,6 +391,9 @@ export function LibraryPage(): ReactElement {
                   edits={edits}
                   density={density}
                   hiddenColumns={hiddenColumns}
+                  onHideColumn={(key) => {
+                    toggleColumn(key, true);
+                  }}
                   selectedIds={selectedIds}
                   onSelectionChange={setSelectedIds}
                   onRowActivate={(book) => {

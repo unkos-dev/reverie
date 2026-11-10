@@ -526,11 +526,24 @@
       "id": "REV-ADR-0070",
       "kind": "adr",
       "path": "docs/adr/0070-library-table-uses-react-data-grid-directly.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0071"
+      ],
       "supersedes": [
         "REV-ADR-0036"
       ],
       "title": "Library table uses react-data-grid directly"
+    },
+    {
+      "id": "REV-ADR-0071",
+      "kind": "adr",
+      "path": "docs/adr/0071-library-table-uses-react-aria-table.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0070"
+      ],
+      "title": "Library table uses React Aria Table"
     },
     {
       "governed-by": [

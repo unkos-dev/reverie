@@ -22,6 +22,7 @@ export {
   resolveMetadataOperation,
   undoMetadataOperation,
   UpdateBookMetadataFieldsSchema,
+  PageCountInputSchema,
   parseSortParam,
   serializeSortParam,
   MAX_SORT_LEVELS,

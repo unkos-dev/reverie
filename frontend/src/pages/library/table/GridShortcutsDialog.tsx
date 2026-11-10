@@ -2,19 +2,7 @@
  * Keyboard-shortcuts overlay for the library table view.
  *
  * The visible Help control opens the shared native dialog, which owns dismissal and focus restoration.
- *
- * The shortcut list documents react-data-grid's native keyboard model
- * (no custom key handling is added by this feature) plus the paging
- * caveat: the list endpoint is forward-only keyset with no total
- * count, so Ctrl+End jumps to the last row currently loaded in memory,
- * not the last row in the library.
- *
- * The editing rows document the vendor's own editing keyboard model
- * (Enter/F2/type-to-open, Escape cancel) plus this feature's Ctrl+Z undo.
- * One deviation from the WAI-ARIA APG grid pattern is called out: F2 opens
- * an editor but, unlike the APG's toggle model, does not also close one.
- * react-data-grid at the pinned tag implements F2-open only, so Escape or
- * Enter are the close paths.
+ * Ctrl+End reaches the last loaded row, not the last book in the library: the list is keyset-paged.
  */
 import type { ReactElement, Ref } from "react";
 
@@ -32,26 +20,27 @@ type ShortcutRow = {
 };
 
 const SHORTCUT_ROWS: ShortcutRow[] = [
-  { keys: ["↑", "↓", "←", "→"], description: "Move focus one cell" },
-  { keys: ["Home", "End"], description: "Jump to the first or last cell in the row" },
+  {
+    keys: ["↑", "↓", "←", "→"],
+    description: "Move between rows, cells and the controls in a cell",
+  },
+  {
+    keys: ["Home", "End"],
+    description: "On a row: the first or last loaded row. In a cell: the first or last cell",
+  },
   { keys: ["Ctrl", "Home"], description: "Jump to the first loaded row" },
   { keys: ["Ctrl", "End"], description: "Jump to the last loaded row" },
-  { keys: ["Page Up", "Page Down"], description: "Scroll one viewport of rows" },
-  { keys: ["Tab"], description: "Move to the next cell; exits the grid at the last cell" },
-  {
-    keys: ["Shift", "Tab"],
-    description: "Move to the previous cell; exits the grid at the first cell",
-  },
-  { keys: ["Esc"], description: "Close this overlay" },
-  { keys: ["Enter"], description: "Edit the focused cell" },
-  {
-    keys: ["F2"],
-    description: "Edit the focused cell (opens only; Esc or Enter closes)",
-  },
-  { keys: ["A", "…", "Z"], description: "Type a character to start editing with that value" },
-  { keys: ["Esc"], description: "While editing: discard the edit" },
-  { keys: ["Enter"], description: "While editing: commit the edit" },
-  { keys: ["Ctrl", "Z"], description: "Undo the most recent edit" },
+  { keys: ["Page Up", "Page Down"], description: "Move one screen of rows" },
+  { keys: ["Tab"], description: "Leave the table" },
+  { keys: ["Space"], description: "On a row: select or deselect it" },
+  { keys: ["Ctrl", "A"], description: "Select every loaded book" },
+  { keys: ["Enter"], description: "On a row: open its details. On a cell: edit it" },
+  { keys: ["F2"], description: "Edit the focused cell, including the title" },
+  { keys: ["A", "…", "Z"], description: "Start editing the focused cell with that character" },
+  { keys: ["1", "…", "5"], description: "On a rating: set it. 0 clears it" },
+  { keys: ["Enter"], description: "While editing: save" },
+  { keys: ["Esc"], description: "While editing: discard. Otherwise: clear the selection" },
+  { keys: ["Ctrl", "Z"], description: "Undo the most recent saved edit" },
 ];
 
 type GridShortcutsDialogProps = {

@@ -1,0 +1,62 @@
+/*
+ * Unlayered, so these rules outrank both Tailwind utilities and the global
+ * :focus-visible ring. The focused cell, header or row paints the table's one
+ * focus indicator; a control inside it paints none of its own.
+ */
+
+.rv-table :focus-visible {
+  outline: none;
+}
+
+.rv-table [data-slot="checkbox-indicator"] {
+  box-shadow: none;
+}
+
+.rv-table [role="row"][data-focus-visible],
+.rv-table [role="gridcell"][data-focus-visible],
+.rv-table [role="rowheader"][data-focus-visible],
+.rv-table [role="columnheader"][data-focus-visible],
+.rv-table [role="gridcell"]:has([data-focus-visible]),
+.rv-table [role="rowheader"]:has([data-focus-visible]),
+.rv-table [role="columnheader"]:has([data-focus-visible]) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+  z-index: 3;
+}
+
+.rv-pending {
+  position: relative;
+}
+
+.rv-pending::after {
+  position: absolute;
+  inset-inline: 12px;
+  bottom: 6px;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, transparent, var(--accent-text), transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: rv-pending-sweep 1.2s var(--ease-standard) infinite;
+}
+
+@keyframes rv-pending-sweep {
+  from {
+    background-position: -50% 0;
+  }
+
+  to {
+    background-position: 150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-pending::after {
+    background: var(--border-strong);
+    animation: none;
+  }
+}
+
+.rv-table [data-slot="checkbox"]:not([data-selected]) [data-slot="checkbox-indicator"] {
+  border-color: var(--fg-muted);
+}
