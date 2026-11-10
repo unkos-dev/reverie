@@ -573,7 +573,7 @@ export function LibraryTable({
     sortBy(field, primary?.field === field ? !primary.desc : descendingFirst(field), "primary");
   }
 
-  const canLoadMore = hasNextPage && !isFetchNextPageError;
+  const canLoadMore = hasNextPage && !isFetchingNextPage && !isFetchNextPageError;
 
   function renderColumn(column: TableColumn): ReactElement {
     if (column.id === "select") {

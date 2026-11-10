@@ -218,20 +218,21 @@ function Trigger({
   renderPending,
   children,
 }: Readonly<TriggerProps>): ReactElement {
+  const pending = state.pending !== undefined;
   let label = valueText === "" ? `Add ${field}` : `${valueText}, edit ${field}`;
-  if (state.pending !== undefined) label = `${field} saving`;
+  if (pending) label = `${field} saving`;
   if (state.failed) label += ", not saved";
   return (
     <AriaButton
       ref={triggerRef}
       aria-label={label}
       aria-haspopup="dialog"
-      aria-busy={state.pending !== undefined || undefined}
+      aria-busy={pending || undefined}
       onPress={(event) => {
-        if (onPointerPress?.(event) === true) return;
+        if (pending || onPointerPress?.(event) === true) return;
         onOpen();
       }}
-      onKeyDown={editKeys(onOpen, allowTyping, direct)}
+      onKeyDown={pending ? undefined : editKeys(onOpen, allowTyping, direct)}
       onPointerMove={(event) => {
         if (event.pointerType !== "mouse" || onPointerMove === undefined) return;
         onPointerMove(event.clientX - event.currentTarget.getBoundingClientRect().left);
@@ -493,7 +494,7 @@ export function TitleCell({
         size="icon-sm"
         aria-label={`Edit title of ${book.title}`}
         onPress={() => {
-          editor.open();
+          if (state.pending === undefined) editor.open();
         }}
         className="text-fg-muted data-hovered:text-fg -my-1 shrink-0 opacity-0 transition-opacity duration-150 group-data-hovered/row:opacity-100 group-data-focus-visible-within/row:opacity-100 data-focus-visible:opacity-100 pointer-coarse:opacity-100"
       >
