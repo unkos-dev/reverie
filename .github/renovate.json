@@ -45,6 +45,11 @@
       "allowedVersions": "<12"
     },
     {
+      "description": "Keep oxc-transform-react inside the peer range @vitejs/plugin-react declares for it (>=0.152.0 <0.157.0 through plugin 6.3.0). With react({ compiler: true }) it transforms every frontend component, and REV-ADR-0072 records that the plugin supports only the versions it declares. Review this cap whenever the plugin updates, and raise it only when the plugin's declared range does.",
+      "matchPackageNames": ["oxc-transform-react"],
+      "allowedVersions": "<0.157.0"
+    },
+    {
       "description": "Update lockfiles within compatible cargo and npm ranges; replace ranges for incompatible releases.",
       "matchManagers": ["cargo", "npm"],
       "rangeStrategy": "update-lockfile"
