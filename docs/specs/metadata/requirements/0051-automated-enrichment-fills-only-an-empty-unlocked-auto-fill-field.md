@@ -18,9 +18,9 @@ set, so no automated observation ever sets or replaces it, whether or not it alr
 
 An operator who has set a value, or locked a field against change, relies on automated enrichment leaving it alone;
 silently overwriting a deliberate choice with no warning would destroy the operator's own edit and erode trust in the
-catalogue. Content rating additionally gates what a child account can see, so a human reviewer, never an automated
-source, must be the one who assigns or changes it; treating it like any other auto-fill field would let an external
-source silently set the value the child-safety enforcement depends on.
+catalogue. Content rating additionally records the household's own judgement of a book's suitability, and an external
+source's rating is not that judgement, so a person, never an automated source, assigns or changes it; treating it like
+any other auto-fill field would let an external source silently set a judgement that belongs to the household.
 
 ## Acceptance criteria
 

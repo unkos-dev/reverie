@@ -55,11 +55,11 @@ does not own the EPUB-ingestion pipeline's metadata extraction or its `metadata_
 ingestion time with `source = 'opf'`); those rows land in the same table this subject's policy engine reads, so an
 OPF-sourced pending row can itself be the row an enrichment observation is checked against for agreement or disagreement
 in a subsequent run (see State-writer census). It does not own `content_rating` as a value type
-(`backend/src/models/content_rating.rs`) or its child-safety consumption; this subject only pins the field's merge
-policy to `Propose` and never writes the column itself. The cover-download and staging module (`cover_download.rs`) has
-no caller outside its own test module, and `http.rs`'s `cover_client` factory is constructed only there. Provider cover
-URLs are recorded as `cover_url` observations like any other field; nothing in the production path fetches, downloads or
-stages the image such an observation points to.
+(`backend/src/models/content_rating.rs`); this subject only pins the field's merge policy to `Propose` and never writes
+the column itself. The cover-download and staging module (`cover_download.rs`) has no caller outside its own test
+module, and `http.rs`'s `cover_client` factory is constructed only there. Provider cover URLs are recorded as
+`cover_url` observations like any other field; nothing in the production path fetches, downloads or stages the image
+such an observation points to.
 
 Depends on: the row-level-security mechanism and the ingestion role's unconditional policies the queue and the dry-run's
 fan-out rely on to reach `manifestations` without a per-user session context (the Design "Row-level security and
