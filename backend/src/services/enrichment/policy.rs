@@ -55,9 +55,10 @@ pub fn default_policy(field: &str) -> FieldPolicy {
         f if f.starts_with("identifiers.") => FieldPolicy::AutoFill,
         // All other known fields ("description", "series", "contributors.*", etc.)
         // and any unknown fields default to Propose: cautious until a human promotes.
-        // THREAT: content_rating must stay Propose, never AutoFill: it is the
-        // future enforcement input for the child-account safety layer, so
-        // automated sources must never auto-apply it. A policy test pins this.
+        // THREAT: content_rating must stay Propose, never AutoFill: it records
+        // the household's own judgement of a book's suitability, which an
+        // external source's rating is not, so automated sources must never
+        // auto-apply it. A policy test pins this.
         _ => FieldPolicy::Propose,
     }
 }

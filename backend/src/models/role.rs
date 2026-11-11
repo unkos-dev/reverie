@@ -38,11 +38,11 @@
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "user_role", rename_all = "lowercase")]
 pub enum Role {
-    /// Full administrative access; bypass content age-gates.
+    /// Full administrative access.
     Admin,
     /// Standard adult user; full library access, no admin actions.
     Adult,
-    /// Child profile; subject to age-restricted content filtering.
+    /// Child profile; sees only the books on its own shelves.
     Child,
 }
 
