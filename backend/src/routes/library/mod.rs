@@ -1153,7 +1153,7 @@ async fn detail(
     canonical_ids.extend(junction_ids);
     // THREAT: a child cannot act on a proposal (every metadata route refuses a
     // child), so the detail carries none for that caller rather than exposing
-    // provider-supplied values the child-safety gate never reviewed.
+    // provider-supplied values no one has reviewed.
     let pending_versions = if current_user.is_child() {
         Vec::new()
     } else {

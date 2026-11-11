@@ -487,8 +487,8 @@ unstated.
 `content_rating`'s default policy is pinned to `Propose` and has no entry in `default_policy`'s `AutoFill` match arm; a
 unit test (`policy::tests::content_rating_never_autofills`) pins the mapping, so promoting it to `AutoFill` fails that
 test immediately. No adapter emits an observation for that field. `content_rating` is a manually-set, library-facing
-field (`routes/library/mod.rs` reads and returns it); the pin keeps every automated source out of that column so the
-value the child-account safety layer reads is never auto-applied.
+field (`routes/library/mod.rs` reads and returns it); the pin keeps every automated source out of that column, so only a
+person sets it.
 
 Every outbound metadata request goes through `http::api_client`, built by the same `ssrf_client` constructor as
 `http::cover_client`: a process-wide custom `DNS` resolver drops any resolved address in a denied range before `reqwest`
