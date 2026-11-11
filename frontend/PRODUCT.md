@@ -44,7 +44,9 @@ These mechanisms support that aim:
 - Automated enrichment fills a field only when the field is empty, unlocked and in the set the system fills
   automatically. A change to an existing value is staged for review, with its source recorded, until a person accepts or
   rejects it. Automated enrichment never sets content rating.
-- Ingestion never modifies or deletes a source file.
+- Ingestion copies each file from the ingestion directory into the managed library without altering its contents. By
+  default it then removes the imported file from the ingestion directory. Removing a recognised duplicate is optional
+  and off by default. A rejected or not-accepted file stays where it is.
 - A child account sees nothing by default. A parent grants access for each shelf.
 
 ## Operating Context

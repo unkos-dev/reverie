@@ -27,8 +27,9 @@ above track the engineering, but there is no supported install path yet.
 
 These constraints are fixed:
 
-- Source files are read-only. Ingestion copies or hardlinks into a managed library and never modifies or deletes an
-  original.
+- Ingestion copies each file from the ingestion directory into a managed library without altering its contents. By
+  default it then removes the imported file from the ingestion directory. Removing a recognised duplicate is optional
+  and off by default. A rejected or not-accepted file stays where it is.
 - A book is a work, not a file. Editions and formats of the same title group under one catalogue entry.
 - Fetched metadata is staged, with its source recorded, until you accept or reject it. External sources cannot write to
   the catalogue directly.
