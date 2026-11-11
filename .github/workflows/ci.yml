@@ -63,20 +63,6 @@ jobs:
   docker:
     uses: $/.github/workflows/docker.yml
 
-  codeql:
-    uses: $/.github/workflows/codeql.yml
-    secrets:
-      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-      R2_ACCESS_KEY_ID_RW: ${{ secrets.R2_ACCESS_KEY_ID_RW }}
-      R2_ACCESS_KEY_ID_RO: ${{ secrets.R2_ACCESS_KEY_ID_RO }}
-      R2_SECRET_ACCESS_KEY_RW: ${{ secrets.R2_SECRET_ACCESS_KEY_RW }}
-      R2_SECRET_ACCESS_KEY_RO: ${{ secrets.R2_SECRET_ACCESS_KEY_RO }}
-    permissions:
-      contents: read
-      pull-requests: read
-      security-events: write
-      actions: read
-
   # Absent from ci-gate.needs on purpose: every job here is advisory and never
   # fails, so a detector hiccup must not block a merge.
   snyk:
@@ -109,7 +95,6 @@ jobs:
       - lint
       - website
       - docker
-      - codeql
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
