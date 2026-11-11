@@ -66,10 +66,10 @@ crafted filename cannot inject into the shell.
 
 ### CodeQL language scope
 
-Rust analysis runs on every PR and merge group. Main pushes use path filtering for `backend/`, the CI caller, the CodeQL
-workflow and configuration, and the shared Rust toolchain action. The crate's manifests, lockfile, toolchain files and
-its dependency, build-script and migration inputs all live under `backend/`, so no root Cargo, lockfile or toolchain
-pattern selects Rust.
+Rust analysis runs on every PR. Merge groups and main pushes use path filtering for `backend/`, the CI caller, the
+CodeQL workflow and configuration, and the shared Rust toolchain action. The crate's manifests, lockfile, toolchain
+files and its dependency, build-script and migration inputs all live under `backend/`, so no root Cargo, lockfile or
+toolchain pattern selects Rust.
 
 The Rust extractor uses kache and the existing R2 bucket for internal Cargo compilation. The CodeQL namespace groups
 downloads of compatible compiled artifacts, which remain reusable from the shared store. A matching manifest key keeps
@@ -89,8 +89,8 @@ no extension at all when its shebang invokes node, which no path pattern can sel
 analysis always runs. The weekly schedule runs all three languages without path filtering.
 
 The code-scanning ruleset requires a Rust result on PRs even when the required Rust job reports an accepted skip. PR
-scans therefore retain every language category. Merge groups run the same analyses on the queued commit. Detector and
-analyser failures remain subject to `CI gate`.
+scans therefore retain every language category. The rule does not apply to merge groups, so a merge group runs Rust
+analysis only when its path filter matches. Detector and analyser failures remain subject to `CI gate`.
 
 ## The backstop gate
 

@@ -40,7 +40,7 @@ jobs:
 
   checks:
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -209,7 +209,7 @@ jobs:
   # Kept off the checks job's serial critical path.
   tests:
     needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:

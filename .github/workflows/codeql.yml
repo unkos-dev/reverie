@@ -138,7 +138,12 @@ jobs:
 
   rust:
     needs: changes
-    if: github.event_name != 'push' || needs.changes.outputs.rust == 'true'
+    # The ruleset's code-scanning rule expects a Rust result on every pull
+    # request but does not apply to merge queue groups.
+    if: >-
+      github.event_name == 'pull_request'
+      || github.event_name == 'schedule'
+      || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

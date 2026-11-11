@@ -29,7 +29,7 @@ jobs:
 
   lint:
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -58,7 +58,7 @@ jobs:
 
   test:
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -112,7 +112,7 @@ jobs:
 
   build:
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
