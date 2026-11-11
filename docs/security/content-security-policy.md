@@ -86,7 +86,7 @@ injection. Must be a valid absolute `http(s)://` URL.
 
 | Surface | Dev (Vite dev server) | Production (Docker container) |
 | ------- | --------------------- | ----------------------------- |
-| HTML CSP | `'unsafe-inline' 'unsafe-eval'` + HMR WebSocket | Strict hash-based, no `'unsafe-inline'`/`'unsafe-eval'` |
+| HTML CSP | `'unsafe-inline' 'unsafe-eval'` + HMR WebSocket + live helper script from `http://localhost:8400` | Strict hash-based, no `'unsafe-inline'`/`'unsafe-eval'` |
 | API CSP | Vite proxies `/api`, `/auth`, `/opds` to the backend; backend's API CSP applies to those responses | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` |
 | HSTS | Off | Off by default; on behind TLS with `REVERIE_BEHIND_HTTPS=true` |
 | `font-src` policy | `'self'` (matches prod) | `'self'` (declared in `csp.rs::build_html_csp`) |
