@@ -55,7 +55,7 @@ that never report again.
 ## The changes job and path filters
 
 Concern files use a `changes` job running `dorny/paths-filter` and expose the filters they need as outputs. Most use
-`.github/path-filters.yml`; CodeQL keeps its extraction-specific filters in `codeql.yml`.
+`.github/path-filters.yml`; CodeQL keeps its own filter in `codeql.yml`.
 
 The filter file is shared with `scripts/preflight-scope.sh`, which decides which lanes a local gate runs. One file, so a
 local gate and CI cannot disagree about what a change touches.
@@ -63,34 +63,6 @@ local gate and CI cannot disagree about what a change touches.
 Merge-group filters pass the event's `base_sha` and `head_sha` explicitly to compare the whole group against its base. A
 filter that feeds a guard a file list passes it through the environment rather than inline `${{ }}` interpolation, so a
 crafted filename cannot inject into the shell.
-
-### CodeQL language scope
-
-Rust analysis runs on every PR and merge group. Main pushes use path filtering for `backend/`, the CI caller, the CodeQL
-workflow and configuration, and the shared Rust toolchain action. The crate's manifests, lockfile, toolchain files and
-its dependency, build-script and migration inputs all live under `backend/`, so no root Cargo, lockfile or toolchain
-pattern selects Rust.
-
-The Rust extractor uses kache and the existing R2 bucket for internal Cargo compilation. The CodeQL namespace groups
-downloads of compatible compiled artifacts, which remain reusable from the shared store. A matching manifest key keeps
-early prefetch scoped to CodeQL builds. Main runs can write, while PR and merge-group runs use read-only credentials.
-Without an R2 account ID, including on forks without secrets, scans compile without the remote cache. When the account
-ID is set, missing credentials for the current event fail the job with the missing secret names. The Actions cache
-stores only Cargo registry data. Every scan creates a fresh CodeQL database and runs the configured queries.
-
-Backend checks use a separate `dev` manifest key matching their namespace, so prefetch selects backend build artifacts.
-
-JavaScript/TypeScript analysis runs on every PR and merge group and uses its path filter on main pushes: `frontend/`,
-plus the extractor file types this repository has or plausibly will, matched repo-wide. Those are the JavaScript and
-TypeScript extensions and the plain HTML ones. Left out on purpose are the template and embedded HTML types (`.vue`,
-`.hbs`, `.ejs`, `.njk`, `.erb`, `.jsp`, `.dot`), the legacy JavaScript spellings (`.es6`, `.es`, `.xsjs`, `.xsjslib`),
-and JSON and YAML, since `**/*.yml` would start a scan on every workflow edit. The extractor also reads a file that has
-no extension at all when its shebang invokes node, which no path pattern can select; the repository tracks none. Actions
-analysis always runs. The weekly schedule runs all three languages without path filtering.
-
-The code-scanning ruleset requires a Rust result on PRs even when the required Rust job reports an accepted skip. PR
-scans therefore retain every language category. Merge groups run the same analyses on the queued commit. Detector and
-analyser failures remain subject to `CI gate`.
 
 ## The backstop gate
 
@@ -178,6 +150,15 @@ would make queue entries cancel each other.
 requests are skipped because they cannot access the analysis credential. Coverage reporting is disabled, and Sonar is
 not a required merge check.
 
+`codeql.yml` analyses Actions, JavaScript/TypeScript and Rust nightly on main, and on manual dispatch. Through the CI
+caller it runs only when its own workflow, `.github/codeql/`, the shared Rust toolchain action or the caller changes, so
+a breaking analyser or action update fails the required `codeql /` checks before it reaches main; every other change
+skips them. No ruleset rule acts on CodeQL results, so its alerts reach code scanning without blocking a merge. The Rust
+extractor compiles through kache and the existing R2 bucket. Its CodeQL namespace and matching manifest key keep
+prefetch scoped to CodeQL builds, while backend checks use a separate `dev` key. Without an R2 account ID the scan
+compiles without the remote cache; with one, missing credentials fail the job with the missing secret names. The Actions
+cache stores only Cargo registry data, and every scan builds a fresh CodeQL database.
+
 The rest are non-PR lanes: the release publish, the scheduled audits and mutation runs, the OSSF scorecard, the
 pull-request labelling on `pull_request_target`, and release automation. None of them has a PR-time surface to compose.
 
@@ -188,7 +169,8 @@ Everything above is portable. These are the parts that are not:
 - Concerns: `backend`, `frontend`, `deps`, `security`, `lint`, `website`, `staging`, `docker`, `codeql`, and `snyk`.
 - `snyk` is the one concern with no `changes` job. Its scans are continuous advisory review whose value is a fresh
   baseline on every push, which path gating would defeat, so its jobs filter on event and fork origin only.
-- `codeql` and `website` keep a direct trigger beside `workflow_call`: a weekly schedule and a manual dispatch
-  respectively. Neither carries a required context on that path, so the bare job names those runs report are fine.
+- `codeql` and `website` keep direct triggers beside `workflow_call`: a nightly schedule with a manual dispatch, and a
+  manual dispatch, respectively. Neither carries a required context on that path, so the bare job names those runs
+  report are fine.
 - Filters live in `.github/path-filters.yml` and are consumed by both CI and `scripts/preflight-scope.sh`.
 - Tools come from `mise.toml`; the JS workspace resolves under the package manager `package.json` declares.

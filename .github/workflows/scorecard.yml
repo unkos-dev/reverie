@@ -6,7 +6,7 @@ on:
   # Protection posture is a heavily-weighted Scorecard check, so re-score on change.
   branch_protection_rule:
   schedule:
-    # Off-peak and off CodeQL's weekly slot (Sunday 17:37 UTC), to dodge runner contention.
+    # Off-peak and off CodeQL's nightly slot (17:37 UTC), to dodge runner contention.
     - cron: "23 23 * * 2"
   push:
     branches: [main]

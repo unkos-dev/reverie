@@ -177,9 +177,10 @@ the binary runs and that CI's `setup-vp` reads the version from. If a declared p
 through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check
 and report the missing command; do not bypass the check or install system packages implicitly.
 
-Workflow and infrastructure files are additionally scanned in CI by zizmor, Checkov, Trivy, CodeQL, cargo-audit,
-cargo-deny, and dependency-review. These are intentionally CI-only scanners. Local installation is not part of
-contributor setup. Documented zizmor suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
+Workflow and infrastructure files are additionally scanned in CI by zizmor, Checkov, Trivy, cargo-audit, cargo-deny, and
+dependency-review, and CodeQL analyses main nightly. These are intentionally CI-only scanners. Local installation is not
+part of contributor setup. Documented zizmor suppressions and their justifications live in
+[`.github/zizmor.yml`](zizmor.yml).
 
 [Snyk](https://snyk.io) also scans every PR as an advisory (non-blocking) layer: Snyk Code runs static analysis over the
 Rust and TypeScript sources, and Snyk Open Source scans the npm lockfile for vulnerable or license-incompatible
