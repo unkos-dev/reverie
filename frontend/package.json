@@ -3,9 +3,6 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "engines": {
-    "node": ">=26.0.0"
-  },
   "scripts": {
     "build": "vp build",
     "lint": "vp lint --max-warnings 0",
