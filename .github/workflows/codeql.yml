@@ -1,15 +1,61 @@
 name: CodeQL
 
 on:
+  # Through ci.yml's caller, the analyses run only when CodeQL's own workflow,
+  # configuration or toolchain action changes, so a breaking update fails a
+  # required check instead of the next nightly scan.
+  workflow_call:
+    secrets:
+      R2_ACCOUNT_ID:
+        required: false
+      R2_ACCESS_KEY_ID_RW:
+        required: false
+      R2_ACCESS_KEY_ID_RO:
+        required: false
+      R2_SECRET_ACCESS_KEY_RW:
+        required: false
+      R2_SECRET_ACCESS_KEY_RO:
+        required: false
   schedule:
     # Off-peak, off top-of-the-hour, to dodge runner contention.
     - cron: "37 17 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      codeql: ${{ steps.filter.outputs.codeql }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+        id: filter
+        with:
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
+          filters: |
+            codeql:
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/codeql.yml'
+              - '.github/codeql/**'
+              - '.github/actions/rust-toolchain/**'
+
   actions:
+    needs: changes
+    if: >-
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+      || needs.changes.outputs.codeql == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -35,6 +81,11 @@ jobs:
           category: /language:actions
 
   javascript-typescript:
+    needs: changes
+    if: >-
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+      || needs.changes.outputs.codeql == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -59,6 +110,11 @@ jobs:
           category: /language:javascript-typescript
 
   rust:
+    needs: changes
+    if: >-
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+      || needs.changes.outputs.codeql == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
