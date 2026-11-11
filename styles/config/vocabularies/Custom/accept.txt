@@ -42,6 +42,8 @@ async
 async_zip
 atlassian
 atomicity
+Audiobook
+Audiobooks
 Audiobookshelf
 auditable
 auth
@@ -283,6 +285,7 @@ keyframe
 keyless
 keyset
 kilork
+Kobo
 Kubernetes
 lefthook
 Leonxlnx
