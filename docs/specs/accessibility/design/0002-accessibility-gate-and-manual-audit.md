@@ -17,17 +17,17 @@ Playwright and axe-core gate and the manual audit that covers what the automated
 ## Purpose and boundaries
 
 This subject owns verifying WCAG 2.2 Level AA conformance for Reverie's web surfaces: the automated scan that runs on
-every UI-touching pull request and the recurring manual audit. It does not own the design tokens, component markup, or
-colour system that make a surface conformant in the first place; those live in `frontend/DESIGN.md` and the component
-implementations themselves. It does not own the WCAG 2.2 standard's own rule definitions, which `@axe-core/playwright`
-evaluates against.
+every UI-touching pull request, the recurring manual audit, and the register of approved exceptions. It does not own the
+design tokens, component markup, or colour system that make a surface conformant in the first place; those live in
+`frontend/DESIGN.md` and the component implementations themselves. It does not own the WCAG 2.2 standard's own rule
+definitions, which `@axe-core/playwright` evaluates against.
 
 Depends on: `@playwright/test` and `@axe-core/playwright` as the browser-automation and axe-core integration; the
 frontend Vite dev server, whose lifecycle Playwright's `webServer` configuration owns for the gate run; the `changes`
 job in `.github/workflows/frontend.yml`, which decides whether a pull request touches the frontend at all.
 
-Depended on by: every pull request that touches the frontend, through the CI `a11y` job; every release tag and every
-net-new view, through the manual audit; a contributor running the gate locally before pushing.
+Depended on by: every pull request that touches the frontend, through the CI `a11y` job; every release tag, through the
+manual audit; a contributor running the gate locally before pushing.
 
 ## Structure
 
@@ -62,6 +62,15 @@ net-new view, through the manual audit; a contributor running the gate locally b
 - The `A11Y_TARGETS` environment variable, when set, overrides `DEFAULT_TARGETS` for that run; CI does not set it, so CI
   always scans `DEFAULT_TARGETS`.
 
+### Approved exceptions
+
+This register is the only record of permitted non-conformance with WCAG 2.2 Level AA. Each entry names one success
+criterion, the surfaces it covers, the reason, and the date the maintainer approved it. An exception covers only the
+surfaces its entry names. The automated gate does not read this register, so a violation of a rule the gate evaluates
+still fails the gate.
+
+No exceptions are approved.
+
 ## Runtime behaviour
 
 For each target path in `parseTargets(process.env.A11Y_TARGETS)`, `a11y.spec.ts` runs one test:
@@ -84,7 +93,7 @@ For each target path in `parseTargets(process.env.A11Y_TARGETS)`, `a11y.spec.ts`
   `axe-results.json`; CI additionally uploads the Playwright trace directory (`frontend/test-results/`) as a workflow
   artifact on failure.
 - **A verified axe false positive.** The finding and manual assessment evidence for the affected success criterion are
-  retained. This is a scanner defect; a genuine WCAG failure is a product defect.
+  retained. This is a scanner defect; a genuine WCAG failure without an approved exception is a product defect.
 - **A crashed browser or blank/wrong page.** The liveness checks in step 4 fail closed: an empty `violations` array from
   a page that never rendered is indistinguishable from a genuinely clean scan unless the test also confirms axe ran
   (`testEngine` present), against the intended page (`urlMatches`), with a non-trivial rule set applied
@@ -106,13 +115,13 @@ without a browser substitution because Playwright installs a matching Chromium b
 point on a red run: the attached `axe-results.json` (rule id, impact, per-node contrast data) locally, or the same
 attachment plus the uploaded Playwright trace directory in CI.
 
-The manual audit is the operational control the automated gate does not replace: it runs at every release tag and before
-any net-new view ships, and any team member may perform and sign off the pass. It covers every surface, including routes
-that the gate scans. On scanned routes, it assesses the applicable criteria and behaviours that automated checks cannot
-fully establish; on unscanned surfaces, it assesses the full applicable Level A and Level AA criteria. This includes
-keyboard navigation order, screen-reader semantics, focus management in dialogs and overlays, and the motion budget
-under `prefers-reduced-motion`. The automated gate supplies evidence for the colour contrast, accessible name, role, and
-structural rules it evaluates, rather than proof of complete conformance on those routes.
+The manual audit is the operational control the automated gate does not replace: it runs at every release tag, and any
+team member may perform and sign off the pass. It covers every surface, including routes that the gate scans. On scanned
+routes, it assesses the applicable criteria and behaviours that automated checks cannot fully establish; on unscanned
+surfaces, it assesses the full applicable Level A and Level AA criteria. This includes keyboard navigation order,
+screen-reader semantics, focus management in dialogs and overlays, and the motion budget under `prefers-reduced-motion`.
+The automated gate supplies evidence for the colour contrast, accessible name, role, and structural rules it evaluates,
+rather than proof of complete conformance on those routes.
 
 ## More information
 
