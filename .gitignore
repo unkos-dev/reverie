@@ -75,6 +75,7 @@ SDL.md
 **/.impeccable/review/
 **/.impeccable/questions/
 **/.impeccable/live/server.json
+**/.impeccable/live/app-root.json
 **/.impeccable/live/sessions/
 **/.impeccable/live/previews/
 **/.impeccable/live/annotations/

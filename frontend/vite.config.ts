@@ -8,11 +8,14 @@ import { cspHashPlugin } from "./vite-plugins/csp-hash";
 // THREAT: 'unsafe-inline' and 'unsafe-eval' let Vite HMR, error overlays and
 // Tailwind JIT run. This policy feeds only the dev server; production serves
 // the strict hash-based policy in backend/src/security/csp.rs.
+// THREAT: http://localhost:8400 is the Impeccable live helper, which serves
+// the picker script and its event stream. Any local process bound to that
+// port can run script in the dev page, so the origin stays out of production.
 const DEV_CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:8400",
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173",
+  "connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173 http://localhost:8400",
   "img-src 'self' data:",
   "font-src 'self'",
 ].join("; ");
