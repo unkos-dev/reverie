@@ -33,9 +33,10 @@ export default defineConfig({
     // Bind on IPv4 and IPv6, so a client dialling 127.0.0.1 still connects
     // when localhost resolves to ::1.
     host: true,
-    // THREAT: allowedHosts stays at Vite's default, which rejects any
-    // non-loopback Host header. The proxy below forwards authenticated
-    // routes, so widening it would reopen DNS rebinding against them.
+    // THREAT: allowedHosts stays at Vite's default, which rejects unknown DNS
+    // hostnames but accepts loopback names and IP addresses. The proxy below
+    // forwards authenticated routes, so widening it would reopen DNS
+    // rebinding against them.
     proxy: {
       "/api": { target: "http://localhost:3000", changeOrigin: true },
       "/auth": { target: "http://localhost:3000", changeOrigin: true },
