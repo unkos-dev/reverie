@@ -553,6 +553,13 @@
       "title": "Compile the frontend with the React Compiler through oxc"
     },
     {
+      "id": "REV-ADR-0073",
+      "kind": "adr",
+      "path": "docs/adr/0073-nfc-metadata-comparison-stays-separate-from-fuzzy-matching.md",
+      "status": "accepted",
+      "title": "NFC metadata comparison stays separate from fuzzy matching"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0062",
@@ -795,7 +802,8 @@
         "REV-ADR-0067",
         "REV-ADR-0007",
         "REV-ADR-0068",
-        "REV-ADR-0051"
+        "REV-ADR-0051",
+        "REV-ADR-0073"
       ],
       "id": "REV-DESIGN-0016",
       "kind": "design",

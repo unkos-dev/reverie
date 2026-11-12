@@ -1,25 +1,19 @@
-//! Canonical-JSON + SHA-256 hashing for the metadata journal.
+//! Normalised canonical-JSON + SHA-256 comparison for metadata observations.
 //!
-//! Every `metadata_versions` row stores a stable hash of its `new_value` so that
-//! repeated observations of the same logical value (from the same source) can
-//! be deduplicated via the unique constraint on
-//! `(manifestation_id, source, field_name, value_hash)`.
-//!
-//! Per-field normalisation hooks (sort list items, trim strings, preserve publication precision)
-//! guarantee that equivalent values produce the same hash regardless of how the
-//! source serialised them.
+//! Enrichment uses this hash for agreement and disagreement. Exact journal
+//! observation identity preserves source values independently of normalisation.
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use unicode_normalization::UnicodeNormalization;
 
 /// Compute the canonical hash of a field's value.
 ///
 /// The hash is stable across:
 /// * JSON object key ordering,
-/// * insignificant whitespace,
+/// * canonical Unicode equivalence and surrounding string whitespace,
 /// * list-field item order (creators, subjects, genres, moods, tags),
-/// * publisher leading/trailing whitespace,
-/// * `pub_date` surrounding whitespace for conforming values.
+/// * contributor-role list item order.
 #[must_use]
 pub fn value_hash(field_name: &str, value: &Value) -> Vec<u8> {
     let normalised = normalise(field_name, value);
@@ -28,49 +22,23 @@ pub fn value_hash(field_name: &str, value: &Value) -> Vec<u8> {
 }
 
 fn normalise(field: &str, v: &Value) -> Value {
-    match field {
-        "publisher" => match v {
-            Value::String(s) => Value::String(s.trim().to_string()),
-            other => other.clone(),
-        },
-        // External identifiers are single canonical strings; trim so a manual
-        // entry with stray whitespace dedups against the same source value.
-        f if f.starts_with("identifiers.") => match v {
-            Value::String(s) => Value::String(s.trim().to_string()),
-            other => other.clone(),
-        },
-        "pub_date" => match v {
-            Value::String(value) => {
-                match crate::services::metadata::publication_date::normalise(value) {
-                    Ok(Some(value)) => Value::String(value),
-                    Ok(None) | Err(_) => v.clone(),
-                }
+    match v {
+        Value::Array(items) => {
+            let mut normalised: Vec<Value> = items.iter().map(normalise_item).collect();
+            if matches!(field, "creators" | "subjects" | "genres" | "moods" | "tags")
+                || field.starts_with("contributors.")
+            {
+                normalised.sort_by_key(canonical_json);
             }
-            other => other.clone(),
-        },
-        f if f == "creators"
-            || f == "subjects"
-            || f == "genres"
-            || f == "moods"
-            || f == "tags"
-            || f.starts_with("contributors.") =>
-        {
-            match v {
-                Value::Array(items) => {
-                    let mut sorted: Vec<Value> = items.iter().map(normalise_item).collect();
-                    sorted.sort_by_key(canonical_json);
-                    Value::Array(sorted)
-                }
-                other => other.clone(),
-            }
+            Value::Array(normalised)
         }
-        _ => v.clone(),
+        _ => normalise_item(v),
     }
 }
 
 fn normalise_item(v: &Value) -> Value {
     match v {
-        Value::String(s) => Value::String(s.trim().to_string()),
+        Value::String(s) => Value::String(s.nfc().collect::<String>().trim().to_owned()),
         other => other.clone(),
     }
 }
@@ -99,6 +67,31 @@ fn canonical_json(v: &Value) -> String {
                 })
                 .collect();
             format!("{{{}}}", parts.join(","))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::value_hash;
+    use serde_json::json;
+
+    #[test]
+    fn canonically_equivalent_observations_share_value_hash() {
+        for (field, composed, decomposed) in [
+            ("publisher", json!("Beyoncé"), json!("Beyonce\u{0301}")),
+            ("title", json!("Beyoncé"), json!("Beyonce\u{0301}")),
+            (
+                "contributors.author",
+                json!(["Beyoncé"]),
+                json!(["Beyonce\u{0301}"]),
+            ),
+        ] {
+            assert_eq!(
+                value_hash(field, &composed),
+                value_hash(field, &decomposed),
+                "{field}",
+            );
         }
     }
 }
