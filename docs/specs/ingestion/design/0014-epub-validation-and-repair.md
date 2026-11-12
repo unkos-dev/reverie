@@ -10,7 +10,7 @@ satisfies:
   - "REV-REQ-0046"
   - "REV-REQ-0047"
 governed-by:
-  - "REV-ADR-0073"
+  - "REV-ADR-0074"
 ---
 
 # EPUB validation and repair

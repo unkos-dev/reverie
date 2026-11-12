@@ -5,7 +5,7 @@ id: "REV-ADR-0049"
 title: "Read EPUB archives with rawzip"
 status: "superseded"
 superseded-by:
-  - "REV-ADR-0073"
+  - "REV-ADR-0074"
 recorded-on: "2026-09-14"
 decided-on: "2026-09-14"
 decision-makers:

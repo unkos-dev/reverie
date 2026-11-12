@@ -1,7 +1,7 @@
 ---
 type: ADR
 profile-version: 1
-id: "REV-ADR-0073"
+id: "REV-ADR-0074"
 title: "Use rawzip for EPUB reads and writes"
 status: "accepted"
 recorded-on: "2026-11-12"
@@ -49,6 +49,12 @@ fields does not justify another writer or custom header handling.
 - Positive: untouched file payloads copy without decompressing or compressing them again.
 - Negative: repacking normalises ancillary ZIP metadata, so external archive tools may report different timestamps or
   attributes for internal entries.
-- Negative: rawzip uses data descriptors for file entries, including the Stored mimetype entry. Reader compatibility
-  remains part of qualifying EPUB output.
+- Negative: rawzip uses data descriptors for file entries, including the Stored mimetype entry. Java's `ZipInputStream`
+  rejects Stored entries with data descriptors. This API incompatibility is an accepted limitation of the migration.
 - Negative: rawzip has one maintainer. Its small dependency footprint limits the code that Reverie inherits.
+
+## More information
+
+[OpenJDK's local-header reader](https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/util/zip/ZipInputStream.java#L518-L522)
+rejects the Stored and data-descriptor combination. No failure in a current reading system used with Reverie has been
+established, so this restriction does not justify retaining a second writer.
