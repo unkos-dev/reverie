@@ -83,7 +83,7 @@ pub enum AppError {
     /// 9457 body as every other variant — e-reader clients ignore the body
     /// and act on the status and challenge header alone. RFC 9457 `type`
     /// [`problems::BASIC_AUTH_REQUIRED`]. `realm` is operator-configured
-    /// and validated at startup (no embedded `"` allowed).
+    /// and validated at startup as a header value without embedded quotes.
     #[error("basic auth required")]
     BasicAuthRequired {
         /// The `realm` value emitted in the `WWW-Authenticate: Basic`
@@ -251,8 +251,12 @@ impl IntoResponse for AppError {
                 Some(HeaderValue::from_static(r#"Bearer error="invalid_token""#))
             }
             Self::BasicAuthRequired { realm } => {
+                let realm = realm.replace('\\', "\\\\");
                 let challenge = format!("Basic realm=\"{realm}\", charset=\"UTF-8\"");
-                HeaderValue::from_str(&challenge).ok()
+                match HeaderValue::from_str(&challenge) {
+                    Ok(value) => Some(value),
+                    Err(error) => return Self::Internal(error.into()).into_response(),
+                }
             }
             _ => None,
         };

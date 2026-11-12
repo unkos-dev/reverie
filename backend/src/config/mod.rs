@@ -830,6 +830,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn opds_realm_preserves_challenge_conformance() {
+        use axum::http::{StatusCode, header};
+        use axum::response::IntoResponse;
+
+        let invalid_realm = "Library\nBooks";
+        let response = crate::error::AppError::BasicAuthRequired {
+            realm: invalid_realm.into(),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let error =
+            cfg_from_owned(&with_overrides(&[("REVERIE_OPDS_REALM", invalid_realm)])).unwrap_err();
+        assert!(
+            matches!(error, ConfigError::Invalid { ref var, .. } if var == "REVERIE_OPDS_REALM")
+        );
+
+        let config =
+            cfg_from_owned(&with_overrides(&[("REVERIE_OPDS_REALM", r"Library\Books")])).unwrap();
+        let response = crate::error::AppError::BasicAuthRequired {
+            realm: config.opds.realm,
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers()[header::WWW_AUTHENTICATE],
+            r#"Basic realm="Library\\Books", charset="UTF-8""#
+        );
+    }
+
+    #[test]
     fn library_storage_config_absolute_defaults() {
         let config = cfg_from(BASE_VARS).unwrap();
         assert_eq!(config.library_path.as_str(), "/data/library");

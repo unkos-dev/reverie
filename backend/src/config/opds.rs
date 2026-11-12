@@ -21,8 +21,8 @@ pub struct OpdsConfig {
     pub page_size: u32,
     /// `WWW-Authenticate: Basic realm=...` value emitted on 401
     /// responses from `/opds/*` (`REVERIE_OPDS_REALM`, default
-    /// `"Reverie OPDS"`). Validated to exclude `"` to keep the header
-    /// well-formed.
+    /// `"Reverie OPDS"`). Must be a valid HTTP header value without
+    /// embedded quotes; backslashes are escaped in the challenge.
     #[validate(custom(function = "validate_realm"))]
     pub realm: String,
 }
@@ -47,16 +47,18 @@ impl Default for OpdsConfig {
 // natively (`opds.realm` → `REVERIE_OPDS_REALM`).
 // ---------------------------------------------------------------------------
 
-/// Reject a `"` in the OPDS `realm` — it flows into a `WWW-Authenticate: Basic
-/// realm="…"` header and an embedded quote would split the value.
+/// Validate the OPDS realm before it becomes a Basic challenge header.
 ///
-/// THREAT: `realm` is emitted into the `WWW-Authenticate` response header on
-/// 401s from `/opds/*`; an embedded `"` terminates the quoted value early and
-/// opens header-value injection. Rejected here at config-load time.
+/// THREAT: quotes can split the challenge and invalid header bytes can suppress it.
 fn validate_realm(realm: &str) -> Result<(), ValidationError> {
     if realm.contains('"') {
         let mut e = ValidationError::new("realm_quote");
         e.message = Some("must not contain '\"'".into());
+        return Err(e);
+    }
+    if axum::http::HeaderValue::from_str(realm).is_err() {
+        let mut e = ValidationError::new("realm_header");
+        e.message = Some("must be a valid HTTP header value".into());
         return Err(e);
     }
     Ok(())

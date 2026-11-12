@@ -425,7 +425,7 @@
           "minimum": 1
         },
         "realm": {
-          "description": "`WWW-Authenticate: Basic realm=...` value emitted on 401\nresponses from `/opds/*` (`REVERIE_OPDS_REALM`, default\n`\"Reverie OPDS\"`). Validated to exclude `\"` to keep the header\nwell-formed.",
+          "description": "`WWW-Authenticate: Basic realm=...` value emitted on 401\nresponses from `/opds/*` (`REVERIE_OPDS_REALM`, default\n`\"Reverie OPDS\"`). Must be a valid HTTP header value without\nembedded quotes; backslashes are escaped in the challenge.",
           "type": "string",
           "default": "Reverie OPDS"
         }
