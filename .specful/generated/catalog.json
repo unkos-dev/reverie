@@ -364,7 +364,10 @@
       "id": "REV-ADR-0049",
       "kind": "adr",
       "path": "docs/adr/0049-read-epub-archives-with-rawzip.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0074"
+      ],
       "title": "Read EPUB archives with rawzip"
     },
     {
@@ -558,6 +561,16 @@
       "path": "docs/adr/0073-nfc-metadata-comparison-stays-separate-from-fuzzy-matching.md",
       "status": "accepted",
       "title": "NFC metadata comparison stays separate from fuzzy matching"
+    },
+    {
+      "id": "REV-ADR-0074",
+      "kind": "adr",
+      "path": "docs/adr/0074-use-rawzip-for-epub-reads-and-writes.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0049"
+      ],
+      "title": "Use rawzip for EPUB reads and writes"
     },
     {
       "governed-by": [
@@ -767,7 +780,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0049"
+        "REV-ADR-0074"
       ],
       "id": "REV-DESIGN-0014",
       "kind": "design",
@@ -819,6 +832,7 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0074",
         "REV-ADR-0067",
         "REV-ADR-0068",
         "REV-ADR-0020",

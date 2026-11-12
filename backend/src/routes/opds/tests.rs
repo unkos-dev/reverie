@@ -684,7 +684,6 @@ async fn capability_cover_route_headers_authorisation_and_conditional_open(pool:
 #[sqlx::test(migrations = "./migrations")]
 async fn capability_cover_route_svg_and_uncached_failures(pool: PgPool) {
     use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, VARY};
-    use std::io::Write;
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -705,16 +704,11 @@ async fn capability_cover_route_svg_and_uncached_failures(pool: PgPool) {
         &test_support::db::make_minimal_epub_with_malformed_svg_cover("cap-bad-svg"),
     )
     .await;
-    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    writer
-        .start_file(
-            "mimetype",
-            zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Stored),
-        )
-        .unwrap();
-    writer.write_all(b"application/epub+zip").unwrap();
-    let coverless_bytes = writer.finish().unwrap().into_inner();
+    let coverless_bytes = test_support::zip_fixture(&[(
+        "mimetype",
+        b"application/epub+zip",
+        rawzip::CompressionMethod::STORE,
+    )]);
     let coverless = insert_manifestation_bytes(
         &ingestion_pool,
         library.path(),

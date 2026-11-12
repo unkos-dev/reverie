@@ -6,7 +6,7 @@
 
 /// All failure modes that can abort a writeback job.
 ///
-/// Implements `From` for `std::io::Error`, `zip::result::ZipError`,
+/// Implements `From` for `std::io::Error`,
 /// `quick_xml::Error`, `EpubError`, and `sqlx::Error` so callers can
 /// propagate with `?` at each pipeline stage without per-stage wrapping.
 #[derive(Debug, thiserror::Error)]
@@ -14,9 +14,6 @@ pub enum WritebackError {
     /// An `std::io` operation failed (reads, writes, rename, fsync).
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    /// A `zip` archive operation failed (open, entry read, repack write).
-    #[error("zip: {0}")]
-    Zip(#[from] zip::result::ZipError),
     /// A `quick_xml` parse or write event failed.
     #[error("xml: {0}")]
     Xml(#[from] quick_xml::Error),

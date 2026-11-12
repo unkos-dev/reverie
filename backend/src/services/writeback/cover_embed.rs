@@ -16,7 +16,7 @@ use std::io::Cursor;
 use quick_xml::Reader;
 use quick_xml::Writer;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
-use zip::write::{ExtendedFileOptions, FileOptions};
+use rawzip::CompressionMethod;
 
 use super::error::WritebackError;
 
@@ -32,15 +32,11 @@ pub struct CoverPlan {
     /// orchestrator translates these to `ZIP`-absolute paths before passing
     /// them to `repack::with_modifications`.
     pub binary_replacements: HashMap<String, Vec<u8>>,
-    /// New entries to append — `(opf-relative path, bytes, options)` — used
+    /// New entries to append — `(opf-relative path, bytes, compression)` — used
     /// when the new cover's format differs from the existing entry or no
     /// cover was present. Translated to `ZIP`-absolute paths by the
     /// orchestrator before repack.
-    pub additions: Vec<(
-        String,
-        Vec<u8>,
-        FileOptions<'static, 'static, ExtendedFileOptions>,
-    )>,
+    pub additions: Vec<(String, Vec<u8>, CompressionMethod)>,
     /// Rewritten `OPF` bytes when the manifest must change (new cover href
     /// or new `MIME` type); `None` when an in-place binary replacement
     /// requires no structural `OPF` change.
@@ -93,11 +89,7 @@ pub fn plan_embed(opf_bytes: &[u8], new_cover_bytes: &[u8]) -> Result<CoverPlan,
 
     let scan = scan_opf(opf_bytes);
     let mut binary_replacements = HashMap::new();
-    let mut additions: Vec<(
-        String,
-        Vec<u8>,
-        FileOptions<'static, 'static, ExtendedFileOptions>,
-    )> = Vec::new();
+    let mut additions: Vec<(String, Vec<u8>, CompressionMethod)> = Vec::new();
     let mut opf_replacement: Option<Vec<u8>> = None;
 
     if let Some(existing_href) = scan.cover_href.clone() {
@@ -111,11 +103,7 @@ pub fn plan_embed(opf_bytes: &[u8], new_cover_bytes: &[u8]) -> Result<CoverPlan,
             // Format changed: add a new entry under a fresh name and
             // rewrite the OPF manifest to reference it.
             let new_href = format!("images/cover-image-writeback.{ext}");
-            additions.push((
-                new_href.clone(),
-                new_cover_bytes.to_vec(),
-                FileOptions::default().compression_method(compression),
-            ));
+            additions.push((new_href.clone(), new_cover_bytes.to_vec(), compression));
             opf_replacement = Some(rewrite_opf_cover_reference(
                 opf_bytes, &scan, &new_href, media_type,
             )?);
@@ -123,11 +111,7 @@ pub fn plan_embed(opf_bytes: &[u8], new_cover_bytes: &[u8]) -> Result<CoverPlan,
     } else {
         // No cover: insert a new manifest item + cover marker.
         let new_href = format!("images/cover-image-writeback.{ext}");
-        additions.push((
-            new_href.clone(),
-            new_cover_bytes.to_vec(),
-            FileOptions::default().compression_method(compression),
-        ));
+        additions.push((new_href.clone(), new_cover_bytes.to_vec(), compression));
         opf_replacement = Some(insert_opf_cover(opf_bytes, &new_href, media_type, &scan)?);
     }
 
@@ -374,13 +358,11 @@ fn insert_opf_cover(
     Ok(writer.into_inner().into_inner())
 }
 
-const fn media_for(
-    fmt: image::ImageFormat,
-) -> (&'static str, &'static str, zip::CompressionMethod) {
+const fn media_for(fmt: image::ImageFormat) -> (&'static str, &'static str, CompressionMethod) {
     match fmt {
-        image::ImageFormat::Jpeg => ("image/jpeg", "jpg", zip::CompressionMethod::Stored),
-        image::ImageFormat::WebP => ("image/webp", "webp", zip::CompressionMethod::Stored),
+        image::ImageFormat::Jpeg => ("image/jpeg", "jpg", CompressionMethod::STORE),
+        image::ImageFormat::WebP => ("image/webp", "webp", CompressionMethod::STORE),
         // PNG and anything else the image crate produces both get PNG container.
-        _ => ("image/png", "png", zip::CompressionMethod::Deflated),
+        _ => ("image/png", "png", CompressionMethod::DEFLATE),
     }
 }

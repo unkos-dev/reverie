@@ -8,6 +8,7 @@ satisfies:
   - "REV-REQ-0053"
   - "REV-REQ-0054"
 governed-by:
+  - "REV-ADR-0074"
   - "REV-ADR-0067"
   - "REV-ADR-0068"
   - "REV-ADR-0020"
@@ -146,7 +147,7 @@ writeback. There is no EXDEV fallback, replay or `cover_path` rewrite for this s
   name because the format changed (the old entry then becomes orphaned in the archive, an accepted trade-off with
   nothing reclaiming it afterwards), or is inserted where no cover existed. It returns `OPF`-relative paths; the
   orchestrator translates them to `ZIP`-absolute paths by joining with the `OPF`'s own directory before passing them to
-  the repack helper.
+  the repack helper. Additions carry a rawzip compression method alongside their path and bytes.
 - `backend/src/services/writeback/path_rename.rs` opens actual source/destination parents, uses no-replace rename and
   falls back only on EXDEV. The fallback streams through a 64 KiB buffer into `cap-tempfile`, verifies the published
   destination independently and then removes the source.

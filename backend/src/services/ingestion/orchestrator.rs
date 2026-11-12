@@ -2150,9 +2150,11 @@ fn forced_validator_error(candidate_path: &str) -> Option<crate::services::epub:
             }],
         ))
     } else if candidate_path.contains("force-zip-error") {
-        Some(crate::services::epub::EpubError::Zip(
-            zip::result::ZipError::InvalidArchive("forced zip error (test seam)".into()),
-        ))
+        Some(crate::services::epub::EpubError::Zip(rawzip::Error::from(
+            rawzip::ErrorKind::InvalidInput {
+                msg: "forced zip error (test seam)".into(),
+            },
+        )))
     } else if candidate_path.contains("force-xml-error") {
         Some(crate::services::epub::EpubError::Xml(
             quick_xml::Error::Syntax(quick_xml::errors::SyntaxError::UnclosedTag),
@@ -4540,30 +4542,23 @@ mod tests {
     /// Assemble an EPUB ZIP in memory: stored `mimetype`, an optional
     /// `META-INF/container.xml`, and the given OPF at `OEBPS/content.opf`.
     fn build_epub(opf: &[u8], container_xml: Option<&[u8]>) -> Vec<u8> {
-        use std::io::Write as _;
-        use zip::write::{ExtendedFileOptions, FileOptions};
-
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-
-        // mimetype must be first and stored (not deflated) per EPUB spec
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("mimetype", stored).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-
-        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
+        let mut entries: Vec<(&str, &[u8], rawzip::CompressionMethod)> = vec![(
+            "mimetype",
+            b"application/epub+zip",
+            rawzip::CompressionMethod::STORE,
+        )];
 
         if let Some(container) = container_xml {
-            w.start_file("META-INF/container.xml", default.clone())
-                .unwrap();
-            w.write_all(container).unwrap();
+            entries.push((
+                "META-INF/container.xml",
+                container,
+                rawzip::CompressionMethod::DEFLATE,
+            ));
         }
 
-        w.start_file("OEBPS/content.opf", default).unwrap();
-        w.write_all(opf).unwrap();
+        entries.push(("OEBPS/content.opf", opf, rawzip::CompressionMethod::DEFLATE));
 
-        w.finish().unwrap().into_inner()
+        crate::test_support::zip_fixture(&entries)
     }
 
     /// Build a minimal valid EPUB ZIP in memory. All layers pass cleanly:
@@ -5012,34 +5007,30 @@ mod tests {
     /// rules: `mimetype` is second in the archive and Deflate-compressed, so
     /// repack rewrites the file and its bytes differ from the source.
     fn make_epub_with_mimetype_second_and_deflated() -> Vec<u8> {
-        use std::io::Write as _;
-        use zip::write::{ExtendedFileOptions, FileOptions};
-
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
-
-        w.start_file("META-INF/container.xml", default.clone())
-            .unwrap();
-        w.write_all(CONTAINER_XML).unwrap();
-
-        let mimetype_opts: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-        w.start_file("mimetype", mimetype_opts).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-
-        w.start_file("OEBPS/content.opf", default).unwrap();
-        w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
+        let entries: Vec<(&str, &[u8], rawzip::CompressionMethod)> = vec![
+            (
+                "META-INF/container.xml",
+                CONTAINER_XML,
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            (
+                "mimetype",
+                b"application/epub+zip",
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            (
+                "OEBPS/content.opf",
+                br#"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata/>
   <manifest/>
   <spine/>
 </package>"#,
-        )
-        .unwrap();
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+        ];
 
-        w.finish().unwrap().into_inner()
+        crate::test_support::zip_fixture(&entries)
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -5360,16 +5351,19 @@ mod tests {
     }
 
     fn zip_without_package_document() -> Vec<u8> {
-        use std::io::Write as _;
-        use zip::write::{ExtendedFileOptions, FileOptions};
-        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("mimetype", stored.clone()).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-        w.start_file("OEBPS/chapter.xhtml", stored).unwrap();
-        w.write_all(b"<html/>").unwrap();
-        w.finish().unwrap().into_inner()
+        let entries: Vec<(&str, &[u8], rawzip::CompressionMethod)> = vec![
+            (
+                "mimetype",
+                b"application/epub+zip",
+                rawzip::CompressionMethod::STORE,
+            ),
+            (
+                "OEBPS/chapter.xhtml",
+                b"<html/>",
+                rawzip::CompressionMethod::STORE,
+            ),
+        ];
+        crate::test_support::zip_fixture(&entries)
     }
 
     fn epub_with_failing_crc() -> Vec<u8> {
@@ -5451,10 +5445,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_owner_rejects_empty_zip(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let empty = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()))
-            .finish()
-            .unwrap()
-            .into_inner();
+        let empty = crate::test_support::zip_fixture(&[]);
         assert_corrupt_epub_is_rejected(&pool, "Bad - Empty.epub", &empty, &["invalid_structure"])
             .await;
     }

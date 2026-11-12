@@ -10,7 +10,7 @@ satisfies:
   - "REV-REQ-0046"
   - "REV-REQ-0047"
 governed-by:
-  - "REV-ADR-0049"
+  - "REV-ADR-0074"
 ---
 
 # EPUB validation and repair
@@ -34,8 +34,8 @@ on `rawzip` (`zip_layer.rs`); Layer 2's `container.xml` parse and OPF-path disco
 manifest, spine, Dublin Core fields, W3C accessibility metadata, and series metadata (`opf_layer.rs`); Layer 4's XHTML
 spine-document encoding and well-formedness checks (`xhtml_layer.rs`); Layer 5's cover-image decoding check
 (`cover_layer.rs`); the repair plan that records `Repaired`-severity entry instructions (`repair.rs`); and the low-level
-repack helper that rebuilds a ZIP archive with the `mimetype` entry first and stored, copying every untouched entry
-verbatim (`repack.rs`).
+repack helper that rebuilds a ZIP archive with the `mimetype` entry first and stored, copying every untouched entry as
+compressed payloads (`repack.rs`).
 
 It does not own what a caller does with a `Quarantined` outcome, and the three production callers do three different
 things with it. The Design "Ingestion pipeline" discards its owned candidate, retains the drop-zone original and records
@@ -64,12 +64,11 @@ It does not own the OPF and cover-image bytes a metadata rewrite produces. The D
 those bytes and hands them to this subject's own repack function to fold into a fresh archive; the OPF rewrite logic and
 cover-embed planning that produce those bytes belong to that subject, not this one.
 
-Depends on: `rawzip` for Layer 1's lazy, allocation-bounded central-directory read; `flate2` for on-the-fly Deflate
-decompression during Layer 1's probes and full entry reads; the `zip` crate, built with only the
-`deflate-flate2-zlib-rs` and `time` features, for the repack write path; `quick_xml` for `container.xml`, OPF, and XHTML
-parsing; `encoding_rs` for XHTML transcoding; `image`, plus `rasterize_svg`, `looks_like_svg`, and `parses_as_svg`,
-owned by the Design "Covers", for cover decoding; and `cap-std-ext` and `cap-tempfile` for durable replacement beneath
-an opened parent. This subject opens no database connection.
+Depends on: `rawzip` for lazy, allocation-bounded central-directory reads and repack writing; `flate2` for Deflate
+decompression during probes and entry reads, and compression of changed entries; `quick_xml` for `container.xml`, OPF,
+and XHTML parsing; `encoding_rs` for XHTML transcoding; `image`, plus `rasterize_svg`, `looks_like_svg`, and
+`parses_as_svg`, owned by the Design "Covers", for cover decoding; and `cap-std-ext` and `cap-tempfile` for durable
+replacement beneath an opened parent. This subject opens no database connection.
 
 Ingestion passes an opened copied-library file to `validate_and_repair` with its actual parent capability and basename.
 Writeback uses `inspect`, builds entry repairs and metadata changes together, then calls `repack::publish`. Cover
@@ -183,9 +182,12 @@ spine references and a discoverable container target. It converts each requested
 payload after writing. An OPF repair precedes metadata transformation. A regenerated container replaces an unreadable
 existing entry; it is added only when absent.
 
-`with_modifications` consumes an admitted `ZipHandle` and a random-access candidate file. The `zip` reader parses the
-source only after rawzip admission. The writer emits compliant mimetype first and Stored, writes replacements and
-additions, and raw-copies untouched compressed payloads and metadata. It finishes before checking or hashing output.
+`with_modifications` consumes an admitted `ZipHandle` and a candidate file. The rawzip reader walks the source after
+admission. The writer emits compliant mimetype first and Stored, writes replacements and additions, and copies untouched
+file entries with their names, compressed payloads, CRC-32 checksums, sizes and compression methods. Replacements keep
+the source compression method. An entry name that the writer would normalise causes a failure before publication.
+Directory entries use the writer's directory builder. ZIP entry timestamps, attributes, comments and extra fields use
+writer defaults. Each file entry carries a data descriptor. The archive finishes before checking or hashing output.
 
 ## Interfaces and dependencies
 

@@ -7,6 +7,43 @@ use crate::config::{
 use crate::models::manifestation_format::ManifestationFormat;
 use crate::state::AppState;
 
+pub fn zip_fixture(entries: &[(&str, &[u8], rawzip::CompressionMethod)]) -> Vec<u8> {
+    use std::io::Write;
+    let mut writer = rawzip::ZipArchiveWriter::new(Vec::new());
+    for (name, bytes, compression) in entries {
+        let normalized = rawzip::path::ZipFilePath::from_str(name);
+        let path = if normalized.as_str() == *name {
+            normalized.into()
+        } else {
+            rawzip::path::EntryPath::verbatim(name.as_bytes())
+        };
+        if name.ends_with('/') {
+            writer.new_dir(path).create().unwrap();
+            continue;
+        }
+        let (mut entry, config) = writer
+            .new_file(path)
+            .compression_method(*compression)
+            .start()
+            .unwrap();
+        let descriptor = if *compression == rawzip::CompressionMethod::DEFLATE {
+            let encoder =
+                flate2::write::DeflateEncoder::new(&mut entry, flate2::Compression::fast());
+            let mut data = config.wrap(encoder);
+            data.write_all(bytes).unwrap();
+            let (encoder, descriptor) = data.finish().unwrap();
+            encoder.finish().unwrap();
+            descriptor
+        } else {
+            let mut data = config.wrap(&mut entry);
+            data.write_all(bytes).unwrap();
+            data.finish().unwrap().1
+        };
+        entry.finish(descriptor).unwrap();
+    }
+    writer.finish().unwrap()
+}
+
 pub fn test_library_files_at(
     library: &crate::config::AbsoluteRootPath,
     id: crate::models::storage_library::LibraryId,
@@ -925,9 +962,6 @@ pub mod db {
     /// `marker` — it's embedded as a ZIP entry so the resulting SHA-256 is
     /// unique and doesn't collide with `manifestations.file_hash_unique`.
     pub fn make_minimal_epub_with_cover_tagged(marker: &str) -> Vec<u8> {
-        use std::io::Write as _;
-        use zip::write::{ExtendedFileOptions, FileOptions};
-
         // 2x2 JPEG bytes via the image crate.
         let cover_bytes = {
             let img = image::DynamicImage::new_rgb8(2, 2);
@@ -940,31 +974,25 @@ pub mod db {
             buf
         };
 
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("mimetype", stored).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-
-        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
-
-        w.start_file("META-INF/container.xml", default.clone())
-            .unwrap();
-        w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
+        let entries: Vec<(&str, &[u8], rawzip::CompressionMethod)> = vec![
+            (
+                "mimetype",
+                b"application/epub+zip",
+                rawzip::CompressionMethod::STORE,
+            ),
+            (
+                "META-INF/container.xml",
+                br#"<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>"#,
-        )
-        .unwrap();
-
-        w.start_file("OEBPS/content.opf", default.clone()).unwrap();
-        w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            (
+                "OEBPS/content.opf",
+                br#"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata/>
   <manifest>
@@ -972,19 +1000,21 @@ pub mod db {
   </manifest>
   <spine/>
 </package>"#,
-        )
-        .unwrap();
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            (
+                "OEBPS/cover.jpg",
+                &cover_bytes,
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            (
+                "META-INF/reverie-marker.txt",
+                marker.as_bytes(),
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+        ];
 
-        w.start_file("OEBPS/cover.jpg", default.clone()).unwrap();
-        w.write_all(&cover_bytes).unwrap();
-
-        // Uniqueness tag — lets the same helper produce distinct bytes (and
-        // thus distinct SHA-256 hashes) per call site.
-        w.start_file("META-INF/reverie-marker.txt", default)
-            .unwrap();
-        w.write_all(marker.as_bytes()).unwrap();
-
-        w.finish().unwrap().into_inner()
+        crate::test_support::zip_fixture(&entries)
     }
 
     /// Build a minimal EPUB whose cover is an SVG at `OEBPS/cover.svg`
@@ -994,34 +1024,25 @@ pub mod db {
     /// is added so an `<image href="cover.jpg">` reference resolves. `marker`
     /// makes the archive bytes (and thus the SHA-256) unique per call site.
     fn build_svg_cover_epub(marker: &str, svg_body: &[u8], sibling_jpeg: bool) -> Vec<u8> {
-        use std::io::Write as _;
-        use zip::write::{ExtendedFileOptions, FileOptions};
-
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("mimetype", stored).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-
-        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
-
-        w.start_file("META-INF/container.xml", default.clone())
-            .unwrap();
-        w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
+        let mut entries: Vec<(&str, &[u8], rawzip::CompressionMethod)> = vec![
+            (
+                "mimetype",
+                b"application/epub+zip",
+                rawzip::CompressionMethod::STORE,
+            ),
+            (
+                "META-INF/container.xml",
+                br#"<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>"#,
-        )
-        .unwrap();
-
-        w.start_file("OEBPS/content.opf", default.clone()).unwrap();
-        w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            (
+                "OEBPS/content.opf",
+                br#"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata/>
   <manifest>
@@ -1029,29 +1050,34 @@ pub mod db {
   </manifest>
   <spine/>
 </package>"#,
-        )
-        .unwrap();
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            (
+                "OEBPS/cover.svg",
+                svg_body,
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+        ];
 
-        w.start_file("OEBPS/cover.svg", default.clone()).unwrap();
-        w.write_all(svg_body).unwrap();
-
+        let jpeg;
         if sibling_jpeg {
-            let jpeg = {
+            jpeg = {
                 let img = image::DynamicImage::new_rgb8(2, 2);
                 let mut b = Vec::new();
                 img.write_to(&mut std::io::Cursor::new(&mut b), image::ImageFormat::Jpeg)
                     .expect("encode jpeg");
                 b
             };
-            w.start_file("OEBPS/cover.jpg", default.clone()).unwrap();
-            w.write_all(&jpeg).unwrap();
+            entries.push(("OEBPS/cover.jpg", &jpeg, rawzip::CompressionMethod::DEFLATE));
         }
 
-        w.start_file("META-INF/reverie-marker.txt", default)
-            .unwrap();
-        w.write_all(marker.as_bytes()).unwrap();
+        entries.push((
+            "META-INF/reverie-marker.txt",
+            marker.as_bytes(),
+            rawzip::CompressionMethod::DEFLATE,
+        ));
 
-        w.finish().unwrap().into_inner()
+        crate::test_support::zip_fixture(&entries)
     }
 
     /// SE-realistic SVG cover referencing a sibling raster via

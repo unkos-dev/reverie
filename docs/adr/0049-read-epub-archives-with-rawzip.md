@@ -3,7 +3,9 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0049"
 title: "Read EPUB archives with rawzip"
-status: "accepted"
+status: "superseded"
+superseded-by:
+  - "REV-ADR-0074"
 recorded-on: "2026-09-14"
 decided-on: "2026-09-14"
 decision-makers:

@@ -163,10 +163,14 @@ impl RejectionReason {
     pub fn from_file_defect(error: &crate::services::epub::EpubError) -> Vec<Self> {
         use crate::services::epub::EpubError;
         match error {
-            EpubError::Zip(zip::result::ZipError::Io(_))
-            | EpubError::Io(_)
-            | EpubError::PublicationUncertain { .. } => vec![Self::Unspecified],
-            EpubError::Zip(_) => vec![Self::Damaged],
+            EpubError::Io(_) | EpubError::PublicationUncertain { .. } => vec![Self::Unspecified],
+            EpubError::Zip(error) => {
+                if matches!(error.kind(), rawzip::ErrorKind::IO(_)) {
+                    vec![Self::Unspecified]
+                } else {
+                    vec![Self::Damaged]
+                }
+            }
             EpubError::Xml(_) | EpubError::Repair(_) => vec![Self::InvalidStructure],
             EpubError::CandidateRejected(_, issues) => match Self::from_issues(issues).as_slice() {
                 [Self::Unspecified] => vec![Self::InvalidStructure],
