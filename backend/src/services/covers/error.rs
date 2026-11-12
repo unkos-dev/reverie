@@ -29,10 +29,9 @@ pub enum CoverError {
     /// Format detected successfully but not one we serve (GIF, BMP, …).
     #[error("unsupported format: {0}")]
     UnsupportedFormat(String),
-    /// Corrupt or unreadable `ZIP`/`EPUB` archive structure (propagated from
-    /// the `zip` crate via `#[from]`).
+    /// ZIP archive processing failed.
     #[error("zip: {0}")]
-    Zip(#[from] zip::result::ZipError),
+    Zip(#[from] rawzip::Error),
     /// Source or cache authority is unavailable in the owning library.
     #[error("library source: {0}")]
     Library(#[from] crate::services::files::LibraryFileError),

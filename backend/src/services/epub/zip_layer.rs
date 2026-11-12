@@ -623,7 +623,6 @@ pub(crate) fn read_entry_from_bytes(bytes: &[u8], entry_name: &str) -> Option<Ve
 mod tests {
     use super::*;
     use crate::services::epub::{IssueKind, Severity};
-    use std::io::Write;
 
     #[test]
     fn entry_read_errors_remain_storage_errors() {
@@ -674,34 +673,22 @@ mod tests {
     }
 
     fn make_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-        for (name, data) in entries {
-            let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-                zip::write::FileOptions::default();
-            w.start_file(*name, opts).unwrap();
-            w.write_all(data).unwrap();
-        }
-        w.finish().unwrap().into_inner()
+        crate::test_support::zip_fixture(
+            &entries
+                .iter()
+                .map(|(name, data)| (*name, *data, CompressionMethod::DEFLATE))
+                .collect::<Vec<_>>(),
+        )
     }
 
-    /// Like [`make_zip`], but prepends a compliant `mimetype` entry (Stored,
-    /// exact OCF content) first, so tests unrelated to the mimetype rules
-    /// keep asserting an empty issue list.
     fn make_zip_with_mimetype(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
-        w.write_all(MIMETYPE_CONTENT).unwrap();
-        for (name, data) in entries {
-            let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-                zip::write::FileOptions::default();
-            w.start_file(*name, opts).unwrap();
-            w.write_all(data).unwrap();
-        }
-        w.finish().unwrap().into_inner()
+        let mut files = vec![(MIMETYPE_ENTRY, MIMETYPE_CONTENT, CompressionMethod::STORE)];
+        files.extend(
+            entries
+                .iter()
+                .map(|(name, data)| (*name, *data, CompressionMethod::DEFLATE)),
+        );
+        crate::test_support::zip_fixture(&files)
     }
 
     /// Byte offset of the classic end-of-central-directory record.
@@ -892,20 +879,15 @@ mod tests {
 
     #[test]
     fn directory_entry_and_file_validate_clean_in_order() {
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
-        w.write_all(MIMETYPE_CONTENT).unwrap();
-        let dir_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default();
-        w.add_directory("OEBPS", dir_opts).unwrap();
-        let file_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default();
-        w.start_file("OEBPS/content.opf", file_opts).unwrap();
-        w.write_all(b"<package/>").unwrap();
-        let bytes = w.finish().unwrap().into_inner();
+        let bytes = crate::test_support::zip_fixture(&[
+            (MIMETYPE_ENTRY, MIMETYPE_CONTENT, CompressionMethod::STORE),
+            ("OEBPS/", b"", CompressionMethod::STORE),
+            (
+                "OEBPS/content.opf",
+                b"<package/>",
+                CompressionMethod::DEFLATE,
+            ),
+        ]);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
         let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
@@ -950,18 +932,12 @@ mod tests {
 
     #[test]
     fn archive_with_comment_validates_clean() {
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
-        w.write_all(MIMETYPE_CONTENT).unwrap();
-        let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default();
-        w.start_file("a.txt", opts).unwrap();
-        w.write_all(b"hello world").unwrap();
-        w.set_comment("a deliberate archive comment").unwrap();
-        let bytes = w.finish().unwrap().into_inner();
+        let mut bytes = make_zip_with_mimetype(&[("a.txt", b"hello world")]);
+        let comment = b"a deliberate archive comment";
+        let end = find_classic_eocd(&bytes);
+        bytes[end + 20..end + 22]
+            .copy_from_slice(&u16::try_from(comment.len()).unwrap().to_le_bytes());
+        bytes.extend_from_slice(comment);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
         let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
@@ -1054,17 +1030,10 @@ mod tests {
         // because the entry is bigger than the probe, only when the probe
         // cap itself equals declared+1 and fills completely.
         let data = vec![0xABu8; 8_192];
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
-        w.write_all(MIMETYPE_CONTENT).unwrap();
-        let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("big.bin", opts).unwrap();
-        w.write_all(&data).unwrap();
-        let bytes = w.finish().unwrap().into_inner();
+        let bytes = crate::test_support::zip_fixture(&[
+            (MIMETYPE_ENTRY, MIMETYPE_CONTENT, CompressionMethod::STORE),
+            ("big.bin", &data, CompressionMethod::STORE),
+        ]);
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();

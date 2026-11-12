@@ -364,7 +364,10 @@
       "id": "REV-ADR-0049",
       "kind": "adr",
       "path": "docs/adr/0049-read-epub-archives-with-rawzip.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0073"
+      ],
       "title": "Read EPUB archives with rawzip"
     },
     {
@@ -551,6 +554,16 @@
       "path": "docs/adr/0072-compile-the-frontend-with-the-react-compiler-through-oxc.md",
       "status": "accepted",
       "title": "Compile the frontend with the React Compiler through oxc"
+    },
+    {
+      "id": "REV-ADR-0073",
+      "kind": "adr",
+      "path": "docs/adr/0073-use-rawzip-for-epub-reads-and-writes.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0049"
+      ],
+      "title": "Use rawzip for EPUB reads and writes"
     },
     {
       "governed-by": [
@@ -760,7 +773,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0049"
+        "REV-ADR-0073"
       ],
       "id": "REV-DESIGN-0014",
       "kind": "design",
@@ -811,6 +824,7 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0073",
         "REV-ADR-0067",
         "REV-ADR-0068",
         "REV-ADR-0020",

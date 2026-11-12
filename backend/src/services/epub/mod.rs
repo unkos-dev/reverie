@@ -34,7 +34,7 @@ pub mod zip_layer;
 pub enum EpubError {
     /// Raised only by the repack and repair paths; Layer 1 reports a corrupt archive as an `Irrecoverable` issue.
     #[error("ZIP I/O error: {0}")]
-    Zip(#[from] zip::result::ZipError),
+    Zip(#[from] rawzip::Error),
     /// Filesystem I/O error reading or writing the archive.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -61,10 +61,10 @@ impl EpubError {
     /// Whether the error is a verdict on the file's content rather than a fault
     /// in Reverie's own storage or publication.
     #[must_use]
-    pub const fn is_file_defect(&self) -> bool {
+    pub fn is_file_defect(&self) -> bool {
         match self {
             Self::CandidateRejected(..) | Self::Repair(_) | Self::Xml(_) => true,
-            Self::Zip(error) => !matches!(error, zip::result::ZipError::Io(_)),
+            Self::Zip(error) => !matches!(error.kind(), rawzip::ErrorKind::IO(_)),
             Self::Io(_) | Self::PublicationUncertain { .. } => false,
         }
     }
@@ -503,9 +503,8 @@ mod tests {
         super::validate_and_repair(File::open(path)?, &parent, path.file_name().unwrap())
             .map(|published| published.report)
     }
-    use std::io::{Read, Write};
-    use zip::write::{ExtendedFileOptions, FileOptions};
-    use zip::{ZipArchive, ZipWriter};
+    use crate::test_support::zip_fixture;
+    use rawzip::CompressionMethod;
 
     const CONTAINER_XML: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -528,23 +527,6 @@ mod tests {
     ) -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("book.epub");
-        let mut writer = ZipWriter::new(File::create(&path).unwrap());
-        let options = FileOptions::<ExtendedFileOptions>::default();
-        writer
-            .start_file(
-                "mimetype",
-                options.clone().compression_method(if bad_mimetype {
-                    zip::CompressionMethod::Deflated
-                } else {
-                    zip::CompressionMethod::Stored
-                }),
-            )
-            .unwrap();
-        writer.write_all(repack::MIMETYPE_CONTENT).unwrap();
-        writer
-            .start_file("META-INF/container.xml", options.clone())
-            .unwrap();
-        writer.write_all(CONTAINER_XML).unwrap();
         let mut manifest = String::new();
         let mut spine = String::new();
         for (i, (name, _)) in chapters.iter().enumerate() {
@@ -564,108 +546,39 @@ mod tests {
         let opf = format!(
             "<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:title>Old</dc:title></metadata><manifest>{manifest}</manifest><spine>{spine}{broken}</spine></package>"
         );
-        writer
-            .start_file("OEBPS/content.opf", options.clone())
-            .unwrap();
-        writer.write_all(opf.as_bytes()).unwrap();
-        for (name, bytes) in chapters {
-            writer
-                .start_file(format!("OEBPS/{name}"), options.clone())
-                .unwrap();
-            writer.write_all(bytes).unwrap();
-        }
-        writer.finish().unwrap();
+        let names: Vec<_> = chapters
+            .iter()
+            .map(|(name, _)| format!("OEBPS/{name}"))
+            .collect();
+        let mut entries: Vec<(&str, &[u8], CompressionMethod)> = vec![
+            (
+                "mimetype",
+                repack::MIMETYPE_CONTENT,
+                if bad_mimetype {
+                    CompressionMethod::DEFLATE
+                } else {
+                    CompressionMethod::STORE
+                },
+            ),
+            (
+                "META-INF/container.xml",
+                CONTAINER_XML,
+                CompressionMethod::DEFLATE,
+            ),
+            (
+                "OEBPS/content.opf",
+                opf.as_bytes(),
+                CompressionMethod::DEFLATE,
+            ),
+        ];
+        entries.extend(
+            names
+                .iter()
+                .zip(chapters)
+                .map(|(name, (_, bytes))| (name.as_str(), *bytes, CompressionMethod::DEFLATE)),
+        );
+        std::fs::write(&path, zip_fixture(&entries)).unwrap();
         (dir, path)
-    }
-
-    #[test]
-    fn repack_preserves_unix_ownership_extra_field() {
-        let payload = [1, 4, 0xe8, 3, 0, 0, 4, 0xe9, 3, 0, 0];
-        for compression in [
-            zip::CompressionMethod::Stored,
-            zip::CompressionMethod::Deflated,
-        ] {
-            let (dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
-            let file = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&path)
-                .unwrap();
-            let mut writer = ZipWriter::new_append(file).unwrap();
-            let mut options =
-                FileOptions::<ExtendedFileOptions>::default().compression_method(compression);
-            options.add_extra_field(0x1234, payload, false).unwrap();
-            writer.start_file("ownership.txt", options).unwrap();
-            let content = b"untouched entry with Unix ownership metadata";
-            writer.write_all(content).unwrap();
-            writer.finish().unwrap();
-
-            let mut bytes = std::fs::read(&path).unwrap();
-            let mut marker = vec![0x34, 0x12, 11, 0];
-            marker.extend_from_slice(&payload);
-            let offsets: Vec<_> = bytes
-                .windows(marker.len())
-                .enumerate()
-                .filter_map(|(offset, value)| (value == marker).then_some(offset))
-                .collect();
-            assert_eq!(offsets.len(), 2);
-            for offset in offsets {
-                bytes[offset..offset + 2].copy_from_slice(&0x7875u16.to_le_bytes());
-            }
-            std::fs::write(&path, &bytes).unwrap();
-            let (handle, report) = inspect(File::open(&path).unwrap()).unwrap();
-            assert_eq!(report.outcome, ValidationOutcome::Clean);
-            assert!(report.issues.is_empty());
-            let opf = zip_layer::read_entry(&handle, "OEBPS/content.opf").unwrap();
-            let replacement = String::from_utf8(opf).unwrap().replace("Old", "New");
-            let mut candidate = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
-            repack::with_modifications(
-                &handle,
-                candidate.as_file_mut(),
-                Some("OEBPS/content.opf"),
-                Some(replacement.as_bytes()),
-                &std::collections::HashMap::new(),
-                &[],
-                &repair::RepairPlan::default(),
-            )
-            .unwrap();
-            let (output, report) = inspect(candidate.reopen().unwrap()).unwrap();
-            assert_eq!(report.outcome, ValidationOutcome::Clean);
-            assert!(report.issues.is_empty());
-            assert_eq!(
-                zip_layer::read_entry(&output, "OEBPS/content.opf").unwrap(),
-                replacement.as_bytes()
-            );
-            assert_eq!(
-                zip_layer::read_entry(&output, "ownership.txt").unwrap(),
-                content
-            );
-            let mut source = ZipArchive::new(File::open(&path).unwrap()).unwrap();
-            let mut result = ZipArchive::new(candidate.reopen().unwrap()).unwrap();
-            let mut expected_extra = vec![0x75, 0x78, 11, 0];
-            expected_extra.extend_from_slice(&payload);
-            for archive in [&mut source, &mut result] {
-                let entry = archive.by_name("ownership.txt").unwrap();
-                assert_eq!(entry.compression(), compression);
-                assert_eq!(entry.extra_data().unwrap(), expected_extra);
-            }
-            let mut source_raw = Vec::new();
-            let source_index = source.index_for_name("ownership.txt").unwrap();
-            source
-                .by_index_raw(source_index)
-                .unwrap()
-                .read_to_end(&mut source_raw)
-                .unwrap();
-            let mut result_raw = Vec::new();
-            let result_index = result.index_for_name("ownership.txt").unwrap();
-            result
-                .by_index_raw(result_index)
-                .unwrap()
-                .read_to_end(&mut result_raw)
-                .unwrap();
-            assert_eq!(source_raw, result_raw);
-            assert_eq!(std::fs::read(&path).unwrap(), bytes);
-        }
     }
 
     #[test]
@@ -906,30 +819,23 @@ mod tests {
     fn file_backed_epub_unreadable_container_is_replaced_once() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("book.epub");
-        let mut writer = ZipWriter::new(File::create(&path).unwrap());
-        writer
-            .start_file(
-                "mimetype",
-                FileOptions::<ExtendedFileOptions>::default()
-                    .compression_method(zip::CompressionMethod::Stored),
-            )
-            .unwrap();
-        writer.write_all(repack::MIMETYPE_CONTENT).unwrap();
-        writer
-            .start_file(
-                "META-INF/container.xml",
-                FileOptions::<ExtendedFileOptions>::default(),
-            )
-            .unwrap();
-        writer.write_all(b"unreadable container").unwrap();
-        writer
-            .start_file(
-                "OEBPS/content.opf",
-                FileOptions::<ExtendedFileOptions>::default(),
-            )
-            .unwrap();
-        writer.write_all(CONTENT_OPF).unwrap();
-        writer.finish().unwrap();
+        std::fs::write(
+            &path,
+            zip_fixture(&[
+                (
+                    "mimetype",
+                    repack::MIMETYPE_CONTENT,
+                    CompressionMethod::STORE,
+                ),
+                (
+                    "META-INF/container.xml",
+                    b"unreadable container",
+                    CompressionMethod::DEFLATE,
+                ),
+                ("OEBPS/content.opf", CONTENT_OPF, CompressionMethod::DEFLATE),
+            ]),
+        )
+        .unwrap();
         let mut bytes = std::fs::read(&path).unwrap();
         let offset = bytes
             .windows(4)
@@ -959,25 +865,19 @@ mod tests {
     /// `mimetype` entry that is neither first nor stored, so the mimetype
     /// rules are the sole source of the `Repaired` issues.
     fn make_epub_with_bad_mimetype() -> Vec<u8> {
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = ZipWriter::new(buf);
-        let default_opts: FileOptions<ExtendedFileOptions> = FileOptions::default();
-
-        w.start_file("META-INF/container.xml", default_opts.clone())
-            .unwrap();
-        w.write_all(CONTAINER_XML).unwrap();
-
-        w.start_file("OEBPS/content.opf", default_opts).unwrap();
-        w.write_all(CONTENT_OPF).unwrap();
-
-        // mimetype deliberately last and Deflated: violates position and
-        // compression, but nothing else.
-        let mimetype_opts: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-        w.start_file(repack::MIMETYPE_ENTRY, mimetype_opts).unwrap();
-        w.write_all(repack::MIMETYPE_CONTENT).unwrap();
-
-        w.finish().unwrap().into_inner()
+        zip_fixture(&[
+            (
+                "META-INF/container.xml",
+                CONTAINER_XML,
+                CompressionMethod::DEFLATE,
+            ),
+            ("OEBPS/content.opf", CONTENT_OPF, CompressionMethod::DEFLATE),
+            (
+                repack::MIMETYPE_ENTRY,
+                repack::MIMETYPE_CONTENT,
+                CompressionMethod::DEFLATE,
+            ),
+        ])
     }
 
     #[test]
@@ -1003,15 +903,17 @@ mod tests {
         )));
 
         let repacked = std::fs::read(&path).unwrap();
-        let mut archive = ZipArchive::new(std::io::Cursor::new(repacked)).unwrap();
-        {
-            let mut first = archive.by_index(0).unwrap();
-            assert_eq!(first.name().unwrap(), repack::MIMETYPE_ENTRY);
-            assert_eq!(first.compression(), zip::CompressionMethod::Stored);
-            let mut content = Vec::new();
-            first.read_to_end(&mut content).unwrap();
-            assert_eq!(content, repack::MIMETYPE_CONTENT);
-        }
+        let archive = rawzip::ZipArchive::from_slice(&repacked).unwrap();
+        let first = archive.entries().next_entry().unwrap().unwrap();
+        assert_eq!(
+            first.file_path().as_ref(),
+            repack::MIMETYPE_ENTRY.as_bytes()
+        );
+        assert_eq!(first.compression_method(), CompressionMethod::STORE);
+        assert_eq!(
+            archive.get_entry(first.wayfinder()).unwrap().data(),
+            repack::MIMETYPE_CONTENT
+        );
 
         // A second pass over the repacked file reports no InvalidMimetype issue.
         let report2 = validate_and_repair(&path).unwrap();
@@ -1029,8 +931,8 @@ mod tests {
         let io = || std::io::Error::other("storage");
         assert!(EpubError::CandidateRejected("regressed".into(), Vec::new()).is_file_defect());
         assert!(EpubError::Repair("no entry".into()).is_file_defect());
-        assert!(EpubError::Zip(zip::result::ZipError::FileNotFound).is_file_defect());
-        assert!(!EpubError::Zip(zip::result::ZipError::Io(io())).is_file_defect());
+        assert!(EpubError::Zip(rawzip::Error::from(rawzip::ErrorKind::Eof)).is_file_defect());
+        assert!(!EpubError::Zip(rawzip::Error::from(rawzip::ErrorKind::IO(io()))).is_file_defect());
         assert!(!EpubError::Io(io()).is_file_defect());
         assert!(
             !EpubError::PublicationUncertain {

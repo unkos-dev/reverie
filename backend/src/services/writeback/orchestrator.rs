@@ -317,9 +317,7 @@ fn rewrite(
     let repairs = epub::repair::RepairPlan::from_report(&pre_report);
     let opf_bytes = match repairs.replacement(&handle, opf_path)? {
         Some(bytes) => bytes,
-        None => {
-            zip_layer::read_entry(&handle, opf_path).ok_or(zip::result::ZipError::FileNotFound)?
-        }
+        None => zip_layer::read_entry(&handle, opf_path).ok_or(WritebackError::MissingOpf)?,
     };
     let target = metadata_target(snap);
     let new_opf = opf_rewrite::transform(&opf_bytes, &target)?;
@@ -349,11 +347,11 @@ fn rewrite(
         for (href, bytes) in &plan.binary_replacements {
             replacements.insert(resolve_opf_relative(opf_dir, href)?, bytes.clone());
         }
-        for (href, bytes, options) in &plan.additions {
+        for (href, bytes, compression) in &plan.additions {
             additions.push((
                 resolve_opf_relative(opf_dir, href)?,
                 bytes.clone(),
-                options.clone(),
+                *compression,
             ));
         }
     }
@@ -912,9 +910,6 @@ mod tests {
 
     use crate::config::{CoverConfig, EnrichmentConfig, WritebackConfig};
     use crate::models::manifestation_format::ManifestationFormat;
-    use std::io::Write;
-    use zip::ZipWriter;
-    use zip::write::{ExtendedFileOptions, FileOptions};
 
     use crate::test_support::db::{ingestion_pool_for, writeback_pool_for};
 
@@ -1034,22 +1029,25 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("fixture.epub");
-        let file = std::fs::File::create(&path).unwrap();
-        let mut w = ZipWriter::new(file);
-
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("mimetype", stored).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-        let deflate: FileOptions<ExtendedFileOptions> = FileOptions::default();
-        w.start_file("META-INF/container.xml", deflate.clone())
-            .unwrap();
-        w.write_all(container_xml).unwrap();
-        w.start_file("OEBPS/package.opf", deflate.clone()).unwrap();
-        w.write_all(opf.as_bytes()).unwrap();
-        w.start_file("OEBPS/nav.xhtml", deflate).unwrap();
-        w.write_all(nav).unwrap();
-        w.finish().unwrap();
+        let entries: Vec<(&str, &[u8], rawzip::CompressionMethod)> = vec![
+            (
+                "mimetype",
+                b"application/epub+zip",
+                rawzip::CompressionMethod::STORE,
+            ),
+            (
+                "META-INF/container.xml",
+                container_xml,
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            (
+                "OEBPS/package.opf",
+                opf.as_bytes(),
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            ("OEBPS/nav.xhtml", nav, rawzip::CompressionMethod::DEFLATE),
+        ];
+        std::fs::write(&path, crate::test_support::zip_fixture(&entries)).unwrap();
         (dir, path)
     }
 
@@ -1986,23 +1984,30 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("fixture.epub");
-        let file = std::fs::File::create(&path).unwrap();
-        let mut w = ZipWriter::new(file);
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("mimetype", stored).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-        let deflate: FileOptions<ExtendedFileOptions> = FileOptions::default();
-        w.start_file("META-INF/container.xml", deflate.clone())
-            .unwrap();
-        w.write_all(container_xml).unwrap();
-        w.start_file("OEBPS/package.opf", deflate.clone()).unwrap();
-        w.write_all(opf.as_bytes()).unwrap();
-        w.start_file("OEBPS/nav.xhtml", deflate.clone()).unwrap();
-        w.write_all(nav).unwrap();
-        w.start_file("OEBPS/images/cover.png", deflate).unwrap();
-        w.write_all(cover_bytes).unwrap();
-        w.finish().unwrap();
+        let entries: Vec<(&str, &[u8], rawzip::CompressionMethod)> = vec![
+            (
+                "mimetype",
+                b"application/epub+zip",
+                rawzip::CompressionMethod::STORE,
+            ),
+            (
+                "META-INF/container.xml",
+                container_xml,
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            (
+                "OEBPS/package.opf",
+                opf.as_bytes(),
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+            ("OEBPS/nav.xhtml", nav, rawzip::CompressionMethod::DEFLATE),
+            (
+                "OEBPS/images/cover.png",
+                cover_bytes,
+                rawzip::CompressionMethod::DEFLATE,
+            ),
+        ];
+        std::fs::write(&path, crate::test_support::zip_fixture(&entries)).unwrap();
         (dir, path)
     }
 

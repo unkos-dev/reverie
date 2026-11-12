@@ -201,7 +201,6 @@ fn generate_container_xml(opf_path: &str) -> String {
 mod tests {
     use super::*;
     use std::path::Path;
-    use zip::write::{ExtendedFileOptions, FileOptions};
     fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Result<(), EpubError> {
         let (handle, report) = super::super::inspect(std::fs::File::open(path)?)?;
         let plan = RepairPlan::from_issues(issues, opf_path);
@@ -224,18 +223,14 @@ mod tests {
     }
     use crate::services::epub::repack::MIMETYPE_ENTRY;
     use crate::services::epub::{IssueKind, Layer, Severity};
-    use std::io::Write;
-    use zip::{ZipArchive, ZipWriter};
 
     fn make_epub(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = ZipWriter::new(buf);
-        for (name, data) in entries {
-            let opts: FileOptions<ExtendedFileOptions> = FileOptions::default();
-            w.start_file(*name, opts).unwrap();
-            w.write_all(data).unwrap();
-        }
-        w.finish().unwrap().into_inner()
+        crate::test_support::zip_fixture(
+            &entries
+                .iter()
+                .map(|(name, data)| (*name, *data, rawzip::CompressionMethod::DEFLATE))
+                .collect::<Vec<_>>(),
+        )
     }
 
     #[test]
@@ -256,10 +251,9 @@ mod tests {
         repackage(&path, &issues, Some("OEBPS/content.opf")).unwrap();
 
         let repacked = std::fs::read(&path).unwrap();
-        let cursor = std::io::Cursor::new(repacked);
-        let mut archive = ZipArchive::new(cursor).unwrap();
-        let first = archive.by_index(0).unwrap();
-        assert_eq!(first.name().unwrap(), MIMETYPE_ENTRY);
-        assert_eq!(first.compression(), zip::CompressionMethod::Stored);
+        let archive = rawzip::ZipArchive::from_slice(&repacked).unwrap();
+        let first = archive.entries().next_entry().unwrap().unwrap();
+        assert_eq!(first.file_path().as_ref(), MIMETYPE_ENTRY.as_bytes());
+        assert_eq!(first.compression_method(), rawzip::CompressionMethod::STORE);
     }
 }

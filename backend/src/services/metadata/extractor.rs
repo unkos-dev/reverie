@@ -376,8 +376,6 @@ mod tests {
     // REV-REQ-0072 AC2-4; REV-REQ-0073 AC1; incident: non-ISBN identifiers promoted as ISBNs.
     #[test]
     fn isbn_contract_extraction() {
-        use std::io::Write;
-
         let single = extract(&OpfData {
             identifiers: vec!["urn:isbn:0306406152".into()],
             ..empty_opf()
@@ -409,12 +407,11 @@ mod tests {
                 <meta refines="#isbn-ten" property="identifier-type" scheme="onix:codelist5" content="02"/>
             </metadata><manifest/><spine/>
         </package>"##;
-        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let options: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default();
-        zip.start_file("content.opf", options).unwrap();
-        zip.write_all(xml).unwrap();
-        let bytes = zip.finish().unwrap().into_inner();
+        let bytes = crate::test_support::zip_fixture(&[(
+            "content.opf",
+            xml,
+            rawzip::CompressionMethod::DEFLATE,
+        )]);
         let handle = crate::services::epub::zip_layer::ZipHandle::from_bytes(&bytes);
         let opf = opf_layer::validate(&handle, Some("content.opf"), &mut Vec::new()).unwrap();
         let recognised = extract(&opf);

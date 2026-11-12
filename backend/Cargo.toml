@@ -60,9 +60,6 @@ oauth2-reqwest = "=0.1.0-alpha.3"
 openidconnect = { version = "4.0.1", default-features = false }
 quick-xml = "0.42.0"
 rand = "0.10.1"
-# Reads ZIP central directories lazily with no per-entry allocation, so the
-# EPUB entry-count cap runs as a counted iteration instead of after the zip
-# crate's eager parse; zip stays for writing. See docs/adr/0049-read-epub-archives-with-rawzip.md.
 rawzip = "0.5.1"
 regex = "1.12.4"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json", "stream"] }
@@ -119,15 +116,6 @@ percent-encoding = "2.3.2"
 utoipa = { version = "6.0", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-axum = "0.3"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
-# An EPUB container (OCF 4.3.2) allows only Stored and Deflate, and forbids
-# encryption, so default features would pull in compression methods and
-# crypto code no valid archive uses. `time` stays because ZipWriter's default
-# write timestamp needs it. See docs/adr/0049-read-epub-archives-with-rawzip.md.
-zip = { version = "9.0.3", default-features = false, features = [
-  "deflate-flate2-zlib-rs",
-  "time",
-  "unreserved",
-] }
 # Server-side password-strength estimator (NIST SP 800-63B strength floor,
 # docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md). Pure Rust, no network.
 zxcvbn = "3"
