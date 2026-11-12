@@ -68,9 +68,11 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   impl. The impl first computes an optional `WWW-Authenticate` challenge for the three variants that carry one
   (`Unauthorized`, `InvalidCredential`, `BasicAuthRequired`), then matches every variant by name — no catch-all arm — to
   a `(StatusCode, slug, title, detail)` tuple, and finally builds one `crate::openapi::ProblemDetails` from that tuple
-  and attaches the challenge header if present. Because the match has no wildcard, a variant added without its own arm
-  fails to compile inside this module, even though `#[non_exhaustive]` means a downstream crate could not write such a
-  match itself. Three `From` implementations route framework rejections into the same type:
+  and attaches the challenge header if present. The Basic challenge escapes backslashes in its quoted realm.
+  Configuration validation rejects embedded quotes and invalid HTTP header bytes. A header-conversion failure returns
+  the shared internal-error response instead of a 401 without a challenge. Because the match has no wildcard, a variant
+  added without its own arm fails to compile inside this module, even though `#[non_exhaustive]` means a downstream
+  crate could not write such a match itself. Three `From` implementations route framework rejections into the same type:
   `From<axum_extra::extract::QueryRejection>` (`MalformedQuery`), `From<axum::extract::rejection::PathRejection>`
   (`MalformedPath` for a decode failure, `Internal` for any other rejection kind — a routing or extractor-ordering bug,
   not a caller error), and `From<axum::extract::rejection::JsonRejection>` (`InvalidRequestBody`, matching the rejection

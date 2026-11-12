@@ -14,6 +14,7 @@ governed-by:
   - "REV-ADR-0007"
   - "REV-ADR-0068"
   - "REV-ADR-0051"
+  - "REV-ADR-0073"
 ---
 
 # Enrichment pipeline
@@ -146,8 +147,8 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
 - `confidence.rs`, `lookup_key.rs` and `value_hash.rs` are small pure helpers: a source/match-type/quorum scoring
   formula, ISBN and title/author key normalisation (so ISBN-10 and ISBN-13 of the same book, or title strings that
   differ only in case, whitespace or punctuation, converge on one cache key), and a canonical-JSON `SHA-256` hash that
-  ignores list-item order for the vocabulary and contributor fields and trims conforming `pub_date` and `publisher` text
-  without collapsing publication precision.
+  applies NFC then trims every string field and string list item, and ignores list-item order for the vocabulary and
+  contributor fields without collapsing publication precision. `unicode-normalization` supplies NFC through `.nfc()`.
 - `cache.rs` is a thin `api_cache` read/write helper with a Rust-computed per-kind (`Hit`/`Miss`/`Error`) expiry.
 - `http.rs` builds two `SSRF`-guarded `reqwest::Client` factories through one shared constructor (`ssrf_client`):
   `api_client` (fixed 5-hop redirect limit, 10-second timeout; the one this subject's fan-out uses) and `cover_client`
@@ -219,6 +220,13 @@ Journal upsert conflicts use the exact observation key and change only observati
 representation or match method retains a distinct observation, even when normalised hashes agree. Quorum and
 disagreement continue to use `value_hash`. Confidence recalculation changes the current assessment without rewriting
 observation meaning. These rules apply to all observations, including those held only by a live Undo memento.
+
+The shared comparison function serves manual edits, OPF ingestion, enrichment and its dry-run preview. It normalises
+strings before sorting list fields and serialising canonical JSON for SHA-256. Other arrays retain item order, and
+non-string items retain their values. Case, punctuation and internal whitespace remain significant. The normalised value
+exists only for hashing; source payloads and exact observation keys retain their original representation.
+Publication-date validation remains separate: comparison does not infer components, truncate precision or convert
+timestamps to UTC.
 
 Canonical scalar, relation and source-pointer changes advance metadata aggregate revisions and the affected field stamps
 through the data-model triggers. A referenced journal row's value, source, origin edition, field, confidence, match type

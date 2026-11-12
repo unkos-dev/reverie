@@ -120,6 +120,7 @@ uuid = { version = "1.23.4", features = ["v4", "serde"] }
 # docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md). Pure Rust, no network.
 zxcvbn = "3"
 isbn = "0.8"
+unicode-normalization = "=0.1.26"
 
 [dev-dependencies]
 tempfile = "3.27.0"

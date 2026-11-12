@@ -3661,6 +3661,7 @@ dependencies = [
  "tower-sessions",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "url",
  "utoipa",
  "utoipa-axum",
