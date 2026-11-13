@@ -189,7 +189,10 @@
       "id": "REV-ADR-0027",
       "kind": "adr",
       "path": "docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0076"
+      ],
       "title": "A single danger hue amends the no-hue-states policy"
     },
     {
@@ -467,7 +470,10 @@
       "id": "REV-ADR-0062",
       "kind": "adr",
       "path": "docs/adr/0062-uniform-dismissal-for-library-filter-edits.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0075"
+      ],
       "supersedes": [
         "REV-ADR-0041"
       ],
@@ -571,6 +577,26 @@
         "REV-ADR-0049"
       ],
       "title": "Use rawzip for EPUB reads and writes"
+    },
+    {
+      "id": "REV-ADR-0075",
+      "kind": "adr",
+      "path": "docs/adr/0075-non-modal-filter-panel-beside-the-library.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0062"
+      ],
+      "title": "Non-modal filter panel beside the library"
+    },
+    {
+      "id": "REV-ADR-0076",
+      "kind": "adr",
+      "path": "docs/adr/0076-one-reserved-error-colour-for-states-that-need-action.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0027"
+      ],
+      "title": "One reserved error colour for states that need action"
     },
     {
       "governed-by": [

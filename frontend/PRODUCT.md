@@ -72,7 +72,10 @@ instance as exposed.
 
 ## Brand Commitments
 
-- The name is Reverie. It is the only brand commitment.
+- The name is Reverie.
+- Interface structure is conventional. Navigation, controls and layouts follow the standard patterns for the category,
+  and a departure needs a stated benefit to the person using it. The finish aims above the best products in the
+  category.
 - Logo, wordmark, colour, type and motion are open. The brand files in the repository do not bind future design work.
 - Interface copy uses Australian English. Localisation is a possible future consideration and is not in current scope.
 
