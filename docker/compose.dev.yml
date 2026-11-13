@@ -15,7 +15,7 @@ services:
     # Dictionary changes can leave folded indexes and works.search_vector stale
     # on this persistent volume; see the risk statement in
     # docs/adr/0044-match-time-accent-folding-via-unaccent-expression-indexes.md.
-    image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+    image: postgres:18@sha256:b9f6b8ff03b62f3cfd9d9ba3fe56226a9991c79d3fb46fd46536263bf02be553
     # Suffixed like the project so an alternate-env stack does not clash on
     # the global container namespace; the published host port and the socket
     # directory are then the only resources shared between env stacks, and
