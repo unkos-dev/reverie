@@ -136,11 +136,12 @@ build:
 
 # The CI frontend gate form; cheap and offline, so locally runnable on its own.
 #
-# Verify the committed Fontshare woff2 files against their pinned checksums.
+# Verify the committed self-hosted woff2 files against their pinned checksums.
 [group('js')]
-[working-directory('frontend/public/fonts/fontshare/files')]
+[working-directory('frontend/public/fonts')]
 font-integrity:
-    sha256sum -c SHA256SUMS
+    cd fontshare/files && sha256sum -c SHA256SUMS
+    cd mona-sans/files && sha256sum -c SHA256SUMS
 
 # Locally-runnable verify set: lint + format check (a11y excluded).
 [group('js')]
