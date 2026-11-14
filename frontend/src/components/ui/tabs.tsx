@@ -32,7 +32,7 @@ const tabsListVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-surface",
+        default: "bg-surface dark:bg-canvas-2",
         line: "gap-1 bg-transparent",
       },
     },
@@ -62,8 +62,8 @@ function Tab({ className, ...props }: React.ComponentProps<typeof AriaTab>): Rea
     <AriaTab
       data-slot="tabs-trigger"
       className={composeRenderProps(className, (className) => cn(
-        "relative inline-flex h-7 flex-1 items-center justify-center gap-[7px] rounded-[7px] border border-transparent px-[11px] text-sm font-medium whitespace-nowrap text-fg-muted transition-colors data-hovered:bg-surface-2 data-pressed:bg-surface-3 data-disabled:pointer-events-none data-disabled:opacity-50 group-data-[orientation=vertical]/tabs:w-full [&_svg]:size-4",
-        "data-selected:border-border-control data-selected:bg-surface-2 data-selected:text-fg group-data-[variant=line]/tabs-list:rounded-none group-data-[variant=line]/tabs-list:border-0 group-data-[variant=line]/tabs-list:border-b-2 group-data-[variant=line]/tabs-list:data-selected:border-border-control",
+        "relative inline-flex h-7 flex-1 items-center justify-center gap-[7px] rounded-[7px] border border-transparent px-[11px] text-sm font-medium whitespace-nowrap text-fg-muted transition-colors data-hovered:bg-surface-2 dark:data-hovered:bg-surface data-pressed:bg-surface-3 dark:data-pressed:bg-surface-2 data-disabled:pointer-events-none data-disabled:opacity-50 group-data-[orientation=vertical]/tabs:w-full [&_svg]:size-4",
+        "data-selected:border-border-control data-selected:bg-surface-2 dark:data-selected:bg-surface data-selected:text-fg group-data-[variant=line]/tabs-list:rounded-none group-data-[variant=line]/tabs-list:border-0 group-data-[variant=line]/tabs-list:border-b-2 group-data-[variant=line]/tabs-list:data-selected:border-border-control",
         className,
       ))}
       {...props}
