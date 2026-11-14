@@ -33,9 +33,3 @@ export function AppShell({ children, onOpenSearch }: Readonly<AppShellProps>): R
     </div>
   );
 }
-
-export type AppZone = "admin";
-
-export type ZoneHandle = {
-  zone: AppZone;
-};
