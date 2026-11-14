@@ -92,7 +92,7 @@
   --accent-text: var(--accent-11);
   --accent-glow: color-mix(in oklch, var(--accent) 45%, transparent);
   --fg-on-accent: var(--accent-contrast);
-  --overlay: rgb(14 13 10 / 88%);
+  --overlay: rgb(7 11 26 / 88%);
   --danger: var(--danger-9);
   --danger-text: var(--danger-11);
   --danger-soft: var(--danger-3);
@@ -119,6 +119,7 @@ body {
 :focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+  /* Unlayered, so it overrides controls' own focus-visible ring utilities and keeps one focus indicator. */
   box-shadow: none;
 }
 

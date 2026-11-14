@@ -15,6 +15,7 @@
  * textures are deferred to port-time (§5i).
  */
 :root {
+  --cover-font: "Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   /* Cover-artwork palette — theme-fixed (covers are physical objects; they do
      not swap on the Light↔Dark flip). Relocated here from index.css. */
   --cover-ink: #0e0d0a;

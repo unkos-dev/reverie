@@ -9,8 +9,7 @@
  * Below this width the table trims to its mobile column set (selection,
  * details, title with the author stacked under it, added). One constant
  * drives both the column trim and the stacked author line, so the two
- * cannot disagree; the masthead's reduced-height rule in `motion.css`
- * shares the same 899px boundary.
+ * cannot disagree.
  */
 export const TABLE_MOBILE_MEDIA_QUERY = "(max-width: 899px)";
 

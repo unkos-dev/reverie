@@ -312,6 +312,7 @@ export function LibraryPage(): ReactElement {
     <>
       <div>
         <div className="px-6 py-10 sm:px-10">
+          <h1 className="mb-8">Library</h1>
           {/* Sort announcements stay mounted here: the filter drawer (which
               carries the sort section) unmounts when closed, and an
               unmounted live region is silent, which would leave
@@ -639,12 +640,7 @@ function LibrarySkeleton(): ReactElement {
   const PLACEHOLDERS = Array.from({ length: 12 }, (_, i) => i);
   return (
     <div className="px-6 py-10 sm:px-10" aria-busy="true">
-      {/* Masthead placeholder — mirror the hero band height (title renders
-          inside the band now) so the Suspense fallback reserves the same
-          vertical space the loaded masthead occupies (avoids a CLS jump). */}
-      <div className="mb-8">
-        <Skeleton className="-mx-6 -mt-10 h-[clamp(220px,10vw,340px)] sm:-mx-10" />
-      </div>
+      <Skeleton className="mb-8 h-6 w-24" />
       {/* Toolbar placeholder: search field + control cluster. */}
       <div className="mb-4 flex items-center gap-2">
         <Skeleton className="h-9 flex-1" />

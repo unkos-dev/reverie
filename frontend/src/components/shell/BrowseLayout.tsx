@@ -5,7 +5,7 @@
  * ≥1280px the rail sits in a sticky 264px column right of the content,
  * and the column can fully collapse (`railCollapsed`), handing its width
  * back to the content. Below 1280px the rail rides a right sheet. Both
- * visibility states are controlled by the owning page: the masthead's
+ * visibility states are controlled by the owning page: the
  * filter toggle is the single show/hide affordance at every width, so
  * this layout renders no trigger of its own.
  *

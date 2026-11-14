@@ -6,7 +6,7 @@
  * because Vite serves `public/` at the root in both dev and prod.
  *
  * - Mona Sans — interface text and headings.
- * - Author Variable — retained display face.
+ * - Author Variable — generated-cover face.
  * - Satoshi Variable — wordmark.
  * - JetBrains Mono Regular — metadata surfaces (ISBN, IDs, format codes).
  *
@@ -70,7 +70,7 @@
 
 @font-face {
   font-family: "Mona Sans";
-  src: url("/fonts/mona-sans/files/MonaSansVF.woff2") format("woff2-variations");
+  src: url("/fonts/mona-sans/files/MonaSansVF-Italic.woff2") format("woff2-variations");
   font-weight: 200 900;
   font-stretch: 75% 125%;
   font-style: italic;
