@@ -123,7 +123,9 @@ body {
   box-shadow: none;
 }
 
-h1 {
-  font-family: var(--font-body);
-  font-weight: 700;
+@layer base {
+  h1 {
+    font-family: var(--font-body);
+    font-weight: 700;
+  }
 }
