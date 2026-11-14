@@ -53,6 +53,9 @@ function p3block(prefix: string, wide: string[], wideAlpha: string[]) {
   return lines.join("\n");
 }
 
+const withStep = (scale: string[], step: number, value: string) =>
+  scale.map((v, i) => (i === step - 1 ? value : v));
+
 const HEADER = `/* Generated colour primitives. Regenerate: vp run primitives:gen. */\n`;
 
 export function buildPrimitivesCss(): string {
@@ -68,11 +71,21 @@ export function buildPrimitivesCss(): string {
     `  --shell: ${ANCHORS.light.shell};`,
     `  --hairline-color: ${ANCHORS.light.hairline};`,
     `  --bar-fill: rgb(255 255 255 / 4.5%);`,
-    block("neutral", gL.grayScale, gL.grayScaleAlpha, gL.graySurface, ANCHORS.light.text),
+    block(
+      "neutral",
+      withStep(gL.grayScale, 12, ANCHORS.light.text),
+      gL.grayScaleAlpha,
+      gL.graySurface,
+      ANCHORS.light.text,
+    ),
     block("accent", gL.accentScale, gL.accentScaleAlpha, gL.accentSurface, ANCHORS.light.contrast),
-    block("danger", dL.accentScale, dL.accentScaleAlpha, dL.accentSurface, dL.accentContrast),
-    `  --neutral-12: ${ANCHORS.light.text};`,
-    `  --danger-11: ${ANCHORS.danger};`,
+    block(
+      "danger",
+      withStep(dL.accentScale, 11, ANCHORS.danger),
+      dL.accentScaleAlpha,
+      dL.accentSurface,
+      dL.accentContrast,
+    ),
     `}`,
   ].join("\n");
 
@@ -83,10 +96,15 @@ export function buildPrimitivesCss(): string {
     `  --shell: ${ANCHORS.dark.shell};`,
     `  --hairline-color: ${ANCHORS.dark.hairline};`,
     `  --bar-fill: rgb(255 255 255 / 4.5%);`,
-    block("neutral", gD.grayScale, gD.grayScaleAlpha, gD.graySurface, ANCHORS.dark.text),
+    block(
+      "neutral",
+      withStep(gD.grayScale, 12, ANCHORS.dark.text),
+      gD.grayScaleAlpha,
+      gD.graySurface,
+      ANCHORS.dark.text,
+    ),
     block("accent", gD.accentScale, gD.accentScaleAlpha, gD.accentSurface, ANCHORS.dark.contrast),
     block("danger", dD.accentScale, dD.accentScaleAlpha, dD.accentSurface, ANCHORS.dark.contrast),
-    `  --neutral-12: ${ANCHORS.dark.text};`,
     `}`,
   ].join("\n");
 
@@ -95,17 +113,26 @@ export function buildPrimitivesCss(): string {
     `@supports (color: color(display-p3 1 1 1)) {`,
     `  @media (color-gamut: p3) {`,
     `    :root,\n    [data-theme="dark"] {`,
-    p3block("neutral", gD.grayScaleWideGamut, gD.grayScaleAlphaWideGamut),
+    p3block(
+      "neutral",
+      withStep(gD.grayScaleWideGamut, 12, ANCHORS.dark.text),
+      gD.grayScaleAlphaWideGamut,
+    ),
     p3block("accent", gD.accentScaleWideGamut, gD.accentScaleAlphaWideGamut),
     p3block("danger", dD.accentScaleWideGamut, dD.accentScaleAlphaWideGamut),
-    `      --neutral-12: ${ANCHORS.dark.text};`,
     `    }`,
     `    [data-theme="light"] {`,
-    p3block("neutral", gL.grayScaleWideGamut, gL.grayScaleAlphaWideGamut),
+    p3block(
+      "neutral",
+      withStep(gL.grayScaleWideGamut, 12, ANCHORS.light.text),
+      gL.grayScaleAlphaWideGamut,
+    ),
     p3block("accent", gL.accentScaleWideGamut, gL.accentScaleAlphaWideGamut),
-    p3block("danger", dL.accentScaleWideGamut, dL.accentScaleAlphaWideGamut),
-    `      --neutral-12: ${ANCHORS.light.text};`,
-    `      --danger-11: ${ANCHORS.danger};`,
+    p3block(
+      "danger",
+      withStep(dL.accentScaleWideGamut, 11, ANCHORS.danger),
+      dL.accentScaleAlphaWideGamut,
+    ),
     `    }`,
     `  }`,
     `}`,
