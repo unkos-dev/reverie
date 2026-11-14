@@ -146,3 +146,19 @@ just db-migrate
 `just db-reset <confirmed-volume>` verifies the exact project volume and the container's mounted volume before removing
 that volume and recreating the cluster. It reuses retained valid credentials. Deleted data cannot be recovered by a code
 revert.
+
+## GraphQL schema and trusted documents
+
+The authenticated GraphQL endpoint is `POST /api/graphql`, built with async-graphql and async-graphql-axum 7.2.1 in the
+existing process. The viewer resolver uses `CurrentUser`, read scope and a caller-scoped transaction. Session POST
+requests retain CSRF enforcement. Retained `/api/v1`, authentication, OPDS and binary endpoints keep their HTTP
+contracts and OpenAPI documentation.
+
+Run `just rust::regen` to export `backend/schema.graphql`, then `just js::relay-gen` from the repository root to
+generate the matching frontend operations and `backend/graphql-documents.json`. Commit all generated output together.
+`just rust::drift` compares the schema; `just js::relay-check` compares operations and the pruned document map.
+
+The server embeds that map at compile time. Release builds accept only its document IDs and disable schema
+introspection; debug builds accept developer documents and retain introspection. No environment setting changes this
+policy. `__typename` remains available. Unknown cached-client IDs receive a refusal without registration or text
+fallback. The backend image carries the map through its existing backend-directory copy.

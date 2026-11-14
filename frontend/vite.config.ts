@@ -1,6 +1,7 @@
 import path from "node:path";
 import { defineConfig, lazyPlugins } from "vite-plus";
 import { playwright } from "vite-plus/test/browser-playwright";
+import babel from "@rolldown/plugin-babel";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { cspHashPlugin } from "./vite-plugins/csp-hash";
@@ -23,7 +24,16 @@ const DEV_CSP = [
 export default defineConfig({
   // fmt + lint are defined in the root vite.config.ts; this file is frontend
   // build/server/test config only.
-  plugins: lazyPlugins(() => [react({ compiler: true }), tailwindcss(), cspHashPlugin()]),
+  plugins: lazyPlugins(() => [
+    react({ compiler: true }),
+    babel({
+      plugins: [
+        ["relay", { artifactDirectory: "./src/lib/relay/__generated__", eagerEsModules: true }],
+      ],
+    }),
+    tailwindcss(),
+    cspHashPlugin(),
+  ]),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
@@ -61,7 +71,18 @@ export default defineConfig({
             "react-dom/client",
           ],
         },
-        plugins: lazyPlugins(() => [react({ compiler: true }), tailwindcss()]),
+        plugins: lazyPlugins(() => [
+          react({ compiler: true }),
+          babel({
+            plugins: [
+              [
+                "relay",
+                { artifactDirectory: "./src/lib/relay/__generated__", eagerEsModules: true },
+              ],
+            ],
+          }),
+          tailwindcss(),
+        ]),
         resolve: { alias: { "@": path.resolve(__dirname, "src") } },
         test: {
           name: "components-chromium",

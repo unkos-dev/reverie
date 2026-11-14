@@ -33,7 +33,7 @@ doc-lint:
 # Generated-artifact drift guard (OpenAPI spec + config reference + config schema).
 [group('rust')]
 drift:
-    SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
+    SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_graphql --test gen_config_ref --test gen_config_schema
 
 # Extra args pass through to nextest as filters, so the red-green loop can
 # run just the tests under work instead of the whole suite: e.g.
@@ -98,7 +98,7 @@ schema-dump:
 # Regenerate the OpenAPI spec, config reference, and config schema in place.
 [group('rust')]
 regen:
-    REGEN=1 SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
+    REGEN=1 SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_graphql --test gen_config_ref --test gen_config_schema
 
 # Compile the workspace.
 [group('rust')]

@@ -149,6 +149,10 @@ these headers.
 
 ## Runtime behaviour
 
+`/api/graphql` belongs to the reserved `/api` class. Its router joins the documented API router before the API CSP and
+CSRF layers, and the composite session and security-header layers wrap it. The adapter adds `Cache-Control: no-store`.
+Unmatched GraphQL paths and unsupported methods retain the API Problem Details fallbacks.
+
 **From a build to an enforced policy**, from `vite build` to the first request the server accepts:
 
 1. `cspHashPlugin`'s `transformIndexHtml` hook reads `frontend/src/fouc/fouc.js`, rejects a closing-script-tag literal,

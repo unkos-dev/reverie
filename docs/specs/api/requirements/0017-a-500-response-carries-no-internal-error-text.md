@@ -12,6 +12,10 @@ title: "A 500 response carries no internal error text"
 WHEN an operation under `/api/v1` answers with status 500, the response body's `detail` field MUST NOT contain any text
 drawn from the underlying failure; it MUST instead be the fixed sentence "An internal error occurred."
 
+For `/api/graphql`, an internal HTTP failure MUST use that same fixed detail. An internal GraphQL execution fault MUST
+use exactly "An internal error occurred." as its message and MUST NOT expose underlying diagnostic text anywhere in its
+error envelope.
+
 ## Rationale
 
 A 500 response's underlying cause can carry operational detail an operator never intends a caller to see: a connection
@@ -30,3 +34,5 @@ any individual failure happens to say.
 - The same test constructs an underlying failure whose own message names a database connection string and asserts that
   neither that string nor any fragment of it appears anywhere in the response body, confirming the fixed sentence is a
   full replacement rather than a value appended alongside the original text.
+- An internal GraphQL execution fault carries the fixed message and no underlying diagnostic text in its envelope.
+  Checked by `graphql_request_boundary`.

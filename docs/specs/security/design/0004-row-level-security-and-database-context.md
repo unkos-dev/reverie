@@ -258,6 +258,10 @@ Outside `init_writeback_pool`, the only code in `backend/src` that sets `app.sys
 
 ## Runtime behaviour
 
+The GraphQL viewer receives the authenticated identity as request data. Its display-name read opens an
+`acquire_with_rls` transaction on the existing application pool, executes through that transaction and commits before
+returning. Neither identity nor transaction state lives on the shared schema. GraphQL creates no pool or database role.
+
 **An adult or admin reading a manifestation**, for example through `GET /api/v1/books/{id}`:
 
 1. The handler calls `db::acquire_with_rls(&state.pool, current_user.user_id)`, which opens a transaction on the

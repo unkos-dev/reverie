@@ -10,6 +10,97 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/graphql": {
+      "post": {
+        "tags": [
+          "graphql"
+        ],
+        "operationId": "execute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "GraphQL execution response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request body is missing a required field or has a field of the wrong type",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "device_token_bearer": []
+          },
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
     "/api/v1/account/email-verifications": {
       "get": {
         "tags": [
@@ -13907,6 +13998,10 @@
     {
       "name": "health",
       "description": "Liveness and readiness probes."
+    },
+    {
+      "name": "graphql",
+      "description": "Authenticated GraphQL HTTP transport."
     },
     {
       "name": "library",

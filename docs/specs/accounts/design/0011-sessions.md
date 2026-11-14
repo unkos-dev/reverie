@@ -168,6 +168,13 @@ requires the capability field in its Zod schema rather than assuming it when abs
 
 ## Data and state
 
+The confirmed-account lifecycle in `active-user.ts` also owns Relay environment selection. Replacing or forgetting an
+account aborts its in-flight Relay requests, clears its records and releases the old environment before another account
+adopts one. GraphQL HTTP 401 failures from Relay call the existing once-guarded recovery funnel, which forgets the hint
+before navigation. Execution-level field denial does not trigger that funnel. An identity epoch prevents a delayed
+`/auth/me` completion from recreating the Relay environment after account loss. Query continues to own existing HTTP
+workflows.
+
 - **The session row.** `tower_sessions.session` (`id text`, `data bytea`, `expiry_date timestamptz`), created by the
   initial schema migration, with a check constraint bounding `expiry_date` to the range a `timestamptz` can decode
   (`session_expiry_date_ts_decode_range`, `'0001-01-01 00:00:00+00' <= expiry_date < '10000-01-01 00:00:00+00'`). `data`
