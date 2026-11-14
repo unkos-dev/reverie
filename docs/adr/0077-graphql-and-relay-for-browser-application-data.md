@@ -65,6 +65,9 @@ subscriptions.
 - Positive: Relay provides one normalised owner for related records and generated browser operations.
 - Positive: retained HTTP APIs keep their URL-path major version and code-first OpenAPI 3.1 contract. REST conventions
   in REV-ADR-0011 still govern those APIs.
+- Positive: migrating a browser workflow to GraphQL removes no REST operation. The versioned `/api/v1` data surface
+  remains the contract for device-token and other non-browser clients under REV-ADR-0011 and REV-ADR-0028, and retiring
+  any of it requires a separate compatibility decision.
 - Positive: the selected validation boundary preserves runtime checks for editing snapshots and scalar formats.
 - Negative: schema and operation generation add build integration and matching release artefacts.
 - Negative: each workflow migrates as a whole, with explicit connection and aggregate updates.
