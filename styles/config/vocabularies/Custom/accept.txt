@@ -158,6 +158,7 @@ dialogs
 differentiator
 dir
 discoverable
+dismissible
 dispositioned
 distro
 docblock
@@ -430,6 +431,7 @@ refactor
 refetch
 refetches
 reflow
+reflows
 reformats
 regenerations
 rehydrated
@@ -529,6 +531,7 @@ suboptimal
 Supabase
 Supersession
 suppressions
+swappable
 SWR
 symlink
 symlinks

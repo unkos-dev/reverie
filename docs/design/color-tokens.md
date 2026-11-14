@@ -40,9 +40,9 @@ and the danger family below. Each resolves to a Tier 1 primitive; none carry raw
 ## Danger is the one sanctioned state hue
 
 `--danger` (`#B91C1C`, Radix step 9) is the **only** state color. It amends the otherwise no-hue-states philosophy and
-is reserved strictly for destructive, error and invalid-input semantics, **never decorative**. Per WCAG 1.4.1 color is
-never the sole signal: danger always pairs with an icon, weight, or text label. The rationale is recorded in the
-single-danger-hue ADR (`docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md`).
+is reserved for irreversible destructive confirmation and errors the person must act on, **never decorative**. Per WCAG
+1.4.1 color is never the sole signal: danger always pairs with an icon or text label. The rationale is recorded in the
+reserved-error-colour ADR (`docs/adr/0076-one-reserved-error-colour-for-states-that-need-action.md`).
 
 ## Focus indicator (WCAG 1.4.11)
 

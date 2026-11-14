@@ -3,12 +3,14 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0062"
 title: "Uniform dismissal for library filter edits"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-10-21"
 decision-makers:
   - "John Unkovich"
 supersedes:
   - "REV-ADR-0041"
+superseded-by:
+  - "REV-ADR-0075"
 ---
 
 # Uniform dismissal for library filter edits

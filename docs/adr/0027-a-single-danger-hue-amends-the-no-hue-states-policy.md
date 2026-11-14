@@ -3,11 +3,13 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0027"
 title: "A single danger hue amends the no-hue-states policy"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-05"
 decided-on: "2026-06-18"
 decision-makers:
   - "John Unkovich"
+superseded-by:
+  - "REV-ADR-0076"
 ---
 
 # A single danger hue amends the no-hue-states policy
