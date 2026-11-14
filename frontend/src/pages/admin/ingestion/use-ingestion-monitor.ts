@@ -5,8 +5,9 @@
  * page one of every expanded group; those components take the interval as a
  * prop and never start a timer of their own. It also owns the scan mutation
  * and the single notice that reports it. The app shell also reads the
- * dashboard activity and dashboard stats keys and polls them off the ingestion
- * route, but does not poll them while this page is mounted.
+ * dashboard activity key and polls it off the ingestion route, but not while
+ * this page is mounted. The shell polls the dashboard stats key everywhere,
+ * because this hook invalidates it after a scan but never polls it.
  *
  * Polling runs while the latest batch has not ended, and for a grace window
  * after a scan that queued or deferred files (jobs appear only once attempts

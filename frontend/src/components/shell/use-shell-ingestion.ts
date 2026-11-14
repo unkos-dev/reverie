@@ -31,16 +31,14 @@ export function useShellIngestion(): {
     queryKey: queryKeys.dashboard.stats(),
     queryFn: ({ signal }) => getDashboardStats(signal),
     enabled,
-    refetchInterval: (query) => {
-      if (isIngestionRoute) return false;
-      return scanRunning ||
-        query.state.data?.enrichment_breakdown.some(
-          (entry) => entry.status === "in_progress" && entry.count > 0,
-        )
+    refetchInterval: (query) =>
+      scanRunning ||
+      query.state.data?.enrichment_breakdown.some(
+        (entry) => entry.status === "in_progress" && entry.count > 0,
+      )
         ? 3000
-        : 30_000;
-    },
-    refetchOnWindowFocus: !isIngestionRoute,
+        : 30_000,
+    refetchOnWindowFocus: true,
   });
   const enrichmentRunning =
     stats.data?.enrichment_breakdown.some(
