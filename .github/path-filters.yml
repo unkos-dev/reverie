@@ -5,6 +5,8 @@
 # it gates, so editing the definition re-runs the job. Patterns
 # are literal paths and trailing `/**` only: the local scoper has no glob engine.
 backend:
+  - "frontend/src/lib/relay/**"
+  - "frontend/relay.config.json"
   - "backend/**"
   - "docker/init-roles.sql"
   - "docker/compose.dev.yml"
@@ -42,6 +44,9 @@ advisories:
   - ".github/workflows/deps.yml"
   - ".github/path-filters.yml"
 frontend:
+  - "backend/src/graphql/**"
+  - "backend/schema.graphql"
+  - "backend/graphql-documents.json"
   # Root vite.config.ts, the lockfile, and pnpm-workspace.yaml (which declares
   # the workspace members, the catalog and the install-script policy) govern
   # every project.

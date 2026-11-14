@@ -167,6 +167,11 @@ cross-site script request carrying a JSON body fails its preflight before it can
 
 ## Runtime behaviour
 
+GraphQL queries use POST at `/api/graphql` and pass through this same CSRF middleware. Session-authenticated queries
+need the synchronizer token even though their resolver requires read scope. Session-less Basic and device-token callers
+retain the existing exemption. Relay sends through `apiFetch`, so only a pre-execution HTTP CSRF refusal causes one
+refresh and identical resend. GraphQL execution faults cause no retry.
+
 **A mutating request from a cold client cache**, the common case for the first `POST`, `PUT`, `PATCH` or `DELETE` after
 an OIDC session begins:
 

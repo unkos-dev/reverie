@@ -11,8 +11,10 @@
 - [REV-REQ-0018](requirements/0018-metadata-and-reading-state-patch-compare-if-match-byte-for-byte.md): Precondition-protected writes compare If-Match byte for byte
 - [REV-REQ-0019](requirements/0019-the-browser-client-echoes-a-resource-s-last-etag-as-if-match-on.md): Browser edits retain the validator belonging to their values
 - [REV-REQ-0020](requirements/0020-a-precondition-protected-write-answers-428-without-if-match.md): A precondition-protected write answers 428 without If-Match
+- [REV-REQ-0079](requirements/0079-production-graphql-document-admission.md): Production GraphQL document admission
 
 ## Designs
 
 - [REV-DESIGN-0006](design/0006-api-error-contract-and-openapi.md): API error contract and OpenAPI
 - [REV-DESIGN-0007](design/0007-conditional-requests-and-optimistic-concurrency.md): Conditional requests and optimistic concurrency
+- [REV-DESIGN-0031](design/0031-graphql-execution-and-relay-browser-data.md): GraphQL execution and Relay browser data

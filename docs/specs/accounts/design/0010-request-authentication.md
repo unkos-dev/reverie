@@ -162,6 +162,11 @@ restore a pre-disable session's validity, so no live session skips re-authentica
 
 ## Runtime behaviour
 
+The GraphQL adapter declares `CurrentUser` before its JSON-body extractor and places that resolved identity in the
+individual execution request. Its shared schema contains no caller identity. Cookie, Basic and device-token resolution,
+account validity and scope ceilings are the same as for HTTP handlers. The viewer's root guard calls `require_scope`
+with read scope; field denial remains distinct from an unauthenticated HTTP request.
+
 **A session-authenticated request with no `Authorization` header**, the common browser case:
 
 1. `Session::from_request_parts` returns a session carrying `SESSION_KEY_USER_ID`.

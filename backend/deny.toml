@@ -66,6 +66,10 @@ allow = ["AGPL-3.0-or-later"]
 crate = "winx"
 allow = ["Apache-2.0 WITH LLVM-exception"]
 
+[[licenses.exceptions]]
+crate = "ar_archive_writer"
+allow = ["Apache-2.0 WITH LLVM-exception"]
+
 [bans]
 # Duplicate versions are reported but do not fail the build: the tree carries
 # legitimate transitional duplicates (e.g. r-efi 5/6, webpki-roots 0.26/1.0)

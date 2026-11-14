@@ -86,10 +86,10 @@
   --surface-3: var(--neutral-5);
   --border: var(--hairline);
   --border-strong: var(--neutral-7);
-  --border-control: var(--neutral-12);
+  --border-control: var(--neutral-9);
   --fg: var(--neutral-12);
   --fg-muted: var(--neutral-11);
-  --fg-faint: var(--neutral-11);
+  --fg-faint: color-mix(in srgb, var(--fg-muted) 85%, var(--sheet-ground));
   --accent: var(--accent-9);
   --accent-soft: var(--accent-3);
   --accent-strong: var(--accent-10);
@@ -102,6 +102,12 @@
   --danger-soft: var(--danger-3);
   --fg-on-danger: var(--danger-contrast);
   --focus-ring: var(--accent-text);
+  --focus-halo: color-mix(in srgb, var(--accent) 10.5%, transparent);
+}
+
+[data-theme="light"] {
+  --border-control: var(--neutral-10);
+  --fg-faint: color-mix(in srgb, var(--fg-muted) 94%, var(--sheet-ground));
 }
 
 body {
@@ -121,10 +127,10 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline: 1.5px solid var(--focus-ring);
+  outline-offset: 0;
   /* Unlayered, so it overrides controls' own focus-visible ring utilities and keeps one focus indicator. */
-  box-shadow: none;
+  box-shadow: 0 0 0 5px var(--focus-halo);
 }
 
 @layer base {

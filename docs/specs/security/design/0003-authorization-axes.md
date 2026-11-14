@@ -46,6 +46,11 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
 
 ## Structure
 
+GraphQL root fields declare scope through their resolver guards in `backend/src/graphql/mod.rs`. The viewer requires
+`Scope::Read` through `CurrentUser::require_scope`; POST does not impose a write floor on queries. The HTTP matrix
+continues to cover `/api/v1`. GraphQL request-boundary coverage exercises its own adapter. Role, child status and
+ownership remain separate checks, and no GraphQL mutation is exposed.
+
 - `backend/src/auth/scope.rs` declares `Scope { Read, Write, Admin }` with a derived `Ord`, so the hierarchy
   `Read < Write < Admin` is a comparison rather than a lookup table. `Scope::for_role` gives every role `{Read, Write}`
   and gives `Role::Admin` `Admin` as well. `Scope::grantable_by` is the mint-time ceiling: any role may grant `Read` or
