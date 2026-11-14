@@ -138,6 +138,7 @@ impl Modify for SecurityAddon {
     components(schemas(ProblemDetails)),
     tags(
         (name = "health", description = "Liveness and readiness probes."),
+        (name = "graphql", description = "Authenticated GraphQL HTTP transport."),
         (name = "library", description = "Books, works, and full-text search."),
         (name = "suggest", description = "Typeahead suggestions over the metadata vocabularies (genres, moods, tags, authors, series, publishers)."),
         (name = "series", description = "Series and their ordered works."),
@@ -311,6 +312,7 @@ impl axum::response::IntoResponse for ProblemDetails {
 /// here with the rest.
 fn pilot_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .merge(crate::graphql::router())
         .merge(crate::routes::health::router())
         .merge(crate::routes::library::router())
         .merge(crate::routes::suggest::router())

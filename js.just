@@ -119,6 +119,7 @@ a11y:
 [group('js')]
 [working-directory('frontend')]
 test:
+    just js::relay-check
     vp test run
     just js::library-journeys
 
@@ -131,7 +132,7 @@ library-journeys:
 # Frontend production build (vp build; typecheck rides js::oxlint via tsgo).
 [group('js')]
 [working-directory('frontend')]
-build:
+build: relay-check
     vp build
 
 # The CI frontend gate form; cheap and offline, so locally runnable on its own.
@@ -177,3 +178,32 @@ dev-stop:
 [group('js')]
 dev-status:
     scripts/dev-server.sh status
+
+# Regenerate Relay operations and prune the embedded trusted-document map.
+[group('js')]
+relay-gen:
+    mkdir -p frontend/src/lib/relay/__generated__
+    printf '{}\n' > backend/graphql-documents.json
+    pnpm --filter frontend exec relay-compiler --repersist
+    vp fmt --write frontend/src/lib/relay/__generated__
+    node -e 'const fs = require("node:fs"); const map = JSON.parse(fs.readFileSync("backend/graphql-documents.json")); if (!Object.keys(map).length) throw Error("No Relay operations generated");'
+
+# Compare freshly generated Relay operations and documents without changing sources.
+[group('js')]
+relay-check:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    generated="$(mktemp -d)"
+    trap 'rm -rf "$generated"' EXIT
+    mkdir -p "$generated/frontend" "$generated/backend"
+    cp -R frontend/src "$generated/frontend/src"
+    mkdir -p "$generated/frontend/src/lib/relay/__generated__"
+    cp frontend/relay.config.json "$generated/frontend/relay.config.json"
+    cp backend/schema.graphql "$generated/backend/schema.graphql"
+    node -e 'const fs = require("node:fs"); const path = require("node:path"); const file = process.argv[1]; const config = JSON.parse(fs.readFileSync(file)); const root = path.dirname(file); for (const key of ["src", "schema", "artifactDirectory"]) config[key] = path.resolve(root, config[key]); config.persistConfig.file = path.resolve(root, config.persistConfig.file); fs.writeFileSync(file, JSON.stringify(config));' "$generated/frontend/relay.config.json"
+    printf '{}\n' > "$generated/backend/graphql-documents.json"
+    pnpm --filter frontend exec relay-compiler --repersist "$generated/frontend/relay.config.json"
+    node -e 'const fs = require("node:fs"); const map = JSON.parse(fs.readFileSync(process.argv[1])); if (!Object.keys(map).length) throw Error("No Relay operations generated");' "$generated/backend/graphql-documents.json"
+    vp fmt --write "$generated/frontend/src/lib/relay/__generated__"
+    diff -u backend/graphql-documents.json "$generated/backend/graphql-documents.json"
+    diff -ru frontend/src/lib/relay/__generated__ "$generated/frontend/src/lib/relay/__generated__"

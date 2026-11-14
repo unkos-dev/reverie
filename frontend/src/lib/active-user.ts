@@ -15,6 +15,15 @@
  * matching the storage modules this scopes.
  */
 
+import { setRelayAccount } from "@/lib/relay/environment";
+
+let identityEpoch = 0;
+let confirmedAccount: string | null = null;
+
+export function activeUserEpoch(): number {
+  return identityEpoch;
+}
+
 const LAST_USER_KEY = "reverie_last_user";
 
 /** The last confirmed account id on this browser, or `null` when no session
@@ -29,7 +38,13 @@ export function activeUserId(): string | null {
 
 /** Record the confirmed account id. Idempotent; called on every identity
  *  confirmation rather than only at login, so it self-heals. */
-export function rememberActiveUser(id: string): void {
+export function rememberActiveUser(id: string, expectedEpoch = identityEpoch): void {
+  if (expectedEpoch !== identityEpoch) return;
+  if (confirmedAccount !== id) {
+    identityEpoch += 1;
+    confirmedAccount = id;
+  }
+  setRelayAccount(id);
   try {
     localStorage.setItem(LAST_USER_KEY, id);
   } catch {
@@ -40,6 +55,9 @@ export function rememberActiveUser(id: string): void {
 /** Forget the account id, leaving per-user caches in place for the
  *  account's return. Called on sign-out and on the 401 path. */
 export function forgetActiveUser(): void {
+  identityEpoch += 1;
+  confirmedAccount = null;
+  setRelayAccount(null);
   try {
     localStorage.removeItem(LAST_USER_KEY);
   } catch {

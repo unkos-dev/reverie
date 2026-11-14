@@ -14,7 +14,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
-import { rememberActiveUser } from "@/lib/active-user";
+import { activeUserEpoch, rememberActiveUser } from "@/lib/active-user";
 import { queryKeys } from "@/lib/query/keys";
 
 const ROLE_VALUES = ["admin", "adult", "child"] as const;
@@ -36,6 +36,7 @@ function useAuthMe(): { data: AuthMe | undefined; isLoading: boolean; isError: b
   const { data, isLoading, isError } = useQuery({
     queryKey: queryKeys.auth.me(),
     queryFn: async ({ signal }) => {
+      const epoch = activeUserEpoch();
       const resp = await fetch("/auth/me", {
         credentials: "same-origin",
         signal,
@@ -52,7 +53,7 @@ function useAuthMe(): { data: AuthMe | undefined; isLoading: boolean; isError: b
       // The one place every auth mode (local, OIDC, boot with a live
       // session) converges on a confirmed identity, so per-user client
       // caches learn whose they are here rather than in each login flow.
-      rememberActiveUser(me.id);
+      rememberActiveUser(me.id, epoch);
       return me;
     },
     staleTime: Infinity,
