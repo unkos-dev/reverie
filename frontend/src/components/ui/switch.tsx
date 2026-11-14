@@ -34,7 +34,7 @@ function SwitchButton({
           <span
             data-slot="switch-thumb"
             aria-hidden="true"
-            className="pointer-events-none block translate-x-px rounded-full border border-border-control bg-sheet dark:border-transparent dark:bg-fg transition-transform group-data-[size=default]/switch:size-3.5 group-data-[size=sm]/switch:size-2.5 group-data-selected/switch:translate-x-[17px] group-data-[size=sm]/switch:group-data-selected/switch:translate-x-[13px] group-data-selected/switch:border-transparent group-data-selected/switch:bg-fg-on-accent"
+            className="pointer-events-none block translate-x-px rounded-full border border-border-control bg-sheet dark:border-transparent dark:bg-fg transition-transform motion-reduce:transition-none group-data-[size=default]/switch:size-3.5 group-data-[size=sm]/switch:size-2.5 group-data-selected/switch:translate-x-[17px] group-data-[size=sm]/switch:group-data-selected/switch:translate-x-[13px] group-data-selected/switch:border-transparent group-data-selected/switch:bg-fg-on-accent"
           />
           {children}
         </>
