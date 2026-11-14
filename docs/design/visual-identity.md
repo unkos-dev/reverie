@@ -51,7 +51,7 @@ the hex, so treat the primitive as canonical and the hex as informative.
 | `--accent-strong` | `gold-10` | `#967100` | `#BE9E56` | Pressed accent |
 | `--accent-text` | `gold-11` | `#5A3E00` | `#D9B970` | Text-grade gold and the focus ring |
 | `--fg-on-accent` | `gold-contrast` | `#0E0D0A` | `#0E0D0A` | Text on the saturated `bg-accent` fill only |
-| `--danger` | `danger-9` | `#B91C1C` | `#B91C1C` | Destructive, unrecoverable error, and invalid-input border; never decorative |
+| `--danger` | `danger-9` | `#B91C1C` | `#B91C1C` | Destructive confirmation and errors that need action; never decorative |
 | `--danger-text` | `danger-11` | `#900000` | `#FF9082` | Text-grade danger |
 | `--danger-soft` | `danger-3` | `#D4C2BF` | `#410A08` | Danger background wash |
 | `--fg-on-danger` | `danger-contrast` | `#FFFFFF` | `#FFFFFF` | Text on the `bg-danger` fill (6.47:1) |
@@ -66,8 +66,8 @@ focus rings, and recovery actions.
 
 **Danger is the one state hue.** `--success`, `--warning`, `--info`, and `--neutral` are deliberately absent, and adding
 one requires a brand-aligned decision rather than a convenience commit. `--danger` is the single bounded exception,
-recorded in `docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md`. Per WCAG 1.4.1 it never carries
-meaning alone: it always pairs with an icon, weight, or text label. See
+recorded in `docs/adr/0076-one-reserved-error-colour-for-states-that-need-action.md`. Per WCAG 1.4.1 it never carries
+meaning alone: it always pairs with an icon or text label. See
 [Philosophy § State without hue](./philosophy.md#state-without-hue)
 and [Color Tokens](./color-tokens.md).
 

@@ -39,7 +39,8 @@ docs-only, or other non-UI changes. -->
 - [ ] Body text meets 1.4.3 (4.5:1).
 - [ ] Motion respects `prefers-reduced-motion`.
 - [ ] Any new colour is already a design token (no arbitrary hex).
-- [ ] The danger hue appears only in a DESIGN.md carve-out context.
+- [ ] The danger hue marks only an error the person must act on or an irreversible destructive confirmation, and is
+      paired with an icon or text label.
 
 <!--
 Reminders (see CONTRIBUTING.md for the full conventions):
