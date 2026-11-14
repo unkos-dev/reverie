@@ -1,7 +1,6 @@
 /**
  * Author id to display label resolution, shared by every surface that
- * hydrates an author uuid into a name (the rail's authors section, the
- * masthead filter summary).
+ * hydrates an author uuid into a name (the rail's authors section).
  */
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";

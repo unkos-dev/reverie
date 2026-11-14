@@ -4,7 +4,7 @@
  * UI chrome MUST NOT consume these tokens — they are art-directed editorial
  * constants behind a review gate (§7). No `@theme inline` utilities are
  * generated for `--atm-*`, by design: that would expose `bg-atm-*` classes and
- * invite chrome consumption. Atmosphere is read via raw `var(--atm-*)` only.
+ * invite chrome consumption. This tier is read via raw `var(--atm-*)` only.
  *
  * Hex / rgba literals are permitted here (art-directed Tier 3). `--atm-*` values
  * are vendored verbatim from the art-directed atmosphere reference (spec §8.4) —
@@ -15,6 +15,7 @@
  * textures are deferred to port-time (§5i).
  */
 :root {
+  --cover-font: "Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   /* Cover-artwork palette — theme-fixed (covers are physical objects; they do
      not swap on the Light↔Dark flip). Relocated here from index.css. */
   --cover-ink: #0e0d0a;

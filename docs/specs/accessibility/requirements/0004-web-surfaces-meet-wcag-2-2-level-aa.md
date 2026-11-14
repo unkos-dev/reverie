@@ -24,9 +24,8 @@ criterion on one surface would worsen the experience for every user, or would ne
 maintain. The maintainer approves each exception individually and the register records it, so no surface loses
 accessibility coverage through a subset chosen for convenience, and every gap stays visible.
 
-The brand's accent colour needs no exception: Reverie Gold clears the contrast thresholds as a fill with ink-on-gold
-text, and wherever gold must read as text or as a hairline the design system uses the darker `accent-text` step, so the
-restriction on where gold appears is a brand rule rather than an accessibility concession.
+The brand's periwinkle accent needs no exception: it clears the contrast thresholds as a fill with `fg-on-accent` text.
+Accent-coloured text and hairlines use the `accent-text` step.
 
 ## Acceptance criteria
 

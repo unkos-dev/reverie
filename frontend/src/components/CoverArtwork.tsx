@@ -282,7 +282,7 @@ export function CoverArtwork({
           fontWeight="600"
           fontSize={size}
           letterSpacing="0.005em"
-          className="font-display"
+          className="font-[family-name:var(--cover-font)]"
         >
           {lines.map((line, i) => (
             <tspan key={line + String(i)} x="120" dy={i === 0 ? 0 : lineHeight}>

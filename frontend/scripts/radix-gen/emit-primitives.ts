@@ -1,42 +1,34 @@
-/*
- * Emits src/styles/themes/primitives.generated.css from the vendored Radix
- * color engine plus the Reverie brand anchors. Run with `vp run
- * primitives:gen`; a drift test pins the committed artifact to this output,
- * so the file and this emitter change together, never independently.
- *
- * The one deliberate divergence from raw generator output: --gold-contrast is
- * forced to ink #0e0d0a because the generator returns #fff, which is
- * unreadable on the pale dark-theme gold-9 #c9a961 (white = 2.25:1).
- */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { generateRadixColors } from "./generate-radix-colors.ts";
 
 const ANCHORS = {
-  bgDark: "#0E0D0A",
-  bgLight: "#E8DCC2",
-  gold: "#C9A961",
-  danger: "#B91C1C",
-  graySeed: "#8A8170",
+  dark: {
+    background: "#0a0d16",
+    shell: "#141d45",
+    text: "#eef1fa",
+    accent: "#8fa8ff",
+    contrast: "#070b1a",
+    hairline: "rgb(160 180 255 / 13%)",
+  },
+  light: {
+    background: "#fcfcff",
+    shell: "#d9e0fb",
+    text: "#121831",
+    accent: "#3d55d8",
+    contrast: "#ffffff",
+    hairline: "rgb(30 45 120 / 13%)",
+  },
+  danger: "#b91c1c",
+  dangerDark: "#ff8a93",
 };
-
-const GOLD_CONTRAST_OVERRIDE = "#0e0d0a";
-const SAND_CONTRAST = { light: "#0e0d0a", dark: "#f0eee9" };
-
-const dark = (accent: string) =>
+const palette = (appearance: "dark" | "light", accent: string) =>
   generateRadixColors({
-    appearance: "dark",
+    appearance,
     accent,
-    gray: ANCHORS.graySeed,
-    background: ANCHORS.bgDark,
-  });
-const light = (accent: string) =>
-  generateRadixColors({
-    appearance: "light",
-    accent,
-    gray: ANCHORS.graySeed,
-    background: ANCHORS.bgLight,
+    gray: ANCHORS[appearance].text,
+    background: ANCHORS[appearance].background,
   });
 
 function block(
@@ -61,43 +53,58 @@ function p3block(prefix: string, wide: string[], wideAlpha: string[]) {
   return lines.join("\n");
 }
 
-const HEADER = `/*
- * Reverie editorial design-system — Radix-generated color primitives.
- * GENERATED ARTIFACT — do not hand-edit. Regenerate: vp run primitives:gen.
- *
- * Source fn:  scripts/radix-gen/generate-radix-colors.ts (radix-ui/website @ 88a9f14)
- * Anchors:    bg-dark #0E0D0A · bg-light(parchment) #E8DCC2
- *             accent(gold) #C9A961 · danger #B91C1C · neutral-seed #8A8170
- * OVERRIDE:   --gold-contrast forced to ink #0e0d0a (generator returned #fff,
- *             unreadable on the pale dark-theme gold-9 #c9a961: white = 2.25:1).
- * Families:   --sand-* (warm neutral) · --gold-* (accent) · --danger-* (destructive only)
- */
-`;
+const withStep = (scale: string[], step: number, value: string) =>
+  scale.map((v, i) => (i === step - 1 ? value : v));
+
+const HEADER = `/* Generated colour primitives. Regenerate: vp run primitives:gen. */\n`;
 
 export function buildPrimitivesCss(): string {
-  const gD = dark(ANCHORS.gold);
-  const gL = light(ANCHORS.gold);
-  const dD = dark(ANCHORS.danger);
-  const dL = light(ANCHORS.danger);
+  const gD = palette("dark", ANCHORS.dark.accent);
+  const gL = palette("light", ANCHORS.light.accent);
+  const dD = palette("dark", ANCHORS.dangerDark);
+  const dL = palette("light", ANCHORS.danger);
 
   const lightCss = [
-    `/* ---- LIGHT (default) ---- */`,
-    `:root,\n[data-theme="light"] {`,
-    `  /* page background (parchment) */`,
-    `  --bg: ${gL.background};`,
-    block("sand", gL.grayScale, gL.grayScaleAlpha, gL.graySurface, SAND_CONTRAST.light),
-    block("gold", gL.accentScale, gL.accentScaleAlpha, gL.accentSurface, GOLD_CONTRAST_OVERRIDE),
-    block("danger", dL.accentScale, dL.accentScaleAlpha, dL.accentSurface, dL.accentContrast),
+    `/* ---- LIGHT ---- */`,
+    `[data-theme="light"] {`,
+    `  --bg: ${ANCHORS.light.background};`,
+    `  --shell: ${ANCHORS.light.shell};`,
+    `  --hairline-color: ${ANCHORS.light.hairline};`,
+    `  --bar-fill: rgb(255 255 255 / 4.5%);`,
+    block(
+      "neutral",
+      withStep(gL.grayScale, 12, ANCHORS.light.text),
+      gL.grayScaleAlpha,
+      gL.graySurface,
+      ANCHORS.light.text,
+    ),
+    block("accent", gL.accentScale, gL.accentScaleAlpha, gL.accentSurface, ANCHORS.light.contrast),
+    block(
+      "danger",
+      withStep(dL.accentScale, 11, ANCHORS.danger),
+      dL.accentScaleAlpha,
+      dL.accentSurface,
+      dL.accentContrast,
+    ),
     `}`,
   ].join("\n");
 
   const darkCss = [
-    `/* ---- DARK ---- */`,
-    `[data-theme="dark"] {`,
-    `  --bg: ${gD.background};`,
-    block("sand", gD.grayScale, gD.grayScaleAlpha, gD.graySurface, SAND_CONTRAST.dark),
-    block("gold", gD.accentScale, gD.accentScaleAlpha, gD.accentSurface, GOLD_CONTRAST_OVERRIDE),
-    block("danger", dD.accentScale, dD.accentScaleAlpha, dD.accentSurface, dD.accentContrast),
+    `/* ---- DARK (default) ---- */`,
+    `:root,\n[data-theme="dark"] {`,
+    `  --bg: ${ANCHORS.dark.background};`,
+    `  --shell: ${ANCHORS.dark.shell};`,
+    `  --hairline-color: ${ANCHORS.dark.hairline};`,
+    `  --bar-fill: rgb(255 255 255 / 4.5%);`,
+    block(
+      "neutral",
+      withStep(gD.grayScale, 12, ANCHORS.dark.text),
+      gD.grayScaleAlpha,
+      gD.graySurface,
+      ANCHORS.dark.text,
+    ),
+    block("accent", gD.accentScale, gD.accentScaleAlpha, gD.accentSurface, ANCHORS.dark.contrast),
+    block("danger", dD.accentScale, dD.accentScaleAlpha, dD.accentSurface, ANCHORS.dark.contrast),
     `}`,
   ].join("\n");
 
@@ -105,21 +112,33 @@ export function buildPrimitivesCss(): string {
     `/* ---- P3 wide-gamut (progressive enhancement; sRGB above is the floor) ---- */`,
     `@supports (color: color(display-p3 1 1 1)) {`,
     `  @media (color-gamut: p3) {`,
-    `    :root,\n    [data-theme="light"] {`,
-    p3block("sand", gL.grayScaleWideGamut, gL.grayScaleAlphaWideGamut),
-    p3block("gold", gL.accentScaleWideGamut, gL.accentScaleAlphaWideGamut),
-    p3block("danger", dL.accentScaleWideGamut, dL.accentScaleAlphaWideGamut),
-    `    }`,
-    `    [data-theme="dark"] {`,
-    p3block("sand", gD.grayScaleWideGamut, gD.grayScaleAlphaWideGamut),
-    p3block("gold", gD.accentScaleWideGamut, gD.accentScaleAlphaWideGamut),
+    `    :root,\n    [data-theme="dark"] {`,
+    p3block(
+      "neutral",
+      withStep(gD.grayScaleWideGamut, 12, ANCHORS.dark.text),
+      gD.grayScaleAlphaWideGamut,
+    ),
+    p3block("accent", gD.accentScaleWideGamut, gD.accentScaleAlphaWideGamut),
     p3block("danger", dD.accentScaleWideGamut, dD.accentScaleAlphaWideGamut),
+    `    }`,
+    `    [data-theme="light"] {`,
+    p3block(
+      "neutral",
+      withStep(gL.grayScaleWideGamut, 12, ANCHORS.light.text),
+      gL.grayScaleAlphaWideGamut,
+    ),
+    p3block("accent", gL.accentScaleWideGamut, gL.accentScaleAlphaWideGamut),
+    p3block(
+      "danger",
+      withStep(dL.accentScaleWideGamut, 11, ANCHORS.danger),
+      dL.accentScaleAlphaWideGamut,
+    ),
     `    }`,
     `  }`,
     `}`,
   ].join("\n");
 
-  return `${HEADER}\n${lightCss}\n\n${darkCss}\n\n${p3}\n`;
+  return `${HEADER}\n${darkCss}\n\n${lightCss}\n\n${p3}\n`;
 }
 
 export const ARTIFACT_PATH = join(

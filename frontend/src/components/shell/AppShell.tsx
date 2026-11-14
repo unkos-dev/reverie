@@ -64,7 +64,7 @@ export function AppShell({ children, onOpenSearch }: Readonly<AppShellProps>): R
       </div>
       <div
         data-chrome=""
-        className="border-border cinematic-collapse sticky top-0 hidden h-screen w-[228px] shrink-0 border-r lg:block"
+        className="border-border sticky top-0 hidden h-screen w-[228px] shrink-0 border-r lg:block"
       >
         <LeftRail />
       </div>

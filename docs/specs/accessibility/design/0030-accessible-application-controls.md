@@ -96,10 +96,8 @@ for Control+K and Meta+K, opening the palette through native matching and propag
 are outside that boundary. Native close resets the palette query. The existing Library SearchField keeps its own filter
 behaviour and location.
 
-The cinematic ToggleButton controls the existing presentation owner through `isSelected` and `onChange`. It remains
-visible outside hidden chrome at the bottom centre; visibility removes hidden chrome from keyboard traversal. The
-pointer-idle timer and reduced motion remain presentation concerns. Visible Help opens the native shortcuts dialog. Home
-and Stats have static Planned status within their existing non-interactive rows.
+Visible Help opens the native shortcuts dialog. Home and Stats have static Planned status within their existing
+non-interactive rows.
 
 Ingestion disclosures mount query children only while expanded. Book tabs activate from arrow keys and mount only the
 selected panel. Filter disclosures retain their mounted editors, as described by the
