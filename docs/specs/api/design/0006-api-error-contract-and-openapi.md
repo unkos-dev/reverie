@@ -193,6 +193,13 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
 
 ## Runtime behaviour
 
+At `/api/graphql`, `ApiJson<Envelope>` retains the HTTP decoding statuses and fixed Problem Details messages described
+below. Document-admission refusals also use HTTP Problem Details. The GraphQL response envelope carries execution faults
+instead: safe resolver errors use stable `code` extensions, with fixed internal-error text and private structured
+diagnostics. The browser validates that envelope before Relay publication, retains safe classifications and field
+messages, and never replays execution faults. The generated GraphQL schema owns application fields; OpenAPI describes
+only the endpoint's HTTP envelope and credential alternatives.
+
 **A malformed path parameter**, for example `GET /api/v1/works/not-a-uuid`:
 
 1. Routing matches `/api/v1/works/{id}` and axum begins extracting `ApiPath<Uuid>` before the handler body runs.

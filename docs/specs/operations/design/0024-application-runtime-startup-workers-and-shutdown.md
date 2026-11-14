@@ -57,6 +57,12 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 
 ## Structure
 
+The existing process assembles the authenticated GraphQL router through `openapi::pilot_router` before the API layers.
+`backend/src/graphql/mod.rs` creates its schema once at router construction and embeds the committed trusted-document
+map. Release builds select production admission with introspection disabled; debug builds select development policy. No
+environment setting, additional process, worker or pool controls GraphQL. Each execution receives request-local identity
+and the existing application pool.
+
 - `backend/src/main.rs` is the binary's entry point: it collects `argv[1..]`, calls `parse_command`, and matches the
   resulting `Command` to one of seven library-crate functions: six are async and called with `.await` (`run_migrate`,
   `run_bootstrap`, `run_reset_password`, `run_send_test_email`, `run_unlock_account`, `run`), and one,

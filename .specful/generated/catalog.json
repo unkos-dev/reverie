@@ -1080,6 +1080,28 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0077"
+      ],
+      "id": "REV-DESIGN-0031",
+      "kind": "design",
+      "path": "docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md",
+      "satisfies": [
+        "REV-REQ-0005",
+        "REV-REQ-0006",
+        "REV-REQ-0014",
+        "REV-REQ-0015",
+        "REV-REQ-0016",
+        "REV-REQ-0017",
+        "REV-REQ-0021",
+        "REV-REQ-0023",
+        "REV-REQ-0035",
+        "REV-REQ-0036",
+        "REV-REQ-0079"
+      ],
+      "title": "GraphQL execution and Relay browser data"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",

@@ -73,3 +73,25 @@ ownership, vocabulary selection, visit restoration and table-load recovery.
 
 Implementation rules live in [AGENTS.md](AGENTS.md). Visual and interaction authority remains in
 [DESIGN.md](DESIGN.md).
+
+## Relay operations
+
+Relay owns GraphQL application data. Existing HTTP workflows retain Query ownership. The viewer operation establishes
+the foundation without moving Library consumers or replacing `/auth/me`.
+
+`frontend/relay.config.json` uses `backend/schema.graphql`, TypeScript artefacts in
+`frontend/src/lib/relay/__generated__`, and local SHA256 persistence to `backend/graphql-documents.json`. Run
+`just rust::regen` before `just js::relay-gen` when Rust schema fields change. Generation starts with an empty map so
+removed operations disappear. The compiler does not stage files. Stage generated files explicitly with their source.
+`just js::relay-check` generates in a temporary directory and fails on differences or an empty operation set. Frontend
+build and test recipes run this check.
+
+Relay runtime, react-relay, compiler and Babel plugin use 21.0.1. `@rolldown/plugin-babel` 0.3.0 applies the Relay
+transform beside the oxc React Compiler in both production and Browser Mode. Both retain `react({ compiler: true })`.
+Operations import their generated artefacts; the runtime never executes a raw `graphql` tag.
+
+`src/api/graphql.ts` sends generated document IDs to `/api/graphql` through the existing fetch and CSRF boundary. It
+preserves HTTP errors, validates execution envelopes and never repeats a request after an execution fault. Account
+confirmation creates or reuses the environment from `src/lib/relay/environment.ts`. Account replacement or loss aborts
+old requests and clears old records before another account can publish. CSRF tokens stay outside Relay records. No
+custom scalar or editing snapshot is exposed by the viewer operation.

@@ -17,3 +17,4 @@
 
 - [REV-DESIGN-0006](design/0006-api-error-contract-and-openapi.md): API error contract and OpenAPI
 - [REV-DESIGN-0007](design/0007-conditional-requests-and-optimistic-concurrency.md): Conditional requests and optimistic concurrency
+- [REV-DESIGN-0031](design/0031-graphql-execution-and-relay-browser-data.md): GraphQL execution and Relay browser data
