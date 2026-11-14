@@ -1,0 +1,97 @@
+# Changelog
+
+## 0.1.0 (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **auth:** The API no longer accepts identity-provider access tokens, and the `REVERIE_RESOURCE_SERVER_*` settings are removed. API clients must use Reverie-issued scoped tokens instead. OIDC browser sign-in remains supported.
+
+### Features
+
+* **auth:** let account holders choose their own passwords ([#1510](https://github.com/unkos-dev/reverie/issues/1510)) ([574ada6](https://github.com/unkos-dev/reverie/commit/574ada64a4f05abdd06fe195b95a82c14ff3aa69))
+* **auth:** recover accounts through verified email ([#1540](https://github.com/unkos-dev/reverie/issues/1540)) ([f61ba6c](https://github.com/unkos-dev/reverie/commit/f61ba6c5591bb6a79e7cc9dbfd956c57a31d1801))
+* **config:** accept credentials from mounted files ([#1360](https://github.com/unkos-dev/reverie/issues/1360)) ([49b2a9d](https://github.com/unkos-dev/reverie/commit/49b2a9dedd74f86366ae971608f7c691af9258bd))
+* **enrichment:** bound whole runs and rescue stale claims ([#1723](https://github.com/unkos-dev/reverie/issues/1723)) ([21160ba](https://github.com/unkos-dev/reverie/commit/21160ba1f4a7ba3bd170f720c8365abeff924190))
+* **enrichment:** list books whose enrichment is failing under bounded classes ([#1378](https://github.com/unkos-dev/reverie/issues/1378)) ([11b0d81](https://github.com/unkos-dev/reverie/commit/11b0d81e2224379e77e983d780cc17e5e92a0ef4))
+* **frontend:** add the admin settings screen ([#1377](https://github.com/unkos-dev/reverie/issues/1377)) ([a81374d](https://github.com/unkos-dev/reverie/commit/a81374d870267f11f47ce29b526d450a18b1c0c7))
+* **frontend:** establish the new palette and type foundation ([#1845](https://github.com/unkos-dev/reverie/issues/1845)) ([7231c32](https://github.com/unkos-dev/reverie/commit/7231c328afcff23254205573f6d5b2b042690e92))
+* **ingestion:** expose admission control and runtime blockers ([#1459](https://github.com/unkos-dev/reverie/issues/1459)) ([132c3eb](https://github.com/unkos-dev/reverie/commit/132c3eb051179398e0eeee46d5cf38b689fcb11a))
+* **ingestion:** list files skipped as duplicates ([#1487](https://github.com/unkos-dev/reverie/issues/1487)) ([25be5a9](https://github.com/unkos-dev/reverie/commit/25be5a92cd0c412676e56f675b56b3b14e5df697))
+* **ingestion:** list inputs needing attention under bounded reason classes ([#1376](https://github.com/unkos-dev/reverie/issues/1376)) ([9143da3](https://github.com/unkos-dev/reverie/commit/9143da3a152006582069b2d36b836d593bb3ae33))
+* **ingestion:** make import suspension visible ([#1461](https://github.com/unkos-dev/reverie/issues/1461)) ([85fff85](https://github.com/unkos-dev/reverie/commit/85fff85f59ebb7348d50f03627fa615fbff0b982))
+* **ingestion:** retry failure groups without bypassing scheduling ([#1464](https://github.com/unkos-dev/reverie/issues/1464)) ([d9767e7](https://github.com/unkos-dev/reverie/commit/d9767e739db67bbedac7aa763b001b98669b6eda))
+* **library:** protect edit baselines and table Undo ([#1764](https://github.com/unkos-dev/reverie/issues/1764)) ([fffaafb](https://github.com/unkos-dev/reverie/commit/fffaafbea5376de4fbdd6298c86ad32a753682f7))
+* **library:** render the Library table on React Aria for columns that fill and rows that fit ([#1800](https://github.com/unkos-dev/reverie/issues/1800)) ([e77316a](https://github.com/unkos-dev/reverie/commit/e77316ad235513239f36c70e34121a2d3ead4bf9))
+* **library:** reorder authors without re-entering names ([#1807](https://github.com/unkos-dev/reverie/issues/1807)) ([61ebd23](https://github.com/unkos-dev/reverie/commit/61ebd2306c44bebd4a9f2759ed5a7d8d8609f593))
+* **metadata:** preserve independent ISBNs in EPUB writeback ([#1709](https://github.com/unkos-dev/reverie/issues/1709)) ([a26cc94](https://github.com/unkos-dev/reverie/commit/a26cc948e4ee0a93cf9c776c66441a0adbaca5cb))
+* **metadata:** preserve supplied ISBN values independently ([#1690](https://github.com/unkos-dev/reverie/issues/1690)) ([3e8f304](https://github.com/unkos-dev/reverie/commit/3e8f304d0951d47aa18897f98164423969099244))
+* **metadata:** surface ISBN corrections and formatted partial matches ([#1716](https://github.com/unkos-dev/reverie/issues/1716)) ([719ae44](https://github.com/unkos-dev/reverie/commit/719ae44c216f54f2c4fc614c31b219072fa029df))
+* **runtime:** recover failed background workers ([#1452](https://github.com/unkos-dev/reverie/issues/1452)) ([d06786e](https://github.com/unkos-dev/reverie/commit/d06786e9c9505edb19130caea1050c1ba3d18417))
+* **settings:** require If-Match on PUT /api/v1/settings ([#1369](https://github.com/unkos-dev/reverie/issues/1369)) ([4aeb4b8](https://github.com/unkos-dev/reverie/commit/4aeb4b83f0331c96efbb47fea2967e4860bb9d30))
+* **ui:** add ingestion scan control, grouped failure lists and empty-library guidance ([#1391](https://github.com/unkos-dev/reverie/issues/1391)) ([5114156](https://github.com/unkos-dev/reverie/commit/511415697e4f8e3c11409de760005e6227f13421))
+
+
+### Bug Fixes
+
+* **auth:** bound hashing before acquiring login connections ([#1504](https://github.com/unkos-dev/reverie/issues/1504)) ([f0e30d0](https://github.com/unkos-dev/reverie/commit/f0e30d05802eb80244265e557ee6c0be049f9e72))
+* **auth:** prevent replay and competing sign-ins ([#1477](https://github.com/unkos-dev/reverie/issues/1477)) ([635f440](https://github.com/unkos-dev/reverie/commit/635f4400d9a0e672a59a2df1f3cc19460fbf2cf8))
+* **auth:** prevent stale changes and inconsistent password policy ([#1328](https://github.com/unkos-dev/reverie/issues/1328)) ([ed5ae89](https://github.com/unkos-dev/reverie/commit/ed5ae8996c146f663f32c05c84f9c9097ef5c27e))
+* **auth:** prevent verification through account blocks ([#1500](https://github.com/unkos-dev/reverie/issues/1500)) ([89ad785](https://github.com/unkos-dev/reverie/commit/89ad785f1c81d7816330773bb45b5e21f1e1aecf))
+* **auth:** refuse a disabled account before an OIDC login writes to it ([#1371](https://github.com/unkos-dev/reverie/issues/1371)) ([be641f4](https://github.com/unkos-dev/reverie/commit/be641f490651ec8635e53cf3beb5683ee649cc65))
+* **auth:** refuse an OIDC sign-in whose email belongs to another account ([#1389](https://github.com/unkos-dev/reverie/issues/1389)) ([144d156](https://github.com/unkos-dev/reverie/commit/144d156423942f2ed0b0e768138bffd1ff52a27c))
+* **auth:** return OIDC failures to sign-in recovery ([#1484](https://github.com/unkos-dev/reverie/issues/1484)) ([6618a19](https://github.com/unkos-dev/reverie/commit/6618a194f40dcf06967df4d990f420e154205b66))
+* **ci:** run CodeQL nightly and stop repeating jobs on main pushes ([#1813](https://github.com/unkos-dev/reverie/issues/1813)) ([82edef8](https://github.com/unkos-dev/reverie/commit/82edef88a9c12a235124bac7791aa1e79acb122c))
+* **ci:** run Rust build scripts during CodeQL extraction ([#1364](https://github.com/unkos-dev/reverie/issues/1364)) ([b211427](https://github.com/unkos-dev/reverie/commit/b211427643afa82682ac733de3af88a461a17c20))
+* **config:** keep credentials out of diagnostic output ([#1344](https://github.com/unkos-dev/reverie/issues/1344)) ([cd9af72](https://github.com/unkos-dev/reverie/commit/cd9af72c31910c85a59019811fd906dd72a28c83))
+* **db:** isolate verification and remove credential defaults ([#1353](https://github.com/unkos-dev/reverie/issues/1353)) ([4c942cc](https://github.com/unkos-dev/reverie/commit/4c942ccd35145bce5d750df7297b3ad62b570921))
+* **deps:** keep OIDC tests working with RSA 0.10 ([#1791](https://github.com/unkos-dev/reverie/issues/1791)) ([4ea74d5](https://github.com/unkos-dev/reverie/commit/4ea74d54ebedd551d2439c2b646d4af4ff1f56d1))
+* **deps:** patch ctutils and accept assessed crypto-bigint risk ([#1570](https://github.com/unkos-dev/reverie/issues/1570)) ([5a0a745](https://github.com/unkos-dev/reverie/commit/5a0a745aefb3aebcf9f5d5553d00509cff247c2a))
+* **deps:** prevent split Playwright versions and stalled dialog focus ([#1790](https://github.com/unkos-dev/reverie/issues/1790)) ([6235d32](https://github.com/unkos-dev/reverie/commit/6235d323933ec003093cec04000fc9a2c6363f0c))
+* **deps:** reject distrusted certificate chains ([#1513](https://github.com/unkos-dev/reverie/issues/1513)) ([20d40ed](https://github.com/unkos-dev/reverie/commit/20d40ed8f02edc608f4b4da8c9d50d0f8fd51079))
+* **deps:** resolve mise aqua tool updates from GitHub releases ([#1613](https://github.com/unkos-dev/reverie/issues/1613)) ([73b09ad](https://github.com/unkos-dev/reverie/commit/73b09ad513d8d126a38b5f0ed35208a71204e6f1))
+* **deps:** update dependency nuqs to v2.10.2 ([#1422](https://github.com/unkos-dev/reverie/issues/1422)) ([d5f744a](https://github.com/unkos-dev/reverie/commit/d5f744af31680872cb8799c051ea66842be3390a))
+* **deps:** update dependency react-data-grid to v7.0.0-beta.62 ([#1546](https://github.com/unkos-dev/reverie/issues/1546)) ([352a4ce](https://github.com/unkos-dev/reverie/commit/352a4ce96d38b0a141675465d8408e902b0bb883))
+* **deps:** update dependency react-data-grid to v7.0.0-beta.63 ([#1617](https://github.com/unkos-dev/reverie/issues/1617)) ([079a2a4](https://github.com/unkos-dev/reverie/commit/079a2a425939b1db9774cc9f0b3cc29509824b25))
+* **deps:** update dependency starlight-openapi to ^0.27.0 ([#1401](https://github.com/unkos-dev/reverie/issues/1401)) ([392803a](https://github.com/unkos-dev/reverie/commit/392803a98214ac8948a828ffb99ad9bc5f6bb77a))
+* **deps:** update react-data-grid to v7.0.0-beta.64 ([#1781](https://github.com/unkos-dev/reverie/issues/1781)) ([ce6eff7](https://github.com/unkos-dev/reverie/commit/ce6eff79e2eed723020767d7bf226b83f113f2bd))
+* **deps:** update rust crate redactable to v0.14.1 ([#1537](https://github.com/unkos-dev/reverie/issues/1537)) ([4d4d9fa](https://github.com/unkos-dev/reverie/commit/4d4d9fafdaeadba013592964e94a34dd5ae778c4))
+* **deps:** update rust crate redactable to v0.15.0 ([#1583](https://github.com/unkos-dev/reverie/issues/1583)) ([46c96f2](https://github.com/unkos-dev/reverie/commit/46c96f24f6596df07ca325eb386baf122c3c1abc))
+* **deps:** update rust crate redactable to v0.15.2 ([#1600](https://github.com/unkos-dev/reverie/issues/1600)) ([1188523](https://github.com/unkos-dev/reverie/commit/118852393a63e0d61adb1e0350e015ad8a302bf3))
+* **deps:** update rust crate resvg to 0.49 ([#1602](https://github.com/unkos-dev/reverie/issues/1602)) ([d48add7](https://github.com/unkos-dev/reverie/commit/d48add749564e68ceba20bee5b446deaa9da5a9d))
+* **deps:** update rust crate zip to v9 ([#1463](https://github.com/unkos-dev/reverie/issues/1463)) ([a996473](https://github.com/unkos-dev/reverie/commit/a9964735cb11ddd608272188f2f13e70194e95bd))
+* **enrichment:** keep Google Books keys out of source errors ([#1345](https://github.com/unkos-dev/reverie/issues/1345)) ([da964a6](https://github.com/unkos-dev/reverie/commit/da964a6103b62d0d651203793df1693e46ae3ea8))
+* **enrichment:** record a rate-limit deferral apart from the attempt time ([#1409](https://github.com/unkos-dev/reverie/issues/1409)) ([7871d6d](https://github.com/unkos-dev/reverie/commit/7871d6dbde31f22cf5065fd8f462e00cc97c80d5))
+* **frontend:** comply with locale-aware sorting rule ([#1431](https://github.com/unkos-dev/reverie/issues/1431)) ([386b7b3](https://github.com/unkos-dev/reverie/commit/386b7b35eb3fc280470331ee31e8bfd6572aa3cc))
+* **git:** make the worktree recipes work from any worktree ([#1803](https://github.com/unkos-dev/reverie/issues/1803)) ([09004a4](https://github.com/unkos-dev/reverie/commit/09004a4133505a6774992b7610885f98d0b9a58b))
+* **ingestion:** keep concurrent bulk retries from resetting the same inputs ([#1703](https://github.com/unkos-dev/reverie/issues/1703)) ([fe3ff3b](https://github.com/unkos-dev/reverie/commit/fe3ff3b29224172f9260cbbb4b5359813d730a6a))
+* **ingestion:** refuse startup without dedicated credentials ([#1327](https://github.com/unkos-dev/reverie/issues/1327)) ([65bdbad](https://github.com/unkos-dev/reverie/commit/65bdbadad4695bee7327d1dd26e080928a9c2f6f))
+* **ingestion:** reject corrupt EPUBs instead of importing them ([#1398](https://github.com/unkos-dev/reverie/issues/1398)) ([fa6f895](https://github.com/unkos-dev/reverie/commit/fa6f895bac36bc8733b4f6ec2ac2cd417156e668))
+* **ingestion:** release test ownership before the next scan ([#1444](https://github.com/unkos-dev/reverie/issues/1444)) ([79effc8](https://github.com/unkos-dev/reverie/commit/79effc857202635f0fcdf15bdda4a722b441cb51))
+* **library:** answer 422 for sort violations after decode ([#1372](https://github.com/unkos-dev/reverie/issues/1372)) ([88d006c](https://github.com/unkos-dev/reverie/commit/88d006c92795b04d4268845f8936e55d98d4149f))
+* **metadata:** bind validators to canonical change identity ([#1760](https://github.com/unkos-dev/reverie/issues/1760)) ([bbb7c52](https://github.com/unkos-dev/reverie/commit/bbb7c528a819559b6830356967cd8b089fcd51d3))
+* **metadata:** honour edition locks on manual writes ([#1759](https://github.com/unkos-dev/reverie/issues/1759)) ([3763bc2](https://github.com/unkos-dev/reverie/commit/3763bc288c50a3a35e90169fac8f1fe6b8cb8c33))
+* **metadata:** keep clear confirmation interactive on submission ([#1664](https://github.com/unkos-dev/reverie/issues/1664)) ([e865157](https://github.com/unkos-dev/reverie/commit/e865157b4c24de3036a897a7841ff631ac8cd56f))
+* **metadata:** keep unrelated identifiers out of ISBN extraction ([#1702](https://github.com/unkos-dev/reverie/issues/1702)) ([9fa46f2](https://github.com/unkos-dev/reverie/commit/9fa46f2b5fa44db9a716db9b551ddd8e6bf0b3ab))
+* **metadata:** preserve provenance through exact field undo ([#1762](https://github.com/unkos-dev/reverie/issues/1762)) ([e2d3ed1](https://github.com/unkos-dev/reverie/commit/e2d3ed17036c857fc7a2441846d595eb826b94a6))
+* **metadata:** preserve publication date precision ([#1663](https://github.com/unkos-dev/reverie/issues/1663)) ([898f4e8](https://github.com/unkos-dev/reverie/commit/898f4e8dad396821b91e4161eb0ebfc7520d7048))
+* **metadata:** preserve shared vocabulary spelling ([#1758](https://github.com/unkos-dev/reverie/issues/1758)) ([9c539e9](https://github.com/unkos-dev/reverie/commit/9c539e9953f3f3d0e09f0deaedf5dd3df973c99e))
+* **metadata:** recognise equivalent Unicode observations ([#1822](https://github.com/unkos-dev/reverie/issues/1822)) ([75e0ffb](https://github.com/unkos-dev/reverie/commit/75e0ffb0495dab10dce3a7d45a89b83ba5988e07))
+* **opds:** preserve challenges for configured realms ([#1821](https://github.com/unkos-dev/reverie/issues/1821)) ([e59b061](https://github.com/unkos-dev/reverie/commit/e59b06156fe1dd02632cf5e780f92467f7daa72e))
+* **openapi:** declare the extractor failure statuses on every operation ([#1388](https://github.com/unkos-dev/reverie/issues/1388)) ([19b2334](https://github.com/unkos-dev/reverie/commit/19b2334b81dadb1e6dcb917a071f5ba0cf9c70e0))
+* **openapi:** publish existing request bounds ([#1445](https://github.com/unkos-dev/reverie/issues/1445)) ([6db251a](https://github.com/unkos-dev/reverie/commit/6db251a3ec56e1a0c0f5ad0d76a6dfee4bbeb2af))
+* **scripts:** exit with the wrapped command's status from the Postgres provisioner ([#1552](https://github.com/unkos-dev/reverie/issues/1552)) ([a408a02](https://github.com/unkos-dev/reverie/commit/a408a02ef5d9a0aaea2b995cf03a6317a47560ea))
+* **series:** keep child catalogues within visible books ([#1623](https://github.com/unkos-dev/reverie/issues/1623)) ([f07c30a](https://github.com/unkos-dev/reverie/commit/f07c30a0f7fa68b849a23e880cd99975ac2dee09))
+* **settings:** require at least one accepted ingestion format ([#1411](https://github.com/unkos-dev/reverie/issues/1411)) ([b57524a](https://github.com/unkos-dev/reverie/commit/b57524ace4f2c1d75fe8592cc124364ba1cb2f9d))
+* **test:** preserve nextest filter arguments ([#1348](https://github.com/unkos-dev/reverie/issues/1348)) ([4976813](https://github.com/unkos-dev/reverie/commit/49768131b64d17f4c8dd1bdbc56229890d33f4c5))
+* **tests:** avoid blocking the migration test runtime ([#1432](https://github.com/unkos-dev/reverie/issues/1432)) ([b05d8d6](https://github.com/unkos-dev/reverie/commit/b05d8d6641cc87c88e851c06a1cac7b70d8a62a4))
+* **tooling:** preserve local plans before linking shared storage ([#1625](https://github.com/unkos-dev/reverie/issues/1625)) ([0d83e0f](https://github.com/unkos-dev/reverie/commit/0d83e0fa8baa1884238ed8dd6cfc1c24cd51c636))
+* **tooling:** provision externally created worktrees consistently ([#1606](https://github.com/unkos-dev/reverie/issues/1606)) ([cec97b1](https://github.com/unkos-dev/reverie/commit/cec97b1593407f33760b7e40a50bbd4052d1cf1f))
+* **ui:** preserve native selection and focus composition ([#1511](https://github.com/unkos-dev/reverie/issues/1511)) ([31b14e1](https://github.com/unkos-dev/reverie/commit/31b14e12002f00b8066c7b2a0b5b19c67339a651))
+* **ui:** send the user to sign in when a mutation answers 401 ([#1373](https://github.com/unkos-dev/reverie/issues/1373)) ([cfecdb5](https://github.com/unkos-dev/reverie/commit/cfecdb55b396f0539dca46ed2aedc7c60522c9d9))
+* **users:** synchronise child status with role changes ([#1507](https://github.com/unkos-dev/reverie/issues/1507)) ([6c64fe4](https://github.com/unkos-dev/reverie/commit/6c64fe4270a89a30420ed5885c9f480cd96fa041))
+
+
+### Code Refactoring
+
+* **auth:** limit API credentials to Reverie-issued tokens ([#1440](https://github.com/unkos-dev/reverie/issues/1440)) ([85cb619](https://github.com/unkos-dev/reverie/commit/85cb6190290730341a62e2bfef96f930e8a4ffed))
