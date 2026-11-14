@@ -18,7 +18,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-fit items-center justify-between gap-1.5 rounded-[9px] border border-border-control bg-surface py-1 pr-2 pl-2.5 text-sm text-fg whitespace-nowrap transition-colors data-hovered:bg-surface-2 data-pressed:bg-surface-3 data-disabled:opacity-50 data-invalid:border-danger data-invalid:text-danger-text data-[size=default]:h-[34px] data-[size=sm]:h-7",
+        "flex w-fit items-center justify-between gap-1.5 rounded-[9px] border border-border-control bg-transparent dark:bg-surface py-1 pr-2 pl-2.5 text-sm text-fg whitespace-nowrap transition-colors data-hovered:bg-surface dark:data-hovered:bg-surface-2 data-pressed:bg-surface-3 data-disabled:opacity-50 in-[[data-invalid]]:border-danger data-invalid:border-danger data-invalid:text-danger-text data-[size=default]:h-[34px] data-[size=sm]:h-7",
         typeof className === "string" ? className : undefined,
       )}
       {...props}

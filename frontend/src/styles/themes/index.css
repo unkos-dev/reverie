@@ -82,7 +82,7 @@
   --surface-3: var(--neutral-5);
   --border: var(--hairline);
   --border-strong: var(--neutral-7);
-  --border-control: var(--neutral-12);
+  --border-control: var(--neutral-9);
   --fg: var(--neutral-12);
   --fg-muted: var(--neutral-11);
   --fg-faint: color-mix(in srgb, var(--fg-muted) 85%, var(--sheet-ground));
@@ -102,6 +102,7 @@
 }
 
 [data-theme="light"] {
+  --border-control: var(--neutral-10);
   --fg-faint: color-mix(in srgb, var(--fg-muted) 94%, var(--sheet-ground));
 }
 
