@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getDashboardActivity, getDashboardStats } from "@/api/dashboard";
 import { getInputCounts } from "@/api/ingestion";
 import { useAuthMe } from "@/hooks/useAuthMe";
+import { ACTIVITY_LIMIT } from "@/lib/ingestion";
 import { queryKeys } from "@/lib/query/keys";
 
 export function useShellIngestion(): {
@@ -13,10 +14,10 @@ export function useShellIngestion(): {
   const { data: me } = useAuthMe();
   const enabled = me?.role === "admin";
   const activity = useQuery({
-    queryKey: queryKeys.dashboard.activity(1),
-    queryFn: ({ signal }) => getDashboardActivity(1, signal),
+    queryKey: queryKeys.dashboard.activity(ACTIVITY_LIMIT),
+    queryFn: ({ signal }) => getDashboardActivity(ACTIVITY_LIMIT, signal),
     enabled,
-    refetchInterval: (query) => (query.state.data?.batches[0]?.ended_at === null ? 3000 : false),
+    refetchInterval: (query) => (query.state.data?.batches[0]?.ended_at === null ? 3000 : 30_000),
     refetchOnWindowFocus: true,
   });
   const scanRunning = activity.data?.batches[0]?.ended_at === null;
@@ -30,7 +31,7 @@ export function useShellIngestion(): {
         (entry) => entry.status === "in_progress" && entry.count > 0,
       )
         ? 3000
-        : false,
+        : 30_000,
     refetchOnWindowFocus: true,
   });
   const enrichmentRunning =
