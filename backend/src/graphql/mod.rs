@@ -1,6 +1,7 @@
 //! Authenticated GraphQL execution with build-generated document admission.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use async_graphql::{Context, EmptyMutation, EmptySubscription, ErrorExtensions, Object, Schema};
 use async_graphql_axum::GraphQLResponse;
@@ -145,7 +146,11 @@ struct Envelope {
     variables: serde_json::Map<String, serde_json::Value>,
 }
 
-fn document(envelope: &Envelope, policy: ExecutionPolicy) -> Result<String, AppError> {
+fn document(
+    envelope: &Envelope,
+    policy: ExecutionPolicy,
+    documents: &BTreeMap<String, String>,
+) -> Result<String, AppError> {
     // THREAT: submitted text never registers itself in the production document map.
     if policy == ExecutionPolicy::Production && envelope.query.is_some() {
         return Err(AppError::Validation(
@@ -153,9 +158,6 @@ fn document(envelope: &Envelope, policy: ExecutionPolicy) -> Result<String, AppE
         ));
     }
     if let Some(id) = &envelope.id {
-        let documents: BTreeMap<String, String> =
-            serde_json::from_str(include_str!("../../graphql-documents.json"))
-                .map_err(|error| AppError::Internal(error.into()))?;
         return documents
             .get(id)
             .cloned()
@@ -175,6 +177,7 @@ fn document(envelope: &Envelope, policy: ExecutionPolicy) -> Result<String, AppE
 struct Service {
     schema: AppSchema,
     policy: ExecutionPolicy,
+    documents: Arc<BTreeMap<String, String>>,
 }
 
 #[utoipa::path(
@@ -192,7 +195,7 @@ async fn execute(
     user: CurrentUser,
     ApiJson(envelope): ApiJson<Envelope>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
-    let text = document(&envelope, service.policy)?;
+    let text = document(&envelope, service.policy, &service.documents)?;
     let mut request = async_graphql::Request::new(text)
         .variables(async_graphql::Variables::from_json(
             serde_json::Value::Object(envelope.variables),
@@ -218,11 +221,18 @@ async fn execute(
 
 pub(crate) fn router() -> OpenApiRouter<AppState> {
     let policy = ExecutionPolicy::for_build();
+    #[expect(
+        clippy::expect_used,
+        reason = "The embedded trusted-document map is generated as valid JSON and drift-checked."
+    )]
+    let documents = serde_json::from_str(include_str!("../../graphql-documents.json"))
+        .expect("The embedded trusted-document map must be valid JSON.");
     OpenApiRouter::new()
         .routes(routes!(execute))
         .layer(Extension(Service {
             schema: schema(policy),
             policy,
+            documents: Arc::new(documents),
         }))
 }
 
@@ -360,7 +370,7 @@ mod tests {
         for id in documents.keys() {
             let envelope = serde_json::from_value(json!({"id":id})).unwrap();
             assert_eq!(
-                document(&envelope, ExecutionPolicy::Production).unwrap(),
+                document(&envelope, ExecutionPolicy::Production, &documents).unwrap(),
                 documents[id]
             );
             let response = server
@@ -377,7 +387,7 @@ mod tests {
             json!({"id":documents.keys().next().unwrap(),"query":"{ __typename }"}),
         ] {
             let envelope = serde_json::from_value(request).unwrap();
-            assert!(document(&envelope, ExecutionPolicy::Production).is_err());
+            assert!(document(&envelope, ExecutionPolicy::Production, &documents).is_err());
         }
         for (policy, introspection_allowed) in [
             (ExecutionPolicy::Development, true),
