@@ -8,7 +8,7 @@ export function Link({ className, ...props }: LinkProps): ReactElement {
     <AriaLink
       {...props}
       className={composeRenderProps(className, (value) => cn(
-        "inline-flex items-center justify-center gap-2 rounded-sm border border-transparent text-sm font-medium text-fg-muted outline-none transition-colors data-hovered:bg-surface-2 data-hovered:text-fg aria-[current=page]:border-border-control aria-[current=page]:bg-surface-2 aria-[current=page]:text-fg dark:data-hovered:bg-bar-raised dark:aria-[current=page]:bg-bar-raised motion-reduce:transition-none",
+        "inline-flex items-center justify-center gap-2 rounded-sm border border-transparent text-sm font-medium text-fg-muted outline-none transition-colors data-hovered:bg-surface-2 data-hovered:text-fg aria-[current=page]:border-border-control aria-[current=page]:bg-surface-2 aria-[current=page]:text-fg dark:data-hovered:bg-bar-raised dark:aria-[current=page]:border-bar-raised-border dark:aria-[current=page]:bg-bar-raised motion-reduce:transition-none",
         value,
       ))}
     />
