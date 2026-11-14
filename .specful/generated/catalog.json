@@ -67,7 +67,10 @@
       "id": "REV-ADR-0010",
       "kind": "adr",
       "path": "docs/adr/0010-frontend-data-layer-dependencies-react-query-and-dnd-kit.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0077"
+      ],
       "title": "Frontend data-layer dependencies: React Query and dnd-kit"
     },
     {
@@ -109,7 +112,10 @@
       "id": "REV-ADR-0016",
       "kind": "adr",
       "path": "docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0077"
+      ],
       "title": "API versioning by URL path with OpenAPI as the contract"
     },
     {
@@ -599,6 +605,17 @@
       "title": "One reserved error colour for states that need action"
     },
     {
+      "id": "REV-ADR-0077",
+      "kind": "adr",
+      "path": "docs/adr/0077-graphql-and-relay-for-browser-application-data.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0010",
+        "REV-ADR-0016"
+      ],
+      "title": "GraphQL and Relay for browser application data"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0062",
@@ -677,7 +694,7 @@
     {
       "governed-by": [
         "REV-ADR-0011",
-        "REV-ADR-0016"
+        "REV-ADR-0077"
       ],
       "id": "REV-DESIGN-0006",
       "kind": "design",

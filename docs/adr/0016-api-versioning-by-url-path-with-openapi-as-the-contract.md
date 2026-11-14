@@ -3,11 +3,13 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0016"
 title: "API versioning by URL path with OpenAPI as the contract"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-05"
 decided-on: "2026-06-08"
 decision-makers:
   - "John Unkovich"
+superseded-by:
+  - "REV-ADR-0077"
 ---
 
 # API versioning by URL path with OpenAPI as the contract

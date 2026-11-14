@@ -34,13 +34,14 @@ does not justify keeping it when the chosen tool meets the requirement.
 
 - **Function components:** Write components as functions. Component-level error boundaries use `react-error-boundary`;
   routes use React Router's `errorElement`.
-- **Server state:** API calls live in `src/api/`, and lint bans `fetch` elsewhere. Fetching, caching and mutations go
-  through React Query, never `useState` or `useEffect`.
-- **Recovery:** Use TanStack Query's ordinary mutation/query lifecycle for pending, success and error handling. Use
-  confirmed mutation data where sufficient. Where recovery needs authoritative state, reconcile through existing
-  invalidation, targeted refetch and reconnect behaviour. Preserve input and reconcile obsolete feedback with fresh
-  data. An alternative request/recovery mechanism needs evidence that supported defaults cannot meet the required
-  behaviour and the repository's scope approval.
+- **Server state:** API transport lives in `src/api/`, and lint bans `fetch` elsewhere. Migrated GraphQL application
+  data uses Relay; remaining HTTP application data uses React Query. Each migrated workflow has one server-state owner.
+  Drafts and interaction state stay with their owning components.
+- **Recovery:** Use the owning data library's normal query and mutation lifecycle. Preserve confirmed mutation data,
+  authoritative recovery, pending input and matched editing baselines. A shared-cache update never advances a retained
+  draft's write precondition. Ordinary save recovery never automatically replays a write. An explicit Library Retry
+  resends the retained failed edit under its original baseline and the canonical request-resolution contract. Exact Undo
+  retains its existing session-bound eligibility and resolution contract.
 - **Effects:** Keep dependency arrays complete and never suppress the rule. Use `useEffectEvent` for non-reactive event
   logic an Effect calls, never to drop a dependency that should resynchronise the Effect. Return a cleanup when the
   Effect starts something that must be stopped or undone. Never pass an async function directly. An async Effect for
@@ -76,8 +77,9 @@ does not justify keeping it when the chosen tool meets the requirement.
   helpers may rely on inference.
 - **No enums:** `erasableSyntaxOnly` rejects them. Use `as const` objects and union types.
 - **Type assertions:** Assert only to narrow at a boundary the type system cannot see, with the reason beside it.
-- **Zod at boundaries:** Parse API response bodies, URL parameters and submitted `FormData` through a Zod schema before
-  use.
+- **Boundary validation:** Parse forms, URL inputs and retained REST response bodies through Zod before use. For
+  GraphQL, validate transport failures, execution-error envelopes, custom scalar formats and revision-bearing editing
+  snapshots before publication or use. Generated operation types alone are not runtime validation.
 - **Validate formats, not just types:** A response field with a declared format gets a validator for that format, not
   `z.string()`. Timestamps use bare `z.iso.datetime()`: the API emits `Z`-terminated RFC 3339, and `{ offset: true }`
   would also accept `+00:00`, which nothing produces. A malformed wire format once reached production through a

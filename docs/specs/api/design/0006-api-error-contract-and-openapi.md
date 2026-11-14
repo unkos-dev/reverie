@@ -10,7 +10,7 @@ satisfies:
   - "REV-REQ-0017"
 governed-by:
   - "REV-ADR-0011"
-  - "REV-ADR-0016"
+  - "REV-ADR-0077"
 ---
 
 # API error contract and OpenAPI
