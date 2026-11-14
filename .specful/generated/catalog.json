@@ -1724,6 +1724,15 @@
       "kind": "req",
       "path": "docs/specs/metadata/requirements/0078-a-timed-out-enrichment-run-releases-its-claim-safely.md",
       "title": "A timed-out enrichment run releases its claim safely"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0077"
+      ],
+      "id": "REV-REQ-0079",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0079-production-graphql-document-admission.md",
+      "title": "Production GraphQL document admission"
     }
   ]
 }

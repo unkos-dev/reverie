@@ -16,6 +16,9 @@ answered with a status in the 4xx or 5xx range, the response MUST carry the `app
 JSON body whose `type` field is a URI ending in one of a fixed, closed set of registered problem-type slugs (for example
 `.../not-found`, `.../validation`, `.../internal`).
 
+For `/api/graphql`, pre-execution HTTP failures MUST retain the same Problem Details contract. GraphQL execution faults
+MUST use an execution-error envelope with a stable registered domain classification and safe field messages.
+
 ## Rationale
 
 A caller that branches on error type needs `type` drawn from a closed, predictable set rather than free-form text, so it
@@ -44,3 +47,5 @@ string would defeat that: every consumer, including Reverie's own browser client
 - The `type` value is always the fixed base URI followed by the slug, never a bare slug or a different host per
   occurrence. Checked for two representative slugs by `problem_type_assembles_full_uri` in
   `backend/src/error/problems.rs`.
+- GraphQL transport failures carry Problem Details. Execution faults carry a stable classification in error extensions
+  and preserve safe field messages. Checked by `graphql_request_boundary`.

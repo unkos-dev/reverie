@@ -14,6 +14,9 @@ surface an error carrying that status, regardless of whether the response body i
 JSON, non-JSON text, or absent. For a well-formed Problem Details body, the error MUST preserve `type`, `title` and
 `detail`, together with an optional `errors` object mapping field names to strings, unchanged.
 
+For GraphQL calls, the browser MUST preserve non-2xx HTTP errors independently of execution faults. It MUST validate
+execution-error envelopes and preserve their stable domain classification and safe field messages before publication.
+
 ## Rationale
 
 The underlying browser `fetch` mechanism resolves for any HTTP response, success or failure alike, and does not itself
@@ -35,3 +38,6 @@ met. Surfacing the status unconditionally, independent of the body's shape, is w
 - A response whose body is not JSON at all still surfaces an error carrying the response's real status, falling back to
   the response's status text rather than failing to produce an error. Checked by
   `"non-JSON error body falls back to status-text title"` in the same file.
+- GraphQL network failures preserve HTTP status and safe Problem Details. Execution faults retain classification and
+  field messages, and malformed envelopes fail before publication. Checked in
+  `frontend/tests/browser/api/graphql.test.tsx`.

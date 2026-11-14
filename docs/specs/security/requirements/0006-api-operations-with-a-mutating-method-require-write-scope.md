@@ -14,6 +14,9 @@ governed-by:
 WHEN an `/api/v1` operation uses the `POST`, `PUT`, `PATCH` or `DELETE` method, it MUST refuse any credential that does
 not carry at least `write` scope, unless the operation is `POST /api/v1/manifestations/{id}/enrichment/dry-run`.
 
+For GraphQL, queries MUST require at least `read` scope and mutations MUST require at least `write` scope, or the higher
+scope the field declares. HTTP POST alone MUST NOT make a query require write scope.
+
 ## Rationale
 
 `read` is the floor every valid credential carries, and the mutating methods are how the API changes stored data. If an
@@ -31,3 +34,5 @@ write their responses to `api_cache`; it changes no manifestation.
 - A credential carrying only `read` is refused with `403` by every operation declared at `write` or higher, using device
   tokens. Checked by `read_token_blocked_from_every_mutation`.
 - `POST /api/v1/manifestations/{id}/enrichment/dry-run` declares `read` and is reachable with a `read` credential.
+- A read-scoped credential can execute a GraphQL query over POST. A GraphQL operation cannot bypass the scope its root
+  field declares. Checked by `graphql_request_boundary`.

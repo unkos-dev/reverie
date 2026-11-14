@@ -14,6 +14,9 @@ governed-by:
 Every operation under `/api/v1` MUST refuse a request unless the request's credential carries the scope the operation
 declares, or a higher scope in the order `read` < `write` < `admin`.
 
+Every GraphQL root field MUST declare and enforce its required scope independently of the HTTP method. Scope checks MUST
+preserve independent role, child-status, ownership and credential-ceiling restrictions.
+
 ## Rationale
 
 A narrowed credential, such as a read-only automation token, is a guarantee only if every operation checks the scope it
@@ -32,3 +35,5 @@ or enforced one level looser than declared, would give that credential capabilit
 - A credential carrying no scope is refused with `401` at authentication for every `/api/v1` operation, and no operation
   runs. Checked by `scopeless_token_rejected_by_every_op`, which writes an empty-scope token directly through the model
   layer so the check covers the authentication step itself.
+- Every GraphQL root field declares its scope and refuses an insufficient credential without refusing a credential
+  holding the declared scope or a higher scope. Checked by `graphql_request_boundary`.
