@@ -119,8 +119,8 @@ importers:
         specifier: 3.0.0
         version: 3.0.0
       '@rolldown/plugin-babel':
-        specifier: 0.3.0
-        version: 0.3.0(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19)
+        specifier: 0.3.1
+        version: 0.3.1(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19)
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.5(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))
@@ -147,7 +147,7 @@ importers:
         version: 20.1.1
       '@vitejs/plugin-react':
         specifier: ^6.0.3
-        version: 6.3.0(@rolldown/plugin-babel@0.3.0(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19))(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(oxc-transform-react@0.156.0)
+        version: 6.3.0(@rolldown/plugin-babel@0.3.1(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19))(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(oxc-transform-react@0.156.0)
       '@vitest/browser-playwright':
         specifier: 'catalog:'
         version: 5.1.0(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(playwright@1.65.0)(vitest@5.1.0)
@@ -1651,8 +1651,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@rolldown/plugin-babel@0.3.0':
-    resolution: {integrity: sha512-cB9Z6aqn7i8Zflv1D4tyIy/wvnWt+QVUPX2e3Jxq/4fvdX+Xk2gQyNN2sfYscfLIZN1LCQbCl4olpf9Ki+U1zw==}
+  '@rolldown/plugin-babel@0.3.1':
+    resolution: {integrity: sha512-NVChbrs6m9iEEOqOdreNHRgmwq6KPNCrbzzQw+Eqtp3pPQgXSpiWrQwB8lUObZX+lXqmWAbpo9Q/Mp6yFgy8yg==}
     engines: {node: '>=22.12.0 || ^24.0.0'}
     peerDependencies:
       '@babel/core': ^7.29.0 || ^8.0.0-rc.1
@@ -6097,7 +6097,7 @@ snapshots:
   '@rolldown/binding-win32-x64-msvc@1.2.19':
     optional: true
 
-  '@rolldown/plugin-babel@0.3.0(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19)':
+  '@rolldown/plugin-babel@0.3.1(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19)':
     dependencies:
       '@babel/core': 7.29.13(supports-color@7.2.0)
       artichokie: 0.4.5
@@ -6550,12 +6550,12 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vitejs/plugin-react@6.3.0(@rolldown/plugin-babel@0.3.0(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19))(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(oxc-transform-react@0.156.0)':
+  '@vitejs/plugin-react@6.3.0(@rolldown/plugin-babel@0.3.1(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19))(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(oxc-transform-react@0.156.0)':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: '@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1)'
     optionalDependencies:
-      '@rolldown/plugin-babel': 0.3.0(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19)
+      '@rolldown/plugin-babel': 0.3.1(@babel/core@7.29.13(supports-color@7.2.0))(@babel/runtime@7.29.13)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19)
       oxc-transform-react: 0.156.0
 
   '@vitest/browser-playwright@5.1.0(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(playwright@1.65.0)(vitest@5.1.0)':
