@@ -25,7 +25,7 @@ function SwitchButton({
       data-slot="switch"
       data-size={size}
       className={composeRenderProps(className, (className) => cn(
-        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent bg-input transition-all outline-none after:absolute after:-inset-x-3 after:-inset-y-2 data-focus-visible:border-ring data-focus-visible:ring-3 data-focus-visible:ring-ring/50 data-invalid:border-destructive data-invalid:ring-3 data-invalid:ring-destructive/20 dark:data-invalid:border-destructive/50 dark:data-invalid:ring-destructive/40 data-[size=default]:h-[18.4px] data-[size=default]:w-[32px] data-[size=sm]:h-[14px] data-[size=sm]:w-[24px] data-selected:bg-primary dark:bg-input/80 dark:data-selected:bg-primary data-disabled:cursor-not-allowed data-disabled:opacity-50",
+        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border-[1.5px] border-border-control bg-surface transition-colors after:absolute after:-inset-x-3 after:-inset-y-2 data-hovered:bg-surface-2 data-pressed:bg-surface-3 data-invalid:border-danger data-invalid:text-danger-text data-[size=default]:h-5 data-[size=default]:w-9 data-[size=sm]:h-4 data-[size=sm]:w-7 data-selected:bg-accent data-selected:data-hovered:bg-accent-strong data-selected:data-pressed:bg-accent-strong data-selected:border-accent-text data-disabled:cursor-not-allowed data-disabled:opacity-50",
         className,
       ))}
     >
@@ -34,7 +34,7 @@ function SwitchButton({
           <span
             data-slot="switch-thumb"
             aria-hidden="true"
-            className="pointer-events-none block translate-x-0 rounded-full bg-background ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 group-data-selected/switch:translate-x-[calc(100%-2px)] dark:bg-foreground dark:group-data-selected/switch:bg-primary-foreground"
+            className="pointer-events-none block translate-x-px rounded-full bg-fg transition-transform group-data-[size=default]/switch:size-3.5 group-data-[size=sm]/switch:size-2.5 group-data-selected/switch:translate-x-[17px] group-data-[size=sm]/switch:group-data-selected/switch:translate-x-[13px] group-data-selected/switch:bg-fg-on-accent"
           />
           {children}
         </>
