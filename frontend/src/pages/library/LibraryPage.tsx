@@ -23,7 +23,6 @@ import {
   type ReactElement,
 } from "react";
 import { Link, matchPath } from "react-router";
-import { ToggleButton } from "react-aria-components";
 
 import {
   ApiError,
@@ -33,16 +32,12 @@ import {
   type SortLevelParam,
 } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
-import { Atmosphere } from "@/components/library/Atmosphere";
-import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
-import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { sortStackSummary } from "@/components/library/sort-summary";
 import { FilterRail } from "@/components/shell/FilterRail";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { useLibraryFilters } from "@/lib/hooks/use-library-filters";
 import { queryKeys, type BooksListKey } from "@/lib/query/keys";
 
@@ -243,7 +238,6 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
 export function LibraryPage(): ReactElement {
   const owner = useLibraryFilters();
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
-  const cinematic = useCinematicMode();
   const [overlay, setOverlay] = useState<OverlayState>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [hasRenderedControls, setHasRenderedControls] = useState(false);
@@ -316,19 +310,8 @@ export function LibraryPage(): ReactElement {
 
   return (
     <>
-      <Atmosphere />
-      <BookmarkRibbon />
-      <ToggleButton
-        isSelected={cinematic.active}
-        onChange={cinematic.setActive}
-        className="cinema-control bg-surface text-fg-muted border-border data-selected:text-fg rounded-md border px-3 py-2 font-mono text-xs uppercase tracking-wide outline-none"
-      >
-        {cinematic.active ? "Exit cinematic view" : "Cinematic view"}
-      </ToggleButton>
-      {/* Raise the browse content above the fixed atmosphere layers. */}
-      <div className="relative z-[2]">
+      <div>
         <div className="px-6 py-10 sm:px-10">
-          <LibraryMasthead />
           {/* Sort announcements stay mounted here: the filter drawer (which
               carries the sort section) unmounts when closed, and an
               unmounted live region is silent, which would leave
@@ -428,9 +411,6 @@ export function LibraryPage(): ReactElement {
               }}
             />
           ) : null}
-          <footer className="border-border text-fg-faint mt-16 border-t pt-6 text-center font-mono text-[0.68rem] uppercase tracking-[0.18em]">
-            Reverie · MMXXVI · Set in Author, Satoshi and JetBrains Mono
-          </footer>
         </div>
       </div>
 

@@ -51,13 +51,7 @@ export function BrowseLayout({
   onSheetOpenChange,
 }: Readonly<BrowseLayoutProps>): ReactElement {
   return (
-    <div
-      className={
-        railCollapsed
-          ? "cinematic-grid"
-          : "cinematic-grid xl:grid xl:grid-cols-[minmax(0,1fr)_264px]"
-      }
-    >
+    <div className={railCollapsed ? "" : "xl:grid xl:grid-cols-[minmax(0,1fr)_264px]"}>
       <div className="min-w-0">
         <SheetContent
           isOpen={sheetOpen}

@@ -11,7 +11,7 @@
 // the backend serves in the response `Content-Security-Policy` header — a
 // drift between source and CSP would fail-closed in the browser (script
 // refused, FOUC returns; not an exposure). The csp-hash plugin's closing-
-// script-tag guard (`/<\/script[\s/>]/i`) is load-bearing: a `</script`
+// script-tag guard (`/<\/script[\s/>]/i`) is load-bearing: a closing-script-tag
 // literal anywhere in this body — including inside a comment — would
 // escape the inline script element when injected into index.html and
 // execute as page-level HTML. Keep the body free of that pattern; the
@@ -24,7 +24,7 @@
 //   - Body must not contain a closing-script-tag literal (would terminate
 //     the surrounding inline script when injected into index.html); the
 //     csp-hash Vite plugin throws if it sees one.
-//   - try/catch fallback to "light" is the documented worst-case path
+//   - try/catch fallback to "dark" is the documented worst-case path
 //     (malformed cookie, parse error, or matchMedia failure).
 //
 // Cross-references:
@@ -51,12 +51,12 @@
     }
     document.documentElement.dataset.theme = effective;
   } catch (e) {
-    document.documentElement.dataset.theme = "light";
+    document.documentElement.dataset.theme = "dark";
     // Surface the failure so a regression in this hashed inline script
     // (e.g. d29a7cc which fixed a </'+'script literal that the catch
     // would otherwise have hidden) leaves a breadcrumb for debugging.
     if (window.console && window.console.warn) {
-      window.console.warn("[reverie] FOUC theme resolution failed; defaulting to light", e);
+      window.console.warn("[reverie] FOUC theme resolution failed; defaulting to dark", e);
     }
   }
 })();

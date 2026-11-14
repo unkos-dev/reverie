@@ -365,7 +365,6 @@ describe("LibraryPage", () => {
         cacheParams: { sort: "-pages" },
         extraCacheParams: [{}],
       });
-      await expect.element(page.getByRole("heading", { name: "Library" })).toBeInTheDocument();
       const user = userEvent;
       await user.click(page.getByRole("button", { name: /^Filters/ }));
       await expect.element(page.getByRole("dialog")).toBeInTheDocument();
