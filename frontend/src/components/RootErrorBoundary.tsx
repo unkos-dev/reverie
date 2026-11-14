@@ -72,7 +72,7 @@ type ErrorSurfaceProps = {
 function ErrorSurface({ title, detail }: Readonly<ErrorSurfaceProps>): ReactElement {
   return (
     <div className="bg-canvas text-fg flex min-h-screen items-center justify-center px-6 py-16">
-      <div className="border-border bg-surface-1 max-w-lg rounded-md border p-8 text-center">
+      <div className="border-border bg-surface max-w-lg rounded-md border p-8 text-center">
         <h1 className="font-display text-fg mb-3 text-2xl font-semibold tracking-tight">{title}</h1>
         <p className="text-fg-muted mb-6 text-sm leading-relaxed">{detail}</p>
         <div className="flex justify-center gap-3">

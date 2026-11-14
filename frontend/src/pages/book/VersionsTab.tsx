@@ -288,7 +288,7 @@ type CanonicalRowProps = {
 
 function CanonicalRow({ canonical }: Readonly<CanonicalRowProps>): ReactElement {
   return (
-    <li className="border-border bg-surface-1 flex items-start justify-between gap-4 rounded-sm border p-3">
+    <li className="border-border bg-surface flex items-start justify-between gap-4 rounded-sm border p-3">
       <div className="min-w-0 flex-1">
         <p className="text-fg-muted text-xs uppercase tracking-wide">Current</p>
         <p className="text-fg mt-1 break-words">

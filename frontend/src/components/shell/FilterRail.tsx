@@ -376,7 +376,7 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
           return (
             <div
               key={level.field}
-              className="border-border bg-surface-1 flex items-center gap-0.5 rounded-md border py-1 pl-2 pr-1 text-xs"
+              className="border-border bg-surface flex items-center gap-0.5 rounded-md border py-1 pl-2 pr-1 text-xs"
             >
               <span className="text-fg-muted font-mono">{index + 1}</span>
               <span className="text-fg mr-auto pl-1.5 font-medium">{label}</span>
