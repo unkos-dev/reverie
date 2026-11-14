@@ -14,8 +14,9 @@ governed-by:
 WHEN a request to a paginated JSON list endpoint under `/api/v1/` presents a cursor, the server MUST resume the page
 walk only if the cursor was minted by that same endpoint under the same sort stack and the same filter set as the
 request presents; a cursor minted by a different list endpoint, or under a different sort stack or filter set, MUST be
-refused with `422 Unprocessable Content` and MUST NOT be reinterpreted against the request's own sort or filter. The
-OPDS catalogue feeds are outside this obligation.
+refused with `422 Unprocessable Content` and MUST NOT be reinterpreted against the request's own sort or filter. GraphQL
+connections MUST likewise refuse a cursor unless its connection, parent, complete sort stack and complete filter set
+match, returning a classified validation fault without a page. The OPDS catalogue feeds are outside this obligation.
 
 ## Rationale
 
@@ -44,3 +45,6 @@ than skipping or repeating rows within it.
   `backend/src/routes/shelves/tests.rs`, and `shelf_rejects_foreign_tags` in `backend/src/routes/cursor.rs`.
 - A refused cursor never produces a page: the response carries no items. Checked by the same tests, each of which
   asserts the `422` status.
+- A GraphQL cursor with a different connection, parent, sort column, level order, direction or filter set produces a
+  validation fault and no page. Reordering values within a multi-valued filter preserves its identity. Checked by
+  `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.

@@ -14,7 +14,9 @@ governed-by:
 WHEN a request to `GET /api/v1/books` carries a `?sort=` value that names a column outside the endpoint's published sort
 vocabulary, names the same column more than once, or names more than three columns, the server MUST refuse the request
 with `422 Unprocessable Content` and MUST NOT build or execute a list query for it; only a column name from the
-published vocabulary MAY reach the ordering clause of any query the endpoint runs.
+published vocabulary MAY reach the ordering clause of any query the endpoint runs. GraphQL books connections MUST apply
+the same case-sensitive vocabulary and three-level bound before constructing a query, refusing unknown or repeated
+columns and excessive levels with a classified validation fault.
 
 ## Rationale
 
@@ -39,3 +41,7 @@ the three-level cap this obligation enforces.
 - The refusal happens before any query is built: the parse of the sort value completes, and fails, before the endpoint
   constructs its query. Satisfaction is determined by reading the handler's order of operations; no automated check
   asserts the absence of a query on the refusal path.
+- GraphQL sort requests naming an unknown or differently cased column, repeating a column in either direction, or naming
+  more than three levels produce a validation fault and no page. Checked by `graphql_cursor_contract` in
+  `backend/src/graphql/mod.rs`. GraphQL validation completes before query construction, determined by reading the
+  resolver and shared reader operation.
