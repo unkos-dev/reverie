@@ -237,5 +237,5 @@ count.
 
 The shell targets WCAG 2.2 AA. A skip-to-content link comes first in tab order. Primary navigation, admin navigation,
 and the filter drawer have accessible labels. The active primary destination carries `aria-current="page"`, and disabled
-entries have a visible **Planned** label. Interactive elements have consistent gold focus rings. Motion, including route
+entries have a visible **Planned** label. Interactive elements share one accent focus ring. Motion, including route
 crossfades and the ingestion activity line, respects `prefers-reduced-motion`.
