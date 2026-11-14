@@ -37,6 +37,8 @@ import { forgetActiveUser } from "@/lib/active-user";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import type { ThemePreference } from "@/lib/theme/cookie";
 
+import { useShellIngestion } from "./use-shell-ingestion";
+
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
@@ -47,6 +49,7 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 export function UserChip(): ReactElement | null {
   const { data: me } = useAuthMe();
   const { preference, failure, setPreference } = useTheme();
+  const { attention } = useShellIngestion();
   if (me === undefined) return null;
 
   function handleSignOut(): void {
@@ -83,6 +86,29 @@ export function UserChip(): ReactElement | null {
           </span>
         </Button>
         <DropdownMenuContent placement="bottom end" className="w-56">
+          {me.role === "admin" ? (
+            <DropdownMenuGroup aria-label="Admin" className="lg:hidden">
+              <DropdownMenuItem href="/admin/users">Users</DropdownMenuItem>
+              <DropdownMenuItem
+                href="/admin/dashboard"
+                textValue="Ingestion"
+                aria-label={
+                  attention > 0 ? `Ingestion, ${String(attention)} need attention` : "Ingestion"
+                }
+              >
+                Ingestion
+                {attention > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    className="bg-accent text-fg-on-accent ml-auto rounded-full px-1.5 text-xs tabular-nums"
+                  >
+                    {attention}
+                  </span>
+                ) : null}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </DropdownMenuGroup>
+          ) : null}
           <DropdownMenuGroup>
             <DropdownMenuLabel>
               <span className="block">{me.display_name}</span>

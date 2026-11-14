@@ -44,8 +44,6 @@ export function useShellIngestion(): {
     refetchInterval: scanRunning || enrichmentRunning ? 3000 : false,
     refetchOnWindowFocus: true,
   });
-  const attention = (counts.data?.by_reason ?? [])
-    .filter((entry) => entry.reason === "needs_change" || entry.reason === "retries_exhausted")
-    .reduce((sum, entry) => sum + entry.count, 0);
+  const attention = counts.data?.attention_total ?? 0;
   return { attention, scanRunning, enrichmentRunning };
 }

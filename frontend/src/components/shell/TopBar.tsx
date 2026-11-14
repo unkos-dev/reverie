@@ -43,7 +43,7 @@ export function TopBar({ onOpenSearch }: Readonly<{ onOpenSearch: () => void }>)
             variant="ghost"
             aria-label="Search library"
             onPress={onOpenSearch}
-            className="border-hairline text-fg-muted h-9 w-10 rounded-md lg:w-full lg:max-w-[560px] lg:justify-start lg:border lg:bg-sheet/60 2xl:absolute 2xl:left-1/2 2xl:w-[30%] 2xl:-translate-x-1/2"
+            className="border-hairline text-fg-muted h-9 w-10 rounded-md lg:w-full lg:max-w-[560px] lg:justify-start lg:border lg:bg-sheet/60 2xl:absolute 2xl:left-1/2 2xl:top-1/2 2xl:w-[30%] 2xl:-translate-x-1/2 2xl:-translate-y-1/2"
           >
             <Search aria-hidden="true" strokeWidth={1.7} className="size-4" />
             <span className="hidden truncate lg:inline">Search title, author, series or ISBN</span>
