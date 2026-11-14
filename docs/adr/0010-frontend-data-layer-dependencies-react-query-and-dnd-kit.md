@@ -3,11 +3,13 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0010"
 title: "Frontend data-layer dependencies: React Query and dnd-kit"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-04"
 decided-on: "2026-05-22"
 decision-makers:
   - "John Unkovich"
+superseded-by:
+  - "REV-ADR-0077"
 ---
 
 # Frontend data-layer dependencies: React Query and dnd-kit
