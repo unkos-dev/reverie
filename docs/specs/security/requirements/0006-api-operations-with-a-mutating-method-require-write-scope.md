@@ -34,5 +34,5 @@ write their responses to `api_cache`; it changes no manifestation.
 - A credential carrying only `read` is refused with `403` by every operation declared at `write` or higher, using device
   tokens. Checked by `read_token_blocked_from_every_mutation`.
 - `POST /api/v1/manifestations/{id}/enrichment/dry-run` declares `read` and is reachable with a `read` credential.
-- A read-scoped credential can execute a GraphQL query over POST. A GraphQL operation cannot bypass the scope its root
-  field declares. Checked by `graphql_request_boundary`.
+- A read-scoped credential's GraphQL query over POST is admitted, and requests with missing or invalid credentials are
+  refused with `401`. Checked by `graphql_request_boundary`.
