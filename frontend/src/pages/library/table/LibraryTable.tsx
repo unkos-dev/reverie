@@ -582,9 +582,8 @@ export function LibraryTable({
   onScrollChange,
 }: Readonly<Props>): ReactElement {
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
-  const tableRef = useRef<HTMLTableElement>(null);
   const shiftHeld = useRef(false);
-  const byId = useMemo(() => new Map(items.map((book) => [book.id, book])), [items]);
+  const focusedRow = useRef<string | null>(null);
 
   const columns = useMemo(
     () => [
@@ -707,6 +706,16 @@ export function LibraryTable({
       data-testid="library-table"
       className="rv-table flex h-full min-h-0 flex-col"
       {...edits.keyboardProps}
+      onFocusCapture={(event) => {
+        const target = event.target;
+        focusedRow.current =
+          target instanceof HTMLElement && target.getAttribute("role") === "row"
+            ? (target.dataset.bookId ?? null)
+            : null;
+      }}
+      onBlurCapture={() => {
+        focusedRow.current = null;
+      }}
       onPointerDownCapture={(event) => {
         shiftHeld.current = event.shiftKey;
       }}
@@ -726,7 +735,7 @@ export function LibraryTable({
             }}
           >
             <Table
-              ref={tableRef}
+              keyboardNavigationBehavior="tab"
               onScroll={(event) => {
                 onScrollChange(event.currentTarget.scrollTop > 0);
               }}
@@ -743,23 +752,6 @@ export function LibraryTable({
               sortDescriptor={sortDescriptor}
               onSortChange={(descriptor) => {
                 handleHeaderSort(descriptor.column);
-              }}
-              onRowAction={(key) => {
-                const active = document.activeElement;
-                if (
-                  document.querySelector(
-                    '[role="dialog"][aria-label^="Edit"], [role="dialog"][aria-label="Rating"], [role="dialog"][aria-label="Reading status"]',
-                  ) !== null
-                )
-                  return;
-                if (
-                  active instanceof Element &&
-                  tableRef.current?.contains(active) &&
-                  active.closest('button, a, input, [role="checkbox"], [role="link"]') !== null
-                )
-                  return;
-                const book = byId.get(String(key));
-                if (book !== undefined) onRowActivate(book);
               }}
               className="border-border bg-canvas h-[calc(100dvh-20rem)] min-h-40 lg:h-full lg:min-h-0 w-full scroll-pt-[42px] overflow-auto rounded-md border outline-none"
             >
@@ -778,6 +770,10 @@ export function LibraryTable({
                   {(book) => (
                     <Row
                       id={book.id}
+                      data-book-id={book.id}
+                      onAction={() => {
+                        if (focusedRow.current === book.id) onRowActivate(book);
+                      }}
                       textValue={book.title}
                       columns={columns}
                       className="group/row text-fg data-hovered:bg-surface data-selected:bg-accent-soft [height:inherit] [width:inherit] cursor-default outline-none"

@@ -476,7 +476,7 @@ export function TitleCell({
     <div
       ref={anchorRef}
       className={cn(
-        "flex h-full w-full items-center gap-3 px-3 py-1",
+        "flex h-full min-w-0 w-full items-center gap-3 px-3 py-1",
         ROW_MIN[density],
         state.pending !== undefined && "rv-pending",
       )}
@@ -502,12 +502,9 @@ export function TitleCell({
           <Link
             href={`/b/${book.id}`}
             onKeyDown={editKeys(editor.open, true)}
-            className={cn(
-              "text-fg decoration-accent-text/60 data-hovered:underline flex min-h-6 w-fit max-w-full items-center text-sm leading-5 font-medium underline-offset-[3px] outline-none",
-              WRAP,
-            )}
+            className="text-fg decoration-accent-text/60 data-hovered:underline flex min-h-6 w-full min-w-0 items-center justify-start text-left text-sm leading-5 font-medium underline-offset-[3px] outline-none"
           >
-            {book.title}
+            <span className="min-w-0 truncate">{book.title}</span>
           </Link>
         ) : (
           <span

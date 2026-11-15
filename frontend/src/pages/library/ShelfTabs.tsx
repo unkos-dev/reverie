@@ -82,14 +82,14 @@ export function ShelfTabs({ shelves, selected, onSelect }: Readonly<Props>): Rea
         {visible.map((shelf) => (
           <Link
             key={shelf.id}
+            aria-label={`${shelf.name}, ${String(shelf.item_count)} ${shelf.item_count === 1 ? "book" : "books"}`}
             aria-current={selected.length === 1 && selected[0] === shelf.id ? "page" : undefined}
             onPress={() => {
               onSelect(shelf.id);
             }}
             className="h-8 shrink-0 px-3 whitespace-nowrap"
           >
-            {shelf.name}
-            <span className="text-fg-muted tabular-nums">{shelf.item_count}</span>
+            {shelf.name} <span className="text-fg-muted tabular-nums">{shelf.item_count}</span>
           </Link>
         ))}
       </nav>
@@ -103,12 +103,12 @@ export function ShelfTabs({ shelves, selected, onSelect }: Readonly<Props>): Rea
               <DropdownMenuItem
                 key={shelf.id}
                 textValue={shelf.name}
+                aria-label={`${shelf.name}, ${String(shelf.item_count)} ${shelf.item_count === 1 ? "book" : "books"}`}
                 onAction={() => {
                   onSelect(shelf.id);
                 }}
               >
-                {shelf.name}
-                <span className="text-fg-muted ml-auto tabular-nums">{shelf.item_count}</span>
+                {shelf.name} <span className="text-fg-muted tabular-nums">{shelf.item_count}</span>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
