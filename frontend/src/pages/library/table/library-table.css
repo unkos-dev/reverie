@@ -60,3 +60,24 @@
 .rv-table [data-slot="checkbox"]:not([data-selected]) [data-slot="checkbox-indicator"] {
   border-color: var(--fg-muted);
 }
+
+.rv-saved {
+  animation: rv-saved-fade 1.8s ease-out forwards;
+}
+
+@keyframes rv-saved-fade {
+  0%,
+  60% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-saved {
+    animation: none;
+  }
+}

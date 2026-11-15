@@ -62,7 +62,7 @@ export function FilterChips({
   });
 
   return (
-    <div data-testid="filter-chips" className="mb-4 flex flex-wrap items-center gap-1.5">
+    <div data-testid="filter-chips" className="flex flex-wrap items-center gap-1.5">
       <TagGroup
         aria-label="Active filters"
         onRemove={(keys) => {

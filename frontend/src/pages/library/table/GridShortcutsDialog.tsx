@@ -34,7 +34,7 @@ const SHORTCUT_ROWS: ShortcutRow[] = [
   { keys: ["Tab"], description: "Leave the table" },
   { keys: ["Space"], description: "On a row: select or deselect it" },
   { keys: ["Ctrl", "A"], description: "Select every loaded book" },
-  { keys: ["Enter"], description: "On a row: open its details. On a cell: edit it" },
+  { keys: ["Enter"], description: "On a row: open the book. On a cell: edit it" },
   { keys: ["F2"], description: "Edit the focused cell, including the title" },
   { keys: ["A", "…", "Z"], description: "Start editing the focused cell with that character" },
   { keys: ["1", "…", "5"], description: "On a rating: set it. 0 clears it" },

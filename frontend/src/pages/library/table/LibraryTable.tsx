@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronDown, Loader2 } from "lucide-react";
+import { ArrowRight, ArrowDown, ArrowUp, ChevronDown, Loader2 } from "lucide-react";
 import {
   createContext,
   use,
@@ -41,6 +41,7 @@ import {
   type SortLevelParam,
 } from "@/api";
 import { Button } from "@/components/ui/button";
+import { Link } from "@/components/ui/link";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { cn } from "@/lib/utils";
@@ -49,7 +50,6 @@ import { LOCKED_COLUMN_KEYS, MOBILE_COLUMN_KEYS, TABLE_MOBILE_MEDIA_QUERY } from
 
 import {
   AuthorsCell,
-  DetailsButton,
   RatingCell,
   StaticCell,
   StatusCell,
@@ -58,6 +58,7 @@ import {
   type CellState,
 } from "./cells";
 import "./library-table.css";
+import { CellSaveState } from "../CellSaveState";
 import { pendingKey, type UseCellEditResult } from "./useCellEdit";
 
 type ColumnId =
@@ -71,7 +72,7 @@ type ColumnId =
   | "status"
   | "rating"
   | "added"
-  | "details";
+  | "open";
 
 type TableColumn = {
   id: ColumnId;
@@ -95,7 +96,7 @@ const DATA_COLUMNS: readonly TableColumn[] = [
 ];
 
 const SELECT_COLUMN: TableColumn = { id: "select", name: "Select", defaultWidth: 44 };
-const DETAILS_COLUMN: TableColumn = { id: "details", name: "Details", defaultWidth: 48 };
+const OPEN_COLUMN: TableColumn = { id: "open", name: "Open", defaultWidth: 80 };
 
 const COLUMN_BY_FIELD: Readonly<Record<SortField, ColumnId>> = {
   title: "title",
@@ -111,7 +112,7 @@ const SORT_WORDS: Readonly<Record<SortField, { asc: string; desc: string }>> = {
   created_at: { asc: "oldest first", desc: "newest first" },
 };
 
-const ESTIMATED_ROW: Record<Density, number> = { comfortable: 64, compact: 44 };
+const ESTIMATED_ROW: Record<Density, number> = { comfortable: 52, compact: 40 };
 const HEADER_HEIGHT = 42;
 
 const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
@@ -164,7 +165,6 @@ type TableEditContextValue = {
   isMobile: boolean;
   stateFor: (rowId: string, columnKey: string) => CellState;
   commit: (book: BookListItem, columnKey: string, next: BookListItem) => void;
-  openDetails: (book: BookListItem) => void;
 };
 
 const TableEditContext = createContext<TableEditContextValue | null>(null);
@@ -179,7 +179,7 @@ function BookCell({
   book,
   columnId,
 }: Readonly<{ book: BookListItem; columnId: ColumnId }>): ReactElement | null {
-  const { density, isMobile, stateFor, commit, openDetails } = useTableEdit();
+  const { density, isMobile, stateFor, commit } = useTableEdit();
   const state = stateFor(book.id, columnId);
   const reading = book.reading_state ?? EMPTY_READING_STATE;
   switch (columnId) {
@@ -193,14 +193,14 @@ function BookCell({
           />
         </div>
       );
-    case "details":
+    case "open":
       return (
-        <DetailsButton
-          book={book}
-          onOpen={() => {
-            openDetails(book);
-          }}
-        />
+        <Link
+          href={`/b/${book.id}`}
+          className="mx-2 h-7 px-2 opacity-0 group-data-hovered/row:opacity-100 focus-visible:opacity-100"
+        >
+          Open <ArrowRight className="size-3" aria-hidden="true" />
+        </Link>
       );
     case "title":
       return (
@@ -560,6 +560,7 @@ type Props = {
   selectedIds: ReadonlySet<string>;
   onSelectionChange: (ids: ReadonlySet<string>) => void;
   onRowActivate: (book: BookListItem) => void;
+  onScrollChange: (scrolled: boolean) => void;
 };
 
 export function LibraryTable({
@@ -578,8 +579,10 @@ export function LibraryTable({
   selectedIds,
   onSelectionChange,
   onRowActivate,
+  onScrollChange,
 }: Readonly<Props>): ReactElement {
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
+  const tableRef = useRef<HTMLTableElement>(null);
   const shiftHeld = useRef(false);
   const byId = useMemo(() => new Map(items.map((book) => [book.id, book])), [items]);
 
@@ -591,23 +594,24 @@ export function LibraryTable({
         if (isMobile) return MOBILE_COLUMN_KEYS.has(column.id);
         return !hiddenColumns.has(column.id);
       }),
-      DETAILS_COLUMN,
+      OPEN_COLUMN,
     ],
     [hiddenColumns, isMobile],
   );
 
-  const failed = new Set(edits.feedback.map((entry) => pendingKey(entry.rowId, entry.columnKey)));
   const context: TableEditContextValue = {
     density,
     isMobile,
     stateFor: (rowId, columnKey) => {
       const key = pendingKey(rowId, columnKey);
-      return { pending: edits.pendingCells.get(key), failed: failed.has(key) };
+      return {
+        pending: edits.pendingCells.get(key),
+        failed: edits.feedback.some((entry) => pendingKey(entry.rowId, entry.columnKey) === key),
+      };
     },
     commit: (book, columnKey, next) => {
       edits.onCellEdit({ row: next, previousRow: book, columnKey });
     },
-    openDetails: onRowActivate,
   };
 
   const primary = sort.at(0);
@@ -659,15 +663,15 @@ export function LibraryTable({
         </Column>
       );
     }
-    if (column.id === "details") {
+    if (column.id === "open") {
       return (
         <Column
-          id="details"
-          width={isMobile ? 40 : 48}
+          id="open"
+          width={80}
           minWidth={40}
           className="border-border-strong size-full border-b outline-none"
         >
-          <span className="sr-only">Details</span>
+          <span className="sr-only">Open</span>
         </Column>
       );
     }
@@ -701,7 +705,7 @@ export function LibraryTable({
   return (
     <div
       data-testid="library-table"
-      className="rv-table"
+      className="rv-table flex h-full min-h-0 flex-col"
       {...edits.keyboardProps}
       onPointerDownCapture={(event) => {
         shiftHeld.current = event.shiftKey;
@@ -711,16 +715,21 @@ export function LibraryTable({
       }}
     >
       <TableEditContext value={context}>
-        <ResizableTableContainer className="relative w-full">
+        <ResizableTableContainer className="relative min-h-0 w-full flex-1">
           <Virtualizer
             layout={TableLayout}
             layoutOptions={{
+              rowHeight: ESTIMATED_ROW[density],
               estimatedRowHeight: ESTIMATED_ROW[density],
               headingHeight: HEADER_HEIGHT,
               loaderHeight: 48,
             }}
           >
             <Table
+              ref={tableRef}
+              onScroll={(event) => {
+                onScrollChange(event.currentTarget.scrollTop > 0);
+              }}
               aria-label="Library books"
               selectionMode="multiple"
               selectedKeys={selectedIds}
@@ -736,10 +745,23 @@ export function LibraryTable({
                 handleHeaderSort(descriptor.column);
               }}
               onRowAction={(key) => {
+                const active = document.activeElement;
+                if (
+                  document.querySelector(
+                    '[role="dialog"][aria-label^="Edit"], [role="dialog"][aria-label="Rating"], [role="dialog"][aria-label="Reading status"]',
+                  ) !== null
+                )
+                  return;
+                if (
+                  active instanceof Element &&
+                  tableRef.current?.contains(active) &&
+                  active.closest('button, a, input, [role="checkbox"], [role="link"]') !== null
+                )
+                  return;
                 const book = byId.get(String(key));
                 if (book !== undefined) onRowActivate(book);
               }}
-              className="border-border bg-canvas h-[calc(100dvh-22rem)] min-h-96 w-full scroll-pt-[42px] overflow-auto rounded-md border outline-none"
+              className="border-border bg-canvas h-[calc(100dvh-20rem)] min-h-40 lg:h-full lg:min-h-0 w-full scroll-pt-[42px] overflow-auto rounded-md border outline-none"
             >
               <TableHeader
                 columns={columns}
@@ -749,7 +771,10 @@ export function LibraryTable({
                 {renderColumn}
               </TableHeader>
               <TableBody>
-                <Collection items={items} dependencies={[columns, density]}>
+                <Collection
+                  items={items}
+                  dependencies={[columns, density, edits.pendingCells, edits.feedback]}
+                >
                   {(book) => (
                     <Row
                       id={book.id}
@@ -762,7 +787,15 @@ export function LibraryTable({
                           textValue={column.id === "title" ? book.title : undefined}
                           className="border-border size-full overflow-hidden border-b outline-none"
                         >
-                          <BookCell book={book} columnId={column.id} />
+                          <div className="relative flex size-full items-center">
+                            <BookCell book={book} columnId={column.id} />
+                            <CellSaveState
+                              pending={edits.pendingCells.has(pendingKey(book.id, column.id))}
+                              feedback={edits.feedback.find(
+                                (entry) => entry.rowId === book.id && entry.columnKey === column.id,
+                              )}
+                            />
+                          </div>
                         </Cell>
                       )}
                     </Row>

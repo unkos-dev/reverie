@@ -1,4 +1,4 @@
-import { CircleAlert, Check, GripVertical, PanelRight, PenLine, Star, X } from "lucide-react";
+import { CircleAlert, Check, GripVertical, PenLine, Star, X } from "lucide-react";
 import { useRef, useState, type ReactElement, type ReactNode, type RefObject } from "react";
 import {
   Button as AriaButton,
@@ -9,13 +9,10 @@ import {
   GridList,
   GridListItem,
   Input,
-  Link,
   ListBox,
   ListBoxItem,
   Popover,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   useDragAndDrop,
   useListData,
   type KeyboardEvent,
@@ -25,6 +22,9 @@ import { z } from "zod";
 
 import { PageCountInputSchema, type BookListItem, type Density } from "@/api";
 import type { ReadingStatus } from "@/api/books";
+import { Link } from "@/components/ui/link";
+import { Tooltip, TooltipContent } from "@/components/ui/tooltip";
+import { ToggleButton, ToggleButtonGroup } from "@/components/ui/toggle-button-group";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -54,19 +54,19 @@ const STAR_STEP = 18;
 const STAR_INSET = 12;
 
 const ROW_MIN: Record<Density, string> = {
-  comfortable: "min-h-16",
-  compact: "min-h-11",
+  comfortable: "min-h-[52px]",
+  compact: "min-h-10",
 };
 
 const TRIGGER_MIN: Record<Density, string> = {
-  comfortable: "min-h-16",
-  compact: "min-h-11",
+  comfortable: "min-h-[52px]",
+  compact: "min-h-10",
 };
 
-const WRAP = "whitespace-normal break-normal wrap-normal";
+const WRAP = "truncate";
 
 function statusLabel(status: ReadingStatus | null): string {
-  return status === null ? "" : STATUS_LABELS[status];
+  return status === null ? "None" : STATUS_LABELS[status];
 }
 
 function isReadingStatus(key: unknown): key is ReadingStatus {
@@ -181,7 +181,7 @@ function EmptyValue({ field }: Readonly<{ field: string }>): ReactElement {
   return (
     <span
       aria-hidden="true"
-      className="text-fg-faint opacity-0 transition-opacity duration-150 group-data-hovered/trigger:opacity-100 group-data-focus-visible/trigger:opacity-100"
+      className="text-fg-faint opacity-0 transition-opacity duration-150 group-data-hovered/row:opacity-100 group-focus-within/row:opacity-100"
     >
       Add {field}
     </span>
@@ -193,7 +193,7 @@ function PendingValue({ text }: Readonly<{ text: string }>): ReactElement {
 }
 
 function FailedMark(): ReactElement {
-  return <CircleAlert aria-hidden="true" className="text-fg-muted ml-auto size-3.5 shrink-0" />;
+  return <CircleAlert aria-hidden="true" className="text-danger-text ml-auto size-3.5 shrink-0" />;
 }
 
 type TriggerProps = {
@@ -254,7 +254,7 @@ function Trigger({
         if (!hovered) onHoverEnd?.();
       }}
       className={cn(
-        "group/trigger relative isolate flex h-full w-full cursor-text items-center gap-2 px-3 py-3 text-left text-sm outline-none",
+        "group/trigger relative isolate flex h-full w-full cursor-text items-center gap-2 px-3 py-1 text-left text-sm outline-none",
         "before:absolute before:inset-1 before:-z-10 before:rounded-md before:transition-colors before:duration-150 data-hovered:before:bg-surface-2 data-pressed:before:bg-surface-3",
         TRIGGER_MIN[density],
         align === "end" && "justify-end text-right",
@@ -419,7 +419,10 @@ export function TextCell({
   );
 }
 
-function CoverMark({ book }: Readonly<{ book: BookListItem }>): ReactElement {
+function CoverMark({
+  book,
+  density,
+}: Readonly<{ book: BookListItem; density: Density }>): ReactElement {
   const [failed, setFailed] = useState(false);
   if (book.cover_url !== "" && !failed) {
     return (
@@ -431,14 +434,20 @@ function CoverMark({ book }: Readonly<{ book: BookListItem }>): ReactElement {
         onError={() => {
           setFailed(true);
         }}
-        className="ring-border-strong h-[42px] w-[30px] shrink-0 rounded-[2px] object-cover ring-1"
+        className={cn(
+          "ring-border-strong shrink-0 rounded-[2px] object-cover ring-1",
+          density === "comfortable" ? "h-[42px] w-[29px]" : "h-8 w-[22px]",
+        )}
       />
     );
   }
   return (
     <span
       aria-hidden="true"
-      className="bg-surface-2 text-accent-text ring-border-strong font-display flex h-[42px] w-[30px] shrink-0 items-center justify-center rounded-[2px] text-[0.5rem] leading-none tracking-tight ring-1"
+      className={cn(
+        "bg-surface-2 text-fg-muted ring-border-strong flex shrink-0 items-center justify-center rounded-[2px] text-xs leading-none ring-1",
+        density === "comfortable" ? "h-[42px] w-[29px]" : "h-8 w-[22px]",
+      )}
     >
       {book.title.slice(0, 3).toUpperCase()}
     </span>
@@ -467,12 +476,27 @@ export function TitleCell({
     <div
       ref={anchorRef}
       className={cn(
-        "flex h-full items-center gap-3 px-3 py-2.5",
+        "flex h-full w-full items-center gap-3 px-3 py-1",
         ROW_MIN[density],
         state.pending !== undefined && "rv-pending",
       )}
     >
-      {density === "comfortable" ? <CoverMark book={book} /> : null}
+      <Tooltip delay={400} closeDelay={0}>
+        <Link href={`/b/${book.id}`} aria-label={`Open ${book.title}`} className="shrink-0">
+          <CoverMark book={book} density={density} />
+        </Link>
+        <TooltipContent placement="right" className="p-1">
+          {book.cover_url === "" ? (
+            book.title
+          ) : (
+            <img
+              src={book.cover_url}
+              alt={`Cover of ${book.title}`}
+              className="max-h-72 w-44 rounded object-contain"
+            />
+          )}
+        </TooltipContent>
+      </Tooltip>
       <div className="min-w-0 flex-1">
         {state.pending === undefined ? (
           <Link
@@ -825,7 +849,7 @@ function Stars({
             "size-4 transition-[opacity,color] duration-150",
             star <= filled
               ? "text-fg"
-              : "text-fg-faint opacity-0 group-data-hovered/trigger:opacity-100 group-data-focus-visible/trigger:opacity-100",
+              : "text-fg-faint opacity-0 group-data-hovered/row:opacity-100 group-focus-within/row:opacity-100",
             muted && star <= filled && "text-fg-muted",
           )}
           fill={star <= filled ? "currentColor" : "none"}
@@ -956,25 +980,6 @@ export function RatingCell({
   );
 }
 
-export function DetailsButton({
-  book,
-  onOpen,
-}: Readonly<{ book: BookListItem; onOpen: () => void }>): ReactElement {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={`Open details for ${book.title}`}
-        onPress={onOpen}
-        className="text-fg-muted data-hovered:text-fg opacity-0 transition-opacity duration-150 group-data-hovered/row:opacity-100 group-data-focus-visible-within/row:opacity-100 group-data-selected/row:opacity-100 data-focus-visible:opacity-100 pointer-coarse:opacity-100"
-      >
-        <PanelRight aria-hidden="true" />
-      </Button>
-    </div>
-  );
-}
-
 export function StaticCell({
   density,
   align,
@@ -989,7 +994,7 @@ export function StaticCell({
   return (
     <div
       className={cn(
-        "flex h-full items-center px-3 py-2.5 text-sm",
+        "flex h-full w-full items-center px-3 py-1 text-sm",
         ROW_MIN[density],
         align === "end" && "justify-end text-right tabular-nums",
         className,
