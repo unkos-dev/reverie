@@ -481,7 +481,7 @@ export function TitleCell({
         state.pending !== undefined && "rv-pending",
       )}
     >
-      <Tooltip delay={400} closeDelay={0}>
+      <Tooltip delay={400}>
         <Link href={`/b/${book.id}`} aria-label={`Open ${book.title}`} className="shrink-0">
           <CoverMark book={book} density={density} />
         </Link>
