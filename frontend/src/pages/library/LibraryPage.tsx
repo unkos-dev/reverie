@@ -9,7 +9,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, Undo2 } from "lucide-react";
 import {
   lazy,
   memo,
@@ -220,9 +220,6 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
   }, [edits.undoAvailable, edits.undoPending, undoFocused]);
   return (
     <div className="flex items-center justify-end gap-2" {...edits.keyboardProps}>
-      {edits.undoLabel !== undefined ? (
-        <span className="text-fg-muted text-sm">{edits.undoLabel}</span>
-      ) : null}
       <Button
         onFocusChange={setUndoFocused}
         type="button"
@@ -232,7 +229,8 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
         isPending={edits.undoPending}
         isDisabled={!edits.undoAvailable && !edits.undoPending}
       >
-        Undo last edit
+        {edits.undoLabel === undefined ? null : <Undo2 aria-hidden="true" className="size-4" />}
+        {edits.undoLabel === undefined ? "Undo last edit" : `Undo ${edits.undoLabel}`}
       </Button>
       <GridShortcutsTrigger buttonRef={helpRef} onOpenChange={setShortcutsOpen} />
       <GridShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />

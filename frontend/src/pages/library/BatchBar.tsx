@@ -1,4 +1,4 @@
-import { FolderPlus, Loader2 } from "lucide-react";
+import { FolderPlus, Loader2, X } from "lucide-react";
 import type { ReactElement } from "react";
 import { Group } from "react-aria-components";
 
@@ -43,17 +43,14 @@ export function BatchBar({
   return (
     <Group
       aria-label="Batch actions"
-      className="border-border bg-surface sticky bottom-[calc(1rem+3rem+0.75rem+2px+0.75rem)] z-10 mt-4 flex flex-wrap items-center gap-3 border p-3 lg:bottom-4"
+      className="border-border bg-surface sticky bottom-[calc(1rem+3rem+0.75rem+2px+0.75rem)] z-10 mt-4 flex flex-wrap items-center mx-auto w-fit justify-center gap-3 rounded-2xl border p-2 lg:bottom-4"
     >
       <strong className="text-fg text-sm font-medium" aria-live="polite">
         {selectedIds.size} selected
       </strong>
       {hasMorePages ? (
-        <span className="text-fg-muted font-mono text-[0.65rem] uppercase tracking-[0.08em]">
-          Selection covers loaded books only
-        </span>
+        <span className="text-fg-muted text-sm">Selection covers loaded books only</span>
       ) : null}
-      <span className="flex-1" />
       {batch.isPending ? (
         <p role="status" className="text-fg-muted text-sm">
           Adding {batch.variables?.ids.length} books to {batch.variables?.shelf.name}…
@@ -95,15 +92,6 @@ export function BatchBar({
           Dismiss result
         </Button>
       ) : null}
-      <Button
-        type="button"
-        variant="link"
-        size="xs"
-        onPress={onClearSelection}
-        className="text-fg-muted hover:text-fg focus-visible:ring-accent px-1 font-mono text-[0.65rem] uppercase tracking-[0.08em] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2"
-      >
-        Clear selection
-      </Button>
       <DropdownMenu>
         <Button
           type="button"
@@ -135,6 +123,17 @@ export function BatchBar({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      <span aria-hidden="true" className="bg-border mx-1 h-6 w-px" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Clear selection"
+        onPress={onClearSelection}
+        className="text-fg-muted"
+      >
+        <X aria-hidden="true" className="size-3.5" />
+      </Button>
     </Group>
   );
 }

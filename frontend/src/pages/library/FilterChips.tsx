@@ -79,9 +79,12 @@ export function FilterChips({
             <Tag
               id={segment.key}
               textValue={segment.text}
-              className="border-border text-fg-muted inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs outline-none data-focus-visible:ring-2 data-focus-visible:ring-accent"
+              className="border-border text-fg-muted inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs outline-none data-focus-visible:ring-2 data-focus-visible:ring-accent"
             >
-              {segment.text}
+              <span>{segment.text.slice(0, segment.text.indexOf(" ")).replace(/:$/, "")}</span>
+              <span className="text-fg font-medium">
+                {segment.text.slice(segment.text.indexOf(" ") + 1)}
+              </span>
               <Button
                 slot="remove"
                 className="hover:text-fg focus-visible:ring-accent flex min-h-6 min-w-6 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2"
@@ -95,7 +98,7 @@ export function FilterChips({
       <Button
         isDisabled={segments.length === 0}
         onPress={onClearAll}
-        className="text-fg-muted hover:text-fg focus-visible:ring-accent px-1.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.08em] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 data-disabled:opacity-50"
+        className="text-fg-muted hover:text-fg focus-visible:ring-accent px-1.5 py-1 text-sm underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 data-disabled:opacity-50"
       >
         Clear all
       </Button>

@@ -613,20 +613,24 @@ test("metadata Undo survives table refreshes", async () => {
   expect(requestId).toBe("");
   await editor.fill("Saved title");
   await userEvent.keyboard("{Enter}");
-  const undo = page.getByRole("button", { name: "Undo last edit" });
+  const undo = page.getByRole("button", { name: /^Undo / });
   await expect.element(undo).toBeEnabled();
   await expect
-    .element(page.getByText("Title for “The Brothers Karamazov”", { exact: true }))
+    .element(
+      page.getByRole("button", { name: "Undo Title for “The Brothers Karamazov”", exact: true }),
+    )
     .toBeInTheDocument();
   await userEvent.click(page.getByRole("button", { name: "100, edit pages", exact: true }));
   await page.getByRole("dialog").getByRole("textbox").fill("250");
   await userEvent.keyboard("{Enter}");
   await expect
-    .element(page.getByText("Pages for “Saved title”", { exact: true }))
+    .element(page.getByRole("button", { name: "Undo Pages for “Saved title”", exact: true }))
     .toBeInTheDocument();
   await userEvent.click(undo);
   await expect
-    .element(page.getByText("Title for “The Brothers Karamazov”", { exact: true }))
+    .element(
+      page.getByRole("button", { name: "Undo Title for “The Brothers Karamazov”", exact: true }),
+    )
     .toBeInTheDocument();
   const ratingButton = page.getByRole("button", { name: "Add rating", exact: true });
   await expect.element(ratingButton).toBeInTheDocument();
