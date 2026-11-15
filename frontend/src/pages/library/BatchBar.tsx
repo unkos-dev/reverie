@@ -1,85 +1,37 @@
-/**
- * Sticky batch-action bar, shown while table rows are selected: the
- * selection count, a shelf picker, and clear. Add to shelf is an awaited
- * serial mutation over the submitted selection (the shelves API is per-item).
- * Remove is deliberately absent: no delete contract exists.
- *
- * The count reflects loaded rows only (select-all cannot reach unloaded
- * pages under keyset paging); when more pages exist the note says so
- * rather than letting "all" be misread as "everything matching".
- */
-import { FolderPlus, Loader2 } from "lucide-react";
-import { useEffect, type ReactElement } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FolderPlus, Loader2, X } from "lucide-react";
+import type { ReactElement } from "react";
 import { Group } from "react-aria-components";
 
-import { addShelfItem, listShelves, type Shelf } from "@/api";
+import type { Shelf } from "@/api";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { queryKeys } from "@/lib/query/keys";
 
 type BatchBarProps = {
   selectedIds: ReadonlySet<string>;
   /** True when unloaded pages exist, so "selected" cannot mean "all matching". */
   hasMorePages: boolean;
   onClearSelection: () => void;
-  /** Drops the given ids from the selection (after a successful add). */
-  onCompleted: (succeededIds: readonly string[]) => void;
+  shelves: readonly Shelf[] | undefined;
+  shelvesError: boolean;
+  batch: {
+    isIdle: boolean;
+    isPending: boolean;
+    isSuccess: boolean;
+    variables: { shelf: Shelf; ids: readonly string[]; retry?: boolean } | undefined;
+    data: { succeeded: string[]; failed: string[] } | undefined;
+    mutate: (input: { shelf: Shelf; ids: readonly string[]; retry?: boolean }) => void;
+    reset: () => void;
+  };
 };
 
 export function BatchBar({
   selectedIds,
   hasMorePages,
   onClearSelection,
-  onCompleted,
+  shelves,
+  shelvesError,
+  batch,
 }: Readonly<BatchBarProps>): ReactElement | null {
-  const queryClient = useQueryClient();
-  const {
-    data: shelves,
-    isError: shelvesError,
-    error: shelvesQueryError,
-  } = useQuery<Shelf[]>({
-    queryKey: queryKeys.shelves.list(),
-    queryFn: ({ signal }) => listShelves(signal),
-    enabled: selectedIds.size > 0,
-    staleTime: 60_000,
-  });
-  // A shelf-less picker is sanctioned degradation, but the failure must
-  // stay observable: the central QueryCache.onError only routes 401s, so
-  // a non-auth failure would otherwise vanish.
-  useEffect(() => {
-    if (shelvesError) console.error("[BatchBar] shelves fetch failed", shelvesQueryError);
-  }, [shelvesError, shelvesQueryError]);
-
-  const batch = useMutation({
-    mutationFn: async ({
-      shelf,
-      ids,
-    }: {
-      shelf: Shelf;
-      ids: readonly string[];
-      retry?: boolean;
-    }) => {
-      const succeeded: string[] = [];
-      const failed: string[] = [];
-      for (const id of ids) {
-        try {
-          await addShelfItem(shelf.id, id);
-          succeeded.push(id);
-        } catch (error) {
-          failed.push(id);
-          console.error("[BatchBar] add to shelf failed", { id, error });
-        }
-      }
-      return { succeeded, failed };
-    },
-    onSuccess: ({ succeeded }) => {
-      if (succeeded.length > 0)
-        void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.all });
-      onCompleted(succeeded);
-    },
-  });
-
   if (selectedIds.size === 0 && batch.isIdle) return null;
 
   function shelfStatusText(): string {
@@ -91,40 +43,37 @@ export function BatchBar({
   return (
     <Group
       aria-label="Batch actions"
-      className="border-border bg-surface sticky bottom-[calc(1rem+3rem+0.75rem+2px+0.75rem)] z-10 mt-4 flex flex-wrap items-center gap-3 border p-3 lg:bottom-4"
+      className="border-border bg-surface sticky bottom-[calc(1rem+3rem+0.75rem+2px+0.75rem)] z-10 mt-4 flex flex-wrap items-center mx-auto w-fit justify-center gap-3 rounded-2xl border p-2 lg:bottom-4"
     >
       <strong className="text-fg text-sm font-medium" aria-live="polite">
         {selectedIds.size} selected
       </strong>
       {hasMorePages ? (
-        <span className="text-fg-muted font-mono text-[0.65rem] uppercase tracking-[0.08em]">
-          Selection covers loaded books only
-        </span>
+        <span className="text-fg-muted text-sm">Selection covers loaded books only</span>
       ) : null}
-      <span className="flex-1" />
       {batch.isPending ? (
         <p role="status" className="text-fg-muted text-sm">
-          Adding {batch.variables.ids.length} books to {batch.variables.shelf.name}…
+          Adding {batch.variables?.ids.length} books to {batch.variables?.shelf.name}…
         </p>
       ) : null}
       {batch.isSuccess ? (
         <p role="status" className="text-fg-muted text-sm">
-          Added {batch.data.succeeded.length} of {batch.variables.ids.length} books to{" "}
-          {batch.variables.shelf.name}.
-          {batch.data.failed.length > 0
-            ? ` ${String(batch.data.failed.length)} could not be added.`
+          Added {batch.data?.succeeded.length} of {batch.variables?.ids.length} books to{" "}
+          {batch.variables?.shelf.name}.
+          {(batch.data?.failed.length ?? 0) > 0
+            ? ` ${String(batch.data?.failed.length)} could not be added.`
             : ""}
         </p>
       ) : null}
-      {(batch.isSuccess && batch.data.failed.length > 0) ||
-      (batch.isPending && batch.variables.retry === true) ? (
+      {(batch.isSuccess && (batch.data?.failed.length ?? 0) > 0) ||
+      (batch.isPending && batch.variables?.retry === true) ? (
         <Button
           type="button"
           variant="outline"
           size="sm"
           isPending={batch.isPending}
           onPress={() => {
-            if (batch.isSuccess)
+            if (batch.isSuccess && batch.variables !== undefined && batch.data !== undefined)
               batch.mutate({ shelf: batch.variables.shelf, ids: batch.data.failed, retry: true });
           }}
         >
@@ -143,19 +92,10 @@ export function BatchBar({
           Dismiss result
         </Button>
       ) : null}
-      <Button
-        type="button"
-        variant="link"
-        size="xs"
-        onPress={onClearSelection}
-        className="text-fg-muted hover:text-fg focus-visible:ring-accent px-1 font-mono text-[0.65rem] uppercase tracking-[0.08em] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2"
-      >
-        Clear selection
-      </Button>
       <DropdownMenu>
         <Button
           type="button"
-          variant="outline"
+          variant="default"
           size="sm"
           isDisabled={batch.isPending || selectedIds.size === 0}
         >
@@ -183,6 +123,17 @@ export function BatchBar({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      <span aria-hidden="true" className="bg-border mx-1 h-6 w-px" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Clear selection"
+        onPress={onClearSelection}
+        className="text-fg-muted"
+      >
+        <X aria-hidden="true" className="size-3.5" />
+      </Button>
     </Group>
   );
 }

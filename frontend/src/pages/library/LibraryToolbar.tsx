@@ -7,9 +7,9 @@
  * switcher and Filters trigger dispatch to the container, and display
  * preferences arrive as props.
  */
-import { LayoutGrid, SlidersHorizontal, Table2 } from "lucide-react";
-import type { ReactElement } from "react";
-import { ToggleButton, ToggleButtonGroup } from "react-aria-components";
+import { AlignJustify, Rows3, LayoutGrid, SlidersHorizontal, Table2 } from "lucide-react";
+import type { ReactElement, ReactNode } from "react";
+import { ToggleButton, ToggleButtonGroup } from "@/components/ui/toggle-button-group";
 
 import { DENSITIES, type Density } from "@/api";
 import { QuickSearch } from "@/components/library/QuickSearch";
@@ -20,6 +20,10 @@ import type { LibraryView } from "@/routes/library-params";
 import { ColumnsPopover } from "./ColumnsPopover";
 
 type LibraryToolbarProps = {
+  filters: ReactNode;
+  editControls: ReactNode;
+  loadedCount: number;
+  hasMorePages: boolean;
   query: string;
   onQueryChange: (value: string) => void;
   view: LibraryView;
@@ -43,6 +47,10 @@ const DENSITY_LABELS: Record<Density, string> = {
 };
 
 export function LibraryToolbar({
+  filters,
+  editControls,
+  loadedCount,
+  hasMorePages,
   query,
   onQueryChange,
   view,
@@ -58,9 +66,51 @@ export function LibraryToolbar({
   onResetColumns,
 }: Readonly<LibraryToolbarProps>): ReactElement {
   return (
-    <div data-chrome="" className="mb-4 flex flex-wrap items-center gap-2">
-      <QuickSearch value={query} onChange={onQueryChange} />
+    <div data-chrome="" className="mb-2 flex flex-wrap items-center gap-2 py-2">
+      <div className="min-w-60 max-w-60 flex-1">
+        <QuickSearch value={query} onChange={onQueryChange} />
+      </div>
+      {filters}
+      <span className="text-fg-muted text-xs tabular-nums">
+        {loadedCount} books{hasMorePages ? " loaded" : ""}
+      </span>
+      <span className="flex-1" />
+      {editControls}
       <div className="flex flex-wrap items-center gap-2">
+        <ToggleButtonGroup
+          aria-label="View mode"
+          selectionMode="single"
+          disallowEmptySelection
+          selectedKeys={[view]}
+          onSelectionChange={(keys) => {
+            const key = keys.values().next().value;
+            if (key === "grid" || key === "table") onViewChange(key);
+          }}
+          className="border-border bg-surface inline-flex items-center rounded-md border p-1"
+        >
+          <ToggleButton
+            id="table"
+            aria-label="Table"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "data-selected:bg-accent-soft data-selected:text-fg data-selected:data-hovered:bg-accent-soft",
+            )}
+          >
+            <Table2 className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Table</span>
+          </ToggleButton>
+          <ToggleButton
+            id="grid"
+            aria-label="Covers"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "data-selected:bg-accent-soft data-selected:text-fg data-selected:data-hovered:bg-accent-soft",
+            )}
+          >
+            <LayoutGrid className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Covers</span>
+          </ToggleButton>
+        </ToggleButtonGroup>
         {view === "table" ? (
           <>
             <ToggleButtonGroup
@@ -80,10 +130,15 @@ export function LibraryToolbar({
                   id={option}
                   className={cn(
                     buttonVariants({ variant: "ghost", size: "sm" }),
-                    "font-mono text-[0.65rem] uppercase tracking-[0.08em] data-selected:bg-accent-soft data-selected:text-fg data-selected:data-hovered:bg-accent-soft",
+                    "data-selected:bg-accent-soft data-selected:text-fg data-selected:data-hovered:bg-accent-soft",
                   )}
                 >
-                  {DENSITY_LABELS[option]}
+                  {option === "comfortable" ? (
+                    <Rows3 className="size-4" aria-hidden="true" />
+                  ) : (
+                    <AlignJustify className="size-4" aria-hidden="true" />
+                  )}
+                  <span className="sr-only">{DENSITY_LABELS[option]}</span>
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>
@@ -95,38 +150,6 @@ export function LibraryToolbar({
             />
           </>
         ) : null}
-        <ToggleButtonGroup
-          aria-label="View mode"
-          selectionMode="single"
-          disallowEmptySelection
-          selectedKeys={[view]}
-          onSelectionChange={(keys) => {
-            const key = keys.values().next().value;
-            if (key === "grid" || key === "table") onViewChange(key);
-          }}
-          className="border-border bg-surface inline-flex items-center rounded-md border p-1"
-        >
-          <ToggleButton
-            id="grid"
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "sm" }),
-              "data-selected:bg-accent-soft data-selected:text-fg data-selected:data-hovered:bg-accent-soft",
-            )}
-          >
-            <LayoutGrid className="size-4" aria-hidden="true" />
-            <span className="sr-only">Grid</span>
-          </ToggleButton>
-          <ToggleButton
-            id="table"
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "sm" }),
-              "data-selected:bg-accent-soft data-selected:text-fg data-selected:data-hovered:bg-accent-soft",
-            )}
-          >
-            <Table2 className="size-4" aria-hidden="true" />
-            <span className="sr-only">Table</span>
-          </ToggleButton>
-        </ToggleButtonGroup>
         <Button
           type="button"
           variant="outline"

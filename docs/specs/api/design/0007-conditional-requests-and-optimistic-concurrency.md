@@ -180,7 +180,7 @@ data).
 
 Client editing snapshots live in Query and the owning draft. A retained dialog draft owns its initial snapshot until an
 explicit matched reset. The Library table-editing owner holds at most ten field operations in memory. Leaving Library or
-table editing clears them; filtering, sorting, loading, empty results and the details drawer preserve them.
+table editing clears them; filtering, sorting, loading and empty results preserve them.
 
 ## Runtime behaviour
 

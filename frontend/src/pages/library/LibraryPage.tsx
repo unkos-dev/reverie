@@ -1,5 +1,7 @@
 import {
   useInfiniteQuery,
+  useQuery,
+  useMutation,
   infiniteQueryOptions,
   keepPreviousData,
   skipToken,
@@ -7,7 +9,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, Undo2 } from "lucide-react";
 import {
   lazy,
   memo,
@@ -26,6 +28,9 @@ import { Link, matchPath } from "react-router";
 
 import {
   ApiError,
+  addShelfItem,
+  listShelves,
+  type Shelf,
   listBooks,
   type BookListItem,
   type BookListResponse,
@@ -54,7 +59,7 @@ import { useCellEdit, type UseCellEditResult } from "./table/useCellEdit";
 import { GridShortcutsDialog, GridShortcutsTrigger } from "./table/GridShortcutsDialog";
 import { FieldError } from "@/components/ui/field";
 import { BatchBar } from "./BatchBar";
-import { BookDetailDrawer } from "./BookDetailDrawer";
+import { ShelfHeader } from "./ShelfHeader";
 import { EmptyLibrary } from "./EmptyLibrary";
 import { FilterChips } from "./FilterChips";
 import { LibraryToolbar } from "./LibraryToolbar";
@@ -70,8 +75,7 @@ const LibraryTable = lazy(() =>
   import("./table/LibraryTable").then((m) => ({ default: m.LibraryTable })),
 );
 
-/** The library's one overlay slot: filters or one book's details, never both. */
-type OverlayState = "filters" | { detail: string } | null;
+type OverlayState = "filters" | null;
 
 type BookPages = InfiniteData<BookListResponse, string | undefined> & {
   originKey?: BooksListKey;
@@ -214,10 +218,7 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
     if (!edits.undoAvailable && !edits.undoPending && undoFocused) helpRef.current?.focus();
   }, [edits.undoAvailable, edits.undoPending, undoFocused]);
   return (
-    <div className="mb-2 flex items-center justify-end gap-4" {...edits.keyboardProps}>
-      {edits.undoLabel !== undefined ? (
-        <span className="text-fg-muted text-sm">{edits.undoLabel}</span>
-      ) : null}
+    <div className="flex items-center justify-end gap-2" {...edits.keyboardProps}>
       <Button
         onFocusChange={setUndoFocused}
         type="button"
@@ -227,7 +228,8 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
         isPending={edits.undoPending}
         isDisabled={!edits.undoAvailable && !edits.undoPending}
       >
-        Undo last edit
+        {edits.undoLabel === undefined ? null : <Undo2 aria-hidden="true" className="size-4" />}
+        {edits.undoLabel === undefined ? "Undo last edit" : `Undo ${edits.undoLabel}`}
       </Button>
       <GridShortcutsTrigger buttonRef={helpRef} onOpenChange={setShortcutsOpen} />
       <GridShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
@@ -240,6 +242,53 @@ export function LibraryPage(): ReactElement {
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
   const [overlay, setOverlay] = useState<OverlayState>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const queryClient = useQueryClient();
+  const {
+    data: shelves,
+    isError: shelvesError,
+    error: shelvesQueryError,
+  } = useQuery<Shelf[]>({
+    queryKey: queryKeys.shelves.list(),
+    queryFn: ({ signal }) => listShelves(signal),
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (shelvesError) console.error("[LibraryPage] shelves fetch failed", shelvesQueryError);
+  }, [shelvesError, shelvesQueryError]);
+
+  const batch = useMutation({
+    mutationFn: async ({
+      shelf,
+      ids,
+    }: {
+      shelf: Shelf;
+      ids: readonly string[];
+      retry?: boolean;
+    }) => {
+      const succeeded: string[] = [];
+      const failed: string[] = [];
+      for (const id of ids) {
+        try {
+          await addShelfItem(shelf.id, id);
+          succeeded.push(id);
+        } catch (error) {
+          failed.push(id);
+          console.error("[LibraryPage] add to shelf failed", { id, error });
+        }
+      }
+      return { succeeded, failed };
+    },
+    onSuccess: ({ succeeded }) => {
+      if (succeeded.length > 0)
+        void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.all });
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        for (const id of succeeded) next.delete(id);
+        return next;
+      });
+    },
+  });
+
   const [hasRenderedControls, setHasRenderedControls] = useState(false);
   const preferences = useLibraryPreferences();
   const { density, hiddenColumns, sortOverride, sortLevels, defaultSortLevels, setSortLevels } =
@@ -310,9 +359,15 @@ export function LibraryPage(): ReactElement {
 
   return (
     <>
-      <div>
-        <div className="px-6 py-10 sm:px-10">
-          <h1 className="mb-8">Library</h1>
+      <div className={viewMode === "table" ? "lg:h-[calc(100dvh-86px)]" : undefined}>
+        <div
+          className={
+            viewMode === "table"
+              ? "flex h-full min-h-0 flex-col px-3 pb-3 sm:px-5"
+              : "px-3 pb-3 sm:px-5"
+          }
+        >
+          <ShelfHeader shelves={shelves ?? []} selected={filterState.shelf} />
           {/* Sort announcements stay mounted here: the filter drawer (which
               carries the sort section) unmounts when closed, and an
               unmounted live region is silent, which would leave
@@ -323,6 +378,12 @@ export function LibraryPage(): ReactElement {
             {sortStackSummary(sortLevels)}
           </p>
           <LibraryToolbar
+            filters={
+              <FilterChips filters={filterState} onRemove={commitAll} onClearAll={clearAll} />
+            }
+            editControls={viewMode === "table" ? <TableEditControls edits={edits} /> : null}
+            loadedCount={items.length}
+            hasMorePages={canLoadMore}
             query={filterState.q ?? ""}
             onQueryChange={(q) => {
               commitAll((current) => ({ ...current, q }));
@@ -341,11 +402,9 @@ export function LibraryPage(): ReactElement {
             canResetColumns={preferences.canResetColumns}
             onResetColumns={preferences.resetColumns}
           />
-          <FilterChips filters={filterState} onRemove={commitAll} onClearAll={clearAll} />
-          <Separator className="mb-8" />
+          <Separator className="mb-2" />
 
           <CellEditOutcomes edits={edits} />
-          {viewMode === "table" ? <TableEditControls edits={edits} /> : null}
           <LibraryBooks
             items={items}
             filtered={hasActiveFilterState(filterState)}
@@ -380,9 +439,6 @@ export function LibraryPage(): ReactElement {
                   }}
                   selectedIds={selectedIds}
                   onSelectionChange={setSelectedIds}
-                  onRowActivate={(book) => {
-                    openOverlay({ detail: book.id });
-                  }}
                 />
               </Suspense>
             </TableChunkBoundary>
@@ -394,13 +450,9 @@ export function LibraryPage(): ReactElement {
             onClearSelection={() => {
               setSelectedIds(new Set());
             }}
-            onCompleted={(succeededIds) => {
-              setSelectedIds((current) => {
-                const next = new Set(current);
-                for (const id of succeededIds) next.delete(id);
-                return next;
-              });
-            }}
+            shelves={shelves}
+            shelvesError={shelvesError}
+            batch={batch}
           />
 
           {viewMode !== "table" && canLoadMore ? (
@@ -414,9 +466,6 @@ export function LibraryPage(): ReactElement {
           ) : null}
         </div>
       </div>
-
-      {/* The two right-side overlays share the slot above; opening either
-          closes the other by construction. */}
 
       <SheetContent
         isOpen={overlay === "filters"}
@@ -440,13 +489,6 @@ export function LibraryPage(): ReactElement {
           onSortChange={handleSortChange}
         />
       </SheetContent>
-
-      <BookDetailDrawer
-        bookId={typeof overlay === "object" && overlay !== null ? overlay.detail : null}
-        onOpenChange={(open) => {
-          if (!open) setOverlay(null);
-        }}
-      />
     </>
   );
 }
@@ -486,7 +528,10 @@ function LibraryBooks({
   return (
     <>
       {updating ? <p className="text-fg-muted mb-3 text-sm">Updating results…</p> : null}
-      <div aria-busy={updating || undefined} className={updating ? "opacity-60" : ""}>
+      <div
+        aria-busy={updating || undefined}
+        className={`${viewMode === "table" ? "min-h-0 flex-1" : ""} ${updating ? "opacity-60" : ""}`}
+      >
         {books}
       </div>
     </>

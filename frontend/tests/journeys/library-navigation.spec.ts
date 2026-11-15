@@ -189,7 +189,9 @@ test("book Back and Forward restore a visit; Back past Library does not undo edi
   await expect(search(page)).toHaveValue("The Sea");
   for (const series of SERIES)
     await expect(
-      page.getByTestId("filter-chips").getByText(`Series: ${series.value}`, { exact: true }),
+      page
+        .getByTestId("filter-chips")
+        .getByRole("row", { name: `Series: ${series.value}`, exact: true }),
     ).toBeVisible();
   expect(fixture.requests.at(-1)?.getAll("shelf_any")).toEqual(SHELVES.map((item) => item.id));
   expect(fixture.requests.at(-1)?.getAll("series_any")).toEqual(SERIES.map((item) => item.id));

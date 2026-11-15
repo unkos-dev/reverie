@@ -36,9 +36,10 @@ React Aria exposes native state through `isSelected`, `isReadOnly`, `isDisabled`
 data attributes for styling. Label and description associations belong to the parent field or overlay composition.
 Buttons handle activation through `onPress`; navigation links retain link semantics and Router integration.
 
-Library table cells hold React Aria controls: a `Link` for the title, a `Button` that opens each cell's editor, and the
-details `Button`. React Aria's `Table` moves focus between rows, cells and the controls inside a cell with the arrow
-keys, and Tab leaves the table. Each editor opens in a `Popover` and `Dialog` anchored to its cell: text fields are a
+Library table cells hold React Aria controls: a `Link` for the title, a `Button` that opens each cell's editor, and,
+outside phone widths, an Open `Link` to the book page that shows on row hover or focus. Rows have no action. React
+Aria's `Table` uses tab keyboard navigation: the arrow keys move focus between rows and cells, and Tab moves focus into
+and out of a cell's controls. Each editor opens in a `Popover` and `Dialog` anchored to its cell: text fields are a
 `Form` with one `TextField`, Authors is a `GridList` followed by a `TextField`, Status is a `ListBox` and Rating is a
 `ToggleButtonGroup`. The Authors `GridList` reorders through `useDragAndDrop`: each author has a drag `Button`, Tab
 moves into an author's drag and remove buttons, and Enter on the drag button starts a keyboard drag that the arrow keys
@@ -111,19 +112,16 @@ editing the field clears its native server error and permits correction without 
 
 Feedback stays with the action's context. Inline errors are not repeated in a toast. Copy status stays beside the
 read-only credential and retains manual-copy recovery. Row actions retain named failures beside their target. Membership
-outcomes remain outside the closing menu. Drawer shelf additions capture the book and shelf in account/book-scoped
-mutation variables. Reopening the same book observes its latest cached addition, retaining progress, result and retry
-across drawer dismissal. These records use native mutation-cache retention; cache observation does not extend it. Batch
-progress and consolidated results derive from a serial Query mutation's captured IDs and shelf; failed-ID retry and the
-result remain available when selection becomes empty. Completion removes only succeeded IDs from the current selection.
-The batch owner stays mounted across table, grid and blocked-result branches. Versions observes each field's latest
-cached Accept, Reject or Clear action and its submitted target. Pending controls and failures remain available after
-panel or route remounting, including when refreshed book data removes the draft. A pending review without its row
-retains a local status message. Clear retains its confirmation and inline failure; retry uses the same confirmation.
-Successful field actions remove earlier failed actions for that field and await the book refresh before pending ends.
-Native cache retention applies; returning does not replay an action. Theme validation refusals render below the User
-chip; cookie and outage policies stay with the preference owner. Auth success uses fixed, allowlisted copy on the login
-destination.
+outcomes remain outside the closing menu. Batch progress and consolidated results derive from a serial Query mutation's
+captured IDs and shelf; failed-ID retry and the result remain available when selection becomes empty. Completion removes
+only succeeded IDs from the current selection. The batch owner stays mounted across table, grid and blocked-result
+branches. Versions observes each field's latest cached Accept, Reject or Clear action and its submitted target. Pending
+controls and failures remain available after panel or route remounting, including when refreshed book data removes the
+draft. A pending review without its row retains a local status message. Clear retains its confirmation and inline
+failure; retry uses the same confirmation. Successful field actions remove earlier failed actions for that field and
+await the book refresh before pending ends. Native cache retention applies; returning does not replay an action. Theme
+validation refusals render below the User chip; cookie and outage policies stay with the preference owner. Auth success
+uses fixed, allowlisted copy on the login destination.
 
 Field-specific validation appears beside its field with native associations. General API failures remain standalone
 alerts rather than being assigned to an unrelated field. Pending controls suppress duplicate submission while keeping

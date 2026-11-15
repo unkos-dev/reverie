@@ -22,7 +22,7 @@ type ShortcutRow = {
 const SHORTCUT_ROWS: ShortcutRow[] = [
   {
     keys: ["↑", "↓", "←", "→"],
-    description: "Move between rows, cells and the controls in a cell",
+    description: "Move between rows and cells",
   },
   {
     keys: ["Home", "End"],
@@ -31,15 +31,19 @@ const SHORTCUT_ROWS: ShortcutRow[] = [
   { keys: ["Ctrl", "Home"], description: "Jump to the first loaded row" },
   { keys: ["Ctrl", "End"], description: "Jump to the last loaded row" },
   { keys: ["Page Up", "Page Down"], description: "Move one screen of rows" },
-  { keys: ["Tab"], description: "Leave the table" },
+  { keys: ["Tab"], description: "Move into and out of a cell's controls" },
   { keys: ["Space"], description: "On a row: select or deselect it" },
   { keys: ["Ctrl", "A"], description: "Select every loaded book" },
-  { keys: ["Enter"], description: "On a row: open its details. On a cell: edit it" },
-  { keys: ["F2"], description: "Edit the focused cell, including the title" },
-  { keys: ["A", "…", "Z"], description: "Start editing the focused cell with that character" },
-  { keys: ["1", "…", "5"], description: "On a rating: set it. 0 clears it" },
-  { keys: ["Enter"], description: "While editing: save" },
-  { keys: ["Esc"], description: "While editing: discard. Otherwise: clear the selection" },
+  { keys: ["Enter", "Space"], description: "On a cell's edit button: edit it" },
+  { keys: ["Enter"], description: "On the title link: open the book" },
+  { keys: ["F2"], description: "On a value edit button or title link: edit the field" },
+  {
+    keys: ["A", "…", "Z"],
+    description: "On a text edit button or title link: start editing with that character",
+  },
+  { keys: ["1", "…", "5"], description: "On the rating edit button: set it. 0 clears it" },
+  { keys: ["Enter"], description: "In a text editor: save" },
+  { keys: ["Esc"], description: "In an editor: discard. On a row or cell: clear the selection" },
   { keys: ["Ctrl", "Z"], description: "Undo the most recent saved edit" },
 ];
 

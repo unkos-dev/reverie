@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronDown, Loader2 } from "lucide-react";
+import { ArrowRight, ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Loader2 } from "lucide-react";
 import {
   createContext,
   use,
@@ -41,6 +41,7 @@ import {
   type SortLevelParam,
 } from "@/api";
 import { Button } from "@/components/ui/button";
+import { Link } from "@/components/ui/link";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { cn } from "@/lib/utils";
@@ -49,7 +50,6 @@ import { LOCKED_COLUMN_KEYS, MOBILE_COLUMN_KEYS, TABLE_MOBILE_MEDIA_QUERY } from
 
 import {
   AuthorsCell,
-  DetailsButton,
   RatingCell,
   StaticCell,
   StatusCell,
@@ -58,7 +58,9 @@ import {
   type CellState,
 } from "./cells";
 import "./library-table.css";
+import { CellSaveState } from "../CellSaveState";
 import { pendingKey, type UseCellEditResult } from "./useCellEdit";
+import type { EditableColumnKey } from "./edit-routing";
 
 type ColumnId =
   | "select"
@@ -71,7 +73,7 @@ type ColumnId =
   | "status"
   | "rating"
   | "added"
-  | "details";
+  | "open";
 
 type TableColumn = {
   id: ColumnId;
@@ -83,19 +85,19 @@ type TableColumn = {
 };
 
 const DATA_COLUMNS: readonly TableColumn[] = [
-  { id: "title", name: "Title", field: "title", defaultWidth: "2.4fr", minWidth: 160 },
-  { id: "subtitle", name: "Subtitle", defaultWidth: "1.2fr", minWidth: 96 },
-  { id: "authors", name: "Authors", field: "author", defaultWidth: "1.3fr", minWidth: 96 },
-  { id: "series", name: "Series", defaultWidth: "1.4fr", minWidth: 96 },
-  { id: "isbn_13", name: "ISBN", defaultWidth: 148, minWidth: 112 },
-  { id: "pages", name: "Pages", field: "pages", defaultWidth: 84, minWidth: 72, align: "end" },
-  { id: "status", name: "Status", defaultWidth: 132, minWidth: 104 },
-  { id: "rating", name: "Rating", defaultWidth: 120, minWidth: 112 },
-  { id: "added", name: "Added", field: "created_at", defaultWidth: 120, minWidth: 96 },
+  { id: "title", name: "Title", field: "title", defaultWidth: "64fr", minWidth: 240 },
+  { id: "subtitle", name: "Subtitle", defaultWidth: "22fr", minWidth: 112 },
+  { id: "authors", name: "Authors", field: "author", defaultWidth: "25fr", minWidth: 120 },
+  { id: "series", name: "Series", defaultWidth: "22fr", minWidth: 112 },
+  { id: "isbn_13", name: "ISBN", defaultWidth: "20fr", minWidth: 96 },
+  { id: "pages", name: "Pages", field: "pages", defaultWidth: "13fr", minWidth: 104, align: "end" },
+  { id: "status", name: "Status", defaultWidth: "18fr", minWidth: 112 },
+  { id: "rating", name: "Rating", defaultWidth: "16fr", minWidth: 112 },
+  { id: "added", name: "Added", field: "created_at", defaultWidth: "18fr", minWidth: 112 },
 ];
 
 const SELECT_COLUMN: TableColumn = { id: "select", name: "Select", defaultWidth: 44 };
-const DETAILS_COLUMN: TableColumn = { id: "details", name: "Details", defaultWidth: 48 };
+const OPEN_COLUMN: TableColumn = { id: "open", name: "Open", defaultWidth: 80 };
 
 const COLUMN_BY_FIELD: Readonly<Record<SortField, ColumnId>> = {
   title: "title",
@@ -111,7 +113,7 @@ const SORT_WORDS: Readonly<Record<SortField, { asc: string; desc: string }>> = {
   created_at: { asc: "oldest first", desc: "newest first" },
 };
 
-const ESTIMATED_ROW: Record<Density, number> = { comfortable: 64, compact: 44 };
+const ESTIMATED_ROW: Record<Density, number> = { comfortable: 52, compact: 40 };
 const HEADER_HEIGHT = 42;
 
 const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
@@ -163,8 +165,7 @@ type TableEditContextValue = {
   density: Density;
   isMobile: boolean;
   stateFor: (rowId: string, columnKey: string) => CellState;
-  commit: (book: BookListItem, columnKey: string, next: BookListItem) => void;
-  openDetails: (book: BookListItem) => void;
+  commit: (book: BookListItem, columnKey: EditableColumnKey, next: BookListItem) => void;
 };
 
 const TableEditContext = createContext<TableEditContextValue | null>(null);
@@ -179,7 +180,7 @@ function BookCell({
   book,
   columnId,
 }: Readonly<{ book: BookListItem; columnId: ColumnId }>): ReactElement | null {
-  const { density, isMobile, stateFor, commit, openDetails } = useTableEdit();
+  const { density, isMobile, stateFor, commit } = useTableEdit();
   const state = stateFor(book.id, columnId);
   const reading = book.reading_state ?? EMPTY_READING_STATE;
   switch (columnId) {
@@ -193,14 +194,14 @@ function BookCell({
           />
         </div>
       );
-    case "details":
+    case "open":
       return (
-        <DetailsButton
-          book={book}
-          onOpen={() => {
-            openDetails(book);
-          }}
-        />
+        <Link
+          href={`/b/${book.id}`}
+          className="mx-2 h-7 px-2 opacity-0 group-data-hovered/row:opacity-100 focus-visible:opacity-100"
+        >
+          Open <ArrowRight className="size-3" aria-hidden="true" />
+        </Link>
       );
     case "title":
       return (
@@ -390,6 +391,9 @@ function HeaderContent({
       >
         {column.name}
       </span>
+      {level === undefined && column.field !== undefined ? (
+        <ArrowUpDown aria-hidden="true" className="text-fg-muted size-3 opacity-40" />
+      ) : null}
       {level === undefined ? null : (
         <SortIndicator level={level} index={index} levelCount={sort.length} />
       )}
@@ -559,7 +563,6 @@ type Props = {
   onHideColumn: (key: string) => void;
   selectedIds: ReadonlySet<string>;
   onSelectionChange: (ids: ReadonlySet<string>) => void;
-  onRowActivate: (book: BookListItem) => void;
 };
 
 export function LibraryTable({
@@ -577,11 +580,9 @@ export function LibraryTable({
   onHideColumn,
   selectedIds,
   onSelectionChange,
-  onRowActivate,
 }: Readonly<Props>): ReactElement {
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const shiftHeld = useRef(false);
-  const byId = useMemo(() => new Map(items.map((book) => [book.id, book])), [items]);
 
   const columns = useMemo(
     () => [
@@ -591,23 +592,30 @@ export function LibraryTable({
         if (isMobile) return MOBILE_COLUMN_KEYS.has(column.id);
         return !hiddenColumns.has(column.id);
       }),
-      DETAILS_COLUMN,
+      ...(isMobile ? [] : [OPEN_COLUMN]),
     ],
     [hiddenColumns, isMobile],
   );
 
-  const failed = new Set(edits.feedback.map((entry) => pendingKey(entry.rowId, entry.columnKey)));
+  const hasIsbn = items.some((book) => Boolean(book.isbn_13));
+  const hasRating = items.some((book) => book.reading_state?.rating != null);
+  const compactColumns = new Set([
+    ...(!hasIsbn ? ["isbn_13"] : []),
+    ...(!hasRating ? ["rating"] : []),
+  ]);
   const context: TableEditContextValue = {
     density,
     isMobile,
     stateFor: (rowId, columnKey) => {
       const key = pendingKey(rowId, columnKey);
-      return { pending: edits.pendingCells.get(key), failed: failed.has(key) };
+      return {
+        pending: edits.pendingCells.get(key),
+        failed: edits.feedback.some((entry) => pendingKey(entry.rowId, entry.columnKey) === key),
+      };
     },
     commit: (book, columnKey, next) => {
       edits.onCellEdit({ row: next, previousRow: book, columnKey });
     },
-    openDetails: onRowActivate,
   };
 
   const primary = sort.at(0);
@@ -646,8 +654,8 @@ export function LibraryTable({
         <Column
           id="select"
           width={isMobile ? 40 : 44}
-          minWidth={40}
-          className="border-border-strong size-full border-b outline-none"
+          minWidth={isMobile ? 40 : 44}
+          className="border-border size-full border-b outline-none"
         >
           <div className="flex h-full items-center justify-center">
             <Checkbox
@@ -659,27 +667,34 @@ export function LibraryTable({
         </Column>
       );
     }
-    if (column.id === "details") {
+    if (column.id === "open") {
       return (
         <Column
-          id="details"
-          width={isMobile ? 40 : 48}
-          minWidth={40}
-          className="border-border-strong size-full border-b outline-none"
+          id="open"
+          width={80}
+          minWidth={80}
+          className="border-border size-full border-b outline-none"
         >
-          <span className="sr-only">Details</span>
+          <span className="sr-only">Open</span>
         </Column>
       );
+    }
+    let minWidth = column.minWidth;
+    let defaultWidth = column.defaultWidth;
+    if (isMobile) {
+      minWidth = column.id === "title" ? 0 : 84;
+      defaultWidth = column.id === "title" ? "1fr" : 84;
     }
     return (
       <Column
         id={column.id}
         isRowHeader={column.id === "title"}
         allowsSorting={column.field !== undefined}
-        defaultWidth={isMobile && column.id === "added" ? 84 : column.defaultWidth}
-        minWidth={isMobile && column.id === "added" ? 80 : column.minWidth}
+        defaultWidth={defaultWidth}
+        maxWidth={!isMobile && compactColumns.has(column.id) ? minWidth : undefined}
+        minWidth={minWidth}
         textValue={column.name}
-        className="border-border-strong relative size-full border-b text-left outline-none"
+        className="border-border relative size-full border-b text-left outline-none"
       >
         {(render) => (
           <HeaderContent
@@ -701,7 +716,7 @@ export function LibraryTable({
   return (
     <div
       data-testid="library-table"
-      className="rv-table"
+      className="rv-table flex h-full min-h-0 flex-col"
       {...edits.keyboardProps}
       onPointerDownCapture={(event) => {
         shiftHeld.current = event.shiftKey;
@@ -711,16 +726,18 @@ export function LibraryTable({
       }}
     >
       <TableEditContext value={context}>
-        <ResizableTableContainer className="relative w-full">
+        <ResizableTableContainer className="relative min-h-0 w-full flex-1">
           <Virtualizer
             layout={TableLayout}
             layoutOptions={{
+              rowHeight: ESTIMATED_ROW[density],
               estimatedRowHeight: ESTIMATED_ROW[density],
               headingHeight: HEADER_HEIGHT,
               loaderHeight: 48,
             }}
           >
             <Table
+              keyboardNavigationBehavior="tab"
               aria-label="Library books"
               selectionMode="multiple"
               selectedKeys={selectedIds}
@@ -735,26 +752,33 @@ export function LibraryTable({
               onSortChange={(descriptor) => {
                 handleHeaderSort(descriptor.column);
               }}
-              onRowAction={(key) => {
-                const book = byId.get(String(key));
-                if (book !== undefined) onRowActivate(book);
-              }}
-              className="border-border bg-canvas h-[calc(100dvh-22rem)] min-h-96 w-full scroll-pt-[42px] overflow-auto rounded-md border outline-none"
+              className="bg-sheet h-[calc(100dvh-20rem)] min-h-40 lg:h-full lg:min-h-0 w-full scroll-pt-[42px] overflow-auto outline-none"
             >
               <TableHeader
                 columns={columns}
-                dependencies={[sort, hiddenColumns]}
-                className="bg-surface-2 size-full"
+                dependencies={[sort, hiddenColumns, isMobile, hasIsbn, hasRating]}
+                className="bg-sheet size-full"
               >
                 {renderColumn}
               </TableHeader>
               <TableBody>
-                <Collection items={items} dependencies={[columns, density]}>
+                <Collection
+                  items={items}
+                  dependencies={[
+                    columns,
+                    density,
+                    edits.pendingCells,
+                    edits.feedback,
+                    edits.savedCells,
+                  ]}
+                >
                   {(book) => (
                     <Row
                       id={book.id}
+                      data-book-id={book.id}
                       textValue={book.title}
                       columns={columns}
+                      dependencies={[edits.pendingCells, edits.feedback, edits.savedCells]}
                       className="group/row text-fg data-hovered:bg-surface data-selected:bg-accent-soft [height:inherit] [width:inherit] cursor-default outline-none"
                     >
                       {(column) => (
@@ -762,7 +786,16 @@ export function LibraryTable({
                           textValue={column.id === "title" ? book.title : undefined}
                           className="border-border size-full overflow-hidden border-b outline-none"
                         >
-                          <BookCell book={book} columnId={column.id} />
+                          <div className="relative flex size-full items-center">
+                            <BookCell book={book} columnId={column.id} />
+                            <CellSaveState
+                              saved={edits.savedCells.has(pendingKey(book.id, column.id))}
+                              pending={edits.pendingCells.has(pendingKey(book.id, column.id))}
+                              feedback={edits.feedback.find(
+                                (entry) => entry.rowId === book.id && entry.columnKey === column.id,
+                              )}
+                            />
+                          </div>
                         </Cell>
                       )}
                     </Row>

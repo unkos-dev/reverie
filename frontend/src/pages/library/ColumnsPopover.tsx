@@ -48,7 +48,7 @@ export function ColumnsPopover({
         ) : null}
       </Button>
       <PopoverContent aria-label="Columns" placement="bottom end" className="w-56">
-        <p className="text-fg-muted mb-3 font-mono text-xs uppercase tracking-[0.12em]">Columns</p>
+        <p className="text-fg-muted mb-3 text-sm">Columns</p>
         <div className="flex flex-col gap-2">
           <Checkbox id="library-column-title" isSelected isDisabled className="text-fg-muted">
             Title
