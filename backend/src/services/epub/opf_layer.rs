@@ -617,7 +617,7 @@ pub fn validate(
                         .flatten()
                         .find(|a| a.key.as_ref() == "scheme")
                         .map(|a| attr_text(&a));
-                    if let Some(refines) = refines_attr.clone()
+                    if let Some(refines) = refines_attr
                         && content.as_deref().is_some_and(|v| {
                             v.trim().eq_ignore_ascii_case("isbn")
                                 || (scheme.as_deref() == Some("onix:codelist5")
@@ -637,7 +637,7 @@ pub fn validate(
                 if let Some(ref prop) = prop
                     && prop == "group-position"
                 {
-                    if let Some(refines) = refines_attr.clone()
+                    if let Some(refines) = refines_attr
                         && let Some(pos) = content.as_deref().and_then(|c| c.parse::<f64>().ok())
                     {
                         group_positions.insert(refines, pos);
@@ -650,8 +650,8 @@ pub fn validate(
                 if let Some(ref prop) = prop
                     && prop == "role"
                 {
-                    if let Some(refines) = refines_attr.clone()
-                        && let Some(code) = content.clone()
+                    if let Some(refines) = refines_attr
+                        && let Some(code) = content
                     {
                         role_refines.entry(refines).or_default().push(code);
                     }
@@ -660,7 +660,7 @@ pub fn validate(
                 if let Some(ref prop) = prop
                     && prop == "title-type"
                 {
-                    if let Some(refines) = refines_attr.clone()
+                    if let Some(refines) = refines_attr
                         && content.as_deref() == Some("subtitle")
                     {
                         subtitle_ids.insert(refines);
@@ -670,7 +670,7 @@ pub fn validate(
                 if let Some(ref prop) = prop
                     && prop == "schema:numberOfPages"
                 {
-                    if let Some(n) = content.clone() {
+                    if let Some(n) = content {
                         number_of_pages = Some(n);
                     }
                     continue;

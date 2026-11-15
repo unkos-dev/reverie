@@ -82,7 +82,7 @@ fn parse_operations() -> Vec<Operation> {
                         .find_map(|req| req.as_object().and_then(|o| o.values().next()))
                 })
                 .and_then(|v| v.as_array())
-                .map(|arr| {
+                .map_or_default(|arr| {
                     arr.iter()
                         .filter_map(|s| s.as_str())
                         .map(|s| {
@@ -90,18 +90,14 @@ fn parse_operations() -> Vec<Operation> {
                                 .unwrap_or_else(|_| panic!("unknown scope literal {s:?}"))
                         })
                         .collect()
-                })
-                .unwrap_or_default();
-            let transports = op["security"]
-                .as_array()
-                .map(|requirements| {
-                    requirements
-                        .iter()
-                        .filter_map(Value::as_object)
-                        .flat_map(|requirement| requirement.keys().cloned())
-                        .collect()
-                })
-                .unwrap_or_default();
+                });
+            let transports = op["security"].as_array().map_or_default(|requirements| {
+                requirements
+                    .iter()
+                    .filter_map(Value::as_object)
+                    .flat_map(|requirement| requirement.keys().cloned())
+                    .collect()
+            });
             ops.push(Operation {
                 method: method.to_uppercase(),
                 path: path.clone(),
