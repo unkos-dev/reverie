@@ -598,7 +598,7 @@ fn required<T>(value: Option<T>) -> async_graphql::Result<T> {
 }
 
 pub(super) fn page_size(first: i32) -> async_graphql::Result<i32> {
-    super::complexity::effective_page(first, 100).map_err(safe_error)
+    super::complexity::effective_page(first, reader::PAGE_MAX).map_err(safe_error)
 }
 async fn relation(
     ctx: &Context<'_>,

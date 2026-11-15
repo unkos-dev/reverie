@@ -12,7 +12,7 @@ pub(super) fn effective_page(first: i32, ceiling: u32) -> Result<i32, AppError> 
 }
 
 pub(super) fn page(first: i32, child: usize) -> ServerResult<usize> {
-    let size = effective_page(first, 100).map_err(|error| {
+    let size = effective_page(first, reader::PAGE_MAX).map_err(|error| {
         super::safe_error(error).into_server_error(async_graphql::Pos::default())
     })?;
     weighted(usize::try_from(size).map_err(|_| excessive())?, child)
@@ -45,13 +45,7 @@ fn excessive() -> ServerError {
 }
 
 pub(super) fn nested_size(kind: reader::RelationKind, first: i32) -> Result<i32, AppError> {
-    use reader::RelationKind;
-    let maximum = match kind {
-        RelationKind::SeriesWorks | RelationKind::ShelfItems => 100,
-        RelationKind::Tags => 50,
-        _ => 20,
-    };
-    effective_page(first, maximum)
+    effective_page(first, kind.max_first())
 }
 
 pub(super) fn nested(kind: reader::RelationKind, first: i32, child: usize) -> ServerResult<usize> {
@@ -69,5 +63,5 @@ pub(super) fn pending(first: i32, child: usize) -> ServerResult<usize> {
 }
 
 pub(super) fn pending_size(first: i32) -> Result<i32, AppError> {
-    effective_page(first, 50)
+    effective_page(first, reader::PENDING_MAX)
 }

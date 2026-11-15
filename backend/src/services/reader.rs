@@ -2036,6 +2036,19 @@ pub enum RelationKind {
     Ratings,
 }
 
+pub const PAGE_MAX: u32 = 100;
+pub const PENDING_MAX: u32 = 50;
+
+impl RelationKind {
+    pub const fn max_first(self) -> u32 {
+        match self {
+            Self::SeriesWorks | Self::ShelfItems => PAGE_MAX,
+            Self::Tags => 50,
+            _ => 20,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RelationKey {
     pub kind: RelationKind,
@@ -2250,12 +2263,7 @@ fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppEr
 fn relation_inputs(keys: &[RelationKey]) -> Result<Vec<RelationInput>, AppError> {
     let mut inputs = Vec::with_capacity(keys.len());
     for (index, key) in keys.iter().enumerate() {
-        let ceiling = match key.kind {
-            RelationKind::SeriesWorks | RelationKind::ShelfItems => 100,
-            RelationKind::Tags => 50,
-            _ => 20,
-        };
-        if !(0..=ceiling).contains(&i64::from(key.first)) {
+        if !(0..=i64::from(key.kind.max_first())).contains(&i64::from(key.first)) {
             return Err(AppError::Validation("Invalid page size.".into()));
         }
         inputs.push(relation_input(
@@ -3061,7 +3069,7 @@ fn pending_inputs(keys: &[PendingKey]) -> Result<Vec<PendingInput>, AppError> {
     use base64ct::{Base64UrlUnpadded, Encoding};
     let mut inputs = Vec::new();
     for (index, key) in keys.iter().enumerate() {
-        if !(0..=50).contains(&i64::from(key.first)) {
+        if !(0..=i64::from(PENDING_MAX)).contains(&i64::from(key.first)) {
             return Err(AppError::Validation("Invalid page size.".into()));
         }
         let cursor = match &key.after {
