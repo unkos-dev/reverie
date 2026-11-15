@@ -53,7 +53,7 @@ same two tables directly by SQL rather than through this module's Rust functions
 catalogue subject, not here — the OPDS EPUB download route is not shelf-scoped and never queries `shelves` or
 `shelf_items` itself, so it is not a dependent of this subject; the Design "Books list query contract"'s shelf filters,
 which require ownership of every requested shelf and match no rows if any ID is foreign or unknown; and, on the client,
-the library filter rail's shelf facet, the filter chips row, the Library shelf header, and the library batch bar's "add
+the Library filter panel's shelf facet, the filter chips row, the Library shelf header, and the library batch bar's "add
 selection to shelf" action — all described below only as consumers, since none of them owns shelf state.
 
 ## Structure

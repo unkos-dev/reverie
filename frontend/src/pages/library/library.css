@@ -1,0 +1,56 @@
+.library-results {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  gap: 0;
+  transition:
+    grid-template-columns 180ms var(--ease-emphasised),
+    gap 180ms var(--ease-emphasised);
+}
+
+.library-results[data-panel-open="true"] {
+  grid-template-columns: minmax(0, 1fr) 316px;
+  gap: 12px;
+}
+
+.library-filter-slot {
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(16px);
+  transition:
+    opacity 180ms var(--ease-emphasised),
+    transform 180ms var(--ease-emphasised),
+    visibility 180ms;
+}
+
+.library-results[data-panel-open="true"] .library-filter-slot {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+
+.library-filter-panel {
+  width: 316px;
+  max-width: 100%;
+  background: var(--bar);
+  backdrop-filter: blur(22px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-results,
+  .library-filter-slot {
+    transition: none;
+  }
+}
+
+.library-filter-panel div:has(> input[role="combobox"]) {
+  border-radius: 9px;
+  border-color: var(--border-control);
+  background: var(--surface);
+}
+
+.library-filter-panel [data-slot="checkbox"] {
+  font-weight: 400;
+  font-size: 13px;
+}

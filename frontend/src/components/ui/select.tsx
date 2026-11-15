@@ -78,3 +78,5 @@ function SelectItem({
 
 export { Select, SelectValue } from "react-aria-components";
 export { SelectContent, SelectItem, SelectTrigger };
+
+export { ListBox, ListBoxItem } from "react-aria-components";

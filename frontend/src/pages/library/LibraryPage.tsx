@@ -9,10 +9,9 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import { Loader2, Undo2 } from "lucide-react";
+import { Circle, CircleCheck, Loader2, Star, Undo2 } from "lucide-react";
 import {
   lazy,
-  memo,
   Suspense,
   useDeferredValue,
   useEffect,
@@ -20,11 +19,10 @@ import {
   useRef,
   useMemo,
   useState,
-  type CSSProperties,
   type ReactNode,
   type ReactElement,
 } from "react";
-import { Link, matchPath } from "react-router";
+import { matchPath, useNavigate } from "react-router";
 
 import {
   ApiError,
@@ -36,6 +34,14 @@ import {
   type BookListResponse,
   type SortLevelParam,
 } from "@/api";
+import { z } from "zod";
+import { GridList, GridListItem } from "@/components/ui/grid-list";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import { Link } from "@/components/ui/link";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
+import "./library.css";
+
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { sortStackSummary } from "@/components/library/sort-summary";
 import { FilterRail } from "@/components/shell/FilterRail";
@@ -75,7 +81,8 @@ const LibraryTable = lazy(() =>
   import("./table/LibraryTable").then((m) => ({ default: m.LibraryTable })),
 );
 
-type OverlayState = "filters" | null;
+const COVER_WIDTH_KEY = "reverie:cover-width";
+const CoverWidthSchema = z.coerce.number().int().min(120).max(300);
 
 type BookPages = InfiniteData<BookListResponse, string | undefined> & {
   originKey?: BooksListKey;
@@ -240,7 +247,28 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
 export function LibraryPage(): ReactElement {
   const owner = useLibraryFilters();
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
-  const [overlay, setOverlay] = useState<OverlayState>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersBeside = useMediaQuery("(min-width: 1600px)");
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
+  const [coverWidth, setCoverWidth] = useState(() => {
+    try {
+      const stored = CoverWidthSchema.safeParse(localStorage.getItem(COVER_WIDTH_KEY));
+      return stored.success ? stored.data : 180;
+    } catch {
+      return 180;
+    }
+  });
+  function saveCoverWidth(width: number): void {
+    try {
+      localStorage.setItem(COVER_WIDTH_KEY, String(width));
+    } catch (error) {
+      console.error("[LibraryPage] cover width could not be saved", error);
+    }
+  }
+  function closeFilters(): void {
+    setFiltersOpen(false);
+    filterButtonRef.current?.focus();
+  }
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const queryClient = useQueryClient();
   const {
@@ -350,30 +378,15 @@ export function LibraryPage(): ReactElement {
 
   const activeFilterCount = countActiveFilters(filterState);
 
-  function openOverlay(next: Exclude<OverlayState, null>): void {
-    setOverlay(next);
-  }
-
   if (!loading && !hasRenderedControls) setHasRenderedControls(true);
   if (loading && !hasRenderedControls) return <LibrarySkeleton />;
 
   return (
     <>
-      <div className={viewMode === "table" ? "lg:h-[calc(100dvh-86px)]" : undefined}>
-        <div
-          className={
-            viewMode === "table"
-              ? "flex h-full min-h-0 flex-col px-3 pb-3 sm:px-5"
-              : "px-3 pb-3 sm:px-5"
-          }
-        >
+      <div className="lg:h-[calc(100dvh-86px)]">
+        <div className="flex h-full min-h-0 flex-col px-3 pb-3 sm:px-5">
           <ShelfHeader shelves={shelves ?? []} selected={filterState.shelf} />
-          {/* Sort announcements stay mounted here: the filter drawer (which
-              carries the sort section) unmounts when closed, and an
-              unmounted live region is silent, which would leave
-              header-driven sorts unannounced. Announces the effective stack
-              (immediate, not deferred): intent is voiced at gesture time,
-              while the rows carry `aria-busy` until the new order lands. */}
+          {/* Sort announcements stay outside the filter editor so hidden controls do not silence them. */}
           <p className="sr-only" aria-live="polite">
             {sortStackSummary(sortLevels)}
           </p>
@@ -390,10 +403,16 @@ export function LibraryPage(): ReactElement {
             }}
             view={viewMode}
             onViewChange={setView}
-            filtersOpen={overlay === "filters"}
+            filtersOpen={filtersOpen}
+            filterButtonRef={filterButtonRef}
+            coverWidth={coverWidth}
+            onCoverWidthChange={setCoverWidth}
+            onCoverWidthChangeEnd={saveCoverWidth}
+            sortLevels={sortLevels}
+            onSortChange={handleSortChange}
             activeFilterCount={activeFilterCount}
             onOpenFilters={() => {
-              openOverlay("filters");
+              setFiltersOpen((open) => !open);
             }}
             density={density}
             onDensityChange={preferences.setDensity}
@@ -404,46 +423,77 @@ export function LibraryPage(): ReactElement {
           />
           <Separator className="mb-2" />
 
-          <CellEditOutcomes edits={edits} />
-          <LibraryBooks
-            items={items}
-            filtered={hasActiveFilterState(filterState)}
-            onClear={clearAll}
-            viewMode={viewMode}
-            blockedMessage={blockedMessage}
-            loading={loading}
-            updating={updating}
+          <div
+            className="library-results min-h-0 flex-1"
+            data-panel-open={filtersBeside && filtersOpen}
           >
-            <TableChunkBoundary
-              onFallbackToGrid={() => {
-                setVisitView("grid");
-              }}
-            >
-              <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                <LibraryTable
-                  items={items}
-                  sort={sortLevels}
-                  defaultSort={defaultSortLevels}
-                  onSortChange={handleSortChange}
-                  hasNextPage={canLoadMore}
-                  isFetchingNextPage={isFetchingNextPage}
-                  isFetchNextPageError={isFetchNextPageError}
+            <div className="flex min-h-0 min-w-0 flex-col">
+              <CellEditOutcomes edits={edits} />
+              <LibraryBooks
+                items={items}
+                filtered={hasActiveFilterState(filterState)}
+                onClear={clearAll}
+                viewMode={viewMode}
+                coverWidth={coverWidth}
+                selectedIds={selectedIds}
+                onSelectionChange={setSelectedIds}
+                blockedMessage={blockedMessage}
+                loading={loading}
+                updating={updating}
+              >
+                <TableChunkBoundary
+                  onFallbackToGrid={() => {
+                    setVisitView("grid");
+                  }}
+                >
+                  <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                    <LibraryTable
+                      items={items}
+                      sort={sortLevels}
+                      defaultSort={defaultSortLevels}
+                      onSortChange={handleSortChange}
+                      hasNextPage={canLoadMore}
+                      isFetchingNextPage={isFetchingNextPage}
+                      isFetchNextPageError={isFetchNextPageError}
+                      onLoadMore={() => {
+                        void fetchNextPage();
+                      }}
+                      edits={edits}
+                      density={density}
+                      hiddenColumns={hiddenColumns}
+                      onHideColumn={(key) => {
+                        toggleColumn(key, true);
+                      }}
+                      selectedIds={selectedIds}
+                      onSelectionChange={setSelectedIds}
+                    />
+                  </Suspense>
+                </TableChunkBoundary>
+              </LibraryBooks>
+
+              {viewMode !== "table" && canLoadMore ? (
+                <LibraryPagination
+                  isFetching={isFetchingNextPage}
+                  isError={isFetchNextPageError}
                   onLoadMore={() => {
                     void fetchNextPage();
                   }}
-                  edits={edits}
-                  density={density}
-                  hiddenColumns={hiddenColumns}
-                  onHideColumn={(key) => {
-                    toggleColumn(key, true);
-                  }}
-                  selectedIds={selectedIds}
-                  onSelectionChange={setSelectedIds}
                 />
-              </Suspense>
-            </TableChunkBoundary>
-          </LibraryBooks>
-
+              ) : null}
+            </div>
+            {filtersBeside ? (
+              <div className="library-filter-slot" inert={!filtersOpen}>
+                <FilterRail
+                  owner={owner}
+                  showContradiction={showContradiction}
+                  sortLevels={sortLevels}
+                  sortInherited={preferences.sortInherited}
+                  onSortChange={handleSortChange}
+                  onClose={closeFilters}
+                />
+              </div>
+            ) : null}
+          </div>
           <BatchBar
             selectedIds={selectedIds}
             hasMorePages={canLoadMore}
@@ -454,41 +504,31 @@ export function LibraryPage(): ReactElement {
             shelvesError={shelvesError}
             batch={batch}
           />
-
-          {viewMode !== "table" && canLoadMore ? (
-            <LibraryPagination
-              isFetching={isFetchingNextPage}
-              isError={isFetchNextPageError}
-              onLoadMore={() => {
-                void fetchNextPage();
-              }}
-            />
-          ) : null}
         </div>
       </div>
 
-      <SheetContent
-        isOpen={overlay === "filters"}
-        onOpenChange={(open) => {
-          setOverlay(open ? "filters" : null);
-        }}
-
-        id="library-filter-drawer"
-        side="right"
-        aria-describedby={undefined}
-        className="max-w-[100vw] overflow-y-auto p-6 data-[side=right]:w-[340px]"
-      >
-        <SheetHeader className="mb-2 p-0">
-          <SheetTitle className="font-display text-2xl font-medium">Refine</SheetTitle>
-        </SheetHeader>
-        <FilterRail
-          owner={owner}
-          showContradiction={showContradiction}
-          sortLevels={sortLevels}
-          sortInherited={preferences.sortInherited}
-          onSortChange={handleSortChange}
-        />
-      </SheetContent>
+      {!filtersBeside ? (
+        <SheetContent
+          isOpen={filtersOpen}
+          onOpenChange={setFiltersOpen}
+          side="right"
+          showCloseButton={false}
+          aria-describedby={undefined}
+          className="max-w-[100vw] p-3 data-[side=right]:w-[340px]"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Filters</SheetTitle>
+          </SheetHeader>
+          <FilterRail
+            owner={owner}
+            showContradiction={showContradiction}
+            sortLevels={sortLevels}
+            sortInherited={preferences.sortInherited}
+            onSortChange={handleSortChange}
+            onClose={closeFilters}
+          />
+        </SheetContent>
+      ) : null}
     </>
   );
 }
@@ -498,6 +538,9 @@ type LibraryBooksProps = {
   filtered: boolean;
   onClear: () => void;
   viewMode: LibraryView;
+  coverWidth: number;
+  selectedIds: ReadonlySet<string>;
+  onSelectionChange: (ids: ReadonlySet<string>) => void;
   blockedMessage: string | undefined;
   loading: boolean;
   updating: boolean;
@@ -509,6 +552,9 @@ function LibraryBooks({
   filtered,
   onClear,
   viewMode,
+  coverWidth,
+  selectedIds,
+  onSelectionChange,
   blockedMessage,
   loading,
   updating,
@@ -524,13 +570,21 @@ function LibraryBooks({
   if (loading || (updating && items.length === 0)) books = <Skeleton className="h-96 w-full" />;
   else if (items.length === 0)
     books = filtered ? <FilteredEmptyState onClear={onClear} /> : <EmptyLibrary />;
-  else if (viewMode === "grid") books = <BookGrid items={items} />;
+  else if (viewMode === "grid")
+    books = (
+      <BookGrid
+        items={items}
+        coverWidth={coverWidth}
+        selectedIds={selectedIds}
+        onSelectionChange={onSelectionChange}
+      />
+    );
   return (
     <>
       {updating ? <p className="text-fg-muted mb-3 text-sm">Updating results…</p> : null}
       <div
         aria-busy={updating || undefined}
-        className={`${viewMode === "table" ? "min-h-0 flex-1" : ""} ${updating ? "opacity-60" : ""}`}
+        className={`min-h-0 flex-1 ${viewMode === "grid" ? "overflow-y-auto overflow-x-hidden p-1" : ""} ${updating ? "opacity-60" : ""}`}
       >
         {books}
       </div>
@@ -574,56 +628,75 @@ function LibraryPagination({
 
 type BookGridProps = {
   items: BookListItem[];
+  coverWidth: number;
+  selectedIds: ReadonlySet<string>;
+  onSelectionChange: (ids: ReadonlySet<string>) => void;
 };
 
-const BookGrid = memo(function BookGrid({ items }: BookGridProps): ReactElement {
+function BookGrid({
+  items,
+  coverWidth,
+  selectedIds,
+  onSelectionChange,
+}: BookGridProps): ReactElement {
+  const navigate = useNavigate();
   return (
-    <ul
+    <GridList
+      aria-label="Books"
       data-testid="library-grid"
-      className="grid gap-x-6 gap-y-8 [grid-template-columns:repeat(auto-fill,minmax(clamp(170px,10vw,240px),1fr))]"
-    >
-      {items.map((book, index) => {
-        // Stagger index is the one dynamic value utilities can't carry;
-        // typed as an intersection so no `as` cast is needed.
-        const staggerStyle: CSSProperties & { "--tile-index": number } = {
-          "--tile-index": index,
-        };
-        return (
-          <li key={book.id} className="tile-in" style={staggerStyle}>
-            <BookCard book={book} />
-          </li>
+      layout="grid"
+      items={items}
+      selectionMode="multiple"
+      selectionBehavior="toggle"
+      selectedKeys={selectedIds}
+      onSelectionChange={(keys) => {
+        onSelectionChange(
+          new Set(keys === "all" ? items.map((book) => book.id) : [...keys].map(String)),
         );
-      })}
-    </ul>
+      }}
+      onAction={(key) => {
+        void navigate(`/b/${String(key)}`);
+      }}
+      style={{ gridTemplateColumns: `repeat(auto-fill, ${String(coverWidth)}px)` }}
+      className="grid content-start justify-between gap-x-6 gap-y-7 outline-none"
+    >
+      {(book) => (
+        <GridListItem
+          id={book.id}
+          textValue={book.title}
+          className="group/cover min-w-0 rounded-md outline-none data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-(--focus-ring)"
+        >
+          <BookCard book={book} />
+        </GridListItem>
+      )}
+    </GridList>
   );
-});
+}
 
-type BookCardProps = {
-  book: BookListItem;
+const READING_LABELS = {
+  want_to_read: "Want to read",
+  reading: "Reading",
+  on_hold: "On hold",
+  finished: "Finished",
+  abandoned: "Abandoned",
 };
 
-function BookCard({ book }: Readonly<BookCardProps>): ReactElement {
-  // Spine fallback active when there is no art to fall back FROM, or
-  // the art failed to load. The floating series badge renders only
-  // over real cover art — over a typographic spine it collides with
-  // the composition's own type.
+function BookCard({ book }: { book: BookListItem }): ReactElement {
   const [coverFailed, setCoverFailed] = useState(false);
-  const usesSpine = book.cover_url === "" || coverFailed;
-  const seriesLabel =
-    book.series && book.series.position !== null
-      ? `${book.series.name} · #${String(book.series.position)}`
-      : (book.series?.name ?? null);
-  // Delay the z-index drop on hover-out so the card stays above its
-  // neighbours for the full 200ms lift-down — otherwise z resets instantly
-  // and the accent glow is clipped mid-animation.
+  const reading = book.reading_state;
+  const progress = reading?.progress_pct ?? 0;
+  let label =
+    reading?.status === null || reading === null ? "None" : READING_LABELS[reading.status];
+  if (reading?.status === "reading" && reading.progress_pct !== null)
+    label = `${String(progress)}% read`;
+  let statusIcon = <Circle aria-hidden="true" className="size-3" />;
+  if (reading?.status === "finished")
+    statusIcon = <CircleCheck aria-hidden="true" className="size-3" />;
   return (
-    <article className="group relative z-0 transition-[z-index] delay-200 duration-0 hover:z-10 hover:delay-0 focus-within:z-10 focus-within:delay-0">
-      <Link
-        to={`/b/${book.id}`}
-        className="focus-visible:ring-accent focus-visible:ring-offset-canvas flex flex-col gap-3 rounded-md transition-transform duration-200 ease-out hover:-translate-y-2 hover:scale-[1.04] focus-visible:-translate-y-2 focus-visible:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 motion-reduce:transform-none"
-      >
-        <div className="border-border group-hover:border-border-strong bg-surface group-hover:shadow-[0_14px_32px_-16px_var(--accent-glow)] group-focus-within:shadow-[0_14px_32px_-16px_var(--accent-glow)] relative aspect-[2/3] overflow-hidden border transition-[border-color,box-shadow] duration-200 motion-reduce:transition-none">
-          {usesSpine ? (
+    <div className="flex flex-col gap-3">
+      <div className="relative aspect-[2/3] rounded-md border border-hairline bg-surface shadow-[0_8px_16px_color-mix(in_oklab,var(--fg)_15%,transparent)] dark:shadow-none group-data-selected/cover:outline-2 group-data-selected/cover:outline-offset-2 group-data-selected/cover:outline-accent">
+        <div className="size-full overflow-hidden rounded-[inherit]">
+          {book.cover_url === "" || coverFailed ? (
             <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />
           ) : (
             <img
@@ -637,22 +710,51 @@ function BookCard({ book }: Readonly<BookCardProps>): ReactElement {
               className="size-full object-cover"
             />
           )}
-          {seriesLabel !== null && !usesSpine ? (
-            <span className="bg-canvas/85 text-fg border-border absolute left-2 top-2 rounded-sm border px-2 py-1 text-[0.62rem] uppercase tracking-[0.14em] backdrop-blur-sm">
-              {seriesLabel}
-            </span>
+          {reading?.status === "reading" && progress > 0 ? (
+            <Progress
+              aria-label={`Reading progress for ${book.title}`}
+              value={progress}
+              className="absolute inset-x-0 bottom-0 h-1 rounded-b-md"
+            />
           ) : null}
         </div>
-        <div className="flex flex-col gap-1">
-          <h3 className="font-display text-fg line-clamp-2 text-sm font-medium leading-tight">
+        <Checkbox
+          slot="selection"
+          aria-label={`Select ${book.title}`}
+          className="absolute left-2 top-2 opacity-0 group-data-hovered/cover:opacity-100 group-data-selected/cover:opacity-100 group-focus-within/cover:opacity-100"
+        />
+      </div>
+      <div className="flex min-w-0 flex-col gap-1 text-xs">
+        <h3 className="truncate text-[13px] font-semibold text-fg">
+          <Link href={`/b/${book.id}`} className="block truncate text-[13px] font-semibold text-fg">
             {book.title}
-          </h3>
-          <p className="text-fg-muted line-clamp-1 text-xs leading-tight">
-            {book.authors.join(", ")}
-          </p>
+          </Link>
+        </h3>
+        <p className="truncate text-fg-muted">{book.authors.join(", ")}</p>
+        <div className="mt-1 flex items-center justify-between gap-1 text-fg-muted">
+          <span
+            className={`flex min-w-0 items-center gap-1.5 ${reading?.status === "reading" ? "font-semibold text-accent-text" : ""}`}
+          >
+            {reading?.status === "reading" ? null : statusIcon}
+            <span className="truncate">{label}</span>
+          </span>
+          {reading?.rating === null || reading === null ? null : (
+            <span
+              aria-label={`${String(reading.rating)} out of 5 stars`}
+              className="flex shrink-0 gap-0.5 text-fg"
+            >
+              {Array.from({ length: reading.rating }, (_, index) => (
+                <Star
+                  key={String(index + 1)}
+                  aria-hidden="true"
+                  className="size-2.5 fill-current"
+                />
+              ))}
+            </span>
+          )}
         </div>
-      </Link>
-    </article>
+      </div>
+    </div>
   );
 }
 

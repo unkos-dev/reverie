@@ -124,6 +124,7 @@ type RangeFilterEditorProps = {
   max?: number;
   allowEmpty?: boolean;
   showContradiction?: boolean;
+  compact?: boolean;
   onChange: (patch: (current: RangeFilter) => RangeFilter) => void;
 };
 
@@ -134,6 +135,7 @@ export function RangeFilterEditor({
   max,
   allowEmpty = false,
   showContradiction = true,
+  compact = false,
   onChange,
 }: Readonly<RangeFilterEditorProps>): ReactElement {
   const id = useId();
@@ -144,7 +146,10 @@ export function RangeFilterEditor({
     value.gte > value.lte;
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-3" aria-describedby={contradictory ? id : undefined}>
+      <div
+        className={compact ? "grid grid-cols-2 gap-2" : "flex flex-col gap-3"}
+        aria-describedby={contradictory ? id : undefined}
+      >
         {(["gte", "lte"] as const).map((side) => (
           <NumberField
             key={side}
@@ -164,16 +169,25 @@ export function RangeFilterEditor({
           >
             <AriaLabel
               aria-label={`${label} ${side === "gte" ? "minimum" : "maximum"}`}
-              className="text-sm font-medium"
+              className={compact ? "sr-only" : "text-sm font-medium"}
             >
               {side === "gte" ? "Minimum" : "Maximum"}
             </AriaLabel>
-            <Group className="border-input bg-transparent dark:bg-input/30 flex h-9 min-w-0 items-center rounded-lg border px-0.5 data-disabled:opacity-50">
-              <AriaInput className="text-fg min-w-0 flex-1 bg-transparent px-2 text-sm tabular-nums outline-none" />
-              <Button slot="decrement" variant="ghost" size="icon">
+            <Group
+              className={
+                compact
+                  ? "border-border-control bg-surface flex h-[34px] min-w-0 items-center rounded-[9px] border px-0.5 data-disabled:opacity-50"
+                  : "border-input bg-transparent dark:bg-input/30 flex h-9 min-w-0 items-center rounded-lg border px-0.5 data-disabled:opacity-50"
+              }
+            >
+              <AriaInput
+                placeholder={compact ? { gte: "Minimum", lte: "Maximum" }[side] : undefined}
+                className={`text-fg min-w-0 flex-1 bg-transparent px-2 tabular-nums outline-none ${compact ? "text-xs" : "text-sm"}`}
+              />
+              <Button slot="decrement" variant="ghost" size={compact ? "icon-xs" : "icon"}>
                 <Minus aria-hidden="true" />
               </Button>
-              <Button slot="increment" variant="ghost" size="icon">
+              <Button slot="increment" variant="ghost" size={compact ? "icon-xs" : "icon"}>
                 <Plus aria-hidden="true" />
               </Button>
             </Group>
@@ -204,6 +218,7 @@ type DateRangeEditorProps = {
   after?: string;
   before?: string;
   showContradiction?: boolean;
+  compact?: boolean;
   onChange: (
     patch: (current: { after?: string; before?: string }) => { after?: string; before?: string },
   ) => void;
@@ -213,6 +228,7 @@ export function DateRangeEditor({
   after,
   before,
   showContradiction = true,
+  compact = false,
   onChange,
 }: Readonly<DateRangeEditorProps>): ReactElement {
   const id = useId();
@@ -225,7 +241,7 @@ export function DateRangeEditor({
     parseDate(after).compare(parseDate(before)) > 0;
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-3">
+      <div className={compact ? "grid grid-cols-2 gap-2" : "flex flex-col gap-3"}>
         {(["after", "before"] as const).map((side) => {
           const value = side === "after" ? afterValue : beforeValue;
           const label = side === "after" ? "On or after" : "On or before";
@@ -245,12 +261,20 @@ export function DateRangeEditor({
             >
               <AriaLabel
                 aria-label={`Added ${label.toLowerCase()}`}
-                className="text-sm font-medium"
+                className={compact ? "sr-only" : "text-sm font-medium"}
               >
                 {label}
               </AriaLabel>
-              <Group className="border-input bg-transparent dark:bg-input/30 flex h-9 min-w-0 items-center rounded-lg border px-0.5">
-                <DateInput className="flex min-w-0 flex-1 items-center px-2 text-sm">
+              <Group
+                className={
+                  compact
+                    ? "border-border-control bg-surface flex h-[34px] min-w-0 items-center rounded-[9px] border px-0.5"
+                    : "border-input bg-transparent dark:bg-input/30 flex h-9 min-w-0 items-center rounded-lg border px-0.5"
+                }
+              >
+                <DateInput
+                  className={`flex min-w-0 flex-1 items-center ${compact ? "px-1 text-xs" : "px-2 text-sm"}`}
+                >
                   {(segment) => (
                     <DateSegment
                       segment={segment}
@@ -258,7 +282,7 @@ export function DateRangeEditor({
                     />
                   )}
                 </DateInput>
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size={compact ? "icon-xs" : "icon"}>
                   <CalendarDays aria-hidden="true" />
                 </Button>
               </Group>
