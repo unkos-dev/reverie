@@ -154,9 +154,10 @@ mutation invalidates the coarser `queryKeys.shelves.all` — every create, renam
 that key.
 
 Graph shelf roots and request-local loaders call the owner-scoped reads in `reader.rs`. `Shelf` has a base64 domain ID
-and exposes scalar shelf metadata plus a bounded `items(first:, after:)` connection. The root `shelves` connection
-retains system-first, name, then ID ordering. Items retain addition time, then manifestation ID ordering, with the shelf
-ID bound into the graph cursor. Every edge has its own cursor and PageInfo flags come from bounded SQL probes.
+and exposes scalar shelf metadata plus a bounded `items(first:, after:)` connection. GraphQL shelves and items require
+`first` from 0 through 100, independently of `REVERIE_OPDS_PAGE_SIZE`. The root `shelves` connection retains
+system-first, name, then ID ordering. Items retain addition time, then manifestation ID ordering, with the shelf ID
+bound into the graph cursor. Every edge has its own cursor and PageInfo flags come from bounded SQL probes.
 
 Typed and Node lookups return null for foreign, hidden, missing or invalid shelf identities. Item hydration rechecks
 manifestation visibility through the caller's transaction. These reads add no browser cache owner or shelf writer.

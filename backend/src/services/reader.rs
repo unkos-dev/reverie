@@ -1934,8 +1934,10 @@ pub async fn work_records(
     let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    // THREAT: catalogue rows require a permitted manifestation or an adult's visible series membership.
-    let rows = sqlx::query_as!(WorkRecord, r#"
+    // THREAT: catalogue rows require a manifestation visible to the caller.
+    let rows = sqlx::query_as!(
+        WorkRecord,
+        r#"
         SELECT w.id, w.title, w.subtitle, w.description, w.language,
           selected.series_id AS "series_id?", selected.position AS "series_position?: f64"
         FROM works w LEFT JOIN LATERAL (
@@ -1943,30 +1945,9 @@ pub async fn work_records(
           WHERE sw.work_id = w.id ORDER BY sw.position ASC NULLS LAST, sw.series_id ASC LIMIT 1
         ) selected ON TRUE WHERE w.id = ANY($1::uuid[]) AND (
             EXISTS (SELECT 1 FROM manifestations m WHERE m.work_id = w.id)
-            OR ($2 AND EXISTS (
-                SELECT 1 FROM series_works own_membership
-                JOIN series_works visible_membership ON visible_membership.series_id = own_membership.series_id
-                JOIN manifestations m ON m.work_id = visible_membership.work_id
-                WHERE own_membership.work_id = w.id
-            ))
-        )
-    "#, ids, !user.is_child()).fetch_all(&mut *tx).await.map_err(|e| AppError::Internal(e.into()))?;
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
-}
 
-pub async fn direct_work_visibility(
-    user: &CurrentUser,
-    state: &AppState,
-    ids: &[Uuid],
-) -> Result<HashMap<Uuid, bool>, AppError> {
-    let mut tx = db::acquire_with_rls(&state.pool, user.user_id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    let rows = sqlx::query!(
-        "SELECT DISTINCT work_id FROM manifestations WHERE work_id = ANY($1::uuid[])",
+        )
+    "#,
         ids
     )
     .fetch_all(&mut *tx)
@@ -1975,8 +1956,7 @@ pub async fn direct_work_visibility(
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    let visible: HashSet<_> = rows.into_iter().map(|row| row.work_id).collect();
-    Ok(ids.iter().map(|id| (*id, visible.contains(id))).collect())
+    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
 }
 
 #[derive(Clone)]
@@ -2267,9 +2247,14 @@ fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppEr
     ))
 }
 
-fn relation_inputs(keys: &[RelationKey], ceiling: i64) -> Result<Vec<RelationInput>, AppError> {
+fn relation_inputs(keys: &[RelationKey]) -> Result<Vec<RelationInput>, AppError> {
     let mut inputs = Vec::with_capacity(keys.len());
     for (index, key) in keys.iter().enumerate() {
+        let ceiling = match key.kind {
+            RelationKind::SeriesWorks | RelationKind::ShelfItems => 100,
+            RelationKind::Tags => 50,
+            _ => 20,
+        };
         if !(0..=ceiling).contains(&i64::from(key.first)) {
             return Err(AppError::Validation("Invalid page size.".into()));
         }
@@ -2286,8 +2271,7 @@ pub async fn relation_pages(
     state: &AppState,
     keys: &[RelationKey],
 ) -> Result<HashMap<RelationKey, RelationPage>, AppError> {
-    let ceiling = i64::from(state.config.opds.page_size);
-    let inputs = relation_inputs(keys, ceiling)?;
+    let inputs = relation_inputs(keys)?;
     let hidden: Vec<_> = hidden_providers(&state.settings.read().await.provider_visibility)
         .into_iter()
         .collect();
@@ -2444,7 +2428,7 @@ item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
 item.reviews AS "reviews?: i32",
- (q.has_after AND EXISTS (SELECT 1 FROM series_works sw JOIN works w ON w.id = sw.work_id WHERE sw.series_id = q.parent AND (NOT caller.child OR EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = w.id)) AND NOT (((q.after_position IS NULL AND sw.position IS NULL AND w.id > q.after_id)
+ (q.has_after AND EXISTS (SELECT 1 FROM series_works sw JOIN works w ON w.id = sw.work_id WHERE sw.series_id = q.parent AND EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = w.id) AND NOT (((q.after_position IS NULL AND sw.position IS NULL AND w.id > q.after_id)
  OR (q.after_position IS NOT NULL AND (sw.position > q.after_position OR sw.position IS NULL OR (sw.position = q.after_position AND w.id > q.after_id))))) LIMIT 1)) AS "previous!"
  FROM inputs q CROSS JOIN caller
  LEFT JOIN LATERAL (SELECT TRUE AS present, w.id AS id,
@@ -2459,7 +2443,7 @@ NULL::integer AS level,
 NULL::float8 AS rating,
 NULL::float8 AS scale,
 NULL::integer AS reviews
- FROM series_works sw JOIN works w ON w.id = sw.work_id WHERE sw.series_id = q.parent AND (NOT caller.child OR EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = w.id)) AND (NOT q.has_after OR ((q.after_position IS NULL AND sw.position IS NULL AND w.id > q.after_id)
+ FROM series_works sw JOIN works w ON w.id = sw.work_id WHERE sw.series_id = q.parent AND EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = w.id) AND (NOT q.has_after OR ((q.after_position IS NULL AND sw.position IS NULL AND w.id > q.after_id)
  OR (q.after_position IS NOT NULL AND (sw.position > q.after_position OR sw.position IS NULL OR (sw.position = q.after_position AND w.id > q.after_id)))))
  ORDER BY sw.position ASC NULLS LAST, w.id ASC LIMIT (q.first + 1)) item ON TRUE
  WHERE EXISTS (SELECT 1 FROM series_works permitted JOIN manifestations visible ON visible.work_id = permitted.work_id WHERE permitted.series_id = q.parent)
@@ -2550,11 +2534,7 @@ NULL::float8 AS scale,
 NULL::integer AS reviews
  FROM work_authors wa JOIN authors a ON a.id = wa.author_id WHERE wa.work_id = q.parent AND wa.role = 'author' AND (NOT q.has_after OR (CASE wa.role WHEN 'author' THEN 0 WHEN 'editor' THEN 1 WHEN 'translator' THEN 2 WHEN 'narrator' THEN 3 END, wa.position::float8, a.id) > (q.after_ordinal, q.after_position, q.after_id))
  ORDER BY wa.role ASC, wa.position ASC, a.id ASC LIMIT (q.first + 1)) item ON TRUE
- WHERE (EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = q.parent)
- OR (NOT caller.child AND EXISTS (SELECT 1 FROM series_works own_membership
- JOIN series_works visible_membership ON visible_membership.series_id = own_membership.series_id
- JOIN manifestations visible ON visible.work_id = visible_membership.work_id
- WHERE own_membership.work_id = q.parent)))
+ WHERE EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = q.parent)
  ORDER BY q.request, item.ordinal ASC, item.position ASC, item.id ASC"#, payload, user.user_id, user.is_child(), hidden)
  .fetch_all(&mut **tx).await.map_err(|e| AppError::Internal(e.into()))
 }
@@ -2598,11 +2578,7 @@ NULL::float8 AS scale,
 NULL::integer AS reviews
  FROM work_authors wa JOIN authors a ON a.id = wa.author_id WHERE wa.work_id = q.parent AND wa.role <> 'author' AND (NOT q.has_after OR (CASE wa.role WHEN 'author' THEN 0 WHEN 'editor' THEN 1 WHEN 'translator' THEN 2 WHEN 'narrator' THEN 3 END, wa.position::float8, a.id) > (q.after_ordinal, q.after_position, q.after_id))
  ORDER BY wa.role ASC, wa.position ASC, a.id ASC LIMIT (q.first + 1)) item ON TRUE
- WHERE (EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = q.parent)
- OR (NOT caller.child AND EXISTS (SELECT 1 FROM series_works own_membership
- JOIN series_works visible_membership ON visible_membership.series_id = own_membership.series_id
- JOIN manifestations visible ON visible.work_id = visible_membership.work_id
- WHERE own_membership.work_id = q.parent)))
+ WHERE EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = q.parent)
  ORDER BY q.request, item.ordinal ASC, item.position ASC, item.id ASC"#, payload, user.user_id, user.is_child(), hidden)
  .fetch_all(&mut **tx).await.map_err(|e| AppError::Internal(e.into()))
 }
@@ -2821,11 +2797,7 @@ NULL::float8 AS scale,
 NULL::integer AS reviews
  FROM (SELECT 0 AS level, scheme, external_id FROM work_external_identifiers WHERE work_id = q.parent) x WHERE NOT (x.scheme = ANY(caller.hidden)) AND (NOT q.has_after OR (x.level, x.scheme) > (q.after_level, q.after_name))
  ORDER BY x.level ASC, x.scheme ASC LIMIT (q.first + 1)) item ON TRUE
- WHERE (EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = q.parent)
- OR (NOT caller.child AND EXISTS (SELECT 1 FROM series_works own_membership
- JOIN series_works visible_membership ON visible_membership.series_id = own_membership.series_id
- JOIN manifestations visible ON visible.work_id = visible_membership.work_id
- WHERE own_membership.work_id = q.parent)))
+ WHERE EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = q.parent)
  ORDER BY q.request, item.level ASC, item.name ASC"#, payload, user.user_id, user.is_child(), hidden)
  .fetch_all(&mut **tx).await.map_err(|e| AppError::Internal(e.into()))
 }
@@ -3085,11 +3057,11 @@ struct PendingInput {
     id: Option<Uuid>,
 }
 
-fn pending_inputs(keys: &[PendingKey], ceiling: u32) -> Result<Vec<PendingInput>, AppError> {
+fn pending_inputs(keys: &[PendingKey]) -> Result<Vec<PendingInput>, AppError> {
     use base64ct::{Base64UrlUnpadded, Encoding};
     let mut inputs = Vec::new();
     for (index, key) in keys.iter().enumerate() {
-        if !(0..=50.min(i64::from(ceiling))).contains(&i64::from(key.first)) {
+        if !(0..=50).contains(&i64::from(key.first)) {
             return Err(AppError::Validation("Invalid page size.".into()));
         }
         let cursor = match &key.after {
@@ -3122,7 +3094,7 @@ pub async fn pending_pages(
     keys: &[PendingKey],
 ) -> Result<HashMap<PendingKey, PendingPage>, AppError> {
     use base64ct::{Base64UrlUnpadded, Encoding};
-    let mut inputs = pending_inputs(keys, state.config.opds.page_size)?;
+    let mut inputs = pending_inputs(keys)?;
     // THREAT: children return before any proposal count or value query.
     if user.is_child() {
         return Ok(keys

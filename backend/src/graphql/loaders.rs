@@ -58,7 +58,6 @@ macro_rules! domain_loader {
 }
 
 domain_loader!(WorkKey, WorkRecord, work_records);
-domain_loader!(DirectWorkKey, bool, direct_work_visibility);
 domain_loader!(ShelfKey, ShelfRecord, shelf_records);
 domain_loader!(SeriesKey, SeriesRecord, series_records);
 

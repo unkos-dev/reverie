@@ -217,11 +217,11 @@ type Manifestation implements Node {
   enrichmentStatus: String!
   readingState: ReadingState!
   metadata: MetadataSnapshot!
-  genres(first: Int, after: String): GenreConnection!
-  moods(first: Int, after: String): MoodConnection!
-  tags(first: Int, after: String): TagConnection!
-  identifiers(first: Int, after: String): ExternalIdentifierConnection!
-  ratings(first: Int, after: String): ExternalRatingConnection!
+  genres(first: Int!, after: String): GenreConnection!
+  moods(first: Int!, after: String): MoodConnection!
+  tags(first: Int!, after: String): TagConnection!
+  identifiers(first: Int!, after: String): ExternalIdentifierConnection!
+  ratings(first: Int!, after: String): ExternalRatingConnection!
 }
 
 type ManifestationConnection {
@@ -312,7 +312,7 @@ type MetadataVersionEdge {
 type MetadataVersions {
   pendingCount: Int!
   acceptedCount: Int!
-  pending(first: Int, after: String): MetadataVersionConnection!
+  pending(first: Int!, after: String): MetadataVersionConnection!
 }
 
 type Mood {
@@ -392,8 +392,8 @@ type Query {
   manifestation(id: ID!): Manifestation
   shelf(id: ID!): Shelf
   series(id: ID!): Series
-  books(first: Int, after: String, filter: BooksFilter, sort: [SortLevel!]): ManifestationConnection!
-  shelves(first: Int, after: String): ShelfConnection!
+  books(first: Int!, after: String, filter: BooksFilter, sort: [SortLevel!]): ManifestationConnection!
+  shelves(first: Int!, after: String): ShelfConnection!
   search(q: String!): [SearchHit!]!
   authorLabels(ids: [ID!]!): [AuthorSuggestion!]!
   seriesLabels(ids: [ID!]!): [SeriesSuggestion!]!
@@ -430,7 +430,7 @@ type Series implements Node {
   id: ID!
   name: String!
   sortName: String!
-  works(first: Int, after: String): WorkConnection!
+  works(first: Int!, after: String): WorkConnection!
 }
 
 type SeriesSuggestion {
@@ -445,7 +445,7 @@ type Shelf implements Node {
   isSystem: Boolean!
   createdAt: String!
   updatedAt: String!
-  items(first: Int, after: String): ManifestationConnection!
+  items(first: Int!, after: String): ManifestationConnection!
 }
 
 type ShelfConnection {
@@ -544,10 +544,10 @@ type Work implements Node {
   description: String
   language: String
   selectedSeries: SelectedSeries
-  identifiers(first: Int, after: String): ExternalIdentifierConnection!
-  manifestations(first: Int, after: String): ManifestationConnection!
-  authors(first: Int, after: String): AuthorConnection!
-  contributors(first: Int, after: String): AuthorConnection!
+  identifiers(first: Int!, after: String): ExternalIdentifierConnection!
+  manifestations(first: Int!, after: String): ManifestationConnection!
+  authors(first: Int!, after: String): AuthorConnection!
+  contributors(first: Int!, after: String): AuthorConnection!
 }
 
 type WorkConnection {

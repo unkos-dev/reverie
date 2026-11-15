@@ -1,4 +1,4 @@
-use super::loaders::{DirectWorkKey, RequestLoader, SeriesKey, ShelfKey, WorkKey, batch_error};
+use super::loaders::{RequestLoader, SeriesKey, ShelfKey, WorkKey, batch_error};
 use super::{Viewer, id, safe_error};
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
@@ -78,7 +78,7 @@ impl Work {
     async fn identifiers(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, ExternalIdentifier>> {
         term_connection(
@@ -105,7 +105,7 @@ impl Work {
     async fn manifestations(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, Manifestation>> {
         let page = relation(
@@ -124,7 +124,7 @@ impl Work {
     async fn authors(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
         contributor_connection(
@@ -137,7 +137,7 @@ impl Work {
     async fn contributors(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
         contributor_connection(
@@ -271,7 +271,7 @@ impl Manifestation {
     async fn genres(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, Genre>> {
         term_connection(
@@ -297,7 +297,7 @@ impl Manifestation {
     async fn moods(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, Mood>> {
         term_connection(
@@ -323,7 +323,7 @@ impl Manifestation {
     async fn tags(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, Tag>> {
         term_connection(
@@ -342,7 +342,7 @@ impl Manifestation {
     async fn identifiers(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, ExternalIdentifier>> {
         term_connection(
@@ -373,7 +373,7 @@ impl Manifestation {
     async fn ratings(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, ExternalRating>> {
         term_connection(
@@ -516,7 +516,7 @@ impl Shelf {
     async fn items(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, Manifestation>> {
         manifestation_connection(
@@ -556,7 +556,7 @@ impl Series {
     async fn works(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<Connection<String, Work, EmptyFields, MembershipFields>> {
         let page = relation(ctx, RelationKind::SeriesWorks, self.record.id, first, after).await?;
@@ -597,26 +597,20 @@ fn required<T>(value: Option<T>) -> async_graphql::Result<T> {
     })
 }
 
-pub(super) fn page_size(ctx: &Context<'_>, first: Option<i32>) -> async_graphql::Result<i32> {
-    super::complexity::effective_page(first, ctx.data::<AppState>()?.config.opds.page_size)
-        .map_err(safe_error)
+pub(super) fn page_size(first: i32) -> async_graphql::Result<i32> {
+    super::complexity::effective_page(first, 100).map_err(safe_error)
 }
 async fn relation(
     ctx: &Context<'_>,
     kind: RelationKind,
     parent: Uuid,
-    first: Option<i32>,
+    first: i32,
     after: Option<String>,
 ) -> async_graphql::Result<RelationPage> {
     let key = RelationKey {
         kind,
         parent,
-        first: super::complexity::nested_size(
-            kind,
-            first,
-            ctx.data::<AppState>()?.config.opds.page_size,
-        )
-        .map_err(safe_error)?,
+        first: super::complexity::nested_size(kind, first).map_err(safe_error)?,
         after,
     };
     required(
@@ -706,14 +700,6 @@ pub(super) async fn work(ctx: &Context<'_>, id: &ID) -> async_graphql::Result<Op
         return Ok(None);
     };
     let loader = ctx.data::<RequestLoader>()?;
-    if !loader
-        .load_one(DirectWorkKey(id))
-        .await
-        .map_err(|error| batch_error(&error))?
-        .is_some_and(|visible| *visible)
-    {
-        return Ok(None);
-    }
     Ok(loader
         .load_one(WorkKey(id))
         .await
@@ -941,12 +927,12 @@ pub(super) struct SortLevel {
 
 pub(super) async fn books(
     ctx: &Context<'_>,
-    first: Option<i32>,
+    first: i32,
     after: Option<String>,
     filter: Option<BooksFilter>,
     sort: Option<Vec<SortLevel>>,
 ) -> async_graphql::Result<Connection<String, Manifestation>> {
-    let first = page_size(ctx, first)?;
+    let first = page_size(first)?;
     let mut params = filter.unwrap_or_default().params()?;
     params.cursor = after;
     params.sort = sort.map(|levels| {
@@ -992,10 +978,10 @@ pub(super) async fn books(
 
 pub(super) async fn shelves(
     ctx: &Context<'_>,
-    first: Option<i32>,
+    first: i32,
     after: Option<String>,
 ) -> async_graphql::Result<Connection<String, Shelf>> {
-    let first = page_size(ctx, first)?;
+    let first = page_size(first)?;
     let state = ctx.data::<AppState>()?;
     let user = ctx.data::<CurrentUser>()?;
     let (rows, _, has_next) = reader::shelves(user, state, after.as_deref(), i64::from(first))

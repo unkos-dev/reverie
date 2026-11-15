@@ -1,7 +1,7 @@
 import { graphql } from "react-relay";
 
 export const readerWork = graphql`
-  fragment readerWork on Work {
+  fragment readerWork on Work @argumentDefinitions(count: { type: "Int", defaultValue: 5 }) {
     id
     title
     subtitle
@@ -14,7 +14,7 @@ export const readerWork = graphql`
       }
       position
     }
-    authors {
+    authors(first: $count) {
       edges {
         cursor
         role
@@ -31,7 +31,7 @@ export const readerWork = graphql`
         endCursor
       }
     }
-    contributors {
+    contributors(first: $count) {
       edges {
         cursor
         role
@@ -48,7 +48,7 @@ export const readerWork = graphql`
         endCursor
       }
     }
-    identifiers {
+    identifiers(first: $count) {
       edges {
         cursor
         node {
@@ -68,7 +68,11 @@ export const readerWork = graphql`
 `;
 
 export const readerBook = graphql`
-  fragment readerBook on Manifestation {
+  fragment readerBook on Manifestation
+  @argumentDefinitions(
+    count: { type: "Int", defaultValue: 5 }
+    tagCount: { type: "Int", defaultValue: 10 }
+  ) {
     id
     work {
       ...readerWork
@@ -111,7 +115,7 @@ export const readerBook = graphql`
       finishedAt
       lastReadAt
     }
-    genres {
+    genres(first: $count) {
       edges {
         cursor
         node {
@@ -126,7 +130,7 @@ export const readerBook = graphql`
         endCursor
       }
     }
-    moods {
+    moods(first: $count) {
       edges {
         cursor
         node {
@@ -141,7 +145,7 @@ export const readerBook = graphql`
         endCursor
       }
     }
-    tags {
+    tags(first: $tagCount) {
       edges {
         cursor
         node {
@@ -156,7 +160,7 @@ export const readerBook = graphql`
         endCursor
       }
     }
-    identifiers {
+    identifiers(first: $count) {
       edges {
         cursor
         node {
@@ -172,7 +176,7 @@ export const readerBook = graphql`
         endCursor
       }
     }
-    ratings {
+    ratings(first: $count) {
       edges {
         cursor
         node {
@@ -194,8 +198,13 @@ export const readerBook = graphql`
 `;
 
 export const readerLibraryQuery = graphql`
-  query readerLibraryQuery($after: String, $filter: BooksFilter, $sort: [SortLevel!]) {
-    books(after: $after, filter: $filter, sort: $sort) {
+  query readerLibraryQuery(
+    $count: Int = 50
+    $after: String
+    $filter: BooksFilter
+    $sort: [SortLevel!]
+  ) {
+    books(first: $count, after: $after, filter: $filter, sort: $sort) {
       edges {
         cursor
         node {
@@ -221,13 +230,13 @@ export const readerDetailQuery = graphql`
 `;
 
 export const readerVersionsQuery = graphql`
-  query readerVersionsQuery($id: ID!) {
+  query readerVersionsQuery($count: Int = 20, $id: ID!) {
     manifestation(id: $id) {
       id
       versions {
         pendingCount
         acceptedCount
-        pending {
+        pending(first: $count) {
           edges {
             cursor
             node {
@@ -254,7 +263,7 @@ export const readerVersionsQuery = graphql`
 `;
 
 export const readerShelfQuery = graphql`
-  query readerShelfQuery($id: ID!, $after: String) {
+  query readerShelfQuery($count: Int = 50, $id: ID!, $after: String) {
     shelf(id: $id) {
       id
       name
@@ -262,7 +271,7 @@ export const readerShelfQuery = graphql`
       itemCount
       createdAt
       updatedAt
-      items(after: $after) {
+      items(first: $count, after: $after) {
         edges {
           cursor
           node {
@@ -281,8 +290,8 @@ export const readerShelfQuery = graphql`
 `;
 
 export const readerShelvesQuery = graphql`
-  query readerShelvesQuery($after: String) {
-    shelves(after: $after) {
+  query readerShelvesQuery($count: Int = 50, $after: String) {
+    shelves(first: $count, after: $after) {
       edges {
         cursor
         node {
@@ -305,17 +314,22 @@ export const readerShelvesQuery = graphql`
 `;
 
 export const readerSeriesQuery = graphql`
-  query readerSeriesQuery($id: ID!, $after: String) {
+  query readerSeriesQuery(
+    $manifestationCount: Int = 2
+    $count: Int = 50
+    $id: ID!
+    $after: String
+  ) {
     series(id: $id) {
       id
       name
-      works(after: $after) {
+      works(first: $count, after: $after) {
         edges {
           cursor
           position
           node {
             ...readerWork
-            manifestations {
+            manifestations(first: $manifestationCount) {
               edges {
                 cursor
                 node {

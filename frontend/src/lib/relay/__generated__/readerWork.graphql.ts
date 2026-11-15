@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<5b402221208b2c50985bf16323a73cce>>
+ * @generated SignedSource<<a58cd20b57805082ce5d2b55f2c5527a>>
  * @lightSyntaxTransform
  */
 
@@ -107,14 +107,21 @@ const node: ReaderFragment = (function () {
       name: "position",
       storageKey: null,
     },
-    v3 = {
+    v3 = [
+      {
+        kind: "Variable",
+        name: "first",
+        variableName: "count",
+      },
+    ],
+    v4 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "cursor",
       storageKey: null,
     },
-    v4 = {
+    v5 = {
       alias: null,
       args: null,
       concreteType: "PageInfo",
@@ -153,7 +160,7 @@ const node: ReaderFragment = (function () {
       ],
       storageKey: null,
     },
-    v5 = [
+    v6 = [
       {
         alias: null,
         args: null,
@@ -162,7 +169,7 @@ const node: ReaderFragment = (function () {
         name: "edges",
         plural: true,
         selections: [
-          v3 /*:: as any*/,
+          v4 /*:: as any*/,
           {
             alias: null,
             args: null,
@@ -184,10 +191,16 @@ const node: ReaderFragment = (function () {
         ],
         storageKey: null,
       },
-      v4 /*:: as any*/,
+      v5 /*:: as any*/,
     ];
   return {
-    argumentDefinitions: [],
+    argumentDefinitions: [
+      {
+        defaultValue: 5,
+        kind: "LocalArgument",
+        name: "count",
+      },
+    ],
     kind: "Fragment",
     metadata: null,
     name: "readerWork",
@@ -245,27 +258,27 @@ const node: ReaderFragment = (function () {
       },
       {
         alias: null,
-        args: null,
+        args: v3 /*:: as any*/,
         concreteType: "AuthorConnection",
         kind: "LinkedField",
         name: "authors",
         plural: false,
-        selections: v5 /*:: as any*/,
+        selections: v6 /*:: as any*/,
         storageKey: null,
       },
       {
         alias: null,
-        args: null,
+        args: v3 /*:: as any*/,
         concreteType: "AuthorConnection",
         kind: "LinkedField",
         name: "contributors",
         plural: false,
-        selections: v5 /*:: as any*/,
+        selections: v6 /*:: as any*/,
         storageKey: null,
       },
       {
         alias: null,
-        args: null,
+        args: v3 /*:: as any*/,
         concreteType: "ExternalIdentifierConnection",
         kind: "LinkedField",
         name: "identifiers",
@@ -279,7 +292,7 @@ const node: ReaderFragment = (function () {
             name: "edges",
             plural: true,
             selections: [
-              v3 /*:: as any*/,
+              v4 /*:: as any*/,
               {
                 alias: null,
                 args: null,
@@ -315,7 +328,7 @@ const node: ReaderFragment = (function () {
             ],
             storageKey: null,
           },
-          v4 /*:: as any*/,
+          v5 /*:: as any*/,
         ],
         storageKey: null,
       },
@@ -325,6 +338,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "a2397278b76248ffc3bd2cd25f127e1f";
+(node as any).hash = "f0b700ee7da89dbe26566dd9ef0578bb";
 
 export default node;

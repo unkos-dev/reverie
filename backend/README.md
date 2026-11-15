@@ -167,9 +167,12 @@ Shared reads live in `src/services/reader.rs`. Graph request-local loaders batch
 relation keys without sharing caller records across requests. IDs use padded base64 of `Type:<uuid>`. Typed roots and
 `node(id:)` return null for invalid, hidden or missing identities. Connections use keyset SQL and configured page
 bounds. Metadata values and their matching entity-tags stay together. Selecting `versions` loads proposals separately,
-with a 20-row default, 50-row maximum and an early child exclusion. Pending PageInfo keeps remaining rows reachable.
+with a required `first`, 50-row maximum and an early child exclusion. Representative operations request 20 rows. Pending
+PageInfo keeps remaining rows reachable.
 
 Representative operations live in `frontend/src/lib/relay/reader.ts`, including the default 50-row Library page and a
 separate versions query. They have no UI consumers. The trusted map grows only through generation and must be rebuilt
-into the backend. Both policies enforce depth 12 and weighted complexity 82,568. The GraphQL execution Design records
-the per-operation calibration and 25 percent margin.
+into the backend. Every connection requires `first`. Books, shelves, shelf items and series works accept 0 through 100;
+nested maxima are recorded in the GraphQL execution Design. GraphQL ignores `REVERIE_OPDS_PAGE_SIZE`. Both policies
+enforce depth 12 and weighted complexity 82,568. The GraphQL execution Design records the per-operation calibration and
+25 percent margin.

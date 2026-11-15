@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<7c4317d11696799068dc2900c6f7302f>>
+ * @generated SignedSource<<61b9f99a41566175786601c633e6c80b>>
  * @lightSyntaxTransform
  */
 
@@ -205,14 +205,21 @@ const node: ReaderFragment = (function () {
       name: "rating",
       storageKey: null,
     },
-    v9 = {
+    v9 = [
+      {
+        kind: "Variable",
+        name: "first",
+        variableName: "count",
+      },
+    ],
+    v10 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "cursor",
       storageKey: null,
     },
-    v10 = [
+    v11 = [
       v0 /*:: as any*/,
       {
         alias: null,
@@ -222,7 +229,7 @@ const node: ReaderFragment = (function () {
         storageKey: null,
       },
     ],
-    v11 = {
+    v12 = {
       alias: null,
       args: null,
       concreteType: "PageInfo",
@@ -262,7 +269,18 @@ const node: ReaderFragment = (function () {
       storageKey: null,
     };
   return {
-    argumentDefinitions: [],
+    argumentDefinitions: [
+      {
+        defaultValue: 5,
+        kind: "LocalArgument",
+        name: "count",
+      },
+      {
+        defaultValue: 10,
+        kind: "LocalArgument",
+        name: "tagCount",
+      },
+    ],
     kind: "Fragment",
     metadata: null,
     name: "readerBook",
@@ -456,7 +474,7 @@ const node: ReaderFragment = (function () {
       },
       {
         alias: null,
-        args: null,
+        args: v9 /*:: as any*/,
         concreteType: "GenreConnection",
         kind: "LinkedField",
         name: "genres",
@@ -470,7 +488,7 @@ const node: ReaderFragment = (function () {
             name: "edges",
             plural: true,
             selections: [
-              v9 /*:: as any*/,
+              v10 /*:: as any*/,
               {
                 alias: null,
                 args: null,
@@ -478,19 +496,19 @@ const node: ReaderFragment = (function () {
                 kind: "LinkedField",
                 name: "node",
                 plural: false,
-                selections: v10 /*:: as any*/,
+                selections: v11 /*:: as any*/,
                 storageKey: null,
               },
             ],
             storageKey: null,
           },
-          v11 /*:: as any*/,
+          v12 /*:: as any*/,
         ],
         storageKey: null,
       },
       {
         alias: null,
-        args: null,
+        args: v9 /*:: as any*/,
         concreteType: "MoodConnection",
         kind: "LinkedField",
         name: "moods",
@@ -504,7 +522,7 @@ const node: ReaderFragment = (function () {
             name: "edges",
             plural: true,
             selections: [
-              v9 /*:: as any*/,
+              v10 /*:: as any*/,
               {
                 alias: null,
                 args: null,
@@ -512,19 +530,25 @@ const node: ReaderFragment = (function () {
                 kind: "LinkedField",
                 name: "node",
                 plural: false,
-                selections: v10 /*:: as any*/,
+                selections: v11 /*:: as any*/,
                 storageKey: null,
               },
             ],
             storageKey: null,
           },
-          v11 /*:: as any*/,
+          v12 /*:: as any*/,
         ],
         storageKey: null,
       },
       {
         alias: null,
-        args: null,
+        args: [
+          {
+            kind: "Variable",
+            name: "first",
+            variableName: "tagCount",
+          },
+        ],
         concreteType: "TagConnection",
         kind: "LinkedField",
         name: "tags",
@@ -538,7 +562,7 @@ const node: ReaderFragment = (function () {
             name: "edges",
             plural: true,
             selections: [
-              v9 /*:: as any*/,
+              v10 /*:: as any*/,
               {
                 alias: null,
                 args: null,
@@ -546,19 +570,19 @@ const node: ReaderFragment = (function () {
                 kind: "LinkedField",
                 name: "node",
                 plural: false,
-                selections: v10 /*:: as any*/,
+                selections: v11 /*:: as any*/,
                 storageKey: null,
               },
             ],
             storageKey: null,
           },
-          v11 /*:: as any*/,
+          v12 /*:: as any*/,
         ],
         storageKey: null,
       },
       {
         alias: null,
-        args: null,
+        args: v9 /*:: as any*/,
         concreteType: "ExternalIdentifierConnection",
         kind: "LinkedField",
         name: "identifiers",
@@ -572,7 +596,7 @@ const node: ReaderFragment = (function () {
             name: "edges",
             plural: true,
             selections: [
-              v9 /*:: as any*/,
+              v10 /*:: as any*/,
               {
                 alias: null,
                 args: null,
@@ -608,13 +632,13 @@ const node: ReaderFragment = (function () {
             ],
             storageKey: null,
           },
-          v11 /*:: as any*/,
+          v12 /*:: as any*/,
         ],
         storageKey: null,
       },
       {
         alias: null,
-        args: null,
+        args: v9 /*:: as any*/,
         concreteType: "ExternalRatingConnection",
         kind: "LinkedField",
         name: "ratings",
@@ -628,7 +652,7 @@ const node: ReaderFragment = (function () {
             name: "edges",
             plural: true,
             selections: [
-              v9 /*:: as any*/,
+              v10 /*:: as any*/,
               {
                 alias: null,
                 args: null,
@@ -672,7 +696,7 @@ const node: ReaderFragment = (function () {
             ],
             storageKey: null,
           },
-          v11 /*:: as any*/,
+          v12 /*:: as any*/,
         ],
         storageKey: null,
       },
@@ -682,6 +706,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "eaaf2f4175f6e9f6dabe9ff7319bcc1b";
+(node as any).hash = "8c348fcece95fb231b6df3706213fbbb";
 
 export default node;

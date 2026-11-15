@@ -248,15 +248,16 @@ Equivalent offsets share a fingerprint. Invalid columns, duplicate levels and st
 Graph execution refusals carry the `validation` classification. HTTP status and envelope contracts remain unchanged.
 
 Books expose native connection edges and PageInfo. Every edge carries its own keyset cursor. One extra row derives
-`hasNextPage`, and a bounded existence query derives `hasPreviousPage`. The configured page size supplies the omitted
-`first` and its ceiling. Negative and above-ceiling sizes fail validation, while zero returns an empty page with real
-flags. Nested connections bind their parent and relation order in addition to the boundary, preventing cursor replay
-between parents, relation kinds or the root books connection.
+`hasNextPage`, and a bounded existence query derives `hasPreviousPage`. The non-null `first` argument is required and
+accepts 0 through 100 independently of `REVERIE_OPDS_PAGE_SIZE`. Negative and above-maximum sizes fail validation, while
+zero returns an empty page with real flags. Nested connections bind their parent and relation order in addition to the
+boundary, preventing cursor replay between parents, relation kinds or the root books connection.
 
-The pending-version connection has its own parent-bound cursor over `last_seen_at DESC, id DESC`. It uses a 20-row
-default and a 50-row maximum. Its count includes all eligible proposals, with no overall row cap. Canonical scalar and
-junction pointers and JSON-null audit rows are excluded from both the count and page. Children receive an empty result
-before any proposal query. HTTP detail retains its existing 200-row payload bound.
+The pending-version connection has its own parent-bound cursor over `last_seen_at DESC, id DESC`. It requires `first`
+with a 50-row maximum; representative operations request 20 rows. Its count includes all eligible proposals, with no
+overall row cap. Canonical scalar and junction pointers and JSON-null audit rows are excluded from both the count and
+page. Children receive an empty result before any proposal query. HTTP detail retains its existing 200-row payload
+bound.
 
 ## Data and state
 
@@ -273,9 +274,8 @@ spec string, one typed boundary value per level, the `id` tiebreaker, and the fi
 signature: `cursor.rs`'s own module doc records this plainly ("No HMAC — same trust model as the OPDS cursor").
 
 `MAX_SORT_LEVELS` (3), `MAX_TAG_FILTERS` (20) and `MAX_TEXT_FILTER_CHARS` (200) are compile-time constants; changing any
-of them is a code change, not a runtime setting. The one runtime-configurable value this subject reads is the page size,
-`state.config.opds.page_size` (`REVERIE_OPDS_PAGE_SIZE`, default 50) — named for the OPDS catalogue subject it was first
-added for, but read identically here, so an operator who changes it changes both surfaces' page size at once.
+of them is a code change, not a runtime setting. The HTTP page size is runtime-configurable through
+`state.config.opds.page_size` (`REVERIE_OPDS_PAGE_SIZE`, default 50). GraphQL uses explicit bounded arguments instead.
 
 ## Runtime behaviour
 

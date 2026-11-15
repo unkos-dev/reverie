@@ -87,11 +87,10 @@ impl MetadataVersions {
     async fn pending(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<async_graphql::connection::Connection<String, MetadataVersion>> {
-        let ceiling = ctx.data::<crate::state::AppState>()?.config.opds.page_size;
-        let first = super::complexity::pending_size(first, ceiling).map_err(super::safe_error)?;
+        let first = super::complexity::pending_size(first).map_err(super::safe_error)?;
         let page = ctx
             .data::<RequestLoader>()?
             .load_one(reader::PendingKey {

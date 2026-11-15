@@ -41,8 +41,9 @@ a transaction from `acquire_with_rls` and returns the encoded `User` identity. I
 
 `backend/src/graphql/library.rs` defines Work, Manifestation, Shelf and Series objects and their connections.
 `backend/src/services/reader.rs` owns the transport-independent reads used by HTTP adapters and graph fields.
-`loaders.rs` batches keys through caller-scoped transactions and caches results only for one execution request.
-Unprotected catalogue tables require permitted linked manifestations. Shelf reads retain explicit owner predicates.
+`loaders.rs` batches keys through caller-scoped transactions and caches results only for one execution request. Every
+GraphQL Work, Series and relation requires at least one manifestation visible to the caller, including typed and Node
+lookups. Shelf reads retain explicit owner predicates.
 
 Work holds shared metadata, contributors and the selected series. Manifestation holds file metadata and caller-owned
 reading state. Contributor role and series position belong to edges. Metadata editing snapshots carry their matching
@@ -91,27 +92,26 @@ development retains it. `__typename` remains available.
 
 Every connection and output list costs one plus its effective bound times child complexity. A capped relation is always
 a connection with `pageInfo`, so nothing is silently truncated. Continuation cursors keep the remainder reachable.
-Requests above a maximum fail validation. Validation and execution share the same bounds and size validators. A
-validation extension scopes the request's configured ceiling through Tokio task-local storage for async-graphql's
-synchronous cost callbacks. The scope ends with validation.
+Requests above a maximum fail validation. Validation and execution share the same bounds and size validators. Every
+connection requires an explicit non-null `first`. GraphQL ignores `REVERIE_OPDS_PAGE_SIZE`.
 
-| Connection                                           | Default |            Maximum |
-| ---------------------------------------------------- | ------: | -----------------: |
-| Work manifestations                                  |       2 |                 20 |
-| Work authors and contributors                        |       5 |                 20 |
-| Work identifiers                                     |       5 |                 20 |
-| Manifestation genres, moods, identifiers and ratings |       5 |                 20 |
-| Manifestation tags                                   |      10 |                 50 |
-| Pending metadata versions                            |      20 |                 50 |
-| Root books and shelves, series works and shelf items |      50 | Configured ceiling |
+| Connection                                           | Operation size | Maximum |
+| ---------------------------------------------------- | -------------: | ------: |
+| Work manifestations                                  |              2 |      20 |
+| Work authors and contributors                        |              5 |      20 |
+| Work identifiers                                     |              5 |      20 |
+| Manifestation genres, moods, identifiers and ratings |              5 |      20 |
+| Manifestation tags                                   |             10 |      50 |
+| Pending metadata versions                            |             20 |      50 |
+| Root books and shelves, series works and shelf items |             50 |     100 |
 
-Defaults and maxima respect a smaller configured page ceiling. Search retains its shared 20-result bound, suggestions
-their shared 10-result default and 1-20 clamp, and labels their validated input count up to 60. Zero-size connections
-still cost one. Checked arithmetic refuses overflow and excessive cost.
+The sizes above are explicit representative operation arguments, not server defaults. Search retains its shared
+20-result bound, suggestions their shared 10-result default and 1-20 clamp, and labels their validated input count up to
+60. Zero-size connections still cost one. Checked arithmetic refuses overflow and excessive cost.
 
 The complexity limit is 82,568 in both policies. Temporary async-graphql `Analyzer` measurements of the generated
-operations use the default 50-row primary pages and the nested defaults above. The Library measurement executes against
-50 rows. The maximum M is 66,054. Its 25 percent margin, rounded up, is 16,514, so the limit is 66,054 + 16,514.
+operations use the explicit 50-row primary pages and the nested sizes above. The Library operation requests 50 rows. The
+maximum M is 66,054. Its 25 percent margin, rounded up, is 16,514, so the limit is 66,054 + 16,514.
 
 | Operation                |   Cost | Depth |
 | ------------------------ | -----: | ----: |

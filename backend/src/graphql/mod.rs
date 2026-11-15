@@ -162,7 +162,7 @@ impl Query {
     async fn books(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
         filter: Option<library::BooksFilter>,
         sort: Option<Vec<library::SortLevel>>,
@@ -177,7 +177,7 @@ impl Query {
     async fn shelves(
         &self,
         ctx: &Context<'_>,
-        first: Option<i32>,
+        first: i32,
         after: Option<String>,
     ) -> async_graphql::Result<async_graphql::connection::Connection<String, library::Shelf>> {
         library::shelves(ctx, first, after).await
@@ -304,7 +304,6 @@ fn schema_builder(
     let builder = Schema::build(Query, EmptyMutation, EmptySubscription)
         .limit_depth(complexity::DEPTH)
         .limit_complexity(complexity::LIMIT)
-        .extension(complexity::Defaults)
         .data(policy);
     if policy == ExecutionPolicy::Production {
         builder.disable_introspection()
@@ -847,7 +846,7 @@ mod tests {
         let response = reader_query(
             &fixture,
             &fixture.child,
-            "{ books { edges { node { id } } } }",
+            "{ books(first: 50) { edges { node { id } } } }",
             json!({}),
         )
         .await;
@@ -860,7 +859,7 @@ mod tests {
             response["data"]["books"]["edges"][0]["node"]["id"],
             visible.as_str()
         );
-        let query = "query($id: ID!) { manifestation(id: $id) { id metadata { title etag } readingState { notes etag } work { id authors { edges { node { name } role position } } } } }";
+        let query = "query($id: ID!) { manifestation(id: $id) { id metadata { title etag } readingState { notes etag } work { id authors(first: 5) { edges { node { name } role position } } } } }";
         let response = reader_query(
             &fixture,
             &fixture.child,
@@ -917,7 +916,7 @@ mod tests {
             response["data"]["caller"]["id"],
             id::encode("User", fixture.child_id).as_str()
         );
-        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $series: ID!, $shelf: ID!) { work(id: $work) { manifestations { edges { node { id } } } } series(id: $series) { works { edges { node { id manifestations { edges { node { id } } } } } } } shelf(id: $shelf) { items { edges { node { id } } } } }", json!({"work": id::encode("Work", fixture.visible_work).as_str(), "series": id::encode("Series", fixture.series).as_str(), "shelf": id::encode("Shelf", fixture.child_shelf).as_str()})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $series: ID!, $shelf: ID!) { work(id: $work) { manifestations(first: 2) { edges { node { id } } } } series(id: $series) { works(first: 50) { edges { node { id manifestations(first: 2) { edges { node { id } } } } } } } shelf(id: $shelf) { items(first: 50) { edges { node { id } } } } }", json!({"work": id::encode("Work", fixture.visible_work).as_str(), "series": id::encode("Series", fixture.series).as_str(), "shelf": id::encode("Shelf", fixture.child_shelf).as_str()})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert_eq!(
             response["data"]["work"]["manifestations"]["edges"]
@@ -944,7 +943,7 @@ mod tests {
         ] {
             assert!(!response.to_string().contains(hidden.as_str()));
         }
-        let response = reader_query(&fixture, &fixture.child, "query($ids: [ID!]!) { authorLabels(ids: $ids) { entityId value } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { value } shelves { edges { node { id name } } } }", json!({"ids": [id::encode("Author", fixture.author).as_str(), id::encode("Author", fixture.hidden_author).as_str()]})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($ids: [ID!]!) { authorLabels(ids: $ids) { entityId value } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { value } shelves(first: 50) { edges { node { id name } } } }", json!({"ids": [id::encode("Author", fixture.author).as_str(), id::encode("Author", fixture.hidden_author).as_str()]})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert_eq!(
             response["data"]["authorLabels"].as_array().unwrap().len(),
@@ -953,7 +952,7 @@ mod tests {
         assert_eq!(response["data"]["search"].as_array().unwrap().len(), 1);
         assert_eq!(response["data"]["authorSuggestions"], json!([]));
         assert!(!response.to_string().contains("Other graph shelf"));
-        let versions_query = "query($id: ID!) { manifestation(id: $id) { versions { pendingCount pending { edges { node { newValue } } } } } }";
+        let versions_query = "query($id: ID!) { manifestation(id: $id) { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } }";
         let adult_versions = reader_query(
             &fixture,
             &fixture.admin,
@@ -973,11 +972,11 @@ mod tests {
         for (query, variables) in [
             (versions_query, json!({"id": visible.as_str()})),
             (
-                "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending { edges { node { newValue } } } } } } }",
+                "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } }",
                 json!({"id": visible.as_str()}),
             ),
             (
-                "query($id: ID!) { work(id: $id) { manifestations { edges { node { versions { pendingCount pending { edges { node { newValue } } } } } } } } }",
+                "query($id: ID!) { work(id: $id) { manifestations(first: 2) { edges { node { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } } } }",
                 json!({"id": id::encode("Work", fixture.visible_work).as_str()}),
             ),
         ] {
@@ -1016,7 +1015,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_cursor_contract(pool: PgPool) {
         let fixture = reader_fixture(&pool).await;
-        let query = "query($first: Int, $after: String, $filter: BooksFilter, $sort: [SortLevel!]) { books(first: $first, after: $after, filter: $filter, sort: $sort) { edges { cursor node { id pages createdAt } } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } } }";
+        let query = "query($first: Int!, $after: String, $filter: BooksFilter, $sort: [SortLevel!]) { books(first: $first, after: $after, filter: $filter, sort: $sort) { edges { cursor node { id pages createdAt } } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } } }";
         let first = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-04T00:00:00Z"}})).await;
         assert!(first.get("errors").is_none(), "{first}");
         let cursor = first["data"]["books"]["edges"][0]["cursor"]
@@ -1038,8 +1037,13 @@ mod tests {
             json!({"createdAtGte": "2026-01-03T00:00:00Z", "createdAtLt": "2026-01-01T00:00:00Z"}),
             json!({"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-02T00:00:00Z"}),
         ] {
-            let response =
-                reader_query(&fixture, &fixture.admin, query, json!({"filter": filter})).await;
+            let response = reader_query(
+                &fixture,
+                &fixture.admin,
+                query,
+                json!({"first": 50, "filter": filter}),
+            )
+            .await;
             assert!(response.get("errors").is_none(), "{response}");
             let expected = if filter.get("pagesGte") == Some(&json!(20)) {
                 2
@@ -1055,13 +1059,13 @@ mod tests {
             );
         }
         for variables in [
-            json!({"after": cursor, "sort": [{"column": "title", "direction": "ASC"}]}),
-            json!({"after": cursor, "sort": [{"column": "created_at", "direction": "DESC"}]}),
-            json!({"after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:01Z", "createdAtLt": "2026-01-04T00:00:00Z"}}),
-            json!({"after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-05T00:00:00Z"}}),
-            json!({"sort": [{"column": "Title", "direction": "ASC"}]}),
-            json!({"sort": [{"column": "title", "direction": "ASC"}, {"column": "title", "direction": "DESC"}]}),
-            json!({"sort": [{"column": "title", "direction": "ASC"}, {"column": "author", "direction": "ASC"}, {"column": "pages", "direction": "ASC"}, {"column": "created_at", "direction": "ASC"}]}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "title", "direction": "ASC"}]}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "created_at", "direction": "DESC"}]}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:01Z", "createdAtLt": "2026-01-04T00:00:00Z"}}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-05T00:00:00Z"}}),
+            json!({"first": 50, "sort": [{"column": "Title", "direction": "ASC"}]}),
+            json!({"first": 50, "sort": [{"column": "title", "direction": "ASC"}, {"column": "title", "direction": "DESC"}]}),
+            json!({"first": 50, "sort": [{"column": "title", "direction": "ASC"}, {"column": "author", "direction": "ASC"}, {"column": "pages", "direction": "ASC"}, {"column": "created_at", "direction": "ASC"}]}),
         ] {
             let response = reader_query(&fixture, &fixture.admin, query, variables).await;
             assert_eq!(
@@ -1075,7 +1079,7 @@ mod tests {
         let ordered_cursor = ordered["data"]["books"]["edges"][0]["cursor"]
             .as_str()
             .unwrap();
-        let refused = reader_query(&fixture, &fixture.admin, query, json!({"after": ordered_cursor, "sort": [{"column": "created_at", "direction": "ASC"}, {"column": "title", "direction": "ASC"}]})).await;
+        let refused = reader_query(&fixture, &fixture.admin, query, json!({"first": 50, "after": ordered_cursor, "sort": [{"column": "created_at", "direction": "ASC"}, {"column": "title", "direction": "ASC"}]})).await;
         assert_eq!(
             refused["errors"][0]["extensions"]["code"], "validation",
             "{refused}"
@@ -1083,7 +1087,7 @@ mod tests {
         let refused = reader_query(
             &fixture,
             &fixture.admin,
-            "query($after: String!) { shelves(after: $after) { edges { node { id } } } }",
+            "query($after: String!) { shelves(first: 50, after: $after) { edges { node { id } } } }",
             json!({"after": cursor}),
         )
         .await;
@@ -1106,7 +1110,7 @@ mod tests {
             &fixture,
             &fixture.admin,
             query,
-            json!({"after": tagged_cursor, "filter": {"tagAny": ["beta", "alpha"]}}),
+            json!({"first": 50, "after": tagged_cursor, "filter": {"tagAny": ["beta", "alpha"]}}),
         )
         .await;
         assert!(reordered.get("errors").is_none(), "{reordered}");

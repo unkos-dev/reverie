@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<956f40ba4c19763218c97764e493a838>>
- * @relayHash c88fa7123df50e6b2da61428b404c3ab
+ * @generated SignedSource<<66a8c5a79b68f637d97072c86ded70c8>>
+ * @relayHash 23b0a9f19b3e85351fedd950c3d86ad4
  * @lightSyntaxTransform
  */
 
@@ -8,10 +8,11 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID a02bdaf67417f1d853bdf86e94ecf4abb32547bc394bfad19aebefecc58496e1
+// @relayRequestID 0e73ed04932a76fcdd13bb12740f66d8ce6299c34197033b94c2ed7ea63af1d4
 
 import { ConcreteRequest } from "relay-runtime";
 export type readerVersionsQuery$variables = {
+  count?: number | null | undefined;
   id: string;
 };
 export type readerVersionsQuery$data = {
@@ -54,6 +55,11 @@ export type readerVersionsQuery = {
 
 const node: ConcreteRequest = (function () {
   var v0 = [
+      {
+        defaultValue: 20,
+        kind: "LocalArgument",
+        name: "count",
+      },
       {
         defaultValue: null,
         kind: "LocalArgument",
@@ -107,7 +113,13 @@ const node: ConcreteRequest = (function () {
               },
               {
                 alias: null,
-                args: null,
+                args: [
+                  {
+                    kind: "Variable",
+                    name: "first",
+                    variableName: "count",
+                  },
+                ],
                 concreteType: "MetadataVersionConnection",
                 kind: "LinkedField",
                 name: "pending",
@@ -259,7 +271,7 @@ const node: ConcreteRequest = (function () {
       selections: v2 /*:: as any*/,
     },
     params: {
-      id: "a02bdaf67417f1d853bdf86e94ecf4abb32547bc394bfad19aebefecc58496e1",
+      id: "0e73ed04932a76fcdd13bb12740f66d8ce6299c34197033b94c2ed7ea63af1d4",
       metadata: {},
       name: "readerVersionsQuery",
       operationKind: "query",
@@ -268,6 +280,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "bbc6d3d3528b2af271095e5321df77c1";
+(node as any).hash = "d8c5ee1be869dfbb849860c34db029e3";
 
 export default node;

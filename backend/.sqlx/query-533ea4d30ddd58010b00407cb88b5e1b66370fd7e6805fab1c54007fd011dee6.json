@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT w.id, w.title, w.subtitle, w.description, w.language,\n          selected.series_id AS \"series_id?\", selected.position AS \"series_position?: f64\"\n        FROM works w LEFT JOIN LATERAL (\n          SELECT sw.series_id, sw.position::float8 AS position FROM series_works sw\n          WHERE sw.work_id = w.id ORDER BY sw.position ASC NULLS LAST, sw.series_id ASC LIMIT 1\n        ) selected ON TRUE WHERE w.id = ANY($1::uuid[]) AND (\n            EXISTS (SELECT 1 FROM manifestations m WHERE m.work_id = w.id)\n            OR ($2 AND EXISTS (\n                SELECT 1 FROM series_works own_membership\n                JOIN series_works visible_membership ON visible_membership.series_id = own_membership.series_id\n                JOIN manifestations m ON m.work_id = visible_membership.work_id\n                WHERE own_membership.work_id = w.id\n            ))\n        )\n    ",
+  "query": "\n        SELECT w.id, w.title, w.subtitle, w.description, w.language,\n          selected.series_id AS \"series_id?\", selected.position AS \"series_position?: f64\"\n        FROM works w LEFT JOIN LATERAL (\n          SELECT sw.series_id, sw.position::float8 AS position FROM series_works sw\n          WHERE sw.work_id = w.id ORDER BY sw.position ASC NULLS LAST, sw.series_id ASC LIMIT 1\n        ) selected ON TRUE WHERE w.id = ANY($1::uuid[]) AND (\n            EXISTS (SELECT 1 FROM manifestations m WHERE m.work_id = w.id)\n\n        )\n    ",
   "describe": {
     "columns": [
       {
@@ -83,8 +83,7 @@
     ],
     "parameters": {
       "Left": [
-        "UuidArray",
-        "Bool"
+        "UuidArray"
       ]
     },
     "nullable": [
@@ -97,5 +96,5 @@
       true
     ]
   },
-  "hash": "f0fa81ba78bae05a7b0e69852fdd58579762b585f79ea40286346fe167b11af7"
+  "hash": "533ea4d30ddd58010b00407cb88b5e1b66370fd7e6805fab1c54007fd011dee6"
 }

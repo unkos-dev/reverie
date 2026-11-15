@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<adf6309a443e75de3f894e50f4ac1f88>>
- * @relayHash cb624d7a73fae9d22c13033d273be86f
+ * @generated SignedSource<<a4f51f75726c1e7b3b839e33d111e2df>>
+ * @relayHash 802b8268121dcc677e5df8779269eafd
  * @lightSyntaxTransform
  */
 
@@ -8,11 +8,12 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID ff3ff4c960c5412afe367df5aa0a0a3c7c9a0093f431971b7877aed2e68a6085
+// @relayRequestID 2c837b92eb377451d1c2f5dc777282b27df5b6a798d4076b61e19bf19cc7c59b
 
 import { ConcreteRequest } from "relay-runtime";
 export type readerShelvesQuery$variables = {
   after?: string | null | undefined;
+  count?: number | null | undefined;
 };
 export type readerShelvesQuery$data = {
   readonly shelves: {
@@ -41,14 +42,17 @@ export type readerShelvesQuery = {
 };
 
 const node: ConcreteRequest = (function () {
-  var v0 = [
-      {
-        defaultValue: null,
-        kind: "LocalArgument",
-        name: "after",
-      },
-    ],
-    v1 = [
+  var v0 = {
+      defaultValue: null,
+      kind: "LocalArgument",
+      name: "after",
+    },
+    v1 = {
+      defaultValue: 50,
+      kind: "LocalArgument",
+      name: "count",
+    },
+    v2 = [
       {
         alias: null,
         args: [
@@ -56,6 +60,11 @@ const node: ConcreteRequest = (function () {
             kind: "Variable",
             name: "after",
             variableName: "after",
+          },
+          {
+            kind: "Variable",
+            name: "first",
+            variableName: "count",
           },
         ],
         concreteType: "ShelfConnection",
@@ -179,23 +188,23 @@ const node: ConcreteRequest = (function () {
     ];
   return {
     fragment: {
-      argumentDefinitions: v0 /*:: as any*/,
+      argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/],
       kind: "Fragment",
       metadata: null,
       name: "readerShelvesQuery",
-      selections: v1 /*:: as any*/,
+      selections: v2 /*:: as any*/,
       type: "Query",
       abstractKey: null,
     },
     kind: "Request",
     operation: {
-      argumentDefinitions: v0 /*:: as any*/,
+      argumentDefinitions: [v1 /*:: as any*/, v0 /*:: as any*/],
       kind: "Operation",
       name: "readerShelvesQuery",
-      selections: v1 /*:: as any*/,
+      selections: v2 /*:: as any*/,
     },
     params: {
-      id: "ff3ff4c960c5412afe367df5aa0a0a3c7c9a0093f431971b7877aed2e68a6085",
+      id: "2c837b92eb377451d1c2f5dc777282b27df5b6a798d4076b61e19bf19cc7c59b",
       metadata: {},
       name: "readerShelvesQuery",
       operationKind: "query",
@@ -204,6 +213,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "0328c408b45c190882aaa0b3d107e12d";
+(node as any).hash = "7fcebf78bbba05613333104f842f2fae";
 
 export default node;
