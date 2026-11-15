@@ -1,16 +1,589 @@
+type Author {
+  id: ID!
+  name: String!
+}
+
+type AuthorConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [AuthorEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [Author!]!
+}
+
+"""
+An edge in a connection.
+"""
+type AuthorEdge {
+  """
+  The item at the end of the edge
+  """
+  node: Author!
+  role: String!
+  position: Int!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type AuthorSuggestion {
+  entityId: ID
+  value: String!
+}
+
+input BooksFilter {
+  author: [ID!]! = []
+  authorAny: [ID!]! = []
+  authorNone: [ID!]! = []
+  series: ID
+  seriesAny: [ID!]! = []
+  shelf: ID
+  shelfAny: [ID!]! = []
+  tag: [String!]! = []
+  genre: [String!]! = []
+  genreAny: [String!]! = []
+  genreNone: [String!]! = []
+  mood: [String!]! = []
+  moodAny: [String!]! = []
+  moodNone: [String!]! = []
+  tagAny: [String!]! = []
+  tagNone: [String!]! = []
+  titleContains: String
+  titleEq: String
+  titleNe: String
+  subtitleContains: String
+  subtitleEmpty: Boolean
+  isbn13Contains: String
+  isbn13Eq: String
+  isbn13Empty: Boolean
+  pagesGte: Int
+  pagesLte: Int
+  pagesEmpty: Boolean
+  createdAtGte: String
+  createdAtLt: String
+  statusAny: [String!]! = []
+  statusNone: [String!]! = []
+  ratingGte: Int
+  ratingLte: Int
+  ratingEmpty: Boolean
+  q: String
+}
+
+enum Direction {
+  ASC
+  DESC
+}
+
+type ExternalIdentifier {
+  level: String!
+  scheme: String!
+  value: String!
+}
+
+type ExternalIdentifierConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [ExternalIdentifierEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [ExternalIdentifier!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ExternalIdentifierEdge {
+  """
+  The item at the end of the edge
+  """
+  node: ExternalIdentifier!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type ExternalRating {
+  source: String!
+  rating: Float!
+  scale: Float!
+  reviewCount: Int
+  fetchedAt: String
+}
+
+type ExternalRatingConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [ExternalRatingEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [ExternalRating!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ExternalRatingEdge {
+  """
+  The item at the end of the edge
+  """
+  node: ExternalRating!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type Genre {
+  id: ID!
+  name: String!
+}
+
+type GenreConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [GenreEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [Genre!]!
+}
+
+"""
+An edge in a connection.
+"""
+type GenreEdge {
+  """
+  The item at the end of the edge
+  """
+  node: Genre!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type GenreSuggestion {
+  entityId: ID
+  value: String!
+}
+
+"""
+A scalar that can represent any JSON value.
+"""
+scalar JSON
+
+type Manifestation implements Node @fetchable(field_name: "id") {
+  id: ID!
+  versions: MetadataVersions!
+  work: Work
+  isbn13: String
+  isbn10: String
+  isbnMismatch: Boolean!
+  pages: Int
+  publisher: String
+  publicationDate: String
+  createdAt: String!
+  updatedAt: String!
+  coverUrl: String!
+  contentRating: String
+  ingestionStatus: String!
+  validationStatus: String!
+  enrichmentStatus: String!
+  readingState: ReadingState!
+  metadata: MetadataSnapshot!
+  genres(first: Int!, after: String): GenreConnection!
+  moods(first: Int!, after: String): MoodConnection!
+  tags(first: Int!, after: String): TagConnection!
+  identifiers(first: Int!, after: String): ExternalIdentifierConnection!
+  ratings(first: Int!, after: String): ExternalRatingConnection!
+}
+
+type ManifestationConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [ManifestationEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [Manifestation!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ManifestationEdge {
+  """
+  The item at the end of the edge
+  """
+  node: Manifestation!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type MetadataSnapshot {
+  workId: ID!
+  manifestationId: ID!
+  etag: String!
+  title: String!
+  subtitle: String
+  description: String
+  language: String
+  isbn10: String
+  isbn13: String
+  pages: Int
+  publisher: String
+  publicationDate: String
+  contentRating: String
+}
+
+type MetadataVersion {
+  id: ID!
+  fieldName: String!
+  source: String!
+  newValue: JSON!
+  status: String!
+  confidenceScore: Float!
+  matchType: String!
+  observationCount: Int!
+}
+
+type MetadataVersionConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [MetadataVersionEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [MetadataVersion!]!
+}
+
+"""
+An edge in a connection.
+"""
+type MetadataVersionEdge {
+  """
+  The item at the end of the edge
+  """
+  node: MetadataVersion!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type MetadataVersions {
+  pendingCount: Int!
+  acceptedCount: Int!
+  pending(first: Int!, after: String): MetadataVersionConnection!
+}
+
+type Mood {
+  id: ID!
+  name: String!
+}
+
+type MoodConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [MoodEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [Mood!]!
+}
+
+"""
+An edge in a connection.
+"""
+type MoodEdge {
+  """
+  The item at the end of the edge
+  """
+  node: Mood!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type MoodSuggestion {
+  entityId: ID
+  value: String!
+}
+
+interface Node {
+  id: ID!
+}
+
+"""
+Information about pagination in a connection
+"""
+type PageInfo {
+  """
+  When paginating backwards, are there more items?
+  """
+  hasPreviousPage: Boolean!
+  """
+  When paginating forwards, are there more items?
+  """
+  hasNextPage: Boolean!
+  """
+  When paginating backwards, the cursor to continue.
+  """
+  startCursor: String
+  """
+  When paginating forwards, the cursor to continue.
+  """
+  endCursor: String
+}
+
+type PublisherSuggestion {
+  entityId: ID
+  value: String!
+}
+
 type Query {
   viewer: Viewer!
+  node(id: ID!): Node
+  work(id: ID!): Work
+  manifestation(id: ID!): Manifestation
+  shelf(id: ID!): Shelf
+  series(id: ID!): Series
+  fetch__Series(id: ID!): Series
+  fetch__Shelf(id: ID!): Shelf
+  fetch__Manifestation(id: ID!): Manifestation
+  books(first: Int!, after: String, filter: BooksFilter, sort: [SortLevel!]): ManifestationConnection!
+  shelves(first: Int!, after: String): ShelfConnection!
+  search(q: String!): [SearchHit!]!
+  authorLabels(ids: [ID!]!): [AuthorSuggestion!]!
+  seriesLabels(ids: [ID!]!): [SeriesSuggestion!]!
+  authorSuggestions(q: String!, limit: Int): [AuthorSuggestion!]!
+  seriesSuggestions(q: String!, limit: Int): [SeriesSuggestion!]!
+  genreSuggestions(q: String!, limit: Int): [GenreSuggestion!]!
+  moodSuggestions(q: String!, limit: Int): [MoodSuggestion!]!
+  tagSuggestions(q: String!, limit: Int): [TagSuggestion!]!
+  publisherSuggestions(q: String!, limit: Int): [PublisherSuggestion!]!
+}
+
+type ReadingState {
+  etag: String!
+  status: String
+  rating: Int
+  notes: String
+  progressPct: Float
+  startedAt: String
+  finishedAt: String
+  lastReadAt: String
+}
+
+type SearchHit {
+  manifestation: Manifestation
+  snippet: String
+}
+
+type SelectedSeries {
+  node: Series!
+  position: Float
+}
+
+type Series implements Node @fetchable(field_name: "id") {
+  id: ID!
+  name: String!
+  sortName: String!
+  works(first: Int!, after: String): WorkConnection!
+}
+
+type SeriesSuggestion {
+  entityId: ID
+  value: String!
+}
+
+type Shelf implements Node @fetchable(field_name: "id") {
+  id: ID!
+  itemCount: Int!
+  name: String!
+  isSystem: Boolean!
+  createdAt: String!
+  updatedAt: String!
+  items(first: Int!, after: String): ManifestationConnection!
+}
+
+type ShelfConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [ShelfEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [Shelf!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ShelfEdge {
+  """
+  The item at the end of the edge
+  """
+  node: Shelf!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+enum SortField {
+  title
+  author
+  created_at
+  pages
+}
+
+input SortLevel {
+  column: SortField!
+  direction: Direction!
+}
+
+type Tag {
+  id: ID!
+  name: String!
+}
+
+type TagConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [TagEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [Tag!]!
+}
+
+"""
+An edge in a connection.
+"""
+type TagEdge {
+  """
+  The item at the end of the edge
+  """
+  node: Tag!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type TagSuggestion {
+  entityId: ID
+  value: String!
 }
 
 """
 Caller-owned identity, independent of existing browser account projections.
 """
-type Viewer {
+type Viewer implements Node {
   id: ID!
   isChild: Boolean!
   displayName: String!
 }
 
+type Work implements Node {
+  id: ID!
+  title: String!
+  subtitle: String
+  description: String
+  language: String
+  selectedSeries: SelectedSeries
+  identifiers(first: Int!, after: String): ExternalIdentifierConnection!
+  manifestations(first: Int!, after: String): ManifestationConnection!
+  authors(first: Int!, after: String): AuthorConnection!
+  contributors(first: Int!, after: String): AuthorConnection!
+}
+
+type WorkConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [WorkEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [Work!]!
+}
+
+"""
+An edge in a connection.
+"""
+type WorkEdge {
+  """
+  The item at the end of the edge
+  """
+  node: Work!
+  position: Float
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+directive @fetchable(field_name: String!) on OBJECT
 """
 Directs the executor to include this field or fragment only when the `if` argument is true.
 """

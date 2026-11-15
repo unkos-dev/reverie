@@ -86,7 +86,7 @@ removed operations disappear. The compiler does not stage files. Stage generated
 `just js::relay-check` generates in a temporary directory and fails on differences or an empty operation set. Frontend
 build and test recipes run this check.
 
-Relay runtime, react-relay, compiler and Babel plugin use 21.0.1. `@rolldown/plugin-babel` 0.3.0 applies the Relay
+Relay runtime, react-relay, compiler and Babel plugin use 21.0.1. `@rolldown/plugin-babel` 0.3.1 applies the Relay
 transform beside the oxc React Compiler in both production and Browser Mode. Both retain `react({ compiler: true })`.
 Operations import their generated artefacts; the runtime never executes a raw `graphql` tag.
 
@@ -95,3 +95,10 @@ preserves HTTP errors, validates execution envelopes and never repeats a request
 confirmation creates or reuses the environment from `src/lib/relay/environment.ts`. Account replacement or loss aborts
 old requests and clears old records before another account can publish. CSRF tokens stay outside Relay records. No
 custom scalar or editing snapshot is exposed by the viewer operation.
+
+`src/lib/relay/reader.ts` contains representative Library, detail, versions, shelf, series, search, suggestions and Node
+operations. Library and basic detail omit versions. These operations generate contracts and trusted entries without
+wiring a UI consumer or changing existing HTTP cache ownership. Run `just rust::regen`, `just js::relay-gen`,
+`just js::relay-check` and `just js::build` to regenerate and verify them. Rebuild the backend after the trusted map
+changes. Reader proposal JSON and revision-bearing snapshots need runtime validation at their publication and use
+boundary. Generated types alone provide no such validation.

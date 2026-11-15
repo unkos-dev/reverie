@@ -45,7 +45,7 @@ pub struct ReadingState {
 
 /// Reading-state slice embedded in each `GET /api/v1/books` list row.
 ///
-/// Batch-loaded alongside the page (see `routes::library::load_authors_for_works`
+/// Batch-loaded alongside the page (see `services::reader::load_authors_for_works`
 /// for the sibling batch-load pattern); `None` when the caller has no
 /// `reading_state` row for that book (unread).
 ///

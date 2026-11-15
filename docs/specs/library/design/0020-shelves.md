@@ -65,9 +65,8 @@ selection to shelf" action — all described below only as consumers, since none
   row, and a mismatched predicate resolving to `AppError::NotFound` so a foreign shelf's existence is never
   distinguishable from its absence.
 - `backend/src/models/shelf.rs` holds the two response types, `Shelf` and `ShelfItem`. Both are `#[non_exhaustive]` and
-  carry no pagination fields; the paged response envelopes (`ShelfListResponse`, `ShelfDetailResponse`) are declared in
-  `routes/shelves/mod.rs` itself, alongside the request bodies, because pagination is a wire concern local to the
-  handler, not part of the model.
+  carry no pagination fields. The shared reads and paged response envelopes (`ShelfListResponse`, `ShelfDetailResponse`)
+  live in `backend/src/services/reader.rs`. HTTP adapters retain the request and header contract.
 - `backend/src/routes/cursor.rs` declares `ShelfCursor` and `ShelfItemCursor` alongside the books list engine's
   `SortCursor`, in the same module and the same opaque, tagged wire format (`sh|…` and `si|…`, base64url-unpadded).
   `ShelfCursor` carries `(is_system, name, id)`, matching `list_shelves`'s `ORDER BY is_system DESC, name ASC, id ASC`;
@@ -150,6 +149,15 @@ listed in Structure imports from it rather than calling `apiFetch` directly. `qu
 `queryKeys.shelves.detail(id)` (`frontend/src/lib/query/keys.ts`) are the two query keys every reader uses. Every
 mutation invalidates the coarser `queryKeys.shelves.all` — every create, rename and delete on `ShelvesListPage`, plus
 `LibraryPage`'s batch shelf writes — and React Query's prefix matching refetches every reader from that key.
+
+Graph shelf roots and request-local loaders call the owner-scoped reads in `reader.rs`. `Shelf` has a base64 domain ID
+and exposes scalar shelf metadata plus a bounded `items(first:, after:)` connection. GraphQL shelves and items require
+`first` from 0 through 100, independently of `REVERIE_OPDS_PAGE_SIZE`. The root `shelves` connection retains
+system-first, name, then ID ordering. Items retain addition time, then manifestation ID ordering, with the shelf ID
+bound into the graph cursor. Every edge has its own cursor and PageInfo flags come from bounded SQL probes.
+
+Typed and Node lookups return null for foreign, hidden, missing or invalid shelf identities. Item hydration rechecks
+manifestation visibility through the caller's transaction. These reads add no browser cache owner or shelf writer.
 
 ## Data and state
 

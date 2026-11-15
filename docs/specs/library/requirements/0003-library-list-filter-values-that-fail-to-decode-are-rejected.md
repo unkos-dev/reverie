@@ -12,9 +12,9 @@ governed-by:
 
 ## Statement
 
-WHEN a request to `GET /api/v1/books` carries a numeric or timestamp range filter, the server MUST include a value equal
-to a `_gte` or `_lte` bound, MUST exclude a value equal to a `_lt` bound, and MUST compare timestamp bounds as instants
-rather than as the text the request wrote them in.
+WHEN a request to `GET /api/v1/books` or a GraphQL books connection carries a numeric or timestamp range filter, the
+server MUST include a value equal to a `_gte` or `_lte` bound, MUST exclude a value equal to a `_lt` bound, and MUST
+compare timestamp bounds as instants rather than as the text the request wrote them in.
 
 ## Rationale
 
@@ -31,3 +31,7 @@ keeps a page walk valid when a client writes the same instant with a different o
 - Timestamp predicates include their lower instant and exclude their upper instant. Equivalent offsets preserve cursor
   identity; changing either instant invalidates the cursor. Checked by
   `filter_created_at_inclusive_lower_exclusive_upper_and_cursor_identity` in `backend/src/routes/library/tests.rs`.
+- GraphQL numeric bounds include both endpoints. Equal bounds match that value, and inverted bounds return a successful
+  empty connection. Timestamp bounds include the lower instant and exclude the upper instant; equal or inverted bounds
+  return a successful empty connection. Equivalent timestamp offsets preserve cursor identity, while changing either
+  instant invalidates the cursor. Checked by `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.

@@ -13,6 +13,12 @@ use crate::error::AppError;
 use crate::extract::ApiJson;
 use crate::state::AppState;
 
+mod complexity;
+mod id;
+mod library;
+mod loaders;
+mod versions;
+
 /// Build-profile policy for document admission and schema introspection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecutionPolicy {
@@ -49,6 +55,9 @@ impl async_graphql::Guard for ReadScope {
     }
 }
 
+#[async_graphql::TypeDirective(location = "Object", rename_args = "snake_case")]
+fn fetchable(field_name: String) {}
+
 /// Caller-owned identity, independent of existing browser account projections.
 #[derive(async_graphql::SimpleObject)]
 pub struct Viewer {
@@ -76,9 +85,234 @@ impl Query {
             .map_err(|error| safe_error(AppError::Internal(error.into())))?;
         Ok(Viewer {
             display_name,
-            id: async_graphql::ID(format!("User:{}", user.user_id)),
+            id: id::encode("User", user.user_id),
             is_child: user.is_child(),
         })
+    }
+    #[graphql(guard = "ReadScope")]
+    async fn node(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Node>> {
+        if let Some(user_id) = id::decode("User", &id) {
+            if user_id == ctx.data::<CurrentUser>()?.user_id {
+                return self
+                    .viewer(ctx)
+                    .await
+                    .map(|viewer| Some(library::Node::Viewer(viewer)));
+            }
+            return Ok(None);
+        }
+        if id::decode("Work", &id).is_some() {
+            return library::work(ctx, &id)
+                .await
+                .map(|value| value.map(library::Node::Work));
+        }
+        if id::decode("Manifestation", &id).is_some() {
+            return library::manifestation(ctx, &id)
+                .await
+                .map(|value| value.map(library::Node::Manifestation));
+        }
+        if id::decode("Shelf", &id).is_some() {
+            return library::shelf(ctx, &id)
+                .await
+                .map(|value| value.map(library::Node::Shelf));
+        }
+        if id::decode("Series", &id).is_some() {
+            return library::series(ctx, &id)
+                .await
+                .map(|value| value.map(library::Node::Series));
+        }
+        Ok(None)
+    }
+    #[graphql(guard = "ReadScope")]
+    async fn work(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Work>> {
+        library::work(ctx, &id).await
+    }
+    #[graphql(guard = "ReadScope")]
+    async fn manifestation(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Manifestation>> {
+        library::manifestation(ctx, &id).await
+    }
+    #[graphql(guard = "ReadScope")]
+    async fn shelf(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Shelf>> {
+        library::shelf(ctx, &id).await
+    }
+    #[graphql(guard = "ReadScope")]
+    async fn series(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Series>> {
+        library::series(ctx, &id).await
+    }
+    #[graphql(name = "fetch__Series", guard = "ReadScope")]
+    async fn fetch_series(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Series>> {
+        library::series(ctx, &id).await
+    }
+    #[graphql(name = "fetch__Shelf", guard = "ReadScope")]
+    async fn fetch_shelf(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Shelf>> {
+        library::shelf(ctx, &id).await
+    }
+    #[graphql(name = "fetch__Manifestation", guard = "ReadScope")]
+    async fn fetch_manifestation(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Manifestation>> {
+        library::manifestation(ctx, &id).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::page(first, child_complexity)?"
+    )]
+    async fn books(
+        &self,
+        ctx: &Context<'_>,
+        first: i32,
+        after: Option<String>,
+        filter: Option<library::BooksFilter>,
+        sort: Option<Vec<library::SortLevel>>,
+    ) -> async_graphql::Result<async_graphql::connection::Connection<String, library::Manifestation>>
+    {
+        library::books(ctx, first, after, filter, sort).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::page(first, child_complexity)?"
+    )]
+    async fn shelves(
+        &self,
+        ctx: &Context<'_>,
+        first: i32,
+        after: Option<String>,
+    ) -> async_graphql::Result<async_graphql::connection::Connection<String, library::Shelf>> {
+        library::shelves(ctx, first, after).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::weighted(usize::from(crate::services::reader::SEARCH_LIMIT), child_complexity)?"
+    )]
+    async fn search(
+        &self,
+        ctx: &Context<'_>,
+        q: String,
+    ) -> async_graphql::Result<Vec<library::SearchHit>> {
+        library::search(ctx, &q).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::labels(ids.len(), child_complexity)?"
+    )]
+    async fn author_labels(
+        &self,
+        ctx: &Context<'_>,
+        ids: Vec<async_graphql::ID>,
+    ) -> async_graphql::Result<Vec<library::AuthorSuggestion>> {
+        library::author_labels(ctx, &ids).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::labels(ids.len(), child_complexity)?"
+    )]
+    async fn series_labels(
+        &self,
+        ctx: &Context<'_>,
+        ids: Vec<async_graphql::ID>,
+    ) -> async_graphql::Result<Vec<library::SeriesSuggestion>> {
+        library::series_labels(ctx, &ids).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::suggestions(limit, child_complexity)?"
+    )]
+    async fn author_suggestions(
+        &self,
+        ctx: &Context<'_>,
+        q: String,
+        limit: Option<i32>,
+    ) -> async_graphql::Result<Vec<library::AuthorSuggestion>> {
+        library::author_suggestions(ctx, &q, limit).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::suggestions(limit, child_complexity)?"
+    )]
+    async fn series_suggestions(
+        &self,
+        ctx: &Context<'_>,
+        q: String,
+        limit: Option<i32>,
+    ) -> async_graphql::Result<Vec<library::SeriesSuggestion>> {
+        library::series_suggestions(ctx, &q, limit).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::suggestions(limit, child_complexity)?"
+    )]
+    async fn genre_suggestions(
+        &self,
+        ctx: &Context<'_>,
+        q: String,
+        limit: Option<i32>,
+    ) -> async_graphql::Result<Vec<library::GenreSuggestion>> {
+        library::genre_suggestions(ctx, &q, limit).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::suggestions(limit, child_complexity)?"
+    )]
+    async fn mood_suggestions(
+        &self,
+        ctx: &Context<'_>,
+        q: String,
+        limit: Option<i32>,
+    ) -> async_graphql::Result<Vec<library::MoodSuggestion>> {
+        library::mood_suggestions(ctx, &q, limit).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::suggestions(limit, child_complexity)?"
+    )]
+    async fn tag_suggestions(
+        &self,
+        ctx: &Context<'_>,
+        q: String,
+        limit: Option<i32>,
+    ) -> async_graphql::Result<Vec<library::TagSuggestion>> {
+        library::tag_suggestions(ctx, &q, limit).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::suggestions(limit, child_complexity)?"
+    )]
+    async fn publisher_suggestions(
+        &self,
+        ctx: &Context<'_>,
+        q: String,
+        limit: Option<i32>,
+    ) -> async_graphql::Result<Vec<library::PublisherSuggestion>> {
+        library::publisher_suggestions(ctx, &q, limit).await
     }
 }
 
@@ -95,8 +329,8 @@ fn schema_builder(
     policy: ExecutionPolicy,
 ) -> async_graphql::SchemaBuilder<Query, EmptyMutation, EmptySubscription> {
     let builder = Schema::build(Query, EmptyMutation, EmptySubscription)
-        .limit_depth(8)
-        .limit_complexity(64)
+        .limit_depth(complexity::DEPTH)
+        .limit_complexity(complexity::LIMIT)
         .data(policy);
     if policy == ExecutionPolicy::Production {
         builder.disable_introspection()
@@ -200,6 +434,8 @@ async fn execute(
         .variables(async_graphql::Variables::from_json(
             serde_json::Value::Object(envelope.variables),
         ))
+        .data(loaders::request_loader(user.clone(), state.clone()))
+        .data(state.clone())
         .data(user)
         .data(state.pool);
     if let Some(name) = envelope.operation_name {
@@ -243,6 +479,7 @@ mod tests {
     use crate::models::device_token;
     use crate::test_support::{self, db};
     use axum_test::TestServer;
+    use base64ct::Encoding;
     use serde_json::json;
     use sqlx::PgPool;
     use tower_sessions::{MemoryStore, Session};
@@ -287,7 +524,7 @@ mod tests {
         response.assert_status_ok();
         assert_eq!(
             response.json::<serde_json::Value>()["data"]["viewer"]["id"],
-            format!("User:{user_id}")
+            base64ct::Base64::encode_string(format!("User:{user_id}").as_bytes())
         );
         assert!(
             response
@@ -366,17 +603,18 @@ mod tests {
         let documents: BTreeMap<String, String> =
             serde_json::from_str(include_str!("../../graphql-documents.json")).unwrap();
         assert!(!documents.is_empty());
-        let (server, auth, _) = server(&pool).await;
+        let fixture = reader_fixture(&pool).await;
         for id in documents.keys() {
             let envelope = serde_json::from_value(json!({"id":id})).unwrap();
             assert_eq!(
                 document(&envelope, ExecutionPolicy::Production, &documents).unwrap(),
                 documents[id]
             );
-            let response = server
+            let response = fixture
+                .server
                 .post("/api/graphql")
-                .add_header("authorization", auth.clone())
-                .json(&json!({"id": id}))
+                .add_header("authorization", fixture.admin.clone())
+                .json(&json!({"id": id, "variables": reader_variables(&documents[id], &fixture)}))
                 .await;
             response.assert_status_ok();
             assert!(response.json::<serde_json::Value>().get("errors").is_none());
@@ -393,7 +631,9 @@ mod tests {
             (ExecutionPolicy::Development, true),
             (ExecutionPolicy::Production, false),
         ] {
-            let schema = schema(policy);
+            let schema = schema_builder(policy)
+                .data(test_support::test_state())
+                .finish();
             let response = schema
                 .execute("{ __schema { queryType { name } } __type(name: \"Viewer\") { name } }")
                 .await;
@@ -416,9 +656,9 @@ mod tests {
             assert_eq!(
                 schema
                     .execute(format!(
-                        "{{ viewer {{ {} }} }}",
-                        (0..65)
-                            .map(|i| format!("alias{i}: displayName"))
+                        "{{ {} }}",
+                        (0..=complexity::LIMIT / 63_000)
+                            .map(|i| format!("alias{i}: series(id: \"malformed\") {{ works(first: 50) {{ edges {{ node {{ manifestations(first: 20) {{ edges {{ node {{ ratings(first: 20) {{ edges {{ node {{ source }} }} }} }} }} }} }} }} }} }}"))
                             .collect::<Vec<_>>()
                             .join(" ")
                     ))
@@ -437,5 +677,587 @@ mod tests {
                 "Query is nested too deep."
             );
         }
+    }
+
+    fn reader_variables(document: &str, fixture: &ReaderFixture) -> serde_json::Value {
+        let id = if document.contains("readerShelfQuery") {
+            id::encode("Shelf", fixture.shelf_a)
+        } else if document.contains("readerSeriesQuery") {
+            id::encode("Series", fixture.series)
+        } else {
+            id::encode("Manifestation", fixture.visible)
+        };
+        json!({
+            "id": id.as_str(), "q": "Graph",
+            "authorIds": [id::encode("Author", fixture.author).as_str()],
+            "seriesIds": [id::encode("Series", fixture.series).as_str()]
+        })
+    }
+
+    struct ReaderFixture {
+        server: TestServer,
+        admin: String,
+        child: String,
+        other: String,
+        admin_id: uuid::Uuid,
+        child_id: uuid::Uuid,
+        visible_work: uuid::Uuid,
+        visible: uuid::Uuid,
+        sibling: uuid::Uuid,
+        hidden_work: uuid::Uuid,
+        hidden: uuid::Uuid,
+        child_shelf: uuid::Uuid,
+        other_shelf: uuid::Uuid,
+        shelf_a: uuid::Uuid,
+        shelf_b: uuid::Uuid,
+        series: uuid::Uuid,
+        author: uuid::Uuid,
+        hidden_author: uuid::Uuid,
+    }
+
+    async fn reader_tags(pool: &PgPool, visible: uuid::Uuid, sibling: uuid::Uuid) {
+        for name in ["alpha", "beta"] {
+            let tag = sqlx::query_scalar!("INSERT INTO tags (name) VALUES ($1) RETURNING id", name)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+            for book in [visible, sibling] {
+                sqlx::query!(
+                    "INSERT INTO manifestation_tags (manifestation_id, tag_id) VALUES ($1, $2)",
+                    book,
+                    tag
+                )
+                .execute(pool)
+                .await
+                .unwrap();
+            }
+        }
+    }
+
+    async fn reader_notes(
+        pool: &PgPool,
+        ingestion: &PgPool,
+        visible: uuid::Uuid,
+        admin_id: uuid::Uuid,
+        child_id: uuid::Uuid,
+        other_id: uuid::Uuid,
+    ) {
+        for (user, note) in [
+            (admin_id, "Admin note"),
+            (child_id, "Child note"),
+            (other_id, "Other reader note"),
+        ] {
+            sqlx::query!(
+                "INSERT INTO reading_state (user_id, manifestation_id, notes) VALUES ($1, $2, $3)",
+                user,
+                visible,
+                note
+            )
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query!("INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, status, confidence_score) VALUES ($1, 'opf', 'description', to_jsonb('Unreviewed graph proposal'::text), decode('00000001', 'hex'), 'title', 'pending'::metadata_review_status, 0.5)", visible).execute(ingestion).await.unwrap();
+    }
+
+    async fn reader_fixture(pool: &PgPool) -> ReaderFixture {
+        let (server, admin, admin_id) = server(pool).await;
+        let app = db::app_pool_for(pool).await;
+        let ingestion = db::ingestion_pool_for(pool).await;
+        let (child_id, child) = db::create_child_user_and_basic_auth(&app, "graph-child").await;
+        let (other_id, other) = db::create_adult_and_basic_auth(&app, "graph-other").await;
+        let (visible_work, visible) =
+            db::insert_work_and_manifestation(&ingestion, "graph-visible").await;
+        let (_, sibling) = db::insert_work_and_manifestation(&ingestion, "graph-sibling").await;
+        let (hidden_work, hidden) =
+            db::insert_work_and_manifestation(&ingestion, "graph-hidden").await;
+        sqlx::query!(
+            "UPDATE manifestations SET work_id = $1 WHERE id = $2",
+            visible_work,
+            sibling
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        for (work, title) in [
+            (visible_work, "Visible Graph Book"),
+            (hidden_work, "Hidden Graph Book"),
+        ] {
+            sqlx::query!(
+                "UPDATE works SET title = $1, sort_title = lower($1) WHERE id = $2",
+                title,
+                work
+            )
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        for (book, pages, day) in [(visible, 10, 1), (sibling, 20, 2), (hidden, 20, 3)] {
+            let created =
+                chrono::DateTime::parse_from_rfc3339(&format!("2026-01-{day:02}T00:00:00Z"))
+                    .unwrap();
+            sqlx::query!(
+                "UPDATE manifestations SET pages = $1, created_at = $2 WHERE id = $3",
+                pages,
+                created,
+                book
+            )
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        let author =
+            db::insert_contributor(pool, visible_work, "Visible Author", "author", 0).await;
+        db::insert_contributor(pool, visible_work, "Second Author", "author", 1).await;
+        let hidden_author =
+            db::insert_contributor(pool, hidden_work, "Hidden Author", "author", 0).await;
+        reader_tags(pool, visible, sibling).await;
+        let child_shelf = db::create_shelf(&app, child_id, "Child graph shelf").await;
+        db::add_to_shelf(&app, child_shelf, visible).await;
+        let other_shelf = db::create_shelf(&app, other_id, "Other graph shelf").await;
+        db::add_to_shelf(&app, other_shelf, hidden).await;
+        let shelf_a = db::create_shelf(&app, admin_id, "Graph shelf A").await;
+        let shelf_b = db::create_shelf(&app, admin_id, "Graph shelf B").await;
+        for book in [visible, sibling] {
+            db::add_to_shelf(&app, shelf_a, book).await;
+        }
+        db::add_to_shelf(&app, shelf_b, hidden).await;
+        let series = sqlx::query_scalar!("INSERT INTO series (name, sort_name) VALUES ('Graph Series', 'graph series') RETURNING id").fetch_one(pool).await.unwrap();
+        for (work, position) in [(visible_work, 2.0), (hidden_work, 1.0)] {
+            sqlx::query!("INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)", series, work, position).execute(pool).await.unwrap();
+        }
+        reader_notes(pool, &ingestion, visible, admin_id, child_id, other_id).await;
+        ReaderFixture {
+            server,
+            admin,
+            child,
+            other,
+            admin_id,
+            child_id,
+            visible_work,
+            visible,
+            sibling,
+            hidden_work,
+            hidden,
+            child_shelf,
+            other_shelf,
+            shelf_a,
+            shelf_b,
+            series,
+            author,
+            hidden_author,
+        }
+    }
+
+    async fn reader_query(
+        fixture: &ReaderFixture,
+        auth: &str,
+        query: &str,
+        variables: serde_json::Value,
+    ) -> serde_json::Value {
+        let response = fixture
+            .server
+            .post("/api/graphql")
+            .add_header("authorization", auth.to_owned())
+            .json(&json!({"query": query, "variables": variables}))
+            .await;
+        response.assert_status_ok();
+        response.json()
+    }
+
+    // Authorisation and private-data boundary for the concrete refetch roots.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn graphql_fetchable_boundary(pool: PgPool) {
+        let fixture = reader_fixture(&pool).await;
+        let app = db::app_pool_for(&pool).await;
+        let (_, child) = db::create_child_user_and_basic_auth(&app, "fetch-hidden").await;
+        let schema = schema(ExecutionPolicy::Development);
+        for (field, id) in [
+            (
+                "fetch__Manifestation",
+                id::encode("Manifestation", fixture.hidden),
+            ),
+            ("fetch__Shelf", id::encode("Shelf", fixture.other_shelf)),
+            ("fetch__Series", id::encode("Series", fixture.series)),
+        ] {
+            let query = format!("query($id: ID!) {{ {field}(id: $id) {{ id }} }}");
+            let variables = json!({"id": id.as_str()});
+            let denied = schema
+                .execute(
+                    async_graphql::Request::new(&query)
+                        .variables(async_graphql::Variables::from_json(variables.clone()))
+                        .data(CurrentUser::without_scopes_for_test(fixture.admin_id)),
+                )
+                .await;
+            assert_eq!(denied.errors.len(), 1, "{denied:?}");
+            assert_eq!(
+                denied.errors[0].extensions.as_ref().unwrap().get("code"),
+                Some(&async_graphql::Value::from("forbidden"))
+            );
+            let hidden = reader_query(&fixture, &child, &query, variables).await;
+            assert!(hidden.get("errors").is_none(), "{hidden}");
+            assert!(hidden["data"][field].is_null(), "{hidden}");
+        }
+    }
+
+    // Private-data boundary; REV-REQ-0009 and REV-REQ-0059 retain caller visibility and shelf ownership.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn graphql_reader_boundary(pool: PgPool) {
+        let fixture = reader_fixture(&pool).await;
+        let visible = id::encode("Manifestation", fixture.visible);
+        let response = reader_query(
+            &fixture,
+            &fixture.child,
+            "{ books(first: 50) { edges { node { id } } } }",
+            json!({}),
+        )
+        .await;
+        assert!(response.get("errors").is_none(), "{response}");
+        assert_eq!(
+            response["data"]["books"]["edges"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(
+            response["data"]["books"]["edges"][0]["node"]["id"],
+            visible.as_str()
+        );
+        let query = "query($id: ID!) { manifestation(id: $id) { id metadata { title etag } readingState { notes etag } work { id authors(first: 5) { edges { node { name } role position } } } } }";
+        let response = reader_query(
+            &fixture,
+            &fixture.child,
+            query,
+            json!({"id": visible.as_str()}),
+        )
+        .await;
+        assert!(response.get("errors").is_none(), "{response}");
+        assert_eq!(
+            response["data"]["manifestation"]["readingState"]["notes"],
+            "Child note"
+        );
+        assert!(!response.to_string().contains("Other reader note"));
+        assert_eq!(
+            response["data"]["manifestation"]["work"]["authors"]["edges"][0]["node"]["name"],
+            "Visible Author"
+        );
+        let other = reader_query(
+            &fixture,
+            &fixture.other,
+            query,
+            json!({"id": visible.as_str()}),
+        )
+        .await;
+        assert!(other.get("errors").is_none(), "{other}");
+        assert_eq!(
+            other["data"]["manifestation"]["readingState"]["notes"],
+            "Other reader note"
+        );
+        for invalid in [
+            "not-base64".to_owned(),
+            fixture.visible.to_string(),
+            id::encode("Shelf", fixture.visible).to_string(),
+            id::encode("Manifestation", fixture.hidden).to_string(),
+            id::encode("Manifestation", uuid::Uuid::new_v4()).to_string(),
+        ] {
+            let response = reader_query(
+                &fixture,
+                &fixture.child,
+                "query($id: ID!) { manifestation(id: $id) { id } node(id: $id) { id } }",
+                json!({"id": invalid}),
+            )
+            .await;
+            assert!(response.get("errors").is_none(), "{response}");
+            assert!(response["data"]["manifestation"].is_null());
+            assert!(response["data"]["node"].is_null());
+        }
+        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $shelf: ID!, $other: ID!, $caller: ID!) { work(id: $work) { id } shelf(id: $shelf) { id } other: node(id: $other) { id } caller: node(id: $caller) { id } }", json!({"work": id::encode("Work", fixture.hidden_work).as_str(), "shelf": id::encode("Shelf", fixture.other_shelf).as_str(), "other": id::encode("User", fixture.admin_id).as_str(), "caller": id::encode("User", fixture.child_id).as_str()})).await;
+        assert!(response.get("errors").is_none(), "{response}");
+        assert!(response["data"]["work"].is_null());
+        assert!(response["data"]["shelf"].is_null());
+        assert!(response["data"]["other"].is_null());
+        assert_eq!(
+            response["data"]["caller"]["id"],
+            id::encode("User", fixture.child_id).as_str()
+        );
+        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $series: ID!, $shelf: ID!) { work(id: $work) { manifestations(first: 2) { edges { node { id } } } } series(id: $series) { works(first: 50) { edges { node { id manifestations(first: 2) { edges { node { id } } } } } } } shelf(id: $shelf) { items(first: 50) { edges { node { id } } } } }", json!({"work": id::encode("Work", fixture.visible_work).as_str(), "series": id::encode("Series", fixture.series).as_str(), "shelf": id::encode("Shelf", fixture.child_shelf).as_str()})).await;
+        assert!(response.get("errors").is_none(), "{response}");
+        assert_eq!(
+            response["data"]["work"]["manifestations"]["edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            response["data"]["series"]["works"]["edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            response["data"]["shelf"]["items"]["edges"][0]["node"]["id"],
+            visible.as_str()
+        );
+        for hidden in [
+            id::encode("Manifestation", fixture.hidden),
+            id::encode("Manifestation", fixture.sibling),
+            id::encode("Work", fixture.hidden_work),
+        ] {
+            assert!(!response.to_string().contains(hidden.as_str()));
+        }
+        let response = reader_query(&fixture, &fixture.child, "query($ids: [ID!]!) { authorLabels(ids: $ids) { entityId value } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { value } shelves(first: 50) { edges { node { id name } } } }", json!({"ids": [id::encode("Author", fixture.author).as_str(), id::encode("Author", fixture.hidden_author).as_str()]})).await;
+        assert!(response.get("errors").is_none(), "{response}");
+        assert_eq!(
+            response["data"]["authorLabels"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(response["data"]["search"].as_array().unwrap().len(), 1);
+        assert_eq!(response["data"]["authorSuggestions"], json!([]));
+        assert!(!response.to_string().contains("Other graph shelf"));
+        let versions_query = "query($id: ID!) { manifestation(id: $id) { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } }";
+        let adult_versions = reader_query(
+            &fixture,
+            &fixture.admin,
+            versions_query,
+            json!({"id": visible.as_str()}),
+        )
+        .await;
+        assert!(adult_versions.get("errors").is_none(), "{adult_versions}");
+        assert_eq!(
+            adult_versions["data"]["manifestation"]["versions"]["pendingCount"],
+            1
+        );
+        assert_eq!(
+            adult_versions["data"]["manifestation"]["versions"]["pending"]["edges"][0]["node"]["newValue"],
+            "Unreviewed graph proposal"
+        );
+        for (query, variables) in [
+            (versions_query, json!({"id": visible.as_str()})),
+            (
+                "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } }",
+                json!({"id": visible.as_str()}),
+            ),
+            (
+                "query($id: ID!) { work(id: $id) { manifestations(first: 2) { edges { node { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } } } }",
+                json!({"id": id::encode("Work", fixture.visible_work).as_str()}),
+            ),
+        ] {
+            let response = reader_query(&fixture, &fixture.child, query, variables).await;
+            assert!(response.get("errors").is_none(), "{response}");
+            assert!(!response.to_string().contains("Unreviewed graph proposal"));
+            assert!(response.to_string().contains("\"pendingCount\":0"));
+            assert!(response.to_string().contains("\"edges\":[]"));
+        }
+    }
+
+    async fn pending_cursor_identity(fixture: &ReaderFixture) {
+        let query = "query($id: ID!, $after: String) { manifestation(id:$id) { versions { pending(first:1,after:$after) { edges { cursor node { id } } } } } }";
+        let page = reader_query(
+            fixture,
+            &fixture.admin,
+            query,
+            json!({"id":id::encode("Manifestation",fixture.visible).as_str()}),
+        )
+        .await;
+        assert!(page.get("errors").is_none(), "{page}");
+        let cursor = page["data"]["manifestation"]["versions"]["pending"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
+        let refused = reader_query(
+            fixture,
+            &fixture.admin,
+            query,
+            json!({"id":id::encode("Manifestation",fixture.sibling).as_str(),"after":cursor}),
+        )
+        .await;
+        assert_eq!(refused["errors"][0]["extensions"]["code"], "validation");
+    }
+
+    // REV-REQ-0003, REV-REQ-0057 and REV-REQ-0058 cover ranges, cursor identity and sort refusal.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn graphql_cursor_contract(pool: PgPool) {
+        let fixture = reader_fixture(&pool).await;
+        let query = "query($first: Int!, $after: String, $filter: BooksFilter, $sort: [SortLevel!]) { books(first: $first, after: $after, filter: $filter, sort: $sort) { edges { cursor node { id pages createdAt } } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } } }";
+        let first = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-04T00:00:00Z"}})).await;
+        assert!(first.get("errors").is_none(), "{first}");
+        let cursor = first["data"]["books"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
+        assert_eq!(first["data"]["books"]["pageInfo"]["startCursor"], cursor);
+        assert_eq!(first["data"]["books"]["pageInfo"]["endCursor"], cursor);
+        let next = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T08:00:00+08:00", "createdAtLt": "2026-01-04T08:00:00+08:00"}})).await;
+        assert!(next.get("errors").is_none(), "{next}");
+        assert_eq!(
+            next["data"]["books"]["edges"][0]["node"]["id"],
+            id::encode("Manifestation", fixture.sibling).as_str()
+        );
+        assert_eq!(next["data"]["books"]["pageInfo"]["hasPreviousPage"], true);
+        for filter in [
+            json!({"pagesGte": 20, "pagesLte": 20}),
+            json!({"pagesGte": 30, "pagesLte": 10}),
+            json!({"createdAtGte": "2026-01-02T00:00:00Z", "createdAtLt": "2026-01-02T00:00:00Z"}),
+            json!({"createdAtGte": "2026-01-03T00:00:00Z", "createdAtLt": "2026-01-01T00:00:00Z"}),
+            json!({"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-02T00:00:00Z"}),
+        ] {
+            let response = reader_query(
+                &fixture,
+                &fixture.admin,
+                query,
+                json!({"first": 50, "filter": filter}),
+            )
+            .await;
+            assert!(response.get("errors").is_none(), "{response}");
+            let expected = if filter.get("pagesGte") == Some(&json!(20)) {
+                2
+            } else {
+                usize::from(
+                    filter.get("createdAtLt") == Some(&json!("2026-01-02T00:00:00Z"))
+                        && filter.get("createdAtGte") == Some(&json!("2026-01-01T00:00:00Z")),
+                )
+            };
+            assert_eq!(
+                response["data"]["books"]["edges"].as_array().unwrap().len(),
+                expected
+            );
+        }
+        for variables in [
+            json!({"first": 50, "after": cursor, "sort": [{"column": "title", "direction": "ASC"}]}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "created_at", "direction": "DESC"}]}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:01Z", "createdAtLt": "2026-01-04T00:00:00Z"}}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-05T00:00:00Z"}}),
+            json!({"first": 50, "sort": [{"column": "Title", "direction": "ASC"}]}),
+            json!({"first": 50, "sort": [{"column": "title", "direction": "ASC"}, {"column": "title", "direction": "DESC"}]}),
+            json!({"first": 50, "sort": [{"column": "title", "direction": "ASC"}, {"column": "author", "direction": "ASC"}, {"column": "pages", "direction": "ASC"}, {"column": "created_at", "direction": "ASC"}]}),
+        ] {
+            let response = reader_query(&fixture, &fixture.admin, query, variables).await;
+            assert_eq!(
+                response["errors"][0]["extensions"]["code"], "validation",
+                "{response}"
+            );
+            assert!(response["data"]["books"].is_null());
+        }
+        let ordered = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "title", "direction": "ASC"}, {"column": "created_at", "direction": "ASC"}]})).await;
+        assert!(ordered.get("errors").is_none(), "{ordered}");
+        let ordered_cursor = ordered["data"]["books"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
+        let refused = reader_query(&fixture, &fixture.admin, query, json!({"first": 50, "after": ordered_cursor, "sort": [{"column": "created_at", "direction": "ASC"}, {"column": "title", "direction": "ASC"}]})).await;
+        assert_eq!(
+            refused["errors"][0]["extensions"]["code"], "validation",
+            "{refused}"
+        );
+        let refused = reader_query(
+            &fixture,
+            &fixture.admin,
+            "query($after: String!) { shelves(first: 50, after: $after) { edges { node { id } } } }",
+            json!({"after": cursor}),
+        )
+        .await;
+        assert_eq!(
+            refused["errors"][0]["extensions"]["code"], "validation",
+            "{refused}"
+        );
+        let tagged = reader_query(
+            &fixture,
+            &fixture.admin,
+            query,
+            json!({"first": 1, "filter": {"tagAny": ["alpha", "beta"]}}),
+        )
+        .await;
+        assert!(tagged.get("errors").is_none(), "{tagged}");
+        let tagged_cursor = tagged["data"]["books"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
+        let reordered = reader_query(
+            &fixture,
+            &fixture.admin,
+            query,
+            json!({"first": 50, "after": tagged_cursor, "filter": {"tagAny": ["beta", "alpha"]}}),
+        )
+        .await;
+        assert!(reordered.get("errors").is_none(), "{reordered}");
+        assert_eq!(
+            reordered["data"]["books"]["edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        for (field, parent_a, parent_b) in [
+            (
+                "work",
+                id::encode("Work", fixture.visible_work),
+                id::encode("Work", fixture.hidden_work),
+            ),
+            (
+                "shelf",
+                id::encode("Shelf", fixture.shelf_a),
+                id::encode("Shelf", fixture.shelf_b),
+            ),
+        ] {
+            let relation = if field == "work" {
+                "manifestations"
+            } else {
+                "items"
+            };
+            let nested_query = format!(
+                "query($id: ID!, $after: String) {{ {field}(id: $id) {{ {relation}(first: 1, after: $after) {{ edges {{ cursor node {{ id }} }} }} }} }}"
+            );
+            let page = reader_query(
+                &fixture,
+                &fixture.admin,
+                &nested_query,
+                json!({"id": parent_a.as_str()}),
+            )
+            .await;
+            assert!(page.get("errors").is_none(), "{page}");
+            let nested_cursor = page["data"][field][relation]["edges"][0]["cursor"]
+                .as_str()
+                .unwrap();
+            for response in [
+                reader_query(
+                    &fixture,
+                    &fixture.admin,
+                    &nested_query,
+                    json!({"id": parent_b.as_str(), "after": nested_cursor}),
+                )
+                .await,
+                reader_query(
+                    &fixture,
+                    &fixture.admin,
+                    query,
+                    json!({"after": nested_cursor}),
+                )
+                .await,
+            ] {
+                assert_eq!(
+                    response["errors"][0]["extensions"]["code"], "validation",
+                    "{response}"
+                );
+            }
+        }
+        pending_cursor_identity(&fixture).await;
+        let shelf_page = reader_query(
+            &fixture,
+            &fixture.admin,
+            "{ shelves(first: 1) { edges { cursor } } }",
+            json!({}),
+        )
+        .await;
+        assert!(shelf_page.get("errors").is_none(), "{shelf_page}");
+        let shelf_cursor = shelf_page["data"]["shelves"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
+        let refused = reader_query(
+            &fixture,
+            &fixture.admin,
+            query,
+            json!({"after": shelf_cursor}),
+        )
+        .await;
+        assert_eq!(
+            refused["errors"][0]["extensions"]["code"], "validation",
+            "{refused}"
+        );
     }
 }

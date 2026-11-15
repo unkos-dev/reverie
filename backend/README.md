@@ -150,9 +150,9 @@ revert.
 ## GraphQL schema and trusted documents
 
 The authenticated GraphQL endpoint is `POST /api/graphql`, built with async-graphql and async-graphql-axum 7.2.1 in the
-existing process. The viewer resolver uses `CurrentUser`, read scope and a caller-scoped transaction. Session POST
-requests retain CSRF enforcement. Retained `/api/v1`, authentication, OPDS and binary endpoints keep their HTTP
-contracts and OpenAPI documentation.
+existing process. Query roots use `CurrentUser`, read scope and caller-scoped transactions. Session POST requests retain
+CSRF enforcement. Retained `/api/v1`, authentication, OPDS and binary endpoints keep their HTTP contracts and OpenAPI
+documentation.
 
 Run `just rust::regen` to export `backend/schema.graphql`, then `just js::relay-gen` from the repository root to
 generate the matching frontend operations and `backend/graphql-documents.json`. Commit all generated output together.
@@ -162,3 +162,20 @@ The server embeds that map at compile time. Release builds accept only its docum
 introspection; debug builds accept developer documents and retain introspection. No environment setting changes this
 policy. `__typename` remains available. Unknown cached-client IDs receive a refusal without registration or text
 fallback. The backend image carries the map through its existing backend-directory copy.
+
+Shared reads live in `src/services/reader.rs`. Graph request-local loaders batch Work, Manifestation, Shelf, Series and
+relation keys without sharing caller records across requests. IDs use padded base64 of `Type:<uuid>`. Typed roots and
+`node(id:)` return null for invalid, hidden or missing identities. Series, Shelf and Manifestation declare
+`@fetchable(field_name: "id")` and expose guarded concrete roots `fetch__Series`, `fetch__Shelf` and
+`fetch__Manifestation`, each taking `id: ID!`. Their paging fragments set `@refetchable(preferFetchable: true)` so Relay
+refetches through the concrete type and validation retains page complexity multipliers. Connections use keyset SQL and
+configured page bounds. Metadata values and their matching entity-tags stay together. Selecting `versions` loads
+proposals separately, with a required `first`, 50-row maximum and an early child exclusion. Representative operations
+request 20 rows. Pending PageInfo keeps remaining rows reachable.
+
+Representative operations live in `frontend/src/lib/relay/reader.ts`, including the default 50-row Library page and a
+separate versions query. They have no UI consumers. The trusted map grows only through generation and must be rebuilt
+into the backend. Every connection requires `first`. Books, shelves, shelf items and series works accept 0 through 100;
+nested maxima are recorded in the GraphQL execution Design. GraphQL ignores `REVERIE_OPDS_PAGE_SIZE`. Both policies
+enforce depth 12 and weighted complexity 200,000. The worst measured trusted operation costs 6,901 at maximum variables,
+with maximum measured depth 8. The GraphQL execution Design records the per-operation calibration.
