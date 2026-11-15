@@ -32,8 +32,7 @@
  *   surface that re-reads the same key: `routes/shelves` and
  *   `routes/shelf-detail` (both prefetch via `queryClient.query`).
  * - **Auxiliary** surfaces degrade and stay mounted, because shelves are
- *   an accessory to their real job: `components/shell/LeftRail`,
- *   `components/shell/FilterRail`, `pages/library/FilterChips`,
+ *   an accessory to their real job: `components/shell/FilterRail`, `pages/library/FilterChips`,
  *   `pages/library/BookDetailDrawer`, and `pages/library/BatchBar` (all
  *   `useQuery`). Degrading must stay observable: the central
  *   `QueryCache.onError` routes only 401s, so these log the failure

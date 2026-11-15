@@ -20,7 +20,7 @@
  * paints the installation defaults before the preferences arrive. That is
  * intended: blocking first paint on the network would be worse.
  *
- * Reads and writes degrade silently, as `rail-storage.ts` does, and an absent
+ * Reads and writes degrade silently, and an absent
  * or malformed value reads as "no hint" per field, so a payload written
  * before this module covered view and sort still supplies the two groups it
  * does carry. Hidden-column keys are mirrored as written; the table view

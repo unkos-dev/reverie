@@ -1,18 +1,18 @@
 /**
- * Navigation model for the app shell's left rail.
+ * Navigation model for the app shell's top bar.
  *
  * Single source of truth for primary-nav entries (spec §3):
  * live destinations render as links, disabled entries render the
  * product's future shape (visible, non-interactive, with Planned status), and admin-only entries render only
  * for `role === "admin"` (spec S6 — structural absence for non-admins,
- * enforced server-side; rail gating is cosmetic).
+ * enforced server-side; navigation gating is cosmetic).
  *
  * Settings intentionally lives in the user menu, not here.
  */
 
-/** One primary-nav entry in the left rail. */
+/** One primary-nav entry in the top bar. */
 export type NavItem = {
-  /** Visible label (text-only nav — no icons, spec §12). */
+  /** Visible label beside the navigation icon. */
   label: string;
   /** Route path for live entries; absent on disabled placeholders. */
   to?: string;
@@ -20,7 +20,7 @@ export type NavItem = {
   disabled?: boolean;
 };
 
-/** Primary navigation (top of rail, in render order). */
+/** Primary navigation (top bar or phone bottom bar, in render order). */
 export const PRIMARY_NAV: NavItem[] = [
   { label: "Home", disabled: true },
   { label: "Library", to: "/library" },
@@ -28,7 +28,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { label: "Stats", disabled: true },
 ];
 
-/** Admin cluster (below divider; rendered only for `role === "admin"`). */
+/** Admin cluster (beside search; rendered only for `role === "admin"`). */
 export const ADMIN_NAV: NavItem[] = [
   { label: "Users", to: "/admin/users" },
   { label: "Ingestion", to: "/admin/dashboard" },

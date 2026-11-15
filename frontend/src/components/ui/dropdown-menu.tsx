@@ -11,7 +11,7 @@ function DropdownMenuContent({ className, children, ...props }: ContentProps): R
   return (
     <Popover
       className={cn(
-        "z-50 min-w-32 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10",
+        "z-50 min-w-32 rounded-lg bg-popover p-1 text-popover-foreground border border-hairline shadow-raised",
         className,
       )}
       {...props}
@@ -32,7 +32,7 @@ function DropdownMenuItem({
       data-slot="dropdown-menu-item"
       textValue={textValue ?? (typeof children === "string" ? children : undefined)}
       className={cn(
-        "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-focused:bg-muted data-selected:font-semibold data-disabled:opacity-50",
+        "flex cursor-default items-center gap-2 rounded-[9px] px-2 py-1.5 text-sm outline-none data-focused:bg-surface-2 data-hovered:bg-surface-2 data-pressed:bg-surface-3 data-selected:font-semibold data-selected:text-accent-text data-disabled:opacity-50",
         typeof className === "string" ? className : undefined,
       )}
       {...props}

@@ -14,6 +14,7 @@ import { Activity, AlertTriangle, BookOpen, HardDrive } from "lucide-react";
 
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { formatDateTime } from "@/lib/format/datetime";
+import { ACTIVITY_LIMIT } from "@/lib/ingestion";
 import { queryKeys } from "@/lib/query/keys";
 import { getDashboardStats } from "@/api/dashboard";
 import type { DashboardStats, DashboardActivity } from "@/api/dashboard";
@@ -36,9 +37,6 @@ import { NeedsAttentionCard } from "./ingestion/NeedsAttentionCard";
 import { ScanControl } from "./ingestion/ScanControl";
 import { PipelineNotice, ScanNotice } from "./ingestion/ScanNotice";
 import { useIngestionMonitor } from "./ingestion/use-ingestion-monitor";
-
-/** Recent-batch page size requested from `/api/v1/dashboard/activity`. */
-export const ACTIVITY_LIMIT = 20;
 
 const NUMBER_FORMAT = new Intl.NumberFormat(undefined);
 
