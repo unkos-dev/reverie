@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, X } from "lucide-react";
-import { ListBox, ListBoxItem } from "@/components/ui/select";
 import { useEffect, useId, type ReactElement, type ReactNode } from "react";
 
 import { listShelves, MAX_SORT_LEVELS, SORT_FIELDS, type Shelf, type SortLevelParam } from "@/api";
@@ -8,6 +7,8 @@ import { TypeaheadMultiSelect } from "@/components/library/TypeaheadMultiSelect"
 import { Disclosure, DisclosurePanel } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import {
+  ListBox,
+  ListBoxItem,
   Select,
   SelectContent,
   SelectItem,

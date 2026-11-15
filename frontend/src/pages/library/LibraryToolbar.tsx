@@ -88,6 +88,8 @@ export function LibraryToolbar({
   onResetColumns,
 }: Readonly<LibraryToolbarProps>): ReactElement {
   const firstSort = sortLevels.at(0);
+  const sortDirection = firstSort?.desc === true ? "desc" : "asc";
+  const sortValue = firstSort === undefined ? null : `${firstSort.field}:${sortDirection}`;
   return (
     <div data-chrome="" className="mb-2 flex flex-wrap items-center gap-2 py-2">
       <div className="min-w-60 max-w-60 flex-1">
@@ -176,11 +178,7 @@ export function LibraryToolbar({
           <>
             <Select
               aria-label="Sort books"
-              value={
-                firstSort === undefined
-                  ? null
-                  : `${firstSort.field}:${firstSort.desc ? "desc" : "asc"}`
-              }
+              value={sortValue}
               placeholder="Sort"
               onChange={(value) => {
                 for (const field of SORT_FIELDS) {

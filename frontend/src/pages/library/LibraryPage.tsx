@@ -84,6 +84,14 @@ const LibraryTable = lazy(() =>
 const COVER_WIDTH_KEY = "reverie:cover-width";
 const CoverWidthSchema = z.coerce.number().int().min(120).max(300);
 
+function saveCoverWidth(width: number): void {
+  try {
+    localStorage.setItem(COVER_WIDTH_KEY, String(width));
+  } catch (error) {
+    console.error("[LibraryPage] cover width could not be saved", error);
+  }
+}
+
 type BookPages = InfiniteData<BookListResponse, string | undefined> & {
   originKey?: BooksListKey;
 };
@@ -258,13 +266,6 @@ export function LibraryPage(): ReactElement {
       return 180;
     }
   });
-  function saveCoverWidth(width: number): void {
-    try {
-      localStorage.setItem(COVER_WIDTH_KEY, String(width));
-    } catch (error) {
-      console.error("[LibraryPage] cover width could not be saved", error);
-    }
-  }
   function closeFilters(): void {
     setFiltersOpen(false);
     filterButtonRef.current?.focus();
@@ -638,7 +639,7 @@ function BookGrid({
   coverWidth,
   selectedIds,
   onSelectionChange,
-}: BookGridProps): ReactElement {
+}: Readonly<BookGridProps>): ReactElement {
   const navigate = useNavigate();
   return (
     <GridList
@@ -681,14 +682,14 @@ const READING_LABELS = {
   abandoned: "Abandoned",
 };
 
-function BookCard({ book }: { book: BookListItem }): ReactElement {
+function BookCard({ book }: Readonly<{ book: BookListItem }>): ReactElement {
   const [coverFailed, setCoverFailed] = useState(false);
   const reading = book.reading_state;
   const progress = reading?.progress_pct ?? 0;
   let label =
     reading?.status === null || reading === null ? "None" : READING_LABELS[reading.status];
   if (reading?.status === "reading" && reading.progress_pct !== null)
-    label = `${String(progress)}% read`;
+    label = `${String(Math.round(progress))}% read`;
   let statusIcon = <Circle aria-hidden="true" className="size-3" />;
   if (reading?.status === "finished")
     statusIcon = <CircleCheck aria-hidden="true" className="size-3" />;
