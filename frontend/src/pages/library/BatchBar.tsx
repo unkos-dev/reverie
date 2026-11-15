@@ -43,7 +43,7 @@ export function BatchBar({
   return (
     <Group
       aria-label="Batch actions"
-      className="border-border bg-surface sticky bottom-[calc(1rem+3rem+0.75rem+2px+0.75rem)] z-10 mt-4 flex flex-wrap items-center mx-auto w-fit justify-center gap-3 rounded-2xl border p-2 lg:bottom-4"
+      className="border-hairline bg-(--bar) backdrop-blur-[22px] shadow-raised sticky bottom-[calc(1rem+3rem+0.75rem+2px+0.75rem)] z-10 mt-4 flex flex-wrap items-center mx-auto w-fit justify-center gap-3 rounded-2xl border p-2 lg:static lg:shrink-0"
     >
       <strong className="text-fg text-sm font-medium" aria-live="polite">
         {selectedIds.size} selected
@@ -96,7 +96,6 @@ export function BatchBar({
         <Button
           type="button"
           variant="default"
-          size="sm"
           isDisabled={batch.isPending || selectedIds.size === 0}
         >
           {batch.isPending ? (

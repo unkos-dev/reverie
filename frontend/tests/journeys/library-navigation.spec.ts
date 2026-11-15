@@ -123,12 +123,15 @@ async function chooseFacets(page: Page): Promise<void> {
   const shelves = await section(page, "Shelf");
   for (const shelf of SHELVES) await shelves.getByRole("option", { name: shelf.name }).click();
   const series = await section(page, "Series");
-  await series.getByRole("combobox", { name: "Add Series" }).fill("Sea");
+  const seriesInput = series.getByRole("combobox", { name: "Add Series" });
+  await seriesInput.scrollIntoViewIfNeeded();
+  await seriesInput.click();
+  await seriesInput.fill("Sea");
   for (const item of SERIES) {
     await page.getByRole("option", { name: item.value, exact: true }).click();
   }
   await page.keyboard.press("Escape");
-  await drawer.getByRole("button", { name: "Close", exact: true }).click();
+  await drawer.getByRole("button", { name: "Close filters", exact: true }).click();
 }
 const search = (page: Page) => page.getByRole("searchbox", { name: "Search your library" });
 async function ready(page: Page): Promise<void> {
@@ -139,12 +142,12 @@ async function ready(page: Page): Promise<void> {
 }
 async function refine(page: Page) {
   await page.getByRole("button", { name: /^Filters/ }).click();
-  const drawer = page.getByRole("dialog", { name: "Refine" });
+  const drawer = page.getByRole("dialog", { name: "Filters" });
   await expect(drawer).toBeVisible();
   return drawer;
 }
 async function section(page: Page, title: string) {
-  const drawer = page.getByRole("dialog", { name: "Refine" });
+  const drawer = page.getByRole("dialog", { name: "Filters" });
   const button = drawer.getByRole("button", { name: new RegExp(`^${title}(?:\\s*\\d+)?$`) });
   if ((await button.getAttribute("aria-expanded")) === "false") await button.click();
   return button.locator("xpath=ancestor::section[1]");
@@ -242,7 +245,7 @@ test("Refine Escape retains live text and range edits and returns focus", async 
   await upper.fill("200");
   await upper.press("Enter");
   await upper.press("Escape");
-  await expect(page.getByRole("dialog", { name: "Refine" })).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "Filters" })).toBeHidden();
   await expect(opener).toBeFocused();
   await expect(page.getByText("No books match these filters", { exact: true })).toBeVisible();
   expect(

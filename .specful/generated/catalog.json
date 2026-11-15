@@ -618,7 +618,7 @@
     {
       "governed-by": [
         "REV-ADR-0066",
-        "REV-ADR-0062",
+        "REV-ADR-0075",
         "REV-ADR-0047"
       ],
       "id": "REV-DESIGN-0001",

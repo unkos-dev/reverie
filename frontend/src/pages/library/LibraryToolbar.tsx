@@ -8,14 +8,24 @@
  * preferences arrive as props.
  */
 import { AlignJustify, Rows3, LayoutGrid, SlidersHorizontal, Table2 } from "lucide-react";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement, ReactNode, RefObject } from "react";
 import { ToggleButton, ToggleButtonGroup } from "@/components/ui/toggle-button-group";
 
-import { DENSITIES, type Density } from "@/api";
+import { DENSITIES, SORT_FIELDS, type SortLevelParam, type Density } from "@/api";
 import { QuickSearch } from "@/components/library/QuickSearch";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LibraryView } from "@/routes/library-params";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
 
 import { ColumnsPopover } from "./ColumnsPopover";
 
@@ -30,6 +40,12 @@ type LibraryToolbarProps = {
   onViewChange: (view: LibraryView) => void;
   /** Filters drawer trigger state. */
   filtersOpen: boolean;
+  filterButtonRef: RefObject<HTMLButtonElement | null>;
+  coverWidth: number;
+  onCoverWidthChange: (width: number) => void;
+  onCoverWidthChangeEnd: (width: number) => void;
+  sortLevels: readonly SortLevelParam[];
+  onSortChange: (levels: readonly SortLevelParam[]) => void;
   activeFilterCount: number;
   onOpenFilters: () => void;
   /** Table-mode display controls; omitted entirely in grid mode. */
@@ -56,6 +72,12 @@ export function LibraryToolbar({
   view,
   onViewChange,
   filtersOpen,
+  filterButtonRef,
+  coverWidth,
+  onCoverWidthChange,
+  onCoverWidthChangeEnd,
+  sortLevels,
+  onSortChange,
   activeFilterCount,
   onOpenFilters,
   density,
@@ -65,6 +87,9 @@ export function LibraryToolbar({
   canResetColumns,
   onResetColumns,
 }: Readonly<LibraryToolbarProps>): ReactElement {
+  const firstSort = sortLevels.at(0);
+  const sortDirection = firstSort?.desc === true ? "desc" : "asc";
+  const sortValue = firstSort === undefined ? null : `${firstSort.field}:${sortDirection}`;
   return (
     <div data-chrome="" className="mb-2 flex flex-wrap items-center gap-2 py-2">
       <div className="min-w-60 max-w-60 flex-1">
@@ -149,8 +174,55 @@ export function LibraryToolbar({
               onReset={onResetColumns}
             />
           </>
-        ) : null}
+        ) : (
+          <>
+            <Select
+              aria-label="Sort books"
+              value={sortValue}
+              placeholder="Sort"
+              onChange={(value) => {
+                for (const field of SORT_FIELDS) {
+                  if (value === `${field}:asc` || value === `${field}:desc`) {
+                    onSortChange([{ field, desc: value.endsWith(":desc") }]);
+                    break;
+                  }
+                }
+              }}
+            >
+              <SelectTrigger className="border-hairline text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_FIELDS.flatMap((field) =>
+                  [false, true].map((desc) => {
+                    const direction = desc ? "descending" : "ascending";
+                    let order = direction;
+                    if (field === "created_at") order = desc ? "newest first" : "oldest first";
+                    return (
+                      <SelectItem
+                        key={`${field}:${desc ? "desc" : "asc"}`}
+                        id={`${field}:${desc ? "desc" : "asc"}`}
+                      >
+                        {`${SORT_FIELD_LABELS[field]}, ${order}`}
+                      </SelectItem>
+                    );
+                  }),
+                )}
+              </SelectContent>
+            </Select>
+            <Slider
+              label="Cover width"
+              minValue={120}
+              maxValue={300}
+              step={1}
+              value={coverWidth}
+              onChange={onCoverWidthChange}
+              onChangeEnd={onCoverWidthChangeEnd}
+            />
+          </>
+        )}
         <Button
+          ref={filterButtonRef}
           type="button"
           variant="outline"
           size="sm"

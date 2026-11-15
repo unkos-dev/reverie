@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, X } from "lucide-react";
-import { Button as AriaButton, ListBox, ListBoxItem } from "react-aria-components";
 import { useEffect, useId, type ReactElement, type ReactNode } from "react";
 
 import { listShelves, MAX_SORT_LEVELS, SORT_FIELDS, type Shelf, type SortLevelParam } from "@/api";
@@ -8,6 +7,8 @@ import { TypeaheadMultiSelect } from "@/components/library/TypeaheadMultiSelect"
 import { Disclosure, DisclosurePanel } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import {
+  ListBox,
+  ListBoxItem,
   Select,
   SelectContent,
   SelectItem,
@@ -39,6 +40,7 @@ import {
 
 type FilterRailProps = {
   owner: LibraryFilters;
+  onClose?: () => void;
   showContradiction: boolean;
   /** The resolved effective sort stack; see the module docstring. */
   sortLevels: readonly SortLevelParam[];
@@ -52,6 +54,7 @@ type FilterRailProps = {
 /** The library's filter and sort editing surface; see the module docstring. */
 export function FilterRail({
   owner,
+  onClose,
   showContradiction,
   sortLevels,
   sortInherited,
@@ -98,153 +101,175 @@ export function FilterRail({
   );
 
   return (
-    <aside aria-label="Filters" className="flex flex-col gap-4 text-sm">
-      <SortSection levels={sortLevels} inherited={sortInherited} onChange={onSortChange} />
-      <ShelfSection
-        activeShelf={filters.shelf}
-        onPick={(shelf) => {
-          commitAll((current) => ({ ...current, shelf }));
-        }}
-        onClear={() => {
-          commitAll((current) => ({ ...current, shelf: [] }));
-        }}
-      />
-      <RailSection
-        title="Series"
-        activeCount={filters.series.length}
-        onClear={() => {
-          commitAll((current) => ({ ...current, series: [] }));
-        }}
-      >
-        <TypeaheadMultiSelect
-          kind="series"
-          label="Series"
-          selected={filters.series.map((id) => ({ id, value: seriesNames.labelFor(id) }))}
-          maxSelectedItems={MAX_FILTER_VALUES}
-          onChange={(selected) => {
+    <aside
+      id="library-filter-drawer"
+      aria-label="Filters"
+      className="library-filter-panel flex h-full min-h-0 flex-col rounded-[18px] border border-hairline text-sm"
+    >
+      <header className="flex shrink-0 items-center gap-2 px-[18px] pb-2 pt-3">
+        <h2 className="mr-auto text-base font-semibold">Filters</h2>
+        <Button
+          variant="ghost"
+          size="xs"
+          onPress={owner.clearAll}
+          className="text-xs text-fg-muted"
+        >
+          Clear all
+        </Button>
+        {onClose === undefined ? null : (
+          <Button variant="ghost" size="icon-xs" aria-label="Close filters" onPress={onClose}>
+            <X aria-hidden="true" className="size-3" />
+          </Button>
+        )}
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[18px] pb-5 pt-3">
+        <RailSection
+          title="Status"
+          defaultExpanded
+          activeCount={filters.status.any.length + filters.status.none.length}
+          onClear={() => {
+            commitAll((current) => ({ ...current, status: { any: [], none: [] } }));
+          }}
+        >
+          <StatusEditor
+            value={filters.status.any}
+            onChange={(any) => {
+              commitAll((current) => ({ ...current, status: { ...current.status, any } }));
+            }}
+          />
+        </RailSection>
+        <RailSection
+          title="Added"
+          activeCount={
+            (filters.addedAfter === undefined ? 0 : 1) + (filters.addedBefore === undefined ? 0 : 1)
+          }
+          onClear={() => {
             commitAll((current) => ({
               ...current,
-              series: selected.flatMap((item) => (item.id === undefined ? [] : [item.id])),
+              addedAfter: undefined,
+              addedBefore: undefined,
             }));
           }}
-        />
-      </RailSection>
-      {vocabSection("authors", "Authors")}
-      {vocabSection("tags", "Tags")}
-      {vocabSection("genres", "Genres")}
-      {vocabSection("moods", "Moods")}
-      <RailSection
-        title="Status"
-        activeCount={filters.status.any.length + filters.status.none.length}
-        onClear={() => {
-          commitAll((current) => ({ ...current, status: { any: [], none: [] } }));
-        }}
-      >
-        <StatusEditor
-          value={filters.status.any}
-          onChange={(any) => {
-            commitAll((current) => ({
-              ...current,
-              status: { ...current.status, any },
-            }));
+        >
+          <DateRangeEditor
+            compact
+            showContradiction={showContradiction}
+            after={filters.addedAfter}
+            before={filters.addedBefore}
+            onChange={(patch) => {
+              commitAll((current) => {
+                const next = patch({ after: current.addedAfter, before: current.addedBefore });
+                return { ...current, addedAfter: next.after, addedBefore: next.before };
+              });
+            }}
+          />
+        </RailSection>
+        <RailSection
+          title="Series"
+          activeCount={filters.series.length}
+          onClear={() => {
+            commitAll((current) => ({ ...current, series: [] }));
           }}
-        />
-      </RailSection>
-      <TextSection
-        title="Title"
-        ops={TEXT_COLUMN_OPS.title}
-        value={filters.title}
-        activeCount={textCount(filters.title)}
-        onChange={(title) => {
-          commitAll((current) => ({ ...current, title }));
-        }}
-        onClear={() => {
-          commitAll((current) => ({ ...current, title: {} }));
-        }}
-      />
-      <TextSection
-        title="Subtitle"
-        ops={TEXT_COLUMN_OPS.subtitle}
-        value={filters.subtitle}
-        activeCount={textCount(filters.subtitle)}
-        onChange={(subtitle) => {
-          commitAll((current) => ({ ...current, subtitle }));
-        }}
-        onClear={() => {
-          commitAll((current) => ({ ...current, subtitle: {} }));
-        }}
-      />
-      <TextSection
-        title="ISBN-13"
-        ops={TEXT_COLUMN_OPS.isbn_13}
-        value={filters.isbn13}
-        activeCount={Number(isIsbn13FilterActive(filters.isbn13))}
-        onChange={(isbn13) => {
-          commitAll((current) => ({ ...current, isbn13 }));
-        }}
-        onClear={() => {
-          commitAll((current) => ({ ...current, isbn13: {} }));
-        }}
-      />
-      <RangeSection
-        title="Pages"
-        showContradiction={showContradiction}
-        min={0}
-        max={2147483647}
-        value={filters.pages}
-        activeCount={rangeCount(filters.pages)}
-        onChange={(patch) => {
-          commitAll((current) => ({ ...current, pages: patch(current.pages) }));
-        }}
-        onClear={() => {
-          commitAll((current) => ({ ...current, pages: {} }));
-        }}
-      />
-      <RangeSection
-        title="Rating"
-        showContradiction={showContradiction}
-        min={1}
-        max={5}
-        value={filters.rating}
-        activeCount={rangeCount(filters.rating)}
-        onChange={(patch) => {
-          commitAll((current) => ({ ...current, rating: patch(current.rating) }));
-        }}
-        onClear={() => {
-          commitAll((current) => ({ ...current, rating: {} }));
-        }}
-      />
-      <RailSection
-        title="Added"
-        activeCount={
-          (filters.addedAfter === undefined ? 0 : 1) + (filters.addedBefore === undefined ? 0 : 1)
-        }
-        onClear={() => {
-          commitAll((current) => ({
-            ...current,
-            addedAfter: undefined,
-            addedBefore: undefined,
-          }));
-        }}
-      >
-        <DateRangeEditor
+        >
+          <TypeaheadMultiSelect
+            kind="series"
+            label="Series"
+            selected={filters.series.map((id) => ({ id, value: seriesNames.labelFor(id) }))}
+            maxSelectedItems={MAX_FILTER_VALUES}
+            onChange={(selected) => {
+              commitAll((current) => ({
+                ...current,
+                series: selected.flatMap((item) => (item.id === undefined ? [] : [item.id])),
+              }));
+            }}
+          />
+        </RailSection>
+        {vocabSection("authors", "Authors")}
+        <RangeSection
+          title="Pages"
           showContradiction={showContradiction}
-          after={filters.addedAfter}
-          before={filters.addedBefore}
+          min={0}
+          max={2147483647}
+          value={filters.pages}
+          activeCount={rangeCount(filters.pages)}
           onChange={(patch) => {
-            commitAll((current) => {
-              const next = patch({ after: current.addedAfter, before: current.addedBefore });
-              return { ...current, addedAfter: next.after, addedBefore: next.before };
-            });
+            commitAll((current) => ({ ...current, pages: patch(current.pages) }));
+          }}
+          onClear={() => {
+            commitAll((current) => ({ ...current, pages: {} }));
           }}
         />
-      </RailSection>
+        <RangeSection
+          title="Rating"
+          showContradiction={showContradiction}
+          min={1}
+          max={5}
+          value={filters.rating}
+          activeCount={rangeCount(filters.rating)}
+          onChange={(patch) => {
+            commitAll((current) => ({ ...current, rating: patch(current.rating) }));
+          }}
+          onClear={() => {
+            commitAll((current) => ({ ...current, rating: {} }));
+          }}
+        />
+        <ShelfSection
+          activeShelf={filters.shelf}
+          onPick={(shelf) => {
+            commitAll((current) => ({ ...current, shelf }));
+          }}
+          onClear={() => {
+            commitAll((current) => ({ ...current, shelf: [] }));
+          }}
+        />
+        <SortSection levels={sortLevels} inherited={sortInherited} onChange={onSortChange} />
+        <TextSection
+          title="Title"
+          ops={TEXT_COLUMN_OPS.title}
+          value={filters.title}
+          activeCount={textCount(filters.title)}
+          onChange={(title) => {
+            commitAll((current) => ({ ...current, title }));
+          }}
+          onClear={() => {
+            commitAll((current) => ({ ...current, title: {} }));
+          }}
+        />
+        <TextSection
+          title="Subtitle"
+          ops={TEXT_COLUMN_OPS.subtitle}
+          value={filters.subtitle}
+          activeCount={textCount(filters.subtitle)}
+          onChange={(subtitle) => {
+            commitAll((current) => ({ ...current, subtitle }));
+          }}
+          onClear={() => {
+            commitAll((current) => ({ ...current, subtitle: {} }));
+          }}
+        />
+        <TextSection
+          title="ISBN-13"
+          ops={TEXT_COLUMN_OPS.isbn_13}
+          value={filters.isbn13}
+          activeCount={Number(isIsbn13FilterActive(filters.isbn13))}
+          onChange={(isbn13) => {
+            commitAll((current) => ({ ...current, isbn13 }));
+          }}
+          onClear={() => {
+            commitAll((current) => ({ ...current, isbn13: {} }));
+          }}
+        />
+        {vocabSection("tags", "Tags")}
+        {vocabSection("genres", "Genres")}
+        {vocabSection("moods", "Moods")}
+      </div>
     </aside>
   );
 }
 
 type RailSectionProps = {
   title: string;
+  defaultExpanded?: boolean;
   /** Number of active conditions; positive renders the badge + clear control. */
   activeCount: number;
   onClear: () => void;
@@ -266,6 +291,7 @@ type RailSectionProps = {
  */
 function RailSection({
   title,
+  defaultExpanded,
   activeCount,
   onClear,
   clearLabel = "Clear",
@@ -273,14 +299,18 @@ function RailSection({
   children,
 }: Readonly<RailSectionProps>): ReactElement {
   const active = activeCount > 0;
+  const expanded =
+    defaultExpanded ?? ["Status", "Added", "Series", "Authors", "Pages", "Rating"].includes(title);
   return (
     <section>
-      <Disclosure defaultExpanded={activeCount > 0} className="group/section">
+      <Disclosure defaultExpanded={expanded || active} className="group/section">
         <div className="flex items-center gap-2">
-          <AriaButton
+          <Button
+            variant="ghost"
+            size="xs"
             type="button"
             slot="trigger"
-            className={`flex flex-1 cursor-pointer select-none items-center gap-2 self-stretch text-left font-mono text-xs uppercase tracking-[0.14em] ${
+            className={`flex flex-1 cursor-pointer select-none items-center gap-2 self-stretch justify-start h-5 p-0 text-left text-xs font-medium aria-expanded:bg-transparent data-hovered:bg-transparent data-pressed:bg-transparent ${
               active ? "text-accent-text" : "text-fg-muted"
             }`}
           >
@@ -290,7 +320,7 @@ function RailSection({
                 {activeCount}
               </span>
             ) : null}
-          </AriaButton>
+          </Button>
           {active ? (
             <Button
               type="button"
@@ -298,7 +328,7 @@ function RailSection({
               size="xs"
               aria-label={clearAriaLabel ?? `Clear ${title} filters`}
               onPress={onClear}
-              className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 items-center rounded-sm px-2 font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2"
+              className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 items-center rounded-sm px-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2"
             >
               {clearLabel}
             </Button>
@@ -593,6 +623,7 @@ function RangeSection({
   return (
     <RailSection title={title} activeCount={activeCount} onClear={onClear}>
       <RangeFilterEditor
+        compact
         label={title}
         showContradiction={showContradiction}
         value={value}

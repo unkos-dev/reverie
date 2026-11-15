@@ -12,7 +12,7 @@ satisfies:
   - "REV-REQ-0077"
 governed-by:
   - "REV-ADR-0066"
-  - "REV-ADR-0062"
+  - "REV-ADR-0075"
   - "REV-ADR-0047"
 ---
 
@@ -29,8 +29,8 @@ retain their account lifetime independently of the visit.
 
 `frontend/src/routes/library-params.ts` defines the serialisable visit schema, grouped filter model and effective API
 projection. `useLibraryFilters()` in `frontend/src/lib/hooks/use-library-filters.ts` is mounted once by the page after
-Router setup. The toolbar, rail, chips and empty-state actions receive state and dispatch functions from that owner.
-They do not instantiate another filter owner.
+Router setup. The toolbar, filter panel, chips and empty-state actions receive state and dispatch functions from that
+owner. They do not instantiate another filter owner.
 
 Native NumberFields publish numeric values with snapping, steppers and intrinsic domains. Independently optional
 DatePickers provide keyboard segments and calendars. SearchField and TextField publish raw text immediately. Native
@@ -59,8 +59,8 @@ chips and selections; missing or failed labels retain the selected UUID with a s
 filter intent.
 
 `useLibraryPreferences()` resolves sort and display preferences. The page supplies its one sort intent handler to the
-rail and table headers. `useInfiniteQuery` observes the current filter request, retaining previous pages through
-`keepPreviousData` while a changed request loads.
+filter panel, Covers sort control and table headers. `useInfiniteQuery` observes the current filter request, retaining
+previous pages through `keepPreviousData` while a changed request loads.
 
 ## Interfaces and dependencies
 
@@ -137,8 +137,18 @@ The Library page owns metadata Undo above conditional results rendering. Entries
 survive sorting, filtering, temporary loading and empty results, and retained results. Leaving Library or switching away
 from table editing clears this context. There is no exit confirmation.
 
-Uniform Escape, close and outside dismissal retains published edits and returns focus through native overlay handling.
-Closure creates no separate commit or rollback transaction.
+At viewport widths of at least 1600 px, the filter editor occupies a non-modal panel beside the collection. Opening it
+narrows the collection without hiding columns. Its translucent material matches the floating bars, and its top stays
+below the sticky navigation. The Filters control toggles it; its close control returns focus to Filters. The collection
+stays interactive, and Escape and outside presses leave the panel open. Below 1600 px, a native modal sheet provides
+Escape, close and outside dismissal. Both presentations retain published edits. Closure creates no separate commit or
+rollback transaction.
+
+Covers uses a native multiple-selection GridList. A card action opens the book page, while its selection checkbox and
+native keyboard selection feed the page's batch selection. The Covers sort control dispatches a single-level stack
+through the same preference intent handler as the table and full-stack editor. A native slider sets cover width from 120
+to 300 px in one-pixel steps. The grid responds during dragging; the final width persists per browser. Its default is
+180 px. This display setting does not change filter intent, selection or server preferences.
 
 ## Failure and recovery
 
