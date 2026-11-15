@@ -14,7 +14,7 @@ export function CellSaveState({
   pending,
   feedback,
 }: Readonly<Props>): ReactElement | null {
-  const [completedAttempt, setCompletedAttempt] = useState(0);
+  const [completedAttempt, setCompletedAttempt] = useState(pending ? 0 : attempt);
   const [savedAttempt, setSavedAttempt] = useState(0);
   if (!pending && attempt !== completedAttempt) {
     setCompletedAttempt(attempt);

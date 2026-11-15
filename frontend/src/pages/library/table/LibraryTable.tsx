@@ -2,6 +2,7 @@ import { ArrowRight, ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Loader2 } fro
 import {
   createContext,
   use,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -585,6 +586,12 @@ export function LibraryTable({
 }: Readonly<Props>): ReactElement {
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const shiftHeld = useRef(false);
+  useEffect(
+    () => () => {
+      onScrollChange(false);
+    },
+    [onScrollChange],
+  );
   const [saveAttempts, setSaveAttempts] = useState<ReadonlyMap<string, number>>(new Map());
 
   const columns = useMemo(
