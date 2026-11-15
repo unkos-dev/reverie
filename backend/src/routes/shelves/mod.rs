@@ -21,9 +21,7 @@ use axum::http::header::LINK;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Postgres, QueryBuilder, Row};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -32,9 +30,9 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::error::AppError;
 use crate::extract::{ApiJson, ApiPath};
-use crate::models::shelf::{Shelf, ShelfItem};
-use crate::routes::cursor::{ShelfCursor, ShelfItemCursor};
-use crate::routes::library::{build_next_url, split_page};
+use crate::models::shelf::Shelf;
+use crate::routes::library::build_next_url;
+use crate::services::reader::ShelfDetailResponse;
 use crate::state::AppState;
 
 #[cfg(test)]
@@ -105,68 +103,13 @@ async fn list_shelves(
     OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
     let Query(params) = params?;
-    let page_size = i64::from(state.config.opds.page_size);
-    let cursor = params
-        .cursor
-        .as_deref()
-        .map(ShelfCursor::parse)
-        .transpose()
-        .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
-
-    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-        "SELECT s.id, s.name, s.is_system, s.created_at, s.updated_at, \
-                (SELECT COUNT(*) FROM shelf_items si WHERE si.shelf_id = s.id) AS item_count \
-           FROM shelves s \
-          WHERE s.user_id = ",
-    );
-    qb.push_bind(current_user.user_id);
-    if let Some(c) = &cursor {
-        // Mixed-direction sort (is_system DESC, then name/id ASC) cannot
-        // use a single tuple comparison — expand into the two-arm OR.
-        qb.push(" AND (s.is_system < ");
-        qb.push_bind(c.is_system);
-        qb.push(" OR (s.is_system = ");
-        qb.push_bind(c.is_system);
-        qb.push(" AND (s.name, s.id) > (");
-        qb.push_bind(c.name.clone());
-        qb.push(", ");
-        qb.push_bind(c.id);
-        qb.push(")))");
-    }
-    qb.push(" ORDER BY s.is_system DESC, s.name ASC, s.id ASC LIMIT ");
-    qb.push_bind(page_size + 1);
-
-    let rows = qb
-        .build()
-        .fetch_all(&state.pool)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    let (page_rows, has_more) = split_page(&rows, page_size);
-
-    let items: Vec<Shelf> = page_rows
-        .iter()
-        .map(|r| Shelf {
-            id: r.get("id"),
-            name: r.get("name"),
-            is_system: r.get("is_system"),
-            created_at: r.get("created_at"),
-            updated_at: r.get("updated_at"),
-            item_count: r.get("item_count"),
-        })
-        .collect();
-
-    let next_cursor = match page_rows.last() {
-        Some(last) if has_more => Some(
-            ShelfCursor {
-                is_system: last.get("is_system"),
-                name: last.get("name"),
-                id: last.get("id"),
-            }
-            .encode(),
-        ),
-        _ => None,
-    };
+    let (items, next_cursor) = crate::services::reader::shelves(
+        &current_user,
+        &state,
+        params.cursor.as_deref(),
+        i64::from(state.config.opds.page_size),
+    )
+    .await?;
 
     let mut headers = HeaderMap::new();
     if let Some(ref nc) = next_cursor {
@@ -435,28 +378,6 @@ struct ShelfItemsParams {
     cursor: Option<String>,
 }
 
-/// `GET /api/v1/shelves/{id}` response envelope: shelf identity plus
-/// one page of ordered items and the cursor for the next page.
-///
-/// Private to the route module — handler-internal wire shape
-/// (pagination is a transport concern; the `models::shelf` DTOs stay
-/// transport-free).
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-struct ShelfDetailResponse {
-    id: Uuid,
-    name: String,
-    is_system: bool,
-    // This envelope re-declares the model's timestamps rather than
-    // embedding `Shelf`.
-    created_at: DateTime<Utc>,
-    /// `shelves.updated_at`.
-    updated_at: DateTime<Utc>,
-    /// One page of items ordered by `added_at ASC, manifestation_id ASC`.
-    items: Vec<ShelfItem>,
-    /// Opaque cursor for the next items page; `null` on the last page.
-    next_cursor: Option<String>,
-}
-
 /// Shelf identity plus one keyset-paginated page of its items.
 ///
 /// Items page over `(added_at, manifestation_id)`, so every list is bounded by
@@ -493,88 +414,14 @@ async fn get_shelf_with_items(
     OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
     let Query(params) = params?;
-    let page_size = i64::from(state.config.opds.page_size);
-    let cursor = params
-        .cursor
-        .as_deref()
-        .map(ShelfItemCursor::parse)
-        .transpose()
-        .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
-
-    let shelf = sqlx::query!(
-        r#"
-        SELECT id          AS "id!",
-               name        AS "name!",
-               is_system   AS "is_system!",
-               created_at  AS "created_at!",
-               updated_at  AS "updated_at!"
-          FROM shelves WHERE id = $1 AND user_id = $2
-        "#,
+    let body = crate::services::reader::shelf_items(
+        &current_user,
+        &state,
         id,
-        current_user.user_id,
+        params.cursor.as_deref(),
+        i64::from(state.config.opds.page_size),
     )
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    .ok_or(AppError::NotFound)?;
-
-    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-        "SELECT manifestation_id, added_at \
-           FROM shelf_items WHERE shelf_id = ",
-    );
-    qb.push_bind(id);
-    if let Some(c) = &cursor {
-        // All-ASC sort — a single row-tuple comparison is total. The
-        // manifestation_id tiebreaker is load-bearing: added_at is not
-        // unique per shelf.
-        qb.push(" AND (added_at, manifestation_id) > (");
-        qb.push_bind(c.added_at);
-        qb.push(", ");
-        qb.push_bind(c.manifestation_id);
-        qb.push(")");
-    }
-    qb.push(" ORDER BY added_at ASC, manifestation_id ASC LIMIT ");
-    qb.push_bind(page_size + 1);
-
-    let rows = qb
-        .build()
-        .fetch_all(&state.pool)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    let (page_rows, has_more) = split_page(&rows, page_size);
-
-    let items: Vec<ShelfItem> = page_rows
-        .iter()
-        .map(|r| ShelfItem {
-            manifestation_id: r.get("manifestation_id"),
-            added_at: r.get("added_at"),
-        })
-        .collect();
-
-    let next_cursor = match page_rows.last() {
-        Some(last) if has_more => {
-            let manifestation_id: Uuid = last.get("manifestation_id");
-            Some(
-                ShelfItemCursor {
-                    added_at: last.get("added_at"),
-                    manifestation_id,
-                }
-                .encode(),
-            )
-        }
-        _ => None,
-    };
-
-    let body = ShelfDetailResponse {
-        id: shelf.id,
-        name: shelf.name,
-        is_system: shelf.is_system,
-        created_at: shelf.created_at,
-        updated_at: shelf.updated_at,
-        items,
-        next_cursor,
-    };
+    .await?;
     let mut headers = HeaderMap::new();
     if let Some(ref nc) = body.next_cursor {
         let next_url = build_next_url(&uri, nc);

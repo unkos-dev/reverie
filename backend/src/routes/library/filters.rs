@@ -35,7 +35,7 @@ use crate::models::reading_status::ReadingStatus;
 
 use super::{ListParams, MAX_TAG_FILTERS};
 
-pub(super) mod timestamp_opt {
+pub mod timestamp_opt {
     use chrono::{DateTime, Utc};
     use serde::{Deserialize, Deserializer};
 
@@ -89,7 +89,7 @@ pub fn escape_like(raw: &str) -> String {
 ///
 /// # Errors
 /// Returns [`AppError::Validation`] on the first rule a param violates.
-pub(super) fn validate(p: &ListParams) -> Result<(), AppError> {
+pub fn validate(p: &ListParams) -> Result<(), AppError> {
     for (param, len) in [
         ("tag", p.tag.len()),
         ("tag_any", p.tag_any.len()),
@@ -172,7 +172,7 @@ pub(super) fn validate(p: &ListParams) -> Result<(), AppError> {
 /// value that differs in any way yields a different string. This shape is
 /// load-bearing for cursor stability: changing it invalidates every
 /// outstanding cursor, which is acceptable but must be deliberate.
-pub(super) fn canonical_filter_string(p: &ListParams) -> String {
+pub fn canonical_filter_string(p: &ListParams) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     push_multi(&mut parts, "author", &uuids_to_strings(&p.author));
@@ -252,7 +252,7 @@ pub(super) fn canonical_filter_string(p: &ListParams) -> String {
 /// The cursor's filter fingerprint: the first 16 hex chars (8 bytes) of
 /// SHA-256 over [`canonical_filter_string`]. Empty filters hash the empty
 /// string, so an unfiltered request has a stable, non-empty fingerprint.
-pub(super) fn filter_fingerprint(p: &ListParams) -> String {
+pub fn filter_fingerprint(p: &ListParams) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let canonical = canonical_filter_string(p);
     let digest = Sha256::digest(canonical.as_bytes());
@@ -268,7 +268,7 @@ pub(super) fn filter_fingerprint(p: &ListParams) -> String {
 /// after the vocabulary predicates and before the cursor predicate. Empty /
 /// absent conditions push nothing. Ordering among the AND-combined
 /// predicates does not change semantics.
-pub(super) fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
+pub fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     push_author_predicates(qb, p);
     if let Some(series_id) = p.series {
         qb.push(

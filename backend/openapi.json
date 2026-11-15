@@ -432,7 +432,7 @@
           {
             "name": "id",
             "in": "query",
-            "description": "Author ids to resolve, repeated (`?id=<uuid>&id=<uuid>`). Required\n(empty is 422) and capped at [`MAX_RESOLVE_IDS`]; unknown or\nout-of-scope ids are silently omitted rather than 404'd.",
+            "description": "Author ids to resolve, repeated (`?id=<uuid>&id=<uuid>`). Required\n(empty is 422) and capped at 60; unknown or\nout-of-scope ids are silently omitted rather than 404'd.",
             "required": false,
             "schema": {
               "type": "array",
@@ -4292,7 +4292,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Free-form query text. Empty / whitespace-only → 422; over\n[`MAX_Q_LEN`] chars → 422.",
+            "description": "Free-form query text. Empty / whitespace-only → 422; over\n200 chars → 422.",
             "required": false,
             "schema": {
               "type": "string"
@@ -12878,7 +12878,7 @@
       },
       "ShelfDetailResponse": {
         "type": "object",
-        "description": "`GET /api/v1/shelves/{id}` response envelope: shelf identity plus\none page of ordered items and the cursor for the next page.\n\nPrivate to the route module — handler-internal wire shape\n(pagination is a transport concern; the `models::shelf` DTOs stay\ntransport-free).",
+        "description": "Shelf identity, one ordered page of items and the next-page cursor.",
         "required": [
           "id",
           "name",

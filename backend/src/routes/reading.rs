@@ -41,7 +41,7 @@ const NOTES_MAX_CHARS: usize = 10_000;
 /// RLS-scoped existence probe shared by both handlers: `NotFound` when the
 /// manifestation is missing or hidden for the current user
 /// (existence-not-leaked).
-async fn ensure_manifestation_visible(
+pub(crate) async fn ensure_manifestation_visible(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     manifestation_id: Uuid,
 ) -> Result<(), AppError> {
@@ -157,28 +157,8 @@ async fn get_reading(
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Read)?;
 
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    ensure_manifestation_visible(&mut tx, manifestation_id).await?;
-
-    let row = sqlx::query_as!(
-        ReadingStateRow,
-        r#"SELECT status AS "status?: ReadingStatus", rating, notes, progress_pct,
-                  started_at, finished_at, last_read_at
-             FROM reading_state WHERE manifestation_id = $1"#,
-        manifestation_id,
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    let row = row.unwrap_or_default();
+    let row =
+        crate::services::reader::reading_state(&current_user, &state, manifestation_id).await?;
     let mut headers = HeaderMap::new();
     headers.insert(ETAG, row.etag()?);
     Ok((headers, axum::Json(ReadingState::from(row))))

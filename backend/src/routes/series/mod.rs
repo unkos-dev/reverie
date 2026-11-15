@@ -5,19 +5,14 @@
 //! a series with no visible manifestations returns 404.
 
 use axum::extract::State;
-use std::collections::{HashMap, HashSet};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
-use crate::db;
 use crate::error::AppError;
 use crate::extract::ApiPath;
-use crate::models::library::WorkManifestation;
-use crate::models::series::{SeriesDetail, SeriesWork};
-use crate::models::validation_status::ValidationStatus;
-use crate::routes::library::{load_authors_for_works, parse_enrichment, parse_ingestion};
+use crate::models::series::SeriesDetail;
 use crate::state::AppState;
 
 #[cfg(test)]
@@ -61,115 +56,7 @@ async fn detail(
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> Result<axum::Json<SeriesDetail>, AppError> {
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+    crate::services::reader::series_detail(&current_user, &state, id)
         .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    let mut work_rows = sqlx::query!(
-        r#"
-        SELECT w.id                  AS "id!",
-               w.title               AS "title!",
-               sw.position::float8   AS "position?"
-          FROM series_works sw
-          JOIN works w ON w.id = sw.work_id
-         WHERE sw.series_id = $1
-         ORDER BY sw.position ASC NULLS LAST, w.id ASC
-        "#,
-        id,
-    )
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-
-    if work_rows.is_empty() {
-        return Err(AppError::NotFound);
-    }
-
-    let work_ids: Vec<Uuid> = work_rows.iter().map(|r| r.id).collect();
-
-    let manifestation_rows = sqlx::query!(
-        r#"
-        SELECT id          AS "id!",
-               work_id     AS "work_id!",
-               isbn_10,
-               isbn_13,
-               pages,
-               created_at  AS "created_at!",
-               ingestion_status::text  AS "ingestion_status!",
-               validation_status       AS "validation_status!: ValidationStatus",
-               enrichment_status::text AS "enrichment_status!"
-          FROM manifestations
-         WHERE work_id = ANY($1::uuid[])
-         ORDER BY created_at ASC, id ASC
-        "#,
-        &work_ids,
-    )
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-
-    if manifestation_rows.is_empty() {
-        return Err(AppError::NotFound);
-    }
-
-    if current_user.is_child() {
-        // THREAT: Unprotected catalogue rows can disclose works outside the child's visible manifestations.
-        let visible_ids: HashSet<Uuid> = manifestation_rows.iter().map(|r| r.work_id).collect();
-        work_rows.retain(|work| visible_ids.contains(&work.id));
-    }
-    let work_ids: Vec<Uuid> = work_rows.iter().map(|r| r.id).collect();
-
-    let series_row = sqlx::query!(
-        r#"SELECT id   AS "id!",
-                  name AS "name!",
-                  sort_name AS "sort_name!"
-             FROM series WHERE id = $1"#,
-        id,
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    .ok_or(AppError::NotFound)?;
-
-    let authors_by_work = load_authors_for_works(&mut tx, &work_ids).await?;
-
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    let mut manifestations_by_work: HashMap<Uuid, Vec<WorkManifestation>> = HashMap::new();
-    for r in manifestation_rows {
-        manifestations_by_work
-            .entry(r.work_id)
-            .or_default()
-            .push(WorkManifestation {
-                id: r.id,
-                isbn_13: r.isbn_13,
-                isbn_10: r.isbn_10,
-                pages: r.pages,
-                cover_url: format!("/api/v1/books/{}/cover/thumb", r.id),
-                ingestion_status: parse_ingestion(&r.ingestion_status)?,
-                validation_status: r.validation_status,
-                enrichment_status: parse_enrichment(&r.enrichment_status)?,
-                created_at: r.created_at,
-            });
-    }
-
-    let works: Vec<SeriesWork> = work_rows
-        .into_iter()
-        .map(|w| SeriesWork {
-            id: w.id,
-            title: w.title,
-            authors: authors_by_work.get(&w.id).cloned().unwrap_or_default(),
-            position: w.position,
-            manifestations: manifestations_by_work.remove(&w.id).unwrap_or_default(),
-        })
-        .collect();
-
-    Ok(axum::Json(SeriesDetail {
-        id: series_row.id,
-        name: series_row.name,
-        sort_name: series_row.sort_name,
-        works,
-    }))
+        .map(axum::Json)
 }
