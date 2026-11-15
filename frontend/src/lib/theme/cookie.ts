@@ -95,7 +95,7 @@ export type Palette = "periwinkle" | "monochrome";
 
 /** Read this browser's palette, defaulting to periwinkle for an absent or invalid value. */
 export function readPaletteCookie(): Palette {
-  return document.cookie.split("; ").some((pair) => pair === "reverie_palette=monochrome")
+  return document.cookie.split("; ").includes("reverie_palette=monochrome")
     ? "monochrome"
     : "periwinkle";
 }

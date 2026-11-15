@@ -38,11 +38,6 @@
 //     hashes this body).
 (function () {
   try {
-    document.documentElement.dataset.palette = document.cookie.split("; ").some(function (c) {
-      return c === "reverie_palette=monochrome";
-    })
-      ? "monochrome"
-      : "periwinkle";
     var cookie = document.cookie.split("; ").find(function (c) {
       return c.indexOf("reverie_theme=") === 0;
     });
@@ -50,6 +45,10 @@
     if (pref !== "system" && pref !== "light" && pref !== "dark") {
       pref = "system";
     }
+    document.documentElement.dataset.palette =
+      pref === "dark" && document.cookie.split("; ").includes("reverie_palette=monochrome")
+        ? "monochrome"
+        : "periwinkle";
     var effective = pref;
     if (pref === "system") {
       effective = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

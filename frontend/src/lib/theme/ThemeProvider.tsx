@@ -65,6 +65,10 @@ function applyEffective(theme: EffectiveTheme): void {
   document.documentElement.dataset.theme = theme;
 }
 
+function applyPalette(preference: ThemePreference, palette: Palette): void {
+  document.documentElement.dataset.palette = preference === "dark" ? palette : "periwinkle";
+}
+
 function resolveEffective(preference: ThemePreference, systemDark: boolean): EffectiveTheme {
   if (preference === "system") return systemDark ? "dark" : "light";
   return preference;
@@ -108,7 +112,7 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
   // with that public API.
   const [preference, setPreferenceState] = useState<ThemePreference>(initial.preference);
   const [effective, setEffectiveState] = useState<EffectiveTheme>(initial.effective);
-  const [palette, setPaletteState] = useState<Palette>(readPaletteCookie);
+  const [palette, setPalette] = useState<Palette>(readPaletteCookie);
   const channelRef = useRef<BroadcastChannel | null>(null);
   // Captures preference at mount so the reconcile effect can compare
   // server vs. mount-time without re-firing on every preference change.
@@ -154,6 +158,7 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
         const nextEffective = resolveEffective(serverPref, systemDark);
         writeThemeCookie(serverPref);
         applyEffective(nextEffective);
+        applyPalette(serverPref, readPaletteCookie());
         setPreferenceState(serverPref);
         setEffectiveState(nextEffective);
       } catch (error) {
@@ -187,8 +192,8 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
       const nextEffective = resolveEffective(candidate, systemDark);
       const nextPalette = msg.palette === "monochrome" ? "monochrome" : "periwinkle";
       writePaletteCookie(nextPalette);
-      document.documentElement.dataset.palette = nextPalette;
-      setPaletteState(nextPalette);
+      applyPalette(candidate, nextPalette);
+      setPalette(nextPalette);
       writeThemeCookie(candidate);
       applyEffective(nextEffective);
       setPreferenceState(candidate);
@@ -218,8 +223,8 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
       const nextEffective = resolveEffective(next, systemDark);
 
       writePaletteCookie(nextPalette);
-      document.documentElement.dataset.palette = nextPalette;
-      setPaletteState(nextPalette);
+      applyPalette(next, nextPalette);
+      setPalette(nextPalette);
 
       // Optimistic update: cookie + DOM + state immediately.
       writeThemeCookie(next);
@@ -261,8 +266,8 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
         }
         if (readThemeCookie() === next) {
           writePaletteCookie(prevPalette);
-          document.documentElement.dataset.palette = prevPalette;
-          setPaletteState(prevPalette);
+          applyPalette(prevPreference, prevPalette);
+          setPalette(prevPalette);
           writeThemeCookie(prevPreference);
           applyEffective(prevEffective);
           setPreferenceState(prevPreference);
