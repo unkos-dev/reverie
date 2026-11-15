@@ -61,7 +61,7 @@ import {
 import "./library-table.css";
 import { CellSaveState } from "../CellSaveState";
 import { pendingKey, type UseCellEditResult } from "./useCellEdit";
-import { EDIT_ROUTES, type EditableColumnKey } from "./edit-routing";
+import type { EditableColumnKey } from "./edit-routing";
 
 type ColumnId =
   | "select"
@@ -592,7 +592,6 @@ export function LibraryTable({
     },
     [onScrollChange],
   );
-  const [saveAttempts, setSaveAttempts] = useState<ReadonlyMap<string, number>>(new Map());
 
   const columns = useMemo(
     () => [
@@ -624,11 +623,6 @@ export function LibraryTable({
       };
     },
     commit: (book, columnKey, next) => {
-      const route = EDIT_ROUTES[columnKey];
-      if (JSON.stringify(route.toPatch(book, book)) !== JSON.stringify(route.toPatch(book, next))) {
-        const key = pendingKey(book.id, columnKey);
-        setSaveAttempts((current) => new Map(current).set(key, (current.get(key) ?? 0) + 1));
-      }
       edits.onCellEdit({ row: next, previousRow: book, columnKey });
     },
   };
@@ -787,7 +781,7 @@ export function LibraryTable({
                     density,
                     edits.pendingCells,
                     edits.feedback,
-                    saveAttempts,
+                    edits.savedCells,
                   ]}
                 >
                   {(book) => (
@@ -796,7 +790,7 @@ export function LibraryTable({
                       data-book-id={book.id}
                       textValue={book.title}
                       columns={columns}
-                      dependencies={[edits.pendingCells, edits.feedback, saveAttempts]}
+                      dependencies={[edits.pendingCells, edits.feedback, edits.savedCells]}
                       className="group/row text-fg data-hovered:bg-surface data-selected:bg-accent-soft [height:inherit] [width:inherit] cursor-default outline-none"
                     >
                       {(column) => (
@@ -807,7 +801,7 @@ export function LibraryTable({
                           <div className="relative flex size-full items-center">
                             <BookCell book={book} columnId={column.id} />
                             <CellSaveState
-                              attempt={saveAttempts.get(pendingKey(book.id, column.id)) ?? 0}
+                              saved={edits.savedCells.has(pendingKey(book.id, column.id))}
                               pending={edits.pendingCells.has(pendingKey(book.id, column.id))}
                               feedback={edits.feedback.find(
                                 (entry) => entry.rowId === book.id && entry.columnKey === column.id,

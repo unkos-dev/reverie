@@ -146,7 +146,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 function formatError(err: unknown): string {
-  if (err instanceof ApiError) return `${err.title}: ${err.detail}`;
+  if (err instanceof ApiError)
+    return [err.title, err.detail].filter(Boolean).join(": ") || "Request failed.";
   if (err instanceof Error) return err.message;
   return "Request failed.";
 }
@@ -371,6 +372,7 @@ export type CellEditReport = { row: BookListItem; previousRow: BookListItem; col
 
 export type UseCellEditResult = {
   pendingCells: ReadonlyMap<string, string>;
+  savedCells: ReadonlySet<string>;
   onCellEdit: (report: CellEditReport) => void;
   keyboardProps: ReturnType<typeof useKeyboard>["keyboardProps"];
   undo: () => void;
@@ -398,6 +400,7 @@ export function useCellEdit({
   }
   const contextOwner = owner.context;
   const [pendingCells, setPendingCells] = useState<ReadonlyMap<string, string>>(new Map());
+  const [savedCells, setSavedCells] = useState<ReadonlySet<string>>(new Set());
   const records = useCellEditRecords(userId);
 
   function drop(operationId: string): void {
@@ -501,6 +504,10 @@ export function useCellEdit({
     }) => updateBookMetadata(context.row.id, patch, context.baseline, context.requestId),
     onSuccess: (response, { context }) => {
       adopt(context, response);
+      if (context.operation === "save")
+        setSavedCells((current) =>
+          new Set(current).add(pendingKey(context.row.id, context.columnKey)),
+        );
     },
     onError: failed,
     onSettled: settled,
@@ -513,6 +520,10 @@ export function useCellEdit({
     onSuccess: (response, { context }) => {
       applyRecoveryRead(client, context, response);
       retireCellFailures(client, context);
+      if (context.operation === "save")
+        setSavedCells((current) =>
+          new Set(current).add(pendingKey(context.row.id, context.columnKey)),
+        );
     },
     onError: failed,
     onSettled: settled,
@@ -661,6 +672,11 @@ export function useCellEdit({
 
   function onCellEdit({ row, previousRow, columnKey }: CellEditReport): void {
     if (!enabled || !isEditableColumnKey(columnKey)) return;
+    setSavedCells((current) => {
+      const next = new Set(current);
+      next.delete(pendingKey(row.id, columnKey));
+      return next;
+    });
     setUndoOutcome(null);
     const route = EDIT_ROUTES[columnKey];
     const value = valueForRow(row, columnKey);
@@ -728,8 +744,14 @@ export function useCellEdit({
   const undoAvailable =
     enabled && latest !== undefined && pendingCells.size === 0 && !undoMutation.isPending;
   function undo(): void {
-    if (undoAvailable)
+    if (undoAvailable) {
+      setSavedCells((current) => {
+        const next = new Set(current);
+        next.delete(pendingKey(latest.row.id, latest.columnKey));
+        return next;
+      });
       undoMutation.mutate({ entry: latest, context: { ...latest.context, operation: "undo" } });
+    }
   }
   const { keyboardProps } = useKeyboard({
     onKeyDown: (event) => {
@@ -749,6 +771,7 @@ export function useCellEdit({
   });
   return {
     pendingCells,
+    savedCells,
     onCellEdit,
     keyboardProps,
     undo,
