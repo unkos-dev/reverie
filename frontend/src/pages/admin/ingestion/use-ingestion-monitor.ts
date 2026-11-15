@@ -4,8 +4,10 @@
  * It decides the refetch interval for the activity read, the counts read and
  * page one of every expanded group; those components take the interval as a
  * prop and never start a timer of their own. It also owns the scan mutation
- * and the single notice that reports it, so no component reads or writes
- * those cache keys independently.
+ * and the single notice that reports it. The app shell also reads the
+ * dashboard activity key and polls it off the ingestion route, but not while
+ * this page is mounted. The shell polls the dashboard stats key everywhere,
+ * because this hook invalidates it after a scan but never polls it.
  *
  * Polling runs while the latest batch has not ended, and for a grace window
  * after a scan that queued or deferred files (jobs appear only once attempts

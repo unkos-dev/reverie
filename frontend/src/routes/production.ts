@@ -15,7 +15,6 @@
 import { createElement } from "react";
 import { Navigate, type RouteObject } from "react-router";
 
-import type { ZoneHandle } from "@/components/shell/AppShell";
 import { titleCrumb } from "@/components/shell/crumbs";
 
 /** `/library` — paginated grid of books visible to the current user. */
@@ -79,8 +78,6 @@ export const tokensRoute: RouteObject = {
 /** `/admin/users` — admin-only user management. */
 export const adminUsersRoute: RouteObject = {
   path: "admin/users",
-  // Shell tone shift to canvas-2 (spec §2 admin zone).
-  handle: { zone: "admin" } satisfies ZoneHandle,
   lazy: async () => {
     const mod = await import("./admin");
     return { loader: mod.loader, Component: mod.Component };
@@ -90,8 +87,6 @@ export const adminUsersRoute: RouteObject = {
 /** `/admin/dashboard` — admin-only library-health dashboard. */
 export const adminDashboardRoute: RouteObject = {
   path: "admin/dashboard",
-  // Shell tone shift to canvas-2 (spec §2 admin zone).
-  handle: { zone: "admin" } satisfies ZoneHandle,
   lazy: async () => {
     const mod = await import("./dashboard");
     return { loader: mod.loader, Component: mod.Component };
@@ -101,7 +96,6 @@ export const adminDashboardRoute: RouteObject = {
 /** `/admin/settings` — lands on the first settings area. */
 export const adminSettingsIndexRoute: RouteObject = {
   path: "admin/settings",
-  handle: { zone: "admin" } satisfies ZoneHandle,
   element: createElement(Navigate, { to: "/admin/settings/acquisition", replace: true }),
 };
 
@@ -109,8 +103,6 @@ export const adminSettingsIndexRoute: RouteObject = {
 export const adminSettingsRoute: RouteObject = {
   path: "admin/settings/:area",
   shouldRevalidate: ({ currentParams, nextParams }) => currentParams.area !== nextParams.area,
-  // Shell tone shift to canvas-2 (spec §2 admin zone).
-  handle: { zone: "admin" } satisfies ZoneHandle,
   lazy: async () => {
     const mod = await import("./admin-settings");
     return { loader: mod.loader, Component: mod.Component };

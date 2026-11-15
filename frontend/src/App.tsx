@@ -8,8 +8,7 @@ import { AppShell } from "@/components/shell/AppShell";
 /**
  * Root route component (`/`).
  *
- * Mounts the `AppShell` chrome (left rail, utility strip, admin-zone
- * tone) around the `<Outlet />` that the data-mode router fills with
+ * Mounts the `AppShell` chrome (floating navigation and content sheet) around the `<Outlet />` that the data-mode router fills with
  * child routes (`/library`, `/b/:id`, …), plus the command palette.
  *
  */

@@ -3,9 +3,9 @@ title: Instance settings
 description: How administrators change Reverie's runtime settings from the Settings screen, and what happens when two administrators edit at once.
 ---
 
-Administrators tune Reverie from **Settings** in the user menu at the foot of the navigation rail. The settings apply to
-everyone who uses the instance, and they take effect without a restart. Other accounts see no Settings entry, and
-opening the address directly shows a notice that the screen is for administrators.
+Administrators tune Reverie from **Settings** in the account menu in the top bar. The settings apply to everyone who
+uses the instance, and they take effect without a restart. Other accounts see no Settings entry, and opening the address
+directly shows a notice that the screen is for administrators.
 
 ## Areas
 
@@ -19,8 +19,6 @@ currently set to.
 | Covers         | The largest cover file, download timeout, smallest acceptable size and redirect limit.       |
 | Writeback      | Whether corrected metadata is written into book files, and how many files at once.           |
 | Catalogue feed | Whether the OPDS feed is served, and how many entries each page lists.                       |
-
-Provider display, which hides providers from book details, follows in a later release.
 
 The status line under the heading shows when the settings last changed and when the server last refreshed its copy. A
 server that has not refreshed since it started reads values straight from the database, which is normal.

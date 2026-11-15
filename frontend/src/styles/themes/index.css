@@ -37,6 +37,8 @@
   --color-shell: var(--shell-ground);
   --color-sheet: var(--sheet-ground);
   --color-bar: var(--bar);
+  --color-bar-raised: var(--bar-raised);
+  --color-bar-raised-border: var(--bar-raised-border);
   --color-hairline: var(--hairline);
   --radius-sm: 9px;
   --radius-md: 12px;
@@ -74,6 +76,8 @@
   --shell-ground: var(--shell);
   --sheet-ground: var(--bg);
   --bar: var(--bar-fill);
+  --bar-raised: var(--neutral-a2);
+  --bar-raised-border: var(--neutral-10);
   --hairline: var(--hairline-color);
   --canvas: var(--sheet-ground);
   --canvas-2: var(--neutral-2);

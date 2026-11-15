@@ -1,49 +1,39 @@
 ---
 title: Navigating Reverie
-description: "How the app shell is organised: the navigation rail, contextual filters, search, and the thinking behind them."
+description: "How to navigate Reverie with the floating top bar, phone bottom bar, contextual filters, and search."
 ---
 
-Every screen in Reverie wears the same chrome: a navigation rail on the left and, on browse surfaces, contextual filters
-in a drawer on the right. This page describes how to move around and why the shell is shaped the way it is.
+Every screen in Reverie shares a floating top bar and one rounded sheet for route content, including admin pages. The
+Library keeps contextual filters in a drawer on the right.
 
-## Global rail, contextual drawer
+## Global navigation, contextual filters
 
-Reverie separates **where you are** from **what you're looking at**:
+On desktop, the top bar contains the Reverie wordmark, primary navigation, a centred search control, and the account
+menu. **Library** and **Shelves** open their pages. **Home** and **Stats** show a visible **Planned** label and are
+non-interactive. Keyboard navigation skips these entries.
 
-- The **left rail** is global. It always shows the same destinations: Library, Shelves (with your shelves nested
-  beneath), and, for administrators, the admin cluster, so wayfinding never depends on the current screen.
-- **Filters** are contextual. On browse surfaces (the Library today) the toolbar's **Filters** button opens a drawer
-  from the right edge carrying every filter for the books in view. Detail pages, admin screens, and the reader don't
-  have one.
+Open **Shelves** to reach your shelves from the Shelves page.
 
-Keeping the two apart matters because the jobs are different: global navigation must be stable and learnable, while
-filters must change with the content. Folding both into a single sidebar forces one of them to misbehave. The filter
-drawer overlays the books rather than claiming a permanent column, so the collection keeps the full width while you
-browse; the chips row under the toolbar (below) keeps active filters visible while the drawer is closed.
+Administrators also see **Ingestion** and **Users** icon buttons beside search. Ingestion shows a count of files that
+need attention and a moving line while a scan or enrichment runs. The buttons' accessible labels name their
+destinations, and Ingestion's label includes its activity and attention count.
 
-Your shelves live in the left rail under **Shelves**, capped at seven rows with an "All shelves" overflow link; shelves
-are destinations you return to, not filters you apply.
+The account menu contains **Settings** for administrators. See
+[Instance settings](/reverie/guides/instance-settings/).
 
-## Planned entries are visible
-
-The rail shows a few destinations that aren't built yet; Home and Stats render with a visible **Planned** label. This is
-deliberate: the rail communicates the product's intended shape, and a self-hosting operator evaluating Reverie can see
-where it is going without reading a roadmap. Planned entries are skipped by keyboard navigation and never act as links.
-
-Settings is not a rail destination: it lives in the user menu at the foot of the rail, and only administrators see it.
-Everyone else sees no Settings entry at all. See [Instance settings](/reverie/guides/instance-settings/).
+The Library toolbar's **Filters** button opens a drawer from the right edge with filters for the books in view. Detail
+pages, admin screens, and the reader have no filter drawer. The drawer overlays the books, and the chips row under the
+toolbar keeps active filters visible while the drawer is closed.
 
 ## Two search jobs, two surfaces
 
 Reverie separates finding a book from narrowing the books in view.
 
-The **command palette** navigates: pick a book and it takes you there. Open it with `⌘K` / `Ctrl K` while focus is in
-the app shell. The shortcut does not open it from dialogs or popovers. The **search box** in the Library toolbar
-filters: type two or more characters and the collection you are browsing shrinks to the matches, in whatever view and
-sort order you already had. It never navigates, and clearing it brings everything back.
-
-The split keeps each surface honest. A single box would have to guess whether you meant "go to this book" or "show me
-fewer books", and the palette stays free to grow into a broader command surface without dragging filter semantics along.
+The **command palette** navigates: pick a book and it takes you there. Open it with the search control in the top bar,
+or press `⌘K` or `Ctrl K` while focus is in the app shell. The shortcut does not open it from dialogs or popovers. The
+**search box** in the Library toolbar filters: type two or more characters and the collection you are browsing shrinks
+to the matches, in whatever view and sort order you already had. It never navigates, and clearing it brings everything
+back.
 
 ## One query, two views
 
@@ -232,31 +222,20 @@ While saving or checking a lost response, the fields are read-only. You can stil
 settles, Save can retry the unchanged draft. A confirmed save closes the dialog. If the book changed elsewhere,
 **Discard edits and reload** replaces the draft with the latest values.
 
-## Cinematic mode
-
-On the Library page, use **Cinematic view** at the bottom centre to dissolve the surrounding chrome; the navigation
-rail, toolbar, and controls fade out so the cover art fills the screen. The toggle stays available as
-**Exit cinematic view**. After two seconds of pointer stillness the cursor hides too; moving the pointer brings it back.
-
-## Admin is a different room
-
-Admin screens (Users, Ingestion) shift the canvas tone slightly darker. The chrome stays identical; only the surface
-changes, signalling "operational room" rather than "reading room". The admin cluster in the rail is only rendered for
-administrators; for everyone else it is structurally absent rather than locked. Authorization is enforced server-side
-regardless; the rail's gating is presentation, not security.
-
 ## Every size keeps every feature
 
 The toolbar's **Filters** button opens the filter drawer at every width; the chips row keeps active state visible while
 it's closed. On narrow screens the table trims itself to what fits: selection, the details control, the title (with the
 author stacked beneath it), and the added date; every dropped column's data is one press away in the details drawer, and
-the full column set returns with the room to show it. Below 1024px, the navigation rail becomes a drawer behind a
-floating menu button in the top-left corner. Nothing is desktop-only: every destination, filter, and action is reachable
-at every size, just behind one more press.
+the full column set returns with the room to show it.
+
+Below 1024px, primary navigation sits in a floating bottom bar. The top bar keeps the wordmark, search, and account
+menu. Administrators reach **Users** and **Ingestion** from the account menu, where Ingestion also shows its attention
+count.
 
 ## Accessibility
 
-The shell targets WCAG 2.2 AA. Concretely: a skip-to-content link is the first thing in tab order; the rail, primary
-nav, admin cluster, and filter drawer are labelled landmarks; the active destination carries `aria-current="page"`;
-disabled entries are described, not just dimmed; focus rings are consistent (gold) across every interactive element; and
-all motion (including route crossfades) flattens under `prefers-reduced-motion`.
+The shell targets WCAG 2.2 AA. A skip-to-content link comes first in tab order. Primary navigation, admin navigation,
+and the filter drawer have accessible labels. The active primary destination carries `aria-current="page"`, and disabled
+entries have a visible **Planned** label. Interactive elements share one accent focus ring. Motion, including route
+crossfades and the ingestion activity line, respects `prefers-reduced-motion`.
