@@ -48,9 +48,18 @@ conversation; not a position on the dealt list. seed:00f19a41251c3fb1
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and
 every shipping raster carrying its provenance
 
+## Covers
+
+The Covers control row places a native React Aria Slider labelled Cover width beside Sort. Its range is 120 to 300 px in
+one-pixel steps, with a 180 px default and a visible pixel value. Covers resize during a drag or keyboard input; the
+browser stores the chosen width when the interaction ends. It is separate from account preferences.
+
+At 1920 by 1080, the default width gives nine columns with the filter panel closed. Desktop columns retain the chosen
+width, and the collection fits fewer columns when the filter panel opens. The panel sits beside the collection from 1600
+px; below that width, Filters opens a modal. Cover images keep a 2:3 aspect ratio.
+
 ## Unresolved
 
 - Which server-dependent parts ship first: reading-state totals, needs-attention counts, filter counts, sorting on every
   column.
-- Cover-size control in the Covers view.
 - Reduced-effects setting is a follow-up.
