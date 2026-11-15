@@ -2,6 +2,7 @@ import { ArrowRight, ArrowDown, ArrowUp, ChevronDown, Loader2 } from "lucide-rea
 import {
   createContext,
   use,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -86,14 +87,14 @@ type TableColumn = {
 
 const DATA_COLUMNS: readonly TableColumn[] = [
   { id: "title", name: "Title", field: "title", defaultWidth: "1fr", minWidth: 240 },
-  { id: "subtitle", name: "Subtitle", defaultWidth: 176, minWidth: 176 },
-  { id: "authors", name: "Authors", field: "author", defaultWidth: 200, minWidth: 200 },
-  { id: "series", name: "Series", defaultWidth: 176, minWidth: 176 },
-  { id: "isbn_13", name: "ISBN", defaultWidth: 160, minWidth: 160 },
+  { id: "subtitle", name: "Subtitle", defaultWidth: 176, minWidth: 112 },
+  { id: "authors", name: "Authors", field: "author", defaultWidth: 200, minWidth: 120 },
+  { id: "series", name: "Series", defaultWidth: 176, minWidth: 112 },
+  { id: "isbn_13", name: "ISBN", defaultWidth: 160, minWidth: 96 },
   { id: "pages", name: "Pages", field: "pages", defaultWidth: 104, minWidth: 104, align: "end" },
-  { id: "status", name: "Status", defaultWidth: 144, minWidth: 144 },
-  { id: "rating", name: "Rating", defaultWidth: 128, minWidth: 128 },
-  { id: "added", name: "Added", field: "created_at", defaultWidth: 144, minWidth: 144 },
+  { id: "status", name: "Status", defaultWidth: 144, minWidth: 112 },
+  { id: "rating", name: "Rating", defaultWidth: 128, minWidth: 112 },
+  { id: "added", name: "Added", field: "created_at", defaultWidth: 144, minWidth: 112 },
 ];
 
 const SELECT_COLUMN: TableColumn = { id: "select", name: "Select", defaultWidth: 44 };
@@ -582,6 +583,27 @@ export function LibraryTable({
 }: Readonly<Props>): ReactElement {
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const shiftHeld = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const [resized, setResized] = useState<{
+    widths: Map<Key, ColumnProps["width"]>;
+    availableWidth: number;
+    columns: readonly TableColumn[];
+    hasIsbn: boolean;
+    hasRating: boolean;
+  }>();
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container === null) return;
+    const observer = new ResizeObserver(() => {
+      setAvailableWidth(Math.max(0, container.clientWidth - 2));
+    });
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
   const [saveAttempts, setSaveAttempts] = useState<ReadonlyMap<string, number>>(new Map());
 
   const columns = useMemo(
@@ -595,6 +617,50 @@ export function LibraryTable({
       ...(isMobile ? [] : [OPEN_COLUMN]),
     ],
     [hiddenColumns, isMobile],
+  );
+
+  const hasIsbn = items.some((book) => Boolean(book.isbn_13));
+  const hasRating = items.some((book) => book.reading_state?.rating != null);
+  const compactColumns = new Set([
+    ...(!hasIsbn ? ["isbn_13"] : []),
+    ...(!hasRating ? ["rating"] : []),
+  ]);
+  const preferredWidths = columns.map((column) => {
+    const minimum = column.minWidth ?? Number(column.defaultWidth);
+    if (compactColumns.has(column.id) || column.id === "title") return minimum;
+    const newlyPopulated =
+      (column.id === "isbn_13" && !resized?.hasIsbn) ||
+      (column.id === "rating" && !resized?.hasRating);
+    const previous = newlyPopulated ? undefined : resized?.widths.get(column.id);
+    return Math.max(minimum, typeof previous === "number" ? previous : Number(column.defaultWidth));
+  });
+  const minimumTotal = columns.reduce(
+    (total, column) => total + (column.minWidth ?? Number(column.defaultWidth)),
+    0,
+  );
+  const preferredTotal = preferredWidths.reduce((total, width) => total + width, 0);
+  const shrink =
+    preferredTotal > minimumTotal
+      ? Math.min(
+          1,
+          Math.max(0, (preferredTotal - availableWidth) / (preferredTotal - minimumTotal)),
+        )
+      : 0;
+  const widths = new Map(
+    columns.map((column, index) => {
+      const minimum = column.minWidth ?? Number(column.defaultWidth);
+      const preferred = preferredWidths[index] ?? minimum;
+      let width = preferred - (preferred - minimum) * shrink;
+      if (column.id === "title") width += Math.max(0, availableWidth - preferredTotal);
+      const manual =
+        resized?.availableWidth === availableWidth &&
+        resized.columns === columns &&
+        resized.hasIsbn === hasIsbn &&
+        resized.hasRating === hasRating
+          ? resized.widths.get(column.id)
+          : undefined;
+      return [column.id, compactColumns.has(column.id) ? minimum : (manual ?? width)];
+    }),
   );
 
   const context: TableEditContextValue = {
@@ -653,7 +719,7 @@ export function LibraryTable({
         <Column
           id="select"
           width={isMobile ? 40 : 44}
-          minWidth={40}
+          minWidth={isMobile ? 40 : 44}
           className="border-border-strong size-full border-b outline-none"
         >
           <div className="flex h-full items-center justify-center">
@@ -671,7 +737,7 @@ export function LibraryTable({
         <Column
           id="open"
           width={80}
-          minWidth={40}
+          minWidth={80}
           className="border-border-strong size-full border-b outline-none"
         >
           <span className="sr-only">Open</span>
@@ -685,7 +751,9 @@ export function LibraryTable({
         id={column.id}
         isRowHeader={column.id === "title"}
         allowsSorting={column.field !== undefined}
+        width={isMobile ? undefined : widths.get(column.id)}
         defaultWidth={isMobile && column.id === "added" ? 84 : column.defaultWidth}
+        maxWidth={!isMobile && compactColumns.has(column.id) ? minWidth : undefined}
         minWidth={minWidth}
         textValue={column.name}
         className="border-border-strong relative size-full border-b text-left outline-none"
@@ -720,7 +788,14 @@ export function LibraryTable({
       }}
     >
       <TableEditContext value={context}>
-        <ResizableTableContainer className="relative min-h-0 w-full flex-1">
+        <ResizableTableContainer
+          ref={containerRef}
+          onResize={(nextWidths) => {
+            if (!isMobile)
+              setResized({ widths: nextWidths, availableWidth, columns, hasIsbn, hasRating });
+          }}
+          className="relative min-h-0 w-full flex-1"
+        >
           <Virtualizer
             layout={TableLayout}
             layoutOptions={{
@@ -753,7 +828,7 @@ export function LibraryTable({
             >
               <TableHeader
                 columns={columns}
-                dependencies={[sort, hiddenColumns]}
+                dependencies={[sort, hiddenColumns, isMobile, widths]}
                 className="bg-surface-2 size-full"
               >
                 {renderColumn}
