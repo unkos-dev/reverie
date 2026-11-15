@@ -415,15 +415,12 @@ async fn load_reading_state_for_manifestations(
 /// value is exactly `false`. Absent keys mean visible, so an empty map
 /// hides nothing.
 fn hidden_providers(visibility: &serde_json::Value) -> std::collections::HashSet<String> {
-    visibility
-        .as_object()
-        .map(|m| {
-            m.iter()
-                .filter(|(_, v)| v.as_bool() == Some(false))
-                .map(|(k, _)| k.clone())
-                .collect()
-        })
-        .unwrap_or_default()
+    visibility.as_object().map_or_default(|m| {
+        m.iter()
+            .filter(|(_, v)| v.as_bool() == Some(false))
+            .map(|(k, _)| k.clone())
+            .collect()
+    })
 }
 
 /// Batch-load external identifiers for a page of manifestations and their

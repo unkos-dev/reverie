@@ -174,7 +174,7 @@ fn scan_opf(opf_bytes: &[u8]) -> OpfScan {
                     let href = attr_str(&e, "href");
                     let media = attr_str(&e, "media-type");
                     let props = attr_str(&e, "properties");
-                    if let (Some(id), Some(href)) = (id.clone(), href.clone()) {
+                    if let (Some(id), Some(href)) = (id, href) {
                         scan.manifest
                             .insert(id.clone(), (href.clone(), media.clone()));
                         if props
