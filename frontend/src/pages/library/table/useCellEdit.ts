@@ -672,11 +672,6 @@ export function useCellEdit({
 
   function onCellEdit({ row, previousRow, columnKey }: CellEditReport): void {
     if (!enabled || !isEditableColumnKey(columnKey)) return;
-    setSavedCells((current) => {
-      const next = new Set(current);
-      next.delete(pendingKey(row.id, columnKey));
-      return next;
-    });
     setUndoOutcome(null);
     const route = EDIT_ROUTES[columnKey];
     const value = valueForRow(row, columnKey);
@@ -700,20 +695,25 @@ export function useCellEdit({
       requestId: crypto.randomUUID(),
       undoContext: contextOwner,
     };
+    function startSave(): void {
+      const key = pendingKey(row.id, columnKey);
+      setSavedCells((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+      setPendingCells((current) => new Map(current).set(key, context.display));
+    }
     if (route.pipeline === "metadata") {
       const patch = buildPatchIfChanged(route, previousRow, row);
       if (patch !== null) {
-        setPendingCells((current) =>
-          new Map(current).set(pendingKey(row.id, columnKey), context.display),
-        );
+        startSave();
         metadataMutation.mutate({ context, patch });
       }
     } else {
       const patch = buildPatchIfChanged(route, previousRow, row);
       if (patch !== null) {
-        setPendingCells((current) =>
-          new Map(current).set(pendingKey(row.id, columnKey), context.display),
-        );
+        startSave();
         readingMutation.mutate({ context, patch });
       }
     }
