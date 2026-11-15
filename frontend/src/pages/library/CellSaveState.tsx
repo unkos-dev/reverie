@@ -4,26 +4,31 @@ import { Button } from "@/components/ui/button";
 import type { UseCellEditResult } from "./table/useCellEdit";
 
 type Props = {
+  attempt: number;
   pending: boolean;
   feedback: UseCellEditResult["feedback"][number] | undefined;
 };
 
-export function CellSaveState({ pending, feedback }: Readonly<Props>): ReactElement | null {
-  const [wasPending, setWasPending] = useState(pending);
-  const [saved, setSaved] = useState(false);
-  if (pending !== wasPending) {
-    setWasPending(pending);
-    setSaved(!pending && feedback === undefined);
+export function CellSaveState({
+  attempt,
+  pending,
+  feedback,
+}: Readonly<Props>): ReactElement | null {
+  const [completedAttempt, setCompletedAttempt] = useState(0);
+  const [savedAttempt, setSavedAttempt] = useState(0);
+  if (!pending && attempt !== completedAttempt) {
+    setCompletedAttempt(attempt);
+    setSavedAttempt(feedback === undefined ? attempt : 0);
   }
   useEffect(() => {
-    if (!saved) return;
+    if (savedAttempt === 0) return;
     const timer = window.setTimeout(() => {
-      setSaved(false);
+      setSavedAttempt(0);
     }, 1800);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [saved]);
+  }, [savedAttempt]);
   if (feedback !== undefined)
     return (
       <div
@@ -46,7 +51,7 @@ export function CellSaveState({ pending, feedback }: Readonly<Props>): ReactElem
         Saving
       </span>
     );
-  return saved ? (
+  return savedAttempt !== 0 ? (
     <span
       className="rv-saved bg-canvas text-fg-muted pointer-events-none absolute right-2 flex items-center gap-1 text-xs"
       role="status"

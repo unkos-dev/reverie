@@ -60,6 +60,7 @@ import {
 import "./library-table.css";
 import { CellSaveState } from "../CellSaveState";
 import { pendingKey, type UseCellEditResult } from "./useCellEdit";
+import { EDIT_ROUTES, type EditableColumnKey } from "./edit-routing";
 
 type ColumnId =
   | "select"
@@ -164,7 +165,7 @@ type TableEditContextValue = {
   density: Density;
   isMobile: boolean;
   stateFor: (rowId: string, columnKey: string) => CellState;
-  commit: (book: BookListItem, columnKey: string, next: BookListItem) => void;
+  commit: (book: BookListItem, columnKey: EditableColumnKey, next: BookListItem) => void;
 };
 
 const TableEditContext = createContext<TableEditContextValue | null>(null);
@@ -584,6 +585,7 @@ export function LibraryTable({
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const shiftHeld = useRef(false);
   const focusedRow = useRef<string | null>(null);
+  const [saveAttempts, setSaveAttempts] = useState<ReadonlyMap<string, number>>(new Map());
 
   const columns = useMemo(
     () => [
@@ -609,6 +611,11 @@ export function LibraryTable({
       };
     },
     commit: (book, columnKey, next) => {
+      const route = EDIT_ROUTES[columnKey];
+      if (JSON.stringify(route.toPatch(book, book)) !== JSON.stringify(route.toPatch(book, next))) {
+        const key = pendingKey(book.id, columnKey);
+        setSaveAttempts((current) => new Map(current).set(key, (current.get(key) ?? 0) + 1));
+      }
       edits.onCellEdit({ row: next, previousRow: book, columnKey });
     },
   };
@@ -765,7 +772,13 @@ export function LibraryTable({
               <TableBody>
                 <Collection
                   items={items}
-                  dependencies={[columns, density, edits.pendingCells, edits.feedback]}
+                  dependencies={[
+                    columns,
+                    density,
+                    edits.pendingCells,
+                    edits.feedback,
+                    saveAttempts,
+                  ]}
                 >
                   {(book) => (
                     <Row
@@ -776,6 +789,7 @@ export function LibraryTable({
                       }}
                       textValue={book.title}
                       columns={columns}
+                      dependencies={[edits.pendingCells, edits.feedback, saveAttempts]}
                       className="group/row text-fg data-hovered:bg-surface data-selected:bg-accent-soft [height:inherit] [width:inherit] cursor-default outline-none"
                     >
                       {(column) => (
@@ -786,6 +800,7 @@ export function LibraryTable({
                           <div className="relative flex size-full items-center">
                             <BookCell book={book} columnId={column.id} />
                             <CellSaveState
+                              attempt={saveAttempts.get(pendingKey(book.id, column.id)) ?? 0}
                               pending={edits.pendingCells.has(pendingKey(book.id, column.id))}
                               feedback={edits.feedback.find(
                                 (entry) => entry.rowId === book.id && entry.columnKey === column.id,
