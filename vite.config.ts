@@ -30,6 +30,7 @@ export default defineConfig({
       "backend/config.schema.json",
       "website/src/content/docs/reference/configuration.mdx",
       "backend/openapi.json",
+      "backend/schema.graphql",
       ".specful/generated/",
     ],
   },
