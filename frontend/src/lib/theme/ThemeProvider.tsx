@@ -10,7 +10,14 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { readThemeCookie, writeThemeCookie, type ThemePreference } from "./cookie";
+import {
+  readThemeCookie,
+  writeThemeCookie,
+  readPaletteCookie,
+  writePaletteCookie,
+  type Palette,
+  type ThemePreference,
+} from "./cookie";
 import { fetchMe, patchTheme } from "./api";
 
 const PATCH_FAILURE_MESSAGE = "Could not save theme preference. Choose a theme to try again.";
@@ -21,7 +28,8 @@ type ThemeContextValue = {
   preference: ThemePreference;
   effective: EffectiveTheme;
   failure: string | null;
-  setPreference: (next: ThemePreference) => Promise<void>;
+  palette: Palette;
+  setPreference: (next: ThemePreference, palette?: Palette) => Promise<void>;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -100,6 +108,7 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
   // with that public API.
   const [preference, setPreferenceState] = useState<ThemePreference>(initial.preference);
   const [effective, setEffectiveState] = useState<EffectiveTheme>(initial.effective);
+  const [palette, setPaletteState] = useState<Palette>(readPaletteCookie);
   const channelRef = useRef<BroadcastChannel | null>(null);
   // Captures preference at mount so the reconcile effect can compare
   // server vs. mount-time without re-firing on every preference change.
@@ -169,13 +178,17 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
     // BroadcastChannel.close() in the cleanup releases the listener;
     // explicit removeEventListener + named handler would be redundant.
     channel.addEventListener("message", (event) => {
-      const msg = event.data as { preference?: unknown };
+      const msg = event.data as { preference?: unknown; palette?: unknown };
       const candidate = msg.preference;
       if (candidate !== "system" && candidate !== "light" && candidate !== "dark") {
         return;
       }
       const systemDark = matchMedia("(prefers-color-scheme: dark)").matches;
       const nextEffective = resolveEffective(candidate, systemDark);
+      const nextPalette = msg.palette === "monochrome" ? "monochrome" : "periwinkle";
+      writePaletteCookie(nextPalette);
+      document.documentElement.dataset.palette = nextPalette;
+      setPaletteState(nextPalette);
       writeThemeCookie(candidate);
       applyEffective(nextEffective);
       setPreferenceState(candidate);
@@ -192,13 +205,21 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
       next,
       prevPreference,
       prevEffective,
+      nextPalette,
+      prevPalette,
     }: {
       next: ThemePreference;
       prevPreference: ThemePreference;
       prevEffective: EffectiveTheme;
+      nextPalette: Palette;
+      prevPalette: Palette;
     }) => {
       const systemDark = matchMedia("(prefers-color-scheme: dark)").matches;
       const nextEffective = resolveEffective(next, systemDark);
+
+      writePaletteCookie(nextPalette);
+      document.documentElement.dataset.palette = nextPalette;
+      setPaletteState(nextPalette);
 
       // Optimistic update: cookie + DOM + state immediately.
       writeThemeCookie(next);
@@ -209,7 +230,7 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
       try {
         const result = await patchTheme(next);
         if (result.ok) {
-          channelRef.current?.postMessage({ preference: next });
+          channelRef.current?.postMessage({ preference: next, palette: nextPalette });
           return result;
         }
         // 401 (anonymous), 403 (csrf-mismatch / expired session), 428
@@ -220,8 +241,7 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
         // devtools) without interrupting the task. The cookie carries the preference
         // through the lapse; the reconcile effect above re-syncs to the
         // server's stored preference on the next successful authenticated
-        // load, so the server stays canonical across sessions (see
-        // docs/.../design/visual-identity.md, § Theme cookie lifecycle).
+        // load, so the server stays canonical across sessions.
         // Only validation rejections (4xx other than 401/403/428) roll
         // back + local feedback — a real client/server disagreement, not an auth
         // lapse. Rolling back on a 403/428 would strand the reader on
@@ -236,10 +256,13 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
           console.warn(`theme PATCH returned ${String(result.status)}; cookie persists`);
           // Cookie wins → broadcast so other tabs converge without a
           // reload. Same contract as the 2xx success path.
-          channelRef.current?.postMessage({ preference: next });
+          channelRef.current?.postMessage({ preference: next, palette: nextPalette });
           return result;
         }
         if (readThemeCookie() === next) {
+          writePaletteCookie(prevPalette);
+          document.documentElement.dataset.palette = prevPalette;
+          setPaletteState(prevPalette);
           writeThemeCookie(prevPreference);
           applyEffective(prevEffective);
           setPreferenceState(prevPreference);
@@ -252,7 +275,7 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
         // device-state semantics, not session-state. Broadcast so other
         // tabs converge without a reload.
         console.warn("theme PATCH failed; cookie persists", error);
-        channelRef.current?.postMessage({ preference: next });
+        channelRef.current?.postMessage({ preference: next, palette: nextPalette });
         throw error;
       }
     },
@@ -266,19 +289,25 @@ export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): React
       ? PATCH_FAILURE_MESSAGE
       : null;
   const setPreference = useCallback(
-    async (next: ThemePreference): Promise<void> => {
+    async (next: ThemePreference, nextPalette: Palette = "periwinkle"): Promise<void> => {
       try {
-        await mutateAsync({ next, prevPreference: preference, prevEffective: effective });
+        await mutateAsync({
+          next,
+          prevPreference: preference,
+          prevEffective: effective,
+          nextPalette,
+          prevPalette: palette,
+        });
       } catch {
         return;
       }
     },
-    [mutateAsync, preference, effective],
+    [mutateAsync, preference, effective, palette],
   );
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ preference, effective, failure, setPreference }),
-    [preference, effective, failure, setPreference],
+    () => ({ preference, effective, palette, failure, setPreference }),
+    [preference, effective, palette, failure, setPreference],
   );
 
   return <ThemeContext value={value}>{children}</ThemeContext>;

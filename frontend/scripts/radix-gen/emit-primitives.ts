@@ -20,15 +20,23 @@ const ANCHORS = {
     contrast: "#ffffff",
     hairline: "rgb(30 45 120 / 13%)",
   },
+  monochrome: {
+    background: "#0c0c0e",
+    shell: "#1a1a1d",
+    text: "#f3f3f5",
+    accent: "#f3f3f5",
+    contrast: "#0c0c0e",
+    hairline: "rgb(243 243 245 / 13%)",
+  },
   danger: "#b91c1c",
   dangerDark: "#ff8a93",
 };
-const palette = (appearance: "dark" | "light", accent: string) =>
+const palette = (appearance: "dark" | "light", accent: string, anchors = ANCHORS[appearance]) =>
   generateRadixColors({
     appearance,
     accent,
-    gray: ANCHORS[appearance].text,
-    background: ANCHORS[appearance].background,
+    gray: anchors.text,
+    background: anchors.background,
   });
 
 function block(
@@ -63,6 +71,8 @@ export function buildPrimitivesCss(): string {
   const gL = palette("light", ANCHORS.light.accent);
   const dD = palette("dark", ANCHORS.dangerDark);
   const dL = palette("light", ANCHORS.danger);
+  const gM = palette("dark", ANCHORS.monochrome.accent, ANCHORS.monochrome);
+  const dM = palette("dark", ANCHORS.dangerDark, ANCHORS.monochrome);
 
   const lightCss = [
     `/* ---- LIGHT ---- */`,
@@ -108,6 +118,35 @@ export function buildPrimitivesCss(): string {
     `}`,
   ].join("\n");
 
+  const monochromeCss = [
+    `[data-theme="dark"][data-palette="monochrome"] {`,
+    `  --bg: ${ANCHORS.monochrome.background};`,
+    `  --shell: ${ANCHORS.monochrome.shell};`,
+    `  --hairline-color: ${ANCHORS.monochrome.hairline};`,
+    block(
+      "neutral",
+      withStep(gM.grayScale, 12, ANCHORS.monochrome.text),
+      gM.grayScaleAlpha,
+      gM.graySurface,
+      ANCHORS.monochrome.text,
+    ),
+    block(
+      "accent",
+      gM.accentScale,
+      gM.accentScaleAlpha,
+      gM.accentSurface,
+      ANCHORS.monochrome.contrast,
+    ),
+    block(
+      "danger",
+      dM.accentScale,
+      dM.accentScaleAlpha,
+      dM.accentSurface,
+      ANCHORS.monochrome.contrast,
+    ),
+    `}`,
+  ].join("\n");
+
   const p3 = [
     `/* ---- P3 wide-gamut (progressive enhancement; sRGB above is the floor) ---- */`,
     `@supports (color: color(display-p3 1 1 1)) {`,
@@ -134,11 +173,20 @@ export function buildPrimitivesCss(): string {
       dL.accentScaleAlphaWideGamut,
     ),
     `    }`,
+    `    [data-theme="dark"][data-palette="monochrome"] {`,
+    p3block(
+      "neutral",
+      withStep(gM.grayScaleWideGamut, 12, ANCHORS.monochrome.text),
+      gM.grayScaleAlphaWideGamut,
+    ),
+    p3block("accent", gM.accentScaleWideGamut, gM.accentScaleAlphaWideGamut),
+    p3block("danger", dM.accentScaleWideGamut, dM.accentScaleAlphaWideGamut),
+    `    }`,
     `  }`,
     `}`,
   ].join("\n");
 
-  return `${HEADER}\n${darkCss}\n\n${lightCss}\n\n${p3}\n`;
+  return `${HEADER}\n${darkCss}\n\n${lightCss}\n\n${monochromeCss}\n\n${p3}\n`;
 }
 
 export const ARTIFACT_PATH = join(

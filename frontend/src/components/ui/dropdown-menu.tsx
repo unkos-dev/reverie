@@ -11,7 +11,7 @@ function DropdownMenuContent({ className, children, ...props }: ContentProps): R
   return (
     <Popover
       className={cn(
-        "z-50 min-w-32 rounded-lg bg-popover p-1 text-popover-foreground border border-hairline shadow-raised",
+        "z-50 min-w-32 rounded-lg bg-popover p-1 text-popover-foreground border border-hairline shadow-(--shadow-raised)",
         className,
       )}
       {...props}

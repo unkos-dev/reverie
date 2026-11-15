@@ -116,12 +116,15 @@ Reverie sets two cookies on authenticated browsers:
 | Name | HttpOnly | Max-Age | Path | SameSite | Purpose | Lifecycle |
 | ---- | -------- | ------- | ---- | -------- | ------- | --------- |
 | `id` | **Yes** | 24 hours, renewed on each request | `/` | `Lax` | tower-sessions session cookie (auth state) | Cleared on logout; short-lived |
-| `reverie_theme` | **No** | 365 days | `/` | `Lax` | Dark/Light/System preference for FOUC | Survives logout by design (device state, not PII) |
+| `reverie_theme` | **No** | 365 days | `/` | `Lax` | Dark/Light/System preference for FOUC | Survives logout as browser state |
+| `reverie_palette` | **No** | 365 days | `/` | `Lax` | Periwinkle/Monochrome palette for FOUC | Survives logout as browser state |
 
 `reverie_theme` is intentionally not `HttpOnly` because JavaScript must read it synchronously before React hydrates to
-avoid a theme flicker. It carries no PII: only the literal string `system`, `light`, or `dark`. See
-`docs/design/visual-identity.md` § Theme Cookie Lifecycle for the full rationale and the contrast rule: any future
-_session-state_ cookie MUST be `HttpOnly` and MUST be cleared on logout; `reverie_theme` is the explicit counterexample.
+avoid a theme flicker. It carries no PII: only the literal string `system`, `light`, or `dark`. `reverie_palette`
+carries only `periwinkle` or `monochrome` and is also JavaScript-readable and `Secure`. It is a browser preference,
+independent of the account theme. Choosing Monochrome selects dark; the account API keeps its three theme values. Both
+cookies apply before the application bundle loads and survive logout. A session-state cookie MUST be `HttpOnly` and MUST
+be cleared on logout.
 
 `reverie_theme` is always emitted with `Secure`. Reverie's threat model is "multi-user exposed instance," and a
 publicly-reachable HTTP-only deployment in 2026 is a misconfiguration we don't bend the design to support. Localhost dev

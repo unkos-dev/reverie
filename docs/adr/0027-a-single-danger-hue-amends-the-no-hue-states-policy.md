@@ -95,10 +95,8 @@ accent or a state colour.
 
 ## More information
 
-The no-hue-states policy this amends is documented in the design philosophy reference
-([Design philosophy](../design/philosophy.md), "State without hue") and the colour token reference
-([Colour tokens](../design/color-tokens.md)). The `--danger` scale is one of the generated families established by the
-token architecture decision
+The [frontend visual system](../../frontend/DESIGN.md) describes how the interface uses the reserved danger hue. The
+`--danger` scale is one of the generated families established by the token architecture decision
 ([Radix-generated three-tier dual-theme colour tokens](./0026-radix-generated-three-tier-dual-theme-color-tokens.md)).
 The brand identity reference (`reverie-branding/identity.md`) carries the Reverie Danger anchor and its reservation
 rules. Revisit only if a second state hue is ever proposed, which would mean reopening the no-hue policy, not extending

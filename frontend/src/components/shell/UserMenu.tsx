@@ -40,16 +40,17 @@ import type { ThemePreference } from "@/lib/theme/cookie";
 
 import { useShellIngestion } from "./use-shell-ingestion";
 
-const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
+const THEME_OPTIONS: { value: ThemePreference | "monochrome"; label: string }[] = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
+  { value: "monochrome", label: "Monochrome" },
 ];
 
 /** Account avatar opening the account dropdown. */
 export function UserChip(): ReactElement | null {
   const { data: me } = useAuthMe();
-  const { preference, failure, setPreference } = useTheme();
+  const { preference, palette, failure, setPreference } = useTheme();
   const { attention } = useShellIngestion();
   const isDesktop = useMediaQuery("(min-width: 64rem)");
   if (me === undefined) return null;
@@ -132,14 +133,19 @@ export function UserChip(): ReactElement | null {
               <DropdownMenuSubContent>
                 <DropdownMenuRadioGroup
                   selectionMode="single"
-                  selectedKeys={[preference]}
+                  selectedKeys={[
+                    palette === "monochrome" && preference === "dark" ? "monochrome" : preference,
+                  ]}
                   onSelectionChange={(keys) => {
                     if (keys === "all") return;
                     const value = keys.values().next().value;
-                    // Narrow through the closed options list — the radio
-                    // group's payload type is `string` (no `as` casts).
                     const opt = THEME_OPTIONS.find((o) => o.value === value);
-                    if (opt) void setPreference(opt.value);
+                    if (opt) {
+                      void setPreference(
+                        opt.value === "monochrome" ? "dark" : opt.value,
+                        opt.value === "monochrome" ? "monochrome" : "periwinkle",
+                      );
+                    }
                   }}
                 >
                   {THEME_OPTIONS.map((opt) => (

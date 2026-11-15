@@ -1,903 +1,477 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-27T07:27:08+00:00",
+  "generatedAt": "2026-11-15T15:23:24+00:00",
   "title": "Design System: Reverie",
   "extensions": {
     "colorMeta": {
-      "parchment": {
+      "shell": {
         "role": "neutral",
-        "displayName": "Parchment",
+        "displayName": "Ink-navy shell",
         "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
         ]
       },
-      "ink": {
+      "sheet": {
         "role": "neutral",
-        "displayName": "Ink",
+        "displayName": "Catalogue sheet",
         "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
         ]
       },
-      "cream": {
+      "surface": {
         "role": "neutral",
-        "displayName": "Cream",
+        "displayName": "Surface",
         "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
         ]
       },
-      "reverie-gold": {
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Raised surface",
+        "tonalRamp": [
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
+        ]
+      },
+      "surface-3": {
+        "role": "neutral",
+        "displayName": "Pressed surface",
+        "tonalRamp": [
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "tonalRamp": [
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
+        ]
+      },
+      "control-border": {
+        "role": "neutral",
+        "displayName": "Control boundary",
+        "tonalRamp": [
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
+        ]
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Foreground",
+        "tonalRamp": [
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted text",
+        "tonalRamp": [
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
+        ]
+      },
+      "faint": {
+        "role": "neutral",
+        "displayName": "Faint text",
+        "tonalRamp": [
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
+        ]
+      },
+      "accent": {
         "role": "primary",
-        "displayName": "Reverie Gold",
+        "displayName": "Periwinkle accent",
         "tonalRamp": [
-          "#0f0d09",
-          "#1b1812",
-          "#262217",
-          "#312a1a",
-          "#3c321c",
-          "#4b3e1f",
-          "#5f4d22",
-          "#7b6225",
-          "#c9a961",
-          "#be9e56",
-          "#d9b970",
-          "#f5e2ba"
+          "#090d19",
+          "#111625",
+          "#1a2349",
+          "#212c63",
+          "#293776",
+          "#324286",
+          "#3c4e9a",
+          "#475bb5",
+          "#8fa8ff",
+          "#849df3",
+          "#98b1ff",
+          "#d6e1ff"
+        ]
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Soft accent",
+        "tonalRamp": [
+          "#090d19",
+          "#111625",
+          "#1a2349",
+          "#212c63",
+          "#293776",
+          "#324286",
+          "#3c4e9a",
+          "#475bb5",
+          "#8fa8ff",
+          "#849df3",
+          "#98b1ff",
+          "#d6e1ff"
+        ]
+      },
+      "accent-strong": {
+        "role": "primary",
+        "displayName": "Pressed accent",
+        "tonalRamp": [
+          "#090d19",
+          "#111625",
+          "#1a2349",
+          "#212c63",
+          "#293776",
+          "#324286",
+          "#3c4e9a",
+          "#475bb5",
+          "#8fa8ff",
+          "#849df3",
+          "#98b1ff",
+          "#d6e1ff"
+        ]
+      },
+      "accent-text": {
+        "role": "primary",
+        "displayName": "Readable accent",
+        "tonalRamp": [
+          "#090d19",
+          "#111625",
+          "#1a2349",
+          "#212c63",
+          "#293776",
+          "#324286",
+          "#3c4e9a",
+          "#475bb5",
+          "#8fa8ff",
+          "#849df3",
+          "#98b1ff",
+          "#d6e1ff"
+        ]
+      },
+      "on-accent": {
+        "role": "neutral",
+        "displayName": "Text on accent",
+        "tonalRamp": [
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
         ]
       },
       "danger": {
-        "role": "secondary",
-        "displayName": "Danger",
+        "role": "error",
+        "displayName": "Error",
         "tonalRamp": [
-          "#140a09",
-          "#21110f",
-          "#410a08",
-          "#590000",
-          "#6c0003",
-          "#7f0f0f",
-          "#9a211e",
-          "#c72d29",
-          "#b91c1c",
-          "#9c241f",
-          "#ff9082",
-          "#ffcec6"
+          "#120b0c",
+          "#1d1414",
+          "#371619",
+          "#4b171e",
+          "#5b1f26",
+          "#6b2b31",
+          "#843a41",
+          "#ad4c56",
+          "#ff8a93",
+          "#f37f88",
+          "#ff919a",
+          "#fdd4d5"
         ]
       },
-      "canvas-light": {
+      "danger-soft": {
+        "role": "error",
+        "displayName": "Soft error",
+        "tonalRamp": [
+          "#120b0c",
+          "#1d1414",
+          "#371619",
+          "#4b171e",
+          "#5b1f26",
+          "#6b2b31",
+          "#843a41",
+          "#ad4c56",
+          "#ff8a93",
+          "#f37f88",
+          "#ff919a",
+          "#fdd4d5"
+        ]
+      },
+      "danger-text": {
+        "role": "error",
+        "displayName": "Readable error",
+        "tonalRamp": [
+          "#120b0c",
+          "#1d1414",
+          "#371619",
+          "#4b171e",
+          "#5b1f26",
+          "#6b2b31",
+          "#843a41",
+          "#ad4c56",
+          "#ff8a93",
+          "#f37f88",
+          "#ff919a",
+          "#fdd4d5"
+        ]
+      },
+      "bar": {
         "role": "neutral",
-        "displayName": "Canvas Light",
+        "displayName": "Translucent bar",
         "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
         ]
       },
-      "canvas-2-light": {
+      "bar-raised": {
         "role": "neutral",
-        "displayName": "Canvas 2 Light",
+        "displayName": "Raised bar item",
         "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "surface-light": {
-        "role": "neutral",
-        "displayName": "Surface Light",
-        "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "surface-2-light": {
-        "role": "neutral",
-        "displayName": "Surface 2 Light",
-        "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "surface-3-light": {
-        "role": "neutral",
-        "displayName": "Surface 3 Light",
-        "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "border-light": {
-        "role": "neutral",
-        "displayName": "Border Light",
-        "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "border-strong-light": {
-        "role": "neutral",
-        "displayName": "Border Strong Light",
-        "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "border-control-light": {
-        "role": "neutral",
-        "displayName": "Border Control Light",
-        "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "fg-light": {
-        "role": "neutral",
-        "displayName": "Fg Light",
-        "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "fg-muted-light": {
-        "role": "neutral",
-        "displayName": "Fg Muted Light",
-        "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "fg-faint-light": {
-        "role": "neutral",
-        "displayName": "Fg Faint Light",
-        "tonalRamp": [
-          "#251f14",
-          "#3d362a",
-          "#595041",
-          "#635a49",
-          "#8f8778",
-          "#a29c90",
-          "#ada89f",
-          "#b6b2ab",
-          "#bfbcb6",
-          "#c8c6c2",
-          "#d3d1cf",
-          "#d9d8d6"
-        ]
-      },
-      "accent-light": {
-        "role": "primary",
-        "displayName": "Accent Light",
-        "tonalRamp": [
-          "#403827",
-          "#5a3e00",
-          "#967100",
-          "#a77c00",
-          "#98792f",
-          "#aa9158",
-          "#bba167",
-          "#cab076",
-          "#d1bc8f",
-          "#d6c8a8",
-          "#d7d2c9",
-          "#d9d8d6"
-        ]
-      },
-      "accent-soft-light": {
-        "role": "primary",
-        "displayName": "Accent Soft Light",
-        "tonalRamp": [
-          "#403827",
-          "#5a3e00",
-          "#967100",
-          "#a77c00",
-          "#98792f",
-          "#aa9158",
-          "#bba167",
-          "#cab076",
-          "#d1bc8f",
-          "#d6c8a8",
-          "#d7d2c9",
-          "#d9d8d6"
-        ]
-      },
-      "accent-strong-light": {
-        "role": "primary",
-        "displayName": "Accent Strong Light",
-        "tonalRamp": [
-          "#403827",
-          "#5a3e00",
-          "#967100",
-          "#a77c00",
-          "#98792f",
-          "#aa9158",
-          "#bba167",
-          "#cab076",
-          "#d1bc8f",
-          "#d6c8a8",
-          "#d7d2c9",
-          "#d9d8d6"
-        ]
-      },
-      "accent-text-light": {
-        "role": "primary",
-        "displayName": "Accent Text Light",
-        "tonalRamp": [
-          "#403827",
-          "#5a3e00",
-          "#967100",
-          "#a77c00",
-          "#98792f",
-          "#aa9158",
-          "#bba167",
-          "#cab076",
-          "#d1bc8f",
-          "#d6c8a8",
-          "#d7d2c9",
-          "#d9d8d6"
-        ]
-      },
-      "fg-on-accent-light": {
-        "role": "primary",
-        "displayName": "Fg On Accent Light",
-        "tonalRamp": [
-          "#403827",
-          "#5a3e00",
-          "#967100",
-          "#a77c00",
-          "#98792f",
-          "#aa9158",
-          "#bba167",
-          "#cab076",
-          "#d1bc8f",
-          "#d6c8a8",
-          "#d7d2c9",
-          "#d9d8d6"
-        ]
-      },
-      "danger-light": {
-        "role": "secondary",
-        "displayName": "Danger Light",
-        "tonalRamp": [
-          "#631b16",
-          "#900000",
-          "#a7000a",
-          "#b91c1c",
-          "#b15f56",
-          "#bd7a72",
-          "#c98f88",
-          "#d2a19a",
-          "#d7b1ab",
-          "#d4c2bf",
-          "#d7d0cf",
-          "#dad7d7"
-        ]
-      },
-      "danger-text-light": {
-        "role": "secondary",
-        "displayName": "Danger Text Light",
-        "tonalRamp": [
-          "#631b16",
-          "#900000",
-          "#a7000a",
-          "#b91c1c",
-          "#b15f56",
-          "#bd7a72",
-          "#c98f88",
-          "#d2a19a",
-          "#d7b1ab",
-          "#d4c2bf",
-          "#d7d0cf",
-          "#dad7d7"
-        ]
-      },
-      "danger-soft-light": {
-        "role": "secondary",
-        "displayName": "Danger Soft Light",
-        "tonalRamp": [
-          "#631b16",
-          "#900000",
-          "#a7000a",
-          "#b91c1c",
-          "#b15f56",
-          "#bd7a72",
-          "#c98f88",
-          "#d2a19a",
-          "#d7b1ab",
-          "#d4c2bf",
-          "#d7d0cf",
-          "#dad7d7"
-        ]
-      },
-      "fg-on-danger-light": {
-        "role": "secondary",
-        "displayName": "Fg On Danger Light",
-        "tonalRamp": [
-          "#631b16",
-          "#900000",
-          "#a7000a",
-          "#b91c1c",
-          "#b15f56",
-          "#bd7a72",
-          "#c98f88",
-          "#d2a19a",
-          "#d7b1ab",
-          "#d4c2bf",
-          "#d7d0cf",
-          "#dad7d7"
-        ]
-      },
-      "canvas-dark": {
-        "role": "neutral",
-        "displayName": "Canvas Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "canvas-2-dark": {
-        "role": "neutral",
-        "displayName": "Canvas 2 Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "surface-dark": {
-        "role": "neutral",
-        "displayName": "Surface Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "surface-2-dark": {
-        "role": "neutral",
-        "displayName": "Surface 2 Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "surface-3-dark": {
-        "role": "neutral",
-        "displayName": "Surface 3 Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "border-dark": {
-        "role": "neutral",
-        "displayName": "Border Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "border-strong-dark": {
-        "role": "neutral",
-        "displayName": "Border Strong Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "border-control-dark": {
-        "role": "neutral",
-        "displayName": "Border Control Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "fg-dark": {
-        "role": "neutral",
-        "displayName": "Fg Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "fg-muted-dark": {
-        "role": "neutral",
-        "displayName": "Fg Muted Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "fg-faint-dark": {
-        "role": "neutral",
-        "displayName": "Fg Faint Dark",
-        "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
-        ]
-      },
-      "accent-dark": {
-        "role": "primary",
-        "displayName": "Accent Dark",
-        "tonalRamp": [
-          "#0f0d09",
-          "#1b1812",
-          "#262217",
-          "#312a1a",
-          "#3c321c",
-          "#4b3e1f",
-          "#5f4d22",
-          "#7b6225",
-          "#c9a961",
-          "#be9e56",
-          "#d9b970",
-          "#f5e2ba"
-        ]
-      },
-      "accent-soft-dark": {
-        "role": "primary",
-        "displayName": "Accent Soft Dark",
-        "tonalRamp": [
-          "#0f0d09",
-          "#1b1812",
-          "#262217",
-          "#312a1a",
-          "#3c321c",
-          "#4b3e1f",
-          "#5f4d22",
-          "#7b6225",
-          "#c9a961",
-          "#be9e56",
-          "#d9b970",
-          "#f5e2ba"
-        ]
-      },
-      "accent-strong-dark": {
-        "role": "primary",
-        "displayName": "Accent Strong Dark",
-        "tonalRamp": [
-          "#0f0d09",
-          "#1b1812",
-          "#262217",
-          "#312a1a",
-          "#3c321c",
-          "#4b3e1f",
-          "#5f4d22",
-          "#7b6225",
-          "#c9a961",
-          "#be9e56",
-          "#d9b970",
-          "#f5e2ba"
-        ]
-      },
-      "accent-text-dark": {
-        "role": "primary",
-        "displayName": "Accent Text Dark",
-        "tonalRamp": [
-          "#0f0d09",
-          "#1b1812",
-          "#262217",
-          "#312a1a",
-          "#3c321c",
-          "#4b3e1f",
-          "#5f4d22",
-          "#7b6225",
-          "#c9a961",
-          "#be9e56",
-          "#d9b970",
-          "#f5e2ba"
-        ]
-      },
-      "fg-on-accent-dark": {
-        "role": "primary",
-        "displayName": "Fg On Accent Dark",
-        "tonalRamp": [
-          "#0f0d09",
-          "#1b1812",
-          "#262217",
-          "#312a1a",
-          "#3c321c",
-          "#4b3e1f",
-          "#5f4d22",
-          "#7b6225",
-          "#c9a961",
-          "#be9e56",
-          "#d9b970",
-          "#f5e2ba"
-        ]
-      },
-      "danger-dark": {
-        "role": "secondary",
-        "displayName": "Danger Dark",
-        "tonalRamp": [
-          "#140a09",
-          "#21110f",
-          "#410a08",
-          "#590000",
-          "#6c0003",
-          "#7f0f0f",
-          "#9a211e",
-          "#c72d29",
-          "#b91c1c",
-          "#9c241f",
-          "#ff9082",
-          "#ffcec6"
-        ]
-      },
-      "danger-text-dark": {
-        "role": "secondary",
-        "displayName": "Danger Text Dark",
-        "tonalRamp": [
-          "#140a09",
-          "#21110f",
-          "#410a08",
-          "#590000",
-          "#6c0003",
-          "#7f0f0f",
-          "#9a211e",
-          "#c72d29",
-          "#b91c1c",
-          "#9c241f",
-          "#ff9082",
-          "#ffcec6"
-        ]
-      },
-      "danger-soft-dark": {
-        "role": "secondary",
-        "displayName": "Danger Soft Dark",
-        "tonalRamp": [
-          "#140a09",
-          "#21110f",
-          "#410a08",
-          "#590000",
-          "#6c0003",
-          "#7f0f0f",
-          "#9a211e",
-          "#c72d29",
-          "#b91c1c",
-          "#9c241f",
-          "#ff9082",
-          "#ffcec6"
-        ]
-      },
-      "fg-on-danger-dark": {
-        "role": "secondary",
-        "displayName": "Fg On Danger Dark",
-        "tonalRamp": [
-          "#140a09",
-          "#21110f",
-          "#410a08",
-          "#590000",
-          "#6c0003",
-          "#7f0f0f",
-          "#9a211e",
-          "#c72d29",
-          "#b91c1c",
-          "#9c241f",
-          "#ff9082",
-          "#ffcec6"
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
         ]
       },
       "overlay": {
         "role": "neutral",
-        "displayName": "Overlay",
+        "displayName": "Modal scrim",
         "tonalRamp": [
-          "#0e0d0a",
-          "#191815",
-          "#24221e",
-          "#2b2924",
-          "#34302a",
-          "#3e3a32",
-          "#4c473d",
-          "#675f51",
-          "#756c5b",
-          "#827a69",
-          "#bab2a3",
-          "#f0eee9"
+          "#0a0d16",
+          "#151822",
+          "#1f222c",
+          "#262933",
+          "#2e313b",
+          "#373a45",
+          "#444853",
+          "#5d616c",
+          "#6b6e7a",
+          "#787c88",
+          "#b0b4c1",
+          "#eef1fa"
         ]
       }
     },
     "typographyMeta": {
       "display": {
-        "displayName": "Library masthead",
-        "purpose": "Solid accent-text heading over the photographic Library masthead."
+        "displayName": "Library heading",
+        "purpose": "The full-size Library or selected-shelf heading."
+      },
+      "title": {
+        "displayName": "Panel title",
+        "purpose": "Headings within filters and related panels."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Inherited body text."
+        "purpose": "General interface text, with tabular figures."
       },
       "table-cell": {
         "displayName": "Table cell",
-        "purpose": "Compact catalogue text."
+        "purpose": "Compact catalogue values and standard button labels."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Compact labels and metadata beside book artwork."
+      },
+      "metadata": {
+        "displayName": "Technical metadata",
+        "purpose": "ISBNs, identifiers, and format codes."
+      },
+      "wordmark": {
+        "displayName": "Wordmark",
+        "purpose": "The retained uppercase Reverie lockup."
+      },
+      "cover-title": {
+        "displayName": "Generated-cover title",
+        "purpose": "Italic titles inside generated binding artwork."
       }
     },
     "shadows": [
       {
-        "name": "cover-lift",
-        "value": "0 14px 32px -16px var(--accent-glow)",
-        "purpose": "Library cover hover and focus."
+        "name": "raised",
+        "value": "0 20px 60px rgb(0 0 0 / 35%)",
+        "purpose": "Floating controls in dark and Monochrome."
+      },
+      {
+        "name": "raised-light",
+        "value": "0 4px 16px rgb(0 0 0 / 10%)",
+        "purpose": "Floating controls in light."
+      },
+      {
+        "name": "cover-light",
+        "value": "0 8px 16px color-mix(in oklab, var(--fg) 15%, transparent)",
+        "purpose": "Cover artwork in light; absent in dark."
       }
     ],
     "motion": [
       {
-        "name": "duration-fast",
+        "name": "fast",
         "value": "180ms",
-        "purpose": "Fast interaction timing."
+        "purpose": "Shell entrance and filter-panel transitions."
       },
       {
-        "name": "duration-base",
-        "value": "240ms",
-        "purpose": "Base interaction timing."
-      },
-      {
-        "name": "duration-slow",
-        "value": "320ms",
-        "purpose": "Slow interaction timing."
-      },
-      {
-        "name": "duration-theme",
-        "value": "300ms",
-        "purpose": "Theme transition timing."
-      },
-      {
-        "name": "ease-standard",
+        "name": "standard",
         "value": "cubic-bezier(0.22, 0.61, 0.36, 1)",
-        "purpose": "Standard easing."
+        "purpose": "Shared state easing."
       },
       {
-        "name": "ease-emphasised",
+        "name": "emphasised",
         "value": "cubic-bezier(0.16, 0.78, 0.3, 1)",
-        "purpose": "Emphasised easing."
+        "purpose": "Short shell and panel movement."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "none",
+        "purpose": "Remove panel transitions, shell entrance, and activity or save animations."
       }
     ],
     "breakpoints": [
       {
-        "name": "content-padding",
+        "name": "sm",
         "value": "640px"
       },
       {
-        "name": "table-mobile-max",
-        "value": "899px"
+        "name": "md",
+        "value": "768px"
       },
       {
-        "name": "desktop-navigation",
+        "name": "desktop-shell",
         "value": "1024px"
+      },
+      {
+        "name": "filters-beside",
+        "value": "1600px"
       }
     ]
   },
@@ -905,190 +479,116 @@
     {
       "name": "Primary button",
       "kind": "button",
-      "description": "Primary action with React Aria press, focus and pending states.",
-      "html": "<button type=\"button\" class=\"ds-button-primary\">Primary</button>",
-      "css": ".ds-button-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:var(--accent, #C9A961);color:var(--fg-on-accent, #0E0D0A);border-color:transparent}.ds-button-primary:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-primary:active{transform:translateY(1px)}.ds-button-primary:disabled,.ds-button-primary[data-disabled]{pointer-events:none;opacity:.5}.ds-button-primary[data-pending]{opacity:.5}.ds-button-primary:hover{background:color-mix(in oklab,var(--accent, #C9A961) 80%,transparent)}",
-      "refersTo": "button-primary"
+      "refersTo": "button-primary",
+      "description": "The main action in the owning flow.",
+      "html": "<button type=\"button\" class=\"ds-button-primary\">Add to shelf</button>",
+      "css": ".ds-button-primary{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 12px;border:1px solid var(--hairline,rgb(160 180 255 / 13%));border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;transition:background-color 180ms,color 180ms;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);background:var(--accent,#8fa8ff);color:var(--fg-on-accent,#070b1a);}.ds-button-primary:hover{background:var(--accent-strong,#849df3);}.ds-button-primary:active{background:var(--accent-strong,#849df3);}.ds-button-primary:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}.ds-button-primary:disabled{opacity:.5;pointer-events:none;}@media(prefers-reduced-motion:reduce){.ds-button-primary{transition:none;}}"
     },
     {
       "name": "Outline button",
       "kind": "button",
-      "description": "Outline action with React Aria press, focus and pending states.",
-      "html": "<button type=\"button\" class=\"ds-button-outline\">Outline</button>",
-      "css": ".ds-button-outline{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:color-mix(in oklab,var(--border, #3E3A32) 30%,transparent);color:var(--fg, #F0EEE9);border-color:var(--border, #3E3A32)}.ds-button-outline:hover{background:color-mix(in oklab,var(--border, #3E3A32) 50%,transparent)}.ds-button-outline:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-outline:active{transform:translateY(1px)}.ds-button-outline:disabled,.ds-button-outline[data-disabled]{pointer-events:none;opacity:.5}.ds-button-outline[data-pending]{opacity:.5}",
-      "refersTo": "button-outline"
+      "refersTo": "button-outline",
+      "description": "A labelled action on the sheet.",
+      "html": "<button type=\"button\" class=\"ds-button-outline\">Filters</button>",
+      "css": ".ds-button-outline{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 12px;border:1px solid var(--hairline,rgb(160 180 255 / 13%));border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;transition:background-color 180ms,color 180ms;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);background:var(--sheet-ground,#0a0d16);color:var(--fg,#eef1fa);}.ds-button-outline:hover{background:var(--surface,#1f222c);}.ds-button-outline:active{background:var(--surface-2,#262933);}.ds-button-outline:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}.ds-button-outline:disabled{opacity:.5;pointer-events:none;}@media(prefers-reduced-motion:reduce){.ds-button-outline{transition:none;}}"
     },
     {
       "name": "Secondary button",
       "kind": "button",
-      "description": "Secondary action with React Aria press, focus and pending states.",
-      "html": "<button type=\"button\" class=\"ds-button-secondary\">Secondary</button>",
-      "css": ".ds-button-secondary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:var(--surface-2, #2B2924);color:var(--fg, #F0EEE9);border-color:transparent}.ds-button-secondary:hover{background:color-mix(in oklab,var(--surface-2, #2B2924) 80%,transparent)}.ds-button-secondary:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-secondary:active{transform:translateY(1px)}.ds-button-secondary:disabled,.ds-button-secondary[data-disabled]{pointer-events:none;opacity:.5}.ds-button-secondary[data-pending]{opacity:.5}"
+      "refersTo": "button-secondary",
+      "description": "A neutral action on a filled surface.",
+      "html": "<button type=\"button\" class=\"ds-button-secondary\">Choose cover</button>",
+      "css": ".ds-button-secondary{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 12px;border:1px solid var(--hairline,rgb(160 180 255 / 13%));border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;transition:background-color 180ms,color 180ms;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);background:var(--surface,#1f222c);color:var(--fg,#eef1fa);}.ds-button-secondary:hover{background:var(--surface-2,#262933);}.ds-button-secondary:active{background:var(--surface-3,#2e313b);}.ds-button-secondary:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}.ds-button-secondary:disabled{opacity:.5;pointer-events:none;}@media(prefers-reduced-motion:reduce){.ds-button-secondary{transition:none;}}"
     },
     {
       "name": "Ghost button",
       "kind": "button",
-      "description": "Ghost action with React Aria press, focus and pending states.",
-      "html": "<button type=\"button\" class=\"ds-button-ghost\">Ghost</button>",
-      "css": ".ds-button-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:transparent;color:var(--fg, #F0EEE9);border-color:transparent}.ds-button-ghost:hover{background:color-mix(in oklab,var(--surface, #24221E) 50%,transparent)}.ds-button-ghost:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-ghost:active{transform:translateY(1px)}.ds-button-ghost:disabled,.ds-button-ghost[data-disabled]{pointer-events:none;opacity:.5}.ds-button-ghost[data-pending]{opacity:.5}",
-      "refersTo": "button-ghost"
+      "refersTo": "button-ghost",
+      "description": "A quiet action without a resting boundary.",
+      "html": "<button type=\"button\" class=\"ds-button-ghost\">Clear selection</button>",
+      "css": ".ds-button-ghost{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 12px;border:1px solid var(--hairline,rgb(160 180 255 / 13%));border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;transition:background-color 180ms,color 180ms;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);background:transparent;border-color:transparent;color:var(--fg-muted,#b0b4c1);}.ds-button-ghost:hover{background:var(--surface,#1f222c);}.ds-button-ghost:active{background:var(--surface-2,#262933);}.ds-button-ghost:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}.ds-button-ghost:disabled{opacity:.5;pointer-events:none;}@media(prefers-reduced-motion:reduce){.ds-button-ghost{transition:none;}}"
     },
     {
       "name": "Destructive button",
       "kind": "button",
-      "description": "Destructive action with React Aria press, focus and pending states.",
-      "html": "<button type=\"button\" class=\"ds-button-destructive\">Remove</button>",
-      "css": ".ds-button-destructive{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:color-mix(in oklab,var(--danger, #B91C1C) 20%,transparent);color:var(--danger, #B91C1C);border-color:transparent}.ds-button-destructive:hover{background:color-mix(in oklab,var(--danger, #B91C1C) 30%,transparent)}.ds-button-destructive:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-destructive:active{transform:translateY(1px)}.ds-button-destructive:disabled,.ds-button-destructive[data-disabled]{pointer-events:none;opacity:.5}.ds-button-destructive[data-pending]{opacity:.5}",
-      "refersTo": "button-destructive"
+      "refersTo": "button-destructive",
+      "description": "An action that removes content.",
+      "html": "<button type=\"button\" class=\"ds-button-destructive\">Remove book</button>",
+      "css": ".ds-button-destructive{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 12px;border:1px solid var(--hairline,rgb(160 180 255 / 13%));border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;transition:background-color 180ms,color 180ms;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);background:var(--danger-soft,#371619);color:var(--danger-text,#ff919a);}.ds-button-destructive:hover{background:var(--surface-2,#262933);}.ds-button-destructive:active{background:var(--surface-3,#2e313b);}.ds-button-destructive:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}.ds-button-destructive:disabled{opacity:.5;pointer-events:none;}@media(prefers-reduced-motion:reduce){.ds-button-destructive{transition:none;}}"
     },
     {
       "name": "Link button",
       "kind": "button",
-      "description": "Link action with React Aria press, focus and pending states.",
-      "html": "<button type=\"button\" class=\"ds-button-link\">Link</button>",
-      "css": ".ds-button-link{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:transparent;color:var(--accent, #C9A961);border-color:transparent}.ds-button-link:hover{text-decoration:underline;text-underline-offset:4px}.ds-button-link:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-link:active{transform:translateY(1px)}.ds-button-link:disabled,.ds-button-link[data-disabled]{pointer-events:none;opacity:.5}.ds-button-link[data-pending]{opacity:.5}"
+      "refersTo": "button-link",
+      "description": "A compact text action.",
+      "html": "<button type=\"button\" class=\"ds-button-link\">Dismiss result</button>",
+      "css": ".ds-button-link{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 12px;border:1px solid var(--hairline,rgb(160 180 255 / 13%));border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;transition:background-color 180ms,color 180ms;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);background:transparent;border-color:transparent;color:var(--accent-text,#98b1ff);text-underline-offset:4px;}.ds-button-link:hover{text-decoration:underline;}.ds-button-link:active{text-decoration:underline;}.ds-button-link:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}.ds-button-link:disabled{opacity:.5;pointer-events:none;}@media(prefers-reduced-motion:reduce){.ds-button-link{transition:none;}}"
     },
     {
-      "name": "Input",
+      "name": "Text field",
       "kind": "input",
       "refersTo": "input",
-      "description": "Styled input rendered inside a React Aria TextField with its label and validation feedback.",
-      "html": "<input class=\"ds-input\" aria-label=\"Catalogue field\" placeholder=\"Catalogue field\">",
-      "css": ".ds-input{font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);height:32px;width:100%;min-width:0;padding:4px 10px;border:1px solid var(--border, #3E3A32);border-radius:12px;background:color-mix(in oklab,var(--border, #3E3A32) 30%,transparent);color:var(--fg, #F0EEE9);font-size:14px;line-height:20px}.ds-input::placeholder{color:var(--fg-muted, #BAB2A3)}.ds-input:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-input:disabled{opacity:.5;cursor:not-allowed}.ds-input[aria-invalid=true]{border-color:var(--danger, #B91C1C)}"
+      "description": "A compact field with a visible control boundary.",
+      "html": "<input class=\"ds-input\" aria-label=\"Book title\" placeholder=\"Book title\">",
+      "css": ".ds-input{height:34px;width:220px;max-width:100%;padding:4px 10px;border:1px solid var(--border-control,#6b6e7a);border-radius:9px;background:var(--surface,#1f222c);color:var(--fg,#eef1fa);font-size:14px;transition:background-color 180ms;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);}.ds-input::placeholder{color:var(--fg-faint,#a6aab6);}.ds-input:hover{background:var(--surface-2,#262933);}.ds-input:active{background:var(--surface-3,#2e313b);}.ds-input:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}:host-context([data-theme=\"light\"]) .ds-input{background:transparent;}:host-context([data-theme=\"light\"]) .ds-input:hover{background:var(--surface,#e7edfd);}.ds-input[aria-invalid=\"true\"]{border-color:var(--danger,#ff8a93);color:var(--danger-text,#ff919a);}.ds-input:disabled{opacity:.5;}@media(width<768px){.ds-input{font-size:16px;}}@media(prefers-reduced-motion:reduce){.ds-input{transition:none;}}"
     },
     {
-      "name": "Card",
-      "kind": "card",
-      "refersTo": "card",
-      "description": "Flat container with a tonal surface and a fine ring.",
-      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Catalogue</div><p class=\"ds-card-description\">Library details</p></div>",
-      "css": ".ds-card{font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);display:flex;flex-direction:column;gap:16px;overflow:hidden;padding:16px;border-radius:12px;background:var(--surface, #24221E);color:var(--fg, #F0EEE9);font-size:14px;box-shadow:0 0 0 1px color-mix(in oklab,var(--fg, #F0EEE9) 10%,transparent)}.ds-card-title{font-size:16px;line-height:1.375;font-weight:500}.ds-card-description{margin:0;color:var(--fg-muted, #BAB2A3)}"
-    },
-    {
-      "name": "Navigation item",
+      "name": "Current navigation",
       "kind": "nav",
-      "description": "Active library link with the gold slot marker.",
-      "html": "<nav aria-label=\"Preview navigation\"><a class=\"ds-nav\" href=\"#library\" aria-current=\"page\"><span class=\"ds-slot\" aria-hidden=\"true\"></span>Library</a></nav>",
-      "css": ".ds-nav{font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--surface, #24221E);color:var(--fg, #F0EEE9);font-size:14px;font-weight:500;line-height:20px;text-decoration:none}.ds-slot{width:16px;height:2px;background:var(--accent, #C9A961)}.ds-nav:hover{background:var(--surface, #24221E)}.ds-nav:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}"
+      "refersTo": "navigation-current",
+      "description": "The current page is raised within the translucent shell bar.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><a class=\"ds-nav-link\" href=\"#library\" aria-current=\"page\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" aria-hidden=\"true\"><path d=\"m16 6 4 14M12 4v16M8 8v12M4 4v16\"/></svg>Library</a><a class=\"ds-nav-link\" href=\"#shelves\">Shelves</a></nav>",
+      "css": ".ds-nav{display:flex;gap:4px;width:max-content;padding:6px;border:1px solid var(--hairline,rgb(160 180 255 / 13%));border-radius:16px;background:var(--bar,rgb(255 255 255 / 4.5%));backdrop-filter:blur(22px);}.ds-nav-link{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:1px solid transparent;border-radius:9px;color:var(--fg-muted,#b0b4c1);text-decoration:none;font-size:14px;font-weight:500;transition:background-color 180ms;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);}.ds-nav-link:hover{background:var(--bar-raised,#d3d6f10e);color:var(--fg,#eef1fa);}.ds-nav-link[aria-current=\"page\"]{background:var(--bar-raised,#d3d6f10e);border-color:var(--bar-raised-border,#787c88);color:var(--fg,#eef1fa);}.ds-nav-link:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}:host-context([data-theme=\"light\"]) .ds-nav-link[aria-current=\"page\"]{background:var(--surface-2,#dde4fa);border-color:var(--border-control,#6f7dac);}@media(prefers-reduced-motion:reduce){.ds-nav-link{transition:none;}}"
     },
     {
       "name": "Filter chip",
       "kind": "chip",
-      "description": "Removable filter condition with a separate clear control.",
-      "html": "<span class=\"ds-chip\">Format: EPUB<button class=\"ds-chip-remove\" type=\"button\" aria-label=\"Remove format filter\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m18 6-12 12M6 6l12 12\"/></svg></button></span>",
-      "css": ".ds-chip{font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border, #3E3A32);border-radius:9999px;color:var(--fg-muted, #BAB2A3);font-size:12px;line-height:16px}.ds-chip-remove{display:flex;align-items:center;justify-content:center;min-height:24px;min-width:24px;border:0;border-radius:9999px;background:transparent;color:inherit;cursor:pointer}.ds-chip-remove:hover{color:var(--fg, #F0EEE9)}.ds-chip-remove:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}"
+      "refersTo": "filter-chip",
+      "description": "A removable filter with a muted category and foreground value.",
+      "html": "<span class=\"ds-chip\"><span>Status</span><strong>Reading</strong><button class=\"ds-chip-remove\" type=\"button\" aria-label=\"Remove Reading filter\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m18 6-12 12M6 6l12 12\"/></svg></button></span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;gap:6px;width:max-content;border:1px solid var(--border,rgb(160 180 255 / 13%));border-radius:16px;padding:4px 10px;color:var(--fg-muted,#b0b4c1);font-size:12px;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);}.ds-chip strong{font-weight:500;color:var(--fg,#eef1fa);}.ds-chip-remove{display:inline-flex;align-items:center;justify-content:center;min-width:24px;min-height:24px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer;}.ds-chip-remove:hover{color:var(--fg,#eef1fa);}.ds-chip-remove:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}"
+    },
+    {
+      "name": "Flat card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A resting container with a hairline border and no raised shadow.",
+      "html": "<section class=\"ds-card\"><h3 class=\"ds-card-title\">Library settings</h3><p class=\"ds-card-description\">Manage this collection.</p><button class=\"ds-card-action\" type=\"button\">Open settings</button></section>",
+      "css": ".ds-card{display:flex;flex-direction:column;gap:16px;width:260px;max-width:100%;padding:16px;border:1px solid var(--hairline,rgb(160 180 255 / 13%));border-radius:18px;background:var(--surface,#1f222c);color:var(--fg,#eef1fa);font-size:14px;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);}.ds-card-title{margin:0;font-size:16px;font-weight:500;line-height:1.375;}.ds-card-description{margin:0;color:var(--fg-muted,#b0b4c1);}.ds-card-action{align-self:flex-start;height:34px;padding:0 12px;border:1px solid var(--hairline,rgb(160 180 255 / 13%));border-radius:9px;background:var(--sheet-ground,#0a0d16);color:inherit;font-size:14px;font-weight:500;font-family:var(--font-body,\"Mona Sans\",system-ui,sans-serif);}.ds-card-action:hover{background:var(--surface-2,#262933);}.ds-card-action:active{background:var(--surface-3,#2e313b);}.ds-card-action:focus-visible{outline:1.5px solid var(--focus-ring,#98b1ff);outline-offset:0;box-shadow:0 0 0 5px var(--focus-halo,rgb(143 168 255 / 10.5%));}"
     }
   ],
   "narrative": {
-    "northStar": "The Curator's Archive",
-    "overview": "The dark Library table view is the visual reference. The light theme remains under review; its tokens below describe the\ncurrent implementation.\n\nReverie's surfaces feel like a museum after hours — the collection is the point, the lighting is considered, the chrome\nstays out of the reader's way. Cinematic-boutique is the locked visual register: the Library is the identity surface and\ncarries the atmosphere (subtle animated warm gradients, a static noise texture, a photographic hero band, a solid\naccent-text masthead H1, hover-lift on covers, and a press-F cinematic mode that dissolves the chrome). Typography does\nthe structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that\ninherits palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.\n\nColour is governed through a three-tier token tree: generated Radix primitives (`--sand` / `--gold` / `--danger` ramps),\nthen semantic roles (`--canvas` / `--fg` / `--accent` / …) with a shadcn-compatibility alias layer, then a sealed\nart-directed atmosphere tier (`--atm-*` / `--cover-*`) that chrome must never consume. The brand has exactly one accent\n(Reverie Gold) and exactly one state hue (the danger red) — every other state, hierarchy, and emphasis signal is carried\nby weight, opacity, type scale, density, and motion. There is no severity ladder; success, warning, and info stay\nhue-less. The category-reflex check has two altitudes the system answers no to: it does not look like a self-hosted\nmedia manager (Calibre, Plex), and it does not look like an AI workflow tool (SaaS-cream chrome, Linear-clone\ngradients).",
+    "northStar": "The book collection",
+    "overview": "The collection supplies the imagery and colour. A floating navigation bar sits above one rounded catalogue sheet,\nwith compact controls and ruled table rows. Covers retain their own artwork rather than adopting the interface palette.\n\nMona Sans carries the interface. Periwinkle marks primary actions, selection, focus, and reading progress. The dark\npalette places a near-black sheet inside an ink-navy shell; light uses cool pale grounds, and Monochrome uses graphite.\nThe interface has no decorative texture. Existing generated covers retain their cloth textures and metallic detail.",
     "keyCharacteristics": [
-      "Editorial pairing: Author (display) + Satoshi (workhorse) + JetBrains Mono (metadata). Sans-only; no content serif.",
-      "Two anchored canvases: Parchment (`#E8DCC2`) for light, Ink (`#0E0D0A`) for dark. Both surface ramps tint warmly toward the brand hue. No neutral greys.",
-      "Single gold accent (≤10% of any screen), single danger hue (bounded exception, destructive, error and invalid-input only, fill/border/icon — never body text).",
-      "Flat by default; the one signature shadow is the accent-glow cover-lift on the Library grid. Atmospheric depth on the Library page comes from the sealed `--atm-*` tier.",
-      "Motion budget: 180–320 ms ease-out (`--ease-standard` / `--ease-emphasised`), no bounce, no spring; route crossfades via the View Transitions API; `prefers-reduced-motion` respected as a first-class state."
+      "One catalogue sheet beneath a translucent navigation bar.",
+      "Compact controls, quiet rows, and visible book covers.",
+      "Theme-following semantic colours with separate, fixed cover artwork.",
+      "Local edit feedback and reduced-motion alternatives."
     ],
     "rules": [
       {
-        "name": "The One Accent Rule",
-        "body": "Reverie Gold is the only accent. State, hierarchy, and emphasis below the level of \"this matters\" are communicated through weight, opacity, type scale, density, and motion — never through additional hues. There is no severity ladder.",
+        "name": "The semantic colour rule",
+        "body": "Interface elements use semantic roles; fixed artwork keeps its own palette.",
         "section": "colors"
       },
       {
-        "name": "The Danger Carve-Out Rule",
-        "body": "The danger hue is the single exception to no-hue-states. It appears in exactly three contexts: (1) irreversible destructive confirmation (alongside typed-name confirmation and an undo window where feasible), (2) unrecoverable system errors that would otherwise survive as a wrong \"it's working\" mental model, and (3) the border (and its ring) of an invalid form control (`aria-invalid`), paired with the field's visible error message. Nowhere else, never decorative, always paired with a non-colour signal (a glyph or text). Success, warning, and info remain hue-less.",
-        "section": "colors"
-      },
-      {
-        "name": "The Light-Gold Restriction Rule",
-        "body": "On Parchment, gold-9 (`#A77C00`) measures 2.80:1, which clears neither WCAG 1.4.11 as a hairline nor 1.4.3 as text of any size. Darkening it far enough to clear 3:1 stops it reading as gold, so contrast is carried by how the accent is used rather than by the value. As a fill it pairs with `--fg-on-accent` (Ink) at 5.11:1, clearing 1.4.3 for normal text; the fill does the work, not the gold edge. Gold that must read as text or a hairline (for example the focus ring) uses the darker `accent-text` step (`#5A3E00`, 7.27:1 on Parchment) instead. The accent fill stays restricted on light surfaces to large CTAs and recovery actions as a brand rule, not an accessibility concession. axe-core contrast violations on a gold edge or gold text are the right signal: the surface is misusing the accent.",
-        "section": "colors"
-      },
-      {
-        "name": "The No-Black-No-White Rule",
-        "body": "`#000` is prohibited and `#fff` is reserved for exactly one role: `--fg-on-danger`, where the danger solid needs maximum contrast. Every other neutral tints warmly toward the brand hue. The doctrine is OKLCH thinking with sRGB-hex floor and a P3 enhancement layer; primitives are generated, not hand-tuned.",
-        "section": "colors"
-      },
-      {
-        "name": "The Sans-Only Rule",
-        "body": "Reverie deliberately rejected the chrome-sans / content-serif convention. Author and Satoshi both sit in the sans family — Author's wide-letterform editorial energy carries the display register that a content serif would normally fill. There is no content serif in the system.",
-        "section": "typography"
-      },
-      {
-        "name": "The 65-75ch Body Rule",
-        "body": "Body text caps at 65–75ch for prose surfaces (book descriptions, blog-shape content). Library cards and detail panels are not prose and may exceed this; reader text is user-configurable and overrides the system default.",
-        "section": "typography"
-      },
-      {
-        "name": "The Italic-as-Editorial-Accent Rule",
-        "body": "Italics use Author italic (the editorial counterweight), not Satoshi italic. Reserved for book titles, ship-names, internal-monologue, and the tagline (which uses Author 400 regular, not italic). Not for general emphasis.",
-        "section": "typography"
-      },
-      {
-        "name": "The No-Black-Weight Rule",
-        "body": "Author and Satoshi black weights (900) are not loaded — the variable axes run 400–700. Both fight the boutique register; their absence is deliberate. If a display moment needs more weight, increase size or use tracking; do not reach for 900.",
-        "section": "typography"
-      },
-      {
-        "name": "The Flat-By-Default Rule",
-        "body": "Surfaces are flat at rest. Depth comes from tonal layering (canvas → surface → surface-2 → surface-3). The one chrome shadow is the Library cover-lift on hover / focus; otherwise depth is a response to state (the focus ring). If a card's resting state needs a drop shadow to look complete, the design is wrong.",
-        "section": "elevation & depth"
-      },
-      {
-        "name": "The Atmosphere-Is-Library-Only Rule",
-        "body": "The subtle animated warm gradients, static noise texture, photographic hero, and solid accent-text masthead are mounted inside the Library page, never in the app shell. The identity surface carries the atmosphere; the reader recedes and utility / admin screens stay plain. Ambient drift is never app-wide and never bleeds into chrome.",
-        "section": "elevation & depth"
-      },
-      {
-        "name": "The Single-Focus-Indicator Rule",
-        "body": "A global `:focus-visible` rule paints one 2px `accent-text` outline at a 2px offset and forces `box-shadow: none`. The `box-shadow: none` is load-bearing: it suppresses the per-primitive `focus-visible:ring-*` box-shadow rings so the app never paints two concentric indicators. Verify focus by render in both themes, not on the computed claim alone.",
-        "section": "elevation & depth"
-      },
-      {
-        "name": "The One-Primary-Per-Surface Rule",
-        "body": "Each surface has at most one Primary button. If two actions seem to need primary weight, one of them is actually destructive (route to alert-dialog) or the surface is doing two jobs (split it).",
-        "section": "components"
-      },
-      {
-        "name": "The No-Bottom-Nav Rule",
-        "body": "Mobile nav is a sheet, not a bottom bar. Bottom-nav reads consumer-app; Reverie's mobile presence is a complement to the desktop archive, not a standalone mobile app.",
-        "section": "components"
-      },
-      {
-        "name": "The Lockup-As-Brand-Carrier Rule",
-        "body": "The Lockup component is invariant. It uses inline styles, hex values and canonical SVG paths, and must render correctly before the theme tree resolves. Do not theme it; do not re-style its parts; do not use its glyph or wordmark separately as decorative elements.",
-        "section": "components"
+        "name": "The floating depth rule",
+        "body": "Resting cards stay flat; floating controls carry the raised shadow.",
+        "section": "elevation"
       }
     ],
     "dos": [
-      "**Do** anchor every screen on Parchment (`#E8DCC2`) or the Ink dark canvas (`#0E0D0A`); the two canvases are the only legitimate page backgrounds.",
-      "**Do** use Reverie Gold for primary CTAs, recovery actions, the active-nav slot bar, and the Slot mark fill. Use the darker `accent-text` step where gold must read as text or a hairline (e.g. the focus ring); nothing else.",
-      "**Do** restrict the danger hue (`#B91C1C`) to fill, border, or icon — never body text — in exactly the three carve-out contexts (irreversible destructive confirm, unrecoverable system error, invalid-input border), always paired with a non-colour signal.",
-      "**Do** carry hierarchy through weight, opacity, type scale, density, and motion. Author or Satoshi at different weights is the system's primary expressiveness.",
-      "**Do** cap body text at 65–75ch on prose surfaces; cards and detail panels are not prose and may run wider.",
-      "**Do** keep cards flat at rest (`ring-1 ring-foreground/10`, no shadow). Tonal layering — canvas → surface → surface-2 → surface-3 — does the depth work.",
-      "**Do** keep the ambient atmosphere and photographic masthead on the Library page only; the app shell, reader, and admin surfaces stay plain.",
-      "**Do** use the `bg-overlay` scrim token for modal and sheet backdrops. Popovers have no backdrop.",
-      "**Do** respect `prefers-reduced-motion`: tile stagger and dot pulse stop, the warm gradients hold a still frame, route crossfades become instant swaps, cinematic transitions snap. The cinematic register survives in palette and typography when motion withdraws.",
-      "**Do** use the Lockup component for the brand mark, never the glyph or wordmark alone (except favicons / footer microtext)."
+      "Do keep interface colours on semantic roles so all palettes use the same components.",
+      "Do keep book artwork and its generated-cover texture separate from interface styling.",
+      "Do use the raised shadow for floating controls and flat borders for resting cards.",
+      "Do keep edit feedback in its owning context and preserve reduced-motion alternatives."
     ],
     "donts": [
-      "**Don't** introduce a severity colour ladder. No red/amber/green pills. No info-blue callouts. No \"did you know\" banners. Gold says \"this matters\"; the danger hue says \"stop\"; everything else is weight + density + motion. This is the One Accent Rule, hard.",
-      "**Don't** ship surfaces that look like **SaaS-cream AI-workflow chrome** (Linear, Stripe, vercel-cream marketing). The first-order category trap for self-hosted media managers in 2026. Reverie is not a workflow tool.",
-      "**Don't** ship surfaces that look like **generic ebook UI** (Calibre, Plex-clone shelves, default-Tailwind grids of identical title + author + cover cards). The category cliché. Reverie is in the category but must not look like it shipped from the category.",
-      "**Don't** ship surfaces that look like a **cozy reading nook** (lamp, paper, warm-domestic, hand-drawn book stacks). The library is an archive, not a corner of a living room. The reader recedes; it does not invite.",
-      "**Don't** ship surfaces that look like a **severity-coloured dashboard** (red/amber/green pills, info-blue callouts, status banners, hero-metric templates).",
-      "**Don't** use `#000`. `#fff` is reserved for `--fg-on-danger` only; every other neutral tints warmly toward the brand hue.",
-      "**Don't** use the gold accent fill as text on Parchment at any size. Use the darker `accent-text` step for gold text.",
-      "**Don't** consume the sealed `--atm-*` atmosphere tokens from chrome. They are art-directed editorial constants for the Library masthead and ambient field only; no `bg-atm-*` utilities exist by design.",
-      "**Don't** extend the established gilt-text exception to other surfaces. The current Library masthead uses solid accent-text colour; no `.lib-h1-gilt` treatment is implemented.",
-      "**Don't** load Author or Satoshi black weights (900). Both fight the boutique register; reach for size or tracking instead.",
-      "**Don't** use side-stripe borders (`border-left` greater than 1px as a coloured accent). Absolute ban. Use a full border, background tint, leading numeral or icon, or nothing.",
-      "**Don't** paint two focus indicators. The global 2px `accent-text` outline (with `box-shadow: none`) is the single indicator; don't reintroduce a competing box-shadow ring.",
-      "**Don't** use em dashes (`—` or `--`) in UI copy. Commas, colons, semicolons, periods, or parentheses do the work.",
-      "**Don't** centre the Slot in the glyph (it sits at 53 % from top), recolour the glyph, change the wordmark tracking, stack the Lockup vertically, or apply effects (shadow, glow, gradient, bevel, outline) to either part.",
-      "**Don't** invent additional accents or state hues. Gold is the only accent; the danger red is the only state hue. Do not relitigate success / warning / info colours — they stay hue-less."
+      "Don't apply the generated covers' decorative texture or metallic detail to interface controls.",
+      "Don't use the error hue as a general attention accent.",
+      "Don't add shelf tabs or a collapsing Library header to the documented composition.",
+      "Don't treat deferred reading totals, attention counts, filter counts, or additional sortable columns as built UI."
     ]
   }
 }

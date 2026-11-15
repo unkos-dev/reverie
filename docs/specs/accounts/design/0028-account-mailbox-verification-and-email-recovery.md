@@ -33,9 +33,9 @@ verification: identity matching stays on issuer and subject.
 `backend/src/models/account_email_proof.rs` issues, reuses, consumes and cancels proofs. The account routes serve
 verification; the auth routes serve public reset requests and extend credential-link lookup and redemption to email
 recovery proofs. Account transactions that change a password or address enqueue notices through the mail queue.
-`frontend/src/routes/account-email.tsx`, `verify-email.tsx` and `auth-forgot-password.tsx` render the
-[Email verification](../../../design/screens/email-verification.md) and
-[Forgot password](../../../design/screens/forgot-password.md) screen specs.
+`frontend/src/routes/account-email.tsx`, `verify-email.tsx` and `auth-forgot-password.tsx` render the account and
+recovery screens. The [frontend visual system](../../../../frontend/DESIGN.md) describes shared layout, typography and
+controls.
 
 ## Interfaces and dependencies
 

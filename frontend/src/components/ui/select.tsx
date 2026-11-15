@@ -38,7 +38,7 @@ function SelectContent({
     <Popover
       data-slot="select-content"
       className={cn(
-        "z-50 min-w-(--trigger-width) overflow-auto rounded-lg bg-popover p-1 text-popover-foreground border border-hairline shadow-raised",
+        "z-50 min-w-(--trigger-width) overflow-auto rounded-lg bg-popover p-1 text-popover-foreground border border-hairline shadow-(--shadow-raised)",
         typeof className === "string" ? className : undefined,
       )}
       {...props}

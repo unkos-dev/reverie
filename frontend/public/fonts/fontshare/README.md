@@ -1,20 +1,18 @@
 # Reverie · Fontshare fonts (self-hosted)
 
-Locked typography: **Author Variable** (display) + **Satoshi Variable** (body), both Indian Type Foundry, distributed
-via [Fontshare](https://www.fontshare.com). **JetBrains Mono** Regular (mono — metadata surfaces: ISBN, IDs, format
-codes).
+**Author Variable** supplies generated-cover lettering and **Satoshi Variable** supplies the wordmark. Both are from
+Indian Type Foundry, distributed via [Fontshare](https://www.fontshare.com). **JetBrains Mono** Regular supplies
+metadata such as ISBNs, IDs and format codes. [Mona Sans](../mona-sans/README.md) supplies application text.
 
 The variable woff2 files in `files/` are committed into this open-source repository. Integrity is verified by
 `SHA256SUMS` in the same directory: `cd files && sha256sum -c SHA256SUMS`.
 
 ## Why self-host (and not the CDN)
 
-The brand identity at
-[unkos-dev/reverie-branding](https://github.com/unkos-dev/reverie-branding)
-specifies Author + Satoshi via Fontshare. The CDN delivery path is attractive (cookie-free, CORS-permissive woff2;
-passes Chromium's Opaque Response Blocking) — but Fontshare's public CSS API at `api.fontshare.com/v2/css` sets a
-`_fontshare_key` cookie, which Chromium treats as a credentialed response and blocks under ORB. Self-hosting the
-variable woff2 directly is the only viable delivery path:
+Author and Satoshi retain their cover and wordmark roles. The CDN delivery path is attractive (cookie-free,
+CORS-permissive woff2; passes Chromium's Opaque Response Blocking) — but Fontshare's public CSS API at
+`api.fontshare.com/v2/css` sets a `_fontshare_key` cookie, which Chromium treats as a credentialed response and blocks
+under ORB. Self-hosting the variable woff2 directly is the only viable delivery path:
 
 - Removes the runtime dependency on `cdn.fontshare.com` reachability.
 - Strengthens production CSP from `font-src 'self' https://cdn.fontshare.com` to `font-src 'self'`.

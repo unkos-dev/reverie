@@ -32,8 +32,8 @@ administrator chooses to email.
 `backend/src/models/credential_link.rs` stores and consumes links. The users routes create accounts and issue or cancel
 links; the auth routes provide public lookup and redemption. `frontend/src/api/users.ts` and `auth.ts` parse their
 contracts. `UsersPage.tsx` displays link actions and results; `routes/set-password.tsx` renders redemption in
-`AuthShell`. The [Users](../../../design/screens/users.md) and [Set password](../../../design/screens/set-password.md)
-screen specs hold layout, copy, states and accessibility acceptance.
+`AuthShell`. The [frontend visual system](../../../../frontend/DESIGN.md) describes shared layout, typography and
+controls.
 
 ## Interfaces and dependencies
 

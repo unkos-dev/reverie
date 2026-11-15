@@ -38,6 +38,11 @@
 //     hashes this body).
 (function () {
   try {
+    document.documentElement.dataset.palette = document.cookie.split("; ").some(function (c) {
+      return c === "reverie_palette=monochrome";
+    })
+      ? "monochrome"
+      : "periwinkle";
     var cookie = document.cookie.split("; ").find(function (c) {
       return c.indexOf("reverie_theme=") === 0;
     });

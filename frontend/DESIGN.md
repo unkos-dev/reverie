@@ -1,695 +1,304 @@
 ---
 name: Reverie
-description: Your library, catalogued.
+description: A household ebook collection, ready to curate.
 colors:
-  # Brand-canonical anchors (theme-independent identity values)
-  parchment: "#E8DCC2"
-  ink: "#0E0D0A"
-  cream: "#E8E0D0"
-  reverie-gold: "#C9A961"
-  danger: "#B91C1C"
-
-  # Light theme (Parchment-anchored) — surface ramp
-  canvas-light: "#E8DCC2"
-  canvas-2-light: "#D3D1CF"
-  surface-light: "#C8C6C2"
-  surface-2-light: "#BFBCB6"
-  surface-3-light: "#B6B2AB"
-  border-light: "#ADA89F"
-  border-strong-light: "#A29C90"
-  border-control-light: "#251F14"
-  fg-light: "#251F14"
-  fg-muted-light: "#3D362A"
-  fg-faint-light: "#120A00AA"
-  accent-light: "#A77C00"
-  accent-soft-light: "#D6C8A8"
-  accent-strong-light: "#967100"
-  accent-text-light: "#5A3E00"
-  fg-on-accent-light: "#0E0D0A"
-  danger-light: "#B91C1C"
-  danger-text-light: "#900000"
-  danger-soft-light: "#D4C2BF"
-  fg-on-danger-light: "#FFFFFF"
-
-  # Dark theme (Ink-anchored) — surface ramp
-  canvas-dark: "#0E0D0A"
-  canvas-2-dark: "#191815"
-  surface-dark: "#24221E"
-  surface-2-dark: "#2B2924"
-  surface-3-dark: "#34302A"
-  border-dark: "#3E3A32"
-  border-strong-dark: "#4C473D"
-  border-control-dark: "#F0EEE9"
-  fg-dark: "#F0EEE9"
-  fg-muted-dark: "#BAB2A3"
-  fg-faint-dark: "#FFEFCF7B"
-  accent-dark: "#C9A961"
-  accent-soft-dark: "#262217"
-  accent-strong-dark: "#BE9E56"
-  accent-text-dark: "#D9B970"
-  fg-on-accent-dark: "#0E0D0A"
-  danger-dark: "#B91C1C"
-  danger-text-dark: "#FF9082"
-  danger-soft-dark: "#410A08"
-  fg-on-danger-dark: "#FFFFFF"
-
-  # Overlay scrim (ink, theme-fixed) — modal / dialog / sheet / popover backdrop
-  overlay: "#0E0D0AE0"
+  shell: "var(--shell-ground)"
+  sheet: "var(--sheet-ground)"
+  surface: "var(--surface)"
+  surface-2: "var(--surface-2)"
+  surface-3: "var(--surface-3)"
+  hairline: "var(--hairline)"
+  control-border: "var(--border-control)"
+  foreground: "var(--fg)"
+  muted: "var(--fg-muted)"
+  faint: "var(--fg-faint)"
+  accent: "var(--accent)"
+  accent-soft: "var(--accent-soft)"
+  accent-strong: "var(--accent-strong)"
+  accent-text: "var(--accent-text)"
+  on-accent: "var(--fg-on-accent)"
+  danger: "var(--danger)"
+  danger-soft: "var(--danger-soft)"
+  danger-text: "var(--danger-text)"
+  bar: "var(--bar)"
+  bar-raised: "var(--bar-raised)"
+  overlay: "var(--overlay)"
 typography:
   display:
-    fontFamily: '"Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
-    fontSize: "clamp(52px, 6.5vw, 128px)"
-    fontWeight: 500
-    lineHeight: 0.82
-    letterSpacing: "-0.055em"
-  headline:
-    fontFamily: '"Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
-    fontSize: "1.875rem"
-    fontWeight: 500
-    lineHeight: 1.15
-    letterSpacing: "-0.012em"
+    fontFamily: '"Mona Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
+    fontSize: "2.25rem"
+    fontWeight: 800
+    lineHeight: 1.111111
+    letterSpacing: "-0.025em"
   title:
-    fontFamily: '"Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
-    fontSize: "1.125rem"
-    fontWeight: 500
-    lineHeight: 1.35
-    letterSpacing: "0"
+    fontFamily: '"Mona Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
+    fontSize: "1rem"
+    fontWeight: 600
+    lineHeight: 1.5
   body:
-    fontFamily: '"Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
+    fontFamily: '"Mona Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
     fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.5
-    letterSpacing: "0"
   table-cell:
-    fontFamily: '"Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
+    fontFamily: '"Mona Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
     fontSize: "0.875rem"
     fontWeight: 400
-    lineHeight: 1.5
-    letterSpacing: "0"
+    lineHeight: 1.428571
   label:
+    fontFamily: '"Mona Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
+    fontSize: "0.75rem"
+    fontWeight: 500
+    lineHeight: 1.333333
+  metadata:
     fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
     fontSize: "0.75rem"
     fontWeight: 400
-    lineHeight: 1.4
-    letterSpacing: "0.04em"
+    lineHeight: 1.333333
   wordmark:
-    fontFamily: '"Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
-    fontSize: "1.75rem"
+    fontFamily: '"Satoshi Variable", "Satoshi", system-ui, sans-serif'
+    fontSize: "1rem"
     fontWeight: 700
     lineHeight: 1
     letterSpacing: "0.32em"
+  cover-title:
+    fontFamily: '"Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
+    fontWeight: 600
+    lineHeight: 1.06
+    letterSpacing: "0.005em"
 rounded:
-  sm: "0.25rem"
-  md: "0.5rem"
-  lg: "0.75rem"
-  xl: "0.75rem"
+  sm: "9px"
+  md: "12px"
+  lg: "16px"
+  xl: "18px"
+spacing:
+  '1': "4px"
+  '2': "8px"
+  '3': "12px"
+  '4': "16px"
+  '5': "20px"
+  '6': "24px"
 components:
-  # Buttons — shadcn variant set rebound to the canonical brand palette
   button-primary:
-    backgroundColor: "{colors.accent-dark}"
-    textColor: "{colors.fg-on-accent-dark}"
-    rounded: "{rounded.lg}"
-    padding: "0 0.625rem"
-    height: "2rem"
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.on-accent}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "34px"
   button-outline:
-    backgroundColor: "color-mix(in oklab, #3E3A32 30%, transparent)"
-    textColor: "{colors.fg-dark}"
-    rounded: "{rounded.lg}"
-    padding: "0 0.625rem"
-    height: "2rem"
+    backgroundColor: "{colors.sheet}"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "34px"
+  button-secondary:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "34px"
   button-ghost:
     backgroundColor: "transparent"
-    textColor: "{colors.fg-dark}"
-    rounded: "{rounded.lg}"
-    padding: "0 0.625rem"
-    height: "2rem"
+    textColor: "{colors.muted}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "34px"
   button-destructive:
-    backgroundColor: "#B91C1C33" # --color-destructive (danger) @ 20% — the dark soft fill
-    textColor: "{colors.danger-dark}"
-    rounded: "{rounded.lg}"
-    padding: "0 0.625rem"
-    height: "2rem"
-
-  # Surfaces
-  card:
-    backgroundColor: "{colors.surface-dark}"
-    textColor: "{colors.fg-dark}"
-    rounded: "{rounded.xl}"
-    padding: "1rem"
+    backgroundColor: "{colors.danger-soft}"
+    textColor: "{colors.danger-text}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "34px"
+  button-link:
+    backgroundColor: "transparent"
+    textColor: "{colors.accent-text}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "34px"
   input:
-    backgroundColor: "color-mix(in oklab, #3E3A32 30%, transparent)"
-    textColor: "{colors.fg-dark}"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.sm}"
+    padding: "4px 10px"
+    height: "34px"
+  card:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.xl}"
+    padding: "16px"
+  navigation-current:
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "36px"
+  filter-chip:
+    backgroundColor: "transparent"
+    textColor: "{colors.muted}"
     rounded: "{rounded.lg}"
-    padding: "0.25rem 0.625rem"
-    height: "2rem"
-
-  # Signature components — the Lockup is brand-locked (not theme-flexible)
-  lockup-dark:
-    backgroundColor: "{colors.canvas-dark}"
-    textColor: "{colors.cream}"
-    height: "1.75rem"
-  lockup-light:
-    backgroundColor: "{colors.canvas-light}"
-    textColor: "{colors.ink}"
-    height: "1.75rem"
+    padding: "4px 10px"
 ---
-
-<!-- rumdl-disable MD024 MD025 MD026 MD036 -->
-<!-- Stitch DESIGN.md format conflicts: MD024 repeated '### Named Rules',
-     MD025 implicit h1 from frontmatter `name:` field,
-     MD026 '### Do:' and '### Don't:' colons,
-     MD036 '**Creative North Star: "..."**' bolded line. -->
 
 # Design System: Reverie
 
 ## Overview
 
-**Creative North Star: "The Curator's Archive"**
+Creative North Star: "The book collection".
 
-The dark Library table view is the visual reference. The light theme remains under review; its tokens below describe the
-current implementation.
+The collection supplies the imagery and colour. A floating navigation bar sits above one rounded catalogue sheet, with
+compact controls and ruled table rows. Covers retain their own artwork rather than adopting the interface palette.
 
-Reverie's surfaces feel like a museum after hours — the collection is the point, the lighting is considered, the chrome
-stays out of the reader's way. Cinematic-boutique is the locked visual register: the Library is the identity surface and
-carries the atmosphere (subtle animated warm gradients, a static noise texture, a photographic hero band, a solid
-accent-text masthead H1, hover-lift on covers, and a cinematic toggle that dissolves the chrome). Typography does the
-structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that inherits
-palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.
-
-Colour is governed through a three-tier token tree: generated Radix primitives (`--sand` / `--gold` / `--danger` ramps),
-then semantic roles (`--canvas` / `--fg` / `--accent` / …) with a shadcn-compatibility alias layer, then a sealed
-art-directed atmosphere tier (`--atm-*` / `--cover-*`) that chrome must never consume. The brand has exactly one accent
-(Reverie Gold) and exactly one state hue (the danger red) — every other state, hierarchy, and emphasis signal is carried
-by weight, opacity, type scale, density, and motion. There is no severity ladder; success, warning, and info stay
-hue-less. The category-reflex check has two altitudes the system answers no to: it does not look like a self-hosted
-media manager (Calibre, Plex), and it does not look like an AI workflow tool (SaaS-cream chrome, Linear-clone
-gradients).
+Mona Sans carries the interface. Periwinkle marks primary actions, selection, focus, and reading progress. The dark
+palette places a near-black sheet inside an ink-navy shell; light uses cool pale grounds, and Monochrome uses graphite.
+The interface has no decorative texture. Existing generated covers retain their cloth textures and metallic detail.
 
 **Key Characteristics:**
 
-- Editorial pairing: Author (display) + Satoshi (workhorse) + JetBrains Mono (metadata). Sans-only; no content serif.
-- Two anchored canvases: Parchment (`#E8DCC2`) for light, Ink (`#0E0D0A`) for dark. Both surface ramps tint warmly
-  toward the brand hue. No neutral greys.
-- Single gold accent (≤10% of any screen), single danger hue (bounded exception: errors the person must act on and
-  irreversible destructive confirmation; fill, border, icon or AA-contrast text).
-- Flat by default; the one signature shadow is the accent-glow cover-lift on the Library grid. Atmospheric depth on the
-  Library page comes from the sealed `--atm-*` tier.
-- Motion budget: 180–320 ms ease-out (`--ease-standard` / `--ease-emphasised`), no bounce, no spring; route crossfades
-  via the View Transitions API; `prefers-reduced-motion` respected as a first-class state.
+- One catalogue sheet beneath a translucent navigation bar.
+- Compact controls, quiet rows, and visible book covers.
+- Theme-following semantic colours with separate, fixed cover artwork.
+- Local edit feedback and reduced-motion alternatives.
+
+Functional behaviour is governed by the [specification index](../docs/specs/index.md). This guide records the built
+visual system.
 
 ## Colors
 
-A warm, considered palette of parchment, ink, cream, and gold, generated as Radix ramps from four anchors (Ink
-`#0E0D0A`, Parchment `#E8DCC2`, Reverie Gold `#C9A961`, Danger `#B91C1C`). No greys. The dark theme is Ink-anchored; the
-light theme is Parchment-anchored. Both tint surfaces warmly toward the brand hue rather than collapsing toward
-neutrals. sRGB hex is the floor; a P3 wide-gamut layer (OKLCH) progressively enhances where the display supports it.
-
 ### Primary
 
-- **Reverie Gold** (accent: `#C9A961` dark / `#A77C00` light): the accent (`--accent`, the `gold-9` step). Reserved for
-  primary CTAs, recovery actions out of error states, the active-nav slot bar (a 16×2px gold mark echoing the glyph's
-  slot), and the Slot mark fill. The single source of glow. On light surfaces the accent darkens to `#A77C00` because
-  gold at `#C9A961` does not meet WCAG AA against Parchment.
-- **Gold accent-text** (`#D9B970` dark / `#5A3E00` light): a darker companion step (`--accent-text`, `gold-11`) used
-  where gold must read as text or as a hairline against the page — most visibly the focus ring (`--focus-ring`). On
-  light it clears the 1.4.11 non-text boundary on its own, which the accent fill does not.
+Periwinkle is the interface accent in dark and light. Monochrome replaces it with neutral light tones. Primary actions
+use `accent` with `on-accent` text; hover uses `accent-strong`. Selection uses `accent-soft`, and readable accent text
+uses `accent-text`.
 
-### Secondary
+### Neutral
 
-- **Danger** (`#B91C1C` solid, both themes): the one sanctioned state hue (`--danger`, `danger-9`), a generated
-  AA-correct warm red. A bounded exception to the no-hue-states rule, reserved for errors the person must act on,
-  including a failed save and an invalid input, and for irreversible-destructive confirmation. Appears as fill, border,
-  icon or text; danger text meets the WCAG AA contrast minimum on its background. Per WCAG 1.4.1 it always pairs with an
-  icon or text label. `--fg-on-danger` is white (`#FFFFFF`), the one sanctioned use of pure white, clearing 6.47:1 on
-  the solid. Text-weight companions: `--danger-text` (`#FF9082` dark / `#900000` light); soft fill `--danger-soft`
-  (`#410A08` dark / `#D4C2BF` light).
+`shell` surrounds the darker `sheet` in dark mode. Light keeps the same structure with a pale blue shell and near-white
+sheet. `surface`, `surface-2`, and `surface-3` supply control fills and state changes. `hairline` separates content;
+`control-border` identifies fields, checkboxes, radio buttons, switches, and selected controls. Foreground, muted, and
+faint text retain distinct roles.
 
-### Neutral — surface ramp (Light theme · Parchment-anchored)
+The native theme menu offers System, Light, Dark, and Monochrome. System follows the device preference with a dark
+fallback. The first three options use periwinkle. Monochrome selects the dark account theme and stores its palette in a
+browser-local cookie. Both choices resolve before the application module loads. Generated colour scales include sRGB and
+Display P3 values.
 
-- **canvas-light** (`#E8DCC2`): Parchment. The default page background. Warm, slightly aged.
-- **canvas-2-light** (`#D3D1CF`): the layer beneath canvas; nav backdrops, sidebars, less-active surfaces.
-- **surface-light** (`#C8C6C2`): the layer above canvas; cards, dialogs, dropdowns.
-- **surface-2-light** (`#BFBCB6`) / **surface-3-light** (`#B6B2AB`): hover-elevation and popover layers above surface.
-- **border-light** (`#ADA89F`) / **border-strong-light** (`#A29C90`): hairline and structural borders.
-  **border-control-light** (`#251F14`): the sole boundary of interactive controls.
-- **fg-light** (`#251F14`) / **fg-muted-light** (`#3D362A`) / **fg-faint-light** (`#120A00AA`): text hierarchy. fg-faint
-  is sub-AA — placeholder and non-essential text only.
+### Error and artwork colours
 
-### Neutral — surface ramp (Dark theme · Ink-anchored)
+The reserved red identifies errors that need action, with a message or icon. It does not replace neutral status styling.
+The retained slot mark uses ochre (`#c9a961`); the Satoshi wordmark uses cream (`#e8e0d0`) in dark and near-black
+(`#0e0d0a`) in light. Generated covers keep their theme-fixed cream, tan (`#e8dcc2`), ochre, and six dark binding tones.
+These artwork colours do not become interface accents.
 
-- **canvas-dark** (`#0E0D0A`): Ink page background.
-- **canvas-2-dark** (`#191815`): beneath-canvas layer.
-- **surface-dark** (`#24221E`) / **surface-2-dark** (`#2B2924`) / **surface-3-dark** (`#34302A`): card, hover-elevation,
-  and popover layers.
-- **border-dark** (`#3E3A32`) / **border-strong-dark** (`#4C473D`): borders. **border-control-dark** (`#F0EEE9`):
-  control boundary.
-- **fg-dark** (`#F0EEE9`) / **fg-muted-dark** (`#BAB2A3`) / **fg-faint-dark** (`#FFEFCF7B`): text hierarchy.
-
-### Atmosphere (sealed Tier-3 — art-directed, chrome must not consume)
-
-The atmosphere tier is theme-fixed editorial constants behind a review gate. No `bg-atm-*` utilities are generated;
-these are read via raw `var(--atm-*)` only, on the Library page and the cover artwork.
-
-- **Cover palette** (`--cover-ink #0E0D0A`, `--cover-cream #E8E0D0`, `--cover-parchment #E8DCC2`,
-  `--cover-gold #C9A961`): theme-fixed, because a publisher's spine does not shift with the reader's theme.
-- **Gilt foil** (`--atm-gilt-0…4`: `#F8E8B8`, `#E8CC85`, `#C9A961`, `#9A7E40`, `#5E4520`): the five warm-metal stops of
-  the Library masthead H1.
-- **Cover cloth** (`--atm-cloth-*`, six warm-dark tones — bordeaux, oxblood, midnight, charcoal, sepia, terracotta —
-  each with a `-c` body and `-e` embossed edge): book spines as physical objects, theme-fixed.
-- **Ember / vellum / sheen** (`--atm-ember`, `--atm-vellum`, `--atm-sheen-*`): the breathing ambient field and editorial
-  sheen, retuned per theme (softer terracotta on parchment, warm ember on ink).
-
-### Named Rules
-
-**The One Accent Rule.** Reverie Gold is the only accent. State, hierarchy, and emphasis below the level of "this
-matters" are communicated through weight, opacity, type scale, density, and motion — never through additional hues.
-There is no severity ladder.
-
-**The Danger Carve-Out Rule.** The danger hue is the single exception to no-hue-states. It marks an error the person
-must act on, including a failed save and an invalid form control (`aria-invalid`), and it keeps its use on irreversible
-destructive confirmation (alongside typed-name confirmation and an undo window where feasible). It may appear as a fill,
-a border, an icon or text, and danger text meets the WCAG AA contrast minimum on its background. Never decorative,
-always paired with a non-colour signal (an icon or text label). Success, warning, and info remain hue-less. The decision
-is recorded in `docs/adr/0076-one-reserved-error-colour-for-states-that-need-action.md`.
-
-**The Light-Gold Restriction Rule.** On Parchment, gold-9 (`#A77C00`) measures 2.80:1, which clears neither WCAG 1.4.11
-as a hairline nor 1.4.3 as text of any size. Darkening it far enough to clear 3:1 stops it reading as gold, so contrast
-is carried by how the accent is used rather than by the value. As a fill it pairs with `--fg-on-accent` (Ink) at 5.11:1,
-clearing 1.4.3 for normal text; the fill does the work, not the gold edge. Gold that must read as text or a hairline
-(for example the focus ring) uses the darker `accent-text` step (`#5A3E00`, 7.27:1 on Parchment) instead. The accent
-fill stays restricted on light surfaces to large CTAs and recovery actions as a brand rule, not an accessibility
-concession. axe-core contrast violations on a gold edge or gold text are the right signal: the surface is misusing the
-accent.
-
-**The No-Black-No-White Rule.** `#000` is prohibited and `#fff` is reserved for exactly one role: `--fg-on-danger`,
-where the danger solid needs maximum contrast. Every other neutral tints warmly toward the brand hue. The doctrine is
-OKLCH thinking with sRGB-hex floor and a P3 enhancement layer; primitives are generated, not hand-tuned.
+**The semantic colour rule.** Interface elements use semantic roles; fixed artwork keeps its own palette.
 
 ## Typography
 
-**Display Font:** Author Variable (with system-ui, -apple-system, Segoe UI, sans-serif fallback). **Body Font:** Satoshi
-Variable (with system-ui, -apple-system, Segoe UI, sans-serif fallback). **Mono Font:** JetBrains Mono Regular (with
-ui-monospace, SFMono-Regular, Menlo fallback). Used for metadata surfaces (ISBN, IDs, format codes).
+Mona Sans is the self-hosted interface family, with system sans-serif fallbacks and tabular figures. JetBrains Mono
+identifies ISBNs, identifiers, and format codes. Satoshi remains in the uppercase wordmark. Author remains in generated
+cover titles, in italic at 600 weight.
 
-Author and Satoshi are variable WOFF2 fonts; JetBrains Mono is a static Regular WOFF2 font. All are self-hosted at
-`public/fonts/fontshare/files/` with `font-display: swap` and match the `font-src 'self'` policy.
+The Library heading uses the display role. Filter headings use the title role. Table cells and standard buttons use 14px
+text; compact labels and cover metadata use 12px. Cover titles below artwork use 13px Mona Sans at weight 600.
+Generated-cover titles use 14, 17, or 22 SVG units according to line length, within a 240 by 360 viewBox.
 
-**Character:** Author and Satoshi are a deliberate Fontshare pairing — Author does the editorial work (display, book
-titles in detail, italic accent moments), Satoshi does the structural work (body, navigation, controls, wordmark). The
-wordmark uses Satoshi rather than Author because the wide-tracked 0.32em uppercase stamp is itself doing identity work;
-a neutral grotesque lets that treatment carry without competing with display character. JetBrains Mono carries metadata
-where mono affordance is needed.
-
-### Hierarchy
-
-- **Display** (Author 500): the Library masthead uses the `display` frontmatter values and solid accent-text colour over
-  the photographic wash. Book detail titles use Author 600 at 30px with tight tracking.
-- **Headline** (Author 500, 1.875rem / 30px, line-height 1.15, tracking -0.012em): section headers in the library and
-  detail views.
-- **Title** (Satoshi 500, 1.125rem / 18px, line-height 1.35): card titles, primary affordance labels, nav items.
-- **Body** (Satoshi 400, 16px, line-height 1.5): the inherited body default. Components apply their own sizes; table
-  cells use 14px with a 21px line height and navigation uses 14px. Cap line length at 65–75ch for prose.
-- **Label** (JetBrains Mono 400, 0.75rem / 12px, tracking 0.04em, uppercase small): metadata fields (ISBN, file size,
-  format codes), debug surfaces. Use sparingly; mono is signal, not chrome.
-- **Wordmark** (Satoshi 700, 1.75rem reference / 28px, tracking 0.32em, uppercase, padding-left 0.32em for optical
-  balance): the canonical Lockup component only. Not a heading style.
-
-### Named Rules
-
-**The Sans-Only Rule.** Reverie deliberately rejected the chrome-sans / content-serif convention. Author and Satoshi
-both sit in the sans family — Author's wide-letterform editorial energy carries the display register that a content
-serif would normally fill. There is no content serif in the system.
-
-**The 65-75ch Body Rule.** Body text caps at 65–75ch for prose surfaces (book descriptions, blog-shape content). Library
-cards and detail panels are not prose and may exceed this; reader text is user-configurable and overrides the system
-default.
-
-**The Italic-as-Editorial-Accent Rule.** Italics use Author italic (the editorial counterweight), not Satoshi italic.
-Reserved for book titles, ship-names, internal-monologue, and the tagline (which uses Author 400 regular, not italic).
-Not for general emphasis.
-
-**The No-Black-Weight Rule.** Author and Satoshi black weights (900) are not loaded — the variable axes run 400–700.
-Both fight the boutique register; their absence is deliberate. If a display moment needs more weight, increase size or
-use tracking; do not reach for 900.
+Text fields use 16px below the 768px breakpoint and 14px above it. Long table values truncate within their columns.
 
 ## Layout
 
-The application uses a fluid content column beside a sticky left navigation rail (228px from 1024px viewport width).
-Below that breakpoint, navigation opens in a left sheet (260px, capped at 80vw). Admin content uses canvas-2.
+The desktop shell has a 12px outer inset and a sticky 52px top bar. Its three columns place navigation on the left,
+search in a centre column up to 560px wide, and account controls on the right. The catalogue sheet fills the remaining
+width, without a desktop maximum width.
 
-The Library has a full-width photographic masthead above its working toolbar. Content padding is 24px horizontally,
-increasing to 40px from 640px. The masthead bleeds to the content edges. Its height is `clamp(220px, 10vw, 340px)`,
-reducing to 176px at widths of 899px or less.
+Below 1024px, the top bar keeps the mark, search button, and account control. Primary navigation moves into a floating
+bottom bar. The sheet remains rounded, and shell padding reserves room for the bottom bar. Admin destinations appear in
+the account menu at these widths. This describes shell responsiveness; a new phone Library composition is outside this
+guide's built scope.
 
-Search, view selection and Filters share a wrapping toolbar. Table mode adds Comfortable/Compact density and column
-visibility controls. Filters open in a right sheet (340px, capped at viewport width) at every Library breakpoint. The
-filter and book-detail drawers occupy the same overlay slot.
+The Library header stays at full size while its collection scrolls. Shelves are chosen through Filters or the Shelves
+page; there is no shelf-tab row. The toolbar wraps when needed. Its page search keeps a 240px width.
 
-Active filters use native `TagGroup` and `TagList` composition below the toolbar. Tag removal retains native adjacent or
-empty-collection focus. The empty collection stays mounted with the muted text `No active filters.` and a disabled Clear
-all button. View and table density use native single-selection `ToggleButtonGroup` controls with a required selection.
+From 1600px, Filters opens a 316px panel beside the collection with a 12px gap. The collection narrows as the panel
+opens. Below that breakpoint, Filters uses a right-hand modal sheet. The panel scrolls internally beneath its header.
 
-Range endpoints stack vertically, with 12px between fields and 4px between each label and control. Numeric groups are
-36px high, with full-width input space and two native 32px steppers. Visible Minimum/Maximum labels include Pages or
-Rating in their accessible names. Pages range from 0 to 2147483647 and ratings from 1 to 5, with integer steps and
-native snapping. Each endpoint has only its intrinsic bounds.
+Table rows are 52px in comfortable density and 40px in compact density. Native column widths share available space with
+minimums before horizontal scrolling. Title has the largest flexible share. At 1024px the accepted minimum-width table
+retains a small horizontal scroll.
 
-Added uses two optional DatePickers labelled On or after and On or before, including Added in their accessible names.
-Both selected local days are included. Each 36px field group retains locale-ordered keyboard segments and a 32px
-calendar trigger. The one-month calendar popover is 280px wide, capped at viewport minus 16px, with 8px padding and 36px
-day targets. Native popup placement, collision handling, calendar navigation and focus return govern its placement and
-interaction.
-
-Complete inverted ranges retain their values. Settled current results show muted 14px explanation text below the pair
-with an 8px top gap: “Minimum is above maximum. No books match this range.” or “Start date is after end date. No books
-match this range.” The feedback is ordinary narrowing copy, without a danger banner or live announcement. Equal numeric
-bounds are exact matches and equal selected days include one local day. Native controls own partial and invalid input.
-
-Escape, the close button and outside dismissal retain published edits without an Apply or Cancel transaction. Search and
-text fields publish native changes immediately, retaining raw text and the selected operator. The Refine sheet remains
-340px wide with 24px padding and vertical scrolling. Controls stay mounted while results change; retained rows show
-“Updating results…” and the existing busy treatment. Initial uncached loading uses the Library skeleton.
-
-Columns Reset restores inherited visibility and closes the popover; native dismissal returns focus to Columns.
-
-The table occupies `calc(100dvh - 22rem)` with a 384px minimum height. At 899px or less it retains selection, details,
-title and added date. Comfortable rows stack authors below the title; compact rows omit that secondary line and the
-cover mark. The cover grid instead uses fluid columns with a minimum width of `clamp(170px, 10vw, 240px)`.
+Covers keep a 2:3 aspect ratio. Their chosen pixel width stays fixed as the grid fits fewer or more columns, with 24px
+horizontal and 28px vertical gaps. The default 180px width gives nine columns at 1920px with Filters closed. The batch
+bar takes real space beneath the collection, keeping pagination clear when its contents wrap.
 
 ## Elevation & Depth
 
-Flat by default, tonal layering for everyday depth, with one signature shadow and an art-directed atmosphere reserved
-for the Library identity surface.
+Cards rest flat with hairline borders. Floating navigation, batch bars, menus, dialogs, and `TooltipContent` use the
+raised shadow. The default raised shadow is `0 20px 60px rgb(0 0 0 / 35%)`; light uses `0 4px 16px rgb(0 0 0 / 10%)`.
+Navigation, batch bars, and the detached filter panel use a 22px backdrop blur. `TooltipContent` uses an opaque surface
+rather than blurred bar material.
 
-Everyday depth comes from the surface ramp: canvas → surface → surface-2 → surface-3 + border / border-strong does the
-work for cards, dialogs, dropdowns, and primitives. Shadcn primitives use `ring-1 ring-foreground/10` on cards rather
-than box-shadow; that ring is the rest state. Hover and focus lift use opacity and the `--surface-2` hover token, not
-shadow.
+The normal modal scrim uses navy at 88% opacity. Monochrome derives the same opacity from its sheet ground. Cover
+artwork has its own light-theme shadow and no dark-theme shadow.
 
-The cinematic register earns exactly one chrome shadow: the **accent-glow cover-lift** on the Library grid, where a
-cover gains `box-shadow: 0 14px 32px -16px var(--accent-glow)` on hover or focus-within (`--accent-glow` is the accent
-at 45% via `color-mix`). Popovers and sheets currently also carry component shadows. The Library page additionally
-carries the sealed atmosphere — subtle animated warm gradients (`.lib-atm`, 12s `breathe`), a static noise texture, and
-a photographic hero band that fades into the canvas — but these live in the art-directed Tier-3 layer, scoped to the
-Library route only, never on utility, admin, or reader chrome.
+Panels and bars enter with a short slide and fade. The Library panel transition lasts 180ms with the emphasised ease.
+Reduced motion removes these transitions and the ingestion sweep, pending sweep, and saved fade.
 
-The flat-surface rule remains the design intent. The current popover uses `shadow-md` and the sheet uses `shadow-lg`;
-these are implementation differences, not additional approved shadow roles.
-
-### Shadow Vocabulary
-
-- **cover-lift** (`box-shadow: 0 14px 32px -16px var(--accent-glow)`): the gold-tinted glow a Library cover gains on
-  hover / focus-within, over 200ms. The signature cover shadow.
-- **cover pedestal**: on Light, dark cloth covers carry a hairline + subtle pedestal shadow so books read as objects
-  sitting on Parchment rather than dissolving into it.
-- **focus ring** (`outline: 2px solid var(--focus-ring)`, offset 2px): not a shadow, but the only chrome that "elevates"
-  the focused element. `--focus-ring` is the gold `accent-text` step; a single ring, no halo.
-
-### Named Rules
-
-**The Flat-By-Default Rule.** Surfaces are flat at rest. Depth comes from tonal layering (canvas → surface → surface-2 →
-surface-3). The one chrome shadow is the Library cover-lift on hover / focus; otherwise depth is a response to state
-(the focus ring). If a card's resting state needs a drop shadow to look complete, the design is wrong.
-
-**The Atmosphere-Is-Library-Only Rule.** The subtle animated warm gradients, static noise texture, photographic hero,
-and solid accent-text masthead are mounted inside the Library page, never in the app shell. The identity surface carries
-the atmosphere; the reader recedes and utility / admin screens stay plain. Ambient drift is never app-wide and never
-bleeds into chrome.
-
-**The Single-Focus-Indicator Rule.** A global `:focus-visible` rule paints one 2px `accent-text` outline at a 2px offset
-and forces `box-shadow: none`. The `box-shadow: none` is load-bearing: it suppresses the per-primitive
-`focus-visible:ring-*` box-shadow rings so the app never paints two concentric indicators. Verify focus by render in
-both themes, not on the computed claim alone.
+**The floating depth rule.** Resting cards stay flat; floating controls carry the raised shadow.
 
 ## Shapes
 
-Controls use modest rounded corners: small (4px), medium (8px) and large (12px). Cards and dialogs use Tailwind's
-current extra-large radius (12px); the explicit large theme token is also 12px. The library table has an 8px outer
-radius and a single border. Cover thumbnails are rectangular; count badges are pill-shaped.
+The main radius scale is concentric, from 9px controls to an 18px sheet and filter panel. Compact segmented controls
+nest a 7px item inside a 10px track. Small badges use 8px corners. Thin borders follow these shapes. Cover artwork clips
+to its rounded container; progress follows the cover's bottom edge.
 
 ## Components
 
-The component philosophy is **considered, inscribed**: every primitive feels like it was placed deliberately and cannot
-be moved by accident. Each affordance is a carved gesture, not a frictionless tap. Weight + restraint + intent.
+### Buttons and fields
 
-Reverie uses React Aria Components with local Tailwind wrappers for buttons, selection controls, disclosures, tabs,
-progress and overlays, alongside the command palette and vocabulary pickers. Checkbox, switch and radio wrappers use
-native Field/Button composition with their labels. Forms use the React Aria `Form` with native validation: each
-`TextField` composes its `Label`, the styled input through `render`, a description and its `FieldError`, and the first
-invalid field takes focus on a blocked submission. General API failures use the standalone alert `FieldError`. Semantic
-HTML supplies presentation-only badges, labels and separators; Router Links retain navigation behaviour with button
-styling. Cards and plain inputs retain their presentation. The Radix UI runtime is not installed. The shadcn generator
-is not used to create or regenerate primitives.
+Buttons have compact labels, a hairline boundary, and a 34px default height. Primary buttons use the accent fill.
+Outline buttons rest on the sheet, secondary buttons on a surface, and ghost buttons begin transparent with muted text.
+Destructive buttons use the soft error fill and readable error text. Link buttons underline on hover.
 
-Native `data-selected`, `data-expanded`, `data-focus-visible`, `data-disabled` and `data-pending` attributes drive
-control styles. The last selected settings format uses native read-only behaviour. Filter disclosures retain mounted
-native editors; ingestion disclosures mount query children only while expanded. Book tabs mount only their selected
-panel.
+Hover moves neutral controls up one surface step and pressed moves one step further. Disabled and pending buttons reduce
+opacity. Fields have a control boundary and a transparent resting fill in light, with a surface fill in dark. Invalid
+fields pair the error boundary with their field message.
 
-The canonical brand palette, Radix Colors and generated colour primitives remain the colour foundation. The
-shadcn-compatibility aliases in `styles/themes/index.css` remain available to existing components. New code prefers the
-canonical `--color-canvas` / `--color-fg` / `--color-accent` token names.
+The global focus indicator is a 1.5px accent-text outline with a 5px translucent halo. The table uses a 2px inset cell
+indicator, and links or buttons inside a cell show their own focus indicator.
 
-Action feedback stays in the owning flow. Copy status sits beside the credential; failed row actions name their target.
-Membership outcomes remain below the shelf menu. Batch progress, consolidated outcomes and failed-book retry remain in
-the labelled Group even when selection becomes empty. Metadata conflicts retain edits above the form actions and offer
-an explicit Discard edits and reload action. Theme validation refusal appears below the User chip. Successful account
-creation and password changes use fixed context at the login destination. Visible changed content communicates routine
-success; inline errors are not repeated in a toast.
+### Navigation and selection
 
-### Buttons
+The current page has a raised fill and an identifying outline. Dark bar selections use the translucent bar-raised fill
+and its dedicated boundary. Segmented controls on the sheet use a neutral track, a raised selected fill, and a control
+boundary. Removable filter chips keep a quiet outline, a muted category label, and a foreground value.
 
-- **Shape:** rounded-lg (0.75 rem / 12 px) by default. Smaller variants reach for `min(var(--radius-md), 12px)` (sm /
-  icon-sm) and `min(var(--radius-md), 10px)` (xs / icon-xs).
-- **Primary (default):** bg-primary (the accent, `#C9A961` dark / `#A77C00` light), text-fg-on-accent, no border. The
-  single "this matters" gesture on the surface — at most one Primary per surface. (Link-form primaries dim to
-  `bg-primary/80` on hover; the press affordance is `active:translate-y-px`.)
-- **Outline:** transparent / canvas bg, border-border, text-fg, hover-bg muted. The everyday button; appears multiple
-  times per surface. (Dark: `border-input`, `bg-input/30`.)
-- **Secondary:** bg-secondary (surface-2), text-fg, hover `bg-secondary/80`.
-- **Ghost:** transparent rest, hover-bg muted, text-fg. Tertiary affordance, denser surfaces (toolbars, dropdown
-  headers).
-- **Destructive:** `bg-destructive/10 text-destructive` — a soft danger-tinted fill with danger-hue text, hover to
-  `bg-destructive/20`. The dedicated alert-dialog (typed-name confirmation, **solid** danger fill on the confirm action)
-  is the real destructive surface; this variant is the inline soft form.
-- **States:** focus shows the global 2px `accent-text` outline; `active:translate-y-px` gives the carved-in-press
-  affordance (suppressed on menu triggers). Native buttons use `data-pressed` and `data-focus-visible`; styled links use
-  their browser pseudo-classes. `aria-invalid` shifts border + ring to the danger hue. Native disabled and pending
-  states dim the control; pending actions retain focus while suppressing activation.
-- **Sizes:** default h-8 (32 px), xs h-6, sm h-7, lg h-9. Icon variants are square at the matching height (size-6 / 7 /
-  8 / 9).
+### Table and covers
 
-### Cards
+Rows use hairline rules, a surface hover, and a soft-accent selection. Empty ratings and the ISBN editing affordance
+appear on hover or focus. The book title link and hover Open control navigate; clicking or pressing Enter on a row does
+not. In-cell save feedback stays beside the value, and failed edits also remain in Edit outcomes above the table.
 
-- **Corner Style:** rounded-xl (0.75 rem / 12 px).
-- **Background:** bg-card (alias to surface). Slight warm tint above canvas.
-- **Border / Shadow Strategy:** `ring-1 ring-foreground/10` at rest. No drop shadow. Flat-By-Default applies.
-- **Internal Padding:** py-4 default (16 px vertical; full-bleed images extend edge-to-edge and round the matching
-  corners); px-4 on header / content; footer is `border-t bg-muted/50`. Size `sm` collapses to gap-3 / py-3 / px-3.
-- **Composition:** Header (optional title + description + action grid), Content, Footer. Cards do not nest. Cards do not
-  stack inside cards.
+Covers show their selection checkbox on hover, focus, or selection. Selected artwork gains an accent outline. Reading
+progress occupies the bottom edge; status and rating sit below the author. Stored cover images take precedence over the
+generated binding artwork.
 
-### Inputs
+### Filters, sizing, and batch actions
 
-- **Style:** h-8 (32 px), rounded-lg (0.75 rem), border-input, transparent bg in light theme (`bg-input/30` in dark).
-- **Focus:** the global 2px `accent-text` outline (no halo). The focus ring is the inscription gesture — small but
-  unmistakable.
-- **Disabled:** `cursor-not-allowed`, `opacity-50`.
-- **Invalid:** `aria-invalid` shifts border and ring to the danger hue. Visible invalid state still pairs with helper
-  text and weight so colour is never the sole signal (WCAG 1.4.1).
+Filters is a detached card with compact labelled sections. The Cover width slider shows a pixel value and changes cover
+width live between 120 and 300px in one-pixel steps. Its default is 180px; the browser stores the value when the
+interaction ends.
 
-### Dialogs
-
-- **Backdrop:** dialogs, alert dialogs and sheets use the theme-fixed ink scrim (`bg-overlay`), with backdrop blur where
-  supported. Popovers are anchored surfaces without a scrim.
-- **Alert-Dialog (destructive confirmation):** the canonical Danger Carve-Out surface. Typed-name confirmation,
-  **solid** danger fill on the confirm button, plain Outline button on the cancel. Cancel is the safer default and gets
-  focus.
-- **Dialog (general):** bg-surface, rounded-xl, no shadow. Use sparingly; the modal is not a first thought.
-
-### Navigation
-
-- **Style:** the global nav is a sticky left rail (`canvas-2`, `border-r`), not a top bar. Items are Satoshi 500 at
-  text-sm (0.875 rem); default state is fg-muted on transparent; hover and active both lift to a `surface` pill with fg
-  text. The active row additionally carries a 16×2px gold slot bar (`bg-accent`) at its leading edge — the glyph's slot
-  reused as the active marker, the one place the accent appears in the rail. Disabled / planned entries render as
-  fg-faint placeholders, `aria-disabled`, out of tab order, with a "planned" tooltip.
-- **Mobile:** sheet-based, not bottom-nav. The library is the identity surface and earns horizontal scroll affordances;
-  nav stays vertical and quiet.
-
-### Library Table
-
-The table's Undo last edit button sits beside Help and names the next field and book to reverse. It uses the existing
-bounded collection of exact server field operations, newest first. Entries survive sorting, filtering, retained results,
-loading, empty results and the details drawer. Leaving Library or table editing clears them. Native pending state
-preserves focus and suppresses repeated activation. Cell failures retain the submitted value and named target in the
-Library results region outside the table, with native Reload and ordinary Query recovery. They remain readable when
-loading, empty, blocked or grid results replace the table. No toast runtime supplies feedback.
-
-Ctrl/Cmd+Z within the table area invokes the same Undo action when no editor is active. Editors keep native typing Undo
-and Redo. Pending Undo fixes its target and retains focus. If focused Undo becomes unavailable, focus moves to Help;
-completion leaves focus alone when the reader has moved elsewhere. With no entries, Undo is disabled and its label is
-hidden. No history list, field picker, cell menu, expiry text, countdown or exit confirmation appears.
-
-Successful Undo reconciles complete returned values and their ETag, removes the entry and names the next target. After
-412, Query refreshes and retries the same operation once only if the server confirms eligibility and an unlocked field.
-Locked or unresolved recovery keeps the entry and uses Undo as the retry. A 422 `undo-unavailable` or 409
-`undo-conflict` removes the entry; no refusal automatically executes the next one. Original deadlines expire quietly.
-Outcome messages name the field and book, including a book hidden by filters, in Edit outcomes outside the table.
-
-Metadata saves carry a client request ID and their own baseline. Lost acknowledgements resolve automatically through
-Query retry and reconnect. Offline input stays with connection feedback. The table exposes Reload and a fresh edit,
-without a resend control. In the metadata dialog, Save on an unchanged retained draft reuses its original baseline and
-request ID. A 412 then resolves that request before conflict feedback. Changed drafts use a fresh ID against the same
-baseline when correction is available after a definitive refusal. Metadata fields remain read-only during pending or
-unresolved saves. Their values can still be selected. Save can resend the unchanged draft after the request settles,
-including during recovery. Confirmation awaits the matched refresh and closes the dialog. Offline recovery shows one
-connection message. Unknown resolution retains input for ordinary conflict recovery; equal values never establish
-success. The book view offers no saved Undo. The dialog retains Save and Cancel, and reading status and rating retain
-matched-read recovery without saved Undo.
-
-The table is a dense catalogue surface using the same canvas, text and accent roles as the rest of the application. Its
-header uses surface-2, row hover uses surface, and selected rows use accent-soft. Rows are divided by horizontal rules
-only, with no vertical lines between columns. Cells use the inherited body face at 14px; titles have medium weight,
-secondary columns use muted text, and the Reading status has medium weight.
-
-- **Density:** comfortable rows are at least 64px and compact rows at least 44px; headers stay 42px. Title and Authors
-  wrap between words and each row grows to fit them. Comfortable rows carry a 30px by 42px cover or typographic fallback
-  mark.
-- **Columns:** data columns share the table's width as fractions, with minimums of 160px for Title and 96px for
-  Subtitle, Authors and Series. Columns resize from the header edge, or from Resize column in the header menu; widths
-  reset on reload. At 899px and below, Added shows a two-digit year.
-- **Cells:** an empty cell is blank and shows "Add" and the field name on hover. Dates read as day, short month and
-  year, such as 21 Oct 2026.
-- **Controls:** density and view selectors use a bordered native toggle group with a soft accent fill on the selected
-  option. Removable filter tags and the mounted empty state sit below the toolbar.
-- **Editing:** pressing a cell opens its editor in a popover anchored to the cell. Text editors cover the cell, with ✓
-  to save and ✕ to cancel. Authors edit as removable chips, each with a grip for dragging it to a new place, followed by
-  an "Add an author" field, Cancel and a gold-filled Save. A gold bar marks where a dragged chip will land, and the
-  first chip is the primary author. Status opens a list. Rating is set by pressing a star in the cell, with a hover
-  preview. The title link opens the book; a pencil shown on row hover, F2 or typing edits the title. Enter or a click
-  outside saves; Escape discards.
-- **Edit states:** a saving value shows a moving gold line under it, which stays still under reduced motion. A failed
-  save shows an alert icon in its cell.
-- **Sorting:** pressing a header sorts by that column, and Shift adds it as a further level. Each sortable header has a
-  menu to sort, add a level, remove the column from the sort, resize or hide it. The menu is hidden at 899px and below.
-- **Details:** the details button sits at the trailing edge of each row and shows on row hover, focus or selection, and
-  always on touch screens. Pressing a row, or Enter on a row, also opens the details drawer.
-- **Interaction:** the table supports cell editing, row selection, sorting and a details drawer. Pending edits appear
-  muted and italic. Keyboard shortcuts have a dedicated help dialog.
-- **Focus:** the focused row, cell or header carries the table's one focus indicator, a 2px `focus-ring` outline inset
-  inside it, after keyboard use only. A control inside a cell paints no ring of its own.
-- **Paging:** the table scrolls through loaded rows and fetches more near the bottom. The footer shows how many books
-  are loaded, with Load more, loading, retry and end-of-list states.
-
-Source: [LibraryTable](src/pages/library/table/LibraryTable.tsx), [cells](src/pages/library/table/cells.tsx) and the
-[table styles](src/pages/library/table/library-table.css).
-
-Shelf filters use a native multiple ListBox with visible options and section Clear. Series filters use a searchable
-multiple ComboBox with removable tags. Both match any selected value, with no synthetic All option. Removing one chip
-keeps the other selections. Series choices and restored labels come from independent queries, so narrowing results does
-not remove available options. Search text stays after choosing a series.
-
-The existing Search bar keeps its position, label and filtering behaviour. Control+K or Meta+K opens the command palette
-only while focus is within the shell DOM. Portals and document-body focus do not register that shortcut. The native
-palette owns dismissal and virtual focus; visible Help opens the table shortcut dialog.
-
-A native Cinematic view toggle stays at the existing bottom-centre hint position, outside hidden chrome. Its selected
-label is Exit cinematic view. Chrome fades and leaves keyboard traversal through visibility; pointer-idle and reduced
-motion behaviour remain. Home and Stats retain their navigation positions with visible static Planned status outside Tab
-order.
-
-### Signature: Lockup
-
-The canonical brand expression — glyph (the Slot) + wordmark, inline, at `src/components/Lockup.tsx`. The Lockup is
-**brand-locked**, not theme-flexible: glyph fill is always `#C9A961` Reverie Gold, never recoloured; the slot sits at 53
-% from top (not centred — centred reads mechanical / mail-slot, below-centre reads inscribed); the wordmark uses
-inline-literal `#0E0D0A` / `#E8E0D0` rather than design tokens so it renders correctly even before the theme tree
-resolves.
-
-Both glyph variants use the exact canonical paths inline, with a `4 4 24 24` viewBox that removes their transparent
-inset. The visible block is 1.40em, the gap is 0.48em and the wordmark left padding is 0.32em. The thicker favicon
-variant applies below a 24px visible block size. Inline styling and SVG artwork keep the whole lockup independent of
-theme CSS and glyph requests; tests enforce exact parity with the shipped assets.
-
-Three forms ranked by canonicality: (1) lockup with glyph — canonical; (2) glyph alone — favicons, very compressed
-contexts; (3) wordmark alone — only when neither fits (footer microtext, plain-text email signatures). Never use the
-wordmark alone as a primary mark.
-
-### Signature: CoverArtwork
-
-When a book has no cover art (or it fails to load), `src/components/CoverArtwork.tsx` renders a typographic spine —
-compositions × cloth colourways assigned deterministically from the book id, drawn from the `--cover-*` and
-`--atm-cloth-*` tokens. Covers are brand-fixed and theme-independent: a publisher's spine does not switch when the
-reader toggles Light↔Dark. On Light the dark cloth carries a pedestal (hairline + shadow) so books read as objects on
-Parchment. The visible gilt title text is capped to three lines; the SVG `<title>` keeps the whole string for assistive
-tech.
-
-### Named Rules
-
-**The One-Primary-Per-Surface Rule.** Each surface has at most one Primary button. If two actions seem to need primary
-weight, one of them is actually destructive (route to alert-dialog) or the surface is doing two jobs (split it).
-
-**The No-Bottom-Nav Rule.** Mobile nav is a sheet, not a bottom bar. Bottom-nav reads consumer-app; Reverie's mobile
-presence is a complement to the desktop archive, not a standalone mobile app.
-
-**The Lockup-As-Brand-Carrier Rule.** The Lockup component is invariant. It uses inline styles, hex values and canonical
-SVG paths, and must render correctly before the theme tree resolves. Do not theme it; do not re-style its parts; do not
-use its glyph or wordmark separately as decorative elements.
+The floating batch bar keeps its selection count, Add to shelf action, and Clear selection control together. Pending and
+result text stay in the bar, with retry for failed books. It sits above bottom navigation at narrow widths.
 
 ## Do's and Don'ts
 
-### Do:
+### Do
 
-- **Do** anchor every screen on Parchment (`#E8DCC2`) or the Ink dark canvas (`#0E0D0A`); the two canvases are the only
-  legitimate page backgrounds.
-- **Do** use Reverie Gold for primary CTAs, recovery actions, the active-nav slot bar, and the Slot mark fill. Use the
-  darker `accent-text` step where gold must read as text or a hairline (e.g. the focus ring); nothing else.
-- **Do** restrict the danger hue (`#B91C1C`) to errors the person must act on and irreversible destructive confirmation,
-  as fill, border, icon or AA-contrast text, always paired with a non-colour signal.
-- **Do** carry hierarchy through weight, opacity, type scale, density, and motion. Author or Satoshi at different
-  weights is the system's primary expressiveness.
-- **Do** cap body text at 65–75ch on prose surfaces; cards and detail panels are not prose and may run wider.
-- **Do** keep cards flat at rest (`ring-1 ring-foreground/10`, no shadow). Tonal layering — canvas → surface → surface-2
-  → surface-3 — does the depth work.
-- **Do** keep the ambient atmosphere and photographic masthead on the Library page only; the app shell, reader, and
-  admin surfaces stay plain.
-- **Do** use the `bg-overlay` scrim token for modal and sheet backdrops. Popovers have no backdrop.
-- **Do** respect `prefers-reduced-motion`: tile stagger and dot pulse stop, the warm gradients hold a still frame, route
-  crossfades become instant swaps, cinematic transitions snap. The cinematic register survives in palette and typography
-  when motion withdraws.
-- **Do** use the Lockup component for the brand mark, never the glyph or wordmark alone (except favicons / footer
-  microtext).
+- Do keep interface colours on semantic roles so all palettes use the same components.
+- Do keep book artwork and its generated-cover texture separate from interface styling.
+- Do use the raised shadow for floating controls and flat borders for resting cards.
+- Do keep edit feedback in its owning context and preserve reduced-motion alternatives.
 
-### Don't:
+### Don't
 
-- **Don't** introduce a severity colour ladder. No red/amber/green pills. No info-blue callouts. No "did you know"
-  banners. Gold says "this matters"; the danger hue says "stop"; everything else is weight + density + motion. This is
-  the One Accent Rule, hard.
-- **Don't** ship surfaces that look like **SaaS-cream AI-workflow chrome** (Linear, Stripe, vercel-cream marketing). The
-  first-order category trap for self-hosted media managers in 2026. Reverie is not a workflow tool.
-- **Don't** ship surfaces that look like **generic ebook UI** (Calibre, Plex-clone shelves, default-Tailwind grids of
-  identical title + author + cover cards). The category cliché. Reverie is in the category but must not look like it
-  shipped from the category.
-- **Don't** ship surfaces that look like a **cozy reading nook** (lamp, paper, warm-domestic, hand-drawn book stacks).
-  The library is an archive, not a corner of a living room. The reader recedes; it does not invite.
-- **Don't** ship surfaces that look like a **severity-coloured dashboard** (red/amber/green pills, info-blue callouts,
-  status banners, hero-metric templates).
-- **Don't** use `#000`. `#fff` is reserved for `--fg-on-danger` only; every other neutral tints warmly toward the brand
-  hue.
-- **Don't** use the gold accent fill as text on Parchment at any size. Use the darker `accent-text` step for gold text.
-- **Don't** consume the sealed `--atm-*` atmosphere tokens from chrome. They are art-directed editorial constants for
-  the Library masthead and ambient field only; no `bg-atm-*` utilities exist by design.
-- **Don't** extend the established gilt-text exception to other surfaces. The current Library masthead uses solid
-  accent-text colour; no `.lib-h1-gilt` treatment is implemented.
-- **Don't** load Author or Satoshi black weights (900). Both fight the boutique register; reach for size or tracking
-  instead.
-- **Don't** use side-stripe borders (`border-left` greater than 1px as a coloured accent). Absolute ban. Use a full
-  border, background tint, leading numeral or icon, or nothing.
-- **Don't** paint two focus indicators. The global 2px `accent-text` outline (with `box-shadow: none`) is the single
-  indicator; don't reintroduce a competing box-shadow ring.
-- **Don't** use em dashes (`—` or `--`) in UI copy. Commas, colons, semicolons, periods, or parentheses do the work.
-- **Don't** centre the Slot in the glyph (it sits at 53 % from top), recolour the glyph, change the wordmark tracking,
-  stack the Lockup vertically, or apply effects (shadow, glow, gradient, bevel, outline) to either part.
-- **Don't** invent additional accents or state hues. Gold is the only accent; the danger red is the only state hue. Do
-  not relitigate success / warning / info colours — they stay hue-less.
+- Don't apply the generated covers' decorative texture or metallic detail to interface controls.
+- Don't use the error hue as a general attention accent.
+- Don't add shelf tabs or a collapsing Library header to the documented composition.
+- Don't treat deferred reading totals, attention counts, filter counts, or additional sortable columns as built UI.
