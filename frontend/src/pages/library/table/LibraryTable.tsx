@@ -2,7 +2,6 @@ import { ArrowRight, ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Loader2 } fro
 import {
   createContext,
   use,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -564,7 +563,6 @@ type Props = {
   onHideColumn: (key: string) => void;
   selectedIds: ReadonlySet<string>;
   onSelectionChange: (ids: ReadonlySet<string>) => void;
-  onScrollChange: (scrolled: boolean) => void;
 };
 
 export function LibraryTable({
@@ -582,16 +580,9 @@ export function LibraryTable({
   onHideColumn,
   selectedIds,
   onSelectionChange,
-  onScrollChange,
 }: Readonly<Props>): ReactElement {
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const shiftHeld = useRef(false);
-  useEffect(
-    () => () => {
-      onScrollChange(false);
-    },
-    [onScrollChange],
-  );
 
   const columns = useMemo(
     () => [
@@ -747,9 +738,6 @@ export function LibraryTable({
           >
             <Table
               keyboardNavigationBehavior="tab"
-              onScroll={(event) => {
-                onScrollChange(event.currentTarget.scrollTop > 0);
-              }}
               aria-label="Library books"
               selectionMode="multiple"
               selectedKeys={selectedIds}

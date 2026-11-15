@@ -32,7 +32,7 @@ STORY: The curator sees which shelf is open and how much of it is read, finds th
 corrects them in place without leaving the table.
 
 FIRST VIEWPORT: At 1920 by 1080: a floating top bar with wordmark, primary navigation, centred search and account
-controls. Below it one sheet: the shelf name at display size with its book count, collapsing to one line once the table
+controls. Below it one sheet: the shelf name at display size with its book count, staying at full size while the table
 scrolls; a reading-state bar with read, reading and unread counts on the left and needs-attention counts on the right;
 one control row holding filter chips, result count, save state, undo, Table or Covers, row density, Columns and Filters;
 then the table with sortable headers and 52px rows. The primary action, Add to shelf, sits in a floating batch bar at

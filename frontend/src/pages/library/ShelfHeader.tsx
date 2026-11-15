@@ -1,6 +1,5 @@
 import type { ReactElement } from "react";
 import type { Shelf } from "@/api";
-import { cn } from "@/lib/utils";
 
 type ReadingCounts = {
   wantToRead: number;
@@ -69,7 +68,6 @@ export function NeedsAttentionCounts({
 type Props = {
   shelves: readonly Shelf[];
   selected: readonly string[];
-  collapsed: boolean;
   readingCounts?: ReadingCounts;
   attentionCounts?: AttentionCounts;
 };
@@ -77,7 +75,6 @@ type Props = {
 export function ShelfHeader({
   shelves,
   selected,
-  collapsed,
   readingCounts,
   attentionCounts,
 }: Readonly<Props>): ReactElement {
@@ -85,14 +82,9 @@ export function ShelfHeader({
   const name =
     selected.length > 1 ? `${String(selected.length)} shelves` : (shelf?.name ?? "Library");
   return (
-    <header className={cn("flex flex-col gap-4 px-2 py-5", collapsed && "py-2")}>
+    <header className="flex flex-col gap-4 px-2 py-5">
       <div className="flex min-w-0 items-baseline gap-3">
-        <h1
-          className={cn(
-            "min-w-0 truncate font-sans text-4xl font-extrabold tracking-tight",
-            collapsed && "text-xl",
-          )}
-        >
+        <h1 className="min-w-0 truncate font-sans text-4xl font-extrabold tracking-tight">
           {name}
         </h1>
         {shelf === undefined ? null : (
@@ -101,12 +93,10 @@ export function ShelfHeader({
           </span>
         )}
       </div>
-      {!collapsed ? (
-        <div className="flex flex-wrap items-center justify-between gap-4 empty:hidden">
-          <ReadingStateBar data={readingCounts} />
-          <NeedsAttentionCounts data={attentionCounts} />
-        </div>
-      ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-4 empty:hidden">
+        <ReadingStateBar data={readingCounts} />
+        <NeedsAttentionCounts data={attentionCounts} />
+      </div>
     </header>
   );
 }

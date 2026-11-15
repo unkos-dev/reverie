@@ -238,7 +238,6 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
 }
 
 export function LibraryPage(): ReactElement {
-  const [tableScrolled, setTableScrolled] = useState(false);
   const owner = useLibraryFilters();
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
   const [overlay, setOverlay] = useState<OverlayState>(null);
@@ -368,11 +367,7 @@ export function LibraryPage(): ReactElement {
               : "px-3 pb-3 sm:px-5"
           }
         >
-          <ShelfHeader
-            shelves={shelves ?? []}
-            selected={filterState.shelf}
-            collapsed={viewMode === "table" && tableScrolled}
-          />
+          <ShelfHeader shelves={shelves ?? []} selected={filterState.shelf} />
           {/* Sort announcements stay mounted here: the filter drawer (which
               carries the sort section) unmounts when closed, and an
               unmounted live region is silent, which would leave
@@ -444,7 +439,6 @@ export function LibraryPage(): ReactElement {
                   }}
                   selectedIds={selectedIds}
                   onSelectionChange={setSelectedIds}
-                  onScrollChange={setTableScrolled}
                 />
               </Suspense>
             </TableChunkBoundary>
