@@ -48,7 +48,10 @@ export function useShellIngestion(): {
     queryKey: queryKeys.ingestion.counts(),
     queryFn: ({ signal }) => getInputCounts(signal),
     enabled,
-    refetchInterval: !isIngestionRoute && (scanRunning || enrichmentRunning) ? 3000 : false,
+    refetchInterval: () => {
+      if (isIngestionRoute) return false;
+      return scanRunning || enrichmentRunning ? 3000 : 30_000;
+    },
     refetchOnWindowFocus: !isIngestionRoute,
   });
   const attention = counts.data?.attention_total ?? 0;
