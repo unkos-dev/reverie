@@ -49,6 +49,19 @@ impl Loader<CanonicalKey> for ReaderLoader {
     }
 }
 
+impl Loader<reader::PendingKey> for ReaderLoader {
+    type Value = reader::PendingPage;
+    type Error = Arc<AppError>;
+    async fn load(
+        &self,
+        keys: &[reader::PendingKey],
+    ) -> Result<HashMap<reader::PendingKey, Self::Value>, Self::Error> {
+        reader::pending_pages(&self.user, &self.state, keys)
+            .await
+            .map_err(Arc::new)
+    }
+}
+
 #[derive(SimpleObject)]
 #[graphql(complex)]
 pub(super) struct MetadataVersions {
@@ -70,24 +83,43 @@ impl MetadataVersions {
             .map_err(|error| batch_error(&error))?
             .ok_or_else(|| super::safe_error(AppError::NotFound))
     }
-    #[graphql(
-        complexity = "super::complexity::weighted(usize::from(reader::MAX_PENDING_VERSIONS), child_complexity)?"
-    )]
-    async fn pending(&self) -> Vec<MetadataVersion> {
-        self.record
-            .pending
-            .iter()
-            .map(|row| MetadataVersion {
-                id: super::id::encode("MetadataVersion", row.id),
-                field_name: row.field_name.clone(),
-                source: row.source.clone(),
-                new_value: Json(row.new_value.clone()),
-                status: row.status.clone(),
-                confidence_score: f64::from(row.confidence_score),
-                match_type: row.match_type.clone(),
-                observation_count: row.observation_count,
+    #[graphql(complexity = "super::complexity::pending(first, child_complexity)?")]
+    async fn pending(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        after: Option<String>,
+    ) -> async_graphql::Result<async_graphql::connection::Connection<String, MetadataVersion>> {
+        let ceiling = ctx.data::<crate::state::AppState>()?.config.opds.page_size;
+        let first = super::complexity::pending_size(first, ceiling).map_err(super::safe_error)?;
+        let page = ctx
+            .data::<RequestLoader>()?
+            .load_one(reader::PendingKey {
+                parent: self.parent,
+                first,
+                after,
             })
-            .collect()
+            .await
+            .map_err(|error| batch_error(&error))?
+            .ok_or_else(|| super::safe_error(AppError::NotFound))?;
+        let mut connection =
+            async_graphql::connection::Connection::new(page.has_previous, page.has_next);
+        for (cursor, row) in page.edges {
+            connection.edges.push(async_graphql::connection::Edge::new(
+                cursor,
+                MetadataVersion {
+                    id: super::id::encode("MetadataVersion", row.id),
+                    field_name: row.field_name,
+                    source: row.source,
+                    new_value: Json(row.new_value),
+                    status: row.status,
+                    confidence_score: f64::from(row.confidence_score),
+                    match_type: row.match_type,
+                    observation_count: row.observation_count,
+                },
+            ));
+        }
+        Ok(connection)
     }
 }
 #[derive(SimpleObject)]
@@ -112,8 +144,7 @@ pub(super) async fn resolve(
         .await
         .map_err(|error| batch_error(&error))?
         .ok_or_else(|| super::safe_error(AppError::NotFound))?;
-    let pending_count = i32::try_from(record.pending.len())
-        .map_err(|e| super::safe_error(AppError::Internal(e.into())))?;
+    let pending_count = record.pending_count;
     Ok(MetadataVersions {
         pending_count,
         parent,

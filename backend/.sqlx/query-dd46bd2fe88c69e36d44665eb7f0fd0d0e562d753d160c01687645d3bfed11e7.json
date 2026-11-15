@@ -1,0 +1,140 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n      WITH inputs AS (SELECT * FROM jsonb_to_recordset($1::jsonb) AS q(request integer,parent uuid,canonical uuid[],first integer,seen timestamptz,id uuid)),\n      eligible AS NOT MATERIALIZED (\n        SELECT q.request,q.parent,v.id,v.last_seen_at,v.field_name,v.source,v.new_value,v.status,v.confidence_score,v.match_type,v.observation_count\n        FROM inputs q JOIN manifestations visible ON visible.id=q.parent\n        JOIN metadata_versions v ON v.manifestation_id=q.parent\n        WHERE v.status='pending'::metadata_review_status AND v.new_value != 'null'::jsonb AND NOT(v.id=ANY(q.canonical))\n      )\n      SELECT q.request AS \"request!\", totals.total AS \"total!\", previous.value AS \"previous!\",\n        item.id AS \"id?\", item.last_seen_at AS \"seen?\", item.field_name AS \"field_name?\", item.source AS \"source?\", item.new_value AS \"new_value?\",\n        item.status::text AS \"status?\",item.confidence_score AS \"confidence_score?\",item.match_type AS \"match_type?\",item.observation_count AS \"observation_count?\"\n      FROM inputs q\n      CROSS JOIN LATERAL (SELECT count(*) AS total FROM eligible e WHERE e.request=q.request) totals\n      CROSS JOIN LATERAL (SELECT (q.seen IS NOT NULL AND EXISTS(SELECT 1 FROM eligible e WHERE e.request=q.request AND (e.last_seen_at,e.id)>=(q.seen,q.id) LIMIT 1)) AS value) previous\n      LEFT JOIN LATERAL (SELECT e.* FROM eligible e WHERE e.request=q.request AND (q.seen IS NULL OR (e.last_seen_at,e.id)<(q.seen,q.id))\n        ORDER BY e.last_seen_at DESC,e.id DESC LIMIT (q.first+1)) item ON TRUE\n      ORDER BY q.request,item.last_seen_at DESC,item.id DESC\n    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "request!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "previous!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "seen?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "last_seen_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "field_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "field_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "source?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "new_value?",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "new_value"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "status?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "confidence_score?",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "confidence_score"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "match_type?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "match_type"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "observation_count?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "observation_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dd46bd2fe88c69e36d44665eb7f0fd0d0e562d753d160c01687645d3bfed11e7"
+}

@@ -253,6 +253,11 @@ Books expose native connection edges and PageInfo. Every edge carries its own ke
 flags. Nested connections bind their parent and relation order in addition to the boundary, preventing cursor replay
 between parents, relation kinds or the root books connection.
 
+The pending-version connection has its own parent-bound cursor over `last_seen_at DESC, id DESC`. It uses a 20-row
+default and a 50-row maximum. Its count includes all eligible proposals, with no overall row cap. Canonical scalar and
+junction pointers and JSON-null audit rows are excluded from both the count and page. Children receive an empty result
+before any proposal query. HTTP detail retains its existing 200-row payload bound.
+
 ## Data and state
 
 Each `BookListRow` carries `metadata_etag` and `reading_etag` alongside its projected values. The core query selects

@@ -228,14 +228,25 @@ export const readerVersionsQuery = graphql`
         pendingCount
         acceptedCount
         pending {
-          id
-          fieldName
-          source
-          newValue
-          status
-          confidenceScore
-          matchType
-          observationCount
+          edges {
+            cursor
+            node {
+              id
+              fieldName
+              source
+              newValue
+              status
+              confidenceScore
+              matchType
+              observationCount
+            }
+          }
+          pageInfo {
+            hasNextPage
+            hasPreviousPage
+            startCursor
+            endCursor
+          }
         }
       }
     }

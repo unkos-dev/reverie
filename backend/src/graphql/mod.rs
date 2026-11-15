@@ -631,8 +631,8 @@ mod tests {
                 schema
                     .execute(format!(
                         "{{ {} }}",
-                        (0..=complexity::LIMIT / 125_000)
-                            .map(|i| format!("alias{i}: series(id: \"malformed\") {{ works(first: 50) {{ edges {{ node {{ manifestations(first: 50) {{ edges {{ node {{ ratings(first: 50) {{ edges {{ node {{ source }} }} }} }} }} }} }} }} }} }}"))
+                        (0..=complexity::LIMIT / 63_000)
+                            .map(|i| format!("alias{i}: series(id: \"malformed\") {{ works(first: 50) {{ edges {{ node {{ manifestations(first: 20) {{ edges {{ node {{ ratings(first: 20) {{ edges {{ node {{ source }} }} }} }} }} }} }} }} }} }}"))
                             .collect::<Vec<_>>()
                             .join(" ")
                     ))
@@ -953,7 +953,7 @@ mod tests {
         assert_eq!(response["data"]["search"].as_array().unwrap().len(), 1);
         assert_eq!(response["data"]["authorSuggestions"], json!([]));
         assert!(!response.to_string().contains("Other graph shelf"));
-        let versions_query = "query($id: ID!) { manifestation(id: $id) { versions { pendingCount pending { newValue } } } }";
+        let versions_query = "query($id: ID!) { manifestation(id: $id) { versions { pendingCount pending { edges { node { newValue } } } } } }";
         let adult_versions = reader_query(
             &fixture,
             &fixture.admin,
@@ -967,17 +967,17 @@ mod tests {
             1
         );
         assert_eq!(
-            adult_versions["data"]["manifestation"]["versions"]["pending"][0]["newValue"],
+            adult_versions["data"]["manifestation"]["versions"]["pending"]["edges"][0]["node"]["newValue"],
             "Unreviewed graph proposal"
         );
         for (query, variables) in [
             (versions_query, json!({"id": visible.as_str()})),
             (
-                "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending { newValue } } } } }",
+                "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending { edges { node { newValue } } } } } } }",
                 json!({"id": visible.as_str()}),
             ),
             (
-                "query($id: ID!) { work(id: $id) { manifestations { edges { node { versions { pendingCount pending { newValue } } } } } } }",
+                "query($id: ID!) { work(id: $id) { manifestations { edges { node { versions { pendingCount pending { edges { node { newValue } } } } } } } } }",
                 json!({"id": id::encode("Work", fixture.visible_work).as_str()}),
             ),
         ] {
@@ -985,8 +985,31 @@ mod tests {
             assert!(response.get("errors").is_none(), "{response}");
             assert!(!response.to_string().contains("Unreviewed graph proposal"));
             assert!(response.to_string().contains("\"pendingCount\":0"));
-            assert!(response.to_string().contains("\"pending\":[]"));
+            assert!(response.to_string().contains("\"edges\":[]"));
         }
+    }
+
+    async fn pending_cursor_identity(fixture: &ReaderFixture) {
+        let query = "query($id: ID!, $after: String) { manifestation(id:$id) { versions { pending(first:1,after:$after) { edges { cursor node { id } } } } } }";
+        let page = reader_query(
+            fixture,
+            &fixture.admin,
+            query,
+            json!({"id":id::encode("Manifestation",fixture.visible).as_str()}),
+        )
+        .await;
+        assert!(page.get("errors").is_none(), "{page}");
+        let cursor = page["data"]["manifestation"]["versions"]["pending"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
+        let refused = reader_query(
+            fixture,
+            &fixture.admin,
+            query,
+            json!({"id":id::encode("Manifestation",fixture.sibling).as_str(),"after":cursor}),
+        )
+        .await;
+        assert_eq!(refused["errors"][0]["extensions"]["code"], "validation");
     }
 
     // REV-REQ-0003, REV-REQ-0057 and REV-REQ-0058 cover ranges, cursor identity and sort refusal.
@@ -1147,6 +1170,7 @@ mod tests {
                 );
             }
         }
+        pending_cursor_identity(&fixture).await;
         let shelf_page = reader_query(
             &fixture,
             &fixture.admin,

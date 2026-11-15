@@ -280,10 +280,39 @@ type MetadataVersion {
   observationCount: Int!
 }
 
+type MetadataVersionConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [MetadataVersionEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [MetadataVersion!]!
+}
+
+"""
+An edge in a connection.
+"""
+type MetadataVersionEdge {
+  """
+  The item at the end of the edge
+  """
+  node: MetadataVersion!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
 type MetadataVersions {
   pendingCount: Int!
   acceptedCount: Int!
-  pending: [MetadataVersion!]!
+  pending(first: Int, after: String): MetadataVersionConnection!
 }
 
 type Mood {

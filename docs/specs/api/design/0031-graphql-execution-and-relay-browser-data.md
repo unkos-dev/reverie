@@ -89,42 +89,54 @@ Production refuses submitted text and unknown IDs before execution, with no runt
 text for tooling. Both modes validate variables and enforce root-field scope. Production disables schema introspection;
 development retains it. `__typename` remains available.
 
-Every connection and output list costs one plus its effective bound times child complexity. Page arguments use the
-configured page size as both default and ceiling. Validation and execution share the size validator. A validation
-extension scopes the request's configured ceiling through Tokio task-local storage for async-graphql's synchronous cost
-callbacks. The scope ends with validation. Search uses its shared 20-result cap, suggestions use their shared 10-result
-default and 1-20 clamp, labels use the validated input count up to 60, and pending versions use their 200-row per-parent
-cap. Zero-size connections still cost one. Checked arithmetic refuses overflow and excessive cost.
+Every connection and output list costs one plus its effective bound times child complexity. A capped relation is always
+a connection with `pageInfo`, so nothing is silently truncated. Continuation cursors keep the remainder reachable.
+Requests above a maximum fail validation. Validation and execution share the same bounds and size validators. A
+validation extension scopes the request's configured ceiling through Tokio task-local storage for async-graphql's
+synchronous cost callbacks. The scope ends with validation.
 
-The complexity limit is 14,223,380 in both policies. Temporary async-graphql `Analyzer` measurements of the generated
-operations use the default 50-row page and default relation bounds. The Library measurement executes against 50 rows.
-The measured maximum M is 11,378,704. Its 25 percent margin, rounded up, is 2,844,676.
+| Connection                                           | Default |            Maximum |
+| ---------------------------------------------------- | ------: | -----------------: |
+| Work manifestations                                  |       2 |                 20 |
+| Work authors and contributors                        |       5 |                 20 |
+| Work identifiers                                     |       5 |                 20 |
+| Manifestation genres, moods, identifiers and ratings |       5 |                 20 |
+| Manifestation tags                                   |      10 |                 50 |
+| Pending metadata versions                            |      20 |                 50 |
+| Root books and shelves, series works and shelf items |      50 | Configured ceiling |
 
-| Operation                |       Cost | Depth |
-| ------------------------ | ---------: | ----: |
-| `readerLibraryQuery`     |    225,801 |     8 |
-| `readerDetailQuery`      |      4,509 |     6 |
-| `readerVersionsQuery`    |      1,606 |     4 |
-| `readerShelfQuery`       |    225,808 |     9 |
-| `readerShelvesQuery`     |        701 |     4 |
-| `readerSeriesQuery`      | 11,378,704 |    12 |
-| `readerSearchQuery`      |     90,201 |     7 |
-| `readerSuggestionsQuery` |        132 |     2 |
-| `readerNodeQuery`        |      6,280 |     6 |
-| `viewerQuery`            |          4 |     2 |
+Defaults and maxima respect a smaller configured page ceiling. Search retains its shared 20-result bound, suggestions
+their shared 10-result default and 1-20 clamp, and labels their validated input count up to 60. Zero-size connections
+still cost one. Checked arithmetic refuses overflow and excessive cost.
 
-The finite depth limit is 12, the maximum observed depth of these operations. It admits the complete series page and its
-nested file relations. A separate measurement with a configured seven-row default costs 4,824 and returns seven Library
-rows, confirming that validation follows configuration. All representative operations execute under the calibrated
-policy. The existing admission check proves over-budget and depth refusal in both policies. async-graphql excludes
-`__typename` from these counts. Axum's default 2 MiB JSON-body limit still applies.
+The complexity limit is 82,568 in both policies. Temporary async-graphql `Analyzer` measurements of the generated
+operations use the default 50-row primary pages and the nested defaults above. The Library measurement executes against
+50 rows. The maximum M is 66,054. Its 25 percent margin, rounded up, is 16,514, so the limit is 66,054 + 16,514.
 
-`versions.rs` resolves only a selected Manifestation `versions` field. Adults load canonical scalar pointers, junction
-pointers and pending proposals in three set-based statements, independent of parent count. The pending query keeps its
-per-parent 200-row cap, newest-first ordering, canonical exclusions and JSON-null exclusion. Children return an empty
-pending result before any proposal-value query, including typed, Node and nested reads. Accepted counts use canonical
-state only. Temporary SQL counters measure zero versions statements for basic detail and three for selected versions,
-including one proposal statement. Selecting two parents also executes three statements.
+| Operation                |   Cost | Depth |
+| ------------------------ | -----: | ----: |
+| `readerLibraryQuery`     | 28,051 |     8 |
+| `readerDetailQuery`      |    554 |     6 |
+| `readerVersionsQuery`    |    326 |     6 |
+| `readerShelfQuery`       | 28,058 |     9 |
+| `readerShelvesQuery`     |    701 |     4 |
+| `readerSeriesQuery`      | 66,054 |    12 |
+| `readerSearchQuery`      | 11,101 |     7 |
+| `readerSuggestionsQuery` |    132 |     2 |
+| `readerNodeQuery`        |    750 |     6 |
+| `viewerQuery`            |      4 |     2 |
+
+The finite depth limit is 12, the maximum observed depth. Two full Library pages cost 56,102 and fit; three cost 84,153
+and exceed the limit. Both policies admit representative operations and refuse excess cost and depth. async-graphql
+excludes `__typename` from these counts. Axum's default 2 MiB JSON-body limit still applies.
+
+`versions.rs` resolves only a selected Manifestation `versions` field. The pending count is exact across all eligible
+rows. The pending connection orders `last_seen_at DESC, id DESC`, with a parent-bound cursor, a per-parent SQL window
+and PageInfo derived from exact count and bounded probes. Scalar and junction canonical pointers and JSON-null audit
+rows remain excluded. No overall row cap hides the remainder. HTTP detail retains its existing 200-row payload cap.
+Children return an empty result before any proposal count or value query, including typed, Node and nested reads.
+Accepted counts use canonical state only. Basic detail executes no versions SQL. Selecting the count and pending page
+uses two batched operations, each with canonical scalar, junction and pending SQL, independent of parent count.
 
 The Relay network sends generated IDs and variables through `apiFetch` with same-origin credentials and an abort signal.
 It validates the response envelope before publication. The viewer has no custom scalar or editing snapshot. Reader

@@ -72,7 +72,9 @@ impl Work {
                 position: self.record.series_position,
             }))
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::WorkIdentifiers, first, child_complexity)?"
+    )]
     async fn identifiers(
         &self,
         ctx: &Context<'_>,
@@ -97,7 +99,9 @@ impl Work {
             },
         )
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Manifestations, first, child_complexity)?"
+    )]
     async fn manifestations(
         &self,
         ctx: &Context<'_>,
@@ -114,7 +118,9 @@ impl Work {
         .await?;
         manifestation_connection(ctx, page).await
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Authors, first, child_complexity)?"
+    )]
     async fn authors(
         &self,
         ctx: &Context<'_>,
@@ -125,7 +131,9 @@ impl Work {
             relation(ctx, RelationKind::Authors, self.record.id, first, after).await?,
         )
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Contributors, first, child_complexity)?"
+    )]
     async fn contributors(
         &self,
         ctx: &Context<'_>,
@@ -257,7 +265,9 @@ impl Manifestation {
             content_rating: row.content_rating.map(|value| value.as_str().to_owned()),
         }
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Genres, first, child_complexity)?"
+    )]
     async fn genres(
         &self,
         ctx: &Context<'_>,
@@ -281,7 +291,9 @@ impl Manifestation {
             },
         )
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Moods, first, child_complexity)?"
+    )]
     async fn moods(
         &self,
         ctx: &Context<'_>,
@@ -305,7 +317,9 @@ impl Manifestation {
             },
         )
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Tags, first, child_complexity)?"
+    )]
     async fn tags(
         &self,
         ctx: &Context<'_>,
@@ -322,7 +336,9 @@ impl Manifestation {
             },
         )
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Identifiers, first, child_complexity)?"
+    )]
     async fn identifiers(
         &self,
         ctx: &Context<'_>,
@@ -351,7 +367,9 @@ impl Manifestation {
             },
         )
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Ratings, first, child_complexity)?"
+    )]
     async fn ratings(
         &self,
         ctx: &Context<'_>,
@@ -492,7 +510,9 @@ impl Shelf {
             .updated_at
             .to_rfc3339_opts(SecondsFormat::AutoSi, true)
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::ShelfItems, first, child_complexity)?"
+    )]
     async fn items(
         &self,
         ctx: &Context<'_>,
@@ -530,7 +550,9 @@ impl Series {
     async fn sort_name(&self) -> &str {
         &self.record.sort_name
     }
-    #[graphql(complexity = "super::complexity::page(first, child_complexity)?")]
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::SeriesWorks, first, child_complexity)?"
+    )]
     async fn works(
         &self,
         ctx: &Context<'_>,
@@ -589,7 +611,12 @@ async fn relation(
     let key = RelationKey {
         kind,
         parent,
-        first: page_size(ctx, first)?,
+        first: super::complexity::nested_size(
+            kind,
+            first,
+            ctx.data::<AppState>()?.config.opds.page_size,
+        )
+        .map_err(safe_error)?,
         after,
     };
     required(

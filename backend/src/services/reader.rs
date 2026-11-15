@@ -3517,7 +3517,7 @@ struct VersionInput {
 
 #[derive(Clone)]
 pub struct VersionSet {
-    pub pending: Vec<MetadataVersionRow>,
+    pub pending_count: i32,
     pub accepted: Option<i32>,
 }
 
@@ -3618,49 +3618,27 @@ pub async fn versions(
     state: &AppState,
     ids: &[Uuid],
 ) -> Result<HashMap<Uuid, VersionSet>, AppError> {
-    // THREAT: a child never reads unreviewed proposal values, including through nested or Node reads.
-    if user.is_child() {
-        return Ok(ids
-            .iter()
-            .map(|id| {
-                (
-                    *id,
-                    VersionSet {
-                        pending: Vec::new(),
-                        accepted: None,
-                    },
-                )
-            })
-            .collect());
-    }
-    let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    let inputs = version_inputs(&mut tx, ids).await?;
-    let pending_inputs: Vec<_> = inputs
+    let keys: Vec<_> = ids
         .iter()
-        .map(|(input, _)| VersionInput {
-            parent: input.parent,
-            canonical: input.canonical.clone(),
+        .map(|id| PendingKey {
+            parent: *id,
+            first: 0,
+            after: None,
         })
         .collect();
-    let mut pending = pending_version_rows(&mut tx, &pending_inputs).await?;
-    let records = inputs
+    Ok(pending_pages(user, state, &keys)
+        .await?
         .into_iter()
-        .map(|(input, accepted)| {
+        .map(|(key, page)| {
             (
-                input.parent,
+                key.parent,
                 VersionSet {
-                    pending: pending.remove(&input.parent).unwrap_or_default(),
-                    accepted: Some(accepted),
+                    pending_count: page.total,
+                    accepted: page.accepted,
                 },
             )
         })
-        .collect();
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    Ok(records)
+        .collect())
 }
 
 pub async fn canonical_counts(
@@ -3679,4 +3657,177 @@ pub async fn canonical_counts(
         .into_iter()
         .map(|(input, accepted)| (input.parent, accepted))
         .collect())
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct PendingKey {
+    pub parent: Uuid,
+    pub first: i32,
+    pub after: Option<String>,
+}
+#[derive(Clone)]
+pub struct PendingPage {
+    pub edges: Vec<(String, MetadataVersionRow)>,
+    pub total: i32,
+    pub accepted: Option<i32>,
+    pub has_previous: bool,
+    pub has_next: bool,
+}
+impl PendingPage {
+    const fn empty() -> Self {
+        Self {
+            edges: Vec::new(),
+            total: 0,
+            accepted: None,
+            has_previous: false,
+            has_next: false,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PendingCursor {
+    parent: Uuid,
+    seen: DateTime<Utc>,
+    id: Uuid,
+}
+#[derive(serde::Serialize)]
+struct PendingInput {
+    request: i32,
+    parent: Uuid,
+    canonical: Vec<Uuid>,
+    first: i32,
+    seen: Option<DateTime<Utc>>,
+    id: Option<Uuid>,
+}
+
+fn pending_inputs(keys: &[PendingKey], ceiling: u32) -> Result<Vec<PendingInput>, AppError> {
+    use base64ct::{Base64UrlUnpadded, Encoding};
+    let mut inputs = Vec::new();
+    for (index, key) in keys.iter().enumerate() {
+        if !(0..=50.min(i64::from(ceiling))).contains(&i64::from(key.first)) {
+            return Err(AppError::Validation("Invalid page size.".into()));
+        }
+        let cursor = match &key.after {
+            None => None,
+            Some(token) => {
+                let bytes = Base64UrlUnpadded::decode_vec(token).map_err(|_| invalid_cursor())?;
+                let cursor: PendingCursor =
+                    serde_json::from_slice(&bytes).map_err(|_| invalid_cursor())?;
+                if cursor.parent != key.parent {
+                    return Err(invalid_cursor());
+                }
+                Some(cursor)
+            }
+        };
+        inputs.push(PendingInput {
+            request: i32::try_from(index).map_err(|e| AppError::Internal(e.into()))?,
+            parent: key.parent,
+            canonical: Vec::new(),
+            first: key.first,
+            seen: cursor.as_ref().map(|c| c.seen),
+            id: cursor.map(|c| c.id),
+        });
+    }
+    Ok(inputs)
+}
+
+pub async fn pending_pages(
+    user: &CurrentUser,
+    state: &AppState,
+    keys: &[PendingKey],
+) -> Result<HashMap<PendingKey, PendingPage>, AppError> {
+    use base64ct::{Base64UrlUnpadded, Encoding};
+    let mut inputs = pending_inputs(keys, state.config.opds.page_size)?;
+    // THREAT: children return before any proposal count or value query.
+    if user.is_child() {
+        return Ok(keys
+            .iter()
+            .cloned()
+            .map(|key| (key, PendingPage::empty()))
+            .collect());
+    }
+    let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let ids: Vec<_> = keys.iter().map(|key| key.parent).collect();
+    let canonical = version_inputs(&mut tx, &ids).await?;
+    let accepted: HashMap<_, _> = canonical
+        .iter()
+        .map(|(input, count)| (input.parent, *count))
+        .collect();
+    let canonical: HashMap<_, _> = canonical
+        .into_iter()
+        .map(|(input, _)| (input.parent, input.canonical))
+        .collect();
+    for input in &mut inputs {
+        input.canonical = canonical.get(&input.parent).cloned().unwrap_or_default();
+    }
+    let payload = serde_json::to_value(inputs).map_err(|e| AppError::Internal(e.into()))?;
+    let rows = sqlx::query!(r#"
+      WITH inputs AS (SELECT * FROM jsonb_to_recordset($1::jsonb) AS q(request integer,parent uuid,canonical uuid[],first integer,seen timestamptz,id uuid)),
+      eligible AS NOT MATERIALIZED (
+        SELECT q.request,q.parent,v.id,v.last_seen_at,v.field_name,v.source,v.new_value,v.status,v.confidence_score,v.match_type,v.observation_count
+        FROM inputs q JOIN manifestations visible ON visible.id=q.parent
+        JOIN metadata_versions v ON v.manifestation_id=q.parent
+        WHERE v.status='pending'::metadata_review_status AND v.new_value != 'null'::jsonb AND NOT(v.id=ANY(q.canonical))
+      )
+      SELECT q.request AS "request!", totals.total AS "total!", previous.value AS "previous!",
+        item.id AS "id?", item.last_seen_at AS "seen?", item.field_name AS "field_name?", item.source AS "source?", item.new_value AS "new_value?",
+        item.status::text AS "status?",item.confidence_score AS "confidence_score?",item.match_type AS "match_type?",item.observation_count AS "observation_count?"
+      FROM inputs q
+      CROSS JOIN LATERAL (SELECT count(*) AS total FROM eligible e WHERE e.request=q.request) totals
+      CROSS JOIN LATERAL (SELECT (q.seen IS NOT NULL AND EXISTS(SELECT 1 FROM eligible e WHERE e.request=q.request AND (e.last_seen_at,e.id)>=(q.seen,q.id) LIMIT 1)) AS value) previous
+      LEFT JOIN LATERAL (SELECT e.* FROM eligible e WHERE e.request=q.request AND (q.seen IS NULL OR (e.last_seen_at,e.id)<(q.seen,q.id))
+        ORDER BY e.last_seen_at DESC,e.id DESC LIMIT (q.first+1)) item ON TRUE
+      ORDER BY q.request,item.last_seen_at DESC,item.id DESC
+    "#,payload).fetch_all(&mut *tx).await.map_err(|e|AppError::Internal(e.into()))?;
+    let mut pages = HashMap::new();
+    for row in rows {
+        let key = keys
+            .get(usize::try_from(row.request).map_err(|e| AppError::Internal(e.into()))?)
+            .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Unknown pending batch index")))?;
+        let page = pages.entry(key.clone()).or_insert(PendingPage {
+            edges: Vec::new(),
+            total: i32::try_from(row.total).map_err(|e| AppError::Internal(e.into()))?,
+            accepted: accepted.get(&key.parent).copied(),
+            has_previous: row.previous,
+            has_next: false,
+        });
+        if let Some(id) = row.id {
+            let seen = pending_required(row.seen)?;
+            let cursor = Base64UrlUnpadded::encode_string(
+                &serde_json::to_vec(&PendingCursor {
+                    parent: key.parent,
+                    seen,
+                    id,
+                })
+                .map_err(|e| AppError::Internal(e.into()))?,
+            );
+            page.edges.push((
+                cursor,
+                MetadataVersionRow {
+                    id,
+                    field_name: pending_required(row.field_name)?,
+                    source: pending_required(row.source)?,
+                    new_value: pending_required(row.new_value)?,
+                    status: pending_required(row.status)?,
+                    confidence_score: pending_required(row.confidence_score)?,
+                    match_type: pending_required(row.match_type)?,
+                    observation_count: pending_required(row.observation_count)?,
+                },
+            ));
+        }
+    }
+    for (key, page) in &mut pages {
+        let size = usize::try_from(key.first).map_err(|e| AppError::Internal(e.into()))?;
+        page.has_next = page.edges.len() > size;
+        page.edges.truncate(size);
+    }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(pages)
+}
+fn pending_required<T>(value: Option<T>) -> Result<T, AppError> {
+    value.ok_or_else(|| AppError::Internal(anyhow::anyhow!("Missing pending projection field")))
 }
