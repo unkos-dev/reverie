@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { forgetActiveUser } from "@/lib/active-user";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import type { ThemePreference } from "@/lib/theme/cookie";
 
@@ -50,6 +51,7 @@ export function UserChip(): ReactElement | null {
   const { data: me } = useAuthMe();
   const { preference, failure, setPreference } = useTheme();
   const { attention } = useShellIngestion();
+  const isDesktop = useMediaQuery("(min-width: 64rem)");
   if (me === undefined) return null;
 
   function handleSignOut(): void {
@@ -86,8 +88,8 @@ export function UserChip(): ReactElement | null {
           </span>
         </Button>
         <DropdownMenuContent placement="bottom end" className="w-56">
-          {me.role === "admin" ? (
-            <DropdownMenuGroup aria-label="Admin" className="lg:hidden">
+          {me.role === "admin" && !isDesktop ? (
+            <DropdownMenuGroup aria-label="Admin">
               <DropdownMenuItem href="/admin/users">Users</DropdownMenuItem>
               <DropdownMenuItem
                 href="/admin/dashboard"
