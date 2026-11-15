@@ -48,7 +48,7 @@ Depends on: `crate::db::acquire_with_rls` for the RLS-scoped transaction every q
 existence probe; `CurrentUser::require_scope` for the `read`/`write` gate; the shared entity-tag grammar and comparison
 in `backend/src/routes/etag.rs`; `crate::extract::{ApiPath, ApiJson}` for request decoding.
 
-Depended on by: `GET /api/v1/books` (`backend/src/routes/library/mod.rs::load_reading_state_for_manifestations`), which
+Depended on by: `GET /api/v1/books` (`backend/src/services/reader.rs::load_reading_state_for_manifestations`), which
 batch-loads a `ReadingStateSummary` onto every list row under the caller's own RLS scope — the Design "Books list query
 contract"; the library table's status and rating columns and the cell-edit orchestration in the Library table cell
 editing and undo subject, which route a commit to this subject's `PATCH` endpoint and rely on its entity-tag for
@@ -66,19 +66,19 @@ conflict detection.
   serialisation covering every field the `PATCH` can modify. `apply_patch` is a pure function, separated from the
   handler's I/O, that merges an `UpdateReadingRequest` onto a locked row and applies the status-transition stamp rules
   Runtime behaviour describes.
-- `backend/src/models/reading_state.rs` carries two wire types and nothing else — queries live in `routes::reading` and
-  `routes::library`, per the module's own doc comment. `ReadingState` is the full row the single-book endpoints return.
-  `ReadingStateSummary` is a narrower projection batch-loaded onto each `GET /api/v1/books` row, deliberately excluding
-  `notes`: at the maximum page size its 10,000-character cap would dominate the response body many times over, so
-  clients read notes only through the single-book `GET`.
+- `backend/src/models/reading_state.rs` carries two wire types and nothing else — shared reads live in
+  `services::reader`, with mutations in `routes::reading`. `ReadingState` is the full row the single-book endpoints
+  return. `ReadingStateSummary` is a narrower projection batch-loaded onto each `GET /api/v1/books` row, deliberately
+  excluding `notes`: at the maximum page size its 10,000-character cap would dominate the response body many times over,
+  so HTTP clients read notes through the single-book `GET`.
 - `backend/src/models/reading_status.rs` declares `ReadingStatus`, the five-variant enum (`want_to_read`, `reading`,
   `on_hold`, `finished`, `abandoned`) that maps to the Postgres `reading_status` type and to the same snake_case wire
   strings on both sides.
 - `backend/migrations/20260810000000_initial_schema.up.sql` creates `reading_state` — composite primary key
   `(user_id, manifestation_id)`, both foreign keys `ON DELETE CASCADE` — its `CHECK` constraints, the
   `trg_reading_state_updated_at` trigger, and the `reading_state_owner` row-level-security policy.
-- `backend/src/routes/library/mod.rs::load_reading_state_for_manifestations` batch-loads `ReadingStateSummary` for a
-  page of manifestation ids inside the same RLS-scoped transaction the list query already runs in, with no extra
+- `backend/src/services/reader.rs::load_reading_state_for_manifestations` batch-loads `ReadingStateSummary` for a page
+  of manifestation ids inside the same RLS-scoped transaction the list query already runs in, with no extra
   `WHERE user_id = …` predicate of its own: the policy alone confines it. `backend/src/routes/library/filters.rs`'s
   `push_status_match` and `push_rating_predicates` also query `reading_state`, via `EXISTS`/`NOT EXISTS` sub-queries
   backing the `status_any`/`status_none`/`rating_gte`/`rating_lte`/`rating_empty` parameters on the same endpoint. Both
@@ -112,6 +112,14 @@ conflict detection.
   "Books list query contract".
 - `frontend/src/api/books.ts` mirrors the wire types a second time for the list-embedded shape — `ReadingStatusSchema`
   and `ReadingStateSummarySchema`, validated as part of `BookListItemSchema`.
+
+Graph Manifestation exposes caller-owned `readingState` without a global ID. `backend/src/services/reader.rs` loads its
+values and matching entity-tag within the same caller-scoped snapshot as the file projection. A missing state row
+produces the existing unread values and token without inserting a row. Request-local loaders carry the caller and keep
+records isolated between requests. Typed, Node and nested paths use the same visibility checks and state owner.
+
+The GraphQL projection includes notes when selected. Its entity-tag remains an editing baseline paired with those
+values, independent of later metadata-version reads. No reader operation is wired to a browser consumer or writer.
 
 ## Data and state
 

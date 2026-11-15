@@ -187,16 +187,16 @@ Beyond that shared check, encoding is infallible in practice: `CursorError::Seri
 is not among the ones `SortCursor` holds, so every value it holds serialises without error and no code path returns this
 variant.
 
-### Query assembly (`library/mod.rs`)
+### Query assembly (`services/reader.rs`)
 
-The `list` handler runs its checks in a fixed order before it ever opens a transaction: `Query<ListParams>` decode,
-`filters::validate`, `SortSpec::parse` (a parse error maps to `AppError::Validation`, the `422` class of a filter
-bound), the filter fingerprint, then `SortCursor::parse_for` against that spec and fingerprint. Only once all of that
-has succeeded does it call `db::acquire_with_rls_snapshot` and build the query: a fixed `SELECT` naming every column the
-response needs plus a `LEFT JOIN LATERAL` that picks at most one series per work (lowest position, `NULLS LAST`, then
-series id, so a work in several series always reports the same one across pages), `filters::push_filter_predicates`, the
-general keyset predicate, the `ORDER BY`, and `LIMIT page_size + 1` — one extra row fetched so `split_page` can tell
-whether a further page exists without a second query.
+The HTTP `list` handler decodes `Query<ListParams>` and calls `reader.rs`. The shared operation checks inputs before
+opening a transaction: `filters::validate`, `SortSpec::parse` (a parse error maps to `AppError::Validation`, the `422`
+class of a filter bound), the filter fingerprint, then `SortCursor::parse_for` against that spec and fingerprint. Only
+once all of that has succeeded does it call `db::acquire_with_rls_snapshot` and build the query: a fixed `SELECT` naming
+every column the response needs plus a `LEFT JOIN LATERAL` that picks at most one series per work (lowest position,
+`NULLS LAST`, then series id, so a work in several series always reports the same one across pages),
+`filters::push_filter_predicates`, the general keyset predicate, the `ORDER BY`, and `LIMIT page_size + 1` — one extra
+row fetched so `split_page` can tell whether a further page exists without a second query.
 
 `push_cursor_predicate` builds the keyset "advance past the boundary" clause for an arbitrary sort stack as one
 `OR`-chain of per-level branches: level `i`'s branch requires exact equality on every level before it
@@ -228,8 +228,8 @@ framework boundary this subject relies on for decode failures; the crate-wide `i
 (`backend/src/error/mod.rs`) is what turns a rejected field into `AppError::MalformedQuery` with a `400`, a mapping the
 Design "API error contract and OpenAPI" owns and this subject only consumes.
 
-`crate::db::acquire_with_rls(pool, user_id)` is the sole transaction-scoping call `list` makes; its settings and the
-policies it activates belong to the Design "Row-level security and database context".
+`crate::db::acquire_with_rls_snapshot(pool, user_id)` scopes the shared list read; its settings and the policies it
+activates belong to the Design "Row-level security and database context".
 `state.settings.read().await.provider_visibility`, read once per request to build the `hidden_providers` set for the
 external-identifier and -rating lookups that follow the page query, is part of the response contract this subject hands
 off rather than owns.
@@ -240,6 +240,18 @@ and `next_cursor` as values to store and replay, never to parse.
 
 Timestamp bounds are canonical UTC instants in the fingerprint, so equivalent RFC 3339 offsets do not change a cursor's
 filter identity. A different instant changes the fingerprint even if the local calendar date is unchanged.
+
+The GraphQL `books(first:, after:, filter:, sort:)` root resolves typed input objects to the same `ListParams`,
+validators, `SortSpec` and filter fingerprint in `backend/src/services/reader.rs`. Missing sort retains server-default
+resolution. Numeric endpoints remain inclusive and timestamps use inclusive lower and exclusive upper instants.
+Equivalent offsets share a fingerprint. Invalid columns, duplicate levels and stacks over three levels fail before SQL.
+Graph execution refusals carry the `validation` classification. HTTP status and envelope contracts remain unchanged.
+
+Books expose native connection edges and PageInfo. Every edge carries its own keyset cursor. One extra row derives
+`hasNextPage`, and a bounded existence query derives `hasPreviousPage`. The configured page size supplies the omitted
+`first` and its ceiling. Negative and above-ceiling sizes fail validation, while zero returns an empty page with real
+flags. Nested connections bind their parent and relation order in addition to the boundary, preventing cursor replay
+between parents, relation kinds or the root books connection.
 
 ## Data and state
 

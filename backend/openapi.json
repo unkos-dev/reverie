@@ -12194,7 +12194,7 @@
       },
       "ReadingStateSummary": {
         "type": "object",
-        "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\n\nBatch-loaded alongside the page (see `routes::library::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).\n\nDeliberately excludes `notes`: it is capped at 10k characters per row,\nwhich at the maximum page size would dominate the response body many\ntimes over. Clients read notes through the single-book\n`GET /api/v1/books/{id}/reading` endpoint ([`ReadingState`]).",
+        "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\n\nBatch-loaded alongside the page (see `services::reader::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).\n\nDeliberately excludes `notes`: it is capped at 10k characters per row,\nwhich at the maximum page size would dominate the response body many\ntimes over. Clients read notes through the single-book\n`GET /api/v1/books/{id}/reading` endpoint ([`ReadingState`]).",
         "properties": {
           "finished_at": {
             "type": [

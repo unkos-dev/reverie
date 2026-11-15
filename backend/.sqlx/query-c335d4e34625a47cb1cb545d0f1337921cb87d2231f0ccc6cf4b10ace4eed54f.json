@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE works SET title = $1, sort_title = lower($1) WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c335d4e34625a47cb1cb545d0f1337921cb87d2231f0ccc6cf4b10ace4eed54f"
+}

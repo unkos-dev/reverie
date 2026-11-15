@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT w.id, w.title, w.subtitle, w.description, w.language,\n          selected.series_id AS \"series_id?\", selected.position AS \"series_position?: f64\"\n        FROM works w LEFT JOIN LATERAL (\n          SELECT sw.series_id, sw.position::float8 AS position FROM series_works sw\n          WHERE sw.work_id = w.id ORDER BY sw.position ASC NULLS LAST, sw.series_id ASC LIMIT 1\n        ) selected ON TRUE WHERE w.id = ANY($1::uuid[]) AND (\n            EXISTS (SELECT 1 FROM manifestations m WHERE m.work_id = w.id)\n            OR ($2 AND EXISTS (\n                SELECT 1 FROM series_works own_membership\n                JOIN series_works visible_membership ON visible_membership.series_id = own_membership.series_id\n                JOIN manifestations m ON m.work_id = visible_membership.work_id\n                WHERE own_membership.work_id = w.id\n            ))\n        )\n    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "subtitle",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "subtitle"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "series_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_works",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "series_position?: f64",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "series_works",
+            "name": "position"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "f0fa81ba78bae05a7b0e69852fdd58579762b585f79ea40286346fe167b11af7"
+}

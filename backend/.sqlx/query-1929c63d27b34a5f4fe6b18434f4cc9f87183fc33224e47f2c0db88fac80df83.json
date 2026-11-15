@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT inputs.manifestation_id AS \"manifestation_id!\", pointers.id AS \"id!\"\n        FROM UNNEST($1::uuid[], $2::uuid[]) inputs(manifestation_id, work_id)\n        CROSS JOIN LATERAL (\n          SELECT source_version_id AS id FROM manifestation_genres WHERE manifestation_id = inputs.manifestation_id\n          UNION SELECT source_version_id FROM manifestation_moods WHERE manifestation_id = inputs.manifestation_id\n          UNION SELECT source_version_id FROM manifestation_tags WHERE manifestation_id = inputs.manifestation_id\n          UNION SELECT source_version_id FROM work_authors WHERE work_id = inputs.work_id\n        ) pointers WHERE pointers.id IS NOT NULL\n    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifestation_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "1929c63d27b34a5f4fe6b18434f4cc9f87183fc33224e47f2c0db88fac80df83"
+}

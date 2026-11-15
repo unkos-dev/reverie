@@ -1,0 +1,146 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH inputs AS (SELECT * FROM jsonb_to_recordset($1::jsonb) AS input(\n request integer, parent uuid, first integer, has_after boolean, after_id uuid, after_name text,\n after_position float8, after_ordinal integer, after_created timestamptz, after_level integer)),\n caller AS (SELECT $2::uuid AS id, $3::boolean AS child, $4::text[] AS hidden)\n SELECT q.request AS \"request!\", COALESCE(item.present, FALSE) AS \"present!\",\n item.id AS \"id?: Uuid\",\nitem.name AS \"name?: String\",\nitem.value AS \"value?: String\",\nitem.role AS \"role?: ContributorRole\",\nitem.position AS \"position?: f64\",\nitem.ordinal AS \"ordinal?: i32\",\n item.position_index AS \"position_index?: i32\",\nitem.created_at AS \"created_at?: DateTime<Utc>\",\nitem.level AS \"level?: i32\",\nitem.rating AS \"rating?: f64\",\nitem.scale AS \"scale?: f64\",\nitem.reviews AS \"reviews?: i32\",\n (q.has_after AND EXISTS (SELECT 1 FROM (SELECT 0 AS level, scheme, external_id FROM work_external_identifiers WHERE work_id = q.parent) x WHERE NOT (x.scheme = ANY(caller.hidden)) AND NOT ((x.level, x.scheme) > (q.after_level, q.after_name)) LIMIT 1)) AS \"previous!\"\n FROM inputs q CROSS JOIN caller\n LEFT JOIN LATERAL (SELECT TRUE AS present, NULL::uuid AS id,\nx.scheme AS name,\nx.external_id AS value,\nNULL::author_role AS role,\nNULL::float8 AS position,\nNULL::integer AS ordinal,\n NULL::integer AS position_index,\nNULL::timestamptz AS created_at,\nx.level AS level,\nNULL::float8 AS rating,\nNULL::float8 AS scale,\nNULL::integer AS reviews\n FROM (SELECT 0 AS level, scheme, external_id FROM work_external_identifiers WHERE work_id = q.parent) x WHERE NOT (x.scheme = ANY(caller.hidden)) AND (NOT q.has_after OR (x.level, x.scheme) > (q.after_level, q.after_name))\n ORDER BY x.level ASC, x.scheme ASC LIMIT (q.first + 1)) item ON TRUE\n WHERE (EXISTS (SELECT 1 FROM manifestations visible WHERE visible.work_id = q.parent)\n OR (NOT caller.child AND EXISTS (SELECT 1 FROM series_works own_membership\n JOIN series_works visible_membership ON visible_membership.series_id = own_membership.series_id\n JOIN manifestations visible ON visible.work_id = visible_membership.work_id\n WHERE own_membership.work_id = q.parent)))\n ORDER BY q.request, item.level ASC, item.name ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "request!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "present!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "id?: Uuid",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "name?: String",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_external_identifiers",
+            "name": "scheme"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "value?: String",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_external_identifiers",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "role?: ContributorRole",
+        "type_info": {
+          "Custom": {
+            "name": "author_role",
+            "kind": {
+              "Enum": [
+                "author",
+                "editor",
+                "translator",
+                "narrator"
+              ]
+            }
+          }
+        },
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "position?: f64",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "ordinal?: i32",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "position_index?: i32",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at?: DateTime<Utc>",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "level?: i32",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "rating?: f64",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "scale?: f64",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "reviews?: i32",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "previous!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid",
+        "Bool",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "480436be409391f5d31c749e7f14f7b4be0e55e306f8738928ca6ee864f431e0"
+}

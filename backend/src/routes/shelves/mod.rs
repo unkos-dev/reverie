@@ -103,7 +103,7 @@ async fn list_shelves(
     OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
     let Query(params) = params?;
-    let (items, next_cursor) = crate::services::reader::shelves(
+    let (items, next_cursor, _) = crate::services::reader::shelves(
         &current_user,
         &state,
         params.cursor.as_deref(),

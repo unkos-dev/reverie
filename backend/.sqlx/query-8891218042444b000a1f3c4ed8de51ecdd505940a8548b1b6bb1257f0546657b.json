@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM shelves s WHERE s.user_id = $1 AND (s.is_system > $2 OR (s.is_system = $2 AND (s.name, s.id) <= ($3, $4))) LIMIT 1) AS \"previous!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "previous!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8891218042444b000a1f3c4ed8de51ecdd505940a8548b1b6bb1257f0546657b"
+}

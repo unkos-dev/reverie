@@ -1,0 +1,146 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH inputs AS (SELECT * FROM jsonb_to_recordset($1::jsonb) AS input(\n request integer, parent uuid, first integer, has_after boolean, after_id uuid, after_name text,\n after_position float8, after_ordinal integer, after_created timestamptz, after_level integer)),\n caller AS (SELECT $2::uuid AS id, $3::boolean AS child, $4::text[] AS hidden)\n SELECT q.request AS \"request!\", COALESCE(item.present, FALSE) AS \"present!\",\n item.id AS \"id?: Uuid\",\nitem.name AS \"name?: String\",\nitem.value AS \"value?: String\",\nitem.role AS \"role?: ContributorRole\",\nitem.position AS \"position?: f64\",\nitem.ordinal AS \"ordinal?: i32\",\n item.position_index AS \"position_index?: i32\",\nitem.created_at AS \"created_at?: DateTime<Utc>\",\nitem.level AS \"level?: i32\",\nitem.rating AS \"rating?: f64\",\nitem.scale AS \"scale?: f64\",\nitem.reviews AS \"reviews?: i32\",\n (q.has_after AND EXISTS (SELECT 1 FROM shelf_items si JOIN manifestations m ON m.id = si.manifestation_id WHERE si.shelf_id = q.parent AND NOT ((si.added_at, m.id) > (q.after_created, q.after_id)) LIMIT 1)) AS \"previous!\"\n FROM inputs q CROSS JOIN caller\n LEFT JOIN LATERAL (SELECT TRUE AS present, m.id AS id,\nNULL::text AS name,\nNULL::text AS value,\nNULL::author_role AS role,\nNULL::float8 AS position,\nNULL::integer AS ordinal,\n NULL::integer AS position_index,\nsi.added_at AS created_at,\nNULL::integer AS level,\nNULL::float8 AS rating,\nNULL::float8 AS scale,\nNULL::integer AS reviews\n FROM shelf_items si JOIN manifestations m ON m.id = si.manifestation_id WHERE si.shelf_id = q.parent AND (NOT q.has_after OR (si.added_at, m.id) > (q.after_created, q.after_id))\n ORDER BY si.added_at ASC, m.id ASC LIMIT (q.first + 1)) item ON TRUE\n WHERE EXISTS (SELECT 1 FROM shelves permitted WHERE permitted.id = q.parent AND permitted.user_id = caller.id)\n ORDER BY q.request, item.created_at ASC, item.id ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "request!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "present!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "id?: Uuid",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "name?: String",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "value?: String",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "role?: ContributorRole",
+        "type_info": {
+          "Custom": {
+            "name": "author_role",
+            "kind": {
+              "Enum": [
+                "author",
+                "editor",
+                "translator",
+                "narrator"
+              ]
+            }
+          }
+        },
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "position?: f64",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "ordinal?: i32",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "position_index?: i32",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at?: DateTime<Utc>",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "shelf_items",
+            "name": "added_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "level?: i32",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "rating?: f64",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "scale?: f64",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "reviews?: i32",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "previous!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid",
+        "Bool",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "7a4cf6a18758a21fe725bf54df6de78e756fe0cc1eb2e68d915db752a5e3f0d6"
+}

@@ -121,7 +121,7 @@ uuid = { version = "1.23.4", features = ["v4", "serde"] }
 zxcvbn = "3"
 isbn = "0.8"
 unicode-normalization = "=0.1.26"
-async-graphql = { version = "=7.2.1", default-features = false }
+async-graphql = { version = "=7.2.1", default-features = false, features = ["dataloader"] }
 async-graphql-axum = "=7.2.1"
 
 [dev-dependencies]

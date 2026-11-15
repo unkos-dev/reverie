@@ -1,11 +1,17 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, field_name, source, new_value AS \"new_value!\", status::text AS \"status!\", confidence_score AS \"confidence_score!\", match_type, observation_count FROM metadata_versions WHERE manifestation_id = $1 AND status = 'pending'::metadata_review_status AND new_value != 'null'::jsonb AND NOT (id = ANY($2::uuid[])) ORDER BY last_seen_at DESC LIMIT $3",
+  "query": "\n        WITH inputs AS (SELECT * FROM jsonb_to_recordset($1::jsonb) AS input(parent uuid, canonical uuid[]))\n        SELECT inputs.parent AS \"manifestation_id!\", v.id AS \"id!\", v.field_name AS \"field_name!\", v.source AS \"source!\",\n               v.new_value AS \"new_value!\", v.status::text AS \"status!\", v.confidence_score AS \"confidence_score!\",\n               v.match_type AS \"match_type!\", v.observation_count AS \"observation_count!\"\n        FROM inputs JOIN manifestations visible ON visible.id = inputs.parent\n        CROSS JOIN LATERAL (\n          SELECT id, field_name, source, new_value, status, confidence_score, match_type, observation_count, last_seen_at\n          FROM metadata_versions WHERE manifestation_id = inputs.parent\n            AND status = 'pending'::metadata_review_status AND new_value != 'null'::jsonb\n            AND NOT (id = ANY(inputs.canonical))\n          ORDER BY last_seen_at DESC LIMIT $2\n        ) v ORDER BY inputs.parent, v.last_seen_at DESC\n    ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
+        "name": "manifestation_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "id!",
         "type_info": "Uuid",
         "origin": {
           "Table": {
@@ -15,8 +21,8 @@
         }
       },
       {
-        "ordinal": 1,
-        "name": "field_name",
+        "ordinal": 2,
+        "name": "field_name!",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -26,8 +32,8 @@
         }
       },
       {
-        "ordinal": 2,
-        "name": "source",
+        "ordinal": 3,
+        "name": "source!",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -37,7 +43,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "new_value!",
         "type_info": "Jsonb",
         "origin": {
@@ -48,13 +54,13 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "status!",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "confidence_score!",
         "type_info": "Float4",
         "origin": {
@@ -65,8 +71,8 @@
         }
       },
       {
-        "ordinal": 6,
-        "name": "match_type",
+        "ordinal": 7,
+        "name": "match_type!",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -76,8 +82,8 @@
         }
       },
       {
-        "ordinal": 7,
-        "name": "observation_count",
+        "ordinal": 8,
+        "name": "observation_count!",
         "type_info": "Int4",
         "origin": {
           "Table": {
@@ -89,12 +95,12 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "UuidArray",
+        "Jsonb",
         "Int8"
       ]
     },
     "nullable": [
+      null,
       false,
       false,
       false,
@@ -105,5 +111,5 @@
       false
     ]
   },
-  "hash": "dabd2a30c62c2091bc6c7ea4ad2843123891e4ed52217a70d7e7ffadc7d1631c"
+  "hash": "a05e5815c2cb22e673e49909fdf83c41639ca7c8f388b0a27d975024e78ef55a"
 }

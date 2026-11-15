@@ -204,8 +204,9 @@ vocabulary junctions through `apply_contributors_patch` and `apply_vocabulary_pa
 (`orchestrator.rs`, `queue.rs`, `field_lock.rs`), which applies accepted canonical values;
 `backend/src/services/writeback/` (`orchestrator.rs`, `queue.rs`), which updates `file_path` and `current_file_hash`
 after a successful on-disk rewrite; and `backend/src/services/metadata/draft.rs`, which writes the `metadata_versions`
-rows the pointer columns name. The production readers include `backend/src/routes/library/mod.rs` and `filters.rs`, and
-the shared `backend/src/routes/sort_spec.rs` and `cursor.rs` modules they import (also used by
+rows the pointer columns name. The shared production reads live in `backend/src/services/reader.rs`, called by the HTTP
+adapters and `backend/src/graphql/library.rs`. Other readers include `backend/src/routes/library/filters.rs`, and the
+shared `backend/src/routes/sort_spec.rs` and `cursor.rs` modules they import (also used by
 `backend/src/routes/shelves/mod.rs`), `backend/src/routes/series/mod.rs`, `backend/src/routes/opds/` (the OPDS catalogue
 subject), and `backend/src/routes/suggest.rs` and `backend/src/routes/library/search.rs` (vocabulary and text search).
 
@@ -214,6 +215,16 @@ The migration grants `SELECT` and `DELETE` on works and manifestations to both r
 `reverie_readonly` retains SELECT, except that path claims have no readonly grant; the Design "Row-level security and
 database context" is the authority on that grant boundary and on the policies that further narrow `manifestations` and
 its three vocabulary junctions.
+
+Graph Work and Manifestation records have distinct base64 domain identities. Shared metadata, contributors and the
+selected series belong to Work. File metadata and caller reading state belong to Manifestation. Growing relations use
+bounded keyset connections. Contributor role and membership position live on edges, without surrogate membership IDs.
+The selected series orders position ascending with nulls last, then series ID. Work manifestations order creation time
+then ID. Series works order membership position with nulls last, then work ID.
+
+`reader.rs` constructs matched metadata values and revisions in one caller-scoped database snapshot. Lazy versions never
+replace that editing baseline. Graph request caches retain one canonical projection per domain ID for the request.
+Direct and nested catalogue lookups enforce permitted manifestation visibility, with explicit shelf ownership checks.
 
 ## Data and state
 
