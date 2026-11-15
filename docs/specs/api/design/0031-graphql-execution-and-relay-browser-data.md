@@ -66,6 +66,12 @@ IDs use standard padded base64 of `Type:<uuid>`, with distinct Work, Manifestati
 `Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed lookup roots return null for malformed,
 wrong-type, hidden and missing records. The User variant resolves only the caller. Reading state has no global ID.
 
+Series, Shelf and Manifestation declare `@fetchable(field_name: "id")`. Their nullable concrete lookup roots are
+`fetch__Series(id: ID!)`, `fetch__Shelf(id: ID!)` and `fetch__Manifestation(id: ID!)`. They share the typed roots' read
+scope guards and visibility checks. Paging fragments on these types set `@refetchable(preferFetchable: true)` so Relay
+refetches through the concrete root. The concrete parent preserves async-graphql's page complexity multipliers when
+validating named fragment spreads. Query paging fragments use their Query root directly.
+
 `frontend/src/lib/relay/reader.ts` contains representative Library, detail, versions, shelf, series, discovery and Node
 queries. The Library and basic detail fragments omit versions. These operations have no UI consumers and publish no
 reader records in a browser workflow.
@@ -109,26 +115,30 @@ The sizes above are explicit representative operation arguments, not server defa
 20-result bound, suggestions their shared 10-result default and 1-20 clamp, and labels their validated input count up to
 60. Zero-size connections still cost one. Checked arithmetic refuses overflow and excessive cost.
 
-The complexity limit is 82,568 in both policies. Temporary async-graphql `Analyzer` measurements of the generated
-operations use the explicit 50-row primary pages and the nested sizes above. The Library operation requests 50 rows. The
-maximum M is 66,054. Its 25 percent margin, rounded up, is 16,514, so the limit is 66,054 + 16,514.
+The complexity limit is 200,000 in both policies. async-graphql `Analyzer` measurements of every trusted operation use
+maximum variable sizes: 100 for primary pages, 50 for pending pages and 60 IDs for labels. Literal sizes remain as
+written. The worst measured cost is 6,901 and the maximum measured depth is 8. The depth limit is 12.
 
-| Operation                |   Cost | Depth |
-| ------------------------ | -----: | ----: |
-| `readerLibraryQuery`     | 28,051 |     8 |
-| `readerDetailQuery`      |    554 |     6 |
-| `readerVersionsQuery`    |    326 |     6 |
-| `readerShelfQuery`       | 28,058 |     9 |
-| `readerShelvesQuery`     |    701 |     4 |
-| `readerSeriesQuery`      | 66,054 |    12 |
-| `readerSearchQuery`      | 11,101 |     7 |
-| `readerSuggestionsQuery` |    132 |     2 |
-| `readerNodeQuery`        |    750 |     6 |
-| `viewerQuery`            |      4 |     2 |
+| Operation                          |  Cost | Depth |
+| ---------------------------------- | ----: | ----: |
+| `readerLibraryQuery`               | 6,901 |     8 |
+| `readerLibraryPaginationQuery`     | 6,901 |     8 |
+| `readerSeriesWorksPaginationQuery` | 5,304 |     8 |
+| `readerSeriesQuery`                | 2,656 |     8 |
+| `readerShelvesPaginationQuery`     | 1,001 |     4 |
+| `readerSearchQuery`                |   861 |     7 |
+| `readerShelfItemsPaginationQuery`  |   704 |     5 |
+| `readerVersionsQuery`              |   606 |     6 |
+| `readerVersionsPaginationQuery`    |   606 |     6 |
+| `readerShelvesQuery`               |   501 |     4 |
+| `readerSuggestionsQuery`           |   368 |     2 |
+| `readerShelfQuery`                 |   356 |     5 |
+| `readerDetailQuery`                |   132 |     6 |
+| `viewerQuery`                      |     4 |     2 |
+| `readerNodeQuery`                  |     2 |     2 |
 
-The finite depth limit is 12, the maximum observed depth. Two full Library pages cost 56,102 and fit; three cost 84,153
-and exceed the limit. Both policies admit representative operations and refuse excess cost and depth. async-graphql
-excludes `__typename` from these counts. Axum's default 2 MiB JSON-body limit still applies.
+Both policies refuse excess cost and depth. async-graphql excludes `__typename` from these counts. Axum's default 2 MiB
+JSON-body limit still applies.
 
 `versions.rs` resolves only a selected Manifestation `versions` field. The pending count is exact across all eligible
 rows. The pending connection orders `last_seen_at DESC, id DESC`, with a parent-bound cursor, a per-parent SQL window

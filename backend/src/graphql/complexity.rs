@@ -1,7 +1,7 @@
 use crate::{error::AppError, services::reader};
 use async_graphql::{ServerError, ServerResult};
 
-pub(super) const LIMIT: usize = 82_568;
+pub(super) const LIMIT: usize = 200_000;
 pub(super) const DEPTH: usize = 12;
 
 pub(super) fn effective_page(first: i32, ceiling: u32) -> Result<i32, AppError> {

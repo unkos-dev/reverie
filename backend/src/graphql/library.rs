@@ -154,7 +154,7 @@ impl Work {
 }
 
 #[derive(Clone, SimpleObject)]
-#[graphql(complex)]
+#[graphql(complex, directive = super::fetchable::apply("id".to_owned()))]
 pub(super) struct Manifestation {
     id: ID,
     #[graphql(skip)]
@@ -475,7 +475,7 @@ pub(super) struct ExternalRating {
 }
 
 #[derive(Clone, SimpleObject)]
-#[graphql(complex)]
+#[graphql(complex, directive = super::fetchable::apply("id".to_owned()))]
 pub(super) struct Shelf {
     id: ID,
     item_count: i32,
@@ -528,7 +528,7 @@ impl Shelf {
 }
 
 #[derive(Clone, SimpleObject)]
-#[graphql(complex)]
+#[graphql(complex, directive = super::fetchable::apply("id".to_owned()))]
 pub(super) struct Series {
     id: ID,
     #[graphql(skip)]

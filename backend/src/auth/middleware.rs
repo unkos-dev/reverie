@@ -76,6 +76,17 @@ pub struct CurrentUser {
 }
 
 impl CurrentUser {
+    #[cfg(test)]
+    pub(crate) const fn without_scopes_for_test(user_id: Uuid) -> Self {
+        Self {
+            user_id,
+            role: Role::Adult,
+            is_child: false,
+            scopes: Vec::new(),
+            via_session: false,
+        }
+    }
+
     /// Require a browser session for credential administration.
     ///
     /// # Errors

@@ -55,6 +55,9 @@ impl async_graphql::Guard for ReadScope {
     }
 }
 
+#[async_graphql::TypeDirective(location = "Object", rename_args = "snake_case")]
+fn fetchable(field_name: String) {}
+
 /// Caller-owned identity, independent of existing browser account projections.
 #[derive(async_graphql::SimpleObject)]
 pub struct Viewer {
@@ -154,6 +157,30 @@ impl Query {
         id: async_graphql::ID,
     ) -> async_graphql::Result<Option<library::Series>> {
         library::series(ctx, &id).await
+    }
+    #[graphql(name = "fetch__Series", guard = "ReadScope")]
+    async fn fetch_series(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Series>> {
+        library::series(ctx, &id).await
+    }
+    #[graphql(name = "fetch__Shelf", guard = "ReadScope")]
+    async fn fetch_shelf(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Shelf>> {
+        library::shelf(ctx, &id).await
+    }
+    #[graphql(name = "fetch__Manifestation", guard = "ReadScope")]
+    async fn fetch_manifestation(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Manifestation>> {
+        library::manifestation(ctx, &id).await
     }
     #[graphql(
         guard = "ReadScope",
@@ -836,6 +863,41 @@ mod tests {
             .await;
         response.assert_status_ok();
         response.json()
+    }
+
+    // Authorisation and private-data boundary for the concrete refetch roots.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn graphql_fetchable_boundary(pool: PgPool) {
+        let fixture = reader_fixture(&pool).await;
+        let app = db::app_pool_for(&pool).await;
+        let (_, child) = db::create_child_user_and_basic_auth(&app, "fetch-hidden").await;
+        let schema = schema(ExecutionPolicy::Development);
+        for (field, id) in [
+            (
+                "fetch__Manifestation",
+                id::encode("Manifestation", fixture.hidden),
+            ),
+            ("fetch__Shelf", id::encode("Shelf", fixture.other_shelf)),
+            ("fetch__Series", id::encode("Series", fixture.series)),
+        ] {
+            let query = format!("query($id: ID!) {{ {field}(id: $id) {{ id }} }}");
+            let variables = json!({"id": id.as_str()});
+            let denied = schema
+                .execute(
+                    async_graphql::Request::new(&query)
+                        .variables(async_graphql::Variables::from_json(variables.clone()))
+                        .data(CurrentUser::without_scopes_for_test(fixture.admin_id)),
+                )
+                .await;
+            assert_eq!(denied.errors.len(), 1, "{denied:?}");
+            assert_eq!(
+                denied.errors[0].extensions.as_ref().unwrap().get("code"),
+                Some(&async_graphql::Value::from("forbidden"))
+            );
+            let hidden = reader_query(&fixture, &child, &query, variables).await;
+            assert!(hidden.get("errors").is_none(), "{hidden}");
+            assert!(hidden["data"][field].is_null(), "{hidden}");
+        }
     }
 
     // Private-data boundary; REV-REQ-0009 and REV-REQ-0059 retain caller visibility and shelf ownership.

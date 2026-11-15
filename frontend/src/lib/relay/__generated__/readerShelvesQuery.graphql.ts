@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<a4f51f75726c1e7b3b839e33d111e2df>>
- * @relayHash 802b8268121dcc677e5df8779269eafd
+ * @generated SignedSource<<0f56bcfa51b228b8a5e9bef7f6f7bc89>>
+ * @relayHash 11cf3373c8dd608c67cf893f11ceb1be
  * @lightSyntaxTransform
  */
 
@@ -8,33 +8,13 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 2c837b92eb377451d1c2f5dc777282b27df5b6a798d4076b61e19bf19cc7c59b
+// @relayRequestID f62a7246413980413e46be70dc316003cdd66d5cb6561e8c9b143803a1046bd2
 
 import { ConcreteRequest } from "relay-runtime";
-export type readerShelvesQuery$variables = {
-  after?: string | null | undefined;
-  count?: number | null | undefined;
-};
+import { FragmentRefs } from "relay-runtime";
+export type readerShelvesQuery$variables = Record<PropertyKey, never>;
 export type readerShelvesQuery$data = {
-  readonly shelves: {
-    readonly edges: ReadonlyArray<{
-      readonly cursor: string;
-      readonly node: {
-        readonly createdAt: string;
-        readonly id: string;
-        readonly isSystem: boolean;
-        readonly itemCount: number;
-        readonly name: string;
-        readonly updatedAt: string;
-      };
-    }>;
-    readonly pageInfo: {
-      readonly endCursor: string | null | undefined;
-      readonly hasNextPage: boolean;
-      readonly hasPreviousPage: boolean;
-      readonly startCursor: string | null | undefined;
-    };
-  };
+  readonly " $fragmentSpreads": FragmentRefs<"readerShelves">;
 };
 export type readerShelvesQuery = {
   response: readerShelvesQuery$data;
@@ -42,169 +22,148 @@ export type readerShelvesQuery = {
 };
 
 const node: ConcreteRequest = (function () {
-  var v0 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "after",
+  var v0 = [
+    {
+      kind: "Literal",
+      name: "first",
+      value: 50,
     },
-    v1 = {
-      defaultValue: 50,
-      kind: "LocalArgument",
-      name: "count",
-    },
-    v2 = [
-      {
-        alias: null,
-        args: [
-          {
-            kind: "Variable",
-            name: "after",
-            variableName: "after",
-          },
-          {
-            kind: "Variable",
-            name: "first",
-            variableName: "count",
-          },
-        ],
-        concreteType: "ShelfConnection",
-        kind: "LinkedField",
-        name: "shelves",
-        plural: false,
-        selections: [
-          {
-            alias: null,
-            args: null,
-            concreteType: "ShelfEdge",
-            kind: "LinkedField",
-            name: "edges",
-            plural: true,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "cursor",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                concreteType: "Shelf",
-                kind: "LinkedField",
-                name: "node",
-                plural: false,
-                selections: [
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "id",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "name",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "isSystem",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "itemCount",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "createdAt",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "updatedAt",
-                    storageKey: null,
-                  },
-                ],
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "PageInfo",
-            kind: "LinkedField",
-            name: "pageInfo",
-            plural: false,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "hasNextPage",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "hasPreviousPage",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "startCursor",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "endCursor",
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-        ],
-        storageKey: null,
-      },
-    ];
+  ];
   return {
     fragment: {
-      argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/],
+      argumentDefinitions: [],
       kind: "Fragment",
       metadata: null,
       name: "readerShelvesQuery",
-      selections: v2 /*:: as any*/,
+      selections: [
+        {
+          args: null,
+          kind: "FragmentSpread",
+          name: "readerShelves",
+        },
+      ],
       type: "Query",
       abstractKey: null,
     },
     kind: "Request",
     operation: {
-      argumentDefinitions: [v1 /*:: as any*/, v0 /*:: as any*/],
+      argumentDefinitions: [],
       kind: "Operation",
       name: "readerShelvesQuery",
-      selections: v2 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v0 /*:: as any*/,
+          concreteType: "ShelfConnection",
+          kind: "LinkedField",
+          name: "shelves",
+          plural: false,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              concreteType: "ShelfEdge",
+              kind: "LinkedField",
+              name: "edges",
+              plural: true,
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "Shelf",
+                  kind: "LinkedField",
+                  name: "node",
+                  plural: false,
+                  selections: [
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "id",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "name",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "isSystem",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "itemCount",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "__typename",
+                      storageKey: null,
+                    },
+                  ],
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "cursor",
+                  storageKey: null,
+                },
+              ],
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              concreteType: "PageInfo",
+              kind: "LinkedField",
+              name: "pageInfo",
+              plural: false,
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "endCursor",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "hasNextPage",
+                  storageKey: null,
+                },
+              ],
+              storageKey: null,
+            },
+          ],
+          storageKey: "shelves(first:50)",
+        },
+        {
+          alias: null,
+          args: v0 /*:: as any*/,
+          filters: null,
+          handle: "connection",
+          key: "readerShelves_shelves",
+          kind: "LinkedHandle",
+          name: "shelves",
+        },
+      ],
     },
     params: {
-      id: "2c837b92eb377451d1c2f5dc777282b27df5b6a798d4076b61e19bf19cc7c59b",
+      id: "f62a7246413980413e46be70dc316003cdd66d5cb6561e8c9b143803a1046bd2",
       metadata: {},
       name: "readerShelvesQuery",
       operationKind: "query",
@@ -213,6 +172,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "7fcebf78bbba05613333104f842f2fae";
+(node as any).hash = "5fa5b67f8754cf4a24798f70379d9088";
 
 export default node;

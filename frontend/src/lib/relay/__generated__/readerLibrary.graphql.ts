@@ -1,0 +1,175 @@
+/**
+ * @generated SignedSource<<92d1b6fe19ae7769aa9ecb0da6951aec>>
+ * @lightSyntaxTransform
+ */
+
+/* tslint:disable */
+/* eslint-disable */
+// @ts-nocheck
+
+import { ReaderFragment } from "relay-runtime";
+import { FragmentRefs } from "relay-runtime";
+export type readerLibrary$data = {
+  readonly books: {
+    readonly edges: ReadonlyArray<{
+      readonly node: {
+        readonly " $fragmentSpreads": FragmentRefs<"readerLibraryBook">;
+      };
+    }>;
+  };
+  readonly " $fragmentType": "readerLibrary";
+};
+export type readerLibrary$key = {
+  readonly " $data"?: readerLibrary$data;
+  readonly " $fragmentSpreads": FragmentRefs<"readerLibrary">;
+};
+
+import readerLibraryPaginationQuery_graphql from "./readerLibraryPaginationQuery.graphql";
+
+const node: ReaderFragment = (function () {
+  var v0 = ["books"];
+  return {
+    argumentDefinitions: [
+      {
+        defaultValue: 50,
+        kind: "LocalArgument",
+        name: "count",
+      },
+      {
+        defaultValue: null,
+        kind: "LocalArgument",
+        name: "cursor",
+      },
+      {
+        defaultValue: null,
+        kind: "LocalArgument",
+        name: "filter",
+      },
+      {
+        defaultValue: null,
+        kind: "LocalArgument",
+        name: "sort",
+      },
+    ],
+    kind: "Fragment",
+    metadata: {
+      connection: [
+        {
+          count: "count",
+          cursor: "cursor",
+          direction: "forward",
+          path: v0 /*:: as any*/,
+        },
+      ],
+      refetch: {
+        connection: {
+          forward: {
+            count: "count",
+            cursor: "cursor",
+          },
+          backward: null,
+          path: v0 /*:: as any*/,
+        },
+        fragmentPathInResult: [],
+        operation: readerLibraryPaginationQuery_graphql,
+      },
+    },
+    name: "readerLibrary",
+    selections: [
+      {
+        alias: "books",
+        args: [
+          {
+            kind: "Variable",
+            name: "filter",
+            variableName: "filter",
+          },
+          {
+            kind: "Variable",
+            name: "sort",
+            variableName: "sort",
+          },
+        ],
+        concreteType: "ManifestationConnection",
+        kind: "LinkedField",
+        name: "__readerLibrary_books_connection",
+        plural: false,
+        selections: [
+          {
+            alias: null,
+            args: null,
+            concreteType: "ManifestationEdge",
+            kind: "LinkedField",
+            name: "edges",
+            plural: true,
+            selections: [
+              {
+                alias: null,
+                args: null,
+                concreteType: "Manifestation",
+                kind: "LinkedField",
+                name: "node",
+                plural: false,
+                selections: [
+                  {
+                    args: null,
+                    kind: "FragmentSpread",
+                    name: "readerLibraryBook",
+                  },
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "__typename",
+                    storageKey: null,
+                  },
+                ],
+                storageKey: null,
+              },
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "cursor",
+                storageKey: null,
+              },
+            ],
+            storageKey: null,
+          },
+          {
+            alias: null,
+            args: null,
+            concreteType: "PageInfo",
+            kind: "LinkedField",
+            name: "pageInfo",
+            plural: false,
+            selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "endCursor",
+                storageKey: null,
+              },
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "hasNextPage",
+                storageKey: null,
+              },
+            ],
+            storageKey: null,
+          },
+        ],
+        storageKey: null,
+      },
+    ],
+    type: "Query",
+    abstractKey: null,
+  };
+})();
+
+(node as any).hash = "242b6a850451e9051553aedb38207131";
+
+export default node;

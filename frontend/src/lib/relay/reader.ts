@@ -1,197 +1,121 @@
 import { graphql } from "react-relay";
 
-export const readerWork = graphql`
-  fragment readerWork on Work @argumentDefinitions(count: { type: "Int", defaultValue: 5 }) {
+export const readerLibraryBook = graphql`
+  fragment readerLibraryBook on Manifestation {
     id
-    title
-    subtitle
-    description
-    language
-    selectedSeries {
-      node {
-        id
-        name
-      }
-      position
-    }
-    authors(first: $count) {
-      edges {
-        cursor
-        role
-        position
-        node {
-          id
-          name
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
-    contributors(first: $count) {
-      edges {
-        cursor
-        role
-        position
-        node {
-          id
-          name
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
-    identifiers(first: $count) {
-      edges {
-        cursor
-        node {
-          level
-          scheme
-          value
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
-  }
-`;
-
-export const readerBook = graphql`
-  fragment readerBook on Manifestation
-  @argumentDefinitions(
-    count: { type: "Int", defaultValue: 5 }
-    tagCount: { type: "Int", defaultValue: 10 }
-  ) {
-    id
-    work {
-      ...readerWork
-    }
-    isbn13
-    isbn10
-    isbnMismatch
-    pages
-    publisher
-    publicationDate
-    createdAt
-    updatedAt
     coverUrl
-    contentRating
-    ingestionStatus
-    validationStatus
-    enrichmentStatus
+    isbn13
+    pages
+    createdAt
+    work {
+      id
+      title
+      subtitle
+      authors(first: 5) {
+        edges {
+          node {
+            name
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+      selectedSeries {
+        node {
+          id
+          name
+        }
+        position
+      }
+    }
     metadata {
       workId
       manifestationId
       etag
       title
       subtitle
-      description
-      language
-      isbn10
       isbn13
       pages
-      publisher
-      publicationDate
-      contentRating
     }
     readingState {
       etag
       status
       rating
-      notes
-      progressPct
-      startedAt
-      finishedAt
-      lastReadAt
     }
-    genres(first: $count) {
-      edges {
-        cursor
+  }
+`;
+
+export const readerDetailBook = graphql`
+  fragment readerDetailBook on Manifestation {
+    id
+    coverUrl
+    isbn13
+    isbn10
+    isbnMismatch
+    publisher
+    publicationDate
+    ingestionStatus
+    validationStatus
+    enrichmentStatus
+    createdAt
+    work {
+      id
+      title
+      description
+      language
+      authors(first: 5) {
+        edges {
+          node {
+            name
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+      selectedSeries {
         node {
           id
+          name
+        }
+        position
+      }
+    }
+    tags(first: 10) {
+      edges {
+        node {
           name
         }
       }
       pageInfo {
         hasNextPage
-        hasPreviousPage
-        startCursor
         endCursor
       }
     }
-    moods(first: $count) {
-      edges {
-        cursor
-        node {
-          id
-          name
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
+    versions {
+      pendingCount
     }
-    tags(first: $tagCount) {
+  }
+`;
+
+export const readerLibrary = graphql`
+  fragment readerLibrary on Query
+  @argumentDefinitions(
+    count: { type: "Int", defaultValue: 50 }
+    cursor: { type: "String" }
+    filter: { type: "BooksFilter" }
+    sort: { type: "[SortLevel!]" }
+  )
+  @refetchable(queryName: "readerLibraryPaginationQuery") {
+    books(first: $count, after: $cursor, filter: $filter, sort: $sort)
+      @connection(key: "readerLibrary_books") {
       edges {
-        cursor
         node {
-          id
-          name
+          ...readerLibraryBook
         }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
-    identifiers(first: $count) {
-      edges {
-        cursor
-        node {
-          level
-          scheme
-          value
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
-    ratings(first: $count) {
-      edges {
-        cursor
-        node {
-          source
-          rating
-          scale
-          reviewCount
-          fetchedAt
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
       }
     }
   }
@@ -200,61 +124,38 @@ export const readerBook = graphql`
 export const readerLibraryQuery = graphql`
   query readerLibraryQuery(
     $count: Int = 50
-    $after: String
+    $cursor: String
     $filter: BooksFilter
     $sort: [SortLevel!]
   ) {
-    books(first: $count, after: $after, filter: $filter, sort: $sort) {
-      edges {
-        cursor
-        node {
-          ...readerBook
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
+    ...readerLibrary @arguments(count: $count, cursor: $cursor, filter: $filter, sort: $sort)
   }
 `;
 
 export const readerDetailQuery = graphql`
   query readerDetailQuery($id: ID!) {
     manifestation(id: $id) {
-      ...readerBook
+      ...readerDetailBook
     }
   }
 `;
 
-export const readerVersionsQuery = graphql`
-  query readerVersionsQuery($count: Int = 20, $id: ID!) {
-    manifestation(id: $id) {
-      id
-      versions {
-        pendingCount
-        acceptedCount
-        pending(first: $count) {
-          edges {
-            cursor
-            node {
-              id
-              fieldName
-              source
-              newValue
-              status
-              confidenceScore
-              matchType
-              observationCount
-            }
-          }
-          pageInfo {
-            hasNextPage
-            hasPreviousPage
-            startCursor
-            endCursor
+export const readerVersions = graphql`
+  fragment readerVersions on Manifestation
+  @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
+  @refetchable(queryName: "readerVersionsPaginationQuery", preferFetchable: true) {
+    id
+    versions {
+      pendingCount
+      pending(first: $count, after: $cursor) @connection(key: "readerVersions_pending") {
+        edges {
+          node {
+            id
+            fieldName
+            source
+            newValue
+            confidenceScore
+            matchType
           }
         }
       }
@@ -262,27 +163,55 @@ export const readerVersionsQuery = graphql`
   }
 `;
 
-export const readerShelfQuery = graphql`
-  query readerShelfQuery($count: Int = 50, $id: ID!, $after: String) {
-    shelf(id: $id) {
-      id
-      name
-      isSystem
-      itemCount
-      createdAt
-      updatedAt
-      items(first: $count, after: $after) {
-        edges {
-          cursor
-          node {
-            ...readerBook
-          }
+export const readerVersionsQuery = graphql`
+  query readerVersionsQuery($id: ID!, $count: Int = 20, $cursor: String) {
+    manifestation(id: $id) {
+      ...readerVersions @arguments(count: $count, cursor: $cursor)
+    }
+  }
+`;
+
+export const readerShelfItems = graphql`
+  fragment readerShelfItems on Shelf
+  @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
+  @refetchable(queryName: "readerShelfItemsPaginationQuery", preferFetchable: true) {
+    items(first: $count, after: $cursor) @connection(key: "readerShelfItems_items") {
+      edges {
+        node {
+          id
         }
-        pageInfo {
-          hasNextPage
-          hasPreviousPage
-          startCursor
-          endCursor
+      }
+    }
+  }
+`;
+
+export const readerShelf = graphql`
+  fragment readerShelf on Shelf {
+    id
+    name
+    ...readerShelfItems
+  }
+`;
+
+export const readerShelfQuery = graphql`
+  query readerShelfQuery($id: ID!) {
+    shelf(id: $id) {
+      ...readerShelf
+    }
+  }
+`;
+
+export const readerShelves = graphql`
+  fragment readerShelves on Query
+  @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
+  @refetchable(queryName: "readerShelvesPaginationQuery") {
+    shelves(first: $count, after: $cursor) @connection(key: "readerShelves_shelves") {
+      edges {
+        node {
+          id
+          name
+          isSystem
+          itemCount
         }
       }
     }
@@ -290,65 +219,79 @@ export const readerShelfQuery = graphql`
 `;
 
 export const readerShelvesQuery = graphql`
-  query readerShelvesQuery($count: Int = 50, $after: String) {
-    shelves(first: $count, after: $after) {
+  query readerShelvesQuery {
+    ...readerShelves
+  }
+`;
+
+export const readerSeriesWorks = graphql`
+  fragment readerSeriesWorks on Series
+  @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
+  @refetchable(queryName: "readerSeriesWorksPaginationQuery", preferFetchable: true) {
+    works(first: $count, after: $cursor) @connection(key: "readerSeriesWorks_works") {
       edges {
-        cursor
+        position
         node {
           id
-          name
-          isSystem
-          itemCount
-          createdAt
-          updatedAt
+          title
+          authors(first: 5) {
+            edges {
+              node {
+                name
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+          manifestations(first: 1) {
+            edges {
+              node {
+                id
+                coverUrl
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
         }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
       }
     }
   }
 `;
 
+export const readerSeries = graphql`
+  fragment readerSeries on Series {
+    id
+    name
+    ...readerSeriesWorks
+  }
+`;
+
 export const readerSeriesQuery = graphql`
-  query readerSeriesQuery(
-    $manifestationCount: Int = 2
-    $count: Int = 50
-    $id: ID!
-    $after: String
-  ) {
+  query readerSeriesQuery($id: ID!) {
     series(id: $id) {
-      id
-      name
-      works(first: $count, after: $after) {
+      ...readerSeries
+    }
+  }
+`;
+
+export const readerSearchHit = graphql`
+  fragment readerSearchHit on Manifestation {
+    id
+    work {
+      title
+      authors(first: 5) {
         edges {
-          cursor
-          position
           node {
-            ...readerWork
-            manifestations(first: $manifestationCount) {
-              edges {
-                cursor
-                node {
-                  ...readerBook
-                }
-              }
-              pageInfo {
-                hasNextPage
-                hasPreviousPage
-                startCursor
-                endCursor
-              }
-            }
+            name
           }
         }
         pageInfo {
           hasNextPage
-          hasPreviousPage
-          startCursor
           endCursor
         }
       }
@@ -361,7 +304,7 @@ export const readerSearchQuery = graphql`
     search(q: $q) {
       snippet
       manifestation {
-        ...readerBook
+        ...readerSearchHit
       }
     }
   }
@@ -408,26 +351,6 @@ export const readerNodeQuery = graphql`
   query readerNodeQuery($id: ID!) {
     node(id: $id) {
       id
-      ... on Manifestation {
-        ...readerBook @alias(as: "manifestation")
-      }
-      ... on Work {
-        ...readerWork @alias(as: "work")
-      }
-      ... on Shelf {
-        name
-        isSystem
-        itemCount
-        createdAt
-        updatedAt
-      }
-      ... on Series {
-        name
-      }
-      ... on Viewer {
-        displayName
-        isChild
-      }
     }
   }
 `;

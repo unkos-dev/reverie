@@ -198,7 +198,7 @@ A scalar that can represent any JSON value.
 """
 scalar JSON
 
-type Manifestation implements Node {
+type Manifestation implements Node @fetchable(field_name: "id") {
   id: ID!
   versions: MetadataVersions!
   work: Work
@@ -392,6 +392,9 @@ type Query {
   manifestation(id: ID!): Manifestation
   shelf(id: ID!): Shelf
   series(id: ID!): Series
+  fetch__Series(id: ID!): Series
+  fetch__Shelf(id: ID!): Shelf
+  fetch__Manifestation(id: ID!): Manifestation
   books(first: Int!, after: String, filter: BooksFilter, sort: [SortLevel!]): ManifestationConnection!
   shelves(first: Int!, after: String): ShelfConnection!
   search(q: String!): [SearchHit!]!
@@ -426,7 +429,7 @@ type SelectedSeries {
   position: Float
 }
 
-type Series implements Node {
+type Series implements Node @fetchable(field_name: "id") {
   id: ID!
   name: String!
   sortName: String!
@@ -438,7 +441,7 @@ type SeriesSuggestion {
   value: String!
 }
 
-type Shelf implements Node {
+type Shelf implements Node @fetchable(field_name: "id") {
   id: ID!
   itemCount: Int!
   name: String!
@@ -580,6 +583,7 @@ type WorkEdge {
   cursor: String!
 }
 
+directive @fetchable(field_name: String!) on OBJECT
 """
 Directs the executor to include this field or fragment only when the `if` argument is true.
 """
