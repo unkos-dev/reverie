@@ -30,20 +30,22 @@ export function TopBar({ onOpenSearch }: Readonly<{ onOpenSearch: () => void }>)
     <>
       <header
         data-chrome=""
-        className="shell-bar sticky top-0 z-30 mb-3 flex h-[52px] items-center gap-3 px-3 lg:top-3 lg:rounded-lg lg:border lg:border-hairline lg:shadow-raised"
+        className="shell-bar sticky top-0 z-30 mb-3 flex h-[52px] items-center gap-3 px-3 lg:top-3 lg:grid lg:grid-cols-[1fr_minmax(0,560px)_1fr] lg:rounded-lg lg:border lg:border-hairline lg:shadow-raised"
       >
-        <Link href="/library" aria-label="Reverie library" className="shrink-0">
-          <Lockup size={16} theme={effective} />
-        </Link>
-        <div className="hidden lg:block">
-          <PrimaryNavigation />
+        <div className="flex shrink-0 items-center gap-3">
+          <Link href="/library" aria-label="Reverie library" className="shrink-0">
+            <Lockup size={16} theme={effective} />
+          </Link>
+          <div className="hidden lg:block">
+            <PrimaryNavigation />
+          </div>
         </div>
         <div className="flex min-w-0 flex-1 justify-end lg:justify-center">
           <Button
             variant="ghost"
             aria-label="Search library"
             onPress={onOpenSearch}
-            className="border-hairline text-fg-muted h-9 w-10 rounded-md lg:w-full lg:max-w-[560px] lg:justify-start lg:border lg:bg-sheet/60 2xl:absolute 2xl:left-1/2 2xl:top-1/2 2xl:w-[30%] 2xl:-translate-x-1/2 2xl:-translate-y-1/2"
+            className="border-hairline text-fg-muted h-9 w-10 rounded-md lg:w-full lg:justify-start lg:border lg:bg-sheet/60"
           >
             <Search aria-hidden="true" strokeWidth={1.7} className="size-4" />
             <span className="hidden truncate lg:inline">Search title, author, series or ISBN</span>
@@ -52,9 +54,11 @@ export function TopBar({ onOpenSearch }: Readonly<{ onOpenSearch: () => void }>)
             </kbd>
           </Button>
         </div>
-        {me?.role === "admin" ? <AdminNavigation /> : null}
-        <div className="shrink-0 lg:border-l lg:border-hairline lg:pl-2">
-          <UserChip />
+        <div className="flex shrink-0 items-center gap-3 lg:justify-self-end">
+          {me?.role === "admin" ? <AdminNavigation /> : null}
+          <div className="shrink-0 lg:border-l lg:border-hairline lg:pl-2">
+            <UserChip />
+          </div>
         </div>
       </header>
       <div data-chrome="" className="lg:hidden">
