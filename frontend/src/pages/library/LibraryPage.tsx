@@ -60,7 +60,6 @@ import { GridShortcutsDialog, GridShortcutsTrigger } from "./table/GridShortcuts
 import { FieldError } from "@/components/ui/field";
 import { BatchBar } from "./BatchBar";
 import { ShelfHeader } from "./ShelfHeader";
-import { ShelfTabs } from "./ShelfTabs";
 import { EmptyLibrary } from "./EmptyLibrary";
 import { FilterChips } from "./FilterChips";
 import { LibraryToolbar } from "./LibraryToolbar";
@@ -255,7 +254,7 @@ export function LibraryPage(): ReactElement {
     staleTime: 60_000,
   });
   useEffect(() => {
-    if (shelvesError) console.error("[BatchBar] shelves fetch failed", shelvesQueryError);
+    if (shelvesError) console.error("[LibraryPage] shelves fetch failed", shelvesQueryError);
   }, [shelvesError, shelvesQueryError]);
 
   const batch = useMutation({
@@ -275,7 +274,7 @@ export function LibraryPage(): ReactElement {
           succeeded.push(id);
         } catch (error) {
           failed.push(id);
-          console.error("[BatchBar] add to shelf failed", { id, error });
+          console.error("[LibraryPage] add to shelf failed", { id, error });
         }
       }
       return { succeeded, failed };
@@ -369,13 +368,6 @@ export function LibraryPage(): ReactElement {
               : "px-3 pb-3 sm:px-5"
           }
         >
-          <ShelfTabs
-            shelves={shelves ?? []}
-            selected={filterState.shelf}
-            onSelect={(id) => {
-              commitAll((current) => ({ ...current, shelf: id === null ? [] : [id] }));
-            }}
-          />
           <ShelfHeader
             shelves={shelves ?? []}
             selected={filterState.shelf}

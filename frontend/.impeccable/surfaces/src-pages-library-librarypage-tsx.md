@@ -32,11 +32,11 @@ STORY: The curator sees which shelf is open and how much of it is read, finds th
 corrects them in place without leaving the table.
 
 FIRST VIEWPORT: At 1920 by 1080: a floating top bar with wordmark, primary navigation, centred search and account
-controls. Below it one sheet: shelf tabs with counts; the shelf name at display size with its book count; a
-reading-state bar with read, reading and unread counts on the left and needs-attention counts on the right; one control
-row holding filter chips, result count, save state, undo, Table or Covers, row density, Columns and Filters; then the
-table with sortable headers and 52px rows. The primary action, Add to shelf, sits in a floating batch bar at bottom
-centre when rows are selected.
+controls. Below it one sheet: the shelf name at display size with its book count, collapsing to one line once the table
+scrolls; a reading-state bar with read, reading and unread counts on the left and needs-attention counts on the right;
+one control row holding filter chips, result count, save state, undo, Table or Covers, row density, Columns and Filters;
+then the table with sortable headers and 52px rows. The primary action, Add to shelf, sits in a floating batch bar at
+bottom centre when rows are selected.
 
 SIGNATURE: Reading progress, drawn as the same bar in the shelf header, in each table row and along the bottom edge of
 each cover. Motion grammar: panels and bars slide and fade on a short ease-out; the table narrows beside the filter
@@ -52,5 +52,5 @@ every shipping raster carrying its provenance
 
 - Which server-dependent parts ship first: reading-state totals, needs-attention counts, filter counts, sorting on every
   column.
-- Shelf tab overflow rule; shelf header collapse on scroll; cover-size control in the Covers view.
+- Cover-size control in the Covers view.
 - Reduced-effects setting is a follow-up.

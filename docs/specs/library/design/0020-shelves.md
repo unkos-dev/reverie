@@ -53,7 +53,7 @@ same two tables directly by SQL rather than through this module's Rust functions
 catalogue subject, not here — the OPDS EPUB download route is not shelf-scoped and never queries `shelves` or
 `shelf_items` itself, so it is not a dependent of this subject; the Design "Books list query contract"'s shelf filters,
 which require ownership of every requested shelf and match no rows if any ID is foreign or unknown; and, on the client,
-the library filter rail's shelf facet, the filter chips row, the Library shelf tabs, and the library batch bar's "add
+the library filter rail's shelf facet, the filter chips row, the Library shelf header, and the library batch bar's "add
 selection to shelf" action — all described below only as consumers, since none of them owns shelf state.
 
 ## Structure
@@ -87,8 +87,8 @@ selection to shelf" action — all described below only as consumers, since none
 - Three further client surfaces read the shelf list or a shelf's items as an auxiliary concern, degrading in place
   rather than throwing to a route boundary on failure: `components/shell/FilterRail.tsx` (the shelf filter facet),
   `pages/library/FilterChips.tsx` (rendering a shelf id filter chip's display name), and `pages/library/LibraryPage.tsx`
-  (the shelf tabs and the batch bar's "add selection to shelf" action, which calls `addShelfItem` once per selected
-  manifestation in a serial loop). None of these three owns shelf state; each is a `useQuery` reader (not
+  (the shelf header's shelf name and the batch bar's "add selection to shelf" action, which calls `addShelfItem` once
+  per selected manifestation in a serial loop). None of these three owns shelf state; each is a `useQuery` reader (not
   `useSuspenseQuery`) that logs its own failure, the tier the `api/shelves.ts` module doc assigns it.
 
 ### State-writer census
