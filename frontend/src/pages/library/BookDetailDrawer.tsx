@@ -120,7 +120,7 @@ function DrawerBody({ bookId }: Readonly<{ bookId: string }>): ReactElement {
 
   return (
     <div className="flex flex-col">
-      <div className="border-border bg-surface-1 border-b p-6">
+      <div className="border-border bg-surface border-b p-6">
         <SheetHeader className="mb-4 p-0">
           <p className="text-fg-muted font-mono text-[0.65rem] uppercase tracking-[0.12em]">
             Book details

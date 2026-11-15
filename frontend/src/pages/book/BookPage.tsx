@@ -68,7 +68,7 @@ function BookContent({ id }: Readonly<BookContentProps>): ReactElement {
       </nav>
       <div className="grid grid-cols-1 gap-10 md:grid-cols-[280px_1fr]">
         <aside className="md:sticky md:top-10 md:self-start">
-          <div className="border-border bg-surface-1 relative aspect-[2/3] overflow-hidden rounded-md border">
+          <div className="border-border bg-surface relative aspect-[2/3] overflow-hidden rounded-md border">
             <DetailCover book={book} />
           </div>
         </aside>
