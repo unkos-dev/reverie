@@ -95,9 +95,6 @@ export const readerDetailBook = graphql`
         endCursor
       }
     }
-    versions {
-      pendingCount
-    }
   }
 `;
 

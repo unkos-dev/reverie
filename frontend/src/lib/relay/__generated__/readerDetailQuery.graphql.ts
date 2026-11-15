@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<326098c1707005fdf58dd9bfe91f729a>>
- * @relayHash e23fb5318527707afed96a2892bd618a
+ * @generated SignedSource<<b8ab1e3908bac8513b021fb687deb6c6>>
+ * @relayHash ac72fcda159ac7273ab7891c34f2a459
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID cd025184dfe8688c119068d5705508ce4557c2554180dded6aec573b286440f8
+// @relayRequestID c0503fd814c072e187c0cebfe282e29d9d2e4f548f3c4704fc8410261a867a9c
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -334,31 +334,13 @@ const node: ConcreteRequest = (function () {
               ],
               storageKey: "tags(first:10)",
             },
-            {
-              alias: null,
-              args: null,
-              concreteType: "MetadataVersions",
-              kind: "LinkedField",
-              name: "versions",
-              plural: false,
-              selections: [
-                {
-                  alias: null,
-                  args: null,
-                  kind: "ScalarField",
-                  name: "pendingCount",
-                  storageKey: null,
-                },
-              ],
-              storageKey: null,
-            },
           ],
           storageKey: null,
         },
       ],
     },
     params: {
-      id: "cd025184dfe8688c119068d5705508ce4557c2554180dded6aec573b286440f8",
+      id: "c0503fd814c072e187c0cebfe282e29d9d2e4f548f3c4704fc8410261a867a9c",
       metadata: {},
       name: "readerDetailQuery",
       operationKind: "query",

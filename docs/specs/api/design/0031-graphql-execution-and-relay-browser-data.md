@@ -133,7 +133,7 @@ written. The worst measured cost is 6,901 and the maximum measured depth is 8. T
 | `readerShelvesQuery`               |   501 |     4 |
 | `readerSuggestionsQuery`           |   368 |     2 |
 | `readerShelfQuery`                 |   356 |     5 |
-| `readerDetailQuery`                |   132 |     6 |
+| `readerDetailQuery`                |   130 |     6 |
 | `viewerQuery`                      |     4 |     2 |
 | `readerNodeQuery`                  |     2 |     2 |
 

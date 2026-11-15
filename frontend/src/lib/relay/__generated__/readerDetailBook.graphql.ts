@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<8dfd73827a020a413ec11c5c336239db>>
+ * @generated SignedSource<<df2367bc66436d2347eecbb9b9ac7661>>
  * @lightSyntaxTransform
  */
 
@@ -32,9 +32,6 @@ export type readerDetailBook$data = {
     };
   };
   readonly validationStatus: string;
-  readonly versions: {
-    readonly pendingCount: number;
-  };
   readonly work:
     | {
         readonly authors: {
@@ -329,30 +326,12 @@ const node: ReaderFragment = (function () {
         ],
         storageKey: "tags(first:10)",
       },
-      {
-        alias: null,
-        args: null,
-        concreteType: "MetadataVersions",
-        kind: "LinkedField",
-        name: "versions",
-        plural: false,
-        selections: [
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "pendingCount",
-            storageKey: null,
-          },
-        ],
-        storageKey: null,
-      },
     ],
     type: "Manifestation",
     abstractKey: null,
   };
 })();
 
-(node as any).hash = "dffbc75682a11d05329a84e556f399e7";
+(node as any).hash = "956a81b2a9cb4a1ab3aa28e81fdb3fb4";
 
 export default node;
