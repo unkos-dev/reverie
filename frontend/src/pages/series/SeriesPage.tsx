@@ -48,7 +48,7 @@ function SeriesContent(): ReactElement {
           return (
             <li
               key={work.id}
-              className="border-border bg-surface-1 flex items-center gap-4 rounded-lg border p-4"
+              className="border-border bg-surface flex items-center gap-4 rounded-lg border p-4"
             >
               {typeof cover === "string" ? (
                 <img

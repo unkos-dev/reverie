@@ -14,7 +14,7 @@ function SheetContent({
       data-slot="sheet-content"
       data-side={side}
       className={cn(
-        "top-0 left-auto flex h-full max-w-[100vw] translate-x-0 translate-y-0 flex-col rounded-none bg-clip-padding p-0 shadow-lg ring-0 data-[side=right]:right-0 data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=left]:left-0 data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=top]:left-0 data-[side=top]:h-auto data-[side=top]:max-w-none data-[side=top]:border-b data-[side=bottom]:top-auto data-[side=bottom]:bottom-0 data-[side=bottom]:left-0 data-[side=bottom]:h-auto data-[side=bottom]:max-w-none data-[side=bottom]:border-t data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm",
+        "top-0 left-auto flex h-full max-w-[100vw] translate-x-0 translate-y-0 flex-col rounded-none bg-clip-padding p-0 border-hairline shadow-raised data-[side=right]:right-0 data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=left]:left-0 data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=top]:left-0 data-[side=top]:h-auto data-[side=top]:max-w-none data-[side=top]:border-b data-[side=bottom]:top-auto data-[side=bottom]:bottom-0 data-[side=bottom]:left-0 data-[side=bottom]:h-auto data-[side=bottom]:max-w-none data-[side=bottom]:border-t data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm",
         className,
       )}
       {...props}

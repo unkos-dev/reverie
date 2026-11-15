@@ -53,9 +53,9 @@ same two tables directly by SQL rather than through this module's Rust functions
 catalogue subject, not here — the OPDS EPUB download route is not shelf-scoped and never queries `shelves` or
 `shelf_items` itself, so it is not a dependent of this subject; the Design "Books list query contract"'s shelf filters,
 which require ownership of every requested shelf and match no rows if any ID is foreign or unknown; and, on the client,
-the left rail's shelf list, the library filter rail's shelf facet, the filter chips row, the book detail drawer's "add
-to shelf" picker, and the library batch bar's "add selection to shelf" action — all described below only as consumers,
-since none of them owns shelf state.
+the library filter rail's shelf facet, the filter chips row, the book detail drawer's "add to shelf" picker, and the
+library batch bar's "add selection to shelf" action — all described below only as consumers, since none of them owns
+shelf state.
 
 ## Structure
 
@@ -84,13 +84,13 @@ since none of them owns shelf state.
   shelf's items in the order the server returns them. `frontend/src/routes/shelves.tsx` and
   `frontend/src/routes/shelf-detail.tsx` are their route-loader pairings, each loading its page's query and swallowing
   the prefetch's own failure, leaving the page's `useSuspenseQuery` as the one error-surfacing point.
-- Five further client surfaces read the shelf list or a shelf's items as an auxiliary concern, degrading in place rather
-  than throwing to a route boundary on failure: `components/shell/LeftRail.tsx` (the shelves nav entry's nested list),
-  `components/shell/FilterRail.tsx` (the shelf filter facet), `pages/library/FilterChips.tsx` (rendering a shelf id
-  filter chip's display name), `pages/library/BookDetailDrawer.tsx` (the "add to shelf" picker), and
-  `pages/library/BatchBar.tsx` (the "add selection to shelf" action, which calls `addShelfItem` once per selected
-  manifestation in a serial loop). None of these five owns shelf state; each is a `useQuery` reader (not
-  `useSuspenseQuery`) that logs its own failure, the tier the `api/shelves.ts` module doc assigns it.
+- Four further client surfaces read the shelf list or a shelf's items as an auxiliary concern, degrading in place rather
+  than throwing to a route boundary on failure: `components/shell/FilterRail.tsx` (the shelf filter facet),
+  `pages/library/FilterChips.tsx` (rendering a shelf id filter chip's display name),
+  `pages/library/BookDetailDrawer.tsx` (the "add to shelf" picker), and `pages/library/BatchBar.tsx` (the "add selection
+  to shelf" action, which calls `addShelfItem` once per selected manifestation in a serial loop). None of these four
+  owns shelf state; each is a `useQuery` reader (not `useSuspenseQuery`) that logs its own failure, the tier the
+  `api/shelves.ts` module doc assigns it.
 
 ### State-writer census
 

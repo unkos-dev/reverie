@@ -1,5 +1,5 @@
 /**
- * User chip + account menu at the bottom of the left rail (spec §3.7).
+ * Account menu in the floating top bar.
  *
  * Identity comes from `useAuthMe`; while authn is pending (or the
  * viewer is logged out) the chip renders nothing — the 401 redirect in
@@ -15,7 +15,7 @@
  * Theme switching reuses the `useTheme()` write-through that powers
  * `theme-switcher.tsx`.
  */
-import { Button } from "react-aria-components";
+import { Button } from "@/components/ui/button";
 import type { ReactElement } from "react";
 
 import { logout } from "@/api/auth";
@@ -34,8 +34,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { forgetActiveUser } from "@/lib/active-user";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import type { ThemePreference } from "@/lib/theme/cookie";
+
+import { useShellIngestion } from "./use-shell-ingestion";
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
@@ -43,10 +46,12 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "dark", label: "Dark" },
 ];
 
-/** Rail-bottom user chip; opens the account dropdown. */
+/** Account avatar opening the account dropdown. */
 export function UserChip(): ReactElement | null {
   const { data: me } = useAuthMe();
   const { preference, failure, setPreference } = useTheme();
+  const { attention } = useShellIngestion();
+  const isDesktop = useMediaQuery("(min-width: 64rem)");
   if (me === undefined) return null;
 
   function handleSignOut(): void {
@@ -71,7 +76,9 @@ export function UserChip(): ReactElement | null {
       <DropdownMenu>
         <Button
           type="button"
-          className="data-hovered:bg-surface data-focus-visible:ring-accent flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors data-focus-visible:outline-none data-focus-visible:ring-2"
+          variant="ghost"
+          aria-label={`Account menu for ${me.display_name}`}
+          className="data-hovered:bg-surface data-focus-visible:ring-accent flex size-9 items-center justify-center rounded-full p-0 text-left transition-colors data-focus-visible:outline-none data-focus-visible:ring-2"
         >
           <span
             aria-hidden="true"
@@ -79,9 +86,31 @@ export function UserChip(): ReactElement | null {
           >
             {initials(me.display_name)}
           </span>
-          <span className="text-fg min-w-0 truncate text-sm">{me.display_name}</span>
         </Button>
-        <DropdownMenuContent placement="top start" className="w-56">
+        <DropdownMenuContent placement="bottom end" className="w-56">
+          {me.role === "admin" && !isDesktop ? (
+            <DropdownMenuGroup aria-label="Admin">
+              <DropdownMenuItem href="/admin/users">Users</DropdownMenuItem>
+              <DropdownMenuItem
+                href="/admin/dashboard"
+                textValue="Ingestion"
+                aria-label={
+                  attention > 0 ? `Ingestion, ${String(attention)} need attention` : "Ingestion"
+                }
+              >
+                Ingestion
+                {attention > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    className="bg-accent text-fg-on-accent ml-auto rounded-full px-1.5 text-xs tabular-nums"
+                  >
+                    {attention}
+                  </span>
+                ) : null}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </DropdownMenuGroup>
+          ) : null}
           <DropdownMenuGroup>
             <DropdownMenuLabel>
               <span className="block">{me.display_name}</span>

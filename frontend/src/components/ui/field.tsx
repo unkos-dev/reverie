@@ -221,7 +221,7 @@ function FieldError({
     <div
       role="alert"
       data-slot="field-error"
-      className={cn("text-sm font-normal text-fg", className)}
+      className={cn("text-sm font-normal text-danger-text", className)}
       {...props}
     >
       {content}
@@ -244,7 +244,7 @@ function TextInputField({
       </AriaLabel>
       <AriaInput render={(inputProps) => <Input {...inputProps} />} />
       {children}
-      <AriaFieldError className="text-fg text-sm font-normal" />
+      <AriaFieldError className="text-danger-text text-sm font-normal" />
     </TextField>
   )
 }

@@ -12,7 +12,7 @@ function Progress({
       data-slot="progress"
       className={composeRenderProps(className, (className) =>
         cn(
-          "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-muted",
+          "relative flex h-[5px] w-full items-center overflow-x-hidden rounded-full bg-hairline",
           className
         )
       )}

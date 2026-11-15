@@ -33,8 +33,8 @@ function Radio({
           data-slot="radio-group-item"
           className={composeRenderProps(className, (className) => cn("group/radio peer flex w-fit items-center gap-2 text-sm font-normal data-disabled:cursor-not-allowed data-disabled:opacity-50", className))}
         >
-          <span aria-hidden="true" data-slot="radio-group-indicator" className="relative flex size-4 shrink-0 items-center justify-center rounded-full border border-input outline-none after:absolute after:-inset-x-3 after:-inset-y-2 group-data-focus-visible/radio:border-ring group-data-focus-visible/radio:ring-3 group-data-focus-visible/radio:ring-ring/50 group-data-invalid/radio:border-destructive group-data-invalid/radio:ring-3 group-data-invalid/radio:ring-destructive/20 dark:bg-input/30 dark:group-data-invalid/radio:border-destructive/50 dark:group-data-invalid/radio:ring-destructive/40 group-data-selected/radio:border-primary group-data-selected/radio:bg-primary dark:group-data-selected/radio:bg-primary">
-            <span className="size-2 rounded-full bg-primary-foreground opacity-0 group-data-selected/radio:opacity-100" />
+          <span aria-hidden="true" data-slot="radio-group-indicator" className="relative flex size-[17px] shrink-0 items-center justify-center rounded-full border-[1.5px] border-border-control bg-surface transition-colors after:absolute after:-inset-x-3 after:-inset-y-2 group-data-hovered/radio:bg-surface-2 group-data-pressed/radio:bg-surface-3 group-data-selected/radio:border-accent-text group-data-invalid/radio:border-danger group-data-focus-visible/radio:outline-[1.5px] group-data-focus-visible/radio:outline-(--focus-ring) group-data-focus-visible/radio:shadow-[0_0_0_5px_var(--focus-halo)]">
+            <span className="size-2 rounded-full bg-accent-text opacity-0 group-data-selected/radio:opacity-100" />
           </span>
           {children}
         </AriaRadioButton>

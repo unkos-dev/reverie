@@ -94,7 +94,7 @@ function ShelvesContent(): ReactElement {
         {shelves.map((shelf) => (
           <li
             key={shelf.id}
-            className="border-border bg-surface-1 flex items-center justify-between gap-3 rounded-md border p-3"
+            className="border-border bg-surface flex items-center justify-between gap-3 rounded-md border p-3"
           >
             <Link
               to={`/shelves/${shelf.id}`}

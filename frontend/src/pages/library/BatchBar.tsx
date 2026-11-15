@@ -91,7 +91,7 @@ export function BatchBar({
   return (
     <Group
       aria-label="Batch actions"
-      className="border-border bg-surface-1 sticky bottom-4 z-10 mt-4 flex flex-wrap items-center gap-3 border p-3"
+      className="border-border bg-surface sticky bottom-[calc(1rem+3rem+0.75rem+2px+0.75rem)] z-10 mt-4 flex flex-wrap items-center gap-3 border p-3 lg:bottom-4"
     >
       <strong className="text-fg text-sm font-medium" aria-live="polite">
         {selectedIds.size} selected
