@@ -85,15 +85,15 @@ type TableColumn = {
 };
 
 const DATA_COLUMNS: readonly TableColumn[] = [
-  { id: "title", name: "Title", field: "title", defaultWidth: "2.4fr", minWidth: 160 },
-  { id: "subtitle", name: "Subtitle", defaultWidth: "1.2fr", minWidth: 96 },
-  { id: "authors", name: "Authors", field: "author", defaultWidth: "1.3fr", minWidth: 96 },
-  { id: "series", name: "Series", defaultWidth: "1.4fr", minWidth: 96 },
-  { id: "isbn_13", name: "ISBN", defaultWidth: 148, minWidth: 112 },
-  { id: "pages", name: "Pages", field: "pages", defaultWidth: 84, minWidth: 72, align: "end" },
-  { id: "status", name: "Status", defaultWidth: 132, minWidth: 104 },
-  { id: "rating", name: "Rating", defaultWidth: 120, minWidth: 112 },
-  { id: "added", name: "Added", field: "created_at", defaultWidth: 120, minWidth: 96 },
+  { id: "title", name: "Title", field: "title", defaultWidth: "1fr", minWidth: 240 },
+  { id: "subtitle", name: "Subtitle", defaultWidth: 176, minWidth: 176 },
+  { id: "authors", name: "Authors", field: "author", defaultWidth: 200, minWidth: 200 },
+  { id: "series", name: "Series", defaultWidth: 176, minWidth: 176 },
+  { id: "isbn_13", name: "ISBN", defaultWidth: 160, minWidth: 160 },
+  { id: "pages", name: "Pages", field: "pages", defaultWidth: 104, minWidth: 104, align: "end" },
+  { id: "status", name: "Status", defaultWidth: 144, minWidth: 144 },
+  { id: "rating", name: "Rating", defaultWidth: 128, minWidth: 128 },
+  { id: "added", name: "Added", field: "created_at", defaultWidth: 144, minWidth: 144 },
 ];
 
 const SELECT_COLUMN: TableColumn = { id: "select", name: "Select", defaultWidth: 44 };
@@ -560,7 +560,6 @@ type Props = {
   onHideColumn: (key: string) => void;
   selectedIds: ReadonlySet<string>;
   onSelectionChange: (ids: ReadonlySet<string>) => void;
-  onRowActivate: (book: BookListItem) => void;
   onScrollChange: (scrolled: boolean) => void;
 };
 
@@ -579,12 +578,10 @@ export function LibraryTable({
   onHideColumn,
   selectedIds,
   onSelectionChange,
-  onRowActivate,
   onScrollChange,
 }: Readonly<Props>): ReactElement {
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const shiftHeld = useRef(false);
-  const focusedRow = useRef<string | null>(null);
   const [saveAttempts, setSaveAttempts] = useState<ReadonlyMap<string, number>>(new Map());
 
   const columns = useMemo(
@@ -595,7 +592,7 @@ export function LibraryTable({
         if (isMobile) return MOBILE_COLUMN_KEYS.has(column.id);
         return !hiddenColumns.has(column.id);
       }),
-      OPEN_COLUMN,
+      ...(isMobile ? [] : [OPEN_COLUMN]),
     ],
     [hiddenColumns, isMobile],
   );
@@ -681,13 +678,15 @@ export function LibraryTable({
         </Column>
       );
     }
+    let minWidth = column.minWidth;
+    if (isMobile) minWidth = column.id === "title" ? 0 : 84;
     return (
       <Column
         id={column.id}
         isRowHeader={column.id === "title"}
         allowsSorting={column.field !== undefined}
         defaultWidth={isMobile && column.id === "added" ? 84 : column.defaultWidth}
-        minWidth={isMobile && column.id === "added" ? 80 : column.minWidth}
+        minWidth={minWidth}
         textValue={column.name}
         className="border-border-strong relative size-full border-b text-left outline-none"
       >
@@ -713,16 +712,6 @@ export function LibraryTable({
       data-testid="library-table"
       className="rv-table flex h-full min-h-0 flex-col"
       {...edits.keyboardProps}
-      onFocusCapture={(event) => {
-        const target = event.target;
-        focusedRow.current =
-          target instanceof HTMLElement && target.getAttribute("role") === "row"
-            ? (target.dataset.bookId ?? null)
-            : null;
-      }}
-      onBlurCapture={() => {
-        focusedRow.current = null;
-      }}
       onPointerDownCapture={(event) => {
         shiftHeld.current = event.shiftKey;
       }}
@@ -784,9 +773,6 @@ export function LibraryTable({
                     <Row
                       id={book.id}
                       data-book-id={book.id}
-                      onAction={() => {
-                        if (focusedRow.current === book.id) onRowActivate(book);
-                      }}
                       textValue={book.title}
                       columns={columns}
                       dependencies={[edits.pendingCells, edits.feedback, saveAttempts]}

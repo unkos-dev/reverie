@@ -24,7 +24,7 @@ import {
   type ReactNode,
   type ReactElement,
 } from "react";
-import { Link, matchPath, useNavigate } from "react-router";
+import { Link, matchPath } from "react-router";
 
 import {
   ApiError,
@@ -241,7 +241,6 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
 }
 
 export function LibraryPage(): ReactElement {
-  const navigate = useNavigate();
   const [tableScrolled, setTableScrolled] = useState(false);
   const owner = useLibraryFilters();
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
@@ -456,9 +455,6 @@ export function LibraryPage(): ReactElement {
                   selectedIds={selectedIds}
                   onSelectionChange={setSelectedIds}
                   onScrollChange={setTableScrolled}
-                  onRowActivate={(book) => {
-                    void navigate(`/b/${book.id}`);
-                  }}
                 />
               </Suspense>
             </TableChunkBoundary>

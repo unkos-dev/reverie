@@ -32,7 +32,8 @@ export function CellSaveState({
   if (feedback !== undefined)
     return (
       <div
-        className="bg-canvas text-danger-text absolute right-1 flex items-center gap-1 rounded px-1 text-xs"
+        className="bg-canvas text-danger-text absolute right-3 flex items-center gap-1 rounded px-1 text-xs"
+        data-slot="cell-save-state"
         role="status"
       >
         Not saved.
@@ -44,7 +45,8 @@ export function CellSaveState({
   if (pending)
     return (
       <span
-        className="bg-canvas text-fg-muted pointer-events-none absolute right-2 flex items-center gap-1 text-xs"
+        className="bg-canvas text-fg-muted pointer-events-none absolute right-3 flex items-center gap-1 text-xs"
+        data-slot="cell-save-state"
         role="status"
       >
         <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
@@ -53,7 +55,8 @@ export function CellSaveState({
     );
   return savedAttempt !== 0 ? (
     <span
-      className="rv-saved bg-canvas text-fg-muted pointer-events-none absolute right-2 flex items-center gap-1 text-xs"
+      className="rv-saved bg-canvas text-fg-muted pointer-events-none absolute right-3 flex items-center gap-1 text-xs"
+      data-slot="cell-save-state"
       role="status"
     >
       <Check className="size-3" aria-hidden="true" />

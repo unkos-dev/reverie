@@ -485,7 +485,7 @@ export function TitleCell({
         <Link href={`/b/${book.id}`} aria-label={`Open ${book.title}`} className="shrink-0">
           <CoverMark book={book} density={density} />
         </Link>
-        <TooltipContent placement="right" className="p-1">
+        <TooltipContent placement="top start" offset={12} className="overflow-auto p-1">
           {book.cover_url === "" ? (
             book.title
           ) : (
@@ -518,10 +518,10 @@ export function TitleCell({
           <div className={cn("text-fg-muted text-xs leading-5", WRAP)}>{authors}</div>
         ) : null}
       </div>
-      {state.failed ? <FailedMark /> : null}
       <Button
         variant="ghost"
         size="icon-sm"
+        data-slot="edit-pencil"
         aria-label={`Edit title of ${book.title}`}
         onPress={() => {
           if (state.pending === undefined) editor.open();

@@ -81,3 +81,7 @@
     animation: none;
   }
 }
+
+.rv-table [role="rowheader"]:has([data-slot="cell-save-state"]) [data-slot="edit-pencil"] {
+  visibility: hidden;
+}
