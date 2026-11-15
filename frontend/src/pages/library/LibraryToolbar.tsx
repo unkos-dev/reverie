@@ -88,7 +88,7 @@ export function LibraryToolbar({
                 const key = keys.values().next().value;
                 if (key === "comfortable" || key === "compact") onDensityChange(key);
               }}
-              className="border-border bg-surface-1 inline-flex items-center rounded-md border p-1"
+              className="border-border bg-surface inline-flex items-center rounded-md border p-1"
             >
               {DENSITIES.map((option) => (
                 <ToggleButton
@@ -125,7 +125,7 @@ export function LibraryToolbar({
             const key = keys.values().next().value;
             if (key === "grid" || key === "table") onViewChange(key);
           }}
-          className="border-border bg-surface-1 inline-flex items-center rounded-md border p-1"
+          className="border-border bg-surface inline-flex items-center rounded-md border p-1"
         >
           <ToggleButton
             id="grid"
