@@ -163,7 +163,7 @@ export function useCellEdit({
   onChanged: () => void;
 }): UseCellEditResult {
   const environment = useRelayEnvironment();
-  const [controller] = useState(() => new AbortController());
+  const controller = useRef<AbortController | null>(null);
   const [records, setRecords] = useState<EditRecord[]>([]);
   const [savedCells, setSavedCells] = useState<ReadonlySet<string>>(new Set());
   const [owner, setOwner] = useState<Owner>({ enabled, context: {}, entries: [] });
@@ -191,13 +191,15 @@ export function useCellEdit({
     }
     committedUndo.current = owner.entries;
   }, [owner.entries]);
-  useEffect(
-    () => () => {
-      controller.abort();
-      for (const release of held.current) release();
-    },
-    [controller],
-  );
+  useEffect(() => {
+    const lifetime = new AbortController();
+    const releases = held.current;
+    controller.current = lifetime;
+    return () => {
+      lifetime.abort();
+      for (const release of releases) release();
+    };
+  }, []);
   const deadline = owner.entries.reduce(
     (next, entry) => Math.min(next, Date.parse(entry.operation.expiresAt)),
     Infinity,
@@ -316,7 +318,7 @@ export function useCellEdit({
         environment,
         mutationsResolveAuthorsQuery,
         variables,
-        controller.signal,
+        controller.current?.signal,
       );
       return response?.metadataOperation;
     }
@@ -324,7 +326,7 @@ export function useCellEdit({
       environment,
       mutationsResolveCellsQuery,
       variables,
-      controller.signal,
+      controller.current?.signal,
     );
     return response?.metadataOperation;
   }
@@ -362,7 +364,7 @@ export function useCellEdit({
             environment,
             mutationsSaveAuthorsMutation,
             variables,
-            controller.signal,
+            controller.current?.signal,
           );
           if (response === undefined) return;
           acceptMetadata(attempt, response.updateMetadata);
@@ -371,7 +373,7 @@ export function useCellEdit({
             environment,
             mutationsSaveCellsMutation,
             variables,
-            controller.signal,
+            controller.current?.signal,
           );
           if (response === undefined) return;
           acceptMetadata(attempt, response.updateMetadata);
@@ -381,7 +383,7 @@ export function useCellEdit({
           environment,
           mutationsReadingMutation,
           { id, baseline: attempt.baseline, patch: attempt.patch },
-          controller.signal,
+          controller.current?.signal,
         );
         if (response === undefined) return;
         publishReading(attempt, response.updateReadingState);
@@ -389,7 +391,7 @@ export function useCellEdit({
       complete(attempt);
       return { saved: true, action: "none" };
     } catch (failure) {
-      if (controller.signal.aborted) return;
+      if (controller.current?.signal.aborted) return;
       const action = editingFailureAction(failure);
       if (action === "retry" || action === "reload") {
         try {
@@ -405,7 +407,7 @@ export function useCellEdit({
               environment,
               mutationsReadingQuery,
               { id: encodeGraphQLId("Manifestation", attempt.row.id) },
-              controller.signal,
+              controller.current?.signal,
             );
             const reading = response?.manifestation?.readingState;
             if (
@@ -457,7 +459,7 @@ export function useCellEdit({
           environment,
           mutationsReadingQuery,
           { id: encodeGraphQLId("Manifestation", attempt.row.id) },
-          controller.signal,
+          controller.current?.signal,
         );
         if (response?.manifestation === undefined || response.manifestation === null) return;
         const reading = response.manifestation.readingState;
@@ -474,7 +476,11 @@ export function useCellEdit({
           },
         };
       } else if (attempt.columnKey === "authors") {
-        const field = await loadAuthorField(environment, attempt.row.id, controller.signal);
+        const field = await loadAuthorField(
+          environment,
+          attempt.row.id,
+          controller.current?.signal,
+        );
         if (field === undefined) return;
         reset = {
           ...attempt.row,
@@ -487,7 +493,7 @@ export function useCellEdit({
           environment,
           mutationsCellsQuery,
           { id: encodeGraphQLId("Manifestation", attempt.row.id) },
-          controller.signal,
+          controller.current?.signal,
         );
         if (response?.manifestation === undefined || response.manifestation === null) return;
         const metadata = response.manifestation.metadata;
@@ -661,7 +667,7 @@ export function useCellEdit({
             environment,
             mutationsUndoAuthorsMutation,
             variables,
-            controller.signal,
+            controller.current?.signal,
           )
         )?.undoMetadata;
       else
@@ -670,7 +676,7 @@ export function useCellEdit({
             environment,
             mutationsUndoCellsMutation,
             variables,
-            controller.signal,
+            controller.current?.signal,
           )
         )?.undoMetadata;
     } catch (error) {
@@ -707,7 +713,7 @@ export function useCellEdit({
                   environment,
                   mutationsUndoAuthorsMutation,
                   retry,
-                  controller.signal,
+                  controller.current?.signal,
                 )
               )?.undoMetadata;
             else
@@ -716,7 +722,7 @@ export function useCellEdit({
                   environment,
                   mutationsUndoCellsMutation,
                   retry,
-                  controller.signal,
+                  controller.current?.signal,
                 )
               )?.undoMetadata;
           }
@@ -725,7 +731,7 @@ export function useCellEdit({
         failure = error;
       }
     }
-    if (!controller.signal.aborted) {
+    if (!controller.current?.signal.aborted) {
       if (response !== undefined) {
         publishMetadata(attempt, response);
         setOwner((current) => ({

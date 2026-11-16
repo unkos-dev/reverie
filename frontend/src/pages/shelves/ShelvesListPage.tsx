@@ -6,7 +6,12 @@
  * rejects mutations on `is_system = TRUE` shelves with HTTP 409
  * `system-shelf-immutable`.
  */
-import { usePreloadedQuery, useRelayEnvironment, type PreloadedQuery } from "react-relay";
+import {
+  usePreloadedQuery,
+  useQueryLoader,
+  useRelayEnvironment,
+  type PreloadedQuery,
+} from "react-relay";
 import { ConnectionHandler, commitLocalUpdate } from "relay-runtime";
 import { encodeGraphQLId, executeEditingOnce } from "@/api/graphql";
 import { useShelves } from "@/api/shelves";
@@ -21,7 +26,7 @@ import type { mutationsCreateShelfMutation as CreateShelf } from "@/lib/relay/__
 import type { mutationsRenameShelfMutation as RenameShelf } from "@/lib/relay/__generated__/mutationsRenameShelfMutation.graphql";
 import type { mutationsDeleteShelfMutation as DeleteShelf } from "@/lib/relay/__generated__/mutationsDeleteShelfMutation.graphql";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, Suspense, useActionState, useState, type ReactElement } from "react";
+import { useEffect, Suspense, useActionState, useRef, useState, type ReactElement } from "react";
 import { Form, TextField, Input as AriaInput, Label as AriaLabel } from "react-aria-components";
 import { z } from "zod";
 import { Link, useLoaderData } from "react-router";
@@ -39,12 +44,6 @@ import type { loader } from "@/routes/shelves";
 /** Top-level page component (Suspense boundary + content). */
 export function ShelvesListPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
-  useEffect(
-    () => () => {
-      prepared?.dispose();
-    },
-    [prepared],
-  );
   if (prepared === null) return null;
   return (
     <Suspense fallback={<ShelvesSkeleton />}>
@@ -54,17 +53,19 @@ export function ShelvesListPage(): ReactElement | null {
 }
 
 function ShelvesContent({ reference }: { reference: PreloadedQuery<ShelvesQuery> }): ReactElement {
-  const query = usePreloadedQuery<ShelvesQuery>(readerShelvesQuery, reference);
+  const [current] = useQueryLoader<ShelvesQuery>(readerShelvesQuery, reference);
+  const query = usePreloadedQuery<ShelvesQuery>(readerShelvesQuery, current ?? reference);
   const environment = useRelayEnvironment();
   const shelvesQuery = useShelves(query);
   const { data: shelves, error } = shelvesQuery;
-  const [controller] = useState(() => new AbortController());
-  useEffect(
-    () => () => {
-      controller.abort();
-    },
-    [controller],
-  );
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const lifetime = new AbortController();
+    controller.current = lifetime;
+    return () => {
+      lifetime.abort();
+    };
+  }, []);
   const [createOpen, setCreateOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Shelf | null>(null);
   const [createPending, setCreatePending] = useState(false);
@@ -82,7 +83,7 @@ function ShelvesContent({ reference }: { reference: PreloadedQuery<ShelvesQuery>
         environment,
         mutationsCreateShelfMutation,
         { name },
-        controller.signal,
+        controller.current?.signal,
       );
       if (response !== undefined) {
         shelvesQuery.refetch();
@@ -103,7 +104,7 @@ function ShelvesContent({ reference }: { reference: PreloadedQuery<ShelvesQuery>
         environment,
         mutationsRenameShelfMutation,
         { shelfId: encodeGraphQLId("Shelf", renameTarget.id), name },
-        controller.signal,
+        controller.current?.signal,
       );
       if (response !== undefined) {
         shelvesQuery.refetch();
@@ -123,7 +124,7 @@ function ShelvesContent({ reference }: { reference: PreloadedQuery<ShelvesQuery>
         environment,
         mutationsDeleteShelfMutation,
         { shelfId: encodeGraphQLId("Shelf", shelf.id) },
-        controller.signal,
+        controller.current?.signal,
       );
       if (response === undefined) return;
       commitLocalUpdate(environment, (store) => {
@@ -137,7 +138,7 @@ function ShelvesContent({ reference }: { reference: PreloadedQuery<ShelvesQuery>
       });
       setDeletion(undefined);
     } catch (failure) {
-      if (controller.signal.aborted) return;
+      if (controller.current?.signal.aborted) return;
       setDeletion({
         shelf,
         pending: false,

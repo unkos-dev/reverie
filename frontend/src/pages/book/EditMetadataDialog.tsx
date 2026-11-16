@@ -249,13 +249,14 @@ function EditMetadataFields({
   onDone,
 }: Readonly<EditMetadataFieldsProps>): ReactElement {
   const environment = useRelayEnvironment();
-  const [controller] = useState(() => new AbortController());
-  useEffect(
-    () => () => {
-      controller.abort();
-    },
-    [controller],
-  );
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const lifetime = new AbortController();
+    controller.current = lifetime;
+    return () => {
+      lifetime.abort();
+    };
+  }, []);
   const [baseline] = useState(incoming);
   const metadata = baseline;
   const attempt = useRef<{ body: MetadataPatch; requestId: string } | null>(null);
@@ -372,7 +373,7 @@ function EditMetadataFields({
           });
           if (confirmed?.manifestation != null) {
             reconcile(confirmed.manifestation.metadata);
-            if (!controller.signal.aborted) onDone();
+            if (!controller.current?.signal.aborted) onDone();
           }
           return { values, error: null };
         }

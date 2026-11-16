@@ -8,6 +8,7 @@ import {
   useFragment,
   usePaginationFragment,
   usePreloadedQuery,
+  useQueryLoader,
   type PreloadedQuery,
 } from "react-relay";
 import { decodeGraphQLId } from "@/api/graphql";
@@ -26,12 +27,6 @@ import type { loader } from "@/routes/shelf-detail";
 /** Top-level page component (Suspense boundary + content). */
 export function ShelfDetailPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
-  useEffect(
-    () => () => {
-      prepared?.dispose();
-    },
-    [prepared],
-  );
   if (prepared === null) return null;
   return (
     <Suspense fallback={<ShelfDetailSkeleton />}>
@@ -45,7 +40,8 @@ function ShelfDetailContent({
 }: {
   reference: PreloadedQuery<ShelfQuery>;
 }): ReactElement {
-  const query = usePreloadedQuery<ShelfQuery>(readerShelfQuery, reference);
+  const [current] = useQueryLoader<ShelfQuery>(readerShelfQuery, reference);
+  const query = usePreloadedQuery<ShelfQuery>(readerShelfQuery, current ?? reference);
   const data = useFragment<readerShelf$key>(readerShelf, query.shelf);
   const {
     data: items,

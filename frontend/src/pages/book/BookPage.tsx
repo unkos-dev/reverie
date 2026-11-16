@@ -40,12 +40,6 @@ import type { loader } from "@/routes/book";
  */
 export function BookPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
-  useEffect(
-    () => () => {
-      prepared?.dispose();
-    },
-    [prepared],
-  );
   if (prepared === null) return null;
   return (
     <Suspense fallback={<BookSkeleton />}>

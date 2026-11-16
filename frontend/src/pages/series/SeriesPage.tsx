@@ -7,6 +7,7 @@ import {
   useFragment,
   usePaginationFragment,
   usePreloadedQuery,
+  useQueryLoader,
   type PreloadedQuery,
 } from "react-relay";
 import { decodeGraphQLId } from "@/api/graphql";
@@ -39,12 +40,6 @@ import type { loader } from "@/routes/series";
  */
 export function SeriesPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
-  useEffect(
-    () => () => {
-      prepared?.dispose();
-    },
-    [prepared],
-  );
   if (prepared === null) return null;
   return (
     <Suspense fallback={<SeriesSkeleton />}>
@@ -54,7 +49,8 @@ export function SeriesPage(): ReactElement | null {
 }
 
 function SeriesContent({ reference }: { reference: PreloadedQuery<SeriesQuery> }): ReactElement {
-  const query = usePreloadedQuery<SeriesQuery>(readerSeriesQuery, reference);
+  const [current] = useQueryLoader<SeriesQuery>(readerSeriesQuery, reference);
+  const query = usePreloadedQuery<SeriesQuery>(readerSeriesQuery, current ?? reference);
   const data = useFragment<readerSeries$key>(readerSeries, query.series);
   const {
     data: works,

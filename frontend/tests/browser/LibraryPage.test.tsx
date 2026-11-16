@@ -11,7 +11,7 @@ import {
   type LibraryVisit,
 } from "@/routes/library-params";
 import { RouterProvider, createMemoryRouter, useLocation } from "react-router";
-import { useSyncExternalStore, type ReactElement } from "react";
+import { StrictMode, useSyncExternalStore, type ReactElement } from "react";
 import { RelayEnvironmentProvider } from "react-relay";
 import { z } from "zod";
 import type { BookListItem, Preferences } from "@/api";
@@ -339,11 +339,13 @@ async function renderLibrary({
     { initialEntries: [url] },
   );
   await render(
-    <QueryClientProvider client={client}>
-      <RelayEnvironmentProvider environment={fixture.environment}>
-        <RouterProvider router={router} />
-      </RelayEnvironmentProvider>
-    </QueryClientProvider>,
+    <StrictMode>
+      <QueryClientProvider client={client}>
+        <RelayEnvironmentProvider environment={fixture.environment}>
+          <RouterProvider router={router} />
+        </RelayEnvironmentProvider>
+      </QueryClientProvider>
+    </StrictMode>,
   );
   return fixture;
 }
@@ -519,7 +521,8 @@ describe("LibraryPage", () => {
       const fixture = await renderLibrary({
         items: [bookFixture({ title: "The Seeded Row" })],
         handler: (name, variables) => {
-          if (name === "readerLibraryPreferencesQuery") return pending;
+          if (name === "readerLibraryPreferencesQuery")
+            return pending.then((value) => value.clone());
           if (name === "readerLibraryQuery" && variables.sort !== undefined)
             return response({
               books: {
@@ -539,9 +542,10 @@ describe("LibraryPage", () => {
       );
       await expect.element(page.getByText("A Sorted Row")).toBeInTheDocument();
       const requests = fixture.calls.filter((call) => call.name === "readerLibraryQuery");
-      expect(requests).toHaveLength(2);
+      expect(requests).toHaveLength(3);
       expect(requests.at(0)?.variables).not.toHaveProperty("sort");
-      expect(requests.at(1)?.variables.sort).toEqual([{ column: "pages", direction: "DESC" }]);
+      expect(requests.at(1)?.variables).not.toHaveProperty("sort");
+      expect(requests.at(2)?.variables.sort).toEqual([{ column: "pages", direction: "DESC" }]);
     });
   });
 });
@@ -889,6 +893,9 @@ it("Library Retry sends the retained edit again", async () => {
   await expect.element(outcomes.getByText(/field-locked/)).toBeInTheDocument();
   expect(outcomes.getByRole("button", { name: /Retry|Reload/ }).elements()).toHaveLength(0);
   mode = "reading";
+  await expect
+    .element(page.getByText("Updating results…", { exact: true }))
+    .not.toBeInTheDocument();
   page.getByRole("button", { name: "Add rating", exact: true }).element().focus();
   await userEvent.keyboard("{F2}");
   await userEvent.click(page.getByRole("radio", { name: "5 stars", exact: true }));

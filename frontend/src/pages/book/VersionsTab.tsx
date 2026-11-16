@@ -1,5 +1,5 @@
 /** Pending metadata proposals and field-owned review outcomes. */
-import { useEffect, useState, useTransition, type ReactElement } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactElement } from "react";
 import {
   useLazyLoadQuery,
   usePaginationFragment,
@@ -198,13 +198,14 @@ function FieldGroup({
   onAction,
 }: Readonly<FieldGroupProps>): ReactElement | null {
   const environment = useRelayEnvironment();
-  const [controller] = useState(() => new AbortController());
-  useEffect(
-    () => () => {
-      controller.abort();
-    },
-    [controller],
-  );
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const lifetime = new AbortController();
+    controller.current = lifetime;
+    return () => {
+      lifetime.abort();
+    };
+  }, []);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const pending = actionState?.status === "pending";
   const submitted = actionState?.variables;
@@ -220,7 +221,7 @@ function FieldGroup({
           environment,
           mutationsRevertMetadataFieldMutation,
           { id, fieldName: variables.field, versionId: null },
-          controller.signal,
+          controller.current?.signal,
         );
         if (response === undefined) return;
         metadata = response.revertMetadataField.metadata;
@@ -229,7 +230,7 @@ function FieldGroup({
           environment,
           mutationsAcceptMetadataVersionMutation,
           { id, versionId: variables.row.id },
-          controller.signal,
+          controller.current?.signal,
         );
         if (response === undefined) return;
         metadata = response.acceptMetadataVersion.metadata;
@@ -238,7 +239,7 @@ function FieldGroup({
           environment,
           mutationsRejectMetadataVersionMutation,
           { id, versionId: variables.row.id },
-          controller.signal,
+          controller.current?.signal,
         );
         if (response === undefined) return;
       }
@@ -270,7 +271,7 @@ function FieldGroup({
       });
       onAction({ status: "success", variables });
     } catch (failure) {
-      if (controller.signal.aborted) return;
+      if (controller.current?.signal.aborted) return;
       commitLocalUpdate(environment, (store) => {
         const edition = store.get(id);
         const work = edition?.getLinkedRecord("work");

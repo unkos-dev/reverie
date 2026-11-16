@@ -476,7 +476,7 @@ export function captureAuthorPages(pages: readonly AuthorPage[]): {
 export async function loadAuthorField(
   environment: Environment,
   id: string,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<ReturnType<typeof captureAuthorPages> | undefined> {
   const pages: AuthorPage[] = [];
   let after: string | null = null;

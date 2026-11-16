@@ -442,13 +442,14 @@ export function LibraryPage(): ReactElement {
   const { data: account } = useAuthMe();
   const shelvesQuery = useShelves();
   const { data: shelves, isError: shelvesError } = shelvesQuery;
-  const [batchController] = useState(() => new AbortController());
-  useEffect(
-    () => () => {
-      batchController.abort();
-    },
-    [batchController],
-  );
+  const batchController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const lifetime = new AbortController();
+    batchController.current = lifetime;
+    return () => {
+      lifetime.abort();
+    };
+  }, []);
   const [batch, setBatch] = useState<BatchOutcome>();
   const [batchAttempt, setBatchAttempt] = useState<{
     action: BatchAction;
@@ -528,7 +529,7 @@ export function LibraryPage(): ReactElement {
       failed: [],
     });
     for (const id of attempt.ids) {
-      if (batchController.signal.aborted) break;
+      if (batchController.current?.signal.aborted) break;
       try {
         if (attempt.action.kind === "status") {
           const result = await attempt.statusTargets.find((target) => target.id === id)?.send();
@@ -544,7 +545,7 @@ export function LibraryPage(): ReactElement {
                 shelfId: encodeGraphQLId("Shelf", attempt.action.shelf.id),
                 id: encodeGraphQLId("Manifestation", id),
               },
-              batchController.signal,
+              batchController.current?.signal,
             );
             if (response === undefined) break;
             commitLocalUpdate(environment, (store) => {
@@ -555,7 +556,7 @@ export function LibraryPage(): ReactElement {
               environment,
               mutationsRefreshMetadataMutation,
               { id: encodeGraphQLId("Manifestation", id) },
-              batchController.signal,
+              batchController.current?.signal,
             );
             if (response === undefined) break;
           }
@@ -579,7 +580,7 @@ export function LibraryPage(): ReactElement {
       await visit.refresh();
     }
     release?.();
-    if (batchController.signal.aborted) return;
+    if (batchController.current?.signal.aborted) return;
     setBatch({
       action: attempt.action,
       pending: false,
