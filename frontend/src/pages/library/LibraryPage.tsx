@@ -247,7 +247,13 @@ function useLibraryPosition(
     if (element === null || position === undefined) return;
     if (
       expected.current?.element === element &&
-      Math.abs(element.scrollTop - expected.current.offset) < 1
+      Math.abs(
+        element.scrollTop -
+          Math.min(
+            expected.current.offset,
+            Math.max(0, element.scrollHeight - element.clientHeight),
+          ),
+      ) < 1
     )
       return;
     if (frame.current !== undefined) cancelAnimationFrame(frame.current);
@@ -276,13 +282,7 @@ function useLibraryPosition(
       element.scrollTo({ top: offset, behavior: "instant" });
       expected.current = { element, offset: element.scrollTop };
     }
-    if (index < 0) {
-      setOffset(
-        position.offset > element.scrollHeight - element.clientHeight ? 0 : position.offset,
-      );
-      return;
-    }
-    if (view === "table")
+    if (view === "table" && index >= 0)
       setOffset(index * (density === "compact" ? 40 : 52) - position.anchorOffset);
     const adjust = (): void => {
       if (
@@ -291,6 +291,12 @@ function useLibraryPosition(
         navigation.currentEntry?.key !== visit.entryKey
       )
         return;
+      if (index < 0) {
+        setOffset(
+          position.offset > element.scrollHeight - element.clientHeight ? 0 : position.offset,
+        );
+        return;
+      }
       const anchor = [...element.querySelectorAll<HTMLElement>("[data-book-id]")].find(
         (row) => row.dataset.bookId === position.anchorId,
       );
@@ -303,7 +309,7 @@ function useLibraryPosition(
         element.scrollTop + anchor.getBoundingClientRect().top - start - position.anchorOffset,
       );
     };
-    if (view === "grid") adjust();
+    if (view === "grid" || index < 0) adjust();
     if (frame.current !== undefined) cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(adjust);
   }, [position, view, source, visit, density, generation]);

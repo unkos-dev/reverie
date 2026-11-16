@@ -172,10 +172,6 @@ const readerProjections = new Map<string, z.ZodType>([
     "readerVersionsPaginationQuery",
     z.object({ fetch__Manifestation: versionProjection.nullable() }),
   ],
-  [
-    "mutationsRefreshMetadataMutation",
-    z.object({ refreshMetadata: z.object({ manifestationId: domainId("Manifestation") }) }),
-  ],
 ]);
 for (const kind of ["Author", "Series", "Genre", "Mood", "Tag", "Publisher"]) {
   for (const action of kind === "Author" || kind === "Series"
@@ -350,6 +346,10 @@ for (const action of ["Create", "Rename"] as const)
 editingProjections.set(
   "mutationsDeleteShelfMutation",
   z.object({ deleteShelf: z.object({ shelfId: domainId("Shelf") }) }),
+);
+editingProjections.set(
+  "mutationsRefreshMetadataMutation",
+  z.object({ refreshMetadata: z.object({ manifestationId: domainId("Manifestation") }) }),
 );
 for (const action of ["Add", "Remove"] as const)
   editingProjections.set(
