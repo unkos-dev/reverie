@@ -23,6 +23,11 @@ use sha2::{Digest, Sha256};
 
 use crate::error::AppError;
 
+pub(crate) enum Conditional<T> {
+    Matched(T),
+    Mismatch(HeaderValue),
+}
+
 /// Metadata owner identities and their monotonic aggregate revisions.
 #[derive(Debug, Serialize)]
 pub(crate) struct MetadataRevision {
@@ -125,7 +130,7 @@ fn trim_ows(bytes: &[u8]) -> &[u8] {
 /// a `HeaderValue` cannot represent: `http` rejects the C0 controls and DEL
 /// at header-construction time, so those bytes never reach this parser in
 /// production and the checks against them are defence in depth.
-fn parse_strong_entity_tag(raw: &[u8]) -> Result<StrongEntityTag, AppError> {
+pub(crate) fn parse_strong_entity_tag(raw: &[u8]) -> Result<StrongEntityTag, AppError> {
     let value = trim_ows(raw);
     // Rejected before the quoting check so the wildcard, a valid RFC 9110
     // form, gets its own reason rather than "not quoted".

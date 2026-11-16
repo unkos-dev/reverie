@@ -12,6 +12,7 @@ import {
 } from "@/lib/active-user";
 import { setUnauthenticatedHandler } from "@/lib/query/client";
 import { relayEnvironment } from "@/lib/relay/environment";
+import { mutationsSaveTitleMutation } from "@/lib/relay/mutations";
 import { viewerQuery } from "@/lib/relay/viewer";
 import type { viewerQuery as ViewerQuery } from "@/lib/relay/__generated__/viewerQuery.graphql";
 
@@ -108,13 +109,29 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
     json({
       data,
       errors: [
-        { message: "Refused", extensions: { code: "forbidden", errors: { name: "Required" } } },
+        {
+          message: "Refused",
+          extensions: {
+            code: "field-locked",
+            lockedFields: ["title"],
+            currentEtag: '"aaaaaaaaaaaaaaaaaaaaaa"',
+            errors: { name: "Required" },
+          },
+        },
       ],
     }),
   );
   await expect(request()).rejects.toMatchObject({
     errors: [
-      { message: "Refused", extensions: { code: "forbidden", errors: { name: "Required" } } },
+      {
+        message: "Refused",
+        extensions: {
+          code: "field-locked",
+          lockedFields: ["title"],
+          currentEtag: '"aaaaaaaaaaaaaaaaaaaaaa"',
+          errors: { name: "Required" },
+        },
+      },
     ],
   });
   expect(fetch).toHaveBeenCalledTimes(1);
@@ -127,6 +144,54 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   for (const malformed of [{}, { errors: [] }, { errors: [{ message: 7 }] }, { data: null }]) {
     fetch.mockResolvedValueOnce(json(malformed));
     await expect(request()).rejects.toThrow();
+  }
+  const id = btoa("Manifestation:12345678-1234-4234-8234-123456789abc");
+  const operation = {
+    operationId: "22345678-1234-4234-8234-123456789abc",
+    fieldName: "title",
+    expiresAt: "2026-11-16T00:00:00Z",
+    status: "eligible",
+  };
+  const save = {
+    updateMetadata: {
+      requestId: "32345678-1234-4234-8234-123456789abc",
+      operations: [operation],
+      metadata: {
+        manifestationId: id,
+        workId: btoa("Work:42345678-1234-4234-8234-123456789abc"),
+        etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
+        title: "Saved",
+      },
+    },
+  };
+  fetch.mockResolvedValueOnce(json({ data: save }));
+  await expect(
+    graphqlNetwork(
+      getRequest(mutationsSaveTitleMutation).params,
+      {},
+      new AbortController().signal,
+    ).toPromise(),
+  ).resolves.toEqual({ data: save });
+  for (const bad of [
+    { ...operation, operationId: "bad" },
+    { ...operation, expiresAt: "yesterday" },
+  ]) {
+    fetch.mockClear();
+    fetch.mockResolvedValueOnce(
+      json({ data: { updateMetadata: { ...save.updateMetadata, operations: [bad] } } }),
+    );
+    const next = vi.fn();
+    await expect(
+      graphqlNetwork(
+        getRequest(mutationsSaveTitleMutation).params,
+        {},
+        new AbortController().signal,
+      )
+        .do({ next })
+        .toPromise(),
+    ).rejects.toThrow();
+    expect(next).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
   }
   const navigate = vi.fn();
   setUnauthenticatedHandler(navigate);

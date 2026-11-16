@@ -318,7 +318,7 @@ fn completeness_confidence(meta: &ExtractedMetadata) -> f32 {
 
 /// Generate sort name: "J. R. R. Tolkien" → "Tolkien, J. R. R."
 /// Single-word names are returned as-is. Shared with the PATCH contributors
-/// path (`routes::metadata`) so manually-entered names sort the same way as
+/// path (`services::metadata::editing`) so manually-entered names sort the same way as
 /// extracted ones; do not duplicate this logic elsewhere.
 pub(crate) fn generate_sort_name(name: &str) -> String {
     let name = name.trim();

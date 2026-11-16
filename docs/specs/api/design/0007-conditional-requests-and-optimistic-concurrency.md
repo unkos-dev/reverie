@@ -55,17 +55,19 @@ Reverie produces entity-tags in one place, a shared hash-based module. Only the 
 accept `If-Match`; shelf endpoints do neither.
 
 `backend/src/routes/etag.rs` is the shared mechanism, consumed by `backend/src/routes/reading.rs`,
-`backend/src/routes/metadata.rs` and `backend/src/routes/settings/mod.rs`. `hash_etag<T: Serialize>` serialises `state`
-to JSON, SHA-256s the bytes, truncates the digest to 16 bytes, base64url-encodes it without padding, and wraps the
-result in double quotes. Reading hashes all editable state through the fixed-order `ReadingEtagFields`, including notes
-and timestamps. Its all-null default gives an absent row the same validator as matched reading GET.
+`backend/src/services/metadata/editing.rs`, `backend/src/services/reading.rs` and the settings routes.
+`hash_etag<T: Serialize>` serialises `state` to JSON, SHA-256s the bytes, truncates the digest to 16 bytes,
+base64url-encodes it without padding, and wraps the result in double quotes. Reading hashes all editable state through
+the fixed-order `ReadingEtagFields`, including notes and timestamps. Its all-null default gives an absent row the same
+validator as matched reading GET.
 
 Metadata hashes `MetadataRevision`, containing the work identity, manifestation identity and both aggregate revisions of
 zero or greater. The data-model triggers advance revisions for canonical and provenance-relevant changes, including
 changes away and back. `load_book_metadata` returns `MetadataSnapshot`, pairing complete `BookMetadata` values with
-those owner revisions. Matched GET assembles that snapshot in a read-only REPEATABLE READ RLS transaction. PATCH
-compares the tag under its manifestation and work locks and loads the post-write snapshot before commit. Its response
-retains per-field `fields` acknowledgements and adds complete `values`; GET serves the same values type directly.
+those owner revisions. HTTP selects complete values; GraphQL selects the values and bounded relation pages its edit
+needs. Matched GET assembles that snapshot in a read-only REPEATABLE READ RLS transaction. PATCH compares the tag under
+its manifestation and work locks and loads the post-write snapshot before commit. Its response returns request identity,
+field operations and complete `values`; GET serves the same values type directly.
 
 List rows carry `metadata_etag` and `reading_etag`. Their projected values, revisions, relation batches and complete
 reading hash inputs come from one read-only REPEATABLE READ transaction. The list keeps its compact projection and omits
@@ -93,10 +95,12 @@ the resource's current `ETag` into it, so a caller can recover in one round trip
 
 ### The precondition contract's evaluation order
 
-Three handlers apply this contract: `update_book_metadata`, `patch_reading`, and `put_settings`. These are the complete
-set of production call sites of `AppError::IfMatchRequired` and `AppError::IfMatchMismatch`. All three follow the same
-relative order: `CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header and
-rejecting it as absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
+Metadata save, reading patch, exact metadata Undo and settings writes apply this contract. HTTP reads the baseline from
+`If-Match`; GraphQL metadata, reading and Undo accept a nullable `baseline` string argument and reuse the same
+strong-tag parser. Omission or null produces `if-match-required`, malformed input produces `malformed-header`, and a
+locked mismatch produces `if-match-mismatch` with `currentEtag`. Both transports call the same operations. Their
+relative order is: `CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header
+and rejecting it as absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
 
 For metadata and reading, the request then resolves whether the target manifestation exists and is visible to the
 caller, returning `404` when it does not. `update_book_metadata` uses a `SELECT ... FOR UPDATE` whose locked row the
@@ -113,6 +117,12 @@ provider-key registry check. RFC 9110 §13.2.1 places precondition evaluation af
 the request content is processed, so a caller holding a stale representation learns that first and refetches.
 
 ### Client editing baselines
+
+GraphQL editing documents validate their selected values and revision before Relay publication. `executeEditing` uses
+raw `environment.execute` or `executeMutation` payload data and returns a detached projection. It never derives a
+baseline from a merged store read or `commitMutation.onCompleted`. A whole-list author replacement requires all pages of
+that field at one revision, with a complete cursor chain. `captureAuthorPages` enforces that pairing. A newer token
+without the selected values cannot replace a captured baseline.
 
 `apiFetchWithHeaders` returns a decoded body and response headers without retaining entity-tags. Metadata and reading
 adapters validate the complete body and require the matching strong response ETag before publishing one snapshot. List

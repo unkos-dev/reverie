@@ -351,3 +351,31 @@ export const readerNodeQuery = graphql`
     }
   }
 `;
+
+export const readerAuthorEditing = graphql`
+  fragment readerAuthorEditing on Manifestation
+  @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
+  @refetchable(queryName: "readerAuthorEditingPaginationQuery", preferFetchable: true) {
+    id
+    metadata {
+      workId
+      manifestationId
+      etag
+      authors(first: $count, after: $cursor) @connection(key: "readerAuthorEditing_authors") {
+        edges {
+          cursor
+          node {
+            id
+            name
+          }
+        }
+        pageInfo {
+          hasNextPage
+          hasPreviousPage
+          startCursor
+          endCursor
+        }
+      }
+    }
+  }
+`;

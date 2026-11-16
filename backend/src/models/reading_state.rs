@@ -1,7 +1,7 @@
 //! Reading state: per-`(user, manifestation)` status, rating, notes,
 //! progress, and reading dates.
 //!
-//! Queries live in `routes::reading` and `routes::library`, not here; this
+//! Queries live in `services::reading` and `services::reader`, not here; this
 //! module carries the wire DTOs, plus schema-level tests against the
 //! migrations.
 //!

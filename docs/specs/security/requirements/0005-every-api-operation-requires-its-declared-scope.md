@@ -35,7 +35,10 @@ or enforced one level looser than declared, would give that credential capabilit
 - A credential carrying no scope is refused with `401` at authentication for every `/api/v1` operation, and no operation
   runs. Checked by `scopeless_token_rejected_by_every_op`, which writes an empty-scope token directly through the model
   layer so the check covers the authentication step itself.
-- Every GraphQL root field declares its scope. Checked by inspecting the resolver guards in
-  `backend/src/graphql/mod.rs`.
+- Every GraphQL root field declares its scope. Checked by inspecting the resolver guards in `backend/src/graphql/mod.rs`
+  and `backend/src/graphql/mutations.rs`.
 - A read-scoped credential's GraphQL query over POST is admitted, and requests with missing or invalid credentials are
   refused with `401`. Checked by `graphql_request_boundary`.
+- Every GraphQL field requiring write scope refuses a read-only credential with the `forbidden` execution code.
+  Credentials holding its declared scope or admin scope pass the scope check; independent role, ownership and browser
+  session restrictions still apply. Checked by `graphql_request_boundary`, including successful eligible controls.

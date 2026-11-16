@@ -6,6 +6,25 @@ import { getBookMetadata, updateBookMetadata, type BookMetadata } from "@/api/bo
 import { getReadingState, updateReadingState } from "@/api/reading";
 import { apiFetch } from "@/api/fetch";
 
+import { createOperationDescriptor, getRequest } from "relay-runtime";
+import { captureAuthorPages, executeEditing } from "@/api/graphql";
+import { forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
+import { relayEnvironment } from "@/lib/relay/environment";
+import {
+  mutationsTitleQuery,
+  mutationsRevisionQuery,
+  mutationsSaveTitleMutation,
+  mutationsReadingQuery,
+  mutationsReadingMutation,
+  mutationsAuthorPageQuery,
+} from "@/lib/relay/mutations";
+import type { mutationsTitleQuery as TitleQuery } from "@/lib/relay/__generated__/mutationsTitleQuery.graphql";
+import type { mutationsRevisionQuery as RevisionQuery } from "@/lib/relay/__generated__/mutationsRevisionQuery.graphql";
+import type { mutationsSaveTitleMutation as SaveTitle } from "@/lib/relay/__generated__/mutationsSaveTitleMutation.graphql";
+import type { mutationsReadingQuery as ReadingQuery } from "@/lib/relay/__generated__/mutationsReadingQuery.graphql";
+import type { mutationsReadingMutation as ReadingMutation } from "@/lib/relay/__generated__/mutationsReadingMutation.graphql";
+import type { mutationsAuthorPageQuery as AuthorPageQuery } from "@/lib/relay/__generated__/mutationsAuthorPageQuery.graphql";
+
 const SAMPLE_TOKEN = "abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE"; // 43 chars
 const REFRESHED_TOKEN = "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"; // 43 Z
 
@@ -40,6 +59,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  forgetActiveUser();
   __resetCsrfTokenForTesting();
 });
 
@@ -386,4 +406,207 @@ test("metadata and reading edits keep their baseline", async () => {
   await expect(updateReadingState("two", { rating: 2 }, readSaved.etag)).rejects.toThrow();
   expect(new Headers(fetchSpy.mock.lastCall?.[1]?.headers).get("If-Match")).toBe(tag);
   expect(baseline).toEqual({ values, etag: tag });
+  await graphqlBaselines();
 });
+
+async function graphqlBaselines(): Promise<void> {
+  rememberActiveUser("editing-account");
+  const environment = relayEnvironment();
+  const id = btoa("Manifestation:12345678-1234-4234-8234-123456789abc");
+  const workId = btoa("Work:22345678-1234-4234-8234-123456789abc");
+  const tag = '"aaaaaaaaaaaaaaaaaaaaaa"';
+  const newer = '"bbbbbbbbbbbbbbbbbbbbbb"';
+  const latest = '"cccccccccccccccccccccc"';
+  const snapshot = { workId, manifestationId: id, etag: tag, title: "Original" };
+  const fetch = vi.spyOn(globalThis, "fetch");
+  fetch.mockClear();
+  const titleResponse = (metadata: unknown) =>
+    jsonResponse({ data: { manifestation: { id, metadata } } });
+  fetch.mockResolvedValueOnce(titleResponse(snapshot));
+  const initial = await executeEditing<TitleQuery>(environment, mutationsTitleQuery, {
+    id,
+  }).toPromise();
+  const baseline = initial?.manifestation?.metadata;
+  if (baseline === undefined) throw new Error("Expected title baseline.");
+  fetch.mockResolvedValueOnce(titleResponse({ ...snapshot, title: "Background", etag: newer }));
+  await executeEditing<TitleQuery>(environment, mutationsTitleQuery, { id }).toPromise();
+  fetch.mockResolvedValueOnce(titleResponse({ workId, manifestationId: id, etag: latest }));
+  const sparse = await executeEditing<RevisionQuery>(environment, mutationsRevisionQuery, {
+    id,
+  }).toPromise();
+  expect(sparse?.manifestation?.metadata).not.toHaveProperty("title");
+  const operation = createOperationDescriptor(getRequest(mutationsTitleQuery), { id });
+  expect(environment.lookup(operation.fragment).data).toMatchObject({
+    manifestation: { metadata: { title: "Background", etag: latest } },
+  });
+  expect(baseline).toEqual(snapshot);
+  const requestId = crypto.randomUUID();
+  const variables = { id, baseline: baseline.etag, requestId, patch: { title: "Saved" } };
+  fetch.mockClear();
+  fetch.mockResolvedValueOnce(
+    problemResponse({
+      type: "https://reverie.example/probs/csrf-mismatch",
+      title: "Forbidden",
+      status: 403,
+    }),
+  );
+  fetch.mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }));
+  fetch.mockResolvedValueOnce(
+    jsonResponse({
+      data: {
+        updateMetadata: {
+          requestId,
+          operations: [],
+          metadata: { ...snapshot, title: "Saved", etag: latest },
+        },
+      },
+    }),
+  );
+  const saved = await executeEditing<SaveTitle>(
+    environment,
+    mutationsSaveTitleMutation,
+    variables,
+  ).toPromise();
+  expect(saved?.updateMetadata.metadata).toMatchObject({ title: "Saved", etag: latest });
+  const writes = fetch.mock.calls.filter(([, init]) => init?.method === "POST");
+  expect(writes).toHaveLength(2);
+  expect(writes[0][1]?.body).toBe(writes[1][1]?.body);
+  expect(
+    JSON.parse(typeof writes[0][1]?.body === "string" ? writes[0][1].body : "null"),
+  ).toMatchObject({ variables });
+  fetch.mockResolvedValueOnce(
+    jsonResponse({
+      errors: [
+        { message: "Stale", extensions: { code: "if-match-mismatch", currentEtag: latest } },
+      ],
+    }),
+  );
+  await expect(
+    executeEditing<SaveTitle>(environment, mutationsSaveTitleMutation, variables).toPromise(),
+  ).rejects.toMatchObject({
+    errors: [{ extensions: { code: "if-match-mismatch", currentEtag: latest } }],
+  });
+  for (const metadata of [
+    { workId, manifestationId: id, etag: newer },
+    { ...snapshot, title: 7 },
+    { ...snapshot, etag: "weak" },
+  ]) {
+    fetch.mockClear();
+    fetch.mockResolvedValueOnce(titleResponse(metadata));
+    await expect(
+      executeEditing<TitleQuery>(environment, mutationsTitleQuery, { id }).toPromise(),
+    ).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(environment.lookup(operation.fragment).data).toMatchObject({
+      manifestation: { metadata: { title: "Background", etag: latest } },
+    });
+  }
+  fetch.mockResolvedValueOnce(
+    titleResponse({ ...snapshot, title: "Fresh decision", etag: latest }),
+  );
+  const fresh = await executeEditing<TitleQuery>(environment, mutationsTitleQuery, {
+    id,
+  }).toPromise();
+  expect(fresh?.manifestation?.metadata).toMatchObject({ title: "Fresh decision", etag: latest });
+  expect(baseline).toEqual(snapshot);
+  const reading = {
+    etag: tag,
+    status: null,
+    rating: null,
+    notes: "Starting",
+    progressPct: null,
+    startedAt: null,
+    finishedAt: null,
+    lastReadAt: null,
+  };
+  fetch.mockResolvedValueOnce(
+    jsonResponse({ data: { manifestation: { id, readingState: reading } } }),
+  );
+  const read = await executeEditing<ReadingQuery>(environment, mutationsReadingQuery, {
+    id,
+  }).toPromise();
+  const readBaseline = read?.manifestation?.readingState;
+  if (readBaseline === undefined) throw new Error("Expected reading baseline.");
+  fetch.mockResolvedValueOnce(
+    jsonResponse({
+      data: {
+        manifestation: { id, readingState: { ...reading, notes: "Background", etag: newer } },
+      },
+    }),
+  );
+  await executeEditing<ReadingQuery>(environment, mutationsReadingQuery, { id }).toPromise();
+  fetch.mockResolvedValueOnce(
+    jsonResponse({ data: { updateReadingState: { ...reading, notes: "Saved", etag: latest } } }),
+  );
+  await executeEditing<ReadingMutation>(environment, mutationsReadingMutation, {
+    id,
+    baseline: readBaseline.etag,
+    patch: { notes: "Saved" },
+  }).toPromise();
+  expect(
+    JSON.parse(
+      typeof fetch.mock.lastCall?.[1]?.body === "string" ? fetch.mock.lastCall[1].body : "null",
+    ),
+  ).toMatchObject({ variables: { baseline: tag } });
+  expect(readBaseline).toEqual(reading);
+  const authorPage = (name: string, cursor: string, hasNextPage: boolean, etag = tag) => ({
+    workId,
+    manifestationId: id,
+    etag,
+    authors: {
+      edges: [
+        {
+          cursor,
+          node: {
+            id: btoa(
+              `Author:${cursor === "one" ? "32345678" : "42345678"}-1234-4234-8234-123456789abc`,
+            ),
+            name,
+          },
+        },
+      ],
+      pageInfo: {
+        hasNextPage,
+        hasPreviousPage: cursor !== "one",
+        startCursor: cursor,
+        endCursor: cursor,
+      },
+    },
+  });
+  fetch.mockResolvedValueOnce(titleResponse(authorPage("Alice", "one", true)));
+  const firstResult = await executeEditing<AuthorPageQuery>(environment, mutationsAuthorPageQuery, {
+    id,
+    first: 1,
+  }).toPromise();
+  const first = firstResult?.manifestation?.metadata;
+  if (first === undefined) throw new Error("Expected author page.");
+  expect(() => captureAuthorPages([{ after: null, snapshot: first }])).toThrow();
+  fetch.mockResolvedValueOnce(titleResponse(authorPage("Bob", "two", false, newer)));
+  const changedResult = await executeEditing<AuthorPageQuery>(
+    environment,
+    mutationsAuthorPageQuery,
+    { id, first: 1, after: "one" },
+  ).toPromise();
+  const changed = changedResult?.manifestation?.metadata;
+  if (changed === undefined) throw new Error("Expected author page.");
+  expect(() =>
+    captureAuthorPages([
+      { after: null, snapshot: first },
+      { after: "one", snapshot: changed },
+    ]),
+  ).toThrow();
+  fetch.mockResolvedValueOnce(titleResponse(authorPage("Bob", "two", false)));
+  const lastResult = await executeEditing<AuthorPageQuery>(environment, mutationsAuthorPageQuery, {
+    id,
+    first: 1,
+    after: "one",
+  }).toPromise();
+  const last = lastResult?.manifestation?.metadata;
+  if (last === undefined) throw new Error("Expected author page.");
+  const complete = captureAuthorPages([
+    { after: null, snapshot: first },
+    { after: "one", snapshot: last },
+  ]);
+  expect(complete).toMatchObject({ etag: tag, authors: [{ name: "Alice" }, { name: "Bob" }] });
+  expect(complete).not.toHaveProperty("title");
+}

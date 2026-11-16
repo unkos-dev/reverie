@@ -46,10 +46,12 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
 
 ## Structure
 
-GraphQL root fields declare scope through their resolver guards in `backend/src/graphql/mod.rs`. The viewer requires
-`Scope::Read` through `CurrentUser::require_scope`; POST does not impose a write floor on queries. The HTTP matrix
+GraphQL root fields declare scope through guards in `backend/src/graphql/mod.rs` and `mutations.rs`. Ordinary queries
+require read scope; mutations and `metadataOperation` require write scope independently of HTTP POST. The HTTP matrix
 continues to cover `/api/v1`. GraphQL request-boundary coverage exercises its own adapter. Role, child status and
-ownership remain separate checks, and no GraphQL mutation is exposed.
+ownership remain separate checks in the shared operations. Metadata edits and review, plus shelf creation, rename and
+delete, refuse children. Reading and permitted shelf membership changes allow children. Exact Undo and operation
+resolution also require the actual live issuing browser session; Basic and device tokens cannot use those capabilities.
 
 - `backend/src/auth/scope.rs` declares `Scope { Read, Write, Admin }` with a derived `Ord`, so the hierarchy
   `Read < Write < Admin` is a comparison rather than a lookup table. `Scope::for_role` gives every role `{Read, Write}`
@@ -89,8 +91,8 @@ ownership remain separate checks, and no GraphQL mutation is exposed.
   The bulk operations are `POST /api/v1/dashboard/enrichment-failures/retries` and
   `POST /api/v1/ingestion/inputs/retries`. The two checks read different `CurrentUser` fields (`scopes` and `role`) and
   fail independently; Runtime behaviour shows why both are needed.
-- **Ownership map.** `backend/src/routes/shelves/mod.rs` documents its own boundary: `shelves` and `shelf_items` have no
-  row-level-security policy, so every mutating handler in that module enforces ownership with an explicit
+- **Ownership map.** `backend/src/services/shelves.rs` owns the write boundary: `shelves` and `shelf_items` have no
+  row-level-security policy, so every write operation in that module enforces ownership with an explicit
   `WHERE id = $1 AND user_id = $2` predicate, and the item-mutation handlers take a `FOR UPDATE` lock under the same
   predicate against a concurrent write. A mismatched id resolves to `AppError::NotFound`, never to a response that says
   the shelf exists but belongs to someone else. The one exception inside that module is the manifestation probe in
@@ -98,8 +100,8 @@ ownership remain separate checks, and no GraphQL mutation is exposed.
   cannot use a shelf-add attempt to learn about a manifestation its visibility rules hide. Every other resource with a
   per-user ownership rule reaches its tables through `crate::db::acquire_with_rls`, so ownership there is a database
   policy: books and manifestations (`routes::library::mod`, `routes::library::search`, `routes::suggest`), reading state
-  (`routes::reading`), metadata (`routes::metadata`), enrichment (`routes::enrichment`), account preferences
-  (`routes::preferences::mod`), series (`routes::series::mod`) and the OPDS surface
+  (`services::reading`), metadata (`services::metadata::editing`), enrichment (`routes::enrichment`), account
+  preferences (`routes::preferences::mod`), series (`routes::series::mod`) and the OPDS surface
   (`routes::opds::{shelves, download, library, root, opensearch}`). `routes::dashboard::mod` and the inputs list in
   `routes::ingestion` also open their transactions through `acquire_with_rls`, but there the scoping enforces nothing:
   the handlers are admin-gated and read every user's data.

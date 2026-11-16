@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE shelves SET is_system=TRUE WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ac793a50783ce903590de2bd6e2e388ed7626f8e7eda67dbc293f7958ab35e53"
+}

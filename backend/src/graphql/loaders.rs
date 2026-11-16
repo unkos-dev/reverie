@@ -81,3 +81,22 @@ pub(super) fn batch_error(error: &Arc<AppError>) -> async_graphql::Error {
     tracing::error!(error = ?error, "Reader batch failed");
     super::safe_error(AppError::Internal(anyhow::anyhow!("Reader batch failed")))
 }
+
+impl Loader<crate::services::metadata::editing::SnapshotKey> for ReaderLoader {
+    type Value = Arc<crate::services::metadata::editing::MetadataSnapshot>;
+    type Error = Arc<AppError>;
+    async fn load(
+        &self,
+        keys: &[crate::services::metadata::editing::SnapshotKey],
+    ) -> Result<HashMap<crate::services::metadata::editing::SnapshotKey, Self::Value>, Self::Error>
+    {
+        crate::services::metadata::editing::snapshot_pages(&self.user, &self.state, keys)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|(key, value)| (key, Arc::new(value)))
+                    .collect()
+            })
+            .map_err(Arc::new)
+    }
+}

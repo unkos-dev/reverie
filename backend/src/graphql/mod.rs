@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use async_graphql::{Context, EmptyMutation, EmptySubscription, ErrorExtensions, Object, Schema};
+use async_graphql::{Context, EmptySubscription, ErrorExtensions, Object, Schema};
 use async_graphql_axum::GraphQLResponse;
 use axum::extract::{Extension, State};
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -13,10 +13,46 @@ use crate::error::AppError;
 use crate::extract::ApiJson;
 use crate::state::AppState;
 
+macro_rules! input_enum {
+    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        pub(super) enum $name { $($variant),+ }
+        impl async_graphql::resolver_utils::EnumType for $name {
+            fn items() -> &'static [async_graphql::resolver_utils::EnumItem<Self>] {
+                &[$(async_graphql::resolver_utils::EnumItem { name: $wire, value: Self::$variant }),+]
+            }
+        }
+        impl async_graphql::InputType for $name {
+            type RawValueType = Self;
+            fn type_name() -> std::borrow::Cow<'static, str> { stringify!($name).into() }
+            fn create_type_info(registry: &mut async_graphql::registry::Registry) -> String {
+                registry.create_input_type::<Self, _>(async_graphql::registry::MetaTypeId::Enum, |_| {
+                    async_graphql::registry::MetaType::Enum {
+                        name: stringify!($name).into(), description: None,
+                        enum_values: [$(($wire.into(), async_graphql::registry::MetaEnumValue {
+                            name: $wire.into(), description: None,
+                            deprecation: async_graphql::registry::Deprecation::NoDeprecated,
+                            visible: None, inaccessible: false, tags: Vec::new(), directive_invocations: Vec::new(),
+                        })),+].into_iter().collect(),
+                        visible: None, inaccessible: false, tags: Vec::new(),
+                        rust_typename: Some(std::any::type_name::<Self>()),
+                        directive_invocations: Vec::new(), requires_scopes: Vec::new(),
+                    }
+                })
+            }
+            fn parse(value: Option<async_graphql::Value>) -> async_graphql::InputValueResult<Self> {
+                async_graphql::resolver_utils::parse_enum(value.unwrap_or(async_graphql::Value::Null))
+            }
+            fn to_value(&self) -> async_graphql::Value { async_graphql::resolver_utils::enum_value(*self) }
+            fn as_raw_value(&self) -> Option<&Self> { Some(self) }
+        }
+    };
+}
 mod complexity;
 mod id;
 mod library;
 mod loaders;
+mod mutations;
 mod versions;
 
 /// Build-profile policy for document admission and schema introspection.
@@ -42,6 +78,18 @@ impl ExecutionPolicy {
 pub struct Query;
 
 struct ReadScope;
+struct WriteScope;
+impl async_graphql::Guard for WriteScope {
+    fn check(
+        &self,
+        ctx: &Context<'_>,
+    ) -> impl std::future::Future<Output = async_graphql::Result<()>> {
+        std::future::ready(
+            ctx.data::<CurrentUser>()
+                .and_then(|user| user.require_scope(Scope::Write).map_err(safe_error)),
+        )
+    }
+}
 
 impl async_graphql::Guard for ReadScope {
     fn check(
@@ -68,6 +116,17 @@ pub struct Viewer {
 
 #[Object]
 impl Query {
+    #[graphql(guard = "WriteScope")]
+    async fn metadata_operation(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+        request_id: Option<String>,
+        operation_id: Option<String>,
+    ) -> async_graphql::Result<mutations::MetadataOperation> {
+        mutations::metadata_operation(ctx, id, request_id, operation_id).await
+    }
+
     #[graphql(guard = "ReadScope")]
     async fn viewer(&self, ctx: &Context<'_>) -> async_graphql::Result<Viewer> {
         let user = ctx.data::<CurrentUser>()?;
@@ -317,7 +376,7 @@ impl Query {
 }
 
 /// Schema for the authenticated browser API.
-pub type AppSchema = Schema<Query, EmptyMutation, EmptySubscription>;
+pub type AppSchema = Schema<Query, mutations::Mutation, EmptySubscription>;
 
 /// Construct a schema with finite execution limits and an explicit admission policy.
 #[must_use]
@@ -327,8 +386,8 @@ pub fn schema(policy: ExecutionPolicy) -> AppSchema {
 
 fn schema_builder(
     policy: ExecutionPolicy,
-) -> async_graphql::SchemaBuilder<Query, EmptyMutation, EmptySubscription> {
-    let builder = Schema::build(Query, EmptyMutation, EmptySubscription)
+) -> async_graphql::SchemaBuilder<Query, mutations::Mutation, EmptySubscription> {
+    let builder = Schema::build(Query, mutations::Mutation, EmptySubscription)
         .limit_depth(complexity::DEPTH)
         .limit_complexity(complexity::LIMIT)
         .data(policy);
@@ -362,6 +421,26 @@ fn safe_error(error: AppError) -> async_graphql::Error {
                 .extend_with(|_, extensions| extensions.set("code", "validation"));
         }
         AppError::Forbidden => ("Forbidden", "forbidden"),
+        AppError::NotFound => ("Not found", "not-found"),
+        AppError::IfMatchRequired => ("A baseline is required.", "if-match-required"),
+        AppError::IfMatchMismatch => ("The baseline is stale.", "if-match-mismatch"),
+        AppError::MalformedHeader(detail) => {
+            return async_graphql::Error::new(detail)
+                .extend_with(|_, extensions| extensions.set("code", "malformed-header"));
+        }
+        AppError::UndoUnavailable => ("Metadata Undo is unavailable.", "undo-unavailable"),
+        AppError::UndoConflict => ("Metadata Undo state conflicts.", "undo-conflict"),
+        AppError::SystemShelfImmutable => {
+            ("System shelf cannot be modified.", "system-shelf-immutable")
+        }
+        AppError::FieldLocked(fields) => {
+            return async_graphql::Error::new("Metadata fields are locked.").extend_with(
+                |_, extensions| {
+                    extensions.set("code", "field-locked");
+                    extensions.set("lockedFields", fields);
+                },
+            );
+        }
         error => {
             tracing::error!(error = ?error, "GraphQL execution failed");
             ("An internal error occurred.", "internal")
@@ -427,6 +506,7 @@ async fn execute(
     State(state): State<AppState>,
     Extension(service): Extension<Service>,
     user: CurrentUser,
+    session: tower_sessions::Session,
     ApiJson(envelope): ApiJson<Envelope>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     let text = document(&envelope, service.policy, &service.documents)?;
@@ -437,6 +517,7 @@ async fn execute(
         .data(loaders::request_loader(user.clone(), state.clone()))
         .data(state.clone())
         .data(user)
+        .data(session)
         .data(state.pool);
     if let Some(name) = envelope.operation_name {
         request = request.operation_name(name);
@@ -577,6 +658,7 @@ mod tests {
             };
             assert_eq!(request.await.status_code().as_u16(), status);
         }
+        mutation_scope_boundary(&pool).await;
         let error = safe_error(AppError::Internal(anyhow::anyhow!(
             "private-database-credential"
         )));
@@ -598,6 +680,719 @@ mod tests {
         );
     }
 
+    async fn mutation_scope_boundary(pool: &PgPool) {
+        let fixture = reader_fixture(pool).await;
+        let app = db::app_pool_for(pool).await;
+        let mut credentials = Vec::new();
+        for scope in [Scope::Read, Scope::Write] {
+            let (secret, hash) = token::generate_device_token();
+            let record = device_token::create_with_limit(
+                &app,
+                fixture.admin_id,
+                "graph-scope",
+                &hash,
+                &[scope],
+                None,
+            )
+            .await
+            .unwrap();
+            credentials.push(format!(
+                "Bearer {}{}.{}",
+                token::TOKEN_PREFIX,
+                record.id,
+                secret
+            ));
+        }
+        let pending=sqlx::query_scalar!("SELECT id FROM metadata_versions WHERE manifestation_id=$1 AND status='pending'::metadata_review_status LIMIT 1",fixture.visible).fetch_one(pool).await.unwrap();
+        let pending = id::encode("MetadataVersion", pending).as_str().to_owned();
+        let id = id::encode("Manifestation", fixture.visible)
+            .as_str()
+            .to_owned();
+        let baseline=reader_query(&fixture,&fixture.admin,TITLE_READ,json!({"id":id})).await["data"]["manifestation"]["metadata"]["etag"].clone();
+        let mutations = mutation_shapes(&fixture, &pending, &baseline);
+        let inventory = schema(ExecutionPolicy::Development)
+            .execute("{ __type(name:\"Mutation\") { fields { name } } }")
+            .await;
+        assert_eq!(inventory.errors, []);
+        let inventory = serde_json::to_value(inventory.data).unwrap();
+        let roots: std::collections::BTreeSet<_> = inventory["__type"]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|field| field["name"].as_str().unwrap())
+            .collect();
+        let covered: std::collections::BTreeSet<_> =
+            mutations.iter().map(|(name, _)| *name).collect();
+        assert!(!roots.is_empty());
+        assert_eq!(roots, covered);
+        for (name, body) in &mutations {
+            let query = format!("mutation {{ {body} }}");
+            let refused = reader_query(&fixture, &credentials[0], &query, json!({})).await;
+            assert_graph_code(&refused, "forbidden");
+            for auth in [&credentials[1], &fixture.admin]
+                .into_iter()
+                .filter(|_| *name != "undoMetadata")
+            {
+                let admitted = reader_query(&fixture, auth, &query, json!({})).await;
+                let code = &admitted["errors"][0]["extensions"]["code"];
+                assert_ne!(code, "forbidden", "{name}: {admitted}");
+                assert_ne!(code, "validation", "{name}: {admitted}");
+                if *name == "createShelf" {
+                    assert_graph_ok(&admitted);
+                    assert_eq!(admitted["data"][name]["name"], "Scoped shelf");
+                }
+            }
+            if matches!(
+                *name,
+                "updateMetadata"
+                    | "createShelf"
+                    | "renameShelf"
+                    | "deleteShelf"
+                    | "acceptMetadataVersion"
+                    | "rejectMetadataVersion"
+                    | "revertMetadataField"
+                    | "lockMetadataField"
+                    | "unlockMetadataField"
+                    | "undoMetadata"
+            ) {
+                assert_graph_code(
+                    &reader_query(&fixture, &fixture.child, &query, json!({})).await,
+                    "forbidden",
+                );
+            }
+        }
+        assert_graph_code(
+            &reader_query(
+                &fixture,
+                &credentials[0],
+                RESOLVE,
+                json!({"id":id,"request":uuid::Uuid::new_v4()}),
+            )
+            .await,
+            "forbidden",
+        );
+        mutation_session_controls(pool, &id).await;
+        mutation_child_controls(pool, &fixture, &id).await;
+    }
+
+    fn mutation_shapes(
+        fixture: &ReaderFixture,
+        pending: &str,
+        baseline: &serde_json::Value,
+    ) -> Vec<(&'static str, String)> {
+        let id = id::encode("Manifestation", fixture.visible)
+            .as_str()
+            .to_owned();
+        let shelf = id::encode("Shelf", fixture.shelf_a).as_str().to_owned();
+        let delete_shelf = id::encode("Shelf", fixture.shelf_b).as_str().to_owned();
+        let tag = serde_json::to_string(&baseline).unwrap();
+        vec![
+            (
+                "updateMetadata",
+                format!(
+                    "updateMetadata(id:\"{id}\",baseline:{tag},patch:{{title:\"Scoped\"}}) {{ metadata {{ title etag }} }}"
+                ),
+            ),
+            (
+                "updateReadingState",
+                format!("updateReadingState(id:\"{id}\",patch:{{notes:\"Scoped\"}}) {{ etag }}"),
+            ),
+            (
+                "createShelf",
+                "createShelf(name:\"Scoped shelf\") { id name }".to_owned(),
+            ),
+            (
+                "renameShelf",
+                format!("renameShelf(id:\"{shelf}\",name:\"Scoped rename\") {{ id name }}"),
+            ),
+            (
+                "deleteShelf",
+                format!("deleteShelf(id:\"{delete_shelf}\") {{ shelfId }}"),
+            ),
+            (
+                "addShelfItem",
+                format!(
+                    "addShelfItem(shelfId:\"{shelf}\",manifestationId:\"{id}\") {{ shelfId manifestationId }}"
+                ),
+            ),
+            (
+                "removeShelfItem",
+                format!(
+                    "removeShelfItem(shelfId:\"{shelf}\",manifestationId:\"{id}\") {{ shelfId manifestationId }}"
+                ),
+            ),
+            (
+                "acceptMetadataVersion",
+                format!(
+                    "acceptMetadataVersion(id:\"{id}\",versionId:\"{pending}\") {{ manifestationId }}"
+                ),
+            ),
+            (
+                "rejectMetadataVersion",
+                format!(
+                    "rejectMetadataVersion(id:\"{id}\",versionId:\"{pending}\") {{ manifestationId }}"
+                ),
+            ),
+            (
+                "revertMetadataField",
+                format!(
+                    "revertMetadataField(id:\"{id}\",fieldName:\"subtitle\") {{ manifestationId }}"
+                ),
+            ),
+            (
+                "lockMetadataField",
+                format!(
+                    "lockMetadataField(id:\"{id}\",fieldName:\"subtitle\",entityType:\"work\") {{ manifestationId }}"
+                ),
+            ),
+            (
+                "unlockMetadataField",
+                format!(
+                    "unlockMetadataField(id:\"{id}\",fieldName:\"subtitle\",entityType:\"work\") {{ manifestationId }}"
+                ),
+            ),
+            (
+                "undoMetadata",
+                format!(
+                    "undoMetadata(id:\"{id}\",baseline:{tag},operationId:\"{}\") {{ outcome }}",
+                    uuid::Uuid::new_v4()
+                ),
+            ),
+        ]
+    }
+    async fn mutation_session_controls(pool: &PgPool, id: &str) {
+        for (name, admin) in [
+            ("graph-write-session", false),
+            ("graph-admin-session", true),
+        ] {
+            let (user, browser, csrf) = editing_browser(pool, name).await;
+            if admin {
+                sqlx::query!("UPDATE users SET role = 'admin' WHERE id = $1", user)
+                    .execute(pool)
+                    .await
+                    .unwrap();
+            }
+            let current = browser_graph(&browser, &csrf, TITLE_READ, json!({"id":id})).await;
+            let saved = browser_graph(&browser, &csrf, TITLE_SAVE, json!({"id":id,"baseline":current["data"]["manifestation"]["metadata"]["etag"],"patch":{"title":name}})).await;
+            assert_graph_ok(&saved);
+            let operation = &saved["data"]["updateMetadata"]["operations"][0]["operationId"];
+            let resolved = browser_graph(
+                &browser,
+                &csrf,
+                RESOLVE,
+                json!({"id":id,"operation":operation}),
+            )
+            .await;
+            assert_graph_ok(&resolved);
+            assert_eq!(resolved["data"]["metadataOperation"]["outcome"], "saved");
+            let restored = browser_graph(&browser, &csrf, UNDO, json!({"id":id,"baseline":saved["data"]["updateMetadata"]["metadata"]["etag"],"operation":operation})).await;
+            assert_graph_ok(&restored);
+            assert_eq!(restored["data"]["undoMetadata"]["outcome"], "restored");
+        }
+    }
+    async fn mutation_child_controls(pool: &PgPool, fixture: &ReaderFixture, id: &str) {
+        let shelf = id::encode("Shelf", fixture.shelf_a).as_str().to_owned();
+        let own = reader_query(fixture, &fixture.child, READING_READ, json!({"id":id})).await;
+        let child_saved=reader_query(fixture,&fixture.child,READING_SAVE,json!({"id":id,"baseline":own["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Child's change"}})).await;
+        assert_graph_ok(&child_saved);
+        let adult = reader_query(fixture, &fixture.admin, READING_READ, json!({"id":id})).await;
+        assert_eq!(
+            adult["data"]["manifestation"]["readingState"]["notes"],
+            "Admin note"
+        );
+        let hidden = id::encode("Manifestation", fixture.hidden);
+        assert_graph_code(&reader_query(fixture,&fixture.child,READING_SAVE,json!({"id":hidden,"baseline":own["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Hidden"}})).await,"not-found");
+        let membership = "mutation($shelf:ID!,$id:ID!) { addShelfItem(shelfId:$shelf,manifestationId:$id) { shelfId manifestationId } }";
+        assert_graph_ok(
+            &reader_query(
+                fixture,
+                &fixture.child,
+                membership,
+                json!({"shelf":id::encode("Shelf",fixture.child_shelf),"id":id}),
+            )
+            .await,
+        );
+        assert_graph_code(
+            &reader_query(
+                fixture,
+                &fixture.child,
+                membership,
+                json!({"shelf":id::encode("Shelf",fixture.child_shelf),"id":hidden}),
+            )
+            .await,
+            "not-found",
+        );
+        assert_graph_code(
+            &reader_query(
+                fixture,
+                &fixture.admin,
+                membership,
+                json!({"shelf":id::encode("Shelf",fixture.other_shelf),"id":id}),
+            )
+            .await,
+            "not-found",
+        );
+        sqlx::query!(
+            "UPDATE shelves SET is_system=TRUE WHERE id=$1",
+            fixture.shelf_a
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        for query in [
+            format!("mutation {{ renameShelf(id:\"{shelf}\",name:\"Refused\") {{ id }} }}"),
+            format!("mutation {{ deleteShelf(id:\"{shelf}\") {{ shelfId }} }}"),
+        ] {
+            assert_graph_code(
+                &reader_query(fixture, &fixture.admin, &query, json!({})).await,
+                "system-shelf-immutable",
+            );
+        }
+    }
+    async fn editing_browser(pool: &PgPool, name: &str) -> (uuid::Uuid, TestServer, String) {
+        let app = db::app_pool_for(pool).await;
+        let ing = db::ingestion_pool_for(pool).await;
+        let email = format!("{name}@example.test");
+        let user =
+            db::create_adult_with_password(&app, name, &email, test_support::mail::PASSWORD).await;
+        let mut server = db::server_with_real_pools(&app, &ing);
+        server.save_cookies();
+        let csrf = test_support::mail::login(&server, &email, test_support::mail::PASSWORD).await;
+        (user, server, csrf)
+    }
+    async fn browser_graph(
+        server: &TestServer,
+        csrf: &str,
+        query: &str,
+        variables: serde_json::Value,
+    ) -> serde_json::Value {
+        let response = server
+            .post("/api/graphql")
+            .add_header("x-csrf-token", csrf.to_owned())
+            .json(&json!({"query":query,"variables":variables}))
+            .await;
+        response.assert_status_ok();
+        response.json()
+    }
+    fn assert_graph_ok(value: &serde_json::Value) {
+        assert!(value.get("errors").is_none(), "{value}");
+    }
+    fn assert_graph_code(value: &serde_json::Value, code: &str) {
+        assert_eq!(value["errors"][0]["extensions"]["code"], code, "{value}");
+    }
+    const TITLE_READ: &str =
+        "query($id: ID!) { manifestation(id: $id) { metadata { title etag } } }";
+    const TITLE_SAVE: &str = "mutation($id: ID!, $baseline: String, $request: String, $patch: MetadataPatch!) { updateMetadata(id: $id, baseline: $baseline, requestId: $request, patch: $patch) { requestId operations { operationId fieldName expiresAt status } metadata { title etag } } }";
+    const READING_READ: &str =
+        "query($id: ID!) { manifestation(id: $id) { readingState { notes rating status etag } } }";
+    const READING_SAVE: &str = "mutation($id: ID!, $baseline: String, $patch: ReadingPatch!) { updateReadingState(id: $id, baseline: $baseline, patch: $patch) { notes rating status etag } }";
+    const RESOLVE: &str = "query($id: ID!, $request: String, $operation: String) { metadataOperation(id: $id, requestId: $request, operationId: $operation) { outcome operations { operationId fieldName expiresAt status } metadata { title etag } } }";
+    const UNDO: &str = "mutation($id: ID!, $baseline: String, $operation: String!) { undoMetadata(id: $id, baseline: $baseline, operationId: $operation) { outcome operations { operationId fieldName expiresAt status } metadata { title etag } } }";
+
+    // REV-REQ-0018/0020 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn graphql_edit_baselines(pool: PgPool) {
+        let (_, server, csrf) = editing_browser(&pool, "graph-edits").await;
+        let ing = db::ingestion_pool_for(&pool).await;
+        let (_, edition) = db::insert_work_and_manifestation(&ing, "graph-edits").await;
+        let id = id::encode("Manifestation", edition);
+        let vars = json!({"id":id});
+        let initial = browser_graph(&server, &csrf, TITLE_READ, vars.clone()).await;
+        assert_graph_ok(&initial);
+        let original = initial["data"]["manifestation"]["metadata"].clone();
+        assert_eq!(original.as_object().unwrap().len(), 2);
+        let request = uuid::Uuid::new_v4();
+        let attempt = json!({"id":id,"baseline":original["etag"],"request":request,"patch":{"title":"Edited title"}});
+        for (baseline, code) in [
+            (serde_json::Value::Null, "if-match-required"),
+            (json!("weak"), "malformed-header"),
+            (json!("\"stale\""), "if-match-mismatch"),
+        ] {
+            let mut rejected = attempt.clone();
+            rejected["baseline"] = baseline;
+            let result = browser_graph(&server, &csrf, TITLE_SAVE, rejected).await;
+            assert_graph_code(&result, code);
+            if code == "if-match-mismatch" {
+                assert_eq!(
+                    result["errors"][0]["extensions"]["currentEtag"],
+                    original["etag"]
+                );
+            }
+        }
+        let mut omitted = attempt.clone();
+        omitted.as_object_mut().unwrap().remove("baseline");
+        assert_graph_code(
+            &browser_graph(&server, &csrf, TITLE_SAVE, omitted).await,
+            "if-match-required",
+        );
+        let unchanged = browser_graph(&server, &csrf, TITLE_READ, vars.clone()).await;
+        assert_eq!(unchanged["data"]["manifestation"]["metadata"], original);
+        let saved = browser_graph(&server, &csrf, TITLE_SAVE, attempt.clone()).await;
+        assert_graph_ok(&saved);
+        let ack = &saved["data"]["updateMetadata"]["metadata"];
+        assert_eq!(ack["title"], "Edited title");
+        assert_ne!(ack["etag"], original["etag"]);
+        let matched = browser_graph(&server, &csrf, TITLE_READ, vars.clone()).await;
+        assert_eq!(*ack, matched["data"]["manifestation"]["metadata"]);
+        assert_graph_code(
+            &browser_graph(&server, &csrf, TITLE_SAVE, attempt).await,
+            "if-match-mismatch",
+        );
+        let resolved =
+            browser_graph(&server, &csrf, RESOLVE, json!({"id":id,"request":request})).await;
+        assert_graph_ok(&resolved);
+        assert_eq!(resolved["data"]["metadataOperation"]["outcome"], "saved");
+        assert_eq!(
+            resolved["data"]["metadataOperation"]["operations"],
+            saved["data"]["updateMetadata"]["operations"]
+        );
+        let reused = browser_graph(
+            &server,
+            &csrf,
+            TITLE_SAVE,
+            json!({"id":id,"baseline":ack["etag"],"request":request,"patch":{"title":"Reuse"}}),
+        )
+        .await;
+        assert_graph_code(&reused, "validation");
+        let unknown = browser_graph(
+            &server,
+            &csrf,
+            RESOLVE,
+            json!({"id":id,"request":uuid::Uuid::new_v4()}),
+        )
+        .await;
+        assert_eq!(unknown["data"]["metadataOperation"]["outcome"], "unknown");
+        let sparse = "mutation($id:ID!, $baseline:String, $patch:MetadataPatch!) { updateMetadata(id:$id,baseline:$baseline,patch:$patch) { metadata { title subtitle etag } } }";
+        let subtitle = browser_graph(
+            &server,
+            &csrf,
+            sparse,
+            json!({"id":id,"baseline":ack["etag"],"patch":{"subtitle":"Keep"}}),
+        )
+        .await;
+        assert_graph_ok(&subtitle);
+        let retained = browser_graph(&server,&csrf,sparse,json!({"id":id,"baseline":subtitle["data"]["updateMetadata"]["metadata"]["etag"],"patch":{"title":"Still edited"}})).await;
+        assert_graph_ok(&retained);
+        assert_eq!(
+            retained["data"]["updateMetadata"]["metadata"]["subtitle"],
+            "Keep"
+        );
+        let cleared = browser_graph(&server,&csrf,sparse,json!({"id":id,"baseline":retained["data"]["updateMetadata"]["metadata"]["etag"],"patch":{"subtitle":null}})).await;
+        assert_graph_ok(&cleared);
+        assert!(cleared["data"]["updateMetadata"]["metadata"]["subtitle"].is_null());
+        let shared = cleared["data"]["updateMetadata"]["metadata"]["etag"].clone();
+        let (left, right) = tokio::join!(
+            browser_graph(
+                &server,
+                &csrf,
+                TITLE_SAVE,
+                json!({"id":id,"baseline":shared,"patch":{"title":"Left"}})
+            ),
+            browser_graph(
+                &server,
+                &csrf,
+                TITLE_SAVE,
+                json!({"id":id,"baseline":shared,"patch":{"title":"Right"}})
+            )
+        );
+        assert_eq!(
+            [&left, &right]
+                .into_iter()
+                .filter(|v| v.get("errors").is_none())
+                .count(),
+            1
+        );
+        assert_graph_code(
+            if left.get("errors").is_some() {
+                &left
+            } else {
+                &right
+            },
+            "if-match-mismatch",
+        );
+        let now = browser_graph(&server, &csrf, TITLE_READ, vars.clone()).await;
+        let names: Vec<_> = (0..22).map(|n| format!("Author {n:02}")).collect();
+        let author_save = "mutation($id:ID!, $baseline:String, $patch:MetadataPatch!) { updateMetadata(id:$id,baseline:$baseline,patch:$patch) { metadata { etag authors(first:20) { edges { cursor node { name } } pageInfo { hasNextPage hasPreviousPage endCursor } } } } }";
+        let authors = browser_graph(&server,&csrf,author_save,json!({"id":id,"baseline":now["data"]["manifestation"]["metadata"]["etag"],"patch":{"contributors":{"author":names}}})).await;
+        assert_graph_ok(&authors);
+        let first = &authors["data"]["updateMetadata"]["metadata"];
+        assert_eq!(first["authors"]["edges"].as_array().unwrap().len(), 20);
+        assert_eq!(first["authors"]["pageInfo"]["hasNextPage"], true);
+        let pages = "query($id:ID!, $after:String) { manifestation(id:$id) { metadata { etag authors(first:20,after:$after) { edges { node { name } } pageInfo { hasNextPage hasPreviousPage } } one:authors(first:1) { edges { node { name } } } two:authors(first:2,after:$after) { edges { node { name } } } } } }";
+        let rest = browser_graph(
+            &server,
+            &csrf,
+            pages,
+            json!({"id":id,"after":first["authors"]["pageInfo"]["endCursor"]}),
+        )
+        .await;
+        assert_graph_ok(&rest);
+        let rest = &rest["data"]["manifestation"]["metadata"];
+        assert_eq!(rest["etag"], first["etag"]);
+        assert_eq!(rest["authors"]["edges"].as_array().unwrap().len(), 2);
+        assert_eq!(rest["authors"]["pageInfo"]["hasNextPage"], false);
+        assert_eq!(rest["authors"]["pageInfo"]["hasPreviousPage"], true);
+        assert_eq!(rest["one"]["edges"][0]["node"]["name"], "Author 00");
+        assert_eq!(rest["two"]["edges"][0]["node"]["name"], "Author 20");
+        let revised = browser_graph(&server,&csrf,author_save,json!({"id":id,"baseline":first["etag"],"patch":{"contributors":{"author":["Changed author"]}}})).await;
+        assert_graph_ok(&revised);
+        assert_ne!(
+            revised["data"]["updateMetadata"]["metadata"]["etag"],
+            first["etag"]
+        );
+        let read = browser_graph(&server, &csrf, READING_READ, vars.clone()).await;
+        for (baseline, code) in [
+            (serde_json::Value::Null, "if-match-required"),
+            (json!("W/\"tag\""), "malformed-header"),
+            (json!("\"old\""), "if-match-mismatch"),
+        ] {
+            assert_graph_code(
+                &browser_graph(
+                    &server,
+                    &csrf,
+                    READING_SAVE,
+                    json!({"id":id,"baseline":baseline,"patch":{"notes":"Refused"}}),
+                )
+                .await,
+                code,
+            );
+        }
+        assert_graph_code(
+            &browser_graph(
+                &server,
+                &csrf,
+                READING_SAVE,
+                json!({"id":id,"patch":{"notes":"Refused"}}),
+            )
+            .await,
+            "if-match-required",
+        );
+        let reading_attempt = json!({"id":id,"baseline":read["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Notes","rating":3,"status":"READING"}});
+        let read_saved = browser_graph(&server, &csrf, READING_SAVE, reading_attempt.clone()).await;
+        assert_graph_ok(&read_saved);
+        assert_graph_code(
+            &browser_graph(&server, &csrf, READING_SAVE, reading_attempt).await,
+            "if-match-mismatch",
+        );
+        let read_back = browser_graph(&server, &csrf, READING_READ, vars.clone()).await;
+        assert_eq!(
+            read_saved["data"]["updateReadingState"],
+            read_back["data"]["manifestation"]["readingState"]
+        );
+        let notes_clear = browser_graph(&server,&csrf,READING_SAVE,json!({"id":id,"baseline":read_saved["data"]["updateReadingState"]["etag"],"patch":{"notes":null}})).await;
+        assert_graph_ok(&notes_clear);
+        assert!(notes_clear["data"]["updateReadingState"]["notes"].is_null());
+        assert_eq!(notes_clear["data"]["updateReadingState"]["rating"], 3);
+    }
+
+    // Authentication, private-data and corruption boundaries for session-bound, non-consuming exact Undo.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn graphql_undo_boundary(pool: PgPool) {
+        let (user, server, csrf) = editing_browser(&pool, "graph-undo").await;
+        let (_, foreign, foreign_csrf) = editing_browser(&pool, "graph-foreign").await;
+        let app = db::app_pool_for(&pool).await;
+        let ing = db::ingestion_pool_for(&pool).await;
+        let (_, edition) = db::insert_work_and_manifestation(&ing, "graph-undo").await;
+        let (_, other_edition) =
+            db::insert_work_and_manifestation(&ing, "graph-other-edition").await;
+        let id = id::encode("Manifestation", edition);
+        let other_id = id::encode("Manifestation", other_edition);
+        let read = browser_graph(&server, &csrf, TITLE_READ, json!({"id":id})).await;
+        let original = &read["data"]["manifestation"]["metadata"];
+        let saved = browser_graph(&server,&csrf,TITLE_SAVE,json!({"id":id,"baseline":original["etag"],"request":uuid::Uuid::new_v4(),"patch":{"title":"Undo this"}})).await;
+        assert_graph_ok(&saved);
+        let result = &saved["data"]["updateMetadata"];
+        let operation = &result["operations"][0]["operationId"];
+        assert_eq!(result["operations"][0]["status"], "eligible");
+        let input = json!({"id":id,"baseline":result["metadata"]["etag"],"operation":operation});
+        for (baseline, code) in [
+            (serde_json::Value::Null, "if-match-required"),
+            (json!("*"), "malformed-header"),
+            (original["etag"].clone(), "if-match-mismatch"),
+        ] {
+            let mut bad = input.clone();
+            bad["baseline"] = baseline;
+            assert_graph_code(&browser_graph(&server, &csrf, UNDO, bad).await, code);
+        }
+        let mut omitted = input.clone();
+        omitted.as_object_mut().unwrap().remove("baseline");
+        assert_graph_code(
+            &browser_graph(&server, &csrf, UNDO, omitted).await,
+            "if-match-required",
+        );
+        let foreign_result = browser_graph(&foreign, &foreign_csrf, UNDO, input.clone()).await;
+        assert_graph_code(&foreign_result, "undo-unavailable");
+        let mut second = db::server_with_real_pools(&app, &ing);
+        second.save_cookies();
+        let second_csrf = test_support::mail::login(
+            &second,
+            "graph-undo@example.test",
+            test_support::mail::PASSWORD,
+        )
+        .await;
+        assert_graph_code(
+            &browser_graph(&second, &second_csrf, UNDO, input.clone()).await,
+            "undo-unavailable",
+        );
+        let second_resolve = browser_graph(
+            &second,
+            &second_csrf,
+            RESOLVE,
+            json!({"id":id,"operation":operation}),
+        )
+        .await;
+        assert_eq!(
+            second_resolve["data"]["metadataOperation"]["outcome"],
+            "unknown"
+        );
+        let other = browser_graph(&server, &csrf, TITLE_READ, json!({"id":other_id})).await;
+        assert_graph_code(&browser_graph(&server,&csrf,UNDO,json!({"id":other_id,"baseline":other["data"]["manifestation"]["metadata"]["etag"],"operation":operation})).await,"undo-unavailable");
+        let (_, basic) = db::create_admin_and_basic_auth(&app).await;
+        let (secret, hash) = token::generate_device_token();
+        let record = device_token::create_with_limit(
+            &app,
+            user,
+            "graph-undo-token",
+            &hash,
+            &[Scope::Write],
+            None,
+        )
+        .await
+        .unwrap();
+        let bearer = format!("Bearer {}{}.{}", token::TOKEN_PREFIX, record.id, secret);
+        let credential_server = db::server_with_real_pools(&app, &ing);
+        for auth in [basic, bearer] {
+            for (query, vars) in [
+                (UNDO, input.clone()),
+                (RESOLVE, json!({"id":id,"operation":operation})),
+            ] {
+                let response = credential_server
+                    .post("/api/graphql")
+                    .add_header("authorization", auth.clone())
+                    .json(&json!({"query":query,"variables":vars}))
+                    .await;
+                response.assert_status_ok();
+                assert_graph_code(&response.json(), "forbidden");
+            }
+        }
+        let lock = "mutation($id:ID!) { lockMetadataField(id:$id,fieldName:\"title\",entityType:\"work\") { manifestationId } }";
+        let unlock = "mutation($id:ID!) { unlockMetadataField(id:$id,fieldName:\"title\",entityType:\"work\") { manifestationId } }";
+        assert_graph_ok(&browser_graph(&server, &csrf, lock, json!({"id":id})).await);
+        let locked = browser_graph(&server, &csrf, UNDO, input.clone()).await;
+        assert_graph_code(&locked, "field-locked");
+        assert_eq!(
+            locked["errors"][0]["extensions"]["lockedFields"],
+            json!(["title"])
+        );
+        let resolved = browser_graph(
+            &server,
+            &csrf,
+            RESOLVE,
+            json!({"id":id,"operation":operation}),
+        )
+        .await;
+        assert_graph_ok(&resolved);
+        assert_eq!(
+            resolved["data"]["metadataOperation"]["operations"][0]["status"],
+            "locked"
+        );
+        assert_eq!(
+            resolved["data"]["metadataOperation"]["operations"][0]["expiresAt"],
+            result["operations"][0]["expiresAt"]
+        );
+        let operation_uuid: uuid::Uuid = operation.as_str().unwrap().parse().unwrap();
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT consumed_at FROM metadata_undo_operations WHERE id=$1",
+                operation_uuid
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .is_none()
+        );
+        assert_graph_ok(&browser_graph(&server, &csrf, unlock, json!({"id":id})).await);
+        let restored = browser_graph(&server, &csrf, UNDO, input.clone()).await;
+        assert_graph_ok(&restored);
+        assert_eq!(restored["data"]["undoMetadata"]["outcome"], "restored");
+        assert_eq!(
+            restored["data"]["undoMetadata"]["metadata"]["title"],
+            original["title"]
+        );
+        assert_eq!(
+            restored["data"]["undoMetadata"]["operations"][0]["status"],
+            "consumed"
+        );
+        let after = browser_graph(&server, &csrf, TITLE_READ, json!({"id":id})).await;
+        assert_eq!(
+            restored["data"]["undoMetadata"]["metadata"],
+            after["data"]["manifestation"]["metadata"]
+        );
+        let resolved = browser_graph(
+            &server,
+            &csrf,
+            RESOLVE,
+            json!({"id":id,"operation":operation}),
+        )
+        .await;
+        assert_eq!(resolved["data"]["metadataOperation"]["outcome"], "restored");
+        let expiring=browser_graph(&server,&csrf,TITLE_SAVE,json!({"id":id,"baseline":after["data"]["manifestation"]["metadata"]["etag"],"patch":{"title":"Expires"}})).await;
+        assert_graph_ok(&expiring);
+        let expiring_id: uuid::Uuid =
+            expiring["data"]["updateMetadata"]["operations"][0]["operationId"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap();
+        sqlx::query!("UPDATE metadata_undo_operations SET expires_at = clock_timestamp() - interval '1 second' WHERE id = $1",expiring_id).execute(&pool).await.unwrap();
+        let expired=browser_graph(&server,&csrf,UNDO,json!({"id":id,"baseline":expiring["data"]["updateMetadata"]["metadata"]["etag"],"operation":expiring_id})).await;
+        assert_graph_code(&expired, "undo-unavailable");
+    }
+
+    async fn trusted_editing_document(pool: &PgPool, document_id: &str, text: &str) {
+        let fixture_name = format!("trusted-{}", uuid::Uuid::new_v4());
+        let (user, server, csrf) = editing_browser(pool, &fixture_name).await;
+        let app = db::app_pool_for(pool).await;
+        let ing = db::ingestion_pool_for(pool).await;
+        let (_, edition) = db::insert_work_and_manifestation(&ing, &fixture_name).await;
+        let shelf = db::create_shelf(&app, user, "Trusted shelf").await;
+        let id = id::encode("Manifestation", edition);
+        if text.contains("removeShelfItem(") {
+            db::add_to_shelf(&app, shelf, edition).await;
+        }
+        if text.contains("unlockMetadataField(") {
+            let locked = browser_graph(&server, &csrf, "mutation($id:ID!) { lockMetadataField(id:$id,fieldName:\"description\",entityType:\"work\") { manifestationId } }", json!({"id":id})).await;
+            assert_graph_ok(&locked);
+        }
+        let version = sqlx::query_scalar!("INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, status, confidence_score) VALUES ($1, 'opf', 'description', to_jsonb('Trusted proposal'::text), decode('00000001', 'hex'), 'title', 'pending'::metadata_review_status, 0.5) RETURNING id", edition).fetch_one(&ing).await.unwrap();
+        let current = browser_graph(&server, &csrf, TITLE_READ, json!({"id":id})).await;
+        let mut baseline = current["data"]["manifestation"]["metadata"]["etag"].clone();
+        let mut operation = serde_json::Value::Null;
+        let mut request = json!(uuid::Uuid::new_v4());
+        let mut patch = json!({"title":"Trusted title"});
+        if text.contains("updateReadingState(") {
+            let reading = browser_graph(&server, &csrf, READING_READ, json!({"id":id})).await;
+            baseline = reading["data"]["manifestation"]["readingState"]["etag"].clone();
+            patch = json!({"notes":"Trusted reading","status":"READING"});
+        } else if text.contains("mutationsSaveAuthorsMutation") {
+            patch = json!({"contributors":{"author":["Trusted author"]}});
+        }
+        if text.contains("undoMetadata(") || text.contains("metadataOperation(") {
+            let saved = browser_graph(&server,&csrf,TITLE_SAVE,json!({"id":id,"baseline":baseline,"request":request,"patch":{"title":"Resolve or undo this"}})).await;
+            assert_graph_ok(&saved);
+            baseline = saved["data"]["updateMetadata"]["metadata"]["etag"].clone();
+            operation = saved["data"]["updateMetadata"]["operations"][0]["operationId"].clone();
+            request = serde_json::Value::Null;
+        }
+        let response=server.post("/api/graphql").add_header("x-csrf-token",csrf).json(&json!({"id":document_id,"variables":{
+            "id":id,"shelfId":id::encode("Shelf",shelf),"name":"Trusted shelf change",
+            "baseline":baseline,"patch":patch,"requestId":request,"operationId":operation,
+            "versionId":id::encode("MetadataVersion",version),"fieldName":"description","entityType":"work","first":20,"count":20
+        }})).await;
+        response.assert_status_ok();
+        assert_graph_ok(&response.json());
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_trusted_documents(pool: PgPool) {
         let documents: BTreeMap<String, String> =
@@ -610,6 +1405,10 @@ mod tests {
                 document(&envelope, ExecutionPolicy::Production, &documents).unwrap(),
                 documents[id]
             );
+            if documents[id].contains("mutations") {
+                trusted_editing_document(&pool, id, &documents[id]).await;
+                continue;
+            }
             let response = fixture
                 .server
                 .post("/api/graphql")

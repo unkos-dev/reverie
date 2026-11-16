@@ -22,7 +22,8 @@ apply/clear dispatch and external-identifier editing, and the client's edit dial
 
 ## Purpose and boundaries
 
-This subject owns `backend/src/routes/metadata.rs` and its `metadata/undo.rs` child module: the review-queue reads
+This subject owns canonical operations in `backend/src/services/metadata/editing.rs` and `editing/undo.rs`, with HTTP
+adapters in `backend/src/routes/metadata.rs` and `metadata/undo.rs`: the review-queue reads
 (`GET /api/v1/manifestations/{id}/metadata`, `GET /api/v1/works/{id}/metadata`), the accept, reject, revert, lock and
 unlock routes, the matched `GET`/`PATCH` pair at `/api/v1/books/{id}/metadata` that an operator edits through, the
 field-dispatch helpers those routes share (`apply_version`, `clear_field`, `apply_contributors_patch`,
@@ -123,6 +124,17 @@ committing, so a missing or hidden manifestation returns `404` and a concurrent 
 field-lock foreign-key write as an internal error.
 
 ### Component relationships
+
+`graphql/mutations.rs` adapts typed, presence-aware inputs to these same operations. Target version IDs use the existing
+encoded `MetadataVersion` identity; request and operation handles are UUID values. Save and exact Undo take explicit
+nullable baselines. Review actions retain their own existing rules without an aggregate precondition.
+`metadataOperation` reads committed evidence under the original browser-session contract and never repeats a write.
+
+Selected GraphQL acknowledgement pages are materialised before commit under the operation's parent locks. Snapshot reads
+batch selected pages and core revisions in one caller-scoped REPEATABLE READ transaction. Scalar-only results skip
+contributor, vocabulary and identifier projection loaders. Required memento capture and writeback work remain part of
+the submitted action. HTTP selects its complete response through the same operation. Relation pages retain their
+existing bounds and continuation cursors, with no universal snapshot ceiling.
 
 - `router()` registers the matched metadata pair, exact Undo and operation resolution alongside the review operations:
   the two review-queue `GET`s, `accept`, `reject`, `revert`, `lock`, `unlock`, and the `get`/`update` pair at

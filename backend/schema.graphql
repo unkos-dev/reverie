@@ -77,6 +77,20 @@ input BooksFilter {
   q: String
 }
 
+enum ContentRatingInput {
+  EVERYONE
+  TEEN
+  MATURE
+  ADULT
+  EXPLICIT
+}
+
+input ContributorPatch {
+  author: [String!]
+  editor: [String!]
+  translator: [String!]
+}
+
 enum Direction {
   ASC
   DESC
@@ -154,6 +168,13 @@ type ExternalRatingEdge {
   cursor: String!
 }
 
+type FieldOperation {
+  operationId: String!
+  fieldName: String!
+  expiresAt: String!
+  status: String!
+}
+
 type Genre {
   id: ID!
   name: String!
@@ -191,6 +212,11 @@ type GenreEdge {
 type GenreSuggestion {
   entityId: ID
   value: String!
+}
+
+input IdentifierPatch {
+  scheme: String!
+  value: String
 }
 
 """
@@ -253,7 +279,44 @@ type ManifestationEdge {
   cursor: String!
 }
 
+type MetadataOperation {
+  outcome: String!
+  operations: [FieldOperation!]!
+  metadata: MetadataSnapshot!
+}
+
+input MetadataPatch {
+  title: String
+  subtitle: String
+  description: String
+  language: String
+  publisher: String
+  publicationDate: String
+  isbn10: String
+  isbn13: String
+  pages: Int
+  contentRating: ContentRatingInput
+  genres: [String!]
+  moods: [String!]
+  tags: [String!]
+  contributors: ContributorPatch
+  workIdentifiers: [IdentifierPatch!]
+  manifestationIdentifiers: [IdentifierPatch!]
+}
+
+type MetadataReview {
+  manifestationId: ID!
+  metadata: MetadataSnapshot
+}
+
+type MetadataSave {
+  requestId: String
+  operations: [FieldOperation!]!
+  metadata: MetadataSnapshot!
+}
+
 type MetadataSnapshot {
+  isbnMismatch: Boolean!
   workId: ID!
   manifestationId: ID!
   etag: String!
@@ -267,6 +330,13 @@ type MetadataSnapshot {
   publisher: String
   publicationDate: String
   contentRating: String
+  authors(first: Int!, after: String): AuthorConnection!
+  contributors(first: Int!, after: String): AuthorConnection!
+  genres(first: Int!, after: String): GenreConnection!
+  moods(first: Int!, after: String): MoodConnection!
+  tags(first: Int!, after: String): TagConnection!
+  workIdentifiers(first: Int!, after: String): ExternalIdentifierConnection!
+  manifestationIdentifiers(first: Int!, after: String): ExternalIdentifierConnection!
 }
 
 type MetadataVersion {
@@ -354,6 +424,22 @@ type MoodSuggestion {
   value: String!
 }
 
+type Mutation {
+  updateMetadata(id: ID!, baseline: String, requestId: String, patch: MetadataPatch!): MetadataSave!
+  updateReadingState(id: ID!, baseline: String, patch: ReadingPatch!): ReadingState!
+  createShelf(name: String!): Shelf!
+  renameShelf(id: ID!, name: String!): Shelf!
+  deleteShelf(id: ID!): ShelfChange!
+  addShelfItem(shelfId: ID!, manifestationId: ID!): ShelfChange!
+  removeShelfItem(shelfId: ID!, manifestationId: ID!): ShelfChange!
+  acceptMetadataVersion(id: ID!, versionId: ID!): MetadataReview!
+  rejectMetadataVersion(id: ID!, versionId: ID!): MetadataReview!
+  revertMetadataField(id: ID!, fieldName: String!, versionId: ID): MetadataReview!
+  lockMetadataField(id: ID!, fieldName: String!, entityType: String!): MetadataReview!
+  unlockMetadataField(id: ID!, fieldName: String!, entityType: String!): MetadataReview!
+  undoMetadata(id: ID!, baseline: String, operationId: String!): MetadataOperation!
+}
+
 interface Node {
   id: ID!
 }
@@ -386,6 +472,7 @@ type PublisherSuggestion {
 }
 
 type Query {
+  metadataOperation(id: ID!, requestId: String, operationId: String): MetadataOperation!
   viewer: Viewer!
   node(id: ID!): Node
   work(id: ID!): Work
@@ -408,6 +495,12 @@ type Query {
   publisherSuggestions(q: String!, limit: Int): [PublisherSuggestion!]!
 }
 
+input ReadingPatch {
+  status: ReadingStatusInput
+  rating: Int
+  notes: String
+}
+
 type ReadingState {
   etag: String!
   status: String
@@ -417,6 +510,14 @@ type ReadingState {
   startedAt: String
   finishedAt: String
   lastReadAt: String
+}
+
+enum ReadingStatusInput {
+  WANT_TO_READ
+  READING
+  ON_HOLD
+  FINISHED
+  ABANDONED
 }
 
 type SearchHit {
@@ -449,6 +550,11 @@ type Shelf implements Node @fetchable(field_name: "id") {
   createdAt: String!
   updatedAt: String!
   items(first: Int!, after: String): ManifestationConnection!
+}
+
+type ShelfChange {
+  shelfId: ID!
+  manifestationId: ID
 }
 
 type ShelfConnection {
@@ -594,4 +700,5 @@ Directs the executor to skip this field or fragment when the `if` argument is tr
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 schema {
   query: Query
+  mutation: Mutation
 }
