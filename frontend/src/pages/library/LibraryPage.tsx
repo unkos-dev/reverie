@@ -297,6 +297,8 @@ function useLibraryPosition(
         );
         return;
       }
+      if (view === "table")
+        setOffset(index * (density === "compact" ? 40 : 52) - position.anchorOffset);
       const anchor = [...element.querySelectorAll<HTMLElement>("[data-book-id]")].find(
         (row) => row.dataset.bookId === position.anchorId,
       );

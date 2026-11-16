@@ -173,7 +173,7 @@ export class LibraryVisitOwner {
   }
 
   enter(position: LibraryPosition | undefined): void {
-    this.returning = this.state.source !== undefined;
+    this.returning = this.state.source !== undefined || position !== undefined;
     this.publish({ position, restoreGeneration: this.state.restoreGeneration + 1 });
   }
 
