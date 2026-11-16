@@ -185,6 +185,7 @@ export default defineConfig({
           "typescript/prefer-reduce-type-parameter": "error",
           "typescript/prefer-return-this-type": "error",
           "typescript/related-getter-setter-pairs": "error",
+          "typescript/require-array-sort-compare": ["error", { ignoreStringArrays: false }],
           "typescript/require-await": "error",
           "typescript/restrict-plus-operands": [
             "error",

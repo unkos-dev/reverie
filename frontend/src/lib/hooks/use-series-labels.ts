@@ -6,7 +6,10 @@ import type { readerSeriesLabelsQuery as LabelsQuery } from "@/lib/relay/__gener
 
 export function useSeriesLabels(ids: readonly string[]): { labelFor: (id: string) => string } {
   const environment = useRelayEnvironment();
-  const token = [...new Set(ids)].sort().slice(0, 60).join(",");
+  const token = [...new Set(ids)]
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, 60)
+    .join(",");
   const [result, setResult] = useState<{
     token: string;
     data?: LabelsQuery["response"];
