@@ -1366,7 +1366,7 @@ async fn apply_field(
                 tracing::warn!(field = %field, raw = %value, "non-string canonical value; skipping apply");
                 return Ok(false);
             };
-            // Intentional divergence from routes::metadata::apply_version,
+            // Intentional divergence from services::metadata::editing::apply_version,
             // which returns AppError::Validation. In the pipeline a bad
             // pub_date comes from an external source; we keep the journal
             // row so a reviewer can still accept/reject it and skip the

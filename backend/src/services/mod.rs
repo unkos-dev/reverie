@@ -156,3 +156,6 @@ mod tests {
         assert_ne!(forwarded.request_id, audit.request_id);
     }
 }
+
+pub(crate) mod reading;
+pub(crate) mod shelves;

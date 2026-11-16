@@ -1,10 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT w.id             AS \"work_id!\",\n               w.metadata_revision AS \"work_revision!\",\n               m.metadata_revision AS \"manifestation_revision!\",\n               w.title          AS \"title!\",\n               w.subtitle       AS subtitle,\n               w.description    AS description,\n               w.language       AS language,\n               m.publisher      AS publisher,\n               m.pub_date       AS pub_date,\n               m.isbn_10        AS isbn_10,\n               m.isbn_13        AS isbn_13,\n               m.pages          AS pages,\n               m.content_rating AS \"content_rating: ContentRating\"\n          FROM manifestations m\n          JOIN works w ON w.id = m.work_id\n         WHERE m.id = $1\n        ",
+  "query": "\n        SELECT m.id AS \"manifestation_id!\", w.id             AS \"work_id!\",\n               w.metadata_revision AS \"work_revision!\",\n               m.metadata_revision AS \"manifestation_revision!\",\n               w.title          AS \"title!\",\n               w.subtitle       AS subtitle,\n               w.description    AS description,\n               w.language       AS language,\n               m.publisher      AS publisher,\n               m.pub_date       AS pub_date,\n               m.isbn_10        AS isbn_10,\n               m.isbn_13        AS isbn_13,\n               m.pages          AS pages,\n               m.content_rating AS \"content_rating: ContentRating\"\n          FROM manifestations m\n          JOIN works w ON w.id = m.work_id\n         WHERE m.id = ANY($1)\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "manifestation_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
         "name": "work_id!",
         "type_info": "Uuid",
         "origin": {
@@ -15,7 +26,7 @@
         }
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "work_revision!",
         "type_info": "Int8",
         "origin": {
@@ -26,7 +37,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "manifestation_revision!",
         "type_info": "Int8",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "title!",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "subtitle",
         "type_info": "Text",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "description",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "language",
         "type_info": "Text",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "publisher",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "pub_date",
         "type_info": "Text",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "isbn_10",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "isbn_13",
         "type_info": "Text",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "pages",
         "type_info": "Int4",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "content_rating: ContentRating",
         "type_info": {
           "Custom": {
@@ -162,10 +173,11 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "UuidArray"
       ]
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -181,5 +193,5 @@
       true
     ]
   },
-  "hash": "a24d86f877ee6bd8565da55e8d02c307e0ba34dd56d3c2d10cd900150aff26e1"
+  "hash": "a3cb7d254bcef56cf21f93d6672c4943c8249c76bba3f7a643ab4b8cc35c6578"
 }

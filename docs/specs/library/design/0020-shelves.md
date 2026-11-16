@@ -58,12 +58,12 @@ selection to shelf" action — all described below only as consumers, since none
 
 ## Structure
 
-- `backend/src/routes/shelves/mod.rs` holds all seven handlers and is the only place any of them lives: `list_shelves`,
-  `create_shelf`, `rename_shelf`, `delete_shelf`, `get_shelf_with_items`, `add_shelf_item`, and `remove_shelf_item`. Its
-  module doc states the boundary this Design names in Purpose: no row-level security on `shelves` or `shelf_items`,
-  ownership enforced by an explicit `WHERE user_id = $current_user` predicate in every handler that touches an existing
-  row, and a mismatched predicate resolving to `AppError::NotFound` so a foreign shelf's existence is never
-  distinguishable from its absence.
+- `backend/src/routes/shelves/mod.rs` holds the seven HTTP adapters: `list_shelves`, `create_shelf`, `rename_shelf`,
+  `delete_shelf`, `get_shelf_with_items`, `add_shelf_item`, and `remove_shelf_item`. Its write operations delegate to
+  `backend/src/services/shelves.rs`, which retains the boundary this Design names: no row-level security on `shelves` or
+  `shelf_items`, ownership enforced by an explicit `WHERE user_id = $current_user` predicate in every operation that
+  touches an existing row, and a mismatched predicate resolving to `AppError::NotFound` so a foreign shelf's existence
+  is never distinguishable from its absence.
 - `backend/src/models/shelf.rs` holds the two response types, `Shelf` and `ShelfItem`. Both are `#[non_exhaustive]` and
   carry no pagination fields. The shared reads and paged response envelopes (`ShelfListResponse`, `ShelfDetailResponse`)
   live in `backend/src/services/reader.rs`. HTTP adapters retain the request and header contract.
@@ -158,6 +158,11 @@ bound into the graph cursor. Every edge has its own cursor and PageInfo flags co
 
 Typed and Node lookups return null for foreign, hidden, missing or invalid shelf identities. Item hydration rechecks
 manifestation visibility through the caller's transaction. These reads add no browser cache owner or shelf writer.
+
+GraphQL create, rename, delete and membership mutations call `services::shelves` with write scope. They preserve adult
+CRUD, owner predicates, system-shelf refusals and child membership permissions. Create and rename return the shelf;
+deletion and membership changes identify the affected records. These actions introduce no shelf precondition. Browser
+workflows retain their existing HTTP cache ownership.
 
 ## Data and state
 

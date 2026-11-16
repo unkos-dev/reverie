@@ -2,8 +2,8 @@
 //!
 //! Orchestrates the pipeline from raw `OPF` fields through sanitisation,
 //! `ISBN` normalisation, inversion detection, and journal-row persistence.
-//! All sub-modules are deterministic and do not perform I/O except `draft`,
-//! which writes to an open `sqlx` connection supplied by the caller.
+//! Extraction and validation are deterministic. `draft` writes to a caller-supplied
+//! SQLx connection; `editing` owns the write transactions shared by HTTP and GraphQL.
 
 /// Write extracted metadata fields as `metadata_versions` journal rows.
 pub mod draft;
@@ -18,3 +18,5 @@ pub mod sanitiser;
 
 /// Precision-preserving validation of bibliographic publication dates.
 pub mod publication_date;
+
+pub(crate) mod editing;

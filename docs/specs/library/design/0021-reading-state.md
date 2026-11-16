@@ -58,16 +58,16 @@ conflict detection.
 
 - `backend/src/routes/reading.rs` is the whole server-side endpoint surface. `router()` builds the two-route
   `OpenApiRouter` merged into `crate::openapi::pilot_router`; `get_reading` and `patch_reading` are its only handlers,
-  and the module is tagged `reading` in the generated OpenAPI document. `ensure_manifestation_visible` is the RLS-scoped
-  existence probe both handlers call first, returning `AppError::NotFound` when the manifestation is missing or hidden
-  by the caller's own visibility policy. `ReadingStateRow` is the shared decode target for both a `SELECT` and the
-  `UPDATE`'s `RETURNING` clause; its `Default` gives the all-null "unread" shape a query with no row still needs to hash
-  and return. `ReadingEtagFields` and `ReadingStateRow::etag` compute the entity-tag from a fixed-field-order
-  serialisation covering every field the `PATCH` can modify. `apply_patch` is a pure function, separated from the
-  handler's I/O, that merges an `UpdateReadingRequest` onto a locked row and applies the status-transition stamp rules
-  Runtime behaviour describes.
+  and the module is tagged `reading` in the generated OpenAPI document. `services::reading` owns the canonical write,
+  inputs, row and hash types. Its `ensure_manifestation_visible` is the RLS-scoped existence probe both handlers call
+  first, returning `AppError::NotFound` when the manifestation is missing or hidden by the caller's own visibility
+  policy. `ReadingStateRow` is the shared decode target for both a `SELECT` and the `UPDATE`'s `RETURNING` clause; its
+  `Default` gives the all-null "unread" shape a query with no row still needs to hash and return. `ReadingEtagFields`
+  and `ReadingStateRow::etag` compute the entity-tag from a fixed-field-order serialisation covering every field the
+  `PATCH` can modify. `apply_patch` is a pure function, separated from the handler's I/O, that merges an
+  `UpdateReadingRequest` onto a locked row and applies the status-transition stamp rules Runtime behaviour describes.
 - `backend/src/models/reading_state.rs` carries two wire types and nothing else — shared reads live in
-  `services::reader`, with mutations in `routes::reading`. `ReadingState` is the full row the single-book endpoints
+  `services::reader`, with mutations in `services::reading`. `ReadingState` is the full row the single-book endpoints
   return. `ReadingStateSummary` is a narrower projection batch-loaded onto each `GET /api/v1/books` row, deliberately
   excluding `notes`: at the maximum page size its 10,000-character cap would dominate the response body many times over,
   so HTTP clients read notes through the single-book `GET`.
@@ -119,7 +119,12 @@ produces the existing unread values and token without inserting a row. Request-l
 records isolated between requests. Typed, Node and nested paths use the same visibility checks and state owner.
 
 The GraphQL projection includes notes when selected. Its entity-tag remains an editing baseline paired with those
-values, independent of later metadata-version reads. No reader operation is wired to a browser consumer or writer.
+values, independent of later metadata-version reads. No reader operation is wired to a browser consumer.
+
+`updateReadingState` requires write scope and calls the same seed, row-lock, compare and merge operation as HTTP. Its
+nullable baseline distinguishes missing, malformed and stale input. Presence-aware status, rating and notes inputs
+preserve absent and clear semantics. The acknowledgement contains the selected caller state and its matching token
+computed before commit. Child accounts retain their own visible-book reading permissions.
 
 ## Data and state
 

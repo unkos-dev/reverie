@@ -100,5 +100,10 @@ custom scalar or editing snapshot is exposed by the viewer operation.
 operations. Library and basic detail omit versions. These operations generate contracts and trusted entries without
 wiring a UI consumer or changing existing HTTP cache ownership. Run `just rust::regen`, `just js::relay-gen`,
 `just js::relay-check` and `just js::build` to regenerate and verify them. Rebuild the backend after the trusted map
-changes. Reader proposal JSON and revision-bearing snapshots need runtime validation at their publication and use
-boundary. Generated types alone provide no such validation.
+changes. `src/lib/relay/mutations.ts` contains selected editing reads, mutation acknowledgements and operation
+resolution. `api/graphql.ts` validates each editing document's selected values and matching revision before publication,
+reusing scalar validators for domain values. `executeEditing` returns a detached raw `execute` or `executeMutation`
+projection; merged store reads and `commitMutation.onCompleted` cannot supply an editing baseline. Whole-list author
+editing uses `captureAuthorPages` to require a complete cursor chain at one revision. Browser consumers retain their
+HTTP owners. Reader proposal JSON has no browser consumer; generated types alone provide no runtime validation for a new
+consumer.

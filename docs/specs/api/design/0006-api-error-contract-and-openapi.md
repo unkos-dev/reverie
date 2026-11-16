@@ -168,7 +168,14 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
   resolve referenced request bodies and parameters. The document tests check extractor status coverage and the Problem
   Details content type; they do not infer every business error an endpoint can return.
 - On the client, `apiFetch` (`frontend/src/api/fetch.ts`) is the sole interface between the SPA and `fetch()`, and
-  `ApiError` is the sole typed error surface every caller under `frontend/src/` branches on.
+  `ApiError` represents retained HTTP failures. GraphQL execution refusals use `GraphQLExecutionError` in
+  `frontend/src/api/graphql.ts`.
+
+GraphQL execution errors preserve safe domain slugs for validation, forbidden and missing targets, missing or stale
+preconditions, malformed baselines, field locks, unavailable or conflicting Undo, and immutable system shelves.
+`safe_error` carries field-validation messages and `lockedFields`. A stale conditional result adds `currentEtag` only
+after caller-visible target resolution. Internal failures retain the fixed message and no private diagnostics. The
+network validates these extensions and refuses partial data without replaying the operation.
 
 ## Data and state
 

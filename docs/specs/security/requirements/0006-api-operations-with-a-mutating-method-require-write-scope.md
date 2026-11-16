@@ -36,3 +36,5 @@ write their responses to `api_cache`; it changes no manifestation.
 - `POST /api/v1/manifestations/{id}/enrichment/dry-run` declares `read` and is reachable with a `read` credential.
 - A read-scoped credential's GraphQL query over POST is admitted, and requests with missing or invalid credentials are
   refused with `401`. Checked by `graphql_request_boundary`.
+- Every GraphQL mutation refuses a read-only credential with the `forbidden` execution code. An eligible write-scoped
+  caller can execute it. Checked by `graphql_request_boundary`, whose schema inventory covers every mutation root.

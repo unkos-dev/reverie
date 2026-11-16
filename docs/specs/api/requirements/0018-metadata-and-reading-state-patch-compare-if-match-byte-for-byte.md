@@ -17,6 +17,12 @@ current entity tag by strong comparison of every octet, with no normalisation or
 MUST answer `412 Precondition Failed` when any octet differs; the `412` response MUST carry the resource's current
 `ETag`.
 
+GraphQL metadata, reading-state and exact metadata Undo mutations MUST compare their explicit baseline argument with the
+resource's current strong entity-tag byte for byte under the write lock. A mismatch MUST refuse the write with the
+`if-match-mismatch` execution code and the authorised current validator, before semantic patch validation or
+save-request reuse checking. Successful selected acknowledgement values MUST carry the validator belonging to that same
+snapshot.
+
 ## Rationale
 
 [RFC 9110 §13.1.2](https://www.rfc-editor.org/rfc/rfc9110#section-13.1.2) requires strong comparison for `If-Match`: two
@@ -47,3 +53,8 @@ editing decision can adopt that validator.
 - The comparison holds for `obs-text` octets (`%x80`-`%xFF`) in the opaque content, which are valid entity-tag content
   but not valid UTF-8, so a comparison implemented over `&str` rather than bytes could not reach these values at all.
   Checked by `strong_comparison_holds_for_obs_text` in `backend/src/routes/etag.rs`.
+- GraphQL metadata and reading mutations refuse stale baselines without changing stored values, admit matching
+  baselines, and return selected values with their matching validator. A stale unchanged metadata resend keeps its
+  original request identity and resolves committed evidence without another write. Checked by `graphql_edit_baselines`.
+- GraphQL exact Undo refuses a stale baseline and returns matching selected values and validator after an eligible
+  restoration. Checked by `graphql_undo_boundary`.

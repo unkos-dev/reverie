@@ -2,7 +2,9 @@ use super::loaders::{RequestLoader, SeriesKey, ShelfKey, WorkKey, batch_error};
 use super::{Viewer, id, safe_error};
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
+use crate::routes::etag::MetadataRevision;
 use crate::routes::library::ListParams;
+use crate::services::metadata::editing::{self, SnapshotKey, SnapshotPage, SnapshotSelection};
 use crate::services::reader::{
     self, BookRecord, RelationKey, RelationKind, RelationPage, RelationRow, SeriesRecord,
     ShelfRecord, WorkRecord,
@@ -11,6 +13,7 @@ use crate::state::AppState;
 use async_graphql::connection::{Connection, Edge, EmptyFields};
 use async_graphql::{ComplexObject, Context, ID, InputObject, Interface, SimpleObject};
 use chrono::SecondsFormat;
+use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -247,9 +250,30 @@ impl Manifestation {
             last_read_at: row.last_read_at.map(timestamp),
         }
     }
-    async fn metadata(&self) -> MetadataSnapshot {
+    async fn metadata(&self, ctx: &Context<'_>) -> async_graphql::Result<MetadataSnapshot> {
+        let pages = snapshot_pages(&ctx.look_ahead())?;
+        if !pages.is_empty() {
+            let snapshot = required(
+                ctx.data::<RequestLoader>()?
+                    .load_one(SnapshotKey {
+                        manifestation_id: self.record.detail.id,
+                        pages,
+                    })
+                    .await
+                    .map_err(|error| batch_error(&error))?,
+            )?;
+            return MetadataSnapshot::from_domain(&snapshot);
+        }
         let row = &self.record.detail;
-        MetadataSnapshot {
+        Ok(MetadataSnapshot {
+            revision: MetadataRevision {
+                work_id: row.work_id,
+                manifestation_id: row.id,
+                work_revision: row.work_revision,
+                manifestation_revision: row.manifestation_revision,
+            },
+            relation_pages: HashMap::new(),
+            isbn_mismatch: row.isbn_mismatch(),
             work_id: id::encode("Work", row.work_id),
             manifestation_id: id::encode("Manifestation", row.id),
             etag: self.record.metadata_etag.clone(),
@@ -263,7 +287,7 @@ impl Manifestation {
             publisher: row.publisher.clone(),
             publication_date: row.pub_date.clone(),
             content_rating: row.content_rating.map(|value| value.as_str().to_owned()),
-        }
+        })
     }
     #[graphql(
         complexity = "super::complexity::nested(RelationKind::Genres, first, child_complexity)?"
@@ -409,8 +433,35 @@ pub(super) struct ReadingState {
     finished_at: Option<String>,
     last_read_at: Option<String>,
 }
+impl ReadingState {
+    pub(super) fn from_row(
+        row: &crate::services::reading::ReadingStateRow,
+    ) -> async_graphql::Result<Self> {
+        Ok(Self {
+            etag: row
+                .etag()
+                .map_err(safe_error)?
+                .to_str()
+                .map_err(|e| safe_error(AppError::Internal(e.into())))?
+                .to_owned(),
+            status: row.status.map(|v| v.as_str().to_owned()),
+            rating: row.rating.map(i32::from),
+            notes: row.notes.clone(),
+            progress_pct: row.progress_pct.map(f64::from),
+            started_at: row.started_at.map(timestamp),
+            finished_at: row.finished_at.map(timestamp),
+            last_read_at: row.last_read_at.map(timestamp),
+        })
+    }
+}
 #[derive(SimpleObject)]
+#[graphql(complex)]
 pub(super) struct MetadataSnapshot {
+    #[graphql(skip)]
+    revision: MetadataRevision,
+    #[graphql(skip)]
+    relation_pages: HashMap<RelationKey, RelationPage>,
+    isbn_mismatch: bool,
     work_id: ID,
     manifestation_id: ID,
     etag: String,
@@ -424,6 +475,220 @@ pub(super) struct MetadataSnapshot {
     publisher: Option<String>,
     publication_date: Option<String>,
     content_rating: Option<String>,
+}
+pub(super) fn snapshot_pages(
+    look: &async_graphql::Lookahead<'_>,
+) -> async_graphql::Result<Vec<SnapshotPage>> {
+    let mut pages = Vec::new();
+    for root in look.selection_fields() {
+        for field in root.selection_set() {
+            let kind = match field.name() {
+                "authors" => RelationKind::Authors,
+                "contributors" => RelationKind::Contributors,
+                "genres" => RelationKind::Genres,
+                "moods" => RelationKind::Moods,
+                "tags" => RelationKind::Tags,
+                "workIdentifiers" => RelationKind::WorkIdentifiers,
+                "manifestationIdentifiers" => RelationKind::Identifiers,
+                _ => continue,
+            };
+            let arguments = field.arguments()?;
+            let first = arguments
+                .iter()
+                .find(|(name, _)| name == "first")
+                .and_then(|(_, value)| match value {
+                    async_graphql::Value::Number(n) => {
+                        n.as_i64().and_then(|v| i32::try_from(v).ok())
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| safe_error(AppError::Validation("Missing page size.".into())))?;
+            let after = arguments.iter().find(|(name, _)| name == "after").and_then(
+                |(_, value)| match value {
+                    async_graphql::Value::String(value) => Some(value.clone()),
+                    _ => None,
+                },
+            );
+            let page = SnapshotPage {
+                kind,
+                first: super::complexity::nested_size(kind, first).map_err(safe_error)?,
+                after,
+            };
+            if !pages.contains(&page) {
+                pages.push(page);
+            }
+        }
+    }
+    Ok(pages)
+}
+pub(super) fn snapshot_selection(
+    look: &async_graphql::Lookahead<'_>,
+) -> async_graphql::Result<SnapshotSelection> {
+    snapshot_pages(look).map(SnapshotSelection::Selected)
+}
+impl MetadataSnapshot {
+    pub(super) fn from_domain(snapshot: &editing::MetadataSnapshot) -> async_graphql::Result<Self> {
+        let row = &snapshot.values;
+        Ok(Self {
+            revision: MetadataRevision {
+                work_id: snapshot.revision.work_id,
+                manifestation_id: snapshot.revision.manifestation_id,
+                work_revision: snapshot.revision.work_revision,
+                manifestation_revision: snapshot.revision.manifestation_revision,
+            },
+            relation_pages: snapshot.pages.clone(),
+            work_id: id::encode("Work", snapshot.revision.work_id),
+            manifestation_id: id::encode("Manifestation", snapshot.revision.manifestation_id),
+            etag: snapshot
+                .revision
+                .etag()
+                .map_err(safe_error)?
+                .to_str()
+                .map_err(|e| safe_error(AppError::Internal(e.into())))?
+                .to_owned(),
+            title: row.title.clone(),
+            subtitle: row.subtitle.clone(),
+            description: row.description.clone(),
+            language: row.language.clone(),
+            isbn_10: row.isbn_10.clone(),
+            isbn_13: row.isbn_13.clone(),
+            isbn_mismatch: row.isbn_mismatch,
+            pages: row.pages,
+            publisher: row.publisher.clone(),
+            publication_date: row.pub_date.clone(),
+            content_rating: row.content_rating.map(|v| v.as_str().to_owned()),
+        })
+    }
+    fn page(
+        &self,
+        kind: RelationKind,
+        first: i32,
+        after: Option<String>,
+    ) -> impl std::future::Future<Output = async_graphql::Result<RelationPage>> {
+        std::future::ready((|| {
+            let key = SnapshotPage {
+                kind,
+                first: super::complexity::nested_size(kind, first).map_err(safe_error)?,
+                after,
+            }
+            .key(&self.revision);
+            self.relation_pages.get(&key).cloned().ok_or_else(|| {
+                safe_error(AppError::Internal(anyhow::anyhow!(
+                    "Snapshot page was not materialised"
+                )))
+            })
+        })())
+    }
+}
+#[ComplexObject]
+impl MetadataSnapshot {
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Authors, first, child_complexity)?"
+    )]
+    async fn authors(
+        &self,
+        first: i32,
+        after: Option<String>,
+    ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
+        contributor_connection(self.page(RelationKind::Authors, first, after).await?)
+    }
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Contributors, first, child_complexity)?"
+    )]
+    async fn contributors(
+        &self,
+        first: i32,
+        after: Option<String>,
+    ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
+        contributor_connection(self.page(RelationKind::Contributors, first, after).await?)
+    }
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Genres, first, child_complexity)?"
+    )]
+    async fn genres(
+        &self,
+        first: i32,
+        after: Option<String>,
+    ) -> async_graphql::Result<Connection<String, Genre>> {
+        term_connection(
+            self.page(RelationKind::Genres, first, after).await?,
+            |row| {
+                Ok(Genre {
+                    id: id::encode("Genre", required(row.id)?),
+                    name: required(row.name)?,
+                })
+            },
+        )
+    }
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Moods, first, child_complexity)?"
+    )]
+    async fn moods(
+        &self,
+        first: i32,
+        after: Option<String>,
+    ) -> async_graphql::Result<Connection<String, Mood>> {
+        term_connection(self.page(RelationKind::Moods, first, after).await?, |row| {
+            Ok(Mood {
+                id: id::encode("Mood", required(row.id)?),
+                name: required(row.name)?,
+            })
+        })
+    }
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Tags, first, child_complexity)?"
+    )]
+    async fn tags(
+        &self,
+        first: i32,
+        after: Option<String>,
+    ) -> async_graphql::Result<Connection<String, Tag>> {
+        term_connection(self.page(RelationKind::Tags, first, after).await?, |row| {
+            Ok(Tag {
+                id: id::encode("Tag", required(row.id)?),
+                name: required(row.name)?,
+            })
+        })
+    }
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::WorkIdentifiers, first, child_complexity)?"
+    )]
+    async fn work_identifiers(
+        &self,
+        first: i32,
+        after: Option<String>,
+    ) -> async_graphql::Result<Connection<String, ExternalIdentifier>> {
+        term_connection(
+            self.page(RelationKind::WorkIdentifiers, first, after)
+                .await?,
+            |row| {
+                Ok(ExternalIdentifier {
+                    level: "work".to_owned(),
+                    scheme: required(row.name)?,
+                    value: required(row.value)?,
+                })
+            },
+        )
+    }
+    #[graphql(
+        complexity = "super::complexity::nested(RelationKind::Identifiers, first, child_complexity)?"
+    )]
+    async fn manifestation_identifiers(
+        &self,
+        first: i32,
+        after: Option<String>,
+    ) -> async_graphql::Result<Connection<String, ExternalIdentifier>> {
+        term_connection(
+            self.page(RelationKind::Identifiers, first, after).await?,
+            |row| {
+                Ok(ExternalIdentifier {
+                    level: "manifestation".to_owned(),
+                    scheme: required(row.name)?,
+                    value: required(row.value)?,
+                })
+            },
+        )
+    }
 }
 #[derive(SimpleObject)]
 pub(super) struct SelectedSeries {
@@ -483,6 +748,16 @@ pub(super) struct Shelf {
     record: Arc<ShelfRecord>,
 }
 impl Shelf {
+    pub(super) fn from_model(row: crate::models::shelf::Shelf) -> async_graphql::Result<Self> {
+        Self::new(Arc::new(ShelfRecord {
+            id: row.id,
+            name: row.name,
+            is_system: row.is_system,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            item_count: row.item_count,
+        }))
+    }
     fn new(record: Arc<ShelfRecord>) -> async_graphql::Result<Self> {
         Ok(Self {
             id: id::encode("Shelf", record.id),
@@ -872,41 +1147,6 @@ fn filter_timestamp(value: &str) -> async_graphql::Result<chrono::DateTime<chron
         .map_err(|_| safe_error(AppError::Validation("Invalid timestamp bound.".into())))
 }
 
-macro_rules! input_enum {
-    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
-        #[derive(Clone, Copy, PartialEq, Eq)]
-        pub(super) enum $name { $($variant),+ }
-        impl async_graphql::resolver_utils::EnumType for $name {
-            fn items() -> &'static [async_graphql::resolver_utils::EnumItem<Self>] {
-                &[$(async_graphql::resolver_utils::EnumItem { name: $wire, value: Self::$variant }),+]
-            }
-        }
-        impl async_graphql::InputType for $name {
-            type RawValueType = Self;
-            fn type_name() -> std::borrow::Cow<'static, str> { stringify!($name).into() }
-            fn create_type_info(registry: &mut async_graphql::registry::Registry) -> String {
-                registry.create_input_type::<Self, _>(async_graphql::registry::MetaTypeId::Enum, |_| {
-                    async_graphql::registry::MetaType::Enum {
-                        name: stringify!($name).into(), description: None,
-                        enum_values: [$(($wire.into(), async_graphql::registry::MetaEnumValue {
-                            name: $wire.into(), description: None,
-                            deprecation: async_graphql::registry::Deprecation::NoDeprecated,
-                            visible: None, inaccessible: false, tags: Vec::new(), directive_invocations: Vec::new(),
-                        })),+].into_iter().collect(),
-                        visible: None, inaccessible: false, tags: Vec::new(),
-                        rust_typename: Some(std::any::type_name::<Self>()),
-                        directive_invocations: Vec::new(), requires_scopes: Vec::new(),
-                    }
-                })
-            }
-            fn parse(value: Option<async_graphql::Value>) -> async_graphql::InputValueResult<Self> {
-                async_graphql::resolver_utils::parse_enum(value.unwrap_or(async_graphql::Value::Null))
-            }
-            fn to_value(&self) -> async_graphql::Value { async_graphql::resolver_utils::enum_value(*self) }
-            fn as_raw_value(&self) -> Option<&Self> { Some(self) }
-        }
-    };
-}
 input_enum!(SortField { Title => "title", Author => "author", CreatedAt => "created_at", Pages => "pages" });
 impl SortField {
     const fn wire(self) -> &'static str {

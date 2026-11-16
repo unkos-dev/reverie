@@ -1,3 +1,4 @@
+use crate::services::reading::ReadingStateRow;
 mod suggest;
 
 pub use suggest::{
@@ -22,7 +23,6 @@ use crate::routes::{
     cursor::{CursorValue, SortCursor},
     etag::MetadataRevision,
     library::{ListParams, filters},
-    reading::ReadingStateRow,
     sort_spec::{SortColumn, SortDirection, SortSpec},
 };
 use crate::{db, error::AppError, state::AppState};
@@ -1371,7 +1371,7 @@ pub async fn reading_state(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    crate::routes::reading::ensure_manifestation_visible(&mut tx, manifestation_id).await?;
+    crate::services::reading::ensure_manifestation_visible(&mut tx, manifestation_id).await?;
 
     let row = sqlx::query_as!(
         ReadingStateRow,
@@ -2276,13 +2276,26 @@ pub async fn relation_pages(
     state: &AppState,
     keys: &[RelationKey],
 ) -> Result<HashMap<RelationKey, RelationPage>, AppError> {
+    let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let pages = relation_pages_in_tx(user, state, &mut tx, keys).await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(pages)
+}
+
+pub async fn relation_pages_in_tx(
+    user: &CurrentUser,
+    state: &AppState,
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    keys: &[RelationKey],
+) -> Result<HashMap<RelationKey, RelationPage>, AppError> {
     let inputs = relation_inputs(keys)?;
     let hidden: Vec<_> = hidden_providers(&state.settings.read().await.provider_visibility)
         .into_iter()
         .collect();
-    let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
     let mut grouped: HashMap<RelationKey, Vec<RelationRow>> = HashMap::new();
     for kind in [
         RelationKind::Manifestations,
@@ -2309,28 +2322,22 @@ pub async fn relation_pages(
         let payload = serde_json::to_value(batch).map_err(|e| AppError::Internal(e.into()))?;
         let rows = match kind {
             RelationKind::Manifestations => {
-                relation_manifestations(&mut tx, &payload, user, &hidden).await?
+                relation_manifestations(tx, &payload, user, &hidden).await?
             }
-            RelationKind::SeriesWorks => {
-                relation_seriesworks(&mut tx, &payload, user, &hidden).await?
-            }
-            RelationKind::ShelfItems => {
-                relation_shelfitems(&mut tx, &payload, user, &hidden).await?
-            }
-            RelationKind::Authors => relation_authors(&mut tx, &payload, user, &hidden).await?,
+            RelationKind::SeriesWorks => relation_seriesworks(tx, &payload, user, &hidden).await?,
+            RelationKind::ShelfItems => relation_shelfitems(tx, &payload, user, &hidden).await?,
+            RelationKind::Authors => relation_authors(tx, &payload, user, &hidden).await?,
             RelationKind::Contributors => {
-                relation_contributors(&mut tx, &payload, user, &hidden).await?
+                relation_contributors(tx, &payload, user, &hidden).await?
             }
-            RelationKind::Genres => relation_genres(&mut tx, &payload, user, &hidden).await?,
-            RelationKind::Moods => relation_moods(&mut tx, &payload, user, &hidden).await?,
-            RelationKind::Tags => relation_tags(&mut tx, &payload, user, &hidden).await?,
+            RelationKind::Genres => relation_genres(tx, &payload, user, &hidden).await?,
+            RelationKind::Moods => relation_moods(tx, &payload, user, &hidden).await?,
+            RelationKind::Tags => relation_tags(tx, &payload, user, &hidden).await?,
             RelationKind::WorkIdentifiers => {
-                relation_workidentifiers(&mut tx, &payload, user, &hidden).await?
+                relation_workidentifiers(tx, &payload, user, &hidden).await?
             }
-            RelationKind::Identifiers => {
-                relation_identifiers(&mut tx, &payload, user, &hidden).await?
-            }
-            RelationKind::Ratings => relation_ratings(&mut tx, &payload, user, &hidden).await?,
+            RelationKind::Identifiers => relation_identifiers(tx, &payload, user, &hidden).await?,
+            RelationKind::Ratings => relation_ratings(tx, &payload, user, &hidden).await?,
         };
         for row in rows {
             let index = usize::try_from(row.request).map_err(|e| AppError::Internal(e.into()))?;
@@ -2340,9 +2347,6 @@ pub async fn relation_pages(
             grouped.entry(key.clone()).or_default().push(row);
         }
     }
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
     let mut pages = HashMap::new();
     for key in keys {
         let rows = grouped.remove(key).unwrap_or_default();

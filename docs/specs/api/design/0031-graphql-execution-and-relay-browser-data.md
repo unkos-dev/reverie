@@ -10,6 +10,9 @@ satisfies:
   - "REV-REQ-0015"
   - "REV-REQ-0016"
   - "REV-REQ-0017"
+  - "REV-REQ-0018"
+  - "REV-REQ-0019"
+  - "REV-REQ-0020"
   - "REV-REQ-0021"
   - "REV-REQ-0023"
   - "REV-REQ-0035"
@@ -24,20 +27,22 @@ governed-by:
 ## Purpose and boundaries
 
 The Rust service exposes authenticated browser application data at `POST /api/graphql`. Its schema exposes the viewer
-and reader graph through shared catalogue operations. Library and account screens retain their HTTP adapters and Query
-ownership. Authentication protocols, OPDS, binary delivery and `/api/v1` keep their HTTP contracts.
+and reader graph, protected mutations and session-bound operation resolution through shared operations. Library and
+account screens retain their HTTP adapters and Query ownership. Authentication protocols, OPDS, binary delivery and
+`/api/v1` keep their HTTP contracts.
 
 ## Structure
 
-`backend/src/graphql/mod.rs` builds one async-graphql schema with an empty mutation root and no subscriptions. The query
-roots require read scope through `ReadScope`, using the existing `CurrentUser` assertions. The adapter uses
-`ApiJson<Envelope>` and async-graphql-axum's `GraphQLResponse`. Its OpenAPI router joins `pilot_router` before the API
-CSP, CSRF and session layers. OpenAPI describes the HTTP envelope; the generated GraphQL schema describes application
-fields.
+`backend/src/graphql/mod.rs` builds one async-graphql schema with query and mutation roots and no subscriptions.
+Ordinary queries use `ReadScope`; mutations and `metadataOperation` use `WriteScope`, independently of HTTP POST. The
+adapter uses `ApiJson<Envelope>` and async-graphql-axum's `GraphQLResponse`. Its OpenAPI router joins `pilot_router`
+before the API CSP, CSRF and session layers. OpenAPI describes the HTTP envelope; the generated GraphQL schema describes
+application fields.
 
 The schema holds the execution policy, never caller identity. Each request supplies its own `CurrentUser` and
-application state, pool and request-local DataLoader to the executor. The viewer reads the caller's display name through
-a transaction from `acquire_with_rls` and returns the encoded `User` identity. It exposes no other account's data.
+application state, pool, actual tower Session and request-local DataLoader to the executor. The viewer reads the
+caller's display name through a transaction from `acquire_with_rls` and returns the encoded `User` identity. It exposes
+no other account's data.
 
 `backend/src/graphql/library.rs` defines Work, Manifestation, Shelf and Series objects and their connections.
 `backend/src/services/reader.rs` owns the transport-independent reads used by HTTP adapters and graph fields.
@@ -117,7 +122,9 @@ The sizes above are explicit representative operation arguments, not server defa
 
 The complexity limit is 200,000 in both policies. async-graphql `Analyzer` measurements of every trusted operation use
 maximum variable sizes: 100 for primary pages, 50 for pending pages and 60 IDs for labels. Literal sizes remain as
-written. The worst measured cost is 6,901 and the maximum measured depth is 8. The depth limit is 12.
+written. The worst measured cost is 6,901 and the maximum measured depth is 8. The depth limit is 12. All 41 trusted
+documents are measured. The new author save, Undo and resolution documents each cost 784 at depth 6; concrete author
+pagination costs 208 at depth 6. Other editing documents cost 2 through 594.
 
 | Operation                          |  Cost | Depth |
 | ---------------------------------- | ----: | ----: |
@@ -148,10 +155,37 @@ Children return an empty result before any proposal count or value query, includ
 Accepted counts use canonical state only. Basic detail executes no versions SQL. Selecting the count and pending page
 uses two batched operations, each with canonical scalar, junction and pending SQL, independent of parent count.
 
+`mutations.rs` calls the shared metadata editing and Undo, reading and shelf operations. Typed patches preserve absent
+and null values. Metadata save, reading and Undo take explicit nullable baselines. Review and shelves keep their
+existing preconditions. Scope, adult status, caller visibility, shelf ownership and credential ceilings remain separate
+checks. Exact Undo and resolution require the real live issuing browser session and retain expiry, budgets and
+non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
+
+A selected metadata snapshot pairs scalar values and bounded editable relation pages with one aggregate revision. Read
+loaders batch core rows and selected pages in one caller-scoped REPEATABLE READ transaction. Write operations
+materialise selected acknowledgements under their parent locks before commit. Scalar-only paths skip unrelated relation
+projection loads. HTTP asks for its complete result. Whole-list editing needs every page of that field at one revision;
+continuation pages remain available through the concrete Manifestation lookup. Selected pages are keyed by parent, field
+or role, and effective `first`/`after` arguments, including distinct aliases.
+
+Selection inspection uses async-graphql look-ahead. It expands fragments without applying their type conditions or
+fragment-level `@include`/`@skip`, so it may load extra fields beyond the executed selection. Resolver defaults apply
+where arguments are omitted. There is no custom fragment traversal.
+
+Development raw queries can assign too little cost to named fragments spread beneath `node`'s Node interface in
+async-graphql 7.2.1. Production admits only trusted documents, and none uses that pattern.
+
 The Relay network sends generated IDs and variables through `apiFetch` with same-origin credentials and an abort signal.
 It validates the response envelope before publication. The viewer has no custom scalar or editing snapshot. Reader
-proposal JSON and revision-bearing snapshots have no browser consumer. Their runtime validation belongs at the
-publication and use boundary. Execution faults are errors and do not publish partial data or trigger a resend.
+proposal JSON has no browser consumer. Editing documents validate their selected projections before publication.
+Execution faults are errors and do not publish partial data or trigger a resend.
+
+`frontend/src/lib/relay/mutations.ts` contains selected title, form, author and reading reads and acknowledgements, plus
+the other protected actions. `readerAuthorEditing` refetches through `fetch__Manifestation`. The network checks each
+editing document's selected snapshot, domain IDs, UUID handles, strong validators, timestamps and PageInfo before
+`sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment reads, `fetchQuery`,
+store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor chain with one pair
+of domain IDs and one revision. These operations have no UI consumers.
 
 ## Failure and recovery
 
