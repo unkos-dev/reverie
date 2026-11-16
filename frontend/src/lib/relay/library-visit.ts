@@ -233,7 +233,10 @@ export class LibraryVisitOwner {
       this.publish({ pending: false });
       return;
     }
-    if (!returning && JSON.stringify(params) === JSON.stringify(this.state.source?.params)) return;
+    if (!returning && JSON.stringify(params) === JSON.stringify(this.state.source?.params)) {
+      this.publish({ pending: false, error: null });
+      return;
+    }
     void this.replace(params, returning ? this.state.position : undefined);
   }
 

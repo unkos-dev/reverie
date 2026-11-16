@@ -563,10 +563,16 @@ test("a successful empty response replaces placeholders", async () => {
         name === "readerLibraryQuery" &&
         z.object({ q: z.string().optional() }).parse(variables.filter).q === "missing"
       )
-        return pending;
+        return pending.then((value) => value.clone());
     },
   });
   await expect.element(page.getByText("Origin")).toBeInTheDocument();
+  await userEvent.fill(page.getByRole("searchbox"), "missing");
+  await expect.element(page.getByText("Updating results…", { exact: true })).toBeInTheDocument();
+  await userEvent.click(page.getByRole("button", { name: "Clear search", exact: true }));
+  await expect
+    .element(page.getByText("Updating results…", { exact: true }))
+    .not.toBeInTheDocument();
   await userEvent.fill(page.getByRole("searchbox"), "missing");
   await expect.element(page.getByText("Origin")).toBeInTheDocument();
   finishPending?.(response({ books: { edges: [], pageInfo } }));
@@ -993,5 +999,9 @@ it("Library Retry sends the retained edit again", async () => {
     expect(batchWrites).toHaveLength(4);
   });
   expect(batchWrites[3]).toEqual(batchWrites[1]);
+  await expect
+    .element(page.getByRole("group", { name: "Batch actions" }).getByRole("status"))
+    .toHaveTextContent("Set status for 2 of 3 books. 1 could not be saved.");
+  await expect.element(page.getByRole("checkbox", { name: /^Select Conflicted/ })).toBeChecked();
   await expect.element(page.getByText("Submitted value: reading").first()).toBeInTheDocument();
 }, 60000);

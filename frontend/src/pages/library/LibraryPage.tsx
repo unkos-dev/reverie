@@ -523,16 +523,19 @@ export function LibraryPage(): ReactElement {
   ): Promise<void> {
     if (batch?.pending === true) return;
     const release = source?.acquire();
+    const previous = retrying ? batch : undefined;
     const succeeded: string[] = [];
-    const failed: BatchOutcome["failed"][number][] = [];
+    const failed: BatchOutcome["failed"][number][] =
+      previous?.failed.filter((failure) => !attempt.ids.includes(failure.id)) ?? [];
+    const total = previous?.total ?? attempt.ids.length;
     setBatchAttempt(attempt);
     setBatch({
       action: attempt.action,
       pending: true,
       retrying,
-      total: attempt.ids.length,
-      succeeded: [],
-      failed: [],
+      total,
+      succeeded: previous?.succeeded ?? [],
+      failed: [...failed],
     });
     for (const id of attempt.ids) {
       if (batchController.current?.signal.aborted) break;
@@ -591,8 +594,8 @@ export function LibraryPage(): ReactElement {
       action: attempt.action,
       pending: false,
       retrying,
-      total: attempt.ids.length,
-      succeeded,
+      total,
+      succeeded: [...(previous?.succeeded ?? []), ...succeeded],
       failed,
     });
     if (liveIntent.current === queryToken) {
