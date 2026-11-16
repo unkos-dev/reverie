@@ -50,7 +50,7 @@ jobs:
       # root — a registry dependency would link from ~/.cargo/registry with
       # no mise.toml above it. `mise exec` below sidesteps that.
       - name: Install mold and cargo-mutants (mise)
-        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.11.7"
