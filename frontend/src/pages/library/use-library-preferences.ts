@@ -35,20 +35,29 @@
  * list request (see `docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md`
  * for why the two-layer URL-over-preference model was retired).
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchQuery, useFragment, useMutation, useRelayEnvironment } from "react-relay";
+import { createOperationDescriptor, getRequest } from "relay-runtime";
+import { z } from "zod";
+import { activeUserEpoch } from "@/lib/active-user";
+import { readerLibraryPreferences, readerLibraryPreferencesQuery } from "@/lib/relay/reader";
+import { mutationsUpdateLibraryPreferencesMutation } from "@/lib/relay/mutations";
+import type { readerLibraryPreferencesQuery as PreferencesQuery } from "@/lib/relay/__generated__/readerLibraryPreferencesQuery.graphql";
+import type { readerLibraryPreferences$key } from "@/lib/relay/__generated__/readerLibraryPreferences.graphql";
+import type {
+  mutationsUpdateLibraryPreferencesMutation as PreferencesMutation,
+  LibraryPreferencesPatch,
+} from "@/lib/relay/__generated__/mutationsUpdateLibraryPreferencesMutation.graphql";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  getPreferences,
+  DENSITIES,
+  LIBRARY_VIEWS,
   parseSortParam,
   serializeSortParam,
-  updatePreferences,
   type Density,
   type LibraryView,
   type SortLevelParam,
-  type UpdatePreferencesFields,
 } from "@/api";
-import { queryKeys } from "@/lib/query/keys";
 
 import { readDisplayPreferences, writeDisplayPreferences } from "./display-storage";
 
@@ -61,7 +70,7 @@ export const PREFERENCE_WRITE_DEBOUNCE_MS = 400;
  */
 const BOOTSTRAP: { density: Density; hiddenColumns: readonly string[]; view: LibraryView } = {
   density: "comfortable",
-  hiddenColumns: [],
+  hiddenColumns: ["subtitle"],
   view: "grid",
 };
 
@@ -121,16 +130,36 @@ export type LibraryPreferences = {
 };
 
 export function useLibraryPreferences(): LibraryPreferences {
-  const queryClient = useQueryClient();
+  const environment = useRelayEnvironment();
+  const [epoch] = useState(activeUserEpoch);
   // Read once: this is a first-paint hint, and re-reading it mid-session
   // would let the mirror answer for a group the server has since settled.
   const [mirror] = useState(readDisplayPreferences);
 
-  const { data } = useQuery({
-    queryKey: queryKeys.auth.preferences(),
-    queryFn: ({ signal }) => getPreferences(signal),
-  });
-
+  const [reference, setReference] = useState<readerLibraryPreferences$key | null>(null);
+  useEffect(() => {
+    const retention = environment.retain(
+      createOperationDescriptor(getRequest(readerLibraryPreferencesQuery), {}),
+    );
+    const subscription = fetchQuery<PreferencesQuery>(
+      environment,
+      readerLibraryPreferencesQuery,
+      {},
+      { fetchPolicy: "store-or-network" },
+    ).subscribe({
+      next: (response) => {
+        setReference(response.libraryPreferences);
+      },
+      error: (error: Error) => {
+        console.error("[useLibraryPreferences] preferences read failed", error);
+      },
+    });
+    return () => {
+      subscription.unsubscribe();
+      retention.dispose();
+    };
+  }, [environment]);
+  const data = useFragment<readerLibraryPreferences$key>(readerLibraryPreferences, reference);
   const [localDensity, setLocalDensity] = useState<Density | null>(null);
   // Tri-state, like the server column: `undefined` means the reader has not
   // acted this session, `null` means they reset to inherit, an array is
@@ -140,20 +169,8 @@ export function useLibraryPreferences(): LibraryPreferences {
   const [localView, setLocalView] = useState<LibraryView | null>(null);
   const [localSort, setLocalSort] = useState<string | null>(null);
 
-  const { mutate } = useMutation({
-    mutationFn: (fields: UpdatePreferencesFields) => updatePreferences(fields),
-    onSuccess: (next) => {
-      queryClient.setQueryData(queryKeys.auth.preferences(), next);
-    },
-    onError: (error: unknown) => {
-      // The local value stays applied for the session: a reader who chose
-      // compact rows keeps them even when the write failed. Only the
-      // breadcrumb is owed, since a retry cannot know the intent is current.
-      console.error("[useLibraryPreferences] failed to persist a preference", error);
-    },
-  });
-
-  const pending = useRef<UpdatePreferencesFields>({});
+  const [mutate] = useMutation<PreferencesMutation>(mutationsUpdateLibraryPreferencesMutation);
+  const pending = useRef<LibraryPreferencesPatch>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flush = useCallback(() => {
@@ -163,11 +180,22 @@ export function useLibraryPreferences(): LibraryPreferences {
     }
     const fields = pending.current;
     pending.current = {};
-    if (Object.keys(fields).length > 0) mutate(fields);
-  }, [mutate]);
+    if (Object.keys(fields).length > 0 && activeUserEpoch() === epoch)
+      mutate({
+        variables: { patch: fields },
+        updater: (store) => {
+          const target = store.getRoot().getLinkedRecord("libraryPreferences");
+          const updated = store.getRootField("updateLibraryPreferences");
+          target.copyFieldsFrom(updated);
+        },
+        onError: (error) => {
+          console.error("[useLibraryPreferences] failed to persist a preference", error);
+        },
+      });
+  }, [mutate, epoch]);
 
   const queue = useCallback(
-    (fields: UpdatePreferencesFields) => {
+    (fields: LibraryPreferencesPatch) => {
       // Merged, not queued: a later write to the same group replaces the
       // earlier one, and an explicit `null` survives the merge as the reset
       // it is, where a truthiness check would collapse it into "absent".
@@ -189,17 +217,22 @@ export function useLibraryPreferences(): LibraryPreferences {
   }, [flush]);
 
   const density =
-    localDensity ?? data?.density ?? data?.defaults.density ?? mirror.density ?? BOOTSTRAP.density;
-  const view = localView ?? data?.view ?? data?.defaults.view ?? mirror.view ?? BOOTSTRAP.view;
-  const defaultColumns = data?.defaults.hidden_columns ?? BOOTSTRAP.hiddenColumns;
+    localDensity ??
+    z
+      .enum(DENSITIES)
+      .parse(data?.density ?? data?.defaults.density ?? mirror.density ?? BOOTSTRAP.density);
+  const view =
+    localView ??
+    z.enum(LIBRARY_VIEWS).parse(data?.view ?? data?.defaults.view ?? mirror.view ?? BOOTSTRAP.view);
+  const defaultColumns = data?.defaults.hiddenColumns ?? BOOTSTRAP.hiddenColumns;
   // Columns resolve like sort, not like density: `null` is a meaningful
   // layer value (reset to inherit), so a bare `??` chain would fall through
   // it and resurrect the override still cached beneath.
   let columnKeys: readonly string[];
   if (localColumns !== undefined) {
     columnKeys = localColumns ?? defaultColumns;
-  } else if (data !== undefined) {
-    columnKeys = data.hidden_columns ?? data.defaults.hidden_columns;
+  } else if (data != null) {
+    columnKeys = data.hiddenColumns ?? data.defaults.hiddenColumns;
   } else {
     columnKeys = mirror.hiddenColumns ?? BOOTSTRAP.hiddenColumns;
   }
@@ -212,15 +245,15 @@ export function useLibraryPreferences(): LibraryPreferences {
   let columnsOverridden: boolean;
   if (localColumns !== undefined) {
     columnsOverridden = localColumns !== null;
-  } else if (data !== undefined) {
-    columnsOverridden = data.hidden_columns !== null;
+  } else if (data != null) {
+    columnsOverridden = data.hiddenColumns != null;
   } else {
     columnsOverridden = !sameKeys(columnKeys, defaultColumns);
   }
   // Sort cannot use the chain above: an inherited sort resolves to "no
   // override", not to a value, so a `??` chain would fall through to the
   // mirror and resurrect an override the server has already dropped.
-  const storedSort = localSort ?? (data === undefined ? mirror.sortStack : data.sort_stack) ?? "";
+  const storedSort = localSort ?? (data == null ? mirror.sortStack : data.sortStack) ?? "";
   // Normalised through the same codec the request uses, so a mirror written
   // against an older schema can never put an unknown field on the wire.
   const sortOverride = serializeSortParam(parseSortParam(storedSort));
@@ -229,11 +262,11 @@ export function useLibraryPreferences(): LibraryPreferences {
   // request deliberately does NOT follow this fallback (see sortOverride):
   // display resolves to a value because the library always has an order,
   // while the wire omits what the server would apply anyway.
-  const effectiveSort = sortOverride !== "" ? sortOverride : (data?.defaults.sort_stack ?? "");
+  const effectiveSort = sortOverride !== "" ? sortOverride : (data?.defaults.sortStack ?? "");
   const sortLevels = useMemo(() => parseSortParam(effectiveSort), [effectiveSort]);
   const defaultSortLevels = useMemo(
-    () => parseSortParam(data?.defaults.sort_stack ?? ""),
-    [data?.defaults.sort_stack],
+    () => parseSortParam(data?.defaults.sortStack ?? ""),
+    [data?.defaults.sortStack],
   );
 
   const hiddenColumns = useMemo(() => new Set(columnKeys), [columnKeys]);
@@ -257,7 +290,7 @@ export function useLibraryPreferences(): LibraryPreferences {
   const setDensity = useCallback(
     (next: Density) => {
       setLocalDensity(next);
-      queue({ density: next });
+      queue({ density: next === "compact" ? "COMPACT" : "COMFORTABLE" });
     },
     [queue],
   );
@@ -266,7 +299,7 @@ export function useLibraryPreferences(): LibraryPreferences {
     (next: ReadonlySet<string>) => {
       const keys = [...next];
       setLocalColumns(keys);
-      queue({ hidden_columns: keys });
+      queue({ hiddenColumns: keys });
     },
     [queue],
   );
@@ -276,13 +309,13 @@ export function useLibraryPreferences(): LibraryPreferences {
     // resolution shows the defaults immediately (never the override still
     // cached beneath) and the reset control greys out at once.
     setLocalColumns(null);
-    queue({ hidden_columns: null });
+    queue({ hiddenColumns: null });
   }, [queue]);
 
   const setView = useCallback(
     (next: LibraryView) => {
       setLocalView(next);
-      queue({ view: next });
+      queue({ view: next === "table" ? "TABLE" : "GRID" });
     },
     [queue],
   );
@@ -291,7 +324,7 @@ export function useLibraryPreferences(): LibraryPreferences {
     (levels: readonly SortLevelParam[]) => {
       const serialized = serializeSortParam(levels);
       setLocalSort(serialized);
-      queue({ sort_stack: serialized === "" ? null : serialized });
+      queue({ sortStack: serialized === "" ? null : serialized });
     },
     [queue],
   );

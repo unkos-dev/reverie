@@ -1,222 +1,104 @@
 /**
- * Client for the `/api/v1/shelves*` CRUD surface.
+ * Caller-owned shelf reads use Relay's shared connection and complete its cursor pages.
  *
- * Mirrors the response DTOs in `backend/src/models/shelf.rs`.
+ * Read failure has three owners:
+ * - Primary pages, `pages/shelves/ShelvesListPage` and `pages/shelves/ShelfDetailPage`,
+ *   surface failure through their owning route boundary.
+ * - Loaders, `routes/shelves` and `routes/shelf-detail`, prepare and dispose native
+ *   query references for those pages. Failed preparation reaches the owning route.
+ * - Auxiliary consumers, `components/shell/FilterRail`, `pages/library/FilterChips`
+ *   and `pages/library/LibraryPage`, stay mounted and expose their existing degraded
+ *   state. The shared read logs failures, including failed continuation pages.
  *
- * # Timestamp validation
- *
- * `created_at`, `updated_at`, and `added_at` use bare `z.iso.datetime()`,
- * which accepts only a `Z`-terminated value with arbitrary sub-second
- * precision. That is exactly what the backend emits: Postgres
- * `timestamptz` normalises to UTC, and the backend serialises a UTC
- * instant with the `Z` designator. The `{ offset: true }` variant would also accept
- * `+00:00`, which no endpoint here produces, so the bare form is both
- * stricter and correct.
- *
- * These fields were `z.string()` until a serialization defect shipped a
- * non-RFC 3339 shape past them. A type-only check cannot catch a format
- * regression, so the format is pinned here rather than assumed.
- *
- * # Failure policy
- *
- * A malformed timestamp is rejected in the schema, so every consumer
- * fails at the same point rather than each inventing its own handling.
- * What differs is what the surface does with that failure. Reads fall
- * into three tiers, and the split is deliberate:
- *
- * - **Primary** surfaces let the error reach the route error boundary,
- *   because a shelves page that cannot show shelves has nothing to
- *   render: `pages/shelves/ShelvesListPage` and
- *   `pages/shelves/ShelfDetailPage` (both `useSuspenseQuery`).
- * - **Loaders** prefetch and swallow, leaving the throw to the primary
- *   surface that re-reads the same key: `routes/shelves` and
- *   `routes/shelf-detail` (both prefetch via `queryClient.query`).
- * - **Auxiliary** surfaces degrade and stay mounted, because shelves are
- *   an accessory to their real job: `components/shell/FilterRail`, `pages/library/FilterChips`,
- *   and `pages/library/LibraryPage` (all
- *   `useQuery`). Degrading must stay observable: the central
- *   `QueryCache.onError` routes only 401s, so these log the failure
- *   themselves.
- *
- * Adding a read consumer means placing it in one of those three tiers.
- * Do not promote an auxiliary surface to a throw without a design
- * artifact covering the resulting error state.
- *
- * Writes sit outside that split and are not a fourth tier. `createShelf`
- * and `renameShelf` parse `ShelfSchema` on the response to a write the
- * server has already committed, so a rejection there reports failure for
- * an operation that succeeded: the caller's `onSuccess` never runs, its
- * cache invalidation is skipped, and retrying a create adds a second
- * shelf under the same name, because nothing enforces name uniqueness.
- * Recovery is a refetch, not a retry. Distinguishing a
- * schema rejection from a transport failure in mutation handlers is
- * error plumbing rather than contract enforcement, and is deliberately
- * not done here.
+ * Creating, renaming and deleting shelves belongs to the owning page. A failed
+ * create acknowledgement triggers a read, never an automatic create replay.
+ * Membership writes retain the Library's serial per-book result owner.
  */
-import { z } from "zod";
+import { useEffect, useState, useTransition } from "react";
+import { fetchQuery, usePaginationFragment, useRelayEnvironment } from "react-relay";
+import { createOperationDescriptor, getRequest } from "relay-runtime";
+import { decodeGraphQLId } from "./graphql";
+import { readerShelves, readerShelvesQuery } from "@/lib/relay/reader";
+import type { readerShelves$key } from "@/lib/relay/__generated__/readerShelves.graphql";
+import type { readerShelvesQuery as ShelvesQuery } from "@/lib/relay/__generated__/readerShelvesQuery.graphql";
+import type { readerShelvesPaginationQuery as ShelvesPagination } from "@/lib/relay/__generated__/readerShelvesPaginationQuery.graphql";
+export type Shelf = {
+  id: string;
+  name: string;
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+  item_count: number;
+};
 
-import { apiFetch } from "./fetch";
-
-const ShelfSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  is_system: z.boolean(),
-  created_at: z.iso.datetime(),
-  updated_at: z.iso.datetime(),
-  item_count: z.number().int().nonnegative(),
-});
-/** One shelf in `GET /api/v1/shelves` (and create/rename round-trips). */
-export type Shelf = z.infer<typeof ShelfSchema>;
-
-const ShelfItemSchema = z.object({
-  manifestation_id: z.string(),
-  added_at: z.iso.datetime(),
-});
-/** One item row in `GET /api/v1/shelves/{id}`. */
-export type ShelfItem = z.infer<typeof ShelfItemSchema>;
-
-/**
- * Wire page of `GET /api/v1/shelves`: the backend keyset-
- * paginates every list, so the client walks `next_cursor` internally
- * and callers keep receiving the fully assembled array.
- */
-const ShelfListPageSchema = z.object({
-  items: z.array(ShelfSchema),
-  next_cursor: z.string().nullable(),
-});
-
-/** Wire page of `GET /api/v1/shelves/{id}` — items are keyset-paginated. */
-const ShelfDetailPageSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  is_system: z.boolean(),
-  created_at: z.iso.datetime(),
-  updated_at: z.iso.datetime(),
-  items: z.array(ShelfItemSchema),
-  next_cursor: z.string().nullable(),
-});
-
-/** Assembled shelf detail: identity plus the complete items list. */
-export type ShelfWithItems = Omit<z.infer<typeof ShelfDetailPageSchema>, "next_cursor">;
-
-/**
- * Hard bound on cursor walks. The backend terminates every walk
- * (`next_cursor` flips to null on the last page); this guard turns a
- * hypothetical server-side cursor bug into a loud error instead of an
- * infinite fetch loop.
- */
-const MAX_PAGE_WALK = 100;
-
-/** List the caller's shelves (walks all pages). */
-export async function listShelves(signal?: AbortSignal): Promise<Shelf[]> {
-  const shelves: Shelf[] = [];
-  let cursor: string | null = null;
-  for (let walked = 0; walked < MAX_PAGE_WALK; walked++) {
-    const path =
-      cursor === null ? "/api/v1/shelves" : `/api/v1/shelves?cursor=${encodeURIComponent(cursor)}`;
-    const body = await apiFetch(path, signal ? { method: "GET", signal } : { method: "GET" });
-    const page = ShelfListPageSchema.parse(body);
-    shelves.push(...page.items);
-    cursor = page.next_cursor;
-    if (cursor === null) return shelves;
-  }
-  throw new Error("shelves list pagination did not terminate");
-}
-
-/** Fetch a shelf and its complete items list (walks all item pages). */
-export async function getShelf(id: string, signal?: AbortSignal): Promise<ShelfWithItems> {
-  const base = `/api/v1/shelves/${encodeURIComponent(id)}`;
-  const items: ShelfItem[] = [];
-  // Identity (incl. updated_at) comes from the FIRST page: under a
-  // concurrent shelf mutation mid-walk, later pages can carry a newer
-  // updated_at than the items being assembled — pinning page 1's
-  // identity keeps it consistent with the snapshot the caller actually
-  // received.
-  let identity: Omit<ShelfWithItems, "items"> | null = null;
-  let cursor: string | null = null;
-  for (let walked = 0; walked < MAX_PAGE_WALK; walked++) {
-    const path = cursor === null ? base : `${base}?cursor=${encodeURIComponent(cursor)}`;
-    const body = await apiFetch(path, signal ? { method: "GET", signal } : { method: "GET" });
-    const page = ShelfDetailPageSchema.parse(body);
-    identity ??= {
-      id: page.id,
-      name: page.name,
-      is_system: page.is_system,
-      created_at: page.created_at,
-      updated_at: page.updated_at,
+export function useShelves(
+  initial?: readerShelves$key,
+  enabled = true,
+): {
+  data: Shelf[];
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => void;
+} {
+  const environment = useRelayEnvironment();
+  const [reference, setReference] = useState<readerShelves$key | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [, startTransition] = useTransition();
+  useEffect(() => {
+    if (!enabled || initial !== undefined) return;
+    const retention = environment.retain(
+      createOperationDescriptor(getRequest(readerShelvesQuery), {}),
+    );
+    const subscription = fetchQuery<ShelvesQuery>(
+      environment,
+      readerShelvesQuery,
+      {},
+      { fetchPolicy: "store-or-network" },
+    ).subscribe({
+      next: setReference,
+      error: (failure: Error) => {
+        setError(failure);
+        console.error("[useShelves] shelves fetch failed", failure);
+      },
+    });
+    return () => {
+      subscription.unsubscribe();
+      retention.dispose();
     };
-    items.push(...page.items);
-    cursor = page.next_cursor;
-    if (cursor === null) {
-      return { ...identity, items };
-    }
-  }
-  throw new Error("shelf items pagination did not terminate");
-}
-
-/** Create a new shelf. Returns the freshly minted row (mirrors POST 201). */
-export async function createShelf(name: string, signal?: AbortSignal): Promise<Shelf> {
-  const body = await apiFetch("/api/v1/shelves", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-    ...(signal ? { signal } : {}),
-  });
-  return ShelfSchema.parse(body);
-}
-
-/**
- * Rename a shelf. Throws `ApiError` with `.problemSlug ===
- * "system-shelf-immutable"` (status 409) when the target shelf has
- * `is_system = true`.
- */
-export async function renameShelf(id: string, name: string, signal?: AbortSignal): Promise<Shelf> {
-  const body = await apiFetch(`/api/v1/shelves/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-    ...(signal ? { signal } : {}),
-  });
-  return ShelfSchema.parse(body);
-}
-
-/**
- * Delete a shelf. Throws `ApiError` with `.problemSlug ===
- * "system-shelf-immutable"` (status 409) when the target is a system
- * shelf.
- */
-export async function deleteShelf(id: string, signal?: AbortSignal): Promise<void> {
-  await apiFetch(`/api/v1/shelves/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    ...(signal ? { signal } : {}),
-  });
-}
-
-/** Add a manifestation to a shelf. */
-export async function addShelfItem(
-  shelfId: string,
-  manifestationId: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  await apiFetch(`/api/v1/shelves/${encodeURIComponent(shelfId)}/items`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ manifestation_id: manifestationId }),
-    ...(signal ? { signal } : {}),
-  });
-}
-
-/** Remove a single manifestation from a shelf. */
-export async function removeShelfItem(
-  shelfId: string,
-  manifestationId: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  await apiFetch(
-    `/api/v1/shelves/${encodeURIComponent(shelfId)}/items/${encodeURIComponent(manifestationId)}`,
-    {
-      method: "DELETE",
-      ...(signal ? { signal } : {}),
+  }, [environment, initial, enabled]);
+  const { data, hasNext, isLoadingNext, loadNext, refetch } = usePaginationFragment<
+    ShelvesPagination,
+    readerShelves$key
+  >(readerShelves, initial ?? reference);
+  useEffect(() => {
+    if (error === null && hasNext && !isLoadingNext)
+      loadNext(50, {
+        onComplete: (failure) => {
+          if (failure !== null) {
+            setError(failure);
+            console.error("[useShelves] shelf page failed", failure);
+          }
+        },
+      });
+  }, [hasNext, isLoadingNext, loadNext, error]);
+  return {
+    data:
+      data?.shelves.edges.map(({ node }) => ({
+        id: decodeGraphQLId("Shelf", node.id),
+        name: node.name,
+        is_system: node.isSystem,
+        item_count: node.itemCount,
+        created_at: node.createdAt,
+        updated_at: node.updatedAt,
+      })) ?? [],
+    isLoading: error === null && (data == null || hasNext || isLoadingNext),
+    isError: error !== null,
+    error,
+    refetch: () => {
+      startTransition(() => {
+        refetch({}, { fetchPolicy: "network-only", onComplete: setError });
+      });
     },
-  );
+  };
 }

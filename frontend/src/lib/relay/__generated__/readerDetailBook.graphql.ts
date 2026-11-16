@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<df2367bc66436d2347eecbb9b9ac7661>>
+ * @generated SignedSource<<1b7ba57a397117ab322e9a074cfbb6f0>>
  * @lightSyntaxTransform
  */
 
@@ -20,31 +20,12 @@ export type readerDetailBook$data = {
   readonly isbnMismatch: boolean;
   readonly publicationDate: string | null | undefined;
   readonly publisher: string | null | undefined;
-  readonly tags: {
-    readonly edges: ReadonlyArray<{
-      readonly node: {
-        readonly name: string;
-      };
-    }>;
-    readonly pageInfo: {
-      readonly endCursor: string | null | undefined;
-      readonly hasNextPage: boolean;
-    };
-  };
   readonly validationStatus: string;
+  readonly versions: {
+    readonly pendingCount: number;
+  };
   readonly work:
     | {
-        readonly authors: {
-          readonly edges: ReadonlyArray<{
-            readonly node: {
-              readonly name: string;
-            };
-          }>;
-          readonly pageInfo: {
-            readonly endCursor: string | null | undefined;
-            readonly hasNextPage: boolean;
-          };
-        };
         readonly description: string | null | undefined;
         readonly id: string;
         readonly language: string | null | undefined;
@@ -59,9 +40,11 @@ export type readerDetailBook$data = {
           | null
           | undefined;
         readonly title: string;
+        readonly " $fragmentSpreads": FragmentRefs<"readerWorkAuthors">;
       }
     | null
     | undefined;
+  readonly " $fragmentSpreads": FragmentRefs<"readerDetailTags">;
   readonly " $fragmentType": "readerDetailBook";
 };
 export type readerDetailBook$key = {
@@ -71,45 +54,12 @@ export type readerDetailBook$key = {
 
 const node: ReaderFragment = (function () {
   var v0 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "id",
-      storageKey: null,
-    },
-    v1 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "name",
-      storageKey: null,
-    },
-    v2 = [v1 /*:: as any*/],
-    v3 = {
-      alias: null,
-      args: null,
-      concreteType: "PageInfo",
-      kind: "LinkedField",
-      name: "pageInfo",
-      plural: false,
-      selections: [
-        {
-          alias: null,
-          args: null,
-          kind: "ScalarField",
-          name: "hasNextPage",
-          storageKey: null,
-        },
-        {
-          alias: null,
-          args: null,
-          kind: "ScalarField",
-          name: "endCursor",
-          storageKey: null,
-        },
-      ],
-      storageKey: null,
-    };
+    alias: null,
+    args: null,
+    kind: "ScalarField",
+    name: "id",
+    storageKey: null,
+  };
   return {
     argumentDefinitions: [],
     kind: "Fragment",
@@ -218,43 +168,9 @@ const node: ReaderFragment = (function () {
             storageKey: null,
           },
           {
-            alias: null,
-            args: [
-              {
-                kind: "Literal",
-                name: "first",
-                value: 5,
-              },
-            ],
-            concreteType: "AuthorConnection",
-            kind: "LinkedField",
-            name: "authors",
-            plural: false,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                concreteType: "AuthorEdge",
-                kind: "LinkedField",
-                name: "edges",
-                plural: true,
-                selections: [
-                  {
-                    alias: null,
-                    args: null,
-                    concreteType: "Author",
-                    kind: "LinkedField",
-                    name: "node",
-                    plural: false,
-                    selections: v2 /*:: as any*/,
-                    storageKey: null,
-                  },
-                ],
-                storageKey: null,
-              },
-              v3 /*:: as any*/,
-            ],
-            storageKey: "authors(first:5)",
+            args: null,
+            kind: "FragmentSpread",
+            name: "readerWorkAuthors",
           },
           {
             alias: null,
@@ -271,7 +187,16 @@ const node: ReaderFragment = (function () {
                 kind: "LinkedField",
                 name: "node",
                 plural: false,
-                selections: [v0 /*:: as any*/, v1 /*:: as any*/],
+                selections: [
+                  v0 /*:: as any*/,
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "name",
+                    storageKey: null,
+                  },
+                ],
                 storageKey: null,
               },
               {
@@ -289,42 +214,26 @@ const node: ReaderFragment = (function () {
       },
       {
         alias: null,
-        args: [
-          {
-            kind: "Literal",
-            name: "first",
-            value: 10,
-          },
-        ],
-        concreteType: "TagConnection",
+        args: null,
+        concreteType: "MetadataVersions",
         kind: "LinkedField",
-        name: "tags",
+        name: "versions",
         plural: false,
         selections: [
           {
             alias: null,
             args: null,
-            concreteType: "TagEdge",
-            kind: "LinkedField",
-            name: "edges",
-            plural: true,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                concreteType: "Tag",
-                kind: "LinkedField",
-                name: "node",
-                plural: false,
-                selections: v2 /*:: as any*/,
-                storageKey: null,
-              },
-            ],
+            kind: "ScalarField",
+            name: "pendingCount",
             storageKey: null,
           },
-          v3 /*:: as any*/,
         ],
-        storageKey: "tags(first:10)",
+        storageKey: null,
+      },
+      {
+        args: null,
+        kind: "FragmentSpread",
+        name: "readerDetailTags",
       },
     ],
     type: "Manifestation",
@@ -332,6 +241,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "956a81b2a9cb4a1ab3aa28e81fdb3fb4";
+(node as any).hash = "21f12a26f22093fac45d964bc3aafe9b";
 
 export default node;

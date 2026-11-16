@@ -630,7 +630,9 @@
         "REV-REQ-0003",
         "REV-REQ-0075",
         "REV-REQ-0076",
-        "REV-REQ-0077"
+        "REV-REQ-0077",
+        "REV-REQ-0080",
+        "REV-REQ-0081"
       ],
       "title": "Library filter and sort state"
     },
@@ -952,7 +954,8 @@
       "path": "docs/specs/library/design/0021-reading-state.md",
       "satisfies": [
         "REV-REQ-0018",
-        "REV-REQ-0020"
+        "REV-REQ-0020",
+        "REV-REQ-0081"
       ],
       "title": "Reading state"
     },
@@ -1758,6 +1761,18 @@
       "kind": "req",
       "path": "docs/specs/api/requirements/0079-production-graphql-document-admission.md",
       "title": "Production GraphQL document admission"
+    },
+    {
+      "id": "REV-REQ-0080",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0080-library-return-restores-browsing-context.md",
+      "title": "Library return restores browsing context"
+    },
+    {
+      "id": "REV-REQ-0081",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0081-failed-library-saves-support-explicit-retry.md",
+      "title": "Failed Library saves support explicit Retry"
     }
   ]
 }

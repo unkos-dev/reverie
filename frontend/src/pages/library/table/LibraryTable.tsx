@@ -1,3 +1,4 @@
+import type { ReaderBook as BookListItem } from "@/api/graphql";
 import { ArrowRight, ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Loader2 } from "lucide-react";
 import {
   createContext,
@@ -35,7 +36,6 @@ import {
 import {
   MAX_SORT_LEVELS,
   PageCountInputSchema,
-  type BookListItem,
   type Density,
   type SortField,
   type SortLevelParam,
@@ -182,7 +182,8 @@ function BookCell({
 }: Readonly<{ book: BookListItem; columnId: ColumnId }>): ReactElement | null {
   const { density, isMobile, stateFor, commit } = useTableEdit();
   const state = stateFor(book.id, columnId);
-  const reading = book.reading_state ?? EMPTY_READING_STATE;
+  const opening = state.retained ?? book;
+  const reading = opening.reading_state ?? EMPTY_READING_STATE;
   switch (columnId) {
     case "select":
       return (
@@ -211,7 +212,7 @@ function BookCell({
           showAuthors={isMobile && density === "comfortable"}
           state={state}
           onCommit={(title) => {
-            commit(book, "title", { ...book, title });
+            commit(opening, "title", { ...book, title });
           }}
         />
       );
@@ -224,7 +225,7 @@ function BookCell({
           kind="text"
           state={state}
           onCommit={(subtitle) => {
-            commit(book, "subtitle", { ...book, subtitle });
+            commit(opening, "subtitle", { ...book, subtitle });
           }}
         />
       );
@@ -234,8 +235,13 @@ function BookCell({
           book={book}
           density={density}
           state={state}
-          onCommit={(authors) => {
-            commit(book, "authors", { ...book, authors });
+          onCommit={(authors, baseline, previousAuthors) => {
+            const authorOpening = {
+              ...opening,
+              authors: [...previousAuthors],
+              metadata_etag: baseline,
+            };
+            commit(authorOpening, "authors", { ...authorOpening, authors });
           }}
         />
       );
@@ -264,7 +270,7 @@ function BookCell({
           mono
           state={state}
           onCommit={(isbn) => {
-            commit(book, "isbn_13", { ...book, isbn_13: isbn });
+            commit(opening, "isbn_13", { ...book, isbn_13: isbn });
           }}
         />
       );
@@ -278,7 +284,7 @@ function BookCell({
           align="end"
           state={state}
           onCommit={(pages) => {
-            commit(book, "pages", {
+            commit(opening, "pages", {
               ...book,
               pages: pages === null ? null : PageCountInputSchema.parse(pages),
             });
@@ -292,7 +298,7 @@ function BookCell({
           status={reading.status}
           state={state}
           onCommit={(status) => {
-            commit(book, "status", { ...book, reading_state: { ...reading, status } });
+            commit(opening, "status", { ...book, reading_state: { ...reading, status } });
           }}
         />
       );
@@ -303,7 +309,7 @@ function BookCell({
           rating={reading.rating}
           state={state}
           onCommit={(rating) => {
-            commit(book, "rating", { ...book, reading_state: { ...reading, rating } });
+            commit(opening, "rating", { ...book, reading_state: { ...reading, rating } });
           }}
         />
       );
@@ -549,6 +555,8 @@ const MENU_ITEM =
   "text-fg flex cursor-default items-center rounded-md px-2.5 py-1.5 text-sm outline-none data-focused:bg-surface-2";
 
 type Props = {
+  scrollRef?: (element: HTMLTableElement | null) => void;
+  onScroll?: () => void;
   items: readonly BookListItem[];
   sort: readonly SortLevelParam[];
   defaultSort: readonly SortLevelParam[];
@@ -566,6 +574,8 @@ type Props = {
 };
 
 export function LibraryTable({
+  scrollRef,
+  onScroll,
   items,
   sort,
   defaultSort,
@@ -608,9 +618,15 @@ export function LibraryTable({
     isMobile,
     stateFor: (rowId, columnKey) => {
       const key = pendingKey(rowId, columnKey);
+      const failure = edits.feedback.find(
+        (entry) => pendingKey(entry.rowId, entry.columnKey) === key,
+      );
       return {
         pending: edits.pendingCells.get(key),
-        failed: edits.feedback.some((entry) => pendingKey(entry.rowId, entry.columnKey) === key),
+        failed: failure !== undefined,
+        retained: failure?.retained,
+        serverError: failure?.action === "correct" ? failure.message : undefined,
+        retainSource: failure?.retainSource ?? edits.retainSource,
       };
     },
     commit: (book, columnKey, next) => {
@@ -737,6 +753,8 @@ export function LibraryTable({
             }}
           >
             <Table
+              ref={scrollRef}
+              onScroll={onScroll}
               keyboardNavigationBehavior="tab"
               aria-label="Library books"
               selectionMode="multiple"

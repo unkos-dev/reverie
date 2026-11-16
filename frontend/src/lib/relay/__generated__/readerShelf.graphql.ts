@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<419abe853c235975c25a8dcdeb073e1c>>
+ * @generated SignedSource<<de7d9f36425d7d2549cc2d9d7b81f21d>>
  * @lightSyntaxTransform
  */
 
@@ -10,8 +10,12 @@
 import { ReaderFragment } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
 export type readerShelf$data = {
+  readonly createdAt: string;
   readonly id: string;
+  readonly isSystem: boolean;
+  readonly itemCount: number;
   readonly name: string;
+  readonly updatedAt: string;
   readonly " $fragmentSpreads": FragmentRefs<"readerShelfItems">;
   readonly " $fragmentType": "readerShelf";
 };
@@ -41,6 +45,34 @@ const node: ReaderFragment = {
       storageKey: null,
     },
     {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isSystem",
+      storageKey: null,
+    },
+    {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "itemCount",
+      storageKey: null,
+    },
+    {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "createdAt",
+      storageKey: null,
+    },
+    {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "updatedAt",
+      storageKey: null,
+    },
+    {
       args: null,
       kind: "FragmentSpread",
       name: "readerShelfItems",
@@ -50,6 +82,6 @@ const node: ReaderFragment = {
   abstractKey: null,
 };
 
-(node as any).hash = "68ebfe705a75d8bc25a42a34e9e8484e";
+(node as any).hash = "671b64a837db224b972265750dfd742a";
 
 export default node;

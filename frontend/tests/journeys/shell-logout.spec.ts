@@ -1,4 +1,14 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { z } from "zod";
+
+const documents = z
+  .record(z.string(), z.string())
+  .parse(
+    JSON.parse(
+      readFileSync(new URL("../../../backend/graphql-documents.json", import.meta.url), "utf8"),
+    ),
+  );
 
 const ACCOUNT = {
   id: "33333333-3333-4333-8333-333333333333",
@@ -23,7 +33,40 @@ async function intercept(page: Page): Promise<{
   let signedOut = false;
   async function handle(route: Route): Promise<void> {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/auth/me") {
+    if (path === "/api/graphql") {
+      const body = z.object({ id: z.string() }).parse(route.request().postDataJSON());
+      const operation = documents[body.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
+      const page = { edges: [], pageInfo: { endCursor: null, hasNextPage: false } };
+      if (operation === "readerLibraryQuery") {
+        await route.fulfill({ json: { data: { books: page } } });
+      } else if (operation === "readerShelvesQuery") {
+        await route.fulfill({ json: { data: { shelves: page } } });
+      } else if (operation === "readerLibraryPreferencesQuery") {
+        await route.fulfill({
+          json: {
+            data: {
+              libraryPreferences: {
+                hiddenColumns: null,
+                density: null,
+                view: null,
+                sortStack: null,
+                defaults: {
+                  hiddenColumns: ["subtitle"],
+                  density: "comfortable",
+                  view: "grid",
+                  sortStack: "-created_at",
+                },
+              },
+            },
+          },
+        });
+      } else {
+        await route.fulfill({
+          status: 400,
+          json: { error: `Unprovided synthetic document: ${operation ?? body.id}` },
+        });
+      }
+    } else if (path === "/auth/me") {
       await route.fulfill(
         signedOut ? { status: 401, json: { title: "Unauthorised" } } : { json: ACCOUNT },
       );

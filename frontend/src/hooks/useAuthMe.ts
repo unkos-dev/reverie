@@ -11,7 +11,7 @@
  *   caller can distinguish an operational failure from "not logged in"
  *   via `isError`.
  */
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
 import { activeUserEpoch, rememberActiveUser } from "@/lib/active-user";
@@ -32,33 +32,35 @@ const AuthMeSchema = z.object({
 
 type AuthMe = z.infer<typeof AuthMeSchema>;
 
+export const authMeQueryOptions = queryOptions({
+  queryKey: queryKeys.auth.me(),
+  queryFn: async ({ signal }) => {
+    const epoch = activeUserEpoch();
+    const resp = await fetch("/auth/me", {
+      credentials: "same-origin",
+      signal,
+    });
+    if (resp.status === 401 || resp.status === 403) {
+      // Not authenticated — callers treat undefined data as "logged out".
+      return null;
+    }
+    if (!resp.ok) {
+      throw new Error(`/auth/me failed: ${String(resp.status)} ${resp.statusText}`);
+    }
+    const raw: unknown = await resp.json();
+    const me = AuthMeSchema.parse(raw);
+    // The one place every auth mode (local, OIDC, boot with a live
+    // session) converges on a confirmed identity, so per-user client
+    // caches learn whose they are here rather than in each login flow.
+    rememberActiveUser(me.id, epoch);
+    return me;
+  },
+  staleTime: Infinity,
+  retry: false,
+});
+
 function useAuthMe(): { data: AuthMe | undefined; isLoading: boolean; isError: boolean } {
-  const { data, isLoading, isError } = useQuery({
-    queryKey: queryKeys.auth.me(),
-    queryFn: async ({ signal }) => {
-      const epoch = activeUserEpoch();
-      const resp = await fetch("/auth/me", {
-        credentials: "same-origin",
-        signal,
-      });
-      if (resp.status === 401 || resp.status === 403) {
-        // Not authenticated — callers treat undefined data as "logged out".
-        return null;
-      }
-      if (!resp.ok) {
-        throw new Error(`/auth/me failed: ${String(resp.status)} ${resp.statusText}`);
-      }
-      const raw: unknown = await resp.json();
-      const me = AuthMeSchema.parse(raw);
-      // The one place every auth mode (local, OIDC, boot with a live
-      // session) converges on a confirmed identity, so per-user client
-      // caches learn whose they are here rather than in each login flow.
-      rememberActiveUser(me.id, epoch);
-      return me;
-    },
-    staleTime: Infinity,
-    retry: false,
-  });
+  const { data, isLoading, isError } = useQuery(authMeQueryOptions);
   return { data: data ?? undefined, isLoading, isError };
 }
 

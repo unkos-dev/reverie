@@ -1,4 +1,35 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { z } from "zod";
+import type { Preferences } from "../../src/api/preferences";
+
+const documents = z
+  .record(z.string(), z.string())
+  .parse(
+    JSON.parse(
+      readFileSync(new URL("../../../backend/graphql-documents.json", import.meta.url), "utf8"),
+    ),
+  );
+const graphId = (kind: string, id: string) => Buffer.from(`${kind}:${id}`).toString("base64");
+const variablesSchema = z
+  .object({
+    sourceKey: z.string(),
+    cursor: z.string().nullish(),
+    count: z.number().nullish(),
+    filter: z
+      .object({
+        q: z.string().nullish(),
+        titleContains: z.string().nullish(),
+        titleEq: z.string().nullish(),
+        pagesGte: z.number().nullish(),
+        pagesLte: z.number().nullish(),
+        shelfAny: z.array(z.string()).optional(),
+        seriesAny: z.array(z.string()).optional(),
+      })
+      .loose()
+      .nullish(),
+  })
+  .loose();
 
 const BOOK = {
   metadata_etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
@@ -23,7 +54,7 @@ const BOOK = {
   reading_state: null,
   created_at: "2026-10-25T04:00:00Z",
 };
-const PREFERENCES = {
+const PREFERENCES: Preferences = {
   hidden_columns: null,
   density: null,
   view: null,
@@ -45,13 +76,178 @@ const SHELVES = [
   item_count: 1,
 }));
 
-type Fixture = { requests: URLSearchParams[] };
+function graphBook(book: typeof BOOK) {
+  return {
+    __typename: "Manifestation",
+    id: graphId("Manifestation", book.id),
+    coverUrl: "",
+    isbn13: null,
+    pages: book.pages,
+    createdAt: book.created_at,
+    work: {
+      id: graphId("Work", book.work_id),
+      title: book.title,
+      subtitle: null,
+      description: null,
+      language: "en",
+      authors: {
+        edges: [
+          {
+            cursor: "author",
+            node: {
+              id: graphId("Author", "44444444-4444-4444-8444-444444444444"),
+              name: "A Reader",
+            },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+      selectedSeries: null,
+    },
+    metadata: {
+      manifestationId: graphId("Manifestation", book.id),
+      workId: graphId("Work", book.work_id),
+      etag: book.metadata_etag,
+      title: book.title,
+      subtitle: null,
+      isbn13: null,
+      pages: book.pages,
+    },
+    readingState: {
+      etag: book.reading_etag,
+      status: null,
+      rating: null,
+      progressPct: null,
+      startedAt: null,
+      finishedAt: null,
+    },
+    tags: { edges: [], pageInfo: { hasNextPage: false, endCursor: null } },
+    versions: { pendingCount: 0 },
+    isbn10: null,
+    isbnMismatch: false,
+    publisher: null,
+    publicationDate: null,
+    ingestionStatus: "complete",
+    validationStatus: "clean",
+    enrichmentStatus: "complete",
+  };
+}
+
+type Fixture = {
+  requests: z.infer<typeof variablesSchema>[];
+};
 async function intercept(page: Page, withFacets = false): Promise<Fixture> {
   const fixture: Fixture = { requests: [] };
+  let preferences = structuredClone(PREFERENCES);
   await page.route(/^https?:\/\/[^/]+\/(?:api|auth)\//, async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
-    if (path === "/auth/me") {
+    if (path === "/api/graphql") {
+      const body = z
+        .object({ id: z.string(), variables: z.record(z.string(), z.unknown()) })
+        .parse(route.request().postDataJSON());
+      const operation = documents[body.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
+      let data: unknown;
+      if (operation === "readerLibraryQuery" || operation === "readerLibraryPaginationQuery") {
+        const variables = variablesSchema.parse(body.variables);
+        fixture.requests.push(variables);
+        const filter = variables.filter;
+        const q = filter?.q ?? filter?.titleContains ?? filter?.titleEq ?? "";
+        const books = [BOOK].filter(
+          (book) =>
+            book.title.toLowerCase().includes(q.toLowerCase()) &&
+            book.pages >= (filter?.pagesGte ?? 0) &&
+            book.pages <= (filter?.pagesLte ?? 2147483647),
+        );
+        const offset = Number(variables.cursor ?? 0);
+        const pageBooks = books.slice(offset, offset + (variables.count ?? 50));
+        const end = offset + pageBooks.length;
+        data = {
+          books: {
+            edges: pageBooks.map((book, index) => ({
+              cursor: String(offset + index + 1),
+              node: graphBook(book),
+            })),
+            pageInfo: { hasNextPage: end < books.length, endCursor: end > 0 ? String(end) : null },
+          },
+        };
+        await route.fulfill({ json: { data } });
+        return;
+      } else if (operation === "readerDetailQuery") {
+        data = { manifestation: graphBook(BOOK) };
+      } else if (
+        operation === "readerShelvesQuery" ||
+        operation === "readerShelvesPaginationQuery"
+      ) {
+        data = {
+          shelves: {
+            edges: (withFacets ? SHELVES : []).map((shelf) => ({
+              cursor: shelf.id,
+              node: {
+                id: graphId("Shelf", shelf.id),
+                name: shelf.name,
+                isSystem: false,
+                itemCount: 1,
+                createdAt: BOOK.created_at,
+                updatedAt: BOOK.created_at,
+              },
+            })),
+            pageInfo: { endCursor: null, hasNextPage: false },
+          },
+        };
+      } else if (operation === "readerLibraryPreferencesQuery") {
+        data = {
+          libraryPreferences: {
+            hiddenColumns: null,
+            density: null,
+            view: null,
+            sortStack: null,
+            defaults: {
+              hiddenColumns: ["subtitle"],
+              density: "comfortable",
+              view: "grid",
+              sortStack: "-created_at",
+            },
+          },
+        };
+      } else if (operation === "mutationsUpdateLibraryPreferencesMutation") {
+        data = {
+          updateLibraryPreferences: {
+            hiddenColumns: null,
+            density: null,
+            view: null,
+            sortStack: null,
+            ...z.record(z.string(), z.unknown()).parse(body.variables.patch),
+            defaults: {
+              hiddenColumns: ["subtitle"],
+              density: "comfortable",
+              view: "grid",
+              sortStack: "-created_at",
+            },
+          },
+        };
+      } else if (operation === "readerSeriesSuggestionsQuery") {
+        data = {
+          seriesSuggestions: withFacets
+            ? SERIES.map((item) => ({ entityId: graphId("Series", item.id), value: item.value }))
+            : [],
+        };
+      } else if (operation === "readerSeriesLabelsQuery") {
+        data = {
+          seriesLabels: SERIES.map((item) => ({
+            entityId: graphId("Series", item.id),
+            value: item.value,
+          })),
+        };
+      } else {
+        await route.fulfill({
+          status: 400,
+          json: { error: `Unprovided synthetic document: ${operation ?? body.id}` },
+        });
+        return;
+      }
+      await route.fulfill({ json: { data } });
+    } else if (path === "/auth/me") {
       await route.fulfill({
         json: {
           id: "33333333-3333-4333-8333-333333333333",
@@ -76,9 +272,19 @@ async function intercept(page: Page, withFacets = false): Promise<Fixture> {
         },
       });
     } else if (path === "/auth/me/preferences") {
-      await route.fulfill({ json: PREFERENCES });
+      if (route.request().method() === "PATCH") {
+        const patch = z
+          .object({
+            hidden_columns: z.array(z.string()).nullable().optional(),
+            density: z.enum(["comfortable", "compact"]).nullable().optional(),
+            view: z.enum(["grid", "table"]).nullable().optional(),
+            sort_stack: z.string().nullable().optional(),
+          })
+          .parse(route.request().postDataJSON());
+        preferences = { ...preferences, ...patch };
+      }
+      await route.fulfill({ json: preferences });
     } else if (path === "/api/v1/books") {
-      fixture.requests.push(url.searchParams);
       const p = url.searchParams;
       const q = p.get("q") ?? p.get("title_contains") ?? p.get("title_eq") ?? "";
       const empty =
@@ -164,9 +370,13 @@ test("rapid edits reload with their first request and no URL grammar", async ({ 
   await page.reload();
   await ready(page);
   await expect(search(page)).toHaveValue("The Sea");
-  expect(fixture.requests[before]?.get("q")).toBe("The Sea");
-  expect(fixture.requests[before]?.getAll("shelf_any")).toEqual(SHELVES.map((item) => item.id));
-  expect(fixture.requests[before]?.getAll("series_any")).toEqual(SERIES.map((item) => item.id));
+  expect(fixture.requests[before]?.filter?.q).toBe("The Sea");
+  expect(fixture.requests[before]?.filter?.shelfAny).toEqual(
+    SHELVES.map((item) => graphId("Shelf", item.id)),
+  );
+  expect(fixture.requests[before]?.filter?.seriesAny).toEqual(
+    SERIES.map((item) => graphId("Series", item.id)),
+  );
   await expect(page.getByRole("heading", { name: "The Sea", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/library$/);
 });
@@ -196,8 +406,12 @@ test("book Back and Forward restore a visit; Back past Library does not undo edi
         .getByTestId("filter-chips")
         .getByRole("row", { name: `Series: ${series.value}`, exact: true }),
     ).toBeVisible();
-  expect(fixture.requests.at(-1)?.getAll("shelf_any")).toEqual(SHELVES.map((item) => item.id));
-  expect(fixture.requests.at(-1)?.getAll("series_any")).toEqual(SERIES.map((item) => item.id));
+  expect(fixture.requests.at(-1)?.filter?.shelfAny).toEqual(
+    SHELVES.map((item) => graphId("Shelf", item.id)),
+  );
+  expect(fixture.requests.at(-1)?.filter?.seriesAny).toEqual(
+    SERIES.map((item) => graphId("Series", item.id)),
+  );
   await page.goForward();
   await expect(page.getByRole("heading", { name: "The Sea" })).toBeVisible();
   await page.goBack();
@@ -251,9 +465,9 @@ test("Refine Escape retains live text and range edits and returns focus", async 
   expect(
     fixture.requests.some(
       (p) =>
-        p.get("pages_gte") === "300" &&
-        p.get("pages_lte") === "200" &&
-        p.get("title_contains") === "The Sea",
+        p.filter?.pagesGte === 300 &&
+        p.filter.pagesLte === 200 &&
+        p.filter.titleContains === "The Sea",
     ),
   ).toBe(true);
   await refine(page);

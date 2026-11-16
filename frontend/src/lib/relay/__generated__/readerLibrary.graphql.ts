@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<92d1b6fe19ae7769aa9ecb0da6951aec>>
+ * @generated SignedSource<<722cd04e6b9592b0ce3af2cc4056a8ce>>
  * @lightSyntaxTransform
  */
 
@@ -50,6 +50,11 @@ const node: ReaderFragment = (function () {
         kind: "LocalArgument",
         name: "sort",
       },
+      {
+        defaultValue: null,
+        kind: "LocalArgument",
+        name: "sourceKey",
+      },
     ],
     kind: "Fragment",
     metadata: {
@@ -79,6 +84,11 @@ const node: ReaderFragment = (function () {
       {
         alias: "books",
         args: [
+          {
+            kind: "Variable",
+            name: "__dynamicKey",
+            variableName: "sourceKey",
+          },
           {
             kind: "Variable",
             name: "filter",
@@ -170,6 +180,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "242b6a850451e9051553aedb38207131";
+(node as any).hash = "b7913b86b8eabe3cba69089d24fd6175";
 
 export default node;

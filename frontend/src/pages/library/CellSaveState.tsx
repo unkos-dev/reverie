@@ -29,13 +29,25 @@ export function CellSaveState({ saved, pending, feedback }: Readonly<Props>): Re
     return (
       <div
         className="bg-canvas text-danger-text absolute right-3 flex items-center gap-1 rounded px-1 text-xs"
-        data-slot="cell-save-state"
+        data-slot={pending || feedback.reloading ? "cell-save-state" : "cell-save-feedback"}
         role="status"
       >
         Not saved.
-        <Button size="xs" variant="ghost" isPending={feedback.reloading} onPress={feedback.reload}>
-          {feedback.reloading ? "Reloading…" : "Reload"}
-        </Button>
+        {feedback.action === "retry" ? (
+          <Button size="xs" variant="ghost" isPending={feedback.retrying} onPress={feedback.retry}>
+            {feedback.retrying ? "Retrying…" : "Retry"}
+          </Button>
+        ) : null}
+        {feedback.action === "reload" ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            isPending={feedback.reloading}
+            onPress={feedback.reload}
+          >
+            {feedback.reloading ? "Reloading…" : "Reload"}
+          </Button>
+        ) : null}
       </div>
     );
   if (pending)

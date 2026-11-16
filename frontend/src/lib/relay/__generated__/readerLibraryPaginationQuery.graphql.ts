@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<487a29fb48dd975f7be5f09f63f6bcbb>>
- * @relayHash 4c3ec1a6d7770044a124c57dc1c28c1c
+ * @generated SignedSource<<d571993c58da8be033e509893229bee8>>
+ * @relayHash 01b26c9cc139632c9298e3a84ff72c60
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 83915b8c4aeab1298e577b43932f13af079efb8c1ceab6093a93f0d4deee6a0d
+// @relayRequestID db370f1496e6eb1d01992f2aa3d2f76afd2cf7e9e71f6f8b1bb1b2172f899e69
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -60,11 +60,79 @@ export type readerLibraryPaginationQuery$variables = {
   cursor?: string | null | undefined;
   filter?: BooksFilter | null | undefined;
   sort?: ReadonlyArray<SortLevel> | null | undefined;
+  sourceKey: string;
 };
 export type readerLibraryPaginationQuery$data = {
   readonly " $fragmentSpreads": FragmentRefs<"readerLibrary">;
 };
+export type readerLibraryPaginationQuery$rawResponse = {
+  readonly books: {
+    readonly edges: ReadonlyArray<{
+      readonly cursor: string;
+      readonly node: {
+        readonly __typename: "Manifestation";
+        readonly coverUrl: string;
+        readonly createdAt: string;
+        readonly id: string;
+        readonly isbn13: string | null | undefined;
+        readonly metadata: {
+          readonly etag: string;
+          readonly isbn13: string | null | undefined;
+          readonly manifestationId: string;
+          readonly pages: number | null | undefined;
+          readonly subtitle: string | null | undefined;
+          readonly title: string;
+          readonly workId: string;
+        };
+        readonly pages: number | null | undefined;
+        readonly readingState: {
+          readonly etag: string;
+          readonly finishedAt: string | null | undefined;
+          readonly progressPct: number | null | undefined;
+          readonly rating: number | null | undefined;
+          readonly startedAt: string | null | undefined;
+          readonly status: string | null | undefined;
+        };
+        readonly work:
+          | {
+              readonly authors: {
+                readonly edges: ReadonlyArray<{
+                  readonly node: {
+                    readonly id: string;
+                    readonly name: string;
+                  };
+                }>;
+                readonly pageInfo: {
+                  readonly endCursor: string | null | undefined;
+                  readonly hasNextPage: boolean;
+                };
+              };
+              readonly id: string;
+              readonly selectedSeries:
+                | {
+                    readonly node: {
+                      readonly id: string;
+                      readonly name: string;
+                    };
+                    readonly position: number | null | undefined;
+                  }
+                | null
+                | undefined;
+              readonly subtitle: string | null | undefined;
+              readonly title: string;
+            }
+          | null
+          | undefined;
+      };
+    }>;
+    readonly pageInfo: {
+      readonly endCursor: string | null | undefined;
+      readonly hasNextPage: boolean;
+    };
+  };
+};
 export type readerLibraryPaginationQuery = {
+  rawResponse: readerLibraryPaginationQuery$rawResponse;
   response: readerLibraryPaginationQuery$data;
   variables: readerLibraryPaginationQuery$variables;
 };
@@ -90,6 +158,11 @@ const node: ConcreteRequest = (function () {
         defaultValue: null,
         kind: "LocalArgument",
         name: "sort",
+      },
+      {
+        defaultValue: null,
+        kind: "LocalArgument",
+        name: "sourceKey",
       },
     ],
     v1 = {
@@ -200,6 +273,11 @@ const node: ConcreteRequest = (function () {
             },
             v1 /*:: as any*/,
             v2 /*:: as any*/,
+            {
+              kind: "Variable",
+              name: "sourceKey",
+              variableName: "sourceKey",
+            },
           ],
           kind: "FragmentSpread",
           name: "readerLibrary",
@@ -398,6 +476,27 @@ const node: ConcreteRequest = (function () {
                           name: "rating",
                           storageKey: null,
                         },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "progressPct",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "startedAt",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "finishedAt",
+                          storageKey: null,
+                        },
                       ],
                       storageKey: null,
                     },
@@ -442,11 +541,16 @@ const node: ConcreteRequest = (function () {
           key: "readerLibrary_books",
           kind: "LinkedHandle",
           name: "books",
+          dynamicKey: {
+            kind: "Variable",
+            name: "__dynamicKey",
+            variableName: "sourceKey",
+          },
         },
       ],
     },
     params: {
-      id: "83915b8c4aeab1298e577b43932f13af079efb8c1ceab6093a93f0d4deee6a0d",
+      id: "db370f1496e6eb1d01992f2aa3d2f76afd2cf7e9e71f6f8b1bb1b2172f899e69",
       metadata: {},
       name: "readerLibraryPaginationQuery",
       operationKind: "query",
@@ -455,6 +559,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "242b6a850451e9051553aedb38207131";
+(node as any).hash = "b7913b86b8eabe3cba69089d24fd6175";
 
 export default node;

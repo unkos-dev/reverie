@@ -159,12 +159,9 @@ existing bounds and continuation cursors, with no universal snapshot ceiling.
 - `load_book_metadata` is the one assembly function `get_book_metadata`, `update_book_metadata`'s precondition check,
   and its post-write read all share. It pairs complete values with owner identities and revisions;
   `MetadataRevision::etag` produces the same validator for GET, PATCH comparison and the confirmed PATCH response.
-- On the client, `frontend/src/api/metadata.ts` wraps `accept`/`reject`/`revert` under the legacy
-  `/api/v1/manifestations/` prefix; `frontend/src/api/books.ts` wraps `getBookMetadata`/`updateBookMetadata` under
-  `/api/v1/books/`. Both prefixes address the same `manifestations.id`. `VersionsTab.tsx` groups
-  `book.metadata_versions` by `field_name`, renders each pending row with Accept/Reject, and a per-field Clear action
-  that calls `revertField` with a `null` version id; `EditMetadataDialog.tsx` is the manual-edit sheet it opens,
-  tracking a per-field `touched` flag so only edited keys reach the `PATCH` body.
+- Browser consumers use generated GraphQL operations in `mutations.ts` and `reader.ts`. `VersionsTab.tsx` groups the
+  lazy pending connection by field, retains each field's action outcome and supplies Accept, Reject and Clear. The
+  manual edit sheet tracks touched fields and submits only those keys with its opening matched baseline.
 
 ### Three distinct review-queue reads
 
@@ -174,12 +171,10 @@ existing bounds and continuation cursors, with no universal snapshot ceiling.
   joins only `manifestations` to reach `m.work_id = $1` (a column on `manifestations` itself, so no join to `works` is
   needed): a join that puts that table's own row-level-security policies in the query plan, unlike the
   manifestation-scoped read above.
-- The book-detail Versions tab draws from neither of these: it reads `book.metadata_versions`, populated by
-  `load_pending_versions` in `backend/src/routes/library/mod.rs`, which filters to `status = 'pending'`, excludes any
-  row already wired as a canonical pointer (via the canonical-pointer and junction-pointer id sets), excludes
-  null-valued audit rows (`new_value != 'null'::jsonb`), and caps the result at `MAX_PENDING_VERSIONS` (200). The
-  client's `api/metadata.ts` module has no wrapper for either `GET` review-queue route above; `VersionsTab.tsx` sources
-  its list from `GET /api/v1/books/{id}` instead.
+- The book-detail Versions tab executes `readerVersionsQuery` only when opened. Its native pagination fragment completes
+  the selected pending connection. The shared reader service filters out rejected rows, current canonical pointers and
+  null-valued audit rows. Basic detail reads select only the pending count. The retained HTTP book-detail representation
+  uses `load_pending_versions` and its `MAX_PENDING_VERSIONS` bound of 200.
 
 ## Interfaces and dependencies
 
@@ -192,10 +187,9 @@ existing bounds and continuation cursors, with no universal snapshot ceiling.
 - `GET /api/v1/books/{id}/metadata` (`read` scope) / `PATCH /api/v1/books/{id}/metadata` (`UpdateMetadataFields` in,
   `UpdateMetadataResponse` out, `write` scope): the matched editable-metadata pair; `PATCH` additionally requires an
   `If-Match` header whose grammar and status contract belong to "Conditional requests and optimistic concurrency".
-- `frontend/src/api/metadata.ts` (`acceptVersion`, `rejectVersion`, `revertField`) and the metadata exports of
-  `frontend/src/api/books.ts` (`getBookMetadata`, `updateBookMetadata`, `UpdateBookMetadataFieldsSchema`,
-  `BookMetadataSchema`) are the typed client boundary; both route through the shared `apiFetch`, so CSRF-token
-  attachment and Problem Details parsing (owned elsewhere) apply uniformly.
+- Browser review and editing use generated GraphQL operations through the account-scoped Relay environment. The GraphQL
+  network boundary attaches CSRF and validates selected matched responses before publication. Retained HTTP adapters
+  share the same domain operations and conditional-write contracts.
 - `enqueue_writeback` is this subject's one call into the writeback pipeline's interface: an
   `INSERT INTO writeback_jobs (manifestation_id, reason, field_name)`, retaining the changed field and the `"cover"` or
   `"metadata"` reason.
@@ -293,7 +287,7 @@ baselines; current value equality cannot confirm a metadata save.
 `pub_date` is nullable bibliographic text. PATCH, accept and revert validate through the shared publication-date
 validator before canonical writes. Reads preserve the accepted precision and spelling. An omitted PATCH key retains its
 value; explicit null clears it. The edit sheet offers one plain Publication date text field; blank edited input sends
-null. It applies no client date parser. Structured `ApiError.errors` values pass through `useActionState` to React Aria
+null. It applies no client date parser. Safe HTTP or GraphQL field errors pass through `useActionState` to React Aria
 `Form.validationErrors` and native `FieldError` associations. A refused date and every other submitted value remain in
 the mounted form for correction. Publication guidance recommends YYYY-MM-DD or YYYY and leaving unknown values empty. An
 Accepted formats button opens the native popover with the full supported list and a format-reference link. General
@@ -303,23 +297,23 @@ explicitly replaces them with a fresh metadata read; a failed reload retains the
 field section outside removable draft rows. Pending, clear-confirmation and successful closure retain their owners.
 Metadata fields remain read-only while Save is pending or its outcome remains unresolved. Their values can still be
 selected. After the request settles, Save can resend the unchanged draft with its original request ID and baseline.
-Confirmed saves await the matched refresh and close the dialog. Expected refusals retain submitted values for
-correction; unknown outcomes retain the existing Reload recovery. Offline recovery shows one connection message.
-Confirmation closes only its originating mounted form. Cache reconciliation continues after dismissal.
+Confirmed saves await a matched selected raw refresh and close the dialog. Validation refusals retain submitted values
+for correction. Temporary or uncertain failures expose explicit Retry of the retained request. A conflict not confirmed
+as saved exposes the existing matched Reload path. Offline recovery keeps one local failure message. Confirmation closes
+only its originating mounted form. Cache reconciliation continues after dismissal.
 
-**A manual `PATCH`: an operator edits publisher, clears pub_date, and sets a work identifier from the edit dialog.**
+**An operator edits publisher and clears publication date in the metadata form.**
 
-1. `EditMetadataForm` reads `GET /api/v1/books/{id}/metadata` through a `useQuery` on the `["books","metadata",id]` key
-   (30-second default staleness; a reopen inside that window can serve the cached body without a new request rather than
-   guaranteeing a fresh one). `apiFetch` captures the response's `ETag`.
-2. On submit, `updateBookMetadata` sends the touched-only body; `apiFetch` auto-echoes the captured tag as `If-Match`
-   since the caller set none.
-3. `update_book_metadata` parses `If-Match` (`parse_if_match`), requiring it present (`428` otherwise), then opens
-   `acquire_with_rls_read_committed` and locks the manifestation and then its work: `404` if RLS hides or the id does
-   not exist.
-4. Under that lock, `load_book_metadata` + `MetadataRevision::etag` recompute the current tag and compare it to
-   `If-Match`; a mismatch returns `412` with the current tag before anything else is checked, per RFC 9110 §13.2.1
-   precondition ordering.
+1. `EditMetadataForm` executes `mutationsFormQuery` and retains its validated selected raw values and aggregate
+   baseline. Each opening owns that pair independently of later Relay merges.
+2. The native Form action sends the touched-only GraphQL patch, starting baseline and request UUID through
+   `mutationsSaveFormMutation`. An unchanged resend keeps all three values.
+3. The GraphQL resolver parses the supplied strong baseline and calls `editing::update_book_metadata`. The operation
+   opens `acquire_with_rls_read_committed` and locks the manifestation and then its work. Hidden or missing identities
+   produce the safe not-found classification.
+4. Under that lock, `load_book_metadata` + `MetadataRevision::etag` recompute the current tag and compare it to the
+   supplied baseline. A mismatch returns the safe stale-baseline classification before semantic patch validation. The
+   retained HTTP adapter maps the same refusal to `412`.
 5. Once the precondition holds, the handler rejects an entirely-empty body (`422`) and collects every touched scalar,
    vocabulary, contributor-role and identifier key. It checks those keys against the target edition's locks in one
    query, using `is_work_scoped_field` for ownership. Any matching lock returns `409` `field-locked` with all refused
@@ -332,11 +326,13 @@ Confirmation closes only its originating mounted form. Cache reconciliation cont
    applies, `apply_contributors_patch` journals one `contributors.<role>` version per role touched but calls
    `enqueue_writeback` once for `contributors` after its role loop, and the identifier family never enqueues.
 6. If an ISBN field was touched, `work::rematch_on_isbn_change` runs before the response is assembled.
-7. `load_book_metadata` loads the confirmed snapshot inside the transaction. `MetadataRevision::etag` computes its tag
-   before commit. The response carries complete canonical `values`, matching ETag, request ID and exact field
-   operations.
-8. The edit sheet reconciles complete values and invalidates affected lists, details and editable snapshots, including
-   siblings. It awaits the metadata refresh before closing. Review actions invalidate those same book query families.
+7. The operation materialises the selected matched acknowledgement inside the transaction. The response contains its
+   aggregate baseline, selected canonical fields, request ID and exact field operations. HTTP retains its complete
+   canonical response.
+8. The edit sheet publishes confirmed selected fields to canonical Relay records and invalidates affected Work and
+   Manifestation records. It awaits a matched selected metadata refresh before closing its originating mounted form.
+   Versions reads are lazy and complete their native pending connection. Field-owned review outcomes survive proposal
+   removal, and review actions refresh the affected native records and pending count.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 
@@ -393,10 +389,10 @@ refresh the detail and editable-metadata queries, so correction or clearing remo
 view and subsequent edit-sheet read. Native named FieldErrors display ISBN refusals through the existing
 `Form.validationErrors` map and retain submitted values for correction. A valid mismatch remains savable.
 
-The table's metadata catch handles precondition conflicts first. A keyed ISBN-13 validation refusal displays "ISBN-13
-wasn’t saved. Check the 13-digit number; spaces and hyphens are allowed." It clears the pending overlay and retains the
-saved cache value without recording an undo success. Other failures keep their generic feedback; successful edits apply
-the server-normalised value to the displayed rows' source query.
+The table resolves a stale metadata request before conflict feedback. Validation keeps the entered ISBN and native field
+feedback for correction. Temporary or uncertain failures expose retained-attempt Retry; permanent refusals expose their
+specific feedback. A refusal creates no Undo entry. Confirmed selected acknowledgements publish canonical values through
+native Relay store updates and refresh the affected displayed source.
 
 **A manual identifier edit while enrichment is `in_progress`, for the same manifestation.**
 

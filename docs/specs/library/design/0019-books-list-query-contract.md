@@ -254,10 +254,10 @@ zero returns an empty page with real flags. Nested connections bind their parent
 boundary, preventing cursor replay between parents, relation kinds or the root books connection.
 
 The pending-version connection has its own parent-bound cursor over `last_seen_at DESC, id DESC`. It requires `first`
-with a 50-row maximum; representative operations request 20 rows. Its count includes all eligible proposals, with no
-overall row cap. Canonical scalar and junction pointers and JSON-null audit rows are excluded from both the count and
-page. Children receive an empty result before any proposal query. HTTP detail retains its existing 200-row payload
-bound.
+with a 50-row maximum; the lazy Versions view requests 20 rows and completes the connection. Its count includes all
+eligible proposals, with no overall row cap. Canonical scalar and junction pointers and JSON-null audit rows are
+excluded from both the count and page. Children receive an empty result before any proposal query. HTTP detail retains
+its existing 200-row payload bound.
 
 ## Data and state
 
@@ -266,6 +266,11 @@ work and manifestation revisions; metadata tags cover both owner identities and 
 the same read-only REPEATABLE READ RLS transaction. The reading batch also loads notes and `last_read_at` for the
 existing full-state hash without adding them to the response. A missing reading row uses the same all-null hash input as
 matched GET. No per-row query or pre-edit GET supplies these validators.
+
+Browser Library requests project published filters into typed GraphQL arguments and send explicit sort levels only for
+an account override. The visit/source key is a Relay client connection identity, not a server field argument or cursor
+component. Native query references retain membership while detached validated raw list snapshots supply cell baselines.
+Basic detail selects the pending count without opening the proposal connection.
 
 Nothing here is durable. `ListParams`, the parsed `SortSpec`, the filter fingerprint and the decoded `SortCursor` are
 all built fresh from one request's query string and discarded once that request's response is written; the server holds

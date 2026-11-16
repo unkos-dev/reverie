@@ -2,8 +2,22 @@
  * Controlled vocabulary selection over server-ranked suggestions without local text filtering.
  * Callers own persisted selections; author and series identity use UUIDs while other vocabularies use labels.
  */
-import { useQuery } from "@tanstack/react-query";
-import { useState, type ReactElement } from "react";
+import { fetchQuery, useRelayEnvironment } from "react-relay";
+import type { Observable } from "relay-runtime";
+import { decodeGraphQLId } from "@/api/graphql";
+import {
+  readerAuthorSuggestionsQuery,
+  readerSeriesSuggestionsQuery,
+  readerGenreSuggestionsQuery,
+  readerMoodSuggestionsQuery,
+  readerTagSuggestionsQuery,
+} from "@/lib/relay/reader";
+import type { readerAuthorSuggestionsQuery as AuthorQuery } from "@/lib/relay/__generated__/readerAuthorSuggestionsQuery.graphql";
+import type { readerSeriesSuggestionsQuery as SeriesQuery } from "@/lib/relay/__generated__/readerSeriesSuggestionsQuery.graphql";
+import type { readerGenreSuggestionsQuery as GenreQuery } from "@/lib/relay/__generated__/readerGenreSuggestionsQuery.graphql";
+import type { readerMoodSuggestionsQuery as MoodQuery } from "@/lib/relay/__generated__/readerMoodSuggestionsQuery.graphql";
+import type { readerTagSuggestionsQuery as TagQuery } from "@/lib/relay/__generated__/readerTagSuggestionsQuery.graphql";
+import { useEffect, useState, type ReactElement } from "react";
 import {
   Button,
   ComboBox,
@@ -22,8 +36,7 @@ import {
 } from "react-aria-components";
 import { X } from "lucide-react";
 
-import { suggestVocab, type SuggestKind } from "@/api";
-import { queryKeys } from "@/lib/query/keys";
+import { type SuggestKind } from "@/api";
 
 /** A display label with an author or series UUID; other vocabularies use the label as identity. */
 export type TypeaheadOption = { id?: string; value: string };
@@ -49,18 +62,67 @@ export function TypeaheadMultiSelect({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const trimmed = query.trim();
-  const { data, isFetching, isError } = useQuery({
-    queryKey: queryKeys.suggest.vocab(kind, trimmed),
-    queryFn: ({ signal }) => suggestVocab(kind, trimmed, signal),
-    enabled: open && !disabled && trimmed.length >= 2,
-    staleTime: 30_000,
-  });
+  const environment = useRelayEnvironment();
+  const enabled = open && !disabled && trimmed.length >= 2;
+  const token = JSON.stringify([kind, trimmed]);
+  const [result, setResult] = useState<{
+    token: string;
+    data?: readonly { entityId: string | null | undefined; value: string }[];
+    error?: Error;
+  }>();
+  useEffect(() => {
+    if (!enabled) return;
+    const variables = { q: trimmed };
+    let request: Observable<readonly { entityId: string | null | undefined; value: string }[]>;
+    if (kind === "authors")
+      request = fetchQuery<AuthorQuery>(environment, readerAuthorSuggestionsQuery, variables).map(
+        (data) => data.authorSuggestions,
+      );
+    else if (kind === "series")
+      request = fetchQuery<SeriesQuery>(environment, readerSeriesSuggestionsQuery, variables).map(
+        (data) => data.seriesSuggestions,
+      );
+    else if (kind === "genres")
+      request = fetchQuery<GenreQuery>(environment, readerGenreSuggestionsQuery, variables).map(
+        (data) => data.genreSuggestions,
+      );
+    else if (kind === "moods")
+      request = fetchQuery<MoodQuery>(environment, readerMoodSuggestionsQuery, variables).map(
+        (data) => data.moodSuggestions,
+      );
+    else
+      request = fetchQuery<TagQuery>(environment, readerTagSuggestionsQuery, variables).map(
+        (data) => data.tagSuggestions,
+      );
+
+    const subscription = request.subscribe({
+      next: (data) => {
+        setResult({ token, data });
+      },
+      error: (error: Error) => {
+        console.error("[TypeaheadMultiSelect] suggestions failed", error);
+        setResult({ token, error });
+      },
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [environment, enabled, kind, trimmed, token]);
+  const data = result?.token === token ? result.data : undefined;
+  const isError = result?.token === token && result.error !== undefined;
+  const isFetching = enabled && data === undefined && !isError;
   function keyFor(option: TypeaheadOption): string {
     return kind === "authors" || kind === "series" ? (option.id ?? option.value) : option.value;
   }
   const suggestions =
     trimmed.length >= 2
-      ? (data ?? []).map((row) => ({ id: row.id ?? undefined, value: row.value }))
+      ? (data ?? []).map((row) => ({
+          id:
+            row.entityId == null || (kind !== "authors" && kind !== "series")
+              ? undefined
+              : decodeGraphQLId(kind === "authors" ? "Author" : "Series", row.entityId),
+          value: row.value,
+        }))
       : [];
   const optionsByKey = new Map<Key, TypeaheadOption>(
     [...suggestions, ...selected].map((item) => [keyFor(item), item]),

@@ -1,35 +1,42 @@
-/**
- * Author id to display label resolution, shared by every surface that
- * hydrates an author uuid into a name (the rail's authors section).
- */
-import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { fetchQuery, useRelayEnvironment } from "react-relay";
+import { encodeGraphQLId, decodeGraphQLId } from "@/api/graphql";
+import { readerAuthorLabelsQuery } from "@/lib/relay/reader";
+import type { readerAuthorLabelsQuery as LabelsQuery } from "@/lib/relay/__generated__/readerAuthorLabelsQuery.graphql";
 
-import { resolveAuthors } from "@/api";
-import { queryKeys } from "@/lib/query/keys";
-
-/** Resolves a set of author ids to display labels, with fallback states for
- *  in-flight and failed lookups. */
 export function useAuthorLabels(ids: readonly string[]): { labelFor: (id: string) => string } {
-  const { data, isFetching, isError, error } = useQuery({
-    queryKey: queryKeys.authors.resolve(ids),
-    queryFn: ({ signal }) => resolveAuthors(ids, signal),
-    enabled: ids.length > 0,
-    staleTime: 60_000,
-  });
-  // A resolve failure must not read as "author doesn't exist": leave a console
-  // breadcrumb (QueryCache.onError forwards only 401s) and label the author as
-  // unresolved rather than unknown, mirroring the next-page handler in
-  // LibraryContent.
+  const environment = useRelayEnvironment();
+  const token = [...new Set(ids)].sort().slice(0, 60).join(",");
+  const [result, setResult] = useState<{
+    token: string;
+    data?: LabelsQuery["response"];
+    error?: Error;
+  }>({ token: "" });
   useEffect(() => {
-    if (isError) console.error("[useAuthorLabels] failed to resolve author labels", error);
-  }, [isError, error]);
-  function labelFor(id: string): string {
-    const hit = data?.find((row) => row.id === id);
-    if (hit !== undefined) return hit.value;
-    if (isFetching) return "resolving…";
-    if (isError) return "author unavailable";
-    return "Unknown author";
-  }
-  return { labelFor };
+    if (token === "") return;
+    const subscription = fetchQuery<LabelsQuery>(
+      environment,
+      readerAuthorLabelsQuery,
+      { ids: token.split(",").map((id) => encodeGraphQLId("Author", id)) },
+      { fetchPolicy: "store-or-network" },
+    ).subscribe({
+      next: (data) => {
+        setResult({ token, data });
+      },
+      error: (error: Error) => {
+        console.error("[useAuthorLabels] label lookup failed", error);
+        setResult({ token, error });
+      },
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [environment, token]);
+  const data = result.token === token ? result.data : undefined;
+  return {
+    labelFor: (id) =>
+      data?.authorLabels.find(
+        (row) => row.entityId != null && decodeGraphQLId("Author", row.entityId) === id,
+      )?.value ?? `Author ${id.slice(0, 8)}…`,
+  };
 }

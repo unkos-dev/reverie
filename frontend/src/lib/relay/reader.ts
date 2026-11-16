@@ -1,7 +1,7 @@
 import { graphql } from "react-relay";
 
 export const readerLibraryBook = graphql`
-  fragment readerLibraryBook on Manifestation {
+  fragment readerLibraryBook on Manifestation @relay(plural: true) {
     id
     coverUrl
     isbn13
@@ -43,6 +43,41 @@ export const readerLibraryBook = graphql`
       etag
       status
       rating
+      progressPct
+      startedAt
+      finishedAt
+    }
+  }
+`;
+
+export const readerWorkAuthors = graphql`
+  fragment readerWorkAuthors on Work
+  @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
+  @refetchable(queryName: "readerWorkAuthorsPaginationQuery", preferFetchable: true) {
+    id
+    authors(first: $count, after: $cursor) @connection(key: "readerWorkAuthors_authors") {
+      edges {
+        node {
+          id
+          name
+        }
+      }
+    }
+  }
+`;
+
+export const readerDetailTags = graphql`
+  fragment readerDetailTags on Manifestation
+  @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
+  @refetchable(queryName: "readerDetailTagsPaginationQuery", preferFetchable: true) {
+    id
+    tags(first: $count, after: $cursor) @connection(key: "readerDetailTags_tags") {
+      edges {
+        node {
+          id
+          name
+        }
+      }
     }
   }
 `;
@@ -65,17 +100,7 @@ export const readerDetailBook = graphql`
       title
       description
       language
-      authors(first: 5) {
-        edges {
-          node {
-            name
-          }
-        }
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
-      }
+      ...readerWorkAuthors
       selectedSeries {
         node {
           id
@@ -84,17 +109,10 @@ export const readerDetailBook = graphql`
         position
       }
     }
-    tags(first: 10) {
-      edges {
-        node {
-          name
-        }
-      }
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
+    versions {
+      pendingCount
     }
+    ...readerDetailTags
   }
 `;
 
@@ -103,12 +121,13 @@ export const readerLibrary = graphql`
   @argumentDefinitions(
     count: { type: "Int", defaultValue: 50 }
     cursor: { type: "String" }
+    sourceKey: { type: "String!" }
     filter: { type: "BooksFilter" }
     sort: { type: "[SortLevel!]" }
   )
-  @refetchable(queryName: "readerLibraryPaginationQuery") {
+  @refetchable(queryName: "readerLibraryPaginationQuery", directives: ["@raw_response_type"]) {
     books(first: $count, after: $cursor, filter: $filter, sort: $sort)
-      @connection(key: "readerLibrary_books") {
+      @connection(key: "readerLibrary_books", dynamicKey_UNSTABLE: $sourceKey) {
       edges {
         node {
           ...readerLibraryBook
@@ -122,16 +141,28 @@ export const readerLibraryQuery = graphql`
   query readerLibraryQuery(
     $count: Int = 50
     $cursor: String
+    $sourceKey: String!
     $filter: BooksFilter
     $sort: [SortLevel!]
-  ) {
-    ...readerLibrary @arguments(count: $count, cursor: $cursor, filter: $filter, sort: $sort)
+  ) @raw_response_type {
+    ...readerLibrary
+      @arguments(
+        count: $count
+        cursor: $cursor
+        sourceKey: $sourceKey
+        filter: $filter
+        sort: $sort
+      )
   }
 `;
 
 export const readerDetailQuery = graphql`
   query readerDetailQuery($id: ID!) {
     manifestation(id: $id) {
+      id
+      work {
+        title
+      }
       ...readerDetailBook
     }
   }
@@ -153,6 +184,8 @@ export const readerVersions = graphql`
             newValue
             confidenceScore
             matchType
+            status
+            observationCount
           }
         }
       }
@@ -186,6 +219,10 @@ export const readerShelf = graphql`
   fragment readerShelf on Shelf {
     id
     name
+    isSystem
+    itemCount
+    createdAt
+    updatedAt
     ...readerShelfItems
   }
 `;
@@ -209,6 +246,8 @@ export const readerShelves = graphql`
           name
           isSystem
           itemCount
+          createdAt
+          updatedAt
         }
       }
     }
@@ -231,17 +270,7 @@ export const readerSeriesWorks = graphql`
         node {
           id
           title
-          authors(first: 5) {
-            edges {
-              node {
-                name
-              }
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
-          }
+          ...readerWorkAuthors
           manifestations(first: 1) {
             edges {
               node {
@@ -271,6 +300,8 @@ export const readerSeries = graphql`
 export const readerSeriesQuery = graphql`
   query readerSeriesQuery($id: ID!) {
     series(id: $id) {
+      id
+      name
       ...readerSeries
     }
   }
@@ -301,43 +332,78 @@ export const readerSearchQuery = graphql`
     search(q: $q) {
       snippet
       manifestation {
-        ...readerSearchHit
+        ...readerSearchHit @relay(mask: false)
       }
     }
   }
 `;
 
-export const readerSuggestionsQuery = graphql`
-  query readerSuggestionsQuery($q: String!, $authorIds: [ID!]!, $seriesIds: [ID!]!) {
+export const readerAuthorSuggestionsQuery = graphql`
+  query readerAuthorSuggestionsQuery($q: String!) {
     authorSuggestions(q: $q) {
       entityId
       value
     }
+  }
+`;
+
+export const readerSeriesSuggestionsQuery = graphql`
+  query readerSeriesSuggestionsQuery($q: String!) {
     seriesSuggestions(q: $q) {
       entityId
       value
     }
+  }
+`;
+
+export const readerGenreSuggestionsQuery = graphql`
+  query readerGenreSuggestionsQuery($q: String!) {
     genreSuggestions(q: $q) {
       entityId
       value
     }
+  }
+`;
+
+export const readerMoodSuggestionsQuery = graphql`
+  query readerMoodSuggestionsQuery($q: String!) {
     moodSuggestions(q: $q) {
       entityId
       value
     }
+  }
+`;
+
+export const readerTagSuggestionsQuery = graphql`
+  query readerTagSuggestionsQuery($q: String!) {
     tagSuggestions(q: $q) {
       entityId
       value
     }
+  }
+`;
+
+export const readerPublisherSuggestionsQuery = graphql`
+  query readerPublisherSuggestionsQuery($q: String!) {
     publisherSuggestions(q: $q) {
       entityId
       value
     }
-    authorLabels(ids: $authorIds) {
+  }
+`;
+
+export const readerAuthorLabelsQuery = graphql`
+  query readerAuthorLabelsQuery($ids: [ID!]!) {
+    authorLabels(ids: $ids) {
       entityId
       value
     }
-    seriesLabels(ids: $seriesIds) {
+  }
+`;
+
+export const readerSeriesLabelsQuery = graphql`
+  query readerSeriesLabelsQuery($ids: [ID!]!) {
+    seriesLabels(ids: $ids) {
       entityId
       value
     }
@@ -376,6 +442,29 @@ export const readerAuthorEditing = graphql`
           endCursor
         }
       }
+    }
+  }
+`;
+
+export const readerLibraryPreferences = graphql`
+  fragment readerLibraryPreferences on LibraryPreferences {
+    hiddenColumns
+    density
+    view
+    sortStack
+    defaults {
+      hiddenColumns
+      density
+      view
+      sortStack
+    }
+  }
+`;
+
+export const readerLibraryPreferencesQuery = graphql`
+  query readerLibraryPreferencesQuery {
+    libraryPreferences {
+      ...readerLibraryPreferences
     }
   }
 `;

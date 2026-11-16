@@ -87,7 +87,7 @@ describe("status route", () => {
         finished_at: null,
       },
     });
-    expect(route.toPatch(row, draft)).toEqual({ status: "finished" });
+    expect(route.toPatch(row, draft)).toEqual({ status: "FINISHED" });
   });
 });
 

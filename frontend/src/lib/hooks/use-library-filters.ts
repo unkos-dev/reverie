@@ -7,6 +7,7 @@ import {
   type FilterState,
   type LibraryVisit,
   type LibraryView,
+  type LibraryPosition,
 } from "@/routes/library-params";
 
 const VISIT_KEY = "reverieLibrary";
@@ -32,6 +33,8 @@ function restoreSnapshot(): VisitSnapshot {
 export type LibraryFilters = {
   filters: FilterState;
   view: LibraryView | undefined;
+  position: LibraryPosition | undefined;
+  capturePosition: (position: LibraryPosition) => void;
   commitAll: (patch: (current: FilterState) => FilterState) => void;
   clearAll: () => void;
   setView: (view: LibraryView) => void;
@@ -74,14 +77,18 @@ export function useLibraryFilters(): LibraryFilters {
   return {
     filters: rendered.visit.filters,
     view: rendered.visit.view,
+    position: rendered.visit.position,
+    capturePosition: (position) => {
+      update((visit) => ({ ...visit, position }));
+    },
     commitAll: (patch) => {
-      update((visit) => ({ ...visit, filters: patch(visit.filters) }));
+      update((visit) => ({ ...visit, filters: patch(visit.filters), position: undefined }));
     },
     clearAll: () => {
-      update((visit) => ({ ...visit, filters: emptyFilterState() }));
+      update((visit) => ({ ...visit, filters: emptyFilterState(), position: undefined }));
     },
     setView: (view) => {
-      update((visit) => ({ ...visit, view }));
+      update((visit) => ({ ...visit, view, position: undefined }));
     },
   };
 }

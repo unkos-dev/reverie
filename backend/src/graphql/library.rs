@@ -28,7 +28,7 @@ pub(super) enum Node {
 }
 
 #[derive(Clone, SimpleObject)]
-#[graphql(complex)]
+#[graphql(complex, directive = super::fetchable::apply("id".to_owned()))]
 pub(super) struct Work {
     id: ID,
     #[graphql(skip)]

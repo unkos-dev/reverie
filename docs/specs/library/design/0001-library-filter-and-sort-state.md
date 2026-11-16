@@ -10,6 +10,8 @@ satisfies:
   - "REV-REQ-0075"
   - "REV-REQ-0076"
   - "REV-REQ-0077"
+  - "REV-REQ-0080"
+  - "REV-REQ-0081"
 governed-by:
   - "REV-ADR-0066"
   - "REV-ADR-0075"
@@ -21,9 +23,9 @@ governed-by:
 ## Purpose and boundaries
 
 The Library surface owns the reader's current filter intent, visit view override and resolved account sort. It projects
-those values onto the books-list request and shares the resulting QueryClient pages with grid and table views. The
-server's predicate, cursor and ownership contracts belong to the Books list query contract Design. Display preferences
-retain their account lifetime independently of the visit.
+those values onto the books-list request and shares one Relay connection with Covers and Table. The server's predicate,
+cursor and ownership contracts belong to the Books list query contract Design. Display preferences retain their account
+lifetime independently of the visit.
 
 ## Structure
 
@@ -54,13 +56,14 @@ feedback while list requests stay blocked. Section Clear and per-ID chip removal
 Series uses the multiple ComboBox and TagGroup composition with UUID identity. Native `allowsCustomValue` retains free
 search text on commit and dismissal; only selected UUID items publish predicates. Its independent server suggestions
 require two query characters and return up to twenty ranked choices. Controlled query text remains after selection and
-does not depend on narrowed Library results. `useSeriesLabels` reads bounded `GET /api/v1/series?id=…` data for restored
-chips and selections; missing or failed labels retain the selected UUID with a short-ID fallback. No response writes
-filter intent.
+does not depend on narrowed Library results. `useSeriesLabels` reads the independent bounded `readerSeriesLabelsQuery`
+for restored chips and selections; missing or failed labels retain the selected UUID with a short-ID fallback. No
+response writes filter intent.
 
 `useLibraryPreferences()` resolves sort and display preferences. The page supplies its one sort intent handler to the
-filter panel, Covers sort control and table headers. `useInfiniteQuery` observes the current filter request, retaining
-previous pages through `keepPreviousData` while a changed request loads.
+filter panel, Covers sort control and table headers. `useLibraryBooks` owns one displayed Relay source and a candidate
+replacement through the account-scoped `LibraryVisitOwner`. Native fragments render the displayed connection. Detached
+raw list projections retain the metadata and reading values with their matching editing baselines.
 
 ## Interfaces and dependencies
 
@@ -68,15 +71,15 @@ The visit schema validates owned entry data at restoration. The Navigation API p
 `updateCurrentEntry` and `currententrychange`; React Router owns route navigation. The browser baseline requires recent
 Navigation-capable browsers. The owner starts after Router initialisation and does not patch classic history.
 
-The API projection produces `ListBooksParams` for `GET /api/v1/books`. Plain calendar dates become local-midnight
-`created_at_gte` and next-local-midnight `created_at_lt` RFC 3339 instants through `@internationalized/date`. The upper
-bound adds one calendar day before timezone conversion, including ordinary month/year rollovers and daylight-saving
-changes.
+The visit projects to `ListBooksParams`, then `libraryVariables` builds typed GraphQL filters and sort levels. Plain
+calendar dates become local-midnight `created_at_gte` and next-local-midnight `created_at_lt` RFC 3339 instants through
+`@internationalized/date`. The upper bound adds one calendar day before timezone conversion, including ordinary
+month/year rollovers and daylight-saving changes.
 
-`GET /auth/me/preferences` and `PATCH /auth/me/preferences` provide the account preferences and installation defaults.
-Sort gestures write `sort_stack`; a non-empty override goes on list requests explicitly, while inheritance omits sort.
-The shared QueryClient and structured list keys retain the `InfiniteData` pages, page parameters and consumed abort
-signals used by pagination and row actions.
+`libraryPreferences` and `updateLibraryPreferences` provide the account overrides and installation defaults through
+`services::preferences`. The HTTP preference endpoints share that service. Sort gestures write `sortStack`; a non-empty
+override becomes ordered typed sort levels. Inheritance omits the `sort` variable. Native query references retain
+connection membership. Each source keeps its operation, variables and detached editing pairs for row actions.
 
 ## Data and state
 
@@ -86,20 +89,22 @@ signals used by pagination and row actions.
 | Unfinished native input             | Edited React Aria control      | Mounted control               |
 | Sort and display overrides          | `useLibraryPreferences`        | Account preference            |
 | First-paint display mirror          | Preference owner               | Per-user localStorage         |
-| Loaded pages and row patches        | Shared QueryClient             | Query cache                   |
+| Loaded connection and editing pairs | Relay and displayed source     | Account and Navigation entry  |
 | Selected rows                       | Library page                   | Current intent and projection |
 
 The `reverieLibrary` entry field holds the owned visit; writes preserve unrelated entry data. Filter state keeps raw
 text and its selected operator even when the text is blank. Chips and counts describe effective predicates. Requests
 retain raw ISBN-13 contains text, so the server applies its raw length cap before separator removal; the client uses the
-same raw request value for eligibility and cache identity. Complete inverted bounds remain entered. The native owner
+same raw request value for eligibility and source identity. Complete inverted bounds remain entered. The native owner
 keeps immediate dispatch composition aligned with the persisted snapshot; query completion and suggestion responses
 never write filter intent.
 
 Callers include quick search, every rail section, section clear, chip removal, global and empty-state clear, view
 gestures and the table-chunk fallback. View gestures also write the existing preference; chunk failure changes only the
 visit override. Filter clear preserves both view and sort. The preference owner's 400 ms patch queue and local mirror
-retain their existing lifetime; no filter value enters that queue or mirror.
+retain their account lifetime; no filter value enters that queue or mirror. Queued preference writes flush on unmount
+only while their initiating account epoch remains current. Cold hidden columns contain Subtitle; an explicit empty
+override shows every column.
 
 ## Runtime behaviour
 
@@ -109,33 +114,43 @@ destination visit; a fresh push or replacement starts clean, including same-rout
 page. Library has no prefetch loader, so the restored owner supplies the first list request. Browser query parameters
 carry no filter or view state and have no compatibility decoder.
 
-The current query key follows published filter intent immediately. A request is eligible only when each multi-value
+The requested source follows published filter intent immediately. A request is eligible only when each multi-value
 predicate contains at most 20 values and every active text predicate contains at most 200 Unicode scalar values after
 trimming surrounding whitespace. Blank optional text has no predicate; text retained under an `empty` operator is
 dormant. SearchField and TextField use controlled `isInvalid` and associated FieldError feedback immediately, without
 native `maxLength` truncation. Raw overlong text and oversized selections remain published and persisted, including
-across reload and traversal. An ineligible visit prevents the whole list request, pagination and source-cache refetches.
-The results region explains that results are paused; correction or Clear restores request eligibility. Sort retains
+across reload and traversal. An ineligible visit prevents the whole list request, pagination and source refetches. The
+results region explains that results are paused; correction or Clear restores request eligibility. Sort retains
 `useDeferredValue` so its controls resolve at gesture time while the request catches up. Initial uncached loading uses
 LibrarySkeleton. Later changes retain the controls with visible “Updating results…” and busy treatment during fetching.
 Pending recovery without previous pages uses a skeleton inside the results region; neither empty state appears until the
-request settles. Placeholder pages cannot load more. Successful responses replace placeholders, including real empty
-results for contradictory bounds. Range explanations appear against settled current results, rather than describing
-retained rows as the current result set.
+request settles. Retained results cannot load more while a replacement is pending. Successful responses adopt their
+source, including real empty results for contradictory bounds. Range explanations appear against settled current
+results, rather than describing retained rows as the current result set.
 
-Displayed placeholder pages carry their originating query key. A second infinite-query observer reads that source cache
-while placeholders are displayed, sharing the same query function and pagination options. It is enabled only during
-placeholder display and uses an infinite stale time, so retention alone does not refetch the source. Cache patches and
-undo update the visible rows, and conflict invalidation refetches the enabled source query. Row actions retain their
-origin even when intent changes during a mutation. No placeholder data enters the destination cache.
+Each Navigation entry and source generation has a distinct native connection identity through
+`dynamicKey_UNSTABLE: $sourceKey`. Pagination preserves that identity. Replacements allocate another generation and keep
+the displayed connection intact while bounded reads rebuild the candidate. Native Relay connection handlers assemble
+pages; there is no custom merge handler or second reader cache. A replaced source remains retained until its editors,
+failed attempts and Undo entries release their uses.
 
-API cursors remain page parameters; changing intent starts another list key, so a late old page cannot append to it.
-Selection clears at filter, sort or view intent and when the displayed source key changes. Paging within the same query
-retains selection.
+The synchronous Navigation `navigate` event captures the first visible book, its within-row offset, loaded extent and
+absolute scroll position. Entry state contains only serialisable geometry and visit intent. Relay references remain in
+memory. Return renders the retained source while a candidate reads from page one through the saved extent and anchor
+outcome, or the connection end. The owner then adopts its ready reference once. A moved anchor restores at its new
+position; an absent anchor uses the saved absolute offset, or zero when that offset exceeds the new range. Account,
+entry, source and generation checks reject obsolete completion. New intent and user scroll cancel delayed restoration.
+Entry disposal and account loss release retained references.
 
-The Library page owns metadata Undo above conditional results rendering. Entries and their original source query keys
-survive sorting, filtering, temporary loading and empty results, and retained results. Leaving Library or switching away
-from table editing clears this context. There is no exit confirmation.
+Selection clears at filter, sort or view intent and displayed-source replacement. Pagination retains selection. The
+Library editing owner keeps at most ten exact field operations above conditional results. Filtering, sorting, loading
+and empty results preserve Undo. Leaving Library or Table editing clears it.
+
+The batch bar captures selected loaded IDs once. Add to shelf runs serial membership writes. Set status captures one
+status and each target's matched reading baseline before sending. Refresh metadata schedules enrichment for non-child
+callers and reports scheduling separately from completed enrichment. Each target retains its own outcome; successful IDs
+leave selection. Retry includes only temporary or uncertain failures with their retained inputs. Conflicts and
+validation refusals keep their per-book recovery in Edit outcomes, without a bulk Reload control.
 
 At viewport widths of at least 1600 px, the filter editor occupies a non-modal panel beside the collection. Opening it
 narrows the collection without hiding columns. Its translucent material matches the floating bars, and its top stays
@@ -158,18 +173,18 @@ calendar values are checked before restored data drives controls or requests.
 
 Legacy scalar shelf and series values decode to singleton arrays; absent values become empty arrays. This decoding adds
 no recovery write. A malformed member still rejects the owned payload atomically. Wire projection uses `shelf_any` and
-`series_any`; scalar API parameters remain available to other callers. Query keys sort array values and remove
-duplicates, retaining the source key attached to displayed rows.
+`series_any`; scalar API parameters remain available to other callers. Label requests de-duplicate IDs and stay bounded;
+displayed rows retain their owning source.
 
 Exceeding a text or selection-count limit does not make an otherwise well-formed visit malformed. Such visits retain all
 filters and the view override for correction or clearing, while request eligibility enforces those limits.
 
 Malformed API timestamps, numbers, `UUID` and boolean values retain `400` decode errors. Domain, cap, status and cursor
 errors retain `422`; contradictory complete intervals return successful empty data. Network and server errors remain
-errors. A books-list `422` stays in the results region with recoverable feedback and no automatic retry. Search, Filters
-and Clear remain usable; correction or Clear can request results again. The Problem Details envelope supplies no field
-map, so server detail does not identify field errors. Other initial or changed-query failures reach the route error
-boundary. Other failed load-more requests retain loaded pages and provide the existing Retry action.
+errors. A books-list `validation` execution refusal stays in the results region with recoverable feedback and no
+automatic retry. Search, Filters and Clear remain usable; correction or Clear can request results again. List validation
+feedback stays with the owning results region. Other initial or changed-query failures reach the route error boundary.
+Other failed load-more requests retain loaded pages and provide the existing Retry action.
 
 A table-load failure stays inside the results region. Reload page starts a fresh application load and restores the
 Library visit. Switch to grid view selects the visit's grid override without rewriting the account preference. A failed

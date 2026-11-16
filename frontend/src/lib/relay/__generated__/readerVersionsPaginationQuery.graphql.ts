@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<739fff1c691b50d671acf7b6b87615e7>>
- * @relayHash c3f4b2c2029ac0ae49c7949c153361ab
+ * @generated SignedSource<<fb414787c4559150e103d598beae634a>>
+ * @relayHash c87d987c9b621c34524feb0fd222bc2b
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 7e50ae5fa2c9b573c9114588d5c6a6ccb041f979941270a03326ba451c38b281
+// @relayRequestID e3d1baacd4f97f5e43e9cac4094c1250b57558ee241f09a690cfafe4f5e34900
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -206,6 +206,20 @@ const node: ConcreteRequest = (function () {
                               alias: null,
                               args: null,
                               kind: "ScalarField",
+                              name: "status",
+                              storageKey: null,
+                            },
+                            {
+                              alias: null,
+                              args: null,
+                              kind: "ScalarField",
+                              name: "observationCount",
+                              storageKey: null,
+                            },
+                            {
+                              alias: null,
+                              args: null,
+                              kind: "ScalarField",
                               name: "__typename",
                               storageKey: null,
                             },
@@ -268,7 +282,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "7e50ae5fa2c9b573c9114588d5c6a6ccb041f979941270a03326ba451c38b281",
+      id: "e3d1baacd4f97f5e43e9cac4094c1250b57558ee241f09a690cfafe4f5e34900",
       metadata: {},
       name: "readerVersionsPaginationQuery",
       operationKind: "query",
@@ -277,6 +291,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "9e71322341c41432919f977bf3460600";
+(node as any).hash = "6324cf56da084b743ecc94304a5fc6cd";
 
 export default node;

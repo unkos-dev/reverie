@@ -18,6 +18,91 @@ use uuid::Uuid;
 
 pub struct Mutation;
 
+#[derive(SimpleObject)]
+pub(super) struct LibraryPreferenceDefaults {
+    hidden_columns: Vec<String>,
+    density: String,
+    view: String,
+    sort_stack: String,
+}
+
+#[derive(SimpleObject)]
+pub(super) struct LibraryPreferences {
+    hidden_columns: Option<Vec<String>>,
+    density: Option<String>,
+    view: Option<String>,
+    sort_stack: Option<String>,
+    defaults: LibraryPreferenceDefaults,
+}
+
+impl From<crate::services::preferences::PreferencesResponse> for LibraryPreferences {
+    fn from(value: crate::services::preferences::PreferencesResponse) -> Self {
+        Self {
+            hidden_columns: value.overrides.hidden_columns,
+            density: value.overrides.density.map(density_name),
+            view: value.overrides.view.map(view_name),
+            sort_stack: value.overrides.sort_stack,
+            defaults: LibraryPreferenceDefaults {
+                hidden_columns: value
+                    .defaults
+                    .hidden_columns
+                    .iter()
+                    .map(|key| (*key).to_owned())
+                    .collect(),
+                density: density_name(value.defaults.density),
+                view: view_name(value.defaults.view),
+                sort_stack: value.defaults.sort_stack.to_owned(),
+            },
+        }
+    }
+}
+
+input_enum!(LibraryDensityInput { Comfortable => "COMFORTABLE", Compact => "COMPACT" });
+impl From<LibraryDensityInput> for crate::models::user_preferences::LibraryDensity {
+    fn from(value: LibraryDensityInput) -> Self {
+        match value {
+            LibraryDensityInput::Comfortable => Self::Comfortable,
+            LibraryDensityInput::Compact => Self::Compact,
+        }
+    }
+}
+input_enum!(LibraryViewInput { Grid => "GRID", Table => "TABLE" });
+impl From<LibraryViewInput> for crate::models::user_preferences::LibraryView {
+    fn from(value: LibraryViewInput) -> Self {
+        match value {
+            LibraryViewInput::Grid => Self::Grid,
+            LibraryViewInput::Table => Self::Table,
+        }
+    }
+}
+fn density_name(value: crate::models::user_preferences::LibraryDensity) -> String {
+    match value {
+        crate::models::user_preferences::LibraryDensity::Comfortable => "comfortable",
+        crate::models::user_preferences::LibraryDensity::Compact => "compact",
+    }
+    .to_owned()
+}
+fn view_name(value: crate::models::user_preferences::LibraryView) -> String {
+    match value {
+        crate::models::user_preferences::LibraryView::Grid => "grid",
+        crate::models::user_preferences::LibraryView::Table => "table",
+    }
+    .to_owned()
+}
+
+#[derive(InputObject)]
+struct LibraryPreferencesPatch {
+    hidden_columns: MaybeUndefined<Vec<String>>,
+    density: MaybeUndefined<LibraryDensityInput>,
+    view: MaybeUndefined<LibraryViewInput>,
+    sort_stack: MaybeUndefined<String>,
+}
+
+#[derive(SimpleObject)]
+struct MetadataRefresh {
+    manifestation_id: ID,
+}
+
 input_enum!(ContentRatingInput { Everyone => "EVERYONE", Teen => "TEEN", Mature => "MATURE", Adult => "ADULT", Explicit => "EXPLICIT" });
 impl From<ContentRatingInput> for crate::models::content_rating::ContentRating {
     fn from(value: ContentRatingInput) -> Self {
@@ -233,6 +318,53 @@ fn adult(ctx: &Context<'_>) -> async_graphql::Result<()> {
 
 #[Object]
 impl Mutation {
+    #[graphql(guard = "WriteScope")]
+    async fn update_library_preferences(
+        &self,
+        ctx: &Context<'_>,
+        patch: LibraryPreferencesPatch,
+    ) -> async_graphql::Result<LibraryPreferences> {
+        let patch = crate::services::preferences::UpdatePreferencesRequest {
+            hidden_columns: patch.hidden_columns.into(),
+            density: patch.density.map_value(Into::into).into(),
+            view: patch.view.map_value(Into::into).into(),
+            sort_stack: patch.sort_stack.into(),
+        };
+        crate::services::preferences::update_preferences(ctx.data()?, ctx.data()?, patch)
+            .await
+            .map(Into::into)
+            .map_err(safe_error)
+    }
+
+    #[graphql(guard = "WriteScope")]
+    async fn refresh_metadata(
+        &self,
+        ctx: &Context<'_>,
+        id: ID,
+    ) -> async_graphql::Result<MetadataRefresh> {
+        let user = ctx.data::<CurrentUser>()?;
+        user.require_not_child().map_err(safe_error)?;
+        let mut tx = crate::db::acquire_with_rls(ctx.data()?, user.user_id)
+            .await
+            .map_err(|error| safe_error(AppError::Internal(error.into())))?;
+        let changed = crate::services::enrichment::reset_retries(
+            &mut tx,
+            &[target("Manifestation", &id)?],
+            crate::services::enrichment::RetryTiming::ClearProviderDelay,
+        )
+        .await
+        .map_err(|error| safe_error(AppError::Internal(error.into())))?;
+        if changed == 0 {
+            return Err(safe_error(AppError::NotFound));
+        }
+        tx.commit()
+            .await
+            .map_err(|error| safe_error(AppError::Internal(error.into())))?;
+        Ok(MetadataRefresh {
+            manifestation_id: id,
+        })
+    }
+
     #[graphql(guard = "WriteScope")]
     async fn update_metadata(
         &self,

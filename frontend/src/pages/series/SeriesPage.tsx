@@ -3,35 +3,71 @@
  *
  * Lists recorded work metadata in series order.
  */
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, type ReactElement } from "react";
-import { Link, useParams } from "react-router";
+import {
+  useFragment,
+  usePaginationFragment,
+  usePreloadedQuery,
+  type PreloadedQuery,
+} from "react-relay";
+import { decodeGraphQLId } from "@/api/graphql";
+import {
+  readerSeriesQuery,
+  readerSeries,
+  readerSeriesWorks,
+  readerWorkAuthors,
+} from "@/lib/relay/reader";
+import type { readerSeriesQuery as SeriesQuery } from "@/lib/relay/__generated__/readerSeriesQuery.graphql";
+import type { readerSeries$key } from "@/lib/relay/__generated__/readerSeries.graphql";
+import type {
+  readerSeriesWorks$key,
+  readerSeriesWorks$data,
+} from "@/lib/relay/__generated__/readerSeriesWorks.graphql";
+import type { readerSeriesWorksPaginationQuery as WorksPagination } from "@/lib/relay/__generated__/readerSeriesWorksPaginationQuery.graphql";
+import type { readerWorkAuthors$key } from "@/lib/relay/__generated__/readerWorkAuthors.graphql";
+import type { readerWorkAuthorsPaginationQuery as AuthorsPagination } from "@/lib/relay/__generated__/readerWorkAuthorsPaginationQuery.graphql";
+import { useEffect, useState, Suspense, type ReactElement } from "react";
+import { Link, useLoaderData } from "react-router";
 
-import { getSeries, type SeriesDetail } from "@/api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { queryKeys } from "@/lib/query/keys";
+
+import type { loader } from "@/routes/series";
 
 /**
  * Top-level page component. The `<Suspense>` boundary covers the
  * cold-cache path; the route loader pre-warms the cache so render is
  * synchronous on direct navigation.
  */
-export function SeriesPage(): ReactElement {
+export function SeriesPage(): ReactElement | null {
+  const prepared = useLoaderData<typeof loader>();
+  useEffect(
+    () => () => {
+      prepared?.dispose();
+    },
+    [prepared],
+  );
+  if (prepared === null) return null;
   return (
     <Suspense fallback={<SeriesSkeleton />}>
-      <SeriesContent />
+      <SeriesContent reference={prepared.reference} />
     </Suspense>
   );
 }
 
-function SeriesContent(): ReactElement {
-  const params = useParams<{ id: string }>();
-  const id = params.id ?? "";
-  const { data } = useSuspenseQuery<SeriesDetail>({
-    queryKey: queryKeys.series.detail(id),
-    queryFn: ({ signal }) => getSeries(id, signal),
-  });
-
+function SeriesContent({ reference }: { reference: PreloadedQuery<SeriesQuery> }): ReactElement {
+  const query = usePreloadedQuery<SeriesQuery>(readerSeriesQuery, reference);
+  const data = useFragment<readerSeries$key>(readerSeries, query.series);
+  const {
+    data: works,
+    hasNext,
+    isLoadingNext,
+    loadNext,
+  } = usePaginationFragment<WorksPagination, readerSeriesWorks$key>(readerSeriesWorks, data);
+  const [error, setError] = useState<Error | null>(null);
+  useEffect(() => {
+    if (hasNext && !isLoadingNext) loadNext(50, { onComplete: setError });
+  }, [hasNext, isLoadingNext, loadNext]);
+  if (error !== null) throw error;
+  if (data == null) throw new Error("Series not found.");
   return (
     <div className="mx-auto max-w-5xl px-6 py-10 sm:px-10">
       <header className="mb-8">
@@ -41,48 +77,56 @@ function SeriesContent(): ReactElement {
         </h1>
       </header>
       <ol className="space-y-3">
-        {data.works.map((work) => {
-          const cover = work.manifestations[0]?.cover_url;
-          const owns = work.manifestations.length > 0;
-          const positionLabel = work.position === null ? "" : `#${String(work.position)}`;
-          return (
-            <li
-              key={work.id}
-              className="border-border bg-surface flex items-center gap-4 rounded-lg border p-4"
-            >
-              {typeof cover === "string" ? (
-                <img
-                  src={cover}
-                  alt=""
-                  className="border-border h-16 w-12 rounded-sm border object-cover"
-                />
-              ) : (
-                <div className="border-border bg-surface-2 h-16 w-12 rounded-sm border" />
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="text-fg-muted text-xs">{positionLabel}</p>
-                {owns ? (
-                  <Link
-                    to={`/b/${work.manifestations[0]?.id ?? ""}`}
-                    className="text-fg block truncate text-base font-medium hover:underline"
-                  >
-                    {work.title}
-                  </Link>
-                ) : (
-                  <p className="text-fg block truncate text-base font-medium">{work.title}</p>
-                )}
-                <p className="text-fg-muted truncate text-sm">{work.authors.join(", ")}</p>
-              </div>
-              {!owns && (
-                <span className="text-fg-muted border-border rounded-full border px-2 py-0.5 text-xs">
-                  Missing
-                </span>
-              )}
-            </li>
-          );
-        })}
+        {works?.works.edges.map((edge) => (
+          <SeriesWorkRow key={edge.node.id} edge={edge} />
+        ))}
       </ol>
     </div>
+  );
+}
+
+function SeriesWorkRow({
+  edge,
+}: {
+  edge: readerSeriesWorks$data["works"]["edges"][number];
+}): ReactElement {
+  const work = edge.node;
+  const edition = work.manifestations.edges.at(0)?.node;
+  const { data, hasNext, isLoadingNext, loadNext } = usePaginationFragment<
+    AuthorsPagination,
+    readerWorkAuthors$key
+  >(readerWorkAuthors, work);
+  const [error, setError] = useState<Error | null>(null);
+  useEffect(() => {
+    if (hasNext && !isLoadingNext) loadNext(20, { onComplete: setError });
+  }, [hasNext, isLoadingNext, loadNext]);
+  if (error !== null) throw error;
+  return (
+    <li className="border-border bg-surface flex items-center gap-4 rounded-lg border p-4">
+      {typeof edition?.coverUrl === "string" ? (
+        <img
+          src={edition.coverUrl}
+          alt=""
+          className="border-border h-16 w-12 rounded-sm border object-cover"
+        />
+      ) : (
+        <div className="border-border bg-surface-2 h-16 w-12 rounded-sm border" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-fg-muted text-xs">
+          {edge.position == null ? "" : `#${String(edge.position)}`}
+        </p>
+        <Link
+          to={`/b/${decodeGraphQLId("Manifestation", edition?.id ?? "")}`}
+          className="text-fg block truncate text-base font-medium hover:underline"
+        >
+          {work.title}
+        </Link>
+        <p className="text-fg-muted truncate text-sm">
+          {data.authors.edges.map(({ node }) => node.name).join(", ")}
+        </p>
+      </div>
+    </li>
   );
 }
 

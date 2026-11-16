@@ -1,58 +1,148 @@
-/**
- * Production `/b/:id` page.
- *
- * Sticky cover aside + Tabs layout. Data sourced from
- * `GET /api/v1/books/{id}` via `useSuspenseQuery`; the loader has already
- * primed the cache.
- *
- * The Versions tab is implemented in [`VersionsTab`] (sub-phase 11c):
- * per-field pending rows with accept / reject / revert affordances
- * plus a manual edit form (`PATCH /api/v1/books/{id}/metadata`).
- */
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, useState, type ReactElement } from "react";
-import { Link, useParams } from "react-router";
+/** Book detail renders its prepared Relay reference and complete visible relations. */
+import {
+  useFragment,
+  usePaginationFragment,
+  usePreloadedQuery,
+  useQueryLoader,
+  useSubscribeToInvalidationState,
+  type PreloadedQuery,
+} from "react-relay";
+import { decodeGraphQLId } from "@/api/graphql";
+import {
+  readerDetailBook,
+  readerDetailQuery,
+  readerWorkAuthors,
+  readerDetailTags,
+} from "@/lib/relay/reader";
+import type { readerDetailQuery as DetailQuery } from "@/lib/relay/__generated__/readerDetailQuery.graphql";
+import type { readerDetailBook$key } from "@/lib/relay/__generated__/readerDetailBook.graphql";
+import type { readerWorkAuthors$key } from "@/lib/relay/__generated__/readerWorkAuthors.graphql";
+import type { readerWorkAuthorsPaginationQuery as AuthorsPagination } from "@/lib/relay/__generated__/readerWorkAuthorsPaginationQuery.graphql";
+import type { readerDetailTags$key } from "@/lib/relay/__generated__/readerDetailTags.graphql";
+import type { readerDetailTagsPaginationQuery as TagsPagination } from "@/lib/relay/__generated__/readerDetailTagsPaginationQuery.graphql";
+import { useEffect, Suspense, useState, useTransition, type ReactElement } from "react";
+import { Link, useLoaderData } from "react-router";
 
-import { getBook, type BookDetail } from "@/api";
+import { type BookDetail } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabPanel, TabList, Tab } from "@/components/ui/tabs";
-import { queryKeys } from "@/lib/query/keys";
 
 import { VersionsTab } from "./VersionsTab";
+
+import type { loader } from "@/routes/book";
 
 /**
  * Outer page component. Splits suspense boundary from the data layer
  * so the skeleton is rendered with no chance of state pollution from
  * a previous book id.
  */
-export function BookPage(): ReactElement {
-  const { id } = useParams<{ id: string }>();
-  // Loader rejects a missing id before the component renders. The
-  // narrow-or-throw here exists for the safety-belt case where this
-  // component is rendered outside the routed flow (e.g. a direct
-  // import in a test that forgets to mount `:id`); explicit failure
-  // beats a `getBook("")` round-trip to the backend.
-  if (typeof id !== "string" || id.length === 0) {
-    throw new Error("BookPage requires the `id` route param.");
-  }
+export function BookPage(): ReactElement | null {
+  const prepared = useLoaderData<typeof loader>();
+  useEffect(
+    () => () => {
+      prepared?.dispose();
+    },
+    [prepared],
+  );
+  if (prepared === null) return null;
   return (
     <Suspense fallback={<BookSkeleton />}>
-      <BookContent id={id} />
+      <BookContent reference={prepared.reference} />
     </Suspense>
   );
 }
 
-type BookContentProps = {
-  id: string;
+type DisplayBook = Pick<
+  BookDetail,
+  | "id"
+  | "title"
+  | "authors"
+  | "series"
+  | "cover_url"
+  | "description"
+  | "language"
+  | "isbn_13"
+  | "isbn_10"
+  | "isbn_mismatch"
+  | "publisher"
+  | "pub_date"
+  | "tags"
+> & {
+  ingestion_status: string;
+  enrichment_status: string;
+  validation_status: string;
+  metadata_version_summary: { pending: number };
 };
 
-function BookContent({ id }: Readonly<BookContentProps>): ReactElement {
-  const { data: book } = useSuspenseQuery({
-    queryKey: queryKeys.books.detail(id),
-    queryFn: ({ signal }) => getBook(id, signal),
-  });
+function BookContent({ reference }: { reference: PreloadedQuery<DetailQuery> }): ReactElement {
+  const [current, load] = useQueryLoader<DetailQuery>(readerDetailQuery, reference);
+  const query = usePreloadedQuery<DetailQuery>(readerDetailQuery, current ?? reference);
+  const data = useFragment<readerDetailBook$key>(readerDetailBook, query.manifestation);
+  const {
+    data: authorData,
+    hasNext: hasAuthors,
+    isLoadingNext: loadingAuthors,
+    loadNext: loadAuthors,
+  } = usePaginationFragment<AuthorsPagination, readerWorkAuthors$key>(
+    readerWorkAuthors,
+    data?.work,
+  );
+  const {
+    data: tagData,
+    hasNext: hasTags,
+    isLoadingNext: loadingTags,
+    loadNext: loadTags,
+  } = usePaginationFragment<TagsPagination, readerDetailTags$key>(readerDetailTags, data);
+  const [pageError, setPageError] = useState<Error | null>(null);
+  const [, startTransition] = useTransition();
+  useSubscribeToInvalidationState(
+    [
+      ...(data === null || data === undefined ? [] : [data.id]),
+      ...(data?.work == null ? [] : [data.work.id]),
+    ],
+    () => {
+      startTransition(() => {
+        load(reference.variables, { fetchPolicy: "network-only" });
+      });
+    },
+  );
+  useEffect(() => {
+    if (hasAuthors && !loadingAuthors) loadAuthors(20, { onComplete: setPageError });
+  }, [hasAuthors, loadingAuthors, loadAuthors]);
+  useEffect(() => {
+    if (hasTags && !loadingTags) loadTags(20, { onComplete: setPageError });
+  }, [hasTags, loadingTags, loadTags]);
+  if (pageError !== null) throw pageError;
+  if (data == null || data.work == null) throw new Error("Book not found.");
+  const series = data.work.selectedSeries;
+  const book: DisplayBook = {
+    id: decodeGraphQLId("Manifestation", data.id),
+    title: data.work.title,
+    authors: authorData?.authors.edges.map(({ node }) => node.name) ?? [],
+    series:
+      series == null
+        ? null
+        : {
+            id: decodeGraphQLId("Series", series.node.id),
+            name: series.node.name,
+            position: series.position ?? null,
+          },
+    cover_url: data.coverUrl,
+    description: data.work.description ?? null,
+    language: data.work.language ?? null,
+    isbn_13: data.isbn13 ?? null,
+    isbn_10: data.isbn10 ?? null,
+    isbn_mismatch: data.isbnMismatch,
+    publisher: data.publisher ?? null,
+    pub_date: data.publicationDate ?? null,
+    ingestion_status: data.ingestionStatus,
+    enrichment_status: data.enrichmentStatus,
+    validation_status: data.validationStatus,
+    tags: tagData?.tags.edges.map(({ node }) => node.name) ?? [],
+    metadata_version_summary: { pending: data.versions.pendingCount },
+  };
 
   const seriesLabel =
     book.series && book.series.position !== null
@@ -125,7 +215,7 @@ function BookContent({ id }: Readonly<BookContentProps>): ReactElement {
 }
 
 type DetailCoverProps = {
-  book: BookDetail;
+  book: DisplayBook;
 };
 
 /**
@@ -153,7 +243,7 @@ function DetailCover({ book }: Readonly<DetailCoverProps>): ReactElement {
 }
 
 type TabProps = {
-  book: BookDetail;
+  book: DisplayBook;
 };
 
 function OverviewTab({ book }: Readonly<TabProps>): ReactElement {

@@ -2,25 +2,38 @@
  * Column -> pipeline routing for in-place library table edits.
  *
  * The grid has exactly two write pipelines: canonical metadata
- * (`PATCH /api/v1/books/{id}/metadata`, journaled) and per-user reading
- * state (`PATCH /api/v1/books/{id}/reading`, no journal). Every editable
+ * (`updateMetadata`, journalled) and per-user reading
+ * state (`updateReadingState`, no journal). Every editable
  * column resolves to exactly one entry here; the entry owns how a
  * commit becomes a patch body and whether a field belongs to the work. There is no bypass: a column with no entry in this
  * registry is not editable.
  */
-import type { BookListItem, UpdateBookMetadataFields } from "@/api";
-import type { UpdateReadingFields } from "@/api/reading";
+import type { ReaderBook as BookListItem } from "@/api/graphql";
+import type { MetadataPatch } from "@/lib/relay/__generated__/mutationsSaveCellsMutation.graphql";
+import type {
+  ReadingPatch,
+  ReadingStatusInput,
+} from "@/lib/relay/__generated__/mutationsReadingMutation.graphql";
+import type { ReadingStatus } from "@/api/books";
+
+export const READING_STATUS_INPUT: Readonly<Record<ReadingStatus, ReadingStatusInput>> = {
+  want_to_read: "WANT_TO_READ",
+  reading: "READING",
+  on_hold: "ON_HOLD",
+  finished: "FINISHED",
+  abandoned: "ABANDONED",
+};
 
 export type EditRoute =
   | {
       pipeline: "metadata";
       field: string;
       workScoped: boolean;
-      toPatch: (row: BookListItem, draft: BookListItem) => UpdateBookMetadataFields;
+      toPatch: (row: BookListItem, draft: BookListItem) => MetadataPatch;
     }
   | {
       pipeline: "reading";
-      toPatch: (row: BookListItem, draft: BookListItem) => UpdateReadingFields;
+      toPatch: (row: BookListItem, draft: BookListItem) => ReadingPatch;
     };
 
 /** Column keys the table currently wires to an edit route. */
@@ -58,7 +71,7 @@ export const EDIT_ROUTES: Readonly<Record<EditableColumnKey, EditRoute>> = {
     pipeline: "metadata",
     field: "isbn_13",
     workScoped: false,
-    toPatch: (_row, draft) => ({ isbn_13: draft.isbn_13 }),
+    toPatch: (_row, draft) => ({ isbn13: draft.isbn_13 }),
   },
   pages: {
     pipeline: "metadata",
@@ -74,7 +87,12 @@ export const EDIT_ROUTES: Readonly<Record<EditableColumnKey, EditRoute>> = {
   },
   status: {
     pipeline: "reading",
-    toPatch: (_row, draft) => ({ status: draft.reading_state?.status ?? null }),
+    toPatch: (_row, draft) => ({
+      status:
+        draft.reading_state?.status == null
+          ? null
+          : READING_STATUS_INPUT[draft.reading_state.status],
+    }),
   },
   rating: {
     pipeline: "reading",

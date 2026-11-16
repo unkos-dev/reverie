@@ -6,6 +6,7 @@ title: "Reading state"
 satisfies:
   - "REV-REQ-0018"
   - "REV-REQ-0020"
+  - "REV-REQ-0081"
 governed-by:
   - "REV-ADR-0056"
   - "REV-ADR-0011"
@@ -51,8 +52,8 @@ in `backend/src/routes/etag.rs`; `crate::extract::{ApiPath, ApiJson}` for reques
 Depended on by: `GET /api/v1/books` (`backend/src/services/reader.rs::load_reading_state_for_manifestations`), which
 batch-loads a `ReadingStateSummary` onto every list row under the caller's own RLS scope — the Design "Books list query
 contract"; the library table's status and rating columns and the cell-edit orchestration in the Library table cell
-editing and undo subject, which route a commit to this subject's `PATCH` endpoint and rely on its entity-tag for
-conflict detection.
+editing and undo subject, which route a commit through the conditional `updateReadingState` mutation and rely on its
+entity-tag for conflict detection.
 
 ## Structure
 
@@ -84,16 +85,16 @@ conflict detection.
   backing the `status_any`/`status_none`/`rating_gte`/`rating_lte`/`rating_empty` parameters on the same endpoint. Both
   belong to the Design "Books list query contract", not to this subject; they are named here as `reading_state`'s other
   production readers.
-- `frontend/src/api/reading.ts` is the client's wire boundary: `ReadingStateSchema`, `getReadingState` and
-  `updateReadingState`, each documented against the endpoint it wraps.
+- `frontend/src/api/reading.ts` retains the HTTP snapshot boundary. Browser reading edits use selected generated GraphQL
+  documents and raw validation in `frontend/src/api/graphql.ts`. The owning edit retains each starting pair.
 - `StatusCell` and `RatingCell` in `frontend/src/pages/library/table/cells.tsx` are the two reading controls a reader
   interacts with. `StatusCell` opens a React Aria `ListBox` of the five statuses and "No status", and choosing one
   commits it. `RatingCell` commits from the cell itself: a press on a star sets that rating, a press on the current
   rating clears it, digit keys 1 to 5 set it, and 0, Delete or Backspace clear it. Enter or F2 opens a five-star
-  `ToggleButtonGroup` with a Clear button. These two components are the whole of this subject's client-side UI surface —
-  everything downstream of a commit (building the patch, patching the list cache and conflict recovery) is the library
-  table's generic cell-edit orchestration named in Purpose and boundaries. `frontend/src/api/reading.ts` above is this
-  subject's wire boundary, not a UI control.
+  `ToggleButtonGroup` with a Clear button. The batch bar also offers the same five statuses and No status for selected
+  loaded books. Everything downstream of a commit, including conditional publication and recovery, belongs to the
+  Library table's generic cell-edit orchestration named in Purpose and boundaries. `frontend/src/api/reading.ts` above
+  is this subject's wire boundary, not a UI control.
 
 ## Interfaces and dependencies
 
@@ -128,7 +129,7 @@ computed before commit. Child accounts retain their own visible-book reading per
 
 ## Data and state
 
-Reading adapters return complete values and their matching ETag together. Table edits retain the displayed row's
+Reading executions return selected values and their matching baseline together. Table edits retain the displayed row's
 `reading_etag` through CSRF retry and failure. Confirmed saves and matched recovery reads reconcile that pair. Reading
 status and rating have no saved Undo; active inputs retain native typing Undo and Redo.
 
@@ -149,12 +150,17 @@ status and rating have no saved Undo; active inputs retain native typing Undo an
   module's own doc comment states this is deliberate: reading state is self-scoped personal data a child account manages
   for itself, not shared-library curation.
 - **`notes`.** Accepts up to 10,000 characters on the wire and in the client's `UpdateReadingFields` type, but no
-  editing surface in the client writes it; the only client mutation paths are the status and rating editors.
+  editing surface in the client writes it; the client mutation paths are status and rating cells and batch Set status.
 - **`progress_pct`.** Has no direct client write path: the only non-null value the API can ever produce is `100.0`,
   stamped when a patch sets `status` to `finished`. No code path in `apply_patch` sets it to any other non-null value,
   and none clears a set value back to `null`.
 
 ## Runtime behaviour
+
+Library cell and batch saves retain their validated raw starting values and baseline. Explicit Retry sends that
+conditional attempt again. A matched recovery read can recognise the requested reading result; a refusal retains the
+input. Conflicts use per-book matched Reload before a new editing decision. Batch targets keep distinct baselines and
+classifications, and Retry excludes successful and conflicted books. Reading edits create no metadata Undo entry.
 
 **A caller reading their state for one book**, `GET /api/v1/books/{id}/reading`:
 

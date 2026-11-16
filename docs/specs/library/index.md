@@ -18,6 +18,8 @@
 - [REV-REQ-0075](requirements/0075-a-resumed-library-visit-restores-its-filter-state.md): A resumed Library visit restores its filter state
 - [REV-REQ-0076](requirements/0076-a-fresh-library-visit-starts-without-filters.md): A fresh Library visit starts without filters
 - [REV-REQ-0077](requirements/0077-library-filter-edits-add-no-history-entries.md): Library filter edits add no history entries
+- [REV-REQ-0080](requirements/0080-library-return-restores-browsing-context.md): Library return restores browsing context
+- [REV-REQ-0081](requirements/0081-failed-library-saves-support-explicit-retry.md): Failed Library saves support explicit Retry
 
 ## Designs
 

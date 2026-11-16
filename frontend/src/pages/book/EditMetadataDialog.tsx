@@ -1,28 +1,5 @@
-/**
- * Manual metadata edit sheet.
- *
- * Mounted as a controlled sheet from [`VersionsTab`]. Each
- * field tracks a `touched` flag; only touched keys land in the
- * `PATCH /api/v1/books/{id}/metadata` body so the RFC 7396 sparse-update
- * semantics on the server see exactly the operator's intent.
- *
- * Untouched canonical values seed the inputs as a convenience — the
- * operator can clear an input to mark it for null (canonical column
- * cleared) or type a new value. The submit handler distinguishes the
- * two: a touched field with an empty input emits `null`; a touched
- * field with a non-empty input emits the string value.
- *
- * On open, the form fetches `GET /api/v1/books/{id}/metadata` itself
- * rather than seeding from the list/detail cache the caller may be
- * holding. The draft retains that validated snapshot and its ETag through
- * background refresh, field errors and uncertain acknowledgements.
- *
- * A confirmation `<AlertDialog>` interposes when the change would
- * clear an already-populated field, mirroring the per-row Clear
- * affordance on [`VersionsTab`].
- */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useActionState, useId, useRef, useState, type ReactElement } from "react";
+/** Manual metadata editing retains one matched raw snapshot through save recovery. */
+import { useActionState, useEffect, useId, useRef, useState, type ReactElement } from "react";
 import { z } from "zod";
 import {
   Form,
@@ -36,17 +13,27 @@ import {
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { FieldError } from "@/components/ui/field";
 
+import { ApiError, UpdateBookMetadataFieldsSchema, type UpdateBookMetadataFields } from "@/api";
 import {
-  ApiError,
-  UpdateBookMetadataFieldsSchema,
-  getBookMetadata,
-  isIfMatchMismatch,
-  updateBookMetadata,
-  type BookMetadata,
-  type MetadataSnapshot,
-  resolveMetadataOperation,
-  type UpdateBookMetadataFields,
-} from "@/api";
+  GraphQLExecutionError,
+  editingFailureAction,
+  encodeGraphQLId,
+  executeEditingOnce,
+} from "@/api/graphql";
+import { useRelayEnvironment } from "react-relay";
+import { commitLocalUpdate } from "relay-runtime";
+import {
+  mutationsFormQuery,
+  mutationsSaveFormMutation,
+  mutationsResolveFormQuery,
+} from "@/lib/relay/mutations";
+import type { mutationsFormQuery as FormQuery } from "@/lib/relay/__generated__/mutationsFormQuery.graphql";
+import type {
+  mutationsSaveFormMutation as SaveForm,
+  MetadataPatch,
+} from "@/lib/relay/__generated__/mutationsSaveFormMutation.graphql";
+import type { mutationsResolveFormQuery as ResolveForm } from "@/lib/relay/__generated__/mutationsResolveFormQuery.graphql";
+type FormSnapshot = SaveForm["response"]["updateMetadata"]["metadata"];
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -67,7 +54,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { queryKeys } from "@/lib/query/keys";
 
 /** One editable field on the edit form. Its canonical value seeds from a
  *  fresh `GET`, not from a caller-supplied snapshot. */
@@ -91,26 +77,26 @@ type EditMetadataDialogProps = {
  *  offers; an unmapped field (e.g. `contributors`) has no single string
  *  representation and seeds empty. */
 function canonicalValue(
-  metadata: BookMetadata,
+  metadata: FormSnapshot,
   field: keyof UpdateBookMetadataFields,
 ): string | null {
   switch (field) {
     case "title":
       return metadata.title;
     case "subtitle":
-      return metadata.subtitle;
+      return metadata.subtitle ?? null;
     case "description":
-      return metadata.description;
+      return metadata.description ?? null;
     case "language":
-      return metadata.language;
+      return metadata.language ?? null;
     case "publisher":
-      return metadata.publisher;
+      return metadata.publisher ?? null;
     case "pub_date":
-      return metadata.pub_date;
+      return metadata.publicationDate ?? null;
     case "isbn_10":
-      return metadata.isbn_10;
+      return metadata.isbn10 ?? null;
     case "isbn_13":
-      return metadata.isbn_13;
+      return metadata.isbn13 ?? null;
     default:
       return null;
   }
@@ -172,20 +158,45 @@ function EditMetadataForm({
   fields,
   onDone,
 }: Readonly<EditMetadataFormProps>): ReactElement {
+  const environment = useRelayEnvironment();
   const [reloadVersion, setReloadVersion] = useState(0);
-  const metadataQuery = useQuery({
-    queryKey: queryKeys.books.metadata(manifestationId),
-    queryFn: ({ signal }) => getBookMetadata(manifestationId, signal),
-  });
-
-  if (metadataQuery.isPending) {
+  const [snapshot, setSnapshot] = useState<{ metadata: FormSnapshot; version: number }>();
+  const [error, setError] = useState<Error | null>(null);
+  const [reloading, setReloading] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void executeEditingOnce<FormQuery>(
+      environment,
+      mutationsFormQuery,
+      { id: encodeGraphQLId("Manifestation", manifestationId) },
+      controller.signal,
+    )
+      .then((response) => {
+        if (response === undefined || controller.signal.aborted) return;
+        if (response.manifestation == null) setError(new Error("Book not found."));
+        else {
+          setSnapshot({ metadata: response.manifestation.metadata, version: reloadVersion });
+          setError(null);
+        }
+        setReloading(false);
+      })
+      .catch((failure: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(failure instanceof Error ? failure : new Error("Request failed."));
+          setReloading(false);
+        }
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [environment, manifestationId, reloadVersion]);
+  if (snapshot === undefined && error === null)
     return (
       <div className="text-fg-muted flex flex-1 items-center justify-center px-4 py-8 text-sm">
         Loading current metadata…
       </div>
     );
-  }
-  if (metadataQuery.isError && metadataQuery.data === undefined) {
+  if (snapshot === undefined)
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-8">
         <p className="text-fg-muted text-sm">Couldn&apos;t load the latest metadata.</p>
@@ -193,39 +204,38 @@ function EditMetadataForm({
           type="button"
           variant="outline"
           onPress={() => {
-            void metadataQuery.refetch();
+            setError(null);
+            setReloadVersion((value) => value + 1);
           }}
         >
           Retry
         </Button>
       </div>
     );
-  }
-
   return (
     <EditMetadataFields
-      key={reloadVersion}
-      onReload={async () => {
-        const result = await metadataQuery.refetch();
-        if (result.isSuccess) setReloadVersion((value) => value + 1);
+      key={snapshot.version}
+      onReload={() => {
+        setReloading(true);
+        setReloadVersion((value) => value + 1);
       }}
-      reloading={metadataQuery.isFetching}
-      reloadError={metadataQuery.isError}
+      reloading={reloading}
+      reloadError={error !== null}
       manifestationId={manifestationId}
       fields={fields}
-      metadata={metadataQuery.data}
+      metadata={snapshot.metadata}
       onDone={onDone}
     />
   );
 }
 
 type EditMetadataFieldsProps = {
-  onReload: () => Promise<void>;
+  onReload: () => void;
   reloading: boolean;
   reloadError: boolean;
   manifestationId: string;
   fields: readonly EditableField[];
-  metadata: MetadataSnapshot;
+  metadata: FormSnapshot;
   onDone: () => void;
 };
 
@@ -238,89 +248,40 @@ function EditMetadataFields({
   metadata: incoming,
   onDone,
 }: Readonly<EditMetadataFieldsProps>): ReactElement {
-  const queryClient = useQueryClient();
+  const environment = useRelayEnvironment();
+  const [controller] = useState(() => new AbortController());
+  useEffect(
+    () => () => {
+      controller.abort();
+    },
+    [controller],
+  );
   const [baseline] = useState(incoming);
-  const metadata = baseline.values;
-  const attempt = useRef<{ body: UpdateBookMetadataFields; requestId: string } | null>(null);
+  const metadata = baseline;
+  const attempt = useRef<{ body: MetadataPatch; requestId: string } | null>(null);
   const touched = useRef(new Set<keyof UpdateBookMetadataFields>());
   const [pendingClearConfirm, setPendingClearConfirm] = useState(false);
   const formId = useId();
-  function reconcile(snapshot: MetadataSnapshot): void {
-    queryClient.setQueryData(queryKeys.books.metadata(manifestationId), snapshot);
-    void queryClient.invalidateQueries({ queryKey: ["books", "list"] });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.books.detailsAll });
-    void queryClient.invalidateQueries({
-      queryKey: ["books", "metadata"],
-      predicate: (query) => query.queryKey.length === 3 && query.queryKey[2] !== manifestationId,
+  function reconcile(snapshot: FormSnapshot): void {
+    commitLocalUpdate(environment, (store) => {
+      const work = store.get(snapshot.workId);
+      const edition = store.get(snapshot.manifestationId);
+      for (const key of ["title", "subtitle", "description", "language", "contentRating"] as const)
+        work?.setValue(snapshot[key], key);
+      for (const key of [
+        "isbn10",
+        "isbn13",
+        "isbnMismatch",
+        "publisher",
+        "publicationDate",
+        "pages",
+      ] as const)
+        edition?.setValue(snapshot[key], key);
+      work?.invalidateRecord();
+      edition?.invalidateRecord();
     });
   }
-  async function complete(snapshot: MetadataSnapshot): Promise<void> {
-    reconcile(snapshot);
-    await queryClient.invalidateQueries({
-      queryKey: queryKeys.books.metadata(manifestationId),
-      exact: true,
-    });
-  }
-  const mutation = useMutation({
-    mutationFn: async ({
-      body,
-      requestId,
-    }: {
-      body: UpdateBookMetadataFields;
-      requestId: string;
-    }) => {
-      try {
-        return await updateBookMetadata(manifestationId, body, baseline.etag, requestId);
-      } catch (error) {
-        if (!isIfMatchMismatch(error)) throw error;
-        const response = await queryClient.query({
-          queryKey: [...queryKeys.books.metadata(manifestationId), "save-resolution", requestId],
-          queryFn: ({ signal }) =>
-            resolveMetadataOperation(manifestationId, { request_id: requestId }, signal),
-          staleTime: 0,
-        });
-        if (response.outcome === "saved") return response;
-        reconcile(response);
-        throw error;
-      }
-    },
-    onSuccess: complete,
-  });
-  const uncertain =
-    mutation.isError &&
-    !(
-      mutation.error instanceof ApiError &&
-      mutation.error.status >= 400 &&
-      mutation.error.status < 500
-    );
-  const resolution = useQuery({
-    queryKey: [
-      ...queryKeys.books.metadata(manifestationId),
-      "save-resolution",
-      mutation.variables?.requestId,
-    ],
-    queryFn: async ({ signal }) => {
-      const requestId = mutation.variables?.requestId;
-      if (requestId === undefined) throw new Error("No save to resolve.");
-      const response = await resolveMetadataOperation(
-        manifestationId,
-        { request_id: requestId },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (response.outcome === "saved") {
-        await complete(response);
-        signal.throwIfAborted();
-        onDone();
-      } else reconcile(response);
-      return response;
-    },
-    enabled: (query) => uncertain && query.state.data?.outcome !== "saved",
-    staleTime: 0,
-    refetchOnWindowFocus: false,
-  });
-
-  function buildBody(values: Record<string, string>): UpdateBookMetadataFields {
+  function buildBody(values: Record<string, string>): MetadataPatch {
     const raw: Record<string, string | null> = {};
     for (const field of fields) {
       if (!touched.current.has(field.name)) continue;
@@ -331,12 +292,17 @@ function EditMetadataFields({
         raw[field.name] = trimmed;
       }
     }
-    // Boundary parse — form inputs must be schema-validated before
-    // crossing into the API client. A parse
-    // failure here is a programmer error (mismatch between the form
-    // and `UpdateBookMetadataFieldsSchema`), not a user-input error.
     const body = UpdateBookMetadataFieldsSchema.parse(raw);
-    return body;
+    return {
+      ...("title" in body ? { title: body.title } : {}),
+      ...("subtitle" in body ? { subtitle: body.subtitle } : {}),
+      ...("description" in body ? { description: body.description } : {}),
+      ...("language" in body ? { language: body.language } : {}),
+      ...("publisher" in body ? { publisher: body.publisher } : {}),
+      ...("pub_date" in body ? { publicationDate: body.pub_date } : {}),
+      ...("isbn_10" in body ? { isbn10: body.isbn_10 } : {}),
+      ...("isbn_13" in body ? { isbn13: body.isbn_13 } : {}),
+    };
   }
 
   const [state, action, pending] = useActionState<
@@ -344,12 +310,13 @@ function EditMetadataFields({
       values: Partial<Record<string, string>>;
       error: string | null;
       errors?: Record<string, string>;
+      recovery?: ReturnType<typeof editingFailureAction>;
     },
     FormData
   >(
     async (_previous, data) => {
       const values = z.record(z.string(), z.string()).parse(Object.fromEntries(data));
-      let body: UpdateBookMetadataFields;
+      let body: MetadataPatch;
       try {
         body = buildBody(values);
       } catch (err) {
@@ -364,21 +331,66 @@ function EditMetadataFields({
       setPendingClearConfirm(false);
       try {
         const previous = attempt.current;
-        const requestId =
-          previous !== null && JSON.stringify(previous.body) === JSON.stringify(body)
-            ? previous.requestId
-            : crypto.randomUUID();
+        const unchanged =
+          previous !== null && JSON.stringify(previous.body) === JSON.stringify(body);
+        if (unchanged && _previous.recovery !== undefined && _previous.recovery !== "retry")
+          return { ..._previous, values };
+        const requestId = unchanged ? previous.requestId : crypto.randomUUID();
         attempt.current = { body, requestId };
-        await mutation.mutateAsync({ body, requestId }, { onSuccess: onDone });
-        return { values, error: null };
+        const variables = {
+          id: encodeGraphQLId("Manifestation", manifestationId),
+          patch: body,
+          baseline: baseline.etag,
+          requestId,
+        };
+        let saved: FormSnapshot | undefined;
+        let failure: unknown;
+        try {
+          saved = (
+            await executeEditingOnce<SaveForm>(environment, mutationsSaveFormMutation, variables)
+          )?.updateMetadata.metadata;
+        } catch (error) {
+          failure = error;
+        }
+        if (failure !== undefined && ["retry", "reload"].includes(editingFailureAction(failure))) {
+          try {
+            const resolution = await executeEditingOnce<ResolveForm>(
+              environment,
+              mutationsResolveFormQuery,
+              { id: variables.id, requestId },
+            );
+            if (resolution?.metadataOperation.outcome === "saved")
+              saved = resolution.metadataOperation.metadata;
+          } catch (error) {
+            console.error("[EditMetadataDialog] save resolution failed", error);
+          }
+        }
+        if (saved !== undefined) {
+          reconcile(saved);
+          const confirmed = await executeEditingOnce<FormQuery>(environment, mutationsFormQuery, {
+            id: variables.id,
+          });
+          if (confirmed?.manifestation != null) {
+            reconcile(confirmed.manifestation.metadata);
+            if (!controller.signal.aborted) onDone();
+          }
+          return { values, error: null };
+        }
+        const errors =
+          failure instanceof GraphQLExecutionError
+            ? failure.errors.at(0)?.extensions?.errors
+            : undefined;
+        return {
+          values,
+          errors,
+          error: failure === undefined ? null : formatError(failure),
+          recovery: editingFailureAction(failure),
+        };
       } catch (err) {
         const errors = err instanceof ApiError ? err.errors : undefined;
         return {
           values,
-          error:
-            isIfMatchMismatch(err) || Object.keys(errors ?? {}).length > 0
-              ? null
-              : formatError(err),
+          error: Object.keys(errors ?? {}).length > 0 ? null : formatError(err),
           errors,
         };
       }
@@ -420,35 +432,20 @@ function EditMetadataFields({
               field={field}
               hasCanonicalValue={canonicalValue(metadata, field.name) !== null}
               defaultValue={state.values[field.name] ?? canonicalValue(metadata, field.name) ?? ""}
-              isReadOnly={pending || mutation.isPending || uncertain}
+              isReadOnly={pending || state.recovery === "retry"}
               onChange={() => {
                 touched.current.add(field.name);
               }}
             />
           ))}
-          {metadata.isbn_mismatch ? (
+          {metadata.isbnMismatch ? (
             <p className="text-fg-muted text-sm">
               These ISBN-10 and ISBN-13 values do not correspond. Check both values.
             </p>
           ) : null}
         </div>
-        {state.error && !pending && !uncertain ? <FieldError>{state.error}</FieldError> : null}
-        {mutation.isPaused || resolution.fetchStatus === "paused" ? (
-          <p role="status" className="text-fg-muted text-sm">
-            Connection problem. Your entered edits are retained.
-          </p>
-        ) : null}
-        {uncertain &&
-        resolution.fetchStatus !== "paused" &&
-        resolution.data?.outcome !== "unknown" ? (
-          <p role="status" className="text-fg-muted text-sm">
-            {resolution.isFetching
-              ? "Checking whether your save completed…"
-              : "Connection problem. Your edits are retained. Save retries the same request."}
-          </p>
-        ) : null}
-        {(mutation.isError && isIfMatchMismatch(mutation.error)) ||
-        resolution.data?.outcome === "unknown" ? (
+        {state.error && !pending ? <FieldError>{state.error}</FieldError> : null}
+        {state.recovery === "reload" ? (
           <div className="space-y-2 py-2">
             <FieldError>
               Reload the latest metadata before another editing decision. Your entered edits are
@@ -457,14 +454,7 @@ function EditMetadataFields({
             <p className="text-fg-muted text-sm">
               Reloading replaces your entered edits with the latest metadata.
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              isPending={reloading}
-              onPress={() => {
-                void onReload();
-              }}
-            >
+            <Button type="button" variant="outline" isPending={reloading} onPress={onReload}>
               Discard edits and reload
             </Button>
             {reloadError ? (
@@ -481,12 +471,12 @@ function EditMetadataFields({
             onPress={() => {
               onDone();
             }}
-            isDisabled={mutation.isPending}
+            isDisabled={pending}
           >
             Cancel
           </Button>
           <Button type="submit" isPending={pending}>
-            Save
+            {state.recovery === "retry" ? <>{pending ? "Retrying…" : "Retry"}</> : "Save"}
           </Button>
         </SheetFooter>
       </Form>
@@ -506,7 +496,7 @@ function EditMetadataFields({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel
-            isDisabled={mutation.isPending}
+            isDisabled={pending}
             onPress={() => {
               setPendingClearConfirm(false);
             }}
@@ -604,7 +594,7 @@ function FieldRow({
 }
 
 function formatError(err: unknown): string {
-  if (err instanceof ApiError) return `${err.title}: ${err.detail}`;
+  if (err instanceof ApiError) return [err.title, err.detail].filter(Boolean).join(": ");
   if (err instanceof Error) return err.message;
   return "Request failed.";
 }

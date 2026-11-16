@@ -9,8 +9,6 @@
  */
 import { z } from "zod";
 
-import { apiFetch } from "./fetch";
-
 const WorkManifestationSchema = z.object({
   id: z.string(),
   isbn_13: z.string().nullable(),
@@ -42,15 +40,3 @@ const SeriesDetailSchema = z.object({
 });
 /** `GET /api/v1/series/{id}` response envelope. */
 export type SeriesDetail = z.infer<typeof SeriesDetailSchema>;
-
-/**
- * Fetch a series detail by id. RLS-hidden rows resolve to 404
- * (existence-not-leaked).
- */
-export async function getSeries(id: string, signal?: AbortSignal): Promise<SeriesDetail> {
-  const body = await apiFetch(
-    `/api/v1/series/${encodeURIComponent(id)}`,
-    signal ? { method: "GET", signal } : { method: "GET" },
-  );
-  return SeriesDetailSchema.parse(body);
-}

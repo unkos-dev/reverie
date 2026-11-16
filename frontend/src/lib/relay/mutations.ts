@@ -443,3 +443,98 @@ export const mutationsUnlockMetadataFieldMutation = graphql`
     }
   }
 `;
+
+export const mutationsUpdateLibraryPreferencesMutation = graphql`
+  mutation mutationsUpdateLibraryPreferencesMutation($patch: LibraryPreferencesPatch!) {
+    updateLibraryPreferences(patch: $patch) {
+      ...readerLibraryPreferences
+    }
+  }
+`;
+
+export const mutationsRefreshMetadataMutation = graphql`
+  mutation mutationsRefreshMetadataMutation($id: ID!) {
+    refreshMetadata(id: $id) {
+      manifestationId
+    }
+  }
+`;
+
+export const mutationsCellsSnapshot = graphql`
+  fragment mutationsCellsSnapshot on MetadataSnapshot {
+    workId
+    manifestationId
+    etag
+    title
+    subtitle
+    isbn13
+    pages
+  }
+`;
+
+export const mutationsCellsQuery = graphql`
+  query mutationsCellsQuery($id: ID!) {
+    manifestation(id: $id) {
+      id
+      metadata {
+        ...mutationsCellsSnapshot @relay(mask: false)
+      }
+    }
+  }
+`;
+
+export const mutationsSaveCellsMutation = graphql`
+  mutation mutationsSaveCellsMutation(
+    $id: ID!
+    $baseline: String
+    $requestId: String
+    $patch: MetadataPatch!
+  ) {
+    updateMetadata(id: $id, baseline: $baseline, requestId: $requestId, patch: $patch) {
+      requestId
+      operations {
+        operationId
+        fieldName
+        expiresAt
+        status
+      }
+      metadata {
+        ...mutationsCellsSnapshot @relay(mask: false)
+      }
+    }
+  }
+`;
+
+export const mutationsUndoCellsMutation = graphql`
+  mutation mutationsUndoCellsMutation($id: ID!, $baseline: String, $operationId: String!) {
+    undoMetadata(id: $id, baseline: $baseline, operationId: $operationId) {
+      outcome
+      operations {
+        operationId
+        fieldName
+        expiresAt
+        status
+      }
+      metadata {
+        ...mutationsCellsSnapshot @relay(mask: false)
+      }
+    }
+  }
+`;
+
+export const mutationsResolveCellsQuery = graphql`
+  query mutationsResolveCellsQuery($id: ID!, $requestId: String, $operationId: String) {
+    metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
+      outcome
+      operations {
+        operationId
+        fieldName
+        expiresAt
+        status
+      }
+      metadata {
+        ...mutationsCellsSnapshot @relay(mask: false)
+      }
+    }
+  }
+`;
