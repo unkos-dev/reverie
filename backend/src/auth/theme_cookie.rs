@@ -2,10 +2,8 @@
 //!
 //! Lifecycle: `reverie_theme` **survives logout by design**. It is device
 //! state (visual preference, non-PII, non-session-scoped), not session
-//! state. See `docs/design/visual-identity.md` § Theme Cookie Lifecycle
-//! for the rationale and the contrast rule: any future *session-state*
-//! cookie MUST be `HttpOnly` and MUST be cleared on logout — this one
-//! is the explicit counterexample.
+//! state. Any session-state cookie must be `HttpOnly` and cleared on
+//! logout; this cookie carries only a visual preference.
 //!
 //! Attribute parity: the frontend `writeThemeCookie`
 //! (`frontend/src/lib/theme/cookie.ts`) MUST produce matching attributes

@@ -45,6 +45,10 @@
     if (pref !== "system" && pref !== "light" && pref !== "dark") {
       pref = "system";
     }
+    document.documentElement.dataset.palette =
+      pref === "dark" && document.cookie.split("; ").includes("reverie_palette=monochrome")
+        ? "monochrome"
+        : "periwinkle";
     var effective = pref;
     if (pref === "system") {
       effective = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

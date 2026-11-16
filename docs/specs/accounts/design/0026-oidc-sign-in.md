@@ -257,5 +257,5 @@ middleware subsequent-save residual can still produce an empty 500.
 - [Reference configuration](../../../../website/src/content/docs/reference/configuration.mdx): the generated `OIDC_*`
   field reference.
 
-The client parses the outcome with Zod and never rewrites it or starts provider navigation on mount. The approved
-[login screen](../../../design/screens/login.md) owns copy, layout, focus and rendered acceptance in both themes.
+The client parses the outcome with Zod and never rewrites it or starts provider navigation on mount. The
+[frontend visual system](../../../../frontend/DESIGN.md) describes shared layout, typography and controls.

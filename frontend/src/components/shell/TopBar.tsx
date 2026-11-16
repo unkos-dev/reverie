@@ -30,7 +30,7 @@ export function TopBar({ onOpenSearch }: Readonly<{ onOpenSearch: () => void }>)
     <>
       <header
         data-chrome=""
-        className="shell-bar sticky top-0 z-30 mb-3 flex h-[52px] items-center gap-3 px-3 lg:top-3 lg:grid lg:grid-cols-[1fr_minmax(0,560px)_1fr] lg:rounded-lg lg:border lg:border-hairline lg:shadow-raised"
+        className="shell-bar sticky top-0 z-30 mb-3 flex h-[52px] items-center gap-3 px-3 lg:top-3 lg:grid lg:grid-cols-[1fr_minmax(0,560px)_1fr] lg:rounded-lg lg:border lg:border-hairline lg:shadow-(--shadow-raised)"
       >
         <div className="flex shrink-0 items-center gap-3">
           <Link href="/library" aria-label="Reverie library" className="shrink-0">
@@ -73,7 +73,7 @@ function PrimaryNavigation(): ReactElement {
   return (
     <nav
       aria-label="Primary"
-      className="shell-primary shell-bar fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-xl border border-hairline p-1.5 shadow-raised lg:static lg:translate-x-0 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none"
+      className="shell-primary shell-bar fixed bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-xl border border-hairline p-1.5 shadow-(--shadow-raised) lg:static lg:translate-x-0 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none"
     >
       <ul className="flex items-center gap-1">
         {PRIMARY_NAV.map((item, index) => {

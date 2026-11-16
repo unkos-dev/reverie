@@ -10,47 +10,37 @@ import {
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import type { ThemePreference } from "@/lib/theme/cookie";
 
-const OPTIONS: { value: ThemePreference; label: string }[] = [
+const OPTIONS: { value: ThemePreference | "monochrome"; label: string }[] = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
+  { value: "monochrome", label: "Monochrome" },
 ];
 
-/**
- * App-shell theme switcher. Renders a shadcn `DropdownMenu` with a radio
- * group of the three `ThemePreference` values plus a status line that
- * surfaces what the user picked (or `"auto"` when they deferred to the
- * OS). Reads + writes the theme stack via `useTheme()` — the provider
- * owns the optimistic-update + PATCH + rollback flow.
- *
- * The `onValueChange` handler narrows the radio group's `string` payload
- * through the closed `OPTIONS` list instead of an `as ThemePreference`
- * cast (the radio group's value type is `string`). An unknown
- * value is silently ignored — the radio group cannot emit one in
- * practice, but defending against shadcn API drift here costs one
- * `.find` call.
- *
- * @returns The dropdown subtree. Must be mounted inside a
- *   `<ThemeProvider>` — `useTheme()` throws otherwise.
- */
+/** Choose an account theme and browser palette through the native menu. */
 export function ThemeSwitcher(): ReactElement {
-  const { preference, setPreference } = useTheme();
+  const { preference, palette, setPreference } = useTheme();
   return (
     <DropdownMenu>
       <Button variant="outline" size="sm" aria-label="Theme preference">
-        Theme: {preference}
+        Theme: {palette === "monochrome" && preference === "dark" ? "monochrome" : preference}
       </Button>
       <DropdownMenuContent>
         <DropdownMenuRadioGroup
           selectionMode="single"
-          selectedKeys={[preference]}
+          selectedKeys={[
+            palette === "monochrome" && preference === "dark" ? "monochrome" : preference,
+          ]}
           onSelectionChange={(keys) => {
             if (keys === "all") return;
             const value = keys.values().next().value;
-            // Narrow via OPTIONS (the closed source of values the radio
-            // group can emit) instead of an `as` assertion.
             const opt = OPTIONS.find((o) => o.value === value);
-            if (opt) void setPreference(opt.value);
+            if (opt) {
+              void setPreference(
+                opt.value === "monochrome" ? "dark" : opt.value,
+                opt.value === "monochrome" ? "monochrome" : "periwinkle",
+              );
+            }
           }}
         >
           {OPTIONS.map((opt) => (

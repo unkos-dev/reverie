@@ -22,8 +22,8 @@ The **operator already running Reverie** is the secondary audience. They return 
 configuration, the API, or a behaviour they did not expect. Their context is task-driven: they arrive via search or the
 sidebar, want one fact, and leave. Nothing on the site should slow that path down.
 
-Contributors and the design workstream are not an audience the site is shaped for; their reference material (the
-design-system pages) lives in the repository under `docs/design/`, not on the published site.
+Contributors and the design workstream are not an audience the site is shaped for. The application visual system lives
+in `frontend/DESIGN.md`, and functional Requirements and Designs live under `docs/specs/`.
 
 ## Product Purpose
 

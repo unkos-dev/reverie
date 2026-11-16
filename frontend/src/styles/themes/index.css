@@ -33,7 +33,6 @@
   --font-body: "Mona Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --radius-xl: 18px;
-  --shadow-raised: 0 20px 60px rgb(0 0 0 / 35%);
   --color-shell: var(--shell-ground);
   --color-sheet: var(--sheet-ground);
   --color-bar: var(--bar);
@@ -68,6 +67,10 @@
   --duration-theme: 300ms;
   --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-emphasised: cubic-bezier(0.16, 0.78, 0.3, 1);
+}
+
+@theme {
+  --shadow-raised: 0 20px 60px rgb(0 0 0 / 35%);
 }
 
 :root,
@@ -106,8 +109,13 @@
 }
 
 [data-theme="light"] {
+  --shadow-raised: 0 4px 16px rgb(0 0 0 / 10%);
   --border-control: var(--neutral-10);
   --fg-faint: color-mix(in srgb, var(--fg-muted) 94%, var(--sheet-ground));
+}
+
+[data-theme="dark"][data-palette="monochrome"] {
+  --overlay: color-mix(in srgb, var(--sheet-ground) 88%, transparent);
 }
 
 body {

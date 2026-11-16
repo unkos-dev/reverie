@@ -7,7 +7,7 @@ function TooltipContent({ className, ...props }: ComponentProps<typeof AriaToolt
     <AriaTooltip
       data-slot="tooltip-content"
       className={cn(
-        "z-50 max-w-xs rounded-[9px] border border-hairline bg-surface px-3 py-1.5 text-xs text-fg shadow-raised",
+        "z-50 max-w-xs rounded-[9px] border border-hairline bg-surface px-3 py-1.5 text-xs text-fg shadow-(--shadow-raised)",
         typeof className === "string" ? className : undefined,
       )}
       {...props}

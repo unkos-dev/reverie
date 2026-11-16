@@ -90,3 +90,17 @@ export function writeThemeCookie(value: ThemePreference): void {
     `SameSite=Lax; ` +
     `Secure`;
 }
+
+export type Palette = "periwinkle" | "monochrome";
+
+/** Read this browser's palette, defaulting to periwinkle for an absent or invalid value. */
+export function readPaletteCookie(): Palette {
+  return document.cookie.split("; ").includes("reverie_palette=monochrome")
+    ? "monochrome"
+    : "periwinkle";
+}
+
+/** Store the browser palette independently of the account theme. */
+export function writePaletteCookie(value: Palette): void {
+  document.cookie = `reverie_palette=${value}; Path=/; Max-Age=${String(ONE_YEAR_SECONDS)}; SameSite=Lax; Secure`;
+}

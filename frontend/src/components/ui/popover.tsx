@@ -17,7 +17,7 @@ function PopoverContent({
     <AriaPopover
       data-slot="popover-content"
       className={cn(
-        "z-50 w-72 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground border border-hairline shadow-raised outline-none",
+        "z-50 w-72 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground border border-hairline shadow-(--shadow-raised) outline-none",
         className,
       )}
       {...props}
