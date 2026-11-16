@@ -23,6 +23,15 @@ colors:
   bar: "var(--bar)"
   bar-raised: "var(--bar-raised)"
   overlay: "var(--overlay)"
+  neutral-dark: "#eef1fa"
+  accent-dark: "#8fa8ff"
+  danger-dark: "#ff8a93"
+  neutral-light: "#121831"
+  accent-light: "#3d55d8"
+  danger-light: "#b91c1c"
+  neutral-monochrome: "#f3f3f5"
+  accent-monochrome: "#f3f3f5"
+  danger-monochrome: "#ff8a93"
 typography:
   display:
     fontFamily: '"Mona Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
@@ -162,6 +171,9 @@ visual system.
 
 ## Colors
 
+The theme-specific neutral, accent, and error anchors record the generated sRGB palette families. Component colour
+assignments use the semantic roles.
+
 ### Primary
 
 Periwinkle is the interface accent in dark and light. Monochrome replaces it with neutral light tones. Primary actions
@@ -209,8 +221,7 @@ width, without a desktop maximum width.
 
 Below 1024px, the top bar keeps the mark, search button, and account control. Primary navigation moves into a floating
 bottom bar. The sheet remains rounded, and shell padding reserves room for the bottom bar. Admin destinations appear in
-the account menu at these widths. This describes shell responsiveness; a new phone Library composition is outside this
-guide's built scope.
+the account menu at these widths.
 
 The Library header stays at full size while its collection scrolls. Shelves are chosen through Filters or the Shelves
 page; there is no shelf-tab row. The toolbar wraps when needed. Its page search keeps a 240px width.
@@ -219,8 +230,8 @@ From 1600px, Filters opens a 316px panel beside the collection with a 12px gap. 
 opens. Below that breakpoint, Filters uses a right-hand modal sheet. The panel scrolls internally beneath its header.
 
 Table rows are 52px in comfortable density and 40px in compact density. Native column widths share available space with
-minimums before horizontal scrolling. Title has the largest flexible share. At 1024px the accepted minimum-width table
-retains a small horizontal scroll.
+minimums before horizontal scrolling. Title has the largest flexible share. At 1024px the minimum-width table retains a
+small horizontal scroll.
 
 Covers keep a 2:3 aspect ratio. Their chosen pixel width stays fixed as the grid fits fewer or more columns, with 24px
 horizontal and 28px vertical gaps. The default 180px width gives nine columns at 1920px with Filters closed. The batch
@@ -300,5 +311,3 @@ result text stay in the bar, with retry for failed books. It sits above bottom n
 
 - Don't apply the generated covers' decorative texture or metallic detail to interface controls.
 - Don't use the error hue as a general attention accent.
-- Don't add shelf tabs or a collapsing Library header to the documented composition.
-- Don't treat deferred reading totals, attention counts, filter counts, or additional sortable columns as built UI.
