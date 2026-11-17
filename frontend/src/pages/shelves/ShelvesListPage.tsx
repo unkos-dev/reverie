@@ -52,7 +52,9 @@ export function ShelvesListPage(): ReactElement | null {
   );
 }
 
-function ShelvesContent({ reference }: { reference: PreloadedQuery<ShelvesQuery> }): ReactElement {
+function ShelvesContent({
+  reference,
+}: Readonly<{ reference: PreloadedQuery<ShelvesQuery> }>): ReactElement {
   const [current] = useQueryLoader<ShelvesQuery>(readerShelvesQuery, reference);
   const query = usePreloadedQuery<ShelvesQuery>(readerShelvesQuery, current ?? reference);
   const environment = useRelayEnvironment();
@@ -90,10 +92,10 @@ function ShelvesContent({ reference }: { reference: PreloadedQuery<ShelvesQuery>
         setCreateOpen(false);
       }
       setCreatePending(false);
-    } catch (failure) {
+    } catch (error_) {
       setCreatePending(false);
       shelvesQuery.refetch();
-      throw failure;
+      throw error_;
     }
   }
   async function rename(name: string): Promise<void> {
@@ -111,10 +113,10 @@ function ShelvesContent({ reference }: { reference: PreloadedQuery<ShelvesQuery>
         setRenameTarget(null);
       }
       setRenamePending(false);
-    } catch (failure) {
+    } catch (error_) {
       setRenamePending(false);
       shelvesQuery.refetch();
-      throw failure;
+      throw error_;
     }
   }
   async function remove(shelf: Shelf): Promise<void> {
@@ -137,12 +139,12 @@ function ShelvesContent({ reference }: { reference: PreloadedQuery<ShelvesQuery>
         store.delete(response.deleteShelf.shelfId);
       });
       setDeletion(undefined);
-    } catch (failure) {
+    } catch (error_) {
       if (controller.current?.signal.aborted) return;
       setDeletion({
         shelf,
         pending: false,
-        error: failure instanceof Error ? failure : new Error("Request failed."),
+        error: error_ instanceof Error ? error_ : new Error("Request failed."),
       });
       shelvesQuery.refetch();
     }

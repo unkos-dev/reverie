@@ -252,6 +252,19 @@ export class LibraryVisitOwner {
     );
   };
 
+  private needsRetainedRows(
+    source: LibrarySource,
+    retainedExtent: number,
+    position: LibraryPosition | undefined,
+  ): boolean {
+    return (
+      source.rows.size < retainedExtent ||
+      (position?.anchorId !== null &&
+        position?.anchorId !== undefined &&
+        !source.rows.has(position.anchorId))
+    );
+  }
+
   private async replace(
     params: ListBooksParams,
     position?: LibraryPosition,
@@ -280,13 +293,7 @@ export class LibraryVisitOwner {
     try {
       do {
         if (!(await source.loadPage()) || !this.current(request, intent)) return;
-      } while (
-        source.hasNext &&
-        (source.rows.size < retainedExtent ||
-          (position?.anchorId !== null &&
-            position?.anchorId !== undefined &&
-            !source.rows.has(position.anchorId)))
-      );
+      } while (source.hasNext && this.needsRetainedRows(source, retainedExtent, position));
       if (!this.current(request, intent)) return;
       const previous = this.state.source;
       this.candidate = undefined;

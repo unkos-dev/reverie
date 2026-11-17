@@ -4,7 +4,15 @@ import {
   useRelayEnvironment,
   type PreloadedQuery,
 } from "react-relay";
-import { GraphQLExecutionError, decodeGraphQLId, readerBook } from "@/api/graphql";
+import {
+  GraphQLExecutionError,
+  decodeGraphQLId,
+  readerBook,
+  encodeGraphQLId,
+  executeEditingOnce,
+  editingFailureAction,
+  type ReaderBook as BookListItem,
+} from "@/api/graphql";
 import {
   libraryVisit,
   type LibrarySource,
@@ -15,11 +23,9 @@ import type { readerLibraryQuery as LibraryQuery } from "@/lib/relay/__generated
 import type { readerLibrary$key } from "@/lib/relay/__generated__/readerLibrary.graphql";
 import type { readerLibraryBook$key } from "@/lib/relay/__generated__/readerLibraryBook.graphql";
 import type { LibraryFilters } from "@/lib/hooks/use-library-filters";
-import type { ReaderBook as BookListItem } from "@/api/graphql";
 import { commitLocalUpdate } from "relay-runtime";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { useShelves } from "@/api/shelves";
-import { encodeGraphQLId, executeEditingOnce, editingFailureAction } from "@/api/graphql";
 import {
   mutationsAddShelfItemMutation,
   mutationsRefreshMetadataMutation,
@@ -163,7 +169,7 @@ type LibraryRowsProps = {
   children: (items: BookListItem[]) => ReactElement;
 };
 
-function LibraryRows({ source, children }: LibraryRowsProps): ReactElement {
+function LibraryRows({ source, children }: Readonly<LibraryRowsProps>): ReactElement {
   if (source?.reference === undefined) return children([]);
   return (
     <LoadedLibraryRows source={source} reference={source.reference}>
@@ -225,9 +231,10 @@ function useLibraryPosition(
     if (element === null || source === undefined) return undefined;
     const documentScroll = element === document.scrollingElement;
     const rect = element.getBoundingClientRect();
-    const start = documentScroll
-      ? (document.querySelector("header[data-chrome]")?.getBoundingClientRect().bottom ?? 0)
-      : rect.top + (view === "table" ? 42 : 0);
+    let start: number;
+    if (documentScroll)
+      start = document.querySelector("header[data-chrome]")?.getBoundingClientRect().bottom ?? 0;
+    else start = rect.top + (view === "table" ? 42 : 0);
     const end = documentScroll ? window.innerHeight : rect.bottom;
     const anchor = [...element.querySelectorAll<HTMLElement>("[data-book-id]")]
       .map((row) => ({ row, rect: row.getBoundingClientRect() }))
@@ -303,10 +310,10 @@ function useLibraryPosition(
         (row) => row.dataset.bookId === position.anchorId,
       );
       if (anchor === undefined) return;
-      const start =
-        element === document.scrollingElement
-          ? (document.querySelector("header[data-chrome]")?.getBoundingClientRect().bottom ?? 0)
-          : element.getBoundingClientRect().top + (view === "table" ? 42 : 0);
+      let start: number;
+      if (element === document.scrollingElement)
+        start = document.querySelector("header[data-chrome]")?.getBoundingClientRect().bottom ?? 0;
+      else start = element.getBoundingClientRect().top + (view === "table" ? 42 : 0);
       setOffset(
         element.scrollTop + anchor.getBoundingClientRect().top - start - position.anchorOffset,
       );
@@ -519,6 +526,64 @@ export function LibraryPage(): ReactElement {
     if (selectedIds.size > 0) setSelectedIds(new Set());
   }
 
+  async function sendBatchShelf(id: string, shelfId: string): ReturnType<StatusTarget["send"]> {
+    const response = await executeEditingOnce<AddShelfItem>(
+      environment,
+      mutationsAddShelfItemMutation,
+      {
+        shelfId: encodeGraphQLId("Shelf", shelfId),
+        id: encodeGraphQLId("Manifestation", id),
+      },
+      batchController.current?.signal,
+    );
+    if (response === undefined) return;
+    commitLocalUpdate(environment, (store) => {
+      store.get(response.addShelfItem.shelfId)?.invalidateRecord();
+    });
+    return { saved: true, action: "none" };
+  }
+
+  async function sendBatchRefresh(id: string): ReturnType<StatusTarget["send"]> {
+    const response = await executeEditingOnce<RefreshMetadata>(
+      environment,
+      mutationsRefreshMetadataMutation,
+      { id: encodeGraphQLId("Manifestation", id) },
+      batchController.current?.signal,
+    );
+    if (response === undefined) return;
+    return { saved: true, action: "none" };
+  }
+
+  function sendBatchItem(attempt: NonNullable<typeof batchAttempt>, id: string) {
+    if (attempt.action.kind === "status")
+      return attempt.statusTargets.find((target) => target.id === id)?.send();
+    if (attempt.action.kind === "shelf") return sendBatchShelf(id, attempt.action.shelf.id);
+    return sendBatchRefresh(id);
+  }
+
+  async function sendBatchItems(
+    attempt: NonNullable<typeof batchAttempt>,
+    succeeded: string[],
+    failed: BatchOutcome["failed"][number][],
+  ): Promise<void> {
+    for (const id of attempt.ids) {
+      if (batchController.current?.signal.aborted) break;
+      try {
+        const result = await sendBatchItem(attempt, id);
+        if (result === undefined) break;
+        if (result.saved) succeeded.push(id);
+        else failed.push({ id, action: result.action });
+      } catch (error) {
+        console.error("[LibraryPage] batch action failed", { id, error });
+        failed.push({
+          id,
+          action: editingFailureAction(error),
+          message: error instanceof Error ? error.message : "Request failed.",
+        });
+      }
+    }
+  }
+
   async function runBatch(
     attempt: NonNullable<typeof batchAttempt>,
     retrying = false,
@@ -539,49 +604,7 @@ export function LibraryPage(): ReactElement {
       succeeded: previous?.succeeded ?? [],
       failed: [...failed],
     });
-    for (const id of attempt.ids) {
-      if (batchController.current?.signal.aborted) break;
-      try {
-        if (attempt.action.kind === "status") {
-          const result = await attempt.statusTargets.find((target) => target.id === id)?.send();
-          if (result === undefined) break;
-          if (result.saved) succeeded.push(id);
-          else failed.push({ id, action: result.action });
-        } else {
-          if (attempt.action.kind === "shelf") {
-            const response = await executeEditingOnce<AddShelfItem>(
-              environment,
-              mutationsAddShelfItemMutation,
-              {
-                shelfId: encodeGraphQLId("Shelf", attempt.action.shelf.id),
-                id: encodeGraphQLId("Manifestation", id),
-              },
-              batchController.current?.signal,
-            );
-            if (response === undefined) break;
-            commitLocalUpdate(environment, (store) => {
-              store.get(response.addShelfItem.shelfId)?.invalidateRecord();
-            });
-          } else {
-            const response = await executeEditingOnce<RefreshMetadata>(
-              environment,
-              mutationsRefreshMetadataMutation,
-              { id: encodeGraphQLId("Manifestation", id) },
-              batchController.current?.signal,
-            );
-            if (response === undefined) break;
-          }
-          succeeded.push(id);
-        }
-      } catch (error) {
-        console.error("[LibraryPage] batch action failed", { id, error });
-        failed.push({
-          id,
-          action: editingFailureAction(error),
-          message: error instanceof Error ? error.message : "Request failed.",
-        });
-      }
-    }
+    await sendBatchItems(attempt, succeeded, failed);
     if (
       liveIntent.current === queryToken &&
       succeeded.length > 0 &&
@@ -614,6 +637,15 @@ export function LibraryPage(): ReactElement {
       );
     }
   }
+
+  const batchFeedback = new Map(
+    batch?.failed.map((failure) => {
+      const attemptId = batchAttempt?.statusTargets.find(
+        (target) => target.id === failure.id,
+      )?.attemptId;
+      return [failure.id, edits.feedback.find((entry) => entry.id === attemptId)];
+    }),
+  );
 
   function setView(next: LibraryView): void {
     preferences.setView(next);
@@ -778,14 +810,7 @@ export function LibraryPage(): ReactElement {
                         ...batch,
                         failed: batch.failed.map((failure) => ({
                           ...failure,
-                          action:
-                            edits.feedback.find(
-                              (entry) =>
-                                entry.id ===
-                                batchAttempt?.statusTargets.find(
-                                  (target) => target.id === failure.id,
-                                )?.attemptId,
-                            )?.action ?? "none",
+                          action: batchFeedback.get(failure.id)?.action ?? "none",
                         })),
                       }
                 }
@@ -805,13 +830,7 @@ export function LibraryPage(): ReactElement {
                       (failure) =>
                         failure.action === "retry" &&
                         (batch.action.kind !== "status" ||
-                          edits.feedback.some(
-                            (entry) =>
-                              entry.id ===
-                                batchAttempt.statusTargets.find(
-                                  (target) => target.id === failure.id,
-                                )?.attemptId && entry.action === "retry",
-                          )),
+                          batchFeedback.get(failure.id)?.action === "retry"),
                     )
                     .map((failure) => failure.id);
                   void runBatch({ ...batchAttempt, ids }, true);

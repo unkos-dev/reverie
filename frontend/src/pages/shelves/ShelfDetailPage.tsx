@@ -37,9 +37,9 @@ export function ShelfDetailPage(): ReactElement | null {
 
 function ShelfDetailContent({
   reference,
-}: {
+}: Readonly<{
   reference: PreloadedQuery<ShelfQuery>;
-}): ReactElement {
+}>): ReactElement {
   const [current] = useQueryLoader<ShelfQuery>(readerShelfQuery, reference);
   const query = usePreloadedQuery<ShelfQuery>(readerShelfQuery, current ?? reference);
   const data = useFragment<readerShelf$key>(readerShelf, query.shelf);

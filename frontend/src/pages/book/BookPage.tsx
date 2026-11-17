@@ -70,7 +70,9 @@ type DisplayBook = Pick<
   metadata_version_summary: { pending: number };
 };
 
-function BookContent({ reference }: { reference: PreloadedQuery<DetailQuery> }): ReactElement {
+function BookContent({
+  reference,
+}: Readonly<{ reference: PreloadedQuery<DetailQuery> }>): ReactElement {
   const [current, load] = useQueryLoader<DetailQuery>(readerDetailQuery, reference);
   const query = usePreloadedQuery<DetailQuery>(readerDetailQuery, current ?? reference);
   const data = useFragment<readerDetailBook$key>(readerDetailBook, query.manifestation);
@@ -109,7 +111,7 @@ function BookContent({ reference }: { reference: PreloadedQuery<DetailQuery> }):
     if (hasTags && !loadingTags) loadTags(20, { onComplete: setPageError });
   }, [hasTags, loadingTags, loadTags]);
   if (pageError !== null) throw pageError;
-  if (data == null || data.work == null) throw new Error("Book not found.");
+  if (data?.work == null) throw new Error("Book not found.");
   const series = data.work.selectedSeries;
   const book: DisplayBook = {
     id: decodeGraphQLId("Manifestation", data.id),

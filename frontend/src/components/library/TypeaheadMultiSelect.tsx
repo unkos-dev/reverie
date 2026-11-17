@@ -116,13 +116,12 @@ export function TypeaheadMultiSelect({
   }
   const suggestions =
     trimmed.length >= 2
-      ? (data ?? []).map((row) => ({
-          id:
-            row.entityId == null || (kind !== "authors" && kind !== "series")
-              ? undefined
-              : decodeGraphQLId(kind === "authors" ? "Author" : "Series", row.entityId),
-          value: row.value,
-        }))
+      ? (data ?? []).map((row) => {
+          let id: string | undefined;
+          if (row.entityId != null && (kind === "authors" || kind === "series"))
+            id = decodeGraphQLId(kind === "authors" ? "Author" : "Series", row.entityId);
+          return { id, value: row.value };
+        })
       : [];
   const optionsByKey = new Map<Key, TypeaheadOption>(
     [...suggestions, ...selected].map((item) => [keyFor(item), item]),

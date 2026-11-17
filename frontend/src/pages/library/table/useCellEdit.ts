@@ -106,6 +106,11 @@ function errorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+function displayValue(value: string | number | string[] | null): string {
+  if (Array.isArray(value)) return value.join(", ");
+  return value === null ? "unset" : String(value);
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
@@ -206,14 +211,15 @@ export function useCellEdit({
   );
   useEffect(() => {
     if (!Number.isFinite(deadline)) return;
+    const removeExpired = (current: Owner): Owner => ({
+      ...current,
+      entries: current.entries.filter(
+        (entry) => Date.parse(entry.operation.expiresAt) > Date.now(),
+      ),
+    });
     const timer = setTimeout(
       () => {
-        setOwner((current) => ({
-          ...current,
-          entries: current.entries.filter(
-            (entry) => Date.parse(entry.operation.expiresAt) > Date.now(),
-          ),
-        }));
+        setOwner(removeExpired);
       },
       Math.max(0, deadline - Date.now()),
     );
@@ -331,6 +337,90 @@ export function useCellEdit({
     return response?.metadataOperation;
   }
 
+  async function sendMetadata(attempt: Attempt & { pipeline: "metadata" }) {
+    const id = encodeGraphQLId("Manifestation", attempt.row.id);
+    const variables = {
+      id,
+      baseline: attempt.baseline,
+      patch: attempt.patch,
+      requestId: attempt.id,
+    };
+    if (attempt.columnKey === "authors") {
+      const response = await executeEditingOnce<SaveAuthors>(
+        environment,
+        mutationsSaveAuthorsMutation,
+        variables,
+        controller.current?.signal,
+      );
+      return response?.updateMetadata;
+    } else {
+      const response = await executeEditingOnce<SaveCells>(
+        environment,
+        mutationsSaveCellsMutation,
+        variables,
+        controller.current?.signal,
+      );
+      return response?.updateMetadata;
+    }
+  }
+
+  async function sendReading(attempt: Attempt & { pipeline: "reading" }) {
+    const response = await executeEditingOnce<ReadingMutation>(
+      environment,
+      mutationsReadingMutation,
+      {
+        id: encodeGraphQLId("Manifestation", attempt.row.id),
+        baseline: attempt.baseline,
+        patch: attempt.patch,
+      },
+      controller.current?.signal,
+    );
+    return response?.updateReadingState;
+  }
+
+  async function recoverMetadata(attempt: Attempt): Promise<boolean> {
+    const response = await resolve(attempt);
+    if (response?.outcome !== "saved") return false;
+    acceptMetadata(attempt, response);
+    return true;
+  }
+
+  async function recoverReading(attempt: Attempt): Promise<boolean> {
+    const response = await executeEditingOnce<ReadingQuery>(
+      environment,
+      mutationsReadingQuery,
+      { id: encodeGraphQLId("Manifestation", attempt.row.id) },
+      controller.current?.signal,
+    );
+    const reading = response?.manifestation?.readingState;
+    if (
+      reading !== undefined &&
+      ((attempt.columnKey === "status" && reading.status === attempt.value) ||
+        (attempt.columnKey === "rating" && reading.rating === attempt.value))
+    ) {
+      publishReading(attempt, reading);
+      return true;
+    }
+    return false;
+  }
+
+  async function sendAttempt(attempt: Attempt): Promise<boolean> {
+    if (attempt.pipeline === "metadata") {
+      const response = await sendMetadata(attempt);
+      if (response === undefined) return false;
+      acceptMetadata(attempt, response);
+    } else {
+      const response = await sendReading(attempt);
+      if (response === undefined) return false;
+      publishReading(attempt, response);
+    }
+    return true;
+  }
+
+  function recoverAttempt(attempt: Attempt): Promise<boolean> {
+    return attempt.pipeline === "metadata" ? recoverMetadata(attempt) : recoverReading(attempt);
+  }
+
   async function save(
     attempt: Attempt,
     retrying = false,
@@ -351,74 +441,18 @@ export function useCellEdit({
       ];
     });
     try {
-      const id = encodeGraphQLId("Manifestation", attempt.row.id);
-      if (attempt.pipeline === "metadata") {
-        const variables = {
-          id,
-          baseline: attempt.baseline,
-          patch: attempt.patch,
-          requestId: attempt.id,
-        };
-        if (attempt.columnKey === "authors") {
-          const response = await executeEditingOnce<SaveAuthors>(
-            environment,
-            mutationsSaveAuthorsMutation,
-            variables,
-            controller.current?.signal,
-          );
-          if (response === undefined) return;
-          acceptMetadata(attempt, response.updateMetadata);
-        } else {
-          const response = await executeEditingOnce<SaveCells>(
-            environment,
-            mutationsSaveCellsMutation,
-            variables,
-            controller.current?.signal,
-          );
-          if (response === undefined) return;
-          acceptMetadata(attempt, response.updateMetadata);
-        }
-      } else {
-        const response = await executeEditingOnce<ReadingMutation>(
-          environment,
-          mutationsReadingMutation,
-          { id, baseline: attempt.baseline, patch: attempt.patch },
-          controller.current?.signal,
-        );
-        if (response === undefined) return;
-        publishReading(attempt, response.updateReadingState);
-      }
+      if (!(await sendAttempt(attempt))) return;
       complete(attempt);
       return { saved: true, action: "none" };
-    } catch (failure) {
+    } catch (error) {
       if (controller.current?.signal.aborted) return;
-      const action = editingFailureAction(failure);
+      const action = editingFailureAction(error);
       if (action === "retry" || action === "reload") {
         try {
-          if (attempt.pipeline === "metadata") {
-            const response = await resolve(attempt);
-            if (response?.outcome === "saved") {
-              acceptMetadata(attempt, response);
-              complete(attempt);
-              return { saved: true, action: "none" };
-            }
-          } else {
-            const response = await executeEditingOnce<ReadingQuery>(
-              environment,
-              mutationsReadingQuery,
-              { id: encodeGraphQLId("Manifestation", attempt.row.id) },
-              controller.current?.signal,
-            );
-            const reading = response?.manifestation?.readingState;
-            if (
-              reading !== undefined &&
-              ((attempt.columnKey === "status" && reading.status === attempt.value) ||
-                (attempt.columnKey === "rating" && reading.rating === attempt.value))
-            ) {
-              publishReading(attempt, reading);
-              complete(attempt);
-              return { saved: true, action: "none" };
-            }
+          const recovered = await recoverAttempt(attempt);
+          if (recovered) {
+            complete(attempt);
+            return { saved: true, action: "none" };
           }
         } catch (recoveryError) {
           console.error("[useCellEdit] save resolution failed", recoveryError);
@@ -432,7 +466,7 @@ export function useCellEdit({
                 pending: false,
                 retrying: false,
                 action,
-                error: failure instanceof Error ? failure : new Error("Request failed."),
+                error: error instanceof Error ? error : new Error("Request failed."),
               }
             : record,
         ),
@@ -512,8 +546,8 @@ export function useCellEdit({
           item.attempt.id === attempt.id ? { ...item, reset, reloading: false } : item,
         ),
       );
-    } catch (failure) {
-      console.error("[useCellEdit] reload failed", failure);
+    } catch (error) {
+      console.error("[useCellEdit] reload failed", error);
       setRecords((current) =>
         current.map((item) =>
           item.attempt.id === attempt.id ? { ...item, reloading: false } : item,
@@ -543,9 +577,7 @@ export function useCellEdit({
       column === "status" || column === "rating"
         ? (row.reading_state?.[column] ?? null)
         : row[column];
-    let display = "unset";
-    if (Array.isArray(value)) display = value.join(", ");
-    else if (value !== null) display = String(value);
+    const display = displayValue(value);
     let baseline = route.pipeline === "metadata" ? opening.metadata_etag : opening.reading_etag;
     if (previous !== undefined && previous.reset === undefined)
       baseline = previous.attempt.baseline;
@@ -596,12 +628,9 @@ export function useCellEdit({
     status: ReadingStatus | null,
   ): StatusTarget[] {
     if (source === undefined) return [];
-    setSavedCells(
-      (current) =>
-        new Set(
-          [...current].filter((key) => !rows.some((row) => key === pendingKey(row.id, "status"))),
-        ),
-    );
+    const keepSavedCell = (key: string): boolean =>
+      !rows.some((row) => key === pendingKey(row.id, "status"));
+    setSavedCells((current) => new Set([...current].filter(keepSavedCell)));
     return rows.map((row) => {
       const previous = records.findLast(
         (record) => record.attempt.row.id === row.id && record.attempt.columnKey === "status",
@@ -631,9 +660,9 @@ export function useCellEdit({
         patch: { status: status === null ? null : READING_STATUS_INPUT[status] },
       };
       previous?.attempt.release();
-      setRecords((current) =>
-        current.filter((record) => record.attempt.id !== previous?.attempt.id),
-      );
+      const keepRecord = (record: EditRecord): boolean =>
+        record.attempt.id !== previous?.attempt.id;
+      setRecords((current) => current.filter(keepRecord));
       let sent = false;
       return {
         id: row.id,
@@ -650,6 +679,61 @@ export function useCellEdit({
   const latest = owner.entries.at(-1);
   const undoAvailable =
     enabled && latest !== undefined && !undoPending && !records.some((record) => record.pending);
+  async function sendUndo(attempt: Attempt, variables: UndoCells["variables"]) {
+    if (attempt.columnKey === "authors")
+      return (
+        await executeEditingOnce<UndoAuthors>(
+          environment,
+          mutationsUndoAuthorsMutation,
+          variables,
+          controller.current?.signal,
+        )
+      )?.undoMetadata;
+    return (
+      await executeEditingOnce<UndoCells>(
+        environment,
+        mutationsUndoCellsMutation,
+        variables,
+        controller.current?.signal,
+      )
+    )?.undoMetadata;
+  }
+
+  async function recoverUndo(
+    entry: UndoEntry,
+    variables: UndoCells["variables"],
+    response: MetadataResult | undefined,
+    failure: unknown,
+  ) {
+    const attempt = entry.attempt;
+    const resolution = await resolve(attempt, entry.operation.operationId);
+    if (resolution?.outcome === "restored") response = resolution;
+    else {
+      const operation = resolution?.operations.find(
+        (item) => item.operationId === entry.operation.operationId,
+      );
+      if (operation?.status === "locked")
+        failure = new ApiError(
+          409,
+          "/field-locked",
+          "Field locked",
+          "Unlock this field before retrying Undo.",
+        );
+      else if (operation?.status === "unavailable" || operation?.status === "consumed")
+        failure = new ApiError(
+          422,
+          "/undo-unavailable",
+          "Undo unavailable",
+          "This saved edit can no longer be undone.",
+        );
+      else if (resolution !== undefined && operation?.status === "eligible") {
+        const retry = { ...variables, baseline: resolution.metadata.etag };
+        response = await sendUndo(attempt, retry);
+      }
+    }
+    return { response, failure };
+  }
+
   async function undoEntry(entry: UndoEntry): Promise<void> {
     const attempt = entry.attempt;
     const variables = {
@@ -661,72 +745,16 @@ export function useCellEdit({
     let response: MetadataResult | undefined;
     let failure: unknown;
     try {
-      if (attempt.columnKey === "authors")
-        response = (
-          await executeEditingOnce<UndoAuthors>(
-            environment,
-            mutationsUndoAuthorsMutation,
-            variables,
-            controller.current?.signal,
-          )
-        )?.undoMetadata;
-      else
-        response = (
-          await executeEditingOnce<UndoCells>(
-            environment,
-            mutationsUndoCellsMutation,
-            variables,
-            controller.current?.signal,
-          )
-        )?.undoMetadata;
+      response = await sendUndo(attempt, variables);
     } catch (error) {
       failure = error;
     }
     const action = failure === undefined ? "none" : editingFailureAction(failure);
     if (action === "retry" || action === "reload") {
       try {
-        const resolution = await resolve(attempt, entry.operation.operationId);
-        if (resolution?.outcome === "restored") response = resolution;
-        else {
-          const operation = resolution?.operations.find(
-            (item) => item.operationId === entry.operation.operationId,
-          );
-          if (operation?.status === "locked")
-            failure = new ApiError(
-              409,
-              "/field-locked",
-              "Field locked",
-              "Unlock this field before retrying Undo.",
-            );
-          else if (operation?.status === "unavailable" || operation?.status === "consumed")
-            failure = new ApiError(
-              422,
-              "/undo-unavailable",
-              "Undo unavailable",
-              "This saved edit can no longer be undone.",
-            );
-          else if (resolution !== undefined && operation?.status === "eligible") {
-            const retry = { ...variables, baseline: resolution.metadata.etag };
-            if (attempt.columnKey === "authors")
-              response = (
-                await executeEditingOnce<UndoAuthors>(
-                  environment,
-                  mutationsUndoAuthorsMutation,
-                  retry,
-                  controller.current?.signal,
-                )
-              )?.undoMetadata;
-            else
-              response = (
-                await executeEditingOnce<UndoCells>(
-                  environment,
-                  mutationsUndoCellsMutation,
-                  retry,
-                  controller.current?.signal,
-                )
-              )?.undoMetadata;
-          }
-        }
+        const recovered = await recoverUndo(entry, variables, response, failure);
+        response = recovered.response;
+        failure = recovered.failure;
       } catch (error) {
         failure = error;
       }

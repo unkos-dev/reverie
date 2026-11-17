@@ -64,7 +64,7 @@ export function CommandPalette({
   const isFetching = enabled && data === undefined && !isError;
   const items =
     data?.search.flatMap(({ manifestation, snippet }) =>
-      manifestation == null || manifestation.work == null
+      manifestation?.work == null
         ? []
         : [
             {

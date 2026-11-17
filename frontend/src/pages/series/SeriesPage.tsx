@@ -48,7 +48,9 @@ export function SeriesPage(): ReactElement | null {
   );
 }
 
-function SeriesContent({ reference }: { reference: PreloadedQuery<SeriesQuery> }): ReactElement {
+function SeriesContent({
+  reference,
+}: Readonly<{ reference: PreloadedQuery<SeriesQuery> }>): ReactElement {
   const [current] = useQueryLoader<SeriesQuery>(readerSeriesQuery, reference);
   const query = usePreloadedQuery<SeriesQuery>(readerSeriesQuery, current ?? reference);
   const data = useFragment<readerSeries$key>(readerSeries, query.series);
@@ -83,9 +85,9 @@ function SeriesContent({ reference }: { reference: PreloadedQuery<SeriesQuery> }
 
 function SeriesWorkRow({
   edge,
-}: {
+}: Readonly<{
   edge: readerSeriesWorks$data["works"]["edges"][number];
-}): ReactElement {
+}>): ReactElement {
   const work = edge.node;
   const edition = work.manifestations.edges.at(0)?.node;
   const { data, hasNext, isLoadingNext, loadNext } = usePaginationFragment<

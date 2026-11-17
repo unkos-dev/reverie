@@ -130,14 +130,24 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
     ]),
   ].sort((a, b) => a.localeCompare(b));
 
+  const pendingCount = data?.versions.pendingCount ?? 0;
+  const plural = pendingCount === 1 ? "" : "s";
+  let pendingText = "No pending drafts. Manually edit any field below.";
+  if (pendingCount !== 0)
+    pendingText = `${String(pendingCount)} pending draft${plural} await review.`;
+
+  function recordAction(action: FieldActionState): void {
+    const replaceAction = (current: FieldActionState[]): FieldActionState[] => [
+      ...current.filter((previous) => previous.variables.field !== action.variables.field),
+      action,
+    ];
+    setActions(replaceAction);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <p className="text-fg-muted text-sm">
-          {(data?.versions.pendingCount ?? 0) === 0
-            ? "No pending drafts. Manually edit any field below."
-            : `${String(data?.versions.pendingCount ?? 0)} pending draft${(data?.versions.pendingCount ?? 0) === 1 ? "" : "s"} await review.`}
-        </p>
+        <p className="text-fg-muted text-sm">{pendingText}</p>
         <Button
           variant="outline"
           onPress={() => {
@@ -157,14 +167,7 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
             canonical={canonicalValue(book, field)}
             rows={grouped[field] ?? []}
             actionState={actions.findLast((action) => action.variables.field === field)}
-            onAction={(action) => {
-              setActions((current) => [
-                ...current.filter(
-                  (previous) => previous.variables.field !== action.variables.field,
-                ),
-                action,
-              ]);
-            }}
+            onAction={recordAction}
           />
         ))}
       </div>
@@ -270,7 +273,7 @@ function FieldGroup({
         edition?.invalidateRecord();
       });
       onAction({ status: "success", variables });
-    } catch (failure) {
+    } catch (error) {
       if (controller.current?.signal.aborted) return;
       commitLocalUpdate(environment, (store) => {
         const edition = store.get(id);
@@ -278,11 +281,11 @@ function FieldGroup({
         work?.invalidateRecord();
         edition?.invalidateRecord();
       });
-      console.error("[VersionsTab] field action failed", failure);
+      console.error("[VersionsTab] field action failed", error);
       onAction({
         status: "error",
         variables,
-        error: failure instanceof Error ? failure : new Error("Request failed."),
+        error: error instanceof Error ? error : new Error("Request failed."),
       });
     }
   }

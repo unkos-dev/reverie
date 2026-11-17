@@ -44,6 +44,32 @@ const STATUS_OPTIONS: readonly { status: ReadingStatus | null; label: string }[]
   { status: null, label: "No status" },
 ];
 
+function batchStatus(result: BatchOutcome | undefined): string | undefined {
+  if (result === undefined) return;
+  const total = String(result.total);
+  const succeeded = String(result.succeeded.length);
+  const shelfName = result.action.kind === "shelf" ? result.action.shelf.name : "";
+  const messages: Record<BatchAction["kind"], { pending: string; settled: string }> = {
+    shelf: {
+      pending: `Adding ${total} books to ${shelfName}…`,
+      settled: `Added ${succeeded} of ${total} books to ${shelfName}.`,
+    },
+    status: {
+      pending: `Setting status for ${total} books…`,
+      settled: `Set status for ${succeeded} of ${total} books.`,
+    },
+    refresh: {
+      pending: `Scheduling metadata refresh for ${total} books…`,
+      settled: `Scheduled metadata refresh for ${succeeded} of ${total} books.`,
+    },
+  };
+  const message = messages[result.action.kind];
+  let status = result.pending ? message.pending : message.settled;
+  if (!result.pending && result.failed.length > 0)
+    status += ` ${String(result.failed.length)} could not be saved.`;
+  return status;
+}
+
 export function BatchBar({
   selectedIds,
   hasMorePages,
@@ -58,23 +84,7 @@ export function BatchBar({
 }: Readonly<BatchBarProps>): ReactElement | null {
   if (selectedIds.size === 0 && result === undefined) return null;
   const pending = result?.pending === true;
-  let status: string | undefined;
-  if (result !== undefined) {
-    if (result.action.kind === "shelf")
-      status = pending
-        ? `Adding ${String(result.total)} books to ${result.action.shelf.name}…`
-        : `Added ${String(result.succeeded.length)} of ${String(result.total)} books to ${result.action.shelf.name}.`;
-    else if (result.action.kind === "status")
-      status = pending
-        ? `Setting status for ${String(result.total)} books…`
-        : `Set status for ${String(result.succeeded.length)} of ${String(result.total)} books.`;
-    else
-      status = pending
-        ? `Scheduling metadata refresh for ${String(result.total)} books…`
-        : `Scheduled metadata refresh for ${String(result.succeeded.length)} of ${String(result.total)} books.`;
-    if (!pending && result.failed.length > 0)
-      status += ` ${String(result.failed.length)} could not be saved.`;
-  }
+  const status = batchStatus(result);
   let shelfStatus = "No shelves yet";
   if (shelvesError) shelfStatus = "Couldn't load shelves";
   else if (shelves === undefined) shelfStatus = "Loading…";

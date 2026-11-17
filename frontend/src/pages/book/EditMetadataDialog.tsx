@@ -180,9 +180,9 @@ function EditMetadataForm({
         }
         setReloading(false);
       })
-      .catch((failure: unknown) => {
+      .catch((error_: unknown) => {
         if (!controller.signal.aborted) {
-          setError(failure instanceof Error ? failure : new Error("Request failed."));
+          setError(error_ instanceof Error ? error_ : new Error("Request failed."));
           setReloading(false);
         }
       });
@@ -306,6 +306,41 @@ function EditMetadataFields({
     };
   }
 
+  async function sendAndResolve(variables: SaveForm["variables"]) {
+    let saved: FormSnapshot | undefined;
+    let failure: unknown;
+    try {
+      saved = (
+        await executeEditingOnce<SaveForm>(environment, mutationsSaveFormMutation, variables)
+      )?.updateMetadata.metadata;
+    } catch (error) {
+      failure = error;
+    }
+    if (failure !== undefined && ["retry", "reload"].includes(editingFailureAction(failure))) {
+      try {
+        const resolution = await executeEditingOnce<ResolveForm>(
+          environment,
+          mutationsResolveFormQuery,
+          { id: variables.id, requestId: variables.requestId },
+        );
+        if (resolution?.metadataOperation.outcome === "saved")
+          saved = resolution.metadataOperation.metadata;
+      } catch (error) {
+        console.error("[EditMetadataDialog] save resolution failed", error);
+      }
+    }
+    return { saved, failure };
+  }
+
+  async function confirmSaved(saved: FormSnapshot, id: string): Promise<void> {
+    reconcile(saved);
+    const confirmed = await executeEditingOnce<FormQuery>(environment, mutationsFormQuery, { id });
+    if (confirmed?.manifestation != null) {
+      reconcile(confirmed.manifestation.metadata);
+      if (!controller.current?.signal.aborted) onDone();
+    }
+  }
+
   const [state, action, pending] = useActionState<
     {
       values: Partial<Record<string, string>>;
@@ -344,37 +379,9 @@ function EditMetadataFields({
           baseline: baseline.etag,
           requestId,
         };
-        let saved: FormSnapshot | undefined;
-        let failure: unknown;
-        try {
-          saved = (
-            await executeEditingOnce<SaveForm>(environment, mutationsSaveFormMutation, variables)
-          )?.updateMetadata.metadata;
-        } catch (error) {
-          failure = error;
-        }
-        if (failure !== undefined && ["retry", "reload"].includes(editingFailureAction(failure))) {
-          try {
-            const resolution = await executeEditingOnce<ResolveForm>(
-              environment,
-              mutationsResolveFormQuery,
-              { id: variables.id, requestId },
-            );
-            if (resolution?.metadataOperation.outcome === "saved")
-              saved = resolution.metadataOperation.metadata;
-          } catch (error) {
-            console.error("[EditMetadataDialog] save resolution failed", error);
-          }
-        }
+        const { saved, failure } = await sendAndResolve(variables);
         if (saved !== undefined) {
-          reconcile(saved);
-          const confirmed = await executeEditingOnce<FormQuery>(environment, mutationsFormQuery, {
-            id: variables.id,
-          });
-          if (confirmed?.manifestation != null) {
-            reconcile(confirmed.manifestation.metadata);
-            if (!controller.current?.signal.aborted) onDone();
-          }
+          await confirmSaved(saved, variables.id);
           return { values, error: null };
         }
         const errors =

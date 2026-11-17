@@ -1,4 +1,3 @@
-import type { BookListItem } from "./books";
 import type { readerLibraryBook$data } from "@/lib/relay/__generated__/readerLibraryBook.graphql";
 import type { LibraryRowSnapshot } from "@/lib/relay/library-visit";
 import { Observable, createOperationDescriptor, getRequest } from "relay-runtime";
@@ -18,6 +17,7 @@ import {
   ReadingStatusSchema,
   ResourceEtagSchema,
   parseSortParam,
+  type BookListItem,
   type ListBooksParams,
 } from "./books";
 import type { readerLibraryQuery$variables } from "@/lib/relay/__generated__/readerLibraryQuery.graphql";

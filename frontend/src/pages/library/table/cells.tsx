@@ -751,13 +751,13 @@ function MatchedAuthorsEditor({
   onCommit,
   onCancel,
   retained,
-}: {
+}: Readonly<{
   book: BookListItem;
   seed: string | undefined;
   onCommit: AuthorsCellProps["onCommit"];
   onCancel: () => void;
   retained: BookListItem | undefined;
-}): ReactElement {
+}>): ReactElement {
   const environment = useRelayEnvironment();
   const [field, setField] = useState<Awaited<ReturnType<typeof loadAuthorField>>>(undefined);
   const [error, setError] = useState<Error | null>(null);
@@ -768,9 +768,9 @@ function MatchedAuthorsEditor({
       .then((snapshot) => {
         if (!controller.signal.aborted) setField(snapshot);
       })
-      .catch((failure: unknown) => {
+      .catch((error_: unknown) => {
         if (!controller.signal.aborted)
-          setError(failure instanceof Error ? failure : new Error("Request failed."));
+          setError(error_ instanceof Error ? error_ : new Error("Request failed."));
       });
     return () => {
       controller.abort();
