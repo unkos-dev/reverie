@@ -290,7 +290,7 @@ export class LibraryVisitOwner {
       if (!this.current(request, intent)) return;
       const previous = this.state.source;
       this.candidate = undefined;
-      this.publish({ source, pending: false, error: null, moreError: null });
+      this.publish({ source, pending: false, loadingMore: false, error: null, moreError: null });
       previous?.retire();
     } catch (error) {
       if (!this.current(request, intent)) return;
