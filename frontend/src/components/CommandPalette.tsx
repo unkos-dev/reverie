@@ -2,7 +2,10 @@
  * Global library search using server-ranked results and safe snippet highlighting.
  * React Aria owns modal focus and dismissal.
  */
-import { useQuery } from "@tanstack/react-query";
+import { fetchQuery, useRelayEnvironment } from "react-relay";
+import { decodeGraphQLId } from "@/api/graphql";
+import { readerSearchQuery } from "@/lib/relay/reader";
+import type { readerSearchQuery as SearchQuery } from "@/lib/relay/__generated__/readerSearchQuery.graphql";
 import { useEffect, useState, type ReactElement } from "react";
 import {
   Autocomplete,
@@ -19,8 +22,8 @@ import {
 } from "react-aria-components";
 import { SearchIcon } from "lucide-react";
 
-import { searchLibrary, type SearchHit } from "@/api";
-import { queryKeys } from "@/lib/query/keys";
+import type { SearchHit } from "@/api";
+type SearchItem = Pick<SearchHit, "id" | "title" | "authors" | "snippet">;
 
 const SNIPPET_HL_START = "\u0002";
 const SNIPPET_HL_END = "\u0003";
@@ -32,20 +35,50 @@ export function CommandPalette({
 }: Readonly<{ isOpen: boolean; onOpenChange: (open: boolean) => void }>): ReactElement {
   const [query, setQuery] = useState("");
   const trimmed = query.trim();
-  const { data, isFetching, isError, error } = useQuery({
-    queryKey: queryKeys.search(trimmed),
-    queryFn: ({ signal }) => searchLibrary(trimmed, signal),
-    enabled: isOpen && trimmed.length >= 2,
-    staleTime: 30_000,
-  });
-  const items = trimmed.length >= 2 ? (data?.items ?? []) : [];
+  const environment = useRelayEnvironment();
+  const [result, setResult] = useState<{
+    query: string;
+    data?: SearchQuery["response"];
+    error?: Error;
+  }>();
+  const enabled = isOpen && trimmed.length >= 2;
+  useEffect(() => {
+    if (!enabled) return;
+    const subscription = fetchQuery<SearchQuery>(environment, readerSearchQuery, {
+      q: trimmed,
+    }).subscribe({
+      next: (data) => {
+        setResult({ query: trimmed, data });
+      },
+      error: (error: Error) => {
+        console.error("[CommandPalette] search failed", error);
+        setResult({ query: trimmed, error });
+      },
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [environment, enabled, trimmed]);
+  const data = result?.query === trimmed ? result.data : undefined;
+  const isError = result?.query === trimmed && result.error !== undefined;
+  const isFetching = enabled && data === undefined && !isError;
+  const items =
+    data?.search.flatMap(({ manifestation, snippet }) =>
+      manifestation?.work == null
+        ? []
+        : [
+            {
+              id: decodeGraphQLId("Manifestation", manifestation.id),
+              title: manifestation.work.title,
+              authors: manifestation.work.authors.edges.map(({ node }) => node.name),
+              snippet: snippet ?? null,
+            },
+          ],
+    ) ?? [];
   function changeOpen(next: boolean): void {
     onOpenChange(next);
     if (!next) setQuery("");
   }
-  useEffect(() => {
-    if (isError) console.error("[CommandPalette] search query failed", error);
-  }, [isError, error]);
 
   let status: string | null = null;
   if (trimmed.length < 2) status = "Type to search your library.";
@@ -96,7 +129,7 @@ export function CommandPalette({
                 changeOpen(false);
               }}
             >
-              {(hit: SearchHit) => (
+              {(hit: SearchItem) => (
                 <MenuItem
                   id={hit.id}
                   href={`/b/${encodeURIComponent(hit.id)}`}

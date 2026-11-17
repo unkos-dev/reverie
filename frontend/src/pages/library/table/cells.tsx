@@ -1,5 +1,15 @@
+import type { ReaderBook as BookListItem } from "@/api/graphql";
+import { loadAuthorField } from "@/api/graphql";
+import { useRelayEnvironment } from "react-relay";
 import { CircleAlert, Check, GripVertical, PenLine, Star, X } from "lucide-react";
-import { useRef, useState, type ReactElement, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import {
   Button as AriaButton,
   Dialog,
@@ -20,17 +30,21 @@ import {
 } from "react-aria-components";
 import { z } from "zod";
 
-import { PageCountInputSchema, type BookListItem, type Density } from "@/api";
+import { PageCountInputSchema, type Density } from "@/api";
 import type { ReadingStatus } from "@/api/books";
 import { Link } from "@/components/ui/link";
 import { Tooltip, TooltipContent } from "@/components/ui/tooltip";
 import { ToggleButton, ToggleButtonGroup } from "@/components/ui/toggle-button-group";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export type CellState = {
   pending: string | undefined;
   failed: boolean;
+  serverError?: string;
+  retained?: BookListItem;
+  retainSource?: () => () => void;
 };
 
 const STATUS_OPTIONS: readonly { id: ReadingStatus; label: string }[] = [
@@ -77,14 +91,30 @@ type Opening<T> = {
   seed: string | undefined;
   height: number;
   commit: ((value: T) => void) | undefined;
+  release: (() => void) | undefined;
 };
 
-function useCellEditor<T>(anchor: RefObject<HTMLElement | null>, onCommit?: (value: T) => void) {
+function useCellEditor<T>(
+  anchor: RefObject<HTMLElement | null>,
+  onCommit?: (value: T) => void,
+  retainSource?: () => () => void,
+) {
   const [opening, setOpening] = useState<Opening<T> | null>(null);
+  useEffect(
+    () => () => {
+      opening?.release?.();
+    },
+    [opening],
+  );
   return {
     opening,
     open: (seed?: string): void => {
-      setOpening({ seed, height: anchor.current?.offsetHeight ?? 0, commit: onCommit });
+      setOpening({
+        seed,
+        height: anchor.current?.offsetHeight ?? 0,
+        commit: onCommit,
+        release: retainSource?.(),
+      });
     },
     close: (): void => {
       setOpening(null);
@@ -286,6 +316,7 @@ type TextEditorProps = {
   seed: string | undefined;
   kind: TextKind;
   required: boolean;
+  serverError?: string;
   onCommit: (value: string | null) => void;
   onCancel: () => void;
 };
@@ -309,6 +340,7 @@ function TextEditor({
   seed,
   kind,
   required,
+  serverError,
   onCommit,
   onCancel,
 }: Readonly<TextEditorProps>): ReactElement {
@@ -318,6 +350,7 @@ function TextEditor({
         const trimmed = z.string().parse(data.get("value")).trim();
         onCommit(trimmed === "" ? null : trimmed);
       }}
+      validationErrors={serverError === undefined ? {} : { value: serverError }}
       className="flex items-start gap-1 p-1"
     >
       <TextField
@@ -377,7 +410,14 @@ export function TextCell({
   onCommit,
 }: Readonly<TextCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const editor = useCellEditor(triggerRef, onCommit);
+  const editor = useCellEditor(triggerRef, onCommit, state.retainSource);
+  let initial = value ?? "";
+  if (state.retained !== undefined) {
+    if (field === "ISBN") initial = state.retained.isbn_13 ?? "";
+    else if (field === "pages")
+      initial = state.retained.pages === null ? "" : String(state.retained.pages);
+    else initial = state.retained.subtitle ?? "";
+  }
   return (
     <>
       <Trigger
@@ -407,10 +447,11 @@ export function TextCell({
       >
         <TextEditor
           field={field}
-          initial={value ?? ""}
+          initial={initial}
           seed={editor.opening?.seed}
           kind={kind}
           required={required}
+          serverError={state.serverError}
           onCommit={editor.commit}
           onCancel={editor.close}
         />
@@ -470,7 +511,7 @@ export function TitleCell({
   onCommit,
 }: Readonly<TitleCellProps>): ReactElement {
   const anchorRef = useRef<HTMLDivElement>(null);
-  const editor = useCellEditor(anchorRef, onCommit);
+  const editor = useCellEditor(anchorRef, onCommit, state.retainSource);
   const authors = book.authors.join(", ");
   return (
     <div
@@ -540,9 +581,10 @@ export function TitleCell({
       >
         <TextEditor
           field="title"
-          initial={book.title}
+          initial={state.retained?.title ?? book.title}
           seed={editor.opening?.seed}
           kind="text"
+          serverError={state.serverError}
           required
           onCommit={(next) => {
             if (next === null) editor.close();
@@ -700,8 +742,65 @@ type AuthorsCellProps = {
   book: BookListItem;
   density: Density;
   state: CellState;
-  onCommit: (authors: string[]) => void;
+  onCommit: (authors: string[], baseline: string, previousAuthors: readonly string[]) => void;
 };
+
+function MatchedAuthorsEditor({
+  book,
+  seed,
+  onCommit,
+  onCancel,
+  retained,
+}: Readonly<{
+  book: BookListItem;
+  seed: string | undefined;
+  onCommit: AuthorsCellProps["onCommit"];
+  onCancel: () => void;
+  retained: BookListItem | undefined;
+}>): ReactElement {
+  const environment = useRelayEnvironment();
+  const [field, setField] = useState<Awaited<ReturnType<typeof loadAuthorField>>>(undefined);
+  const [error, setError] = useState<Error | null>(null);
+  useEffect(() => {
+    if (retained !== undefined) return;
+    const controller = new AbortController();
+    void loadAuthorField(environment, book.id, controller.signal)
+      .then((snapshot) => {
+        if (!controller.signal.aborted) setField(snapshot);
+      })
+      .catch((error_: unknown) => {
+        if (!controller.signal.aborted)
+          setError(error_ instanceof Error ? error_ : new Error("Request failed."));
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [environment, book.id, retained]);
+  if (error !== null) throw error;
+  if (retained !== undefined)
+    return (
+      <AuthorsEditor
+        authors={retained.authors}
+        seed={seed}
+        onCancel={onCancel}
+        onCommit={(next) => {
+          onCommit(next, retained.metadata_etag, retained.authors);
+        }}
+      />
+    );
+  if (field === undefined) return <Skeleton aria-busy="true" className="m-2 h-10" />;
+  const authors = field.authors.map((author) => author.name);
+  return (
+    <AuthorsEditor
+      authors={authors}
+      seed={seed}
+      onCancel={onCancel}
+      onCommit={(next) => {
+        onCommit(next, field.etag, authors);
+      }}
+    />
+  );
+}
 
 export function AuthorsCell({
   book,
@@ -710,7 +809,17 @@ export function AuthorsCell({
   onCommit,
 }: Readonly<AuthorsCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const editor = useCellEditor(triggerRef, onCommit);
+  const editor = useCellEditor<{
+    authors: string[];
+    baseline: string;
+    previousAuthors: readonly string[];
+  }>(
+    triggerRef,
+    (value) => {
+      onCommit(value.authors, value.baseline, value.previousAuthors);
+    },
+    state.retainSource,
+  );
   const text = book.authors.join(", ");
   return (
     <>
@@ -734,12 +843,17 @@ export function AuthorsCell({
         onClose={editor.close}
         className="w-[23rem] max-w-[calc(100vw-2rem)]"
       >
-        <AuthorsEditor
-          authors={book.authors}
-          seed={editor.opening?.seed}
-          onCommit={editor.commit}
-          onCancel={editor.close}
-        />
+        {editor.opening === null ? null : (
+          <MatchedAuthorsEditor
+            book={book}
+            retained={state.retained}
+            seed={editor.opening.seed}
+            onCommit={(authors, baseline, previousAuthors) => {
+              editor.commit({ authors, baseline, previousAuthors });
+            }}
+            onCancel={editor.close}
+          />
+        )}
       </CellPopover>
     </>
   );
@@ -759,7 +873,7 @@ export function StatusCell({
   onCommit,
 }: Readonly<StatusCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const editor = useCellEditor(triggerRef);
+  const editor = useCellEditor(triggerRef, onCommit, state.retainSource);
   const label = statusLabel(status);
   return (
     <>
@@ -794,14 +908,13 @@ export function StatusCell({
         <ListBox
           aria-label="Reading status"
           selectionMode="single"
-          selectedKeys={[status ?? "none"]}
+          selectedKeys={[state.retained?.reading_state?.status ?? status ?? "none"]}
           autoFocus
           onSelectionChange={(keys) => {
-            editor.close();
             if (keys === "all") return;
             const key = [...keys].at(0);
             if (key === undefined || key === (status ?? "none")) return;
-            onCommit(isReadingStatus(key) ? key : null);
+            editor.commit(isReadingStatus(key) ? key : null);
           }}
           className="flex flex-col gap-px outline-none"
         >
@@ -871,7 +984,7 @@ export function RatingCell({
   onCommit,
 }: Readonly<RatingCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const editor = useCellEditor(triggerRef);
+  const editor = useCellEditor(triggerRef, onCommit, state.retainSource);
   const [preview, setPreview] = useState<number | null>(null);
   const value = rating !== null && rating >= 1 ? Math.min(rating, 5) : null;
   const shown = preview ?? value ?? 0;
@@ -933,9 +1046,8 @@ export function RatingCell({
             selectionMode="single"
             selectedKeys={value === null ? [] : [String(value)]}
             onSelectionChange={(keys) => {
-              editor.close();
               const key = [...keys].at(0);
-              set(key === undefined ? null : Number(key));
+              editor.commit(key === undefined ? null : Number(key));
             }}
             className="flex items-center"
           >

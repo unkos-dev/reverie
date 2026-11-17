@@ -71,15 +71,18 @@ IDs use standard padded base64 of `Type:<uuid>`, with distinct Work, Manifestati
 `Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed lookup roots return null for malformed,
 wrong-type, hidden and missing records. The User variant resolves only the caller. Reading state has no global ID.
 
-Series, Shelf and Manifestation declare `@fetchable(field_name: "id")`. Their nullable concrete lookup roots are
-`fetch__Series(id: ID!)`, `fetch__Shelf(id: ID!)` and `fetch__Manifestation(id: ID!)`. They share the typed roots' read
-scope guards and visibility checks. Paging fragments on these types set `@refetchable(preferFetchable: true)` so Relay
-refetches through the concrete root. The concrete parent preserves async-graphql's page complexity multipliers when
-validating named fragment spreads. Query paging fragments use their Query root directly.
+Work, Series, Shelf and Manifestation declare `@fetchable(field_name: "id")`. Their nullable concrete lookup roots are
+`fetch__Work(id: ID!)`, `fetch__Series(id: ID!)`, `fetch__Shelf(id: ID!)` and `fetch__Manifestation(id: ID!)`. They
+share the typed roots' read scope guards and visibility checks. Paging fragments on these types set
+`@refetchable(preferFetchable: true)` so Relay refetches through the concrete root. The concrete parent preserves
+async-graphql's page complexity multipliers when validating named fragment spreads. Query paging fragments use their
+Query root directly.
 
-`frontend/src/lib/relay/reader.ts` contains representative Library, detail, versions, shelf, series, discovery and Node
-queries. The Library and basic detail fragments omit versions. These operations have no UI consumers and publish no
-reader records in a browser workflow.
+`frontend/src/lib/relay/reader.ts` supplies Library, detail, shelves, series, search, active suggestions and label
+reads. The basic detail includes only the small pending-version count. The Versions tab requests and pages pending
+proposals when it opens. Required Work authors, tags, shelves, shelf items and series works complete their bounded
+native pages. Reader route loaders prepare native references, and the confirmed-account provider owns their shared
+environment.
 
 ## Data and state
 
@@ -122,27 +125,16 @@ The sizes above are explicit representative operation arguments, not server defa
 
 The complexity limit is 200,000 in both policies. async-graphql `Analyzer` measurements of every trusted operation use
 maximum variable sizes: 100 for primary pages, 50 for pending pages and 60 IDs for labels. Literal sizes remain as
-written. The worst measured cost is 6,901 and the maximum measured depth is 8. The depth limit is 12. All 41 trusted
-documents are measured. The new author save, Undo and resolution documents each cost 784 at depth 6; concrete author
-pagination costs 208 at depth 6. Other editing documents cost 2 through 594.
+written. The maximum measured cost is 17,904 and the maximum measured depth is 8 across all 57 trusted documents. The
+depth limit is 12. Library initial and pagination reads cost 7,201, Series initial reads cost 8,957, and Series
+pagination costs 17,904. Sixty-ID label requests cost 121. Admission limits remain 200,000 and depth 12.
 
-| Operation                          |  Cost | Depth |
-| ---------------------------------- | ----: | ----: |
-| `readerLibraryQuery`               | 6,901 |     8 |
-| `readerLibraryPaginationQuery`     | 6,901 |     8 |
-| `readerSeriesWorksPaginationQuery` | 5,304 |     8 |
-| `readerSeriesQuery`                | 2,656 |     8 |
-| `readerShelvesPaginationQuery`     | 1,001 |     4 |
-| `readerSearchQuery`                |   861 |     7 |
-| `readerShelfItemsPaginationQuery`  |   704 |     5 |
-| `readerVersionsQuery`              |   606 |     6 |
-| `readerVersionsPaginationQuery`    |   606 |     6 |
-| `readerShelvesQuery`               |   501 |     4 |
-| `readerSuggestionsQuery`           |   368 |     2 |
-| `readerShelfQuery`                 |   356 |     5 |
-| `readerDetailQuery`                |   130 |     6 |
-| `viewerQuery`                      |     4 |     2 |
-| `readerNodeQuery`                  |     2 |     2 |
+| Operation                          | Maximum cost | Depth |
+| ---------------------------------- | -----------: | ----: |
+| `readerLibraryQuery`               |        7,201 |     8 |
+| `readerLibraryPaginationQuery`     |        7,201 |     8 |
+| `readerSeriesWorksPaginationQuery` |       17,904 |     8 |
+| `readerSeriesQuery`                |        8,957 |     8 |
 
 Both policies refuse excess cost and depth. async-graphql excludes `__typename` from these counts. Axum's default 2 MiB
 JSON-body limit still applies.
@@ -152,8 +144,9 @@ rows. The pending connection orders `last_seen_at DESC, id DESC`, with a parent-
 and PageInfo derived from exact count and bounded probes. Scalar and junction canonical pointers and JSON-null audit
 rows remain excluded. No overall row cap hides the remainder. HTTP detail retains its existing 200-row payload cap.
 Children return an empty result before any proposal count or value query, including typed, Node and nested reads.
-Accepted counts use canonical state only. Basic detail executes no versions SQL. Selecting the count and pending page
-uses two batched operations, each with canonical scalar, junction and pending SQL, independent of parent count.
+Accepted counts use canonical state only. Basic detail selects the pending count without reading a proposal page.
+Selecting the count and pending page uses two batched operations, each with canonical scalar, junction and pending SQL,
+independent of parent count.
 
 `mutations.rs` calls the shared metadata editing and Undo, reading and shelf operations. Typed patches preserve absent
 and null values. Metadata save, reading and Undo take explicit nullable baselines. Review and shelves keep their
@@ -177,7 +170,7 @@ async-graphql 7.2.1. Production admits only trusted documents, and none uses tha
 
 The Relay network sends generated IDs and variables through `apiFetch` with same-origin credentials and an abort signal.
 It validates the response envelope before publication. The viewer has no custom scalar or editing snapshot. Reader
-proposal JSON has no browser consumer. Editing documents validate their selected projections before publication.
+proposal JSON reaches the lazy Versions view. Editing documents validate their selected projections before publication.
 Execution faults are errors and do not publish partial data or trigger a resend.
 
 `frontend/src/lib/relay/mutations.ts` contains selected title, form, author and reading reads and acknowledgements, plus
@@ -185,9 +178,19 @@ the other protected actions. `readerAuthorEditing` refetches through `fetch__Man
 editing document's selected snapshot, domain IDs, UUID handles, strong validators, timestamps and PageInfo before
 `sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment reads, `fetchQuery`,
 store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor chain with one pair
-of domain IDs and one revision. These operations have no UI consumers.
+of domain IDs and one revision. Library cells, the metadata dialog, Versions actions and batch Set status use these
+selected raw executions. Preferences read and sparse update share the canonical service with HTTP; defaults hide
+Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata refresh schedules the
+canonical claim-preserving enrichment operation with write scope and non-child authorisation.
 
 ## Failure and recovery
+
+Account cancellation completes waiting executions without acknowledging a payload and suppresses late publication.
+Caller unsubscribe remains disposal. An originating 401 reaches its error observer before account cleanup aborts the
+other executions. Temporary or uncertain editing failures expose explicit Retry of the retained tuple. Metadata
+conflicts resolve the request UUID first; unknown evidence never advances the starting baseline. A matched Reload adopts
+selected values and baseline together without a save. Validation retains correction input, and permission or
+locked-field refusals retain their own feedback. Exact Undo adopts eligible operations once and retains original expiry.
 
 JSON transport failures retain Problem Details and the extractor's 400, 413, 415 or 422 status. Missing or invalid
 credentials fail through `CurrentUser`. Resolver scope failures carry the `forbidden` extension code. Internal resolver

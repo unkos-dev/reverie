@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<3475a8305afe9622bead3829071bf3aa>>
- * @relayHash 59e9f36c3bbf3ea37052b602ba592fde
+ * @generated SignedSource<<1578d85775cd127d79b4c6ef118b40b3>>
+ * @relayHash 93280cd2056ae60a8fad45268329d146
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 380281b28e73a5967fc05f2742e6ff46587658dc4467750cc43e62ff603d1fae
+// @relayRequestID 242de783e8572bcd63626db7184bae8c65fc0481f1dc0e315907aaa5c44c4c1f
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -60,119 +60,190 @@ export type readerLibraryQuery$variables = {
   cursor?: string | null | undefined;
   filter?: BooksFilter | null | undefined;
   sort?: ReadonlyArray<SortLevel> | null | undefined;
+  sourceKey: string;
 };
 export type readerLibraryQuery$data = {
   readonly " $fragmentSpreads": FragmentRefs<"readerLibrary">;
 };
+export type readerLibraryQuery$rawResponse = {
+  readonly books: {
+    readonly edges: ReadonlyArray<{
+      readonly cursor: string;
+      readonly node: {
+        readonly __typename: "Manifestation";
+        readonly coverUrl: string;
+        readonly createdAt: string;
+        readonly id: string;
+        readonly isbn13: string | null | undefined;
+        readonly metadata: {
+          readonly etag: string;
+          readonly isbn13: string | null | undefined;
+          readonly manifestationId: string;
+          readonly pages: number | null | undefined;
+          readonly subtitle: string | null | undefined;
+          readonly title: string;
+          readonly workId: string;
+        };
+        readonly pages: number | null | undefined;
+        readonly readingState: {
+          readonly etag: string;
+          readonly finishedAt: string | null | undefined;
+          readonly progressPct: number | null | undefined;
+          readonly rating: number | null | undefined;
+          readonly startedAt: string | null | undefined;
+          readonly status: string | null | undefined;
+        };
+        readonly work:
+          | {
+              readonly authors: {
+                readonly edges: ReadonlyArray<{
+                  readonly node: {
+                    readonly id: string;
+                    readonly name: string;
+                  };
+                }>;
+                readonly pageInfo: {
+                  readonly endCursor: string | null | undefined;
+                  readonly hasNextPage: boolean;
+                };
+              };
+              readonly id: string;
+              readonly selectedSeries:
+                | {
+                    readonly node: {
+                      readonly id: string;
+                      readonly name: string;
+                    };
+                    readonly position: number | null | undefined;
+                  }
+                | null
+                | undefined;
+              readonly subtitle: string | null | undefined;
+              readonly title: string;
+            }
+          | null
+          | undefined;
+      };
+    }>;
+    readonly pageInfo: {
+      readonly endCursor: string | null | undefined;
+      readonly hasNextPage: boolean;
+    };
+  };
+};
 export type readerLibraryQuery = {
+  rawResponse: readerLibraryQuery$rawResponse;
   response: readerLibraryQuery$data;
   variables: readerLibraryQuery$variables;
 };
 
 const node: ConcreteRequest = (function () {
-  var v0 = [
-      {
-        defaultValue: 50,
-        kind: "LocalArgument",
-        name: "count",
-      },
-      {
-        defaultValue: null,
-        kind: "LocalArgument",
-        name: "cursor",
-      },
-      {
-        defaultValue: null,
-        kind: "LocalArgument",
-        name: "filter",
-      },
-      {
-        defaultValue: null,
-        kind: "LocalArgument",
-        name: "sort",
-      },
-    ],
+  var v0 = {
+      defaultValue: 50,
+      kind: "LocalArgument",
+      name: "count",
+    },
     v1 = {
+      defaultValue: null,
+      kind: "LocalArgument",
+      name: "cursor",
+    },
+    v2 = {
+      defaultValue: null,
+      kind: "LocalArgument",
+      name: "filter",
+    },
+    v3 = {
+      defaultValue: null,
+      kind: "LocalArgument",
+      name: "sort",
+    },
+    v4 = {
+      defaultValue: null,
+      kind: "LocalArgument",
+      name: "sourceKey",
+    },
+    v5 = {
       kind: "Variable",
       name: "filter",
       variableName: "filter",
     },
-    v2 = {
+    v6 = {
       kind: "Variable",
       name: "sort",
       variableName: "sort",
     },
-    v3 = [
+    v7 = [
       {
         kind: "Variable",
         name: "after",
         variableName: "cursor",
       },
-      v1 /*:: as any*/,
+      v5 /*:: as any*/,
       {
         kind: "Variable",
         name: "first",
         variableName: "count",
       },
-      v2 /*:: as any*/,
+      v6 /*:: as any*/,
     ],
-    v4 = {
+    v8 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "id",
       storageKey: null,
     },
-    v5 = {
+    v9 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "isbn13",
       storageKey: null,
     },
-    v6 = {
+    v10 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "pages",
       storageKey: null,
     },
-    v7 = {
+    v11 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "title",
       storageKey: null,
     },
-    v8 = {
+    v12 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "subtitle",
       storageKey: null,
     },
-    v9 = {
+    v13 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "name",
       storageKey: null,
     },
-    v10 = {
+    v14 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "hasNextPage",
       storageKey: null,
     },
-    v11 = {
+    v15 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "endCursor",
       storageKey: null,
     },
-    v12 = {
+    v16 = {
       alias: null,
       args: null,
       kind: "ScalarField",
@@ -181,7 +252,13 @@ const node: ConcreteRequest = (function () {
     };
   return {
     fragment: {
-      argumentDefinitions: v0 /*:: as any*/,
+      argumentDefinitions: [
+        v0 /*:: as any*/,
+        v1 /*:: as any*/,
+        v2 /*:: as any*/,
+        v3 /*:: as any*/,
+        v4 /*:: as any*/,
+      ],
       kind: "Fragment",
       metadata: null,
       name: "readerLibraryQuery",
@@ -198,8 +275,13 @@ const node: ConcreteRequest = (function () {
               name: "cursor",
               variableName: "cursor",
             },
-            v1 /*:: as any*/,
-            v2 /*:: as any*/,
+            v5 /*:: as any*/,
+            v6 /*:: as any*/,
+            {
+              kind: "Variable",
+              name: "sourceKey",
+              variableName: "sourceKey",
+            },
           ],
           kind: "FragmentSpread",
           name: "readerLibrary",
@@ -210,13 +292,19 @@ const node: ConcreteRequest = (function () {
     },
     kind: "Request",
     operation: {
-      argumentDefinitions: v0 /*:: as any*/,
+      argumentDefinitions: [
+        v0 /*:: as any*/,
+        v1 /*:: as any*/,
+        v4 /*:: as any*/,
+        v2 /*:: as any*/,
+        v3 /*:: as any*/,
+      ],
       kind: "Operation",
       name: "readerLibraryQuery",
       selections: [
         {
           alias: null,
-          args: v3 /*:: as any*/,
+          args: v7 /*:: as any*/,
           concreteType: "ManifestationConnection",
           kind: "LinkedField",
           name: "books",
@@ -238,7 +326,7 @@ const node: ConcreteRequest = (function () {
                   name: "node",
                   plural: false,
                   selections: [
-                    v4 /*:: as any*/,
+                    v8 /*:: as any*/,
                     {
                       alias: null,
                       args: null,
@@ -246,8 +334,8 @@ const node: ConcreteRequest = (function () {
                       name: "coverUrl",
                       storageKey: null,
                     },
-                    v5 /*:: as any*/,
-                    v6 /*:: as any*/,
+                    v9 /*:: as any*/,
+                    v10 /*:: as any*/,
                     {
                       alias: null,
                       args: null,
@@ -263,9 +351,9 @@ const node: ConcreteRequest = (function () {
                       name: "work",
                       plural: false,
                       selections: [
-                        v4 /*:: as any*/,
-                        v7 /*:: as any*/,
                         v8 /*:: as any*/,
+                        v11 /*:: as any*/,
+                        v12 /*:: as any*/,
                         {
                           alias: null,
                           args: [
@@ -295,7 +383,7 @@ const node: ConcreteRequest = (function () {
                                   kind: "LinkedField",
                                   name: "node",
                                   plural: false,
-                                  selections: [v9 /*:: as any*/, v4 /*:: as any*/],
+                                  selections: [v13 /*:: as any*/, v8 /*:: as any*/],
                                   storageKey: null,
                                 },
                               ],
@@ -308,7 +396,7 @@ const node: ConcreteRequest = (function () {
                               kind: "LinkedField",
                               name: "pageInfo",
                               plural: false,
-                              selections: [v10 /*:: as any*/, v11 /*:: as any*/],
+                              selections: [v14 /*:: as any*/, v15 /*:: as any*/],
                               storageKey: null,
                             },
                           ],
@@ -329,7 +417,7 @@ const node: ConcreteRequest = (function () {
                               kind: "LinkedField",
                               name: "node",
                               plural: false,
-                              selections: [v4 /*:: as any*/, v9 /*:: as any*/],
+                              selections: [v8 /*:: as any*/, v13 /*:: as any*/],
                               storageKey: null,
                             },
                             {
@@ -367,11 +455,11 @@ const node: ConcreteRequest = (function () {
                           name: "manifestationId",
                           storageKey: null,
                         },
+                        v16 /*:: as any*/,
+                        v11 /*:: as any*/,
                         v12 /*:: as any*/,
-                        v7 /*:: as any*/,
-                        v8 /*:: as any*/,
-                        v5 /*:: as any*/,
-                        v6 /*:: as any*/,
+                        v9 /*:: as any*/,
+                        v10 /*:: as any*/,
                       ],
                       storageKey: null,
                     },
@@ -383,7 +471,7 @@ const node: ConcreteRequest = (function () {
                       name: "readingState",
                       plural: false,
                       selections: [
-                        v12 /*:: as any*/,
+                        v16 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -396,6 +484,27 @@ const node: ConcreteRequest = (function () {
                           args: null,
                           kind: "ScalarField",
                           name: "rating",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "progressPct",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "startedAt",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "finishedAt",
                           storageKey: null,
                         },
                       ],
@@ -428,7 +537,7 @@ const node: ConcreteRequest = (function () {
               kind: "LinkedField",
               name: "pageInfo",
               plural: false,
-              selections: [v11 /*:: as any*/, v10 /*:: as any*/],
+              selections: [v15 /*:: as any*/, v14 /*:: as any*/],
               storageKey: null,
             },
           ],
@@ -436,17 +545,22 @@ const node: ConcreteRequest = (function () {
         },
         {
           alias: null,
-          args: v3 /*:: as any*/,
+          args: v7 /*:: as any*/,
           filters: ["filter", "sort"],
           handle: "connection",
           key: "readerLibrary_books",
           kind: "LinkedHandle",
           name: "books",
+          dynamicKey: {
+            kind: "Variable",
+            name: "__dynamicKey",
+            variableName: "sourceKey",
+          },
         },
       ],
     },
     params: {
-      id: "380281b28e73a5967fc05f2742e6ff46587658dc4467750cc43e62ff603d1fae",
+      id: "242de783e8572bcd63626db7184bae8c65fc0481f1dc0e315907aaa5c44c4c1f",
       metadata: {},
       name: "readerLibraryQuery",
       operationKind: "query",
@@ -455,6 +569,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "e4c60f3ef0ef39eaa688f5414115c1a2";
+(node as any).hash = "a157247d3d6b5529c35fec423410909e";
 
 export default node;

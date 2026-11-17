@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useShelves } from "@/api/shelves";
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, X } from "lucide-react";
 import { useEffect, useId, type ReactElement, type ReactNode } from "react";
 
-import { listShelves, MAX_SORT_LEVELS, SORT_FIELDS, type Shelf, type SortLevelParam } from "@/api";
+import { MAX_SORT_LEVELS, SORT_FIELDS, type SortLevelParam } from "@/api";
 import { TypeaheadMultiSelect } from "@/components/library/TypeaheadMultiSelect";
 import { Disclosure, DisclosurePanel } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,6 @@ import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
 import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
 import { useSeriesLabels } from "@/lib/hooks/use-series-labels";
 import type { LibraryFilters } from "@/lib/hooks/use-library-filters";
-import { queryKeys } from "@/lib/query/keys";
 import {
   isIsbn13FilterActive,
   MAX_FILTER_VALUES,
@@ -507,23 +506,14 @@ type ShelfSectionProps = {
 
 function ShelfSection({ activeShelf, onPick, onClear }: Readonly<ShelfSectionProps>): ReactElement {
   const descriptionId = useId();
-  const {
-    data: shelves,
-    isLoading,
-    isError,
-    error,
-  } = useQuery<Shelf[]>({
-    queryKey: queryKeys.shelves.list(),
-    queryFn: ({ signal }) => listShelves(signal),
-    staleTime: 60_000,
-  });
+  const { data: shelves, isLoading, isError, error } = useShelves();
   // The degraded copy below is acceptable UI; the failure behind it must
   // still reach the console (QueryCache.onError only routes 401s).
   useEffect(() => {
     if (isError) console.error("[FilterRail] shelves fetch failed", error);
   }, [isError, error]);
 
-  const options = (shelves ?? []).map((shelf) => ({ id: shelf.id, name: shelf.name }));
+  const options = shelves.map((shelf) => ({ id: shelf.id, name: shelf.name }));
   let emptyText = "No shelves yet.";
   if (isLoading) emptyText = "Loading shelves…";
   else if (isError) emptyText = "Couldn't load shelves.";

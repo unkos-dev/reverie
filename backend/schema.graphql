@@ -224,6 +224,38 @@ A scalar that can represent any JSON value.
 """
 scalar JSON
 
+enum LibraryDensityInput {
+  COMFORTABLE
+  COMPACT
+}
+
+type LibraryPreferenceDefaults {
+  hiddenColumns: [String!]!
+  density: String!
+  view: String!
+  sortStack: String!
+}
+
+type LibraryPreferences {
+  hiddenColumns: [String!]
+  density: String
+  view: String
+  sortStack: String
+  defaults: LibraryPreferenceDefaults!
+}
+
+input LibraryPreferencesPatch {
+  hiddenColumns: [String!]
+  density: LibraryDensityInput
+  view: LibraryViewInput
+  sortStack: String
+}
+
+enum LibraryViewInput {
+  GRID
+  TABLE
+}
+
 type Manifestation implements Node @fetchable(field_name: "id") {
   id: ID!
   versions: MetadataVersions!
@@ -302,6 +334,10 @@ input MetadataPatch {
   contributors: ContributorPatch
   workIdentifiers: [IdentifierPatch!]
   manifestationIdentifiers: [IdentifierPatch!]
+}
+
+type MetadataRefresh {
+  manifestationId: ID!
 }
 
 type MetadataReview {
@@ -425,6 +461,8 @@ type MoodSuggestion {
 }
 
 type Mutation {
+  updateLibraryPreferences(patch: LibraryPreferencesPatch!): LibraryPreferences!
+  refreshMetadata(id: ID!): MetadataRefresh!
   updateMetadata(id: ID!, baseline: String, requestId: String, patch: MetadataPatch!): MetadataSave!
   updateReadingState(id: ID!, baseline: String, patch: ReadingPatch!): ReadingState!
   createShelf(name: String!): Shelf!
@@ -472,6 +510,7 @@ type PublisherSuggestion {
 }
 
 type Query {
+  libraryPreferences: LibraryPreferences!
   metadataOperation(id: ID!, requestId: String, operationId: String): MetadataOperation!
   viewer: Viewer!
   node(id: ID!): Node
@@ -480,9 +519,15 @@ type Query {
   shelf(id: ID!): Shelf
   series(id: ID!): Series
   fetch__Series(id: ID!): Series
+  fetch__Work(id: ID!): Work
   fetch__Shelf(id: ID!): Shelf
   fetch__Manifestation(id: ID!): Manifestation
-  books(first: Int!, after: String, filter: BooksFilter, sort: [SortLevel!]): ManifestationConnection!
+  books(    first: Int!,    after: String,    filter: BooksFilter,
+    """
+    Omitted or null sort uses the installation default.
+    """
+    sort: [SortLevel!]
+  ): ManifestationConnection!
   shelves(first: Int!, after: String): ShelfConnection!
   search(q: String!): [SearchHit!]!
   authorLabels(ids: [ID!]!): [AuthorSuggestion!]!
@@ -646,7 +691,7 @@ type Viewer implements Node {
   displayName: String!
 }
 
-type Work implements Node {
+type Work implements Node @fetchable(field_name: "id") {
   id: ID!
   title: String!
   subtitle: String

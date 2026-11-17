@@ -61,8 +61,8 @@ pub const DEFAULT_DENSITY: LibraryDensity = LibraryDensity::Comfortable;
 /// Installation default view for an account that has not chosen one.
 pub const DEFAULT_VIEW: LibraryView = LibraryView::Grid;
 
-/// Installation default hidden-column set: nothing hidden.
-pub const DEFAULT_HIDDEN_COLUMNS: &[&str] = &[];
+/// Installation default hidden-column set.
+pub const DEFAULT_HIDDEN_COLUMNS: &[&str] = &["subtitle"];
 
 /// Installation default sort, in the `?sort=` wire grammar.
 ///

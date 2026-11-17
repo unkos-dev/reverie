@@ -46,6 +46,15 @@ const setFilterSchema = (values: typeof tokens | typeof ids) =>
   z.strictObject({ all: values, any: values, none: values });
 const statuses = z.array(z.enum([...ReadingStatusSchema.options, "unread"]));
 
+const LibraryPositionSchema = z.strictObject({
+  anchorId: z.uuid().nullable(),
+  anchorOffset: z.number(),
+  offset: z.number().nonnegative(),
+  extent: z.number().int().nonnegative(),
+  view: z.enum(["grid", "table"]),
+});
+export type LibraryPosition = z.infer<typeof LibraryPositionSchema>;
+
 export const LibraryVisitSchema = z.strictObject({
   filters: z.strictObject({
     q: z.string().optional(),
@@ -65,6 +74,7 @@ export const LibraryVisitSchema = z.strictObject({
     shelf: facetIds,
   }),
   view: z.enum(["grid", "table"]).optional(),
+  position: LibraryPositionSchema.optional(),
 });
 
 export type LibraryVisit = z.infer<typeof LibraryVisitSchema>;

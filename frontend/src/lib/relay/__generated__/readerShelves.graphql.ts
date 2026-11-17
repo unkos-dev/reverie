@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<b8d1da1906822c0f776fce99cfb2d8ae>>
+ * @generated SignedSource<<428f2795f9a4d023bb20ecd133281b24>>
  * @lightSyntaxTransform
  */
 
@@ -13,10 +13,12 @@ export type readerShelves$data = {
   readonly shelves: {
     readonly edges: ReadonlyArray<{
       readonly node: {
+        readonly createdAt: string;
         readonly id: string;
         readonly isSystem: boolean;
         readonly itemCount: number;
         readonly name: string;
+        readonly updatedAt: string;
       };
     }>;
   };
@@ -125,6 +127,20 @@ const node: ReaderFragment = (function () {
                     alias: null,
                     args: null,
                     kind: "ScalarField",
+                    name: "createdAt",
+                    storageKey: null,
+                  },
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "updatedAt",
+                    storageKey: null,
+                  },
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
                     name: "__typename",
                     storageKey: null,
                   },
@@ -175,6 +191,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "4f9978accc7438b3879197f17a462d76";
+(node as any).hash = "6f8a062f713d31665ff196180212df50";
 
 export default node;

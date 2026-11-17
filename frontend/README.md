@@ -76,8 +76,8 @@ Implementation rules live in [AGENTS.md](AGENTS.md). Visual and interaction auth
 
 ## Relay operations
 
-Relay owns GraphQL application data. Existing HTTP workflows retain Query ownership. The viewer operation establishes
-the foundation without moving Library consumers or replacing `/auth/me`.
+Relay owns Library, book detail, shelves, series, search, suggestions, labels and display preferences. Existing HTTP
+authentication, administration and theme workflows retain their owners. `/auth/me` remains the account authority.
 
 `frontend/relay.config.json` uses `backend/schema.graphql`, TypeScript artefacts in
 `frontend/src/lib/relay/__generated__`, and local SHA256 persistence to `backend/graphql-documents.json`. Run
@@ -96,14 +96,25 @@ confirmation creates or reuses the environment from `src/lib/relay/environment.t
 old requests and clears old records before another account can publish. CSRF tokens stay outside Relay records. No
 custom scalar or editing snapshot is exposed by the viewer operation.
 
-`src/lib/relay/reader.ts` contains representative Library, detail, versions, shelf, series, search, suggestions and Node
-operations. Library and basic detail omit versions. These operations generate contracts and trusted entries without
-wiring a UI consumer or changing existing HTTP cache ownership. Run `just rust::regen`, `just js::relay-gen`,
-`just js::relay-check` and `just js::build` to regenerate and verify them. Rebuild the backend after the trusted map
-changes. `src/lib/relay/mutations.ts` contains selected editing reads, mutation acknowledgements and operation
-resolution. `api/graphql.ts` validates each editing document's selected values and matching revision before publication,
-reusing scalar validators for domain values. `executeEditing` returns a detached raw `execute` or `executeMutation`
-projection; merged store reads and `commitMutation.onCompleted` cannot supply an editing baseline. Whole-list author
-editing uses `captureAuthorPages` to require a complete cursor chain at one revision. Browser consumers retain their
-HTTP owners. Reader proposal JSON has no browser consumer; generated types alone provide no runtime validation for a new
-consumer.
+`src/lib/relay/reader.ts` supplies the reader fragments and prepared route operations. Basic detail requests the
+pending-version count; the Versions tab loads proposals lazily and completes its native connection. Required relation
+pages use concrete refetch roots. Library keeps account/Navigation-entry source references and unique source connection
+keys in `library-visit.ts`. Replacements rebuild bounded candidates without replacing displayed membership midway. Entry
+disposal and account loss release references.
+
+`src/lib/relay/mutations.ts` contains selected editing reads, acknowledgements and resolution. `api/graphql.ts`
+validates each selected revision-bearing projection before publication. `executeEditing` captures the detached raw
+payload; fragment reads, store lookups, `fetchQuery` and `commitMutation.onCompleted` do not supply draft baselines.
+Authors replacement uses `captureAuthorPages` to validate a complete same-revision chain. Failed edits retain their
+patch, baseline and request identity. Retry is explicit and classified; matched Reload reads without writing. Metadata
+Undo retains field-scoped server operations and their original expiry.
+
+Preferences retain their 400 ms merged queue, per-group local intent and per-account display mirror. An account epoch
+prevents a queued unmount flush from reaching another account. Subtitle is hidden on a cold load unless the caller's
+explicit override controls visibility. Batch Set status retains each selected row's original conditional baseline;
+Refresh metadata reports scheduling, and Retry excludes successful and conflicted targets.
+
+Run `just rust::regen`, `just js::relay-gen`, `just js::relay-check` and `just js::build` after operation changes.
+Rebuild the backend after the trusted map changes. The admin-only `EmptyLibrary` ingestion reads share the existing
+Query owner with the top bar and monitor. Their eventual transport migration keeps one polling owner for all three
+consumers.

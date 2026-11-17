@@ -106,8 +106,9 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
   override explicitly. Never add a `?sort=` reader or writer to the library surface, never send the installation default
   sort in a request, and never resolve sort independently in a component: a second resolution is the read split that
   made an inherited descending sort unclearable.
-- **Retained rows keep their source:** While previous results stay on screen, row edits, undo and conflict reload use
-  the displayed rows' source query key, not the current one.
+- **Retained rows keep their source:** While previous results stay on screen, row edits, Undo and conflict reload use
+  the displayed Relay operation, variables and retained source, independently of the current destination. Native
+  connection references retain membership; detached raw snapshots retain matched editing values and baselines.
 
 ## Styling architecture
 

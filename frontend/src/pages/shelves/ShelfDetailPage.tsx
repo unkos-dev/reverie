@@ -4,31 +4,57 @@
  * Renders the shelf's items in the order the server returns them: when
  * each was added.
  */
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, type ReactElement } from "react";
-import { useParams } from "react-router";
+import {
+  useFragment,
+  usePaginationFragment,
+  usePreloadedQuery,
+  useQueryLoader,
+  type PreloadedQuery,
+} from "react-relay";
+import { decodeGraphQLId } from "@/api/graphql";
+import { readerShelfQuery, readerShelf, readerShelfItems } from "@/lib/relay/reader";
+import type { readerShelfQuery as ShelfQuery } from "@/lib/relay/__generated__/readerShelfQuery.graphql";
+import type { readerShelf$key } from "@/lib/relay/__generated__/readerShelf.graphql";
+import type { readerShelfItems$key } from "@/lib/relay/__generated__/readerShelfItems.graphql";
+import type { readerShelfItemsPaginationQuery as ItemsPagination } from "@/lib/relay/__generated__/readerShelfItemsPaginationQuery.graphql";
+import { useEffect, useState, Suspense, type ReactElement } from "react";
+import { useLoaderData } from "react-router";
 
-import { getShelf, type ShelfWithItems } from "@/api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { queryKeys } from "@/lib/query/keys";
+
+import type { loader } from "@/routes/shelf-detail";
 
 /** Top-level page component (Suspense boundary + content). */
-export function ShelfDetailPage(): ReactElement {
+export function ShelfDetailPage(): ReactElement | null {
+  const prepared = useLoaderData<typeof loader>();
+  if (prepared === null) return null;
   return (
     <Suspense fallback={<ShelfDetailSkeleton />}>
-      <ShelfDetailContent />
+      <ShelfDetailContent reference={prepared.reference} />
     </Suspense>
   );
 }
 
-function ShelfDetailContent(): ReactElement {
-  const params = useParams<{ id: string }>();
-  const id = params.id ?? "";
-  const { data } = useSuspenseQuery<ShelfWithItems>({
-    queryKey: queryKeys.shelves.detail(id),
-    queryFn: ({ signal }) => getShelf(id, signal),
-  });
-
+function ShelfDetailContent({
+  reference,
+}: Readonly<{
+  reference: PreloadedQuery<ShelfQuery>;
+}>): ReactElement {
+  const [current] = useQueryLoader<ShelfQuery>(readerShelfQuery, reference);
+  const query = usePreloadedQuery<ShelfQuery>(readerShelfQuery, current ?? reference);
+  const data = useFragment<readerShelf$key>(readerShelf, query.shelf);
+  const {
+    data: items,
+    hasNext,
+    isLoadingNext,
+    loadNext,
+  } = usePaginationFragment<ItemsPagination, readerShelfItems$key>(readerShelfItems, data);
+  const [error, setError] = useState<Error | null>(null);
+  useEffect(() => {
+    if (hasNext && !isLoadingNext) loadNext(50, { onComplete: setError });
+  }, [hasNext, isLoadingNext, loadNext]);
+  if (error !== null) throw error;
+  if (data == null) throw new Error("Shelf not found.");
   return (
     <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
       <header className="mb-6">
@@ -37,12 +63,12 @@ function ShelfDetailContent(): ReactElement {
           {data.name}
         </h1>
         <p className="text-fg-muted mt-2 text-sm">
-          {data.items.length} {data.items.length === 1 ? "item" : "items"}
+          {data.itemCount} {data.itemCount === 1 ? "item" : "items"}
         </p>
       </header>
       <ul className="space-y-2">
-        {data.items.map((item) => (
-          <ShelfItemRow key={item.manifestation_id} id={item.manifestation_id} />
+        {items?.items.edges.map(({ node }) => (
+          <ShelfItemRow key={node.id} id={decodeGraphQLId("Manifestation", node.id)} />
         ))}
       </ul>
     </div>

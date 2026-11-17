@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<04c51a5c2fd339648fe676230c4a6d0e>>
- * @relayHash 53b5a676fe955dceded6b90f622e65e9
+ * @generated SignedSource<<e0a53fd7e27d1d1c5dfe988a895038c7>>
+ * @relayHash 7c8150dfd233442626874e63f37ea6dc
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 9e68ef7303a1442db8316c31bb8d2f048c7019eb38dd1e34b89abc47dd48143d
+// @relayRequestID bc2e21710a9462d54710c1f39cf7f8416cb1aa33e1560e640e6c9ff345b31603
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -18,6 +18,8 @@ export type readerSeriesQuery$variables = {
 export type readerSeriesQuery$data = {
   readonly series:
     | {
+        readonly id: string;
+        readonly name: string;
         readonly " $fragmentSpreads": FragmentRefs<"readerSeries">;
       }
     | null
@@ -64,28 +66,49 @@ const node: ConcreteRequest = (function () {
         value: 50,
       },
     ],
-    v5 = {
+    v5 = [
+      {
+        kind: "Literal",
+        name: "first",
+        value: 20,
+      },
+    ],
+    v6 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "hasNextPage",
+      name: "__typename",
       storageKey: null,
     },
-    v6 = {
+    v7 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "cursor",
+      storageKey: null,
+    },
+    v8 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "endCursor",
       storageKey: null,
     },
-    v7 = {
+    v9 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "hasNextPage",
+      storageKey: null,
+    },
+    v10 = {
       alias: null,
       args: null,
       concreteType: "PageInfo",
       kind: "LinkedField",
       name: "pageInfo",
       plural: false,
-      selections: [v5 /*:: as any*/, v6 /*:: as any*/],
+      selections: [v8 /*:: as any*/, v9 /*:: as any*/],
       storageKey: null,
     };
   return {
@@ -103,6 +126,8 @@ const node: ConcreteRequest = (function () {
           name: "series",
           plural: false,
           selections: [
+            v2 /*:: as any*/,
+            v3 /*:: as any*/,
             {
               args: null,
               kind: "FragmentSpread",
@@ -172,13 +197,7 @@ const node: ConcreteRequest = (function () {
                         },
                         {
                           alias: null,
-                          args: [
-                            {
-                              kind: "Literal",
-                              name: "first",
-                              value: 5,
-                            },
-                          ],
+                          args: v5 /*:: as any*/,
                           concreteType: "AuthorConnection",
                           kind: "LinkedField",
                           name: "authors",
@@ -199,15 +218,29 @@ const node: ConcreteRequest = (function () {
                                   kind: "LinkedField",
                                   name: "node",
                                   plural: false,
-                                  selections: [v3 /*:: as any*/, v2 /*:: as any*/],
+                                  selections: [
+                                    v2 /*:: as any*/,
+                                    v3 /*:: as any*/,
+                                    v6 /*:: as any*/,
+                                  ],
                                   storageKey: null,
                                 },
+                                v7 /*:: as any*/,
                               ],
                               storageKey: null,
                             },
-                            v7 /*:: as any*/,
+                            v10 /*:: as any*/,
                           ],
-                          storageKey: "authors(first:5)",
+                          storageKey: "authors(first:20)",
+                        },
+                        {
+                          alias: null,
+                          args: v5 /*:: as any*/,
+                          filters: null,
+                          handle: "connection",
+                          key: "readerWorkAuthors_authors",
+                          kind: "LinkedHandle",
+                          name: "authors",
                         },
                         {
                           alias: null,
@@ -253,40 +286,28 @@ const node: ConcreteRequest = (function () {
                               ],
                               storageKey: null,
                             },
-                            v7 /*:: as any*/,
+                            {
+                              alias: null,
+                              args: null,
+                              concreteType: "PageInfo",
+                              kind: "LinkedField",
+                              name: "pageInfo",
+                              plural: false,
+                              selections: [v9 /*:: as any*/, v8 /*:: as any*/],
+                              storageKey: null,
+                            },
                           ],
                           storageKey: "manifestations(first:1)",
                         },
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "__typename",
-                          storageKey: null,
-                        },
+                        v6 /*:: as any*/,
                       ],
                       storageKey: null,
                     },
-                    {
-                      alias: null,
-                      args: null,
-                      kind: "ScalarField",
-                      name: "cursor",
-                      storageKey: null,
-                    },
+                    v7 /*:: as any*/,
                   ],
                   storageKey: null,
                 },
-                {
-                  alias: null,
-                  args: null,
-                  concreteType: "PageInfo",
-                  kind: "LinkedField",
-                  name: "pageInfo",
-                  plural: false,
-                  selections: [v6 /*:: as any*/, v5 /*:: as any*/],
-                  storageKey: null,
-                },
+                v10 /*:: as any*/,
               ],
               storageKey: "works(first:50)",
             },
@@ -305,7 +326,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "9e68ef7303a1442db8316c31bb8d2f048c7019eb38dd1e34b89abc47dd48143d",
+      id: "bc2e21710a9462d54710c1f39cf7f8416cb1aa33e1560e640e6c9ff345b31603",
       metadata: {},
       name: "readerSeriesQuery",
       operationKind: "query",
@@ -314,6 +335,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "c2506439909db97799618f3b5e2c5a98";
+(node as any).hash = "b6f5f45d1607d8e7880d21626c8cab93";
 
 export default node;

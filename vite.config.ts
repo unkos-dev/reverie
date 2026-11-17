@@ -185,6 +185,7 @@ export default defineConfig({
           "typescript/prefer-reduce-type-parameter": "error",
           "typescript/prefer-return-this-type": "error",
           "typescript/related-getter-setter-pairs": "error",
+          "typescript/require-array-sort-compare": ["error", { ignoreStringArrays: false }],
           "typescript/require-await": "error",
           "typescript/restrict-plus-operands": [
             "error",
@@ -291,6 +292,16 @@ export default defineConfig({
         env: {
           es2020: true,
           browser: true,
+        },
+      },
+      {
+        files: [
+          "frontend/src/routes/book.tsx",
+          "frontend/src/routes/series.tsx",
+          "frontend/src/routes/shelf-detail.tsx",
+        ],
+        rules: {
+          "typescript/only-throw-error": ["error", { allow: [{ from: "lib", name: "Response" }] }],
         },
       },
       {

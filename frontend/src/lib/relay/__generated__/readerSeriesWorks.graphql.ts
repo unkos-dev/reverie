@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<8bf33f352e65ce1a83b584458fbbf6b2>>
+ * @generated SignedSource<<a28554390fbed166c0414f5a146d781b>>
  * @lightSyntaxTransform
  */
 
@@ -14,17 +14,6 @@ export type readerSeriesWorks$data = {
   readonly works: {
     readonly edges: ReadonlyArray<{
       readonly node: {
-        readonly authors: {
-          readonly edges: ReadonlyArray<{
-            readonly node: {
-              readonly name: string;
-            };
-          }>;
-          readonly pageInfo: {
-            readonly endCursor: string | null | undefined;
-            readonly hasNextPage: boolean;
-          };
-        };
         readonly id: string;
         readonly manifestations: {
           readonly edges: ReadonlyArray<{
@@ -39,6 +28,7 @@ export type readerSeriesWorks$data = {
           };
         };
         readonly title: string;
+        readonly " $fragmentSpreads": FragmentRefs<"readerWorkAuthors">;
       };
       readonly position: number | null | undefined;
     }>;
@@ -73,16 +63,6 @@ const node: ReaderFragment = (function () {
       args: null,
       kind: "ScalarField",
       name: "endCursor",
-      storageKey: null,
-    },
-    v4 = {
-      alias: null,
-      args: null,
-      concreteType: "PageInfo",
-      kind: "LinkedField",
-      name: "pageInfo",
-      plural: false,
-      selections: [v2 /*:: as any*/, v3 /*:: as any*/],
       storageKey: null,
     };
   return {
@@ -167,51 +147,9 @@ const node: ReaderFragment = (function () {
                     storageKey: null,
                   },
                   {
-                    alias: null,
-                    args: [
-                      {
-                        kind: "Literal",
-                        name: "first",
-                        value: 5,
-                      },
-                    ],
-                    concreteType: "AuthorConnection",
-                    kind: "LinkedField",
-                    name: "authors",
-                    plural: false,
-                    selections: [
-                      {
-                        alias: null,
-                        args: null,
-                        concreteType: "AuthorEdge",
-                        kind: "LinkedField",
-                        name: "edges",
-                        plural: true,
-                        selections: [
-                          {
-                            alias: null,
-                            args: null,
-                            concreteType: "Author",
-                            kind: "LinkedField",
-                            name: "node",
-                            plural: false,
-                            selections: [
-                              {
-                                alias: null,
-                                args: null,
-                                kind: "ScalarField",
-                                name: "name",
-                                storageKey: null,
-                              },
-                            ],
-                            storageKey: null,
-                          },
-                        ],
-                        storageKey: null,
-                      },
-                      v4 /*:: as any*/,
-                    ],
-                    storageKey: "authors(first:5)",
+                    args: null,
+                    kind: "FragmentSpread",
+                    name: "readerWorkAuthors",
                   },
                   {
                     alias: null,
@@ -257,7 +195,16 @@ const node: ReaderFragment = (function () {
                         ],
                         storageKey: null,
                       },
-                      v4 /*:: as any*/,
+                      {
+                        alias: null,
+                        args: null,
+                        concreteType: "PageInfo",
+                        kind: "LinkedField",
+                        name: "pageInfo",
+                        plural: false,
+                        selections: [v2 /*:: as any*/, v3 /*:: as any*/],
+                        storageKey: null,
+                      },
                     ],
                     storageKey: "manifestations(first:1)",
                   },
@@ -301,6 +248,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "4216cf6eecd294a1b76fc7812080df14";
+(node as any).hash = "63f39ce0a4a16bebbd3965bf6270dc03";
 
 export default node;

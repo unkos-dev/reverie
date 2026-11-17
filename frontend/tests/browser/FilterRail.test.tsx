@@ -1,5 +1,7 @@
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RelayEnvironmentProvider } from "react-relay";
+import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
+import { encodeGraphQLId } from "@/api/graphql";
 import { render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
 import { emptyFilterState, type FilterState } from "@/routes/library-params";
@@ -38,27 +40,41 @@ function jsonResponse(body: unknown): Response {
 }
 
 function mockFetchByUrl(): void {
-  vi.spyOn(window, "fetch").mockImplementation((input) => {
-    let url: string;
-    if (typeof input === "string") {
-      url = input;
-    } else if (input instanceof URL) {
-      url = input.href;
-    } else {
-      url = input.url;
-    }
-    if (url.includes("/shelves"))
-      return Promise.resolve(jsonResponse({ items: SHELVES, next_cursor: null }));
-    if (url.includes("/authors")) return Promise.resolve(jsonResponse({ items: [] }));
-    return Promise.resolve(jsonResponse([]));
-  });
+  vi.spyOn(window, "fetch").mockImplementation(() =>
+    Promise.resolve(
+      jsonResponse({
+        data: {
+          shelves: {
+            edges: SHELVES.map((shelf) => ({
+              cursor: shelf.id,
+              node: {
+                id: encodeGraphQLId("Shelf", shelf.id),
+                name: shelf.name,
+                isSystem: shelf.is_system,
+                createdAt: shelf.created_at,
+                updatedAt: shelf.updated_at,
+                itemCount: shelf.item_count,
+              },
+            })),
+            pageInfo: {
+              hasNextPage: false,
+              hasPreviousPage: false,
+              endCursor: null,
+              startCursor: null,
+            },
+          },
+          authorLabels: [],
+          seriesLabels: [],
+        },
+      }),
+    ),
+  );
 }
 
 function Providers({ children }: { children: ReactElement }): ReactElement {
-  const [client] = useState(
-    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  return (
+    <RelayEnvironmentProvider environment={relayEnvironment()}>{children}</RelayEnvironmentProvider>
   );
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
 const DEFAULT_STACK: readonly SortLevelParam[] = [{ field: "created_at", desc: true }];
@@ -80,6 +96,8 @@ function SortOwner({
         owner={{
           filters,
           view: undefined,
+          position: undefined,
+          capturePosition: () => {},
           commitAll: setFilters,
           clearAll: () => {
             setFilters(emptyFilterState());
@@ -147,12 +165,14 @@ async function openSection(title: string): Promise<HTMLElement> {
 
 beforeEach(() => {
   __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
+  setRelayAccount("filter-rail");
   mockFetchByUrl();
   sortChanges = [];
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  setRelayAccount(null);
 });
 
 describe("FilterRail sort section", () => {

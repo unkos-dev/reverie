@@ -1,20 +1,46 @@
 import {
-  useInfiniteQuery,
-  useQuery,
-  useMutation,
-  infiniteQueryOptions,
-  keepPreviousData,
-  skipToken,
-  useQueryClient,
-  type InfiniteData,
-  type QueryClient,
-} from "@tanstack/react-query";
+  useFragment,
+  usePreloadedQuery,
+  useRelayEnvironment,
+  type PreloadedQuery,
+} from "react-relay";
+import {
+  GraphQLExecutionError,
+  decodeGraphQLId,
+  readerBook,
+  encodeGraphQLId,
+  executeEditingOnce,
+  editingFailureAction,
+  type ReaderBook as BookListItem,
+} from "@/api/graphql";
+import {
+  libraryVisit,
+  type LibrarySource,
+  type LibraryVisitOwner,
+} from "@/lib/relay/library-visit";
+import { readerLibrary, readerLibraryBook, readerLibraryQuery } from "@/lib/relay/reader";
+import type { readerLibraryQuery as LibraryQuery } from "@/lib/relay/__generated__/readerLibraryQuery.graphql";
+import type { readerLibrary$key } from "@/lib/relay/__generated__/readerLibrary.graphql";
+import type { readerLibraryBook$key } from "@/lib/relay/__generated__/readerLibraryBook.graphql";
+import type { LibraryFilters } from "@/lib/hooks/use-library-filters";
+import { commitLocalUpdate } from "relay-runtime";
+import { useAuthMe } from "@/hooks/useAuthMe";
+import { useShelves } from "@/api/shelves";
+import {
+  mutationsAddShelfItemMutation,
+  mutationsRefreshMetadataMutation,
+} from "@/lib/relay/mutations";
+import type { mutationsAddShelfItemMutation as AddShelfItem } from "@/lib/relay/__generated__/mutationsAddShelfItemMutation.graphql";
+import type { mutationsRefreshMetadataMutation as RefreshMetadata } from "@/lib/relay/__generated__/mutationsRefreshMetadataMutation.graphql";
 import { Circle, CircleCheck, Loader2, Star, Undo2 } from "lucide-react";
 import {
   lazy,
   Suspense,
   useDeferredValue,
+  useCallback,
   useEffect,
+  useEffectEvent,
+  useSyncExternalStore,
   useLayoutEffect,
   useRef,
   useMemo,
@@ -24,16 +50,7 @@ import {
 } from "react";
 import { matchPath, useNavigate } from "react-router";
 
-import {
-  ApiError,
-  addShelfItem,
-  listShelves,
-  type Shelf,
-  listBooks,
-  type BookListItem,
-  type BookListResponse,
-  type SortLevelParam,
-} from "@/api";
+import { type ListBooksParams, type SortLevelParam } from "@/api";
 import { z } from "zod";
 import { GridList, GridListItem } from "@/components/ui/grid-list";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -50,7 +67,6 @@ import { Separator } from "@/components/ui/separator";
 import { SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLibraryFilters } from "@/lib/hooks/use-library-filters";
-import { queryKeys, type BooksListKey } from "@/lib/query/keys";
 
 import {
   countActiveFilters,
@@ -59,12 +75,13 @@ import {
   isLibraryRequestEligible,
   hasOverLimitSelection,
   type LibraryView,
+  type LibraryPosition,
 } from "@/routes/library-params";
 
-import { useCellEdit, type UseCellEditResult } from "./table/useCellEdit";
+import { useCellEdit, type UseCellEditResult, type StatusTarget } from "./table/useCellEdit";
 import { GridShortcutsDialog, GridShortcutsTrigger } from "./table/GridShortcutsDialog";
 import { FieldError } from "@/components/ui/field";
-import { BatchBar } from "./BatchBar";
+import { BatchBar, type BatchAction, type BatchOutcome } from "./BatchBar";
 import { ShelfHeader } from "./ShelfHeader";
 import { EmptyLibrary } from "./EmptyLibrary";
 import { FilterChips } from "./FilterChips";
@@ -92,107 +109,259 @@ function saveCoverWidth(width: number): void {
   }
 }
 
-type BookPages = InfiniteData<BookListResponse, string | undefined> & {
-  originKey?: BooksListKey;
-};
-
-function listOptions(queryKey: BooksListKey, eligible: boolean, client: QueryClient) {
-  const retryPolicy =
-    client.getQueryDefaults(queryKey).retry ?? client.getDefaultOptions().queries?.retry;
-  function retry(count: number, error: Error): boolean {
-    if (error instanceof ApiError && error.status === 422) return false;
-    if (typeof retryPolicy === "function") return retryPolicy(count, error);
-    if (typeof retryPolicy === "boolean") return retryPolicy;
-    return count < (retryPolicy ?? 3);
-  }
-  return infiniteQueryOptions<BookListResponse, Error, BookPages, BooksListKey, string | undefined>(
-    {
-      queryKey,
-      queryFn: eligible
-        ? ({ queryKey: [, , params], signal, pageParam }) =>
-            listBooks(pageParam === undefined ? params : { ...params, cursor: pageParam }, signal)
-        : skipToken,
-      initialPageParam: undefined,
-      retry,
-      getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    },
-  );
-}
-
-function useLibraryBooks(listKey: BooksListKey, eligible: boolean, sortPending: boolean) {
-  const client = useQueryClient();
-  const {
-    data,
-    error: fetchNextPageError,
-    isPending,
-    isError,
-    isPlaceholderData,
-    isFetching,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-  } = useInfiniteQuery({
-    ...listOptions(listKey, eligible, client),
-    placeholderData: (previous, previousQuery) => {
-      const retained = keepPreviousData(previous);
-      return retained === undefined
-        ? undefined
-        : { ...retained, originKey: previousQuery?.queryKey };
-    },
+function useLibraryBooks(
+  params: ListBooksParams,
+  eligible: boolean,
+  sortPending: boolean,
+  owner: LibraryFilters,
+  intent: string,
+) {
+  const environment = useRelayEnvironment();
+  const visit = libraryVisit(environment);
+  const state = useSyncExternalStore(visit.subscribe, visit.snapshot);
+  const paramsToken = JSON.stringify(params);
+  const enter = useEffectEvent(() => {
+    visit.enter(owner.position);
   });
-
-  const displayedKey = data?.originKey ?? listKey;
-  const retained = useInfiniteQuery({
-    ...listOptions(displayedKey, eligible, client),
-    enabled: eligible && isPlaceholderData,
-    staleTime: Infinity,
-  });
-  const displayedData = isPlaceholderData ? retained.data : data;
-  const rejected = fetchNextPageError instanceof ApiError && fetchNextPageError.status === 422;
-  // The user-facing Load-more error is rendered below; this routes the raw
-  // error to the console too (QueryCache.onError only forwards 401s), so a
-  // 500 / parse failure leaves a developer breadcrumb.
+  useLayoutEffect(() => {
+    enter();
+    return () => {
+      visit.leave();
+    };
+  }, [visit]);
   useEffect(() => {
-    if (isFetchNextPageError)
-      console.error("[LibraryPage] failed to load the next page", fetchNextPageError);
-  }, [isFetchNextPageError, fetchNextPageError]);
-
-  const items: BookListItem[] = useMemo(
-    () => displayedData?.pages.flatMap((p) => p.items) ?? [],
-    [displayedData],
-  );
+    visit.activate(params, intent, eligible && !sortPending);
+  }, [visit, params, intent, eligible, sortPending]);
+  const rejected =
+    state.error instanceof GraphQLExecutionError &&
+    state.error.errors.some((error) => error.extensions?.code === "validation");
   const blocked = !eligible || rejected;
-  const updating =
-    !blocked &&
-    (sortPending ||
-      isPlaceholderData ||
-      (isFetching && !isFetchingNextPage) ||
-      retained.isRefetching);
-  const canLoadMore = !blocked && hasNextPage && !isPlaceholderData;
   let blockedMessage: string | undefined;
   if (!eligible)
-    blockedMessage = hasOverLimitSelection(listKey[2])
+    blockedMessage = hasOverLimitSelection(params)
       ? "Results are paused. Choose 20 or fewer values in each filter mode, or clear the filters."
       : "Results are paused. Shorten the search or filter text to 200 characters or fewer, or clear the filters.";
   else if (rejected)
     blockedMessage = "These filters could not be used. Change or clear them to try again.";
-
-  if (isError && !isFetchNextPageError && !rejected && eligible) throw fetchNextPageError;
-
+  if (
+    state.error !== null &&
+    !rejected &&
+    eligible &&
+    (state.source === undefined || JSON.stringify(state.source.params) !== paramsToken)
+  )
+    throw state.error;
   return {
-    items,
-    displayedKey,
-    blocked,
+    ...state,
+    visit,
     blockedMessage,
-    updating,
-    canLoadMore,
-    loading: eligible && isPending,
-    showContradiction: !blocked && !updating && !isError,
-    fetchNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
+    updating: !blocked && (sortPending || state.pending),
+    canLoadMore: !blocked && !state.pending && (state.source?.hasNext ?? false),
+    loading: eligible && state.source === undefined && state.error === null,
+    showContradiction: !blocked && !state.pending && state.error === null,
+    fetchNextPage: visit.loadMore,
+    isFetchingNextPage: state.loadingMore,
+    isFetchNextPageError: state.moreError !== null,
   };
+}
+
+type LibraryRowsProps = {
+  source: LibrarySource | undefined;
+  children: (items: BookListItem[]) => ReactElement;
+};
+
+function LibraryRows({ source, children }: Readonly<LibraryRowsProps>): ReactElement {
+  if (source?.reference === undefined) return children([]);
+  return (
+    <LoadedLibraryRows source={source} reference={source.reference}>
+      {children}
+    </LoadedLibraryRows>
+  );
+}
+
+function LoadedLibraryRows({
+  source,
+  reference,
+  children,
+}: Omit<LibraryRowsProps, "source"> & {
+  source: LibrarySource;
+  reference: PreloadedQuery<LibraryQuery>;
+}): ReactElement {
+  const query = usePreloadedQuery<LibraryQuery>(readerLibraryQuery, reference);
+  const connection = useFragment<readerLibrary$key>(readerLibrary, query);
+  const data = useFragment<readerLibraryBook$key>(
+    readerLibraryBook,
+    connection.books.edges.map((edge) => edge.node),
+  );
+  const items = useMemo(
+    () =>
+      data.map((book) => {
+        const snapshot = source.rows.get(decodeGraphQLId("Manifestation", book.id));
+        if (snapshot === undefined)
+          throw new Error("A matched Library editing snapshot is required.");
+        return readerBook(book, snapshot);
+      }),
+    [data, source],
+  );
+  return children(items);
+}
+
+function useLibraryPosition(
+  visit: LibraryVisitOwner,
+  owner: LibraryFilters,
+  source: LibrarySource | undefined,
+  view: LibraryView,
+  density: "comfortable" | "compact",
+  position: LibraryPosition | undefined,
+  generation: number,
+) {
+  const table = useRef<HTMLTableElement | null>(null);
+  const covers = useRef<HTMLDivElement | null>(null);
+  const expected = useRef<{ element: Element; offset: number } | undefined>(undefined);
+  const frame = useRef<number | undefined>(undefined);
+
+  const scrollElement = useCallback(() => {
+    if (view === "table") return table.current;
+    const element = covers.current;
+    return element !== null && element.scrollHeight > element.clientHeight + 1
+      ? element
+      : document.scrollingElement;
+  }, [view]);
+  const capture = useCallback((): LibraryPosition | undefined => {
+    const element = scrollElement();
+    if (element === null || source === undefined) return undefined;
+    const documentScroll = element === document.scrollingElement;
+    const rect = element.getBoundingClientRect();
+    let start: number;
+    if (documentScroll)
+      start = document.querySelector("header[data-chrome]")?.getBoundingClientRect().bottom ?? 0;
+    else start = rect.top + (view === "table" ? 42 : 0);
+    const end = documentScroll ? window.innerHeight : rect.bottom;
+    const anchor = [...element.querySelectorAll<HTMLElement>("[data-book-id]")]
+      .map((row) => ({ row, rect: row.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.bottom > start && rect.top < end)
+      .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
+      .at(0);
+    return {
+      anchorId: anchor?.row.dataset.bookId ?? null,
+      anchorOffset: (anchor?.rect.top ?? start) - start,
+      offset: element.scrollTop,
+      extent: source.rows.size,
+      view,
+    };
+  }, [source, view, scrollElement]);
+  const scrolled = useCallback(() => {
+    const element = scrollElement();
+    if (element === null || position === undefined) return;
+    if (
+      expected.current?.element === element &&
+      Math.abs(
+        element.scrollTop -
+          Math.min(
+            expected.current.offset,
+            Math.max(0, element.scrollHeight - element.clientHeight),
+          ),
+      ) < 1
+    )
+      return;
+    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+    expected.current = undefined;
+    visit.cancelRestoration();
+  }, [position, visit, scrollElement]);
+  const restore = useCallback(() => {
+    if (
+      position === undefined ||
+      position.view !== view ||
+      source === undefined ||
+      navigation.currentEntry?.key !== visit.entryKey
+    )
+      return;
+    let element: Element | null = table.current;
+    if (view === "grid")
+      element =
+        covers.current !== null && covers.current.scrollHeight > covers.current.clientHeight + 1
+          ? covers.current
+          : document.scrollingElement;
+    if (element === null) return;
+    const index =
+      position.anchorId === null ? -1 : [...source.rows.keys()].indexOf(position.anchorId);
+    function setOffset(offset: number): void {
+      if (element === null) return;
+      element.scrollTo({ top: offset, behavior: "instant" });
+      expected.current = { element, offset: element.scrollTop };
+    }
+    if (view === "table" && index >= 0)
+      setOffset(index * (density === "compact" ? 40 : 52) - position.anchorOffset);
+    const adjust = (): void => {
+      if (
+        visit.snapshot().source !== source ||
+        visit.snapshot().restoreGeneration !== generation ||
+        navigation.currentEntry?.key !== visit.entryKey
+      )
+        return;
+      if (index < 0) {
+        setOffset(
+          position.offset > element.scrollHeight - element.clientHeight ? 0 : position.offset,
+        );
+        return;
+      }
+      if (view === "table")
+        setOffset(index * (density === "compact" ? 40 : 52) - position.anchorOffset);
+      const anchor = [...element.querySelectorAll<HTMLElement>("[data-book-id]")].find(
+        (row) => row.dataset.bookId === position.anchorId,
+      );
+      if (anchor === undefined) return;
+      let start: number;
+      if (element === document.scrollingElement)
+        start = document.querySelector("header[data-chrome]")?.getBoundingClientRect().bottom ?? 0;
+      else start = element.getBoundingClientRect().top + (view === "table" ? 42 : 0);
+      setOffset(
+        element.scrollTop + anchor.getBoundingClientRect().top - start - position.anchorOffset,
+      );
+    };
+    if (view === "grid" || index < 0) adjust();
+    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(adjust);
+  }, [position, view, source, visit, density, generation]);
+
+  useLayoutEffect(() => {
+    restore();
+    return () => {
+      if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+    };
+  }, [restore]);
+  useEffect(() => {
+    const unregister = visit.registerCapture(capture);
+    const leaving = (): void => {
+      if (navigation.currentEntry?.key !== visit.entryKey) return;
+      const next = capture();
+      if (next !== undefined) {
+        visit.capture(next);
+        owner.capturePosition(next);
+      }
+    };
+    navigation.addEventListener("navigate", leaving);
+    window.addEventListener("scroll", scrolled);
+    return () => {
+      unregister();
+      navigation.removeEventListener("navigate", leaving);
+      window.removeEventListener("scroll", scrolled);
+    };
+  }, [visit, owner, capture, scrolled]);
+  const tableRef = useCallback(
+    (element: HTMLTableElement | null) => {
+      table.current = element;
+      restore();
+    },
+    [restore],
+  );
+  const coversRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      covers.current = element;
+      restore();
+    },
+    [restore],
+  );
+  return { tableRef, coversRef, scrolled };
 }
 
 function CellEditOutcomes({ edits }: { edits: UseCellEditResult }): ReactElement | null {
@@ -210,15 +379,28 @@ function CellEditOutcomes({ edits }: { edits: UseCellEditResult }): ReactElement
             {feedback.field} for “{feedback.bookTitle}”: {feedback.message}
           </FieldError>
           <p className="text-fg-muted break-words text-sm">Submitted value: {feedback.submitted}</p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            isPending={feedback.reloading}
-            onPress={feedback.reload}
-          >
-            Reload
-          </Button>
+          {feedback.action === "retry" ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              isPending={feedback.retrying}
+              onPress={feedback.retry}
+            >
+              {feedback.retrying ? "Retrying…" : "Retry"}
+            </Button>
+          ) : null}
+          {feedback.action === "reload" ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              isPending={feedback.reloading}
+              onPress={feedback.reload}
+            >
+              {feedback.reloading ? "Reloading…" : "Reload"}
+            </Button>
+          ) : null}
         </div>
       ))}
     </section>
@@ -271,53 +453,24 @@ export function LibraryPage(): ReactElement {
     filterButtonRef.current?.focus();
   }
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  const queryClient = useQueryClient();
-  const {
-    data: shelves,
-    isError: shelvesError,
-    error: shelvesQueryError,
-  } = useQuery<Shelf[]>({
-    queryKey: queryKeys.shelves.list(),
-    queryFn: ({ signal }) => listShelves(signal),
-    staleTime: 60_000,
-  });
+  const environment = useRelayEnvironment();
+  const { data: account } = useAuthMe();
+  const shelvesQuery = useShelves();
+  const { data: shelves, isError: shelvesError } = shelvesQuery;
+  const batchController = useRef<AbortController | null>(null);
   useEffect(() => {
-    if (shelvesError) console.error("[LibraryPage] shelves fetch failed", shelvesQueryError);
-  }, [shelvesError, shelvesQueryError]);
-
-  const batch = useMutation({
-    mutationFn: async ({
-      shelf,
-      ids,
-    }: {
-      shelf: Shelf;
-      ids: readonly string[];
-      retry?: boolean;
-    }) => {
-      const succeeded: string[] = [];
-      const failed: string[] = [];
-      for (const id of ids) {
-        try {
-          await addShelfItem(shelf.id, id);
-          succeeded.push(id);
-        } catch (error) {
-          failed.push(id);
-          console.error("[LibraryPage] add to shelf failed", { id, error });
-        }
-      }
-      return { succeeded, failed };
-    },
-    onSuccess: ({ succeeded }) => {
-      if (succeeded.length > 0)
-        void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.all });
-      setSelectedIds((current) => {
-        const next = new Set(current);
-        for (const id of succeeded) next.delete(id);
-        return next;
-      });
-    },
-  });
-
+    const lifetime = new AbortController();
+    batchController.current = lifetime;
+    return () => {
+      lifetime.abort();
+    };
+  }, []);
+  const [batch, setBatch] = useState<BatchOutcome>();
+  const [batchAttempt, setBatchAttempt] = useState<{
+    action: BatchAction;
+    ids: readonly string[];
+    statusTargets: readonly StatusTarget[];
+  }>();
   const [hasRenderedControls, setHasRenderedControls] = useState(false);
   const preferences = useLibraryPreferences();
   const { density, hiddenColumns, sortOverride, sortLevels, defaultSortLevels, setSortLevels } =
@@ -328,15 +481,19 @@ export function LibraryPage(): ReactElement {
   const deferredSortOverride = useDeferredValue(sortOverride);
   const sortPending = deferredSortOverride !== sortOverride;
   if (deferredSortOverride !== "") params.sort = deferredSortOverride;
-  const cacheParams = params;
-  const listKey = queryKeys.books.list(cacheParams);
   const queryToken = JSON.stringify([filterState, sortOverride, viewMode]);
+  const liveIntent = useRef(queryToken);
+  useLayoutEffect(() => {
+    liveIntent.current = queryToken;
+  }, [queryToken]);
 
   const eligible =
     matchPath("/library", window.location.pathname) !== null && isLibraryRequestEligible(params);
   const {
-    items,
-    displayedKey,
+    source,
+    visit,
+    position,
+    restoreGeneration,
     blockedMessage,
     updating,
     canLoadMore,
@@ -345,14 +502,150 @@ export function LibraryPage(): ReactElement {
     fetchNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
-  } = useLibraryBooks(listKey, eligible, sortPending);
-  const edits = useCellEdit({ listKey: displayedKey, enabled: viewMode === "table" });
-  const selectionToken = JSON.stringify([queryToken, displayedKey]);
+  } = useLibraryBooks(params, eligible, sortPending, owner, queryToken);
+  const geometry = useLibraryPosition(
+    visit,
+    owner,
+    source,
+    viewMode,
+    density,
+    position,
+    restoreGeneration,
+  );
+  const edits = useCellEdit({
+    source,
+    enabled: viewMode === "table",
+    onChanged: () => {
+      void visit.refresh();
+    },
+  });
+  const selectionToken = JSON.stringify([queryToken, source?.key]);
   const [syncedSelectionToken, setSyncedSelectionToken] = useState(selectionToken);
   if (selectionToken !== syncedSelectionToken) {
     setSyncedSelectionToken(selectionToken);
     if (selectedIds.size > 0) setSelectedIds(new Set());
   }
+
+  async function sendBatchShelf(id: string, shelfId: string): ReturnType<StatusTarget["send"]> {
+    const response = await executeEditingOnce<AddShelfItem>(
+      environment,
+      mutationsAddShelfItemMutation,
+      {
+        shelfId: encodeGraphQLId("Shelf", shelfId),
+        id: encodeGraphQLId("Manifestation", id),
+      },
+      batchController.current?.signal,
+    );
+    if (response === undefined) return;
+    commitLocalUpdate(environment, (store) => {
+      store.get(response.addShelfItem.shelfId)?.invalidateRecord();
+    });
+    return { saved: true, action: "none" };
+  }
+
+  async function sendBatchRefresh(id: string): ReturnType<StatusTarget["send"]> {
+    const response = await executeEditingOnce<RefreshMetadata>(
+      environment,
+      mutationsRefreshMetadataMutation,
+      { id: encodeGraphQLId("Manifestation", id) },
+      batchController.current?.signal,
+    );
+    if (response === undefined) return;
+    return { saved: true, action: "none" };
+  }
+
+  function sendBatchItem(attempt: NonNullable<typeof batchAttempt>, id: string) {
+    if (attempt.action.kind === "status")
+      return attempt.statusTargets.find((target) => target.id === id)?.send();
+    if (attempt.action.kind === "shelf") return sendBatchShelf(id, attempt.action.shelf.id);
+    return sendBatchRefresh(id);
+  }
+
+  async function sendBatchItems(
+    attempt: NonNullable<typeof batchAttempt>,
+    succeeded: string[],
+    failed: BatchOutcome["failed"][number][],
+  ): Promise<void> {
+    for (const id of attempt.ids) {
+      if (batchController.current?.signal.aborted) break;
+      try {
+        const result = await sendBatchItem(attempt, id);
+        if (result === undefined) break;
+        if (result.saved) succeeded.push(id);
+        else failed.push({ id, action: result.action });
+      } catch (error) {
+        console.error("[LibraryPage] batch action failed", { id, error });
+        failed.push({
+          id,
+          action: editingFailureAction(error),
+          message: error instanceof Error ? error.message : "Request failed.",
+        });
+      }
+    }
+  }
+
+  async function runBatch(
+    attempt: NonNullable<typeof batchAttempt>,
+    retrying = false,
+  ): Promise<void> {
+    if (batch?.pending === true) return;
+    const release = source?.acquire();
+    const previous = retrying ? batch : undefined;
+    const succeeded: string[] = [];
+    const failed: BatchOutcome["failed"][number][] =
+      previous?.failed.filter((failure) => !attempt.ids.includes(failure.id)) ?? [];
+    const total = previous?.total ?? attempt.ids.length;
+    setBatchAttempt(attempt);
+    setBatch({
+      action: attempt.action,
+      pending: true,
+      retrying,
+      total,
+      succeeded: previous?.succeeded ?? [],
+      failed: [...failed],
+    });
+    await sendBatchItems(attempt, succeeded, failed);
+    if (
+      liveIntent.current === queryToken &&
+      succeeded.length > 0 &&
+      attempt.action.kind !== "refresh"
+    ) {
+      if (attempt.action.kind === "shelf") shelvesQuery.refetch();
+      await visit.refresh();
+    }
+    release?.();
+    if (batchController.current?.signal.aborted) return;
+    setBatch({
+      action: attempt.action,
+      pending: false,
+      retrying,
+      total,
+      succeeded: [...(previous?.succeeded ?? []), ...succeeded],
+      failed,
+    });
+    if (liveIntent.current === queryToken) {
+      const displayed = visit.snapshot().source;
+      setSyncedSelectionToken(JSON.stringify([queryToken, displayed?.key]));
+      setSelectedIds(
+        (current) =>
+          new Set([
+            ...[...current].filter((id) => !succeeded.includes(id)),
+            ...failed
+              .filter((failure) => displayed?.rows.has(failure.id))
+              .map((failure) => failure.id),
+          ]),
+      );
+    }
+  }
+
+  const batchFeedback = new Map(
+    batch?.failed.map((failure) => {
+      const attemptId = batchAttempt?.statusTargets.find(
+        (target) => target.id === failure.id,
+      )?.attemptId;
+      return [failure.id, edits.feedback.find((entry) => entry.id === attemptId)];
+    }),
+  );
 
   function setView(next: LibraryView): void {
     preferences.setView(next);
@@ -383,158 +676,204 @@ export function LibraryPage(): ReactElement {
   if (loading && !hasRenderedControls) return <LibrarySkeleton />;
 
   return (
-    <>
-      <div className="lg:h-[calc(100dvh-86px)]">
-        <div className="flex h-full min-h-0 flex-col px-3 pb-3 sm:px-5">
-          <ShelfHeader shelves={shelves ?? []} selected={filterState.shelf} />
-          {/* Sort announcements stay outside the filter editor so hidden controls do not silence them. */}
-          <p className="sr-only" aria-live="polite">
-            {sortStackSummary(sortLevels)}
-          </p>
-          <LibraryToolbar
-            filters={
-              <FilterChips filters={filterState} onRemove={commitAll} onClearAll={clearAll} />
-            }
-            editControls={viewMode === "table" ? <TableEditControls edits={edits} /> : null}
-            loadedCount={items.length}
-            hasMorePages={canLoadMore}
-            query={filterState.q ?? ""}
-            onQueryChange={(q) => {
-              commitAll((current) => ({ ...current, q }));
-            }}
-            view={viewMode}
-            onViewChange={setView}
-            filtersOpen={filtersOpen}
-            filterButtonRef={filterButtonRef}
-            coverWidth={coverWidth}
-            onCoverWidthChange={setCoverWidth}
-            onCoverWidthChangeEnd={saveCoverWidth}
-            sortLevels={sortLevels}
-            onSortChange={handleSortChange}
-            activeFilterCount={activeFilterCount}
-            onOpenFilters={() => {
-              setFiltersOpen((open) => !open);
-            }}
-            density={density}
-            onDensityChange={preferences.setDensity}
-            hiddenColumns={hiddenColumns}
-            onToggleColumn={toggleColumn}
-            canResetColumns={preferences.canResetColumns}
-            onResetColumns={preferences.resetColumns}
-          />
-          <Separator className="mb-2" />
-
-          <div
-            className="library-results min-h-0 flex-1"
-            data-panel-open={filtersBeside && filtersOpen}
-          >
-            <div className="flex min-h-0 min-w-0 flex-col">
-              <CellEditOutcomes edits={edits} />
-              <LibraryBooks
-                items={items}
-                filtered={hasActiveFilterState(filterState)}
-                onClear={clearAll}
-                viewMode={viewMode}
+    <LibraryRows source={source}>
+      {(items) => (
+        <>
+          <div className="lg:h-[calc(100dvh-86px)]">
+            <div className="flex h-full min-h-0 flex-col px-3 pb-3 sm:px-5">
+              <ShelfHeader shelves={shelves} selected={filterState.shelf} />
+              {/* Sort announcements stay outside the filter editor so hidden controls do not silence them. */}
+              <p className="sr-only" aria-live="polite">
+                {sortStackSummary(sortLevels)}
+              </p>
+              <LibraryToolbar
+                filters={
+                  <FilterChips filters={filterState} onRemove={commitAll} onClearAll={clearAll} />
+                }
+                editControls={viewMode === "table" ? <TableEditControls edits={edits} /> : null}
+                loadedCount={items.length}
+                hasMorePages={canLoadMore}
+                query={filterState.q ?? ""}
+                onQueryChange={(q) => {
+                  commitAll((current) => ({ ...current, q }));
+                }}
+                view={viewMode}
+                onViewChange={setView}
+                filtersOpen={filtersOpen}
+                filterButtonRef={filterButtonRef}
                 coverWidth={coverWidth}
-                selectedIds={selectedIds}
-                onSelectionChange={setSelectedIds}
-                blockedMessage={blockedMessage}
-                loading={loading}
-                updating={updating}
+                onCoverWidthChange={setCoverWidth}
+                onCoverWidthChangeEnd={saveCoverWidth}
+                sortLevels={sortLevels}
+                onSortChange={handleSortChange}
+                activeFilterCount={activeFilterCount}
+                onOpenFilters={() => {
+                  setFiltersOpen((open) => !open);
+                }}
+                density={density}
+                onDensityChange={preferences.setDensity}
+                hiddenColumns={hiddenColumns}
+                onToggleColumn={toggleColumn}
+                canResetColumns={preferences.canResetColumns}
+                onResetColumns={preferences.resetColumns}
+              />
+              <Separator className="mb-2" />
+
+              <div
+                className="library-results min-h-0 flex-1"
+                data-panel-open={filtersBeside && filtersOpen}
               >
-                <TableChunkBoundary
-                  onFallbackToGrid={() => {
-                    setVisitView("grid");
-                  }}
-                >
-                  <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                    <LibraryTable
-                      items={items}
-                      sort={sortLevels}
-                      defaultSort={defaultSortLevels}
-                      onSortChange={handleSortChange}
-                      hasNextPage={canLoadMore}
-                      isFetchingNextPage={isFetchingNextPage}
-                      isFetchNextPageError={isFetchNextPageError}
+                <div className="flex min-h-0 min-w-0 flex-col">
+                  <CellEditOutcomes edits={edits} />
+                  <LibraryBooks
+                    scrollRef={geometry.coversRef}
+                    onScroll={geometry.scrolled}
+                    items={items}
+                    filtered={hasActiveFilterState(filterState)}
+                    onClear={clearAll}
+                    viewMode={viewMode}
+                    coverWidth={coverWidth}
+                    selectedIds={selectedIds}
+                    onSelectionChange={setSelectedIds}
+                    blockedMessage={blockedMessage}
+                    loading={loading}
+                    updating={updating}
+                  >
+                    <TableChunkBoundary
+                      onFallbackToGrid={() => {
+                        setVisitView("grid");
+                      }}
+                    >
+                      <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                        <LibraryTable
+                          scrollRef={geometry.tableRef}
+                          onScroll={geometry.scrolled}
+                          items={items}
+                          sort={sortLevels}
+                          defaultSort={defaultSortLevels}
+                          onSortChange={handleSortChange}
+                          hasNextPage={canLoadMore}
+                          isFetchingNextPage={isFetchingNextPage}
+                          isFetchNextPageError={isFetchNextPageError}
+                          onLoadMore={() => {
+                            void fetchNextPage();
+                          }}
+                          edits={edits}
+                          density={density}
+                          hiddenColumns={hiddenColumns}
+                          onHideColumn={(key) => {
+                            toggleColumn(key, true);
+                          }}
+                          selectedIds={selectedIds}
+                          onSelectionChange={setSelectedIds}
+                        />
+                      </Suspense>
+                    </TableChunkBoundary>
+                  </LibraryBooks>
+
+                  {viewMode !== "table" && canLoadMore ? (
+                    <LibraryPagination
+                      isFetching={isFetchingNextPage}
+                      isError={isFetchNextPageError}
                       onLoadMore={() => {
                         void fetchNextPage();
                       }}
-                      edits={edits}
-                      density={density}
-                      hiddenColumns={hiddenColumns}
-                      onHideColumn={(key) => {
-                        toggleColumn(key, true);
-                      }}
-                      selectedIds={selectedIds}
-                      onSelectionChange={setSelectedIds}
                     />
-                  </Suspense>
-                </TableChunkBoundary>
-              </LibraryBooks>
-
-              {viewMode !== "table" && canLoadMore ? (
-                <LibraryPagination
-                  isFetching={isFetchingNextPage}
-                  isError={isFetchNextPageError}
-                  onLoadMore={() => {
-                    void fetchNextPage();
-                  }}
-                />
-              ) : null}
-            </div>
-            {filtersBeside ? (
-              <div className="library-filter-slot" inert={!filtersOpen}>
-                <FilterRail
-                  owner={owner}
-                  showContradiction={showContradiction}
-                  sortLevels={sortLevels}
-                  sortInherited={preferences.sortInherited}
-                  onSortChange={handleSortChange}
-                  onClose={closeFilters}
-                />
+                  ) : null}
+                </div>
+                {filtersBeside ? (
+                  <div className="library-filter-slot" inert={!filtersOpen}>
+                    <FilterRail
+                      owner={owner}
+                      showContradiction={showContradiction}
+                      sortLevels={sortLevels}
+                      sortInherited={preferences.sortInherited}
+                      onSortChange={handleSortChange}
+                      onClose={closeFilters}
+                    />
+                  </div>
+                ) : null}
               </div>
-            ) : null}
+              <BatchBar
+                selectedIds={selectedIds}
+                hasMorePages={canLoadMore}
+                onClearSelection={() => {
+                  setSelectedIds(new Set());
+                }}
+                shelves={shelves}
+                shelvesError={shelvesError}
+                canRefresh={account !== undefined && !account.is_child}
+                result={
+                  batch === undefined || batch.action.kind !== "status" || batch.pending
+                    ? batch
+                    : {
+                        ...batch,
+                        failed: batch.failed.map((failure) => ({
+                          ...failure,
+                          action: batchFeedback.get(failure.id)?.action ?? "none",
+                        })),
+                      }
+                }
+                onAction={(action) => {
+                  const rows = items.filter((row) => selectedIds.has(row.id));
+                  void runBatch({
+                    action,
+                    ids: rows.map((row) => row.id),
+                    statusTargets:
+                      action.kind === "status" ? edits.statusTargets(rows, action.status) : [],
+                  });
+                }}
+                onRetry={() => {
+                  if (batchAttempt === undefined || batch === undefined) return;
+                  const ids = batch.failed
+                    .filter(
+                      (failure) =>
+                        failure.action === "retry" &&
+                        (batch.action.kind !== "status" ||
+                          batchFeedback.get(failure.id)?.action === "retry"),
+                    )
+                    .map((failure) => failure.id);
+                  void runBatch({ ...batchAttempt, ids }, true);
+                }}
+                onDismiss={() => {
+                  setBatch(undefined);
+                  setBatchAttempt(undefined);
+                }}
+              />
+            </div>
           </div>
-          <BatchBar
-            selectedIds={selectedIds}
-            hasMorePages={canLoadMore}
-            onClearSelection={() => {
-              setSelectedIds(new Set());
-            }}
-            shelves={shelves}
-            shelvesError={shelvesError}
-            batch={batch}
-          />
-        </div>
-      </div>
 
-      {!filtersBeside ? (
-        <SheetContent
-          isOpen={filtersOpen}
-          onOpenChange={setFiltersOpen}
-          side="right"
-          showCloseButton={false}
-          aria-describedby={undefined}
-          className="max-w-[100vw] p-3 data-[side=right]:w-[340px]"
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Filters</SheetTitle>
-          </SheetHeader>
-          <FilterRail
-            owner={owner}
-            showContradiction={showContradiction}
-            sortLevels={sortLevels}
-            sortInherited={preferences.sortInherited}
-            onSortChange={handleSortChange}
-            onClose={closeFilters}
-          />
-        </SheetContent>
-      ) : null}
-    </>
+          {!filtersBeside ? (
+            <SheetContent
+              isOpen={filtersOpen}
+              onOpenChange={setFiltersOpen}
+              side="right"
+              showCloseButton={false}
+              aria-describedby={undefined}
+              className="max-w-[100vw] p-3 data-[side=right]:w-[340px]"
+            >
+              <SheetHeader className="sr-only">
+                <SheetTitle>Filters</SheetTitle>
+              </SheetHeader>
+              <FilterRail
+                owner={owner}
+                showContradiction={showContradiction}
+                sortLevels={sortLevels}
+                sortInherited={preferences.sortInherited}
+                onSortChange={handleSortChange}
+                onClose={closeFilters}
+              />
+            </SheetContent>
+          ) : null}
+        </>
+      )}
+    </LibraryRows>
   );
 }
 
 type LibraryBooksProps = {
+  scrollRef: (element: HTMLDivElement | null) => void;
+  onScroll: () => void;
   items: BookListItem[];
   filtered: boolean;
   onClear: () => void;
@@ -549,6 +888,8 @@ type LibraryBooksProps = {
 };
 
 function LibraryBooks({
+  scrollRef,
+  onScroll,
   items,
   filtered,
   onClear,
@@ -584,6 +925,8 @@ function LibraryBooks({
     <>
       {updating ? <p className="text-fg-muted mb-3 text-sm">Updating results…</p> : null}
       <div
+        ref={scrollRef}
+        onScroll={onScroll}
         aria-busy={updating || undefined}
         className={`min-h-0 flex-1 ${viewMode === "grid" ? "overflow-y-auto overflow-x-hidden p-1" : ""} ${updating ? "opacity-60" : ""}`}
       >
@@ -664,6 +1007,7 @@ function BookGrid({
       {(book) => (
         <GridListItem
           id={book.id}
+          data-book-id={book.id}
           textValue={book.title}
           className="group/cover min-w-0 rounded-md outline-none data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-(--focus-ring)"
         >

@@ -76,19 +76,16 @@ selection to shelf" action — all described below only as consumers, since none
   tiebreaker is load-bearing because `added_at` is not unique per shelf. The `idx_shelf_items_shelf_keyset` index over
   `(shelf_id, added_at, manifestation_id)` serves that sort.
 - Nothing in `routes/shelves/mod.rs` builds an entity-tag or parses `If-Match`; shelf responses carry no `ETag` header.
-- On the client, `frontend/src/api/shelves.ts` is the sole HTTP boundary for this surface: it defines the Zod schemas
-  for both wire shapes, walks every cursor-paginated response to completion internally so every caller receives a fully
-  assembled array or object. `frontend/src/pages/shelves/ShelvesListPage.tsx` is the `/shelves` list-and-manage page
-  (create, rename, delete); `frontend/src/pages/shelves/ShelfDetailPage.tsx` is the `/shelves/:id` page, which lists the
-  shelf's items in the order the server returns them. `frontend/src/routes/shelves.tsx` and
-  `frontend/src/routes/shelf-detail.tsx` are their route-loader pairings, each loading its page's query and swallowing
-  the prefetch's own failure, leaving the page's `useSuspenseQuery` as the one error-surfacing point.
-- Three further client surfaces read the shelf list or a shelf's items as an auxiliary concern, degrading in place
-  rather than throwing to a route boundary on failure: `components/shell/FilterRail.tsx` (the shelf filter facet),
-  `pages/library/FilterChips.tsx` (rendering a shelf id filter chip's display name), and `pages/library/LibraryPage.tsx`
-  (the shelf header's shelf name and the batch bar's "add selection to shelf" action, which calls `addShelfItem` once
-  per selected manifestation in a serial loop). None of these three owns shelf state; each is a `useQuery` reader (not
-  `useSuspenseQuery`) that logs its own failure, the tier the `api/shelves.ts` module doc assigns it.
+- Browser shelves share one account-scoped Relay environment. The route loaders prepare native query references for
+  `ShelvesListPage` and `ShelfDetailPage`; their primary read failures reach the owning route. The shelf list and item
+  connections page to completion through native pagination fragments without another Load more control.
+- `frontend/src/api/shelves.ts` supplies the shared complete shelf-list read for `FilterRail`, `FilterChips` and
+  `LibraryPage`. These auxiliary consumers keep their existing degraded state and log read failures. The module's
+  consumer list records the primary, loader and auxiliary error tiers.
+- Shelf create and rename publish returned native records and refetch the list to restore server ordering. Deletion
+  removes the native connection edge and record. A failed create acknowledgement triggers a recovery read, never an
+  automatic create replay. Library membership writes run serially, retain per-target outcomes, refresh shelf counts and
+  refetch the active filtered Library connection.
 
 ### State-writer census
 
@@ -144,11 +141,9 @@ a shelf.
 handler uses; their rejection behaviour is the API error contract's concern, referenced here only as the extractors in
 use.
 
-On the client, `frontend/src/api/shelves.ts` is the only module that calls these seven endpoints; every consumer surface
-listed in Structure imports from it rather than calling `apiFetch` directly. `queryKeys.shelves.list()` and
-`queryKeys.shelves.detail(id)` (`frontend/src/lib/query/keys.ts`) are the two query keys every reader uses. Every
-mutation invalidates the coarser `queryKeys.shelves.all` — every create, rename and delete on `ShelvesListPage`, plus
-`LibraryPage`'s batch shelf writes — and React Query's prefix matching refetches every reader from that key.
+Browser readers use the generated shelf operations in `reader.ts` and mutations in `mutations.ts`. Relay owns normalised
+records and connection membership. Targeted native updates and refetches publish changed membership, names and counts.
+Public HTTP adapters retain their response and ownership contracts.
 
 Graph shelf roots and request-local loaders call the owner-scoped reads in `reader.rs`. `Shelf` has a base64 domain ID
 and exposes scalar shelf metadata plus a bounded `items(first:, after:)` connection. GraphQL shelves and items require
@@ -157,12 +152,13 @@ system-first, name, then ID ordering. Items retain addition time, then manifesta
 bound into the graph cursor. Every edge has its own cursor and PageInfo flags come from bounded SQL probes.
 
 Typed and Node lookups return null for foreign, hidden, missing or invalid shelf identities. Item hydration rechecks
-manifestation visibility through the caller's transaction. These reads add no browser cache owner or shelf writer.
+manifestation visibility through the caller's transaction. Relay is the browser owner of these records; read execution
+adds no shelf writer.
 
 GraphQL create, rename, delete and membership mutations call `services::shelves` with write scope. They preserve adult
 CRUD, owner predicates, system-shelf refusals and child membership permissions. Create and rename return the shelf;
 deletion and membership changes identify the affected records. These actions introduce no shelf precondition. Browser
-workflows retain their existing HTTP cache ownership.
+workflows use these generated mutations through their existing page and Library action owners.
 
 ## Data and state
 
@@ -243,16 +239,11 @@ identity.
 - **A child probing shelf existence via manifestation ids.** Covered in Runtime behaviour: the RLS-scoped probe in
   `add_shelf_item` and the ownership check both resolve to the same `AppError::NotFound`, so a child cannot distinguish
   "no such shelf" from "shelf is yours but that manifestation isn't visible to you".
-- **A read hitting a malformed timestamp on the client.** `api/shelves.ts`'s Zod schemas validate `created_at`,
-  `updated_at`, and `added_at` as bare `z.iso.datetime()`. A response that fails this check throws before any consumer
-  sees a partially-typed value; `ShelvesListPage` and `ShelfDetailPage` let that throw reach their route's error
-  boundary (`useSuspenseQuery`), while the five auxiliary consumers named in Structure catch it via `useQuery`'s own
-  error state and degrade in place, logging the failure themselves since only a `401` is centrally routed.
-- **A write that the client's own schema then rejects.** `createShelf` and `renameShelf` parse the response body after
-  the server has already committed the write; a schema rejection there reports failure for an operation that already
-  succeeded; the caller's own `onSuccess` never runs, so the shelf list is not invalidated and a retried create can add
-  a second shelf under the same name, since nothing enforces name uniqueness at any layer. `api/shelves.ts`'s module doc
-  names this as a deliberate non-goal: recovery is a manual refetch, not an automatic retry.
+- **A malformed timestamp in a reader response.** The GraphQL network validates selected shelf timestamps before
+  publication. Primary pages surface failure through their route; auxiliary consumers retain degraded feedback and log
+  the failure.
+- **A failed acknowledgement after a committed create.** The owning page refetches its native shelf list without
+  replaying the create. Entered form input and local error feedback remain available.
 
 ## Security and operations
 

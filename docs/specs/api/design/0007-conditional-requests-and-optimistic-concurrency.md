@@ -119,17 +119,18 @@ the request content is processed, so a caller holding a stale representation lea
 ### Client editing baselines
 
 GraphQL editing documents validate their selected values and revision before Relay publication. `executeEditing` uses
-raw `environment.execute` or `executeMutation` payload data and returns a detached projection. It never derives a
-baseline from a merged store read or `commitMutation.onCompleted`. A whole-list author replacement requires all pages of
-that field at one revision, with a complete cursor chain. `captureAuthorPages` enforces that pairing. A newer token
-without the selected values cannot replace a captured baseline.
+raw `environment.execute` or `executeMutation` payload data to capture validated values and their matching validator
+together in a detached projection. It never derives a baseline from a merged store read or `commitMutation.onCompleted`.
+A whole-list author replacement requires all pages of that field at one revision, with a complete cursor chain.
+`captureAuthorPages` enforces that pairing. A newer token without the selected values cannot replace a captured
+baseline.
 
 `apiFetchWithHeaders` returns a decoded body and response headers without retaining entity-tags. Metadata and reading
 adapters validate the complete body and require the matching strong response ETag before publishing one snapshot. List
 rows carry `metadata_etag` and `reading_etag` from the same database snapshot as their values.
 
-Table commits capture the displayed row's tag, input and source query key. Dialog drafts retain the snapshot from which
-their fields were seeded, including through background refresh and field errors. Every write sends that explicit
+Table commits capture the displayed row's tag, input and retained Relay source. Dialog drafts retain the snapshot from
+which their fields were seeded, including through background refresh and field errors. Every write sends that explicit
 baseline. The transport's CSRF retry retains the same body and precondition. A 412 header alone never replaces a draft
 baseline or permits another save. Only a matched reset or new editing decision adopts fresh values and their tag.
 
@@ -188,9 +189,10 @@ handful of concurrent editors, traded against header compactness, not a cryptogr
 hostile party (the server always recomputes the tag from its own row rather than trusting a client-supplied hash as
 data).
 
-Client editing snapshots live in Query and the owning draft. A retained dialog draft owns its initial snapshot until an
-explicit matched reset. The Library table-editing owner holds at most ten field operations in memory. Leaving Library or
-table editing clears them; filtering, sorting, loading and empty results preserve them.
+Reader editing snapshots live in their retained raw execution owner and owning draft. Relay owns normalised display
+records. A retained dialog draft owns its initial snapshot until an explicit matched reset. The Library table-editing
+owner holds at most ten field operations in memory. Leaving Library or table editing clears them; filtering, sorting,
+loading and empty results preserve them.
 
 ## Runtime behaviour
 
@@ -198,13 +200,16 @@ A metadata save carries a client request UUID and its editing baseline. A stale 
 before request-reuse checking. After a lost acknowledgement, unchanged dialog input reuses its original request UUID,
 patch and baseline. A committed resend therefore receives 412, then resolves the original request before conflict
 feedback. Changed input starts a fresh UUID against the retained baseline. The table resolves uncertain saves through
-Query and exposes Reload, followed by a new edit. Neither flow automatically replays a save or infers success from equal
-values. A saved resolution adopts complete values and the matching ETag; table resolutions retain eligible operations.
+selected raw Relay executions. Temporary or uncertain failures offer explicit Retry of the same tuple. Conflicts not
+confirmed as saved offer matched Reload, validation failures retain input for correction, and permanent refusals retain
+specific feedback. Neither flow automatically replays a save or infers metadata success from equal values. A saved
+resolution adopts its selected values and matching ETag; table resolutions retain eligible operations once.
 
-Undo sends one operation and its retained aggregate validator. After 412, Query resolves that same operation and retries
-once only when the server confirms it eligible and unlocked. The retry uses the matched response's ETag. A restored
-resolution confirms an already committed Undo. Lock or unresolved recovery retains the entry; unavailable or conflicting
-operations leave the local collection. No refusal executes the next entry.
+Undo sends one operation and its retained aggregate validator. After uncertainty or a stale baseline, a selected raw
+execution resolves that same operation and retries once only when the server confirms it eligible and unlocked. The
+retry uses the matched response's ETag. A restored resolution confirms an already committed Undo. Lock or unresolved
+recovery retains the entry; unavailable or conflicting operations leave the local collection. No refusal executes the
+next entry.
 
 **A metadata or reading `PATCH` with a malformed `If-Match`:**
 
@@ -220,7 +225,8 @@ handler body executes at all). The response is `400`, problem type `.../malforme
 - Missing `If-Match` returns 428 before database work. A stale supplied precondition returns 412 with the current tag.
   Ordinary saves retain input and require a matched read before a new editing decision; they never automatically retry.
 - Missing or malformed acknowledgement values or tags leave the edit uncertain. Metadata resolution uses committed
-  request evidence through Query retry and reconnect. Reading recovery uses a matched read. A failed read retains input.
+  request evidence through selected raw resolution reads. Reading recovery uses a matched read. A failed read retains
+  input.
 - Undo refuses locked fields with 409 and retains the entry until its original expiry. A 422 `undo-unavailable` or 409
   `undo-conflict` removes it. Expiry removes entries quietly, without extending their deadlines.
 

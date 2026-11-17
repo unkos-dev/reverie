@@ -9,14 +9,12 @@ title: "Browser edits retain the validator belonging to their values"
 
 ## Statement
 
-WHEN the browser client saves book metadata or reading state, it MUST send the `If-Match` validator belonging to the
-validated values from which that edit began. It MUST retain that baseline through errors and CSRF retry until a new
-editing decision adopts validated values and their matching validator together.
-
-For GraphQL, the client MUST send the explicit baseline belonging to the selected values that edit uses. It MUST capture
-validated values and their validator from the same execution payload, without reconstructing a baseline from merged
-records. A replacement-list edit MUST adopt all pages of that selected field at one revision; it MUST NOT adopt an
-incomplete list or pages from different revisions.
+WHEN the browser client saves book metadata or reading state, it MUST send the validator of the revision from which that
+edit's validated values came. A revision is the resource state a validator identifies. Values and a validator from
+different revisions MUST NOT form an editing baseline. Background reads, refreshes and failed writes MUST NOT advance a
+retained edit's baseline. The client MUST retain that baseline through errors and CSRF retry until a new editing
+decision adopts validated values and their matching validator together. A replacement-list edit MUST adopt all pages of
+that selected field at one revision; it MUST NOT adopt an incomplete list or pages from different revisions.
 
 ## Rationale
 
@@ -26,7 +24,8 @@ write precondition.
 
 ## Acceptance criteria
 
-- Metadata and reading saves send the validator belonging to their editing values, including across a CSRF retry.
+- Metadata and reading saves send the validator belonging to their editing values as HTTP `If-Match` or an explicit
+  GraphQL baseline argument, including across a CSRF retry.
 - A read of another resource, a background refresh or a 412 response does not replace a retained edit's validator.
 - Missing or malformed values or validators do not publish a replacement editing baseline or authorise another write.
 - A new editing decision adopts validated values and their matching validator together.

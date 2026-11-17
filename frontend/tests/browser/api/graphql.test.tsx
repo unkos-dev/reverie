@@ -196,11 +196,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   const navigate = vi.fn();
   setUnauthenticatedHandler(navigate);
   fetch.mockResolvedValueOnce(json({}, 401)).mockResolvedValueOnce(json({}, 401));
-  const firstFailure = graphqlNetwork(
-    getRequest(viewerQuery).params,
-    {},
-    new AbortController().signal,
-  ).toPromise();
+  const firstFailure = request();
   const secondFailure = graphqlNetwork(
     getRequest(viewerQuery).params,
     {},
@@ -227,16 +223,27 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   });
   fetch.mockImplementationOnce(() => pending);
   const published = vi.fn();
-  const subscription = fetchQuery<ViewerQuery>(
+  const completed = vi.fn();
+  const cancelledSource = fetchQuery<ViewerQuery>(
     previous,
     viewerQuery,
     {},
     { fetchPolicy: "network-only" },
-  ).subscribe({ next: published, error: published });
+  );
+  const subscription = cancelledSource.subscribe({
+    next: published,
+    error: published,
+    complete: completed,
+  });
+  const cancelledRequest = cancelledSource.toPromise();
   const init = fetch.mock.calls.at(-1)?.[1];
   const epoch = activeUserEpoch();
   rememberActiveUser("third-account");
   expect(init?.signal?.aborted).toBe(true);
+  await vi.waitFor(() => {
+    expect(completed).toHaveBeenCalledTimes(1);
+  });
+  await expect(cancelledRequest).resolves.toBeUndefined();
   respond(
     json({
       data: {
@@ -251,9 +258,49 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   );
   await request();
   expect(published).not.toHaveBeenCalled();
+  expect(completed).toHaveBeenCalledTimes(1);
   expect(previous.getStore().getSource().get("User:second-account")).toBeUndefined();
   expect(relayEnvironment().getStore().getSource().get("User:second-account")).toBeUndefined();
   rememberActiveUser("second-account", epoch);
   expect(activeUserId()).toBe("third-account");
   subscription.unsubscribe();
+
+  fetch.mockImplementationOnce(() => new Promise<Response>(() => {}));
+  const lost = vi.fn();
+  const lostValues = vi.fn();
+  const lostSource = fetchQuery<ViewerQuery>(
+    relayEnvironment(),
+    viewerQuery,
+    {},
+    {
+      fetchPolicy: "network-only",
+    },
+  );
+  const lostSubscription = lostSource.subscribe({
+    next: lostValues,
+    error: lostValues,
+    complete: lost,
+  });
+  const lostRequest = lostSource.toPromise();
+  forgetActiveUser();
+  await vi.waitFor(() => {
+    expect(lost).toHaveBeenCalledTimes(1);
+  });
+  await expect(lostRequest).resolves.toBeUndefined();
+  expect(lostValues).not.toHaveBeenCalled();
+  expect(navigate).toHaveBeenCalledTimes(1);
+  lostSubscription.unsubscribe();
+
+  const aborted = new AbortController();
+  aborted.abort();
+  fetch.mockClear();
+  const alreadyCompleted = vi.fn();
+  await expect(
+    graphqlNetwork(getRequest(viewerQuery).params, {}, aborted.signal)
+      .do({ complete: alreadyCompleted, next: lostValues, error: lostValues })
+      .toPromise(),
+  ).resolves.toBeUndefined();
+  expect(alreadyCompleted).toHaveBeenCalledTimes(1);
+  expect(lostValues).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled();
 });

@@ -169,7 +169,9 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
   Details content type; they do not infer every business error an endpoint can return.
 - On the client, `apiFetch` (`frontend/src/api/fetch.ts`) is the sole interface between the SPA and `fetch()`, and
   `ApiError` represents retained HTTP failures. GraphQL execution refusals use `GraphQLExecutionError` in
-  `frontend/src/api/graphql.ts`.
+  `frontend/src/api/graphql.ts`. Reader consumers classify these safe execution codes in their owning flow. Temporary or
+  uncertain failures offer explicit retained-input Retry. Conflicts use authoritative resolution and matched Reload,
+  validation stays with the existing native form, and permanent refusals do not expose an unchanged resend.
 
 GraphQL execution errors preserve safe domain slugs for validation, forbidden and missing targets, missing or stale
 preconditions, malformed baselines, field locks, unavailable or conflicting Undo, and immutable system shelves.

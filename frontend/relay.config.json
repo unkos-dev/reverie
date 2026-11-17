@@ -4,6 +4,7 @@
   "language": "typescript",
   "artifactDirectory": "./src/lib/relay/__generated__",
   "eagerEsModules": true,
+  "customScalarTypes": { "JSON": "unknown" },
   "persistConfig": {
     "file": "../backend/graphql-documents.json",
     "algorithm": "SHA256"

@@ -116,6 +116,17 @@ pub struct Viewer {
 
 #[Object]
 impl Query {
+    #[graphql(guard = "ReadScope")]
+    async fn library_preferences(
+        &self,
+        ctx: &Context<'_>,
+    ) -> async_graphql::Result<mutations::LibraryPreferences> {
+        crate::services::preferences::get_preferences(ctx.data()?, ctx.data()?)
+            .await
+            .map(Into::into)
+            .map_err(safe_error)
+    }
+
     #[graphql(guard = "WriteScope")]
     async fn metadata_operation(
         &self,
@@ -225,6 +236,14 @@ impl Query {
     ) -> async_graphql::Result<Option<library::Series>> {
         library::series(ctx, &id).await
     }
+    #[graphql(name = "fetch__Work", guard = "ReadScope")]
+    async fn fetch_work(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::ID,
+    ) -> async_graphql::Result<Option<library::Work>> {
+        library::work(ctx, &id).await
+    }
     #[graphql(name = "fetch__Shelf", guard = "ReadScope")]
     async fn fetch_shelf(
         &self,
@@ -251,7 +270,9 @@ impl Query {
         first: i32,
         after: Option<String>,
         filter: Option<library::BooksFilter>,
-        sort: Option<Vec<library::SortLevel>>,
+        #[graphql(desc = "Omitted or null sort uses the installation default.")] sort: Option<
+            Vec<library::SortLevel>,
+        >,
     ) -> async_graphql::Result<async_graphql::connection::Connection<String, library::Manifestation>>
     {
         library::books(ctx, first, after, filter, sort).await
@@ -745,6 +766,7 @@ mod tests {
             if matches!(
                 *name,
                 "updateMetadata"
+                    | "refreshMetadata"
                     | "createShelf"
                     | "renameShelf"
                     | "deleteShelf"
@@ -773,6 +795,120 @@ mod tests {
         );
         mutation_session_controls(pool, &id).await;
         mutation_child_controls(pool, &fixture, &id).await;
+
+        preference_scope_boundary(&fixture, &credentials[0]).await;
+        work_scope_boundary(&fixture).await;
+    }
+
+    async fn work_scope_boundary(fixture: &ReaderFixture) {
+        let query = "query($id:ID!) { fetch__Work(id:$id) { id } }";
+        let denied = schema(ExecutionPolicy::Development)
+            .execute(
+                async_graphql::Request::new(query)
+                    .variables(async_graphql::Variables::from_json(
+                        json!({"id":id::encode("Work",fixture.visible_work)}),
+                    ))
+                    .data(CurrentUser::without_scopes_for_test(fixture.admin_id)),
+            )
+            .await;
+        assert_eq!(denied.errors.len(), 1);
+        assert_eq!(
+            denied.errors[0].extensions.as_ref().unwrap().get("code"),
+            Some(&async_graphql::Value::from("forbidden"))
+        );
+        let hidden = reader_query(
+            fixture,
+            &fixture.child,
+            query,
+            json!({"id":id::encode("Work",fixture.hidden_work)}),
+        )
+        .await;
+        assert_graph_ok(&hidden);
+        assert!(hidden["data"]["fetch__Work"].is_null());
+    }
+
+    async fn preference_scope_boundary(fixture: &ReaderFixture, read_credential: &str) {
+        let preference_read = "{ libraryPreferences { hiddenColumns density view sortStack defaults { hiddenColumns density view sortStack } } }";
+        let denied = schema(ExecutionPolicy::Development)
+            .execute(
+                async_graphql::Request::new(preference_read)
+                    .data(CurrentUser::without_scopes_for_test(fixture.admin_id)),
+            )
+            .await;
+        assert_eq!(denied.errors.len(), 1);
+        assert_eq!(
+            denied.errors[0].extensions.as_ref().unwrap().get("code"),
+            Some(&async_graphql::Value::from("forbidden"))
+        );
+        let read = reader_query(fixture, read_credential, preference_read, json!({})).await;
+        assert_graph_ok(&read);
+        assert_eq!(read["data"]["libraryPreferences"]["density"], "compact");
+        assert_eq!(
+            read["data"]["libraryPreferences"]["defaults"]["hiddenColumns"],
+            json!(["subtitle"])
+        );
+        let child_initial = reader_query(fixture, &fixture.child, preference_read, json!({})).await;
+        assert_graph_ok(&child_initial);
+        assert!(child_initial["data"]["libraryPreferences"]["density"].is_null());
+        let patch = "mutation($patch:LibraryPreferencesPatch!) { updateLibraryPreferences(patch:$patch) { hiddenColumns density view sortStack } }";
+        let child_write = reader_query(
+            fixture,
+            &fixture.child,
+            patch,
+            json!({"patch":{"density":"COMFORTABLE","hiddenColumns":[]}}),
+        )
+        .await;
+        assert_graph_ok(&child_write);
+        assert_eq!(
+            child_write["data"]["updateLibraryPreferences"]["density"],
+            "comfortable"
+        );
+        assert_eq!(
+            child_write["data"]["updateLibraryPreferences"]["hiddenColumns"],
+            json!([])
+        );
+        let unchanged = reader_query(fixture, &fixture.admin, preference_read, json!({})).await;
+        assert_eq!(
+            unchanged["data"]["libraryPreferences"]["density"],
+            "compact"
+        );
+        assert!(unchanged["data"]["libraryPreferences"]["hiddenColumns"].is_null());
+        let reset = reader_query(
+            fixture,
+            &fixture.child,
+            patch,
+            json!({"patch":{"density":null}}),
+        )
+        .await;
+        assert_graph_ok(&reset);
+        assert!(reset["data"]["updateLibraryPreferences"]["density"].is_null());
+        assert_eq!(
+            reset["data"]["updateLibraryPreferences"]["hiddenColumns"],
+            json!([])
+        );
+        for patch_value in [
+            json!({}),
+            json!({"density":"COMPACT","sortStack":"bad_column"}),
+            json!({"hiddenColumns":["bad column"]}),
+        ] {
+            assert_graph_code(
+                &reader_query(fixture, &fixture.child, patch, json!({"patch":patch_value})).await,
+                "validation",
+            );
+        }
+        let after_refusal = reader_query(fixture, &fixture.child, preference_read, json!({})).await;
+        assert!(after_refusal["data"]["libraryPreferences"]["density"].is_null());
+        let missing = id::encode("Manifestation", uuid::Uuid::new_v4());
+        assert_graph_code(
+            &reader_query(
+                fixture,
+                &fixture.admin,
+                "mutation($id:ID!) { refreshMetadata(id:$id) { manifestationId } }",
+                json!({"id":missing}),
+            )
+            .await,
+            "not-found",
+        );
     }
 
     fn mutation_shapes(
@@ -787,6 +923,14 @@ mod tests {
         let delete_shelf = id::encode("Shelf", fixture.shelf_b).as_str().to_owned();
         let tag = serde_json::to_string(&baseline).unwrap();
         vec![
+            (
+                "updateLibraryPreferences",
+                "updateLibraryPreferences(patch: { density: COMPACT }) { density }".to_owned(),
+            ),
+            (
+                "refreshMetadata",
+                format!("refreshMetadata(id:\"{id}\") {{ manifestationId }}"),
+            ),
             (
                 "updateMetadata",
                 format!(
@@ -1374,6 +1518,8 @@ mod tests {
             let reading = browser_graph(&server, &csrf, READING_READ, json!({"id":id})).await;
             baseline = reading["data"]["manifestation"]["readingState"]["etag"].clone();
             patch = json!({"notes":"Trusted reading","status":"READING"});
+        } else if text.contains("updateLibraryPreferences(") {
+            patch = json!({"density":"COMPACT","hiddenColumns":[]});
         } else if text.contains("mutationsSaveAuthorsMutation") {
             patch = json!({"contributors":{"author":["Trusted author"]}});
         }
@@ -1479,15 +1625,18 @@ mod tests {
     }
 
     fn reader_variables(document: &str, fixture: &ReaderFixture) -> serde_json::Value {
-        let id = if document.contains("readerShelfQuery") {
+        let id = if document.contains("readerShelfQuery") || document.contains("fetch__Shelf(") {
             id::encode("Shelf", fixture.shelf_a)
-        } else if document.contains("readerSeriesQuery") {
+        } else if document.contains("readerSeriesQuery") || document.contains("fetch__Series(") {
             id::encode("Series", fixture.series)
+        } else if document.contains("fetch__Work(") {
+            id::encode("Work", fixture.visible_work)
         } else {
             id::encode("Manifestation", fixture.visible)
         };
         json!({
             "id": id.as_str(), "q": "Graph",
+            "ids": [if document.contains("authorLabels(") { id::encode("Author",fixture.author) } else { id::encode("Series",fixture.series) }],
             "authorIds": [id::encode("Author", fixture.author).as_str()],
             "seriesIds": [id::encode("Series", fixture.series).as_str()]
         })

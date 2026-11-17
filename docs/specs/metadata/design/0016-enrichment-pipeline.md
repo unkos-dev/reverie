@@ -179,6 +179,11 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
 
 ## Interfaces and dependencies
 
+The GraphQL `refreshMetadata(id:)` command uses the same `reset_retries` operation with `ClearProviderDelay` as the HTTP
+trigger. It requires write scope, a non-child caller and caller-visible manifestation identity. An active worker keeps
+its claim and receives a rerun request. The Library batch bar reports scheduling acknowledgements, not completed
+enrichment, and creates no additional polling owner.
+
 The dormant `cover_download::download` interface accepts the guarded HTTP client, validation configuration,
 `LibraryFiles`, a library identity and manifestation/version identities. Its `CoverArtifact` returns a `LibraryLocation`
 beneath `_covers/pending`, raw SHA-256, byte count, dimensions and the detected closed raster format. It returns no

@@ -28,3 +28,5 @@ may not notice which condition moved. View and sort are standing choices, so cle
 - Clear removes every filter condition and leaves view and sort unchanged.
 - Clearing one section leaves sibling sections unchanged.
 - Entered text and its selected operator are kept, and remain editable, while they contribute no effective predicate.
+- The GraphQL books request's effective filter arguments represent exactly the published edit and preserve sibling
+  conditions. Dormant entered text and operators remain available without contributing an effective predicate.

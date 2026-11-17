@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<b27745ab42524df9e7a7f18f273367ab>>
+ * @generated SignedSource<<8bec2d3b3d08d651f6c3370922fb8074>>
  * @lightSyntaxTransform
  */
 
@@ -19,8 +19,10 @@ export type readerVersions$data = {
           readonly fieldName: string;
           readonly id: string;
           readonly matchType: string;
-          readonly newValue: any;
+          readonly newValue: unknown;
+          readonly observationCount: number;
           readonly source: string;
+          readonly status: string;
         };
       }>;
     };
@@ -166,6 +168,20 @@ const node: ReaderFragment = (function () {
                         alias: null,
                         args: null,
                         kind: "ScalarField",
+                        name: "status",
+                        storageKey: null,
+                      },
+                      {
+                        alias: null,
+                        args: null,
+                        kind: "ScalarField",
+                        name: "observationCount",
+                        storageKey: null,
+                      },
+                      {
+                        alias: null,
+                        args: null,
+                        kind: "ScalarField",
                         name: "__typename",
                         storageKey: null,
                       },
@@ -219,6 +235,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "9e71322341c41432919f977bf3460600";
+(node as any).hash = "6324cf56da084b743ecc94304a5fc6cd";
 
 export default node;

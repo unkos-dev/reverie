@@ -6,64 +6,149 @@
  * rejects mutations on `is_system = TRUE` shelves with HTTP 409
  * `system-shelf-immutable`.
  */
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import {
+  usePreloadedQuery,
+  useQueryLoader,
+  useRelayEnvironment,
+  type PreloadedQuery,
+} from "react-relay";
+import { ConnectionHandler, commitLocalUpdate } from "relay-runtime";
+import { encodeGraphQLId, executeEditingOnce } from "@/api/graphql";
+import { useShelves } from "@/api/shelves";
+import { readerShelvesQuery } from "@/lib/relay/reader";
+import {
+  mutationsCreateShelfMutation,
+  mutationsRenameShelfMutation,
+  mutationsDeleteShelfMutation,
+} from "@/lib/relay/mutations";
+import type { readerShelvesQuery as ShelvesQuery } from "@/lib/relay/__generated__/readerShelvesQuery.graphql";
+import type { mutationsCreateShelfMutation as CreateShelf } from "@/lib/relay/__generated__/mutationsCreateShelfMutation.graphql";
+import type { mutationsRenameShelfMutation as RenameShelf } from "@/lib/relay/__generated__/mutationsRenameShelfMutation.graphql";
+import type { mutationsDeleteShelfMutation as DeleteShelf } from "@/lib/relay/__generated__/mutationsDeleteShelfMutation.graphql";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { Suspense, useActionState, useState, type ReactElement } from "react";
+import { useEffect, Suspense, useActionState, useRef, useState, type ReactElement } from "react";
 import { Form, TextField, Input as AriaInput, Label as AriaLabel } from "react-aria-components";
 import { z } from "zod";
-import { Link } from "react-router";
+import { Link, useLoaderData } from "react-router";
 
-import { ApiError, createShelf, deleteShelf, listShelves, renameShelf, type Shelf } from "@/api";
+import { ApiError, type Shelf } from "@/api";
 import { Button } from "@/components/ui/button";
 import { DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { queryKeys } from "@/lib/query/keys";
+
+import type { loader } from "@/routes/shelves";
 
 /** Top-level page component (Suspense boundary + content). */
-export function ShelvesListPage(): ReactElement {
+export function ShelvesListPage(): ReactElement | null {
+  const prepared = useLoaderData<typeof loader>();
+  if (prepared === null) return null;
   return (
     <Suspense fallback={<ShelvesSkeleton />}>
-      <ShelvesContent />
+      <ShelvesContent reference={prepared.reference} />
     </Suspense>
   );
 }
 
-function ShelvesContent(): ReactElement {
-  const qc = useQueryClient();
-  const { data: shelves } = useSuspenseQuery<Shelf[]>({
-    queryKey: queryKeys.shelves.list(),
-    queryFn: ({ signal }) => listShelves(signal),
-  });
-
+function ShelvesContent({
+  reference,
+}: Readonly<{ reference: PreloadedQuery<ShelvesQuery> }>): ReactElement {
+  const [current] = useQueryLoader<ShelvesQuery>(readerShelvesQuery, reference);
+  const query = usePreloadedQuery<ShelvesQuery>(readerShelvesQuery, current ?? reference);
+  const environment = useRelayEnvironment();
+  const shelvesQuery = useShelves(query);
+  const { data: shelves, error } = shelvesQuery;
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const lifetime = new AbortController();
+    controller.current = lifetime;
+    return () => {
+      lifetime.abort();
+    };
+  }, []);
   const [createOpen, setCreateOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Shelf | null>(null);
-
-  const createMutation = useMutation({
-    mutationFn: (name: string) => createShelf(name),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.shelves.all });
-      setCreateOpen(false);
-    },
-  });
-
-  const renameMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => renameShelf(id, name),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.shelves.all });
-      setRenameTarget(null);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (shelf: Shelf) => deleteShelf(shelf.id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.shelves.all });
-    },
-  });
-
+  const [createPending, setCreatePending] = useState(false);
+  const [renamePending, setRenamePending] = useState(false);
+  const [deletion, setDeletion] = useState<{
+    shelf: Shelf;
+    pending: boolean;
+    error: Error | null;
+  }>();
+  if (error !== null) throw error;
+  async function create(name: string): Promise<void> {
+    setCreatePending(true);
+    try {
+      const response = await executeEditingOnce<CreateShelf>(
+        environment,
+        mutationsCreateShelfMutation,
+        { name },
+        controller.current?.signal,
+      );
+      if (response !== undefined) {
+        shelvesQuery.refetch();
+        setCreateOpen(false);
+      }
+      setCreatePending(false);
+    } catch (error_) {
+      setCreatePending(false);
+      shelvesQuery.refetch();
+      throw error_;
+    }
+  }
+  async function rename(name: string): Promise<void> {
+    if (renameTarget === null) return;
+    setRenamePending(true);
+    try {
+      const response = await executeEditingOnce<RenameShelf>(
+        environment,
+        mutationsRenameShelfMutation,
+        { shelfId: encodeGraphQLId("Shelf", renameTarget.id), name },
+        controller.current?.signal,
+      );
+      if (response !== undefined) {
+        shelvesQuery.refetch();
+        setRenameTarget(null);
+      }
+      setRenamePending(false);
+    } catch (error_) {
+      setRenamePending(false);
+      shelvesQuery.refetch();
+      throw error_;
+    }
+  }
+  async function remove(shelf: Shelf): Promise<void> {
+    setDeletion({ shelf, pending: true, error: null });
+    try {
+      const response = await executeEditingOnce<DeleteShelf>(
+        environment,
+        mutationsDeleteShelfMutation,
+        { shelfId: encodeGraphQLId("Shelf", shelf.id) },
+        controller.current?.signal,
+      );
+      if (response === undefined) return;
+      commitLocalUpdate(environment, (store) => {
+        const connection = ConnectionHandler.getConnection(
+          store.getRoot(),
+          "readerShelves_shelves",
+        );
+        if (connection != null)
+          ConnectionHandler.deleteNode(connection, response.deleteShelf.shelfId);
+        store.delete(response.deleteShelf.shelfId);
+      });
+      setDeletion(undefined);
+    } catch (error_) {
+      if (controller.current?.signal.aborted) return;
+      setDeletion({
+        shelf,
+        pending: false,
+        error: error_ instanceof Error ? error_ : new Error("Request failed."),
+      });
+      shelvesQuery.refetch();
+    }
+  }
   return (
     <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
       <header className="mb-8 flex items-center justify-between">
@@ -84,10 +169,9 @@ function ShelvesContent(): ReactElement {
         </Button>
       </header>
 
-      {deleteMutation.isError ? (
+      {deletion?.error ? (
         <FieldError>
-          Could not delete {deleteMutation.variables.name}:{" "}
-          {deleteMutation.error instanceof ApiError ? deleteMutation.error.detail : "Try again."}
+          Could not delete {deletion.shelf.name}: {deletion.error.message}
         </FieldError>
       ) : null}
       <ul className="space-y-2">
@@ -128,10 +212,10 @@ function ShelvesContent(): ReactElement {
                   size="icon"
                   aria-label="Delete shelf"
                   onPress={() => {
-                    deleteMutation.mutate(shelf);
+                    void remove(shelf);
                   }}
-                  isPending={deleteMutation.isPending && deleteMutation.variables.id === shelf.id}
-                  isDisabled={deleteMutation.isPending && deleteMutation.variables.id !== shelf.id}
+                  isPending={deletion?.pending === true && deletion.shelf.id === shelf.id}
+                  isDisabled={deletion?.pending === true && deletion.shelf.id !== shelf.id}
                 >
                   <Trash2 className="size-4" aria-hidden="true" />
                 </Button>
@@ -148,10 +232,8 @@ function ShelvesContent(): ReactElement {
         onClose={() => {
           setCreateOpen(false);
         }}
-        onSubmit={async (name) => {
-          await createMutation.mutateAsync(name);
-        }}
-        pending={createMutation.isPending}
+        onSubmit={create}
+        pending={createPending}
       />
       <NameDialog
         // `key` forces remount when the rename target changes — without
@@ -165,12 +247,8 @@ function ShelvesContent(): ReactElement {
         onClose={() => {
           setRenameTarget(null);
         }}
-        onSubmit={async (name) => {
-          if (renameTarget !== null) {
-            await renameMutation.mutateAsync({ id: renameTarget.id, name });
-          }
-        }}
-        pending={renameMutation.isPending}
+        onSubmit={rename}
+        pending={renamePending}
       />
     </div>
   );

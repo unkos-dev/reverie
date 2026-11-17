@@ -91,3 +91,11 @@
 .rv-table [role="rowheader"]:has([data-slot="cell-save-state"]) [data-slot="edit-pencil"] {
   visibility: hidden;
 }
+
+.rv-table [role="rowheader"] [data-slot="cell-save-feedback"] {
+  right: 3rem;
+}
+
+.rv-table [role="rowheader"]:has([data-slot="cell-save-feedback"]) [data-slot="edit-pencil"] {
+  opacity: 1;
+}

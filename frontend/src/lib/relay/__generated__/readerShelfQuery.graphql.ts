@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<74c8052833fdb6d091d5068077fcf512>>
- * @relayHash 725ca89a1953a8da7191bcd372afa9d5
+ * @generated SignedSource<<6fa427bc45e23208fbc0320c3bd96dc7>>
+ * @relayHash bc7dd8d98d9805c686fea03bad6ddd61
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID e9778ee1ef1f0584eae94a9c39e360850a2511ac722610e16283deb2e20b94a7
+// @relayRequestID 37d9b9f35933e7b9b3592140e3a1a42be48ac404b7a1e932b2e1db91e4bffb0f
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -108,6 +108,34 @@ const node: ConcreteRequest = (function () {
             },
             {
               alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "isSystem",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "itemCount",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "createdAt",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "updatedAt",
+              storageKey: null,
+            },
+            {
+              alias: null,
               args: v3 /*:: as any*/,
               concreteType: "ManifestationConnection",
               kind: "LinkedField",
@@ -194,7 +222,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "e9778ee1ef1f0584eae94a9c39e360850a2511ac722610e16283deb2e20b94a7",
+      id: "37d9b9f35933e7b9b3592140e3a1a42be48ac404b7a1e932b2e1db91e4bffb0f",
       metadata: {},
       name: "readerShelfQuery",
       operationKind: "query",

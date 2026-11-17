@@ -1,3 +1,4 @@
+import { useShelves } from "@/api/shelves";
 /**
  * Active-filter chips row: one removable chip per filter condition, plus
  * a clear-all affordance. Replaces the read-only filter summary; the
@@ -6,12 +7,10 @@
  * write (it must kill pending drafts), so the container hands down the
  * clear-path writer, not the commit-path one.
  */
-import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, type ReactElement } from "react";
 import { Button, Tag, TagGroup, TagList } from "react-aria-components";
 
-import { listShelves, type Shelf } from "@/api";
 import {
   buildFilterSummary,
   shortId,
@@ -19,7 +18,6 @@ import {
 } from "@/components/library/filter-summary";
 import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
 import { useSeriesLabels } from "@/lib/hooks/use-series-labels";
-import { queryKeys } from "@/lib/query/keys";
 import type { FilterState } from "@/routes/library-params";
 
 type FilterChipsProps = {
@@ -44,20 +42,14 @@ export function FilterChips({
     data: shelves,
     isError: shelvesError,
     error: shelvesQueryError,
-  } = useQuery<Shelf[]>({
-    queryKey: queryKeys.shelves.list(),
-    queryFn: ({ signal }) => listShelves(signal),
-    staleTime: 60_000,
-    // Nothing to resolve without an active shelf filter; skip the fetch.
-    enabled: hasShelfFilter,
-  });
+  } = useShelves(undefined, hasShelfFilter);
   useEffect(() => {
     if (shelvesError) console.error("[FilterChips] shelves fetch failed", shelvesQueryError);
   }, [shelvesError, shelvesQueryError]);
 
   const segments = buildFilterSummary(filters, {
     authorLabel: authorNames.labelFor,
-    shelfName: (id) => shelves?.find((shelf) => shelf.id === id)?.name ?? shortId(id),
+    shelfName: (id) => shelves.find((shelf) => shelf.id === id)?.name ?? shortId(id),
     seriesName: seriesNames.labelFor,
   });
 

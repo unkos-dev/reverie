@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<57951bd997e70daa2171034670490772>>
+ * @generated SignedSource<<a34c7c2ef596257afece32741020130a>>
  * @lightSyntaxTransform
  */
 
@@ -9,7 +9,7 @@
 
 import { ReaderFragment } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
-export type readerLibraryBook$data = {
+export type readerLibraryBook$data = ReadonlyArray<{
   readonly coverUrl: string;
   readonly createdAt: string;
   readonly id: string;
@@ -26,7 +26,10 @@ export type readerLibraryBook$data = {
   readonly pages: number | null | undefined;
   readonly readingState: {
     readonly etag: string;
+    readonly finishedAt: string | null | undefined;
+    readonly progressPct: number | null | undefined;
     readonly rating: number | null | undefined;
+    readonly startedAt: string | null | undefined;
     readonly status: string | null | undefined;
   };
   readonly work:
@@ -59,11 +62,11 @@ export type readerLibraryBook$data = {
     | null
     | undefined;
   readonly " $fragmentType": "readerLibraryBook";
-};
-export type readerLibraryBook$key = {
+}>;
+export type readerLibraryBook$key = ReadonlyArray<{
   readonly " $data"?: readerLibraryBook$data;
   readonly " $fragmentSpreads": FragmentRefs<"readerLibraryBook">;
-};
+}>;
 
 const node: ReaderFragment = (function () {
   var v0 = {
@@ -118,7 +121,9 @@ const node: ReaderFragment = (function () {
   return {
     argumentDefinitions: [],
     kind: "Fragment",
-    metadata: null,
+    metadata: {
+      plural: true,
+    },
     name: "readerLibraryBook",
     selections: [
       v0 /*:: as any*/,
@@ -296,6 +301,27 @@ const node: ReaderFragment = (function () {
             name: "rating",
             storageKey: null,
           },
+          {
+            alias: null,
+            args: null,
+            kind: "ScalarField",
+            name: "progressPct",
+            storageKey: null,
+          },
+          {
+            alias: null,
+            args: null,
+            kind: "ScalarField",
+            name: "startedAt",
+            storageKey: null,
+          },
+          {
+            alias: null,
+            args: null,
+            kind: "ScalarField",
+            name: "finishedAt",
+            storageKey: null,
+          },
         ],
         storageKey: null,
       },
@@ -305,6 +331,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "c7ca10ac4533d3362d62b1327da0e43d";
+(node as any).hash = "c2dadf3aa9e423342c31172a8bb77298";
 
 export default node;

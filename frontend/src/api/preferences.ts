@@ -1,5 +1,5 @@
 /**
- * Client for `/auth/me/preferences`, the caller's per-user library display
+ * Presentation types for the caller's per-user library display
  * preferences: hidden columns, row density, view choice, and default sort.
  *
  * Mirrors `PreferencesResponse` in `backend/src/routes/preferences/mod.rs`.
@@ -14,8 +14,6 @@
  * for the `?view=` codec, and the table view imports the density union.
  */
 import { z } from "zod";
-
-import { apiFetch } from "./fetch";
 
 /** Row heights the library table offers. */
 export const DENSITIES = ["comfortable", "compact"] as const;
@@ -69,35 +67,3 @@ export type UpdatePreferencesFields = {
   view?: LibraryView | null;
   sort_stack?: string | null;
 };
-
-/** `GET /auth/me/preferences` — the caller's overrides plus the defaults. */
-export async function getPreferences(signal?: AbortSignal): Promise<Preferences> {
-  const body = await apiFetch("/auth/me/preferences", { signal });
-  return PreferencesSchema.parse(body);
-}
-
-/**
- * `PATCH /auth/me/preferences` — merge a partial update into the caller's
- * preferences, creating the row on first write. Last write wins; there is no
- * precondition header, so two of the caller's own tabs can drift until one
- * reloads.
- *
- * Routed through `apiFetch`, never a bare `fetch`: the session-authenticated
- * CSRF middleware rejects a PATCH without `X-CSRF-Token`, which is the
- * wrapper's job to inject.
- *
- * Throws an `ApiError` with `status === 422` when the body names no group,
- * carries an unknown density or view, or submits a sort stack or column key
- * the server refuses.
- */
-export async function updatePreferences(
-  fields: UpdatePreferencesFields,
-  signal?: AbortSignal,
-): Promise<Preferences> {
-  const body = await apiFetch("/auth/me/preferences", {
-    method: "PATCH",
-    body: JSON.stringify(fields),
-    signal,
-  });
-  return PreferencesSchema.parse(body);
-}

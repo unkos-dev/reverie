@@ -1,29 +1,28 @@
-/**
- * Versions tab body for the book detail page.
- *
- * Renders pending `metadata_versions` rows grouped by `field_name`, with
- * accept / reject / revert affordances per row and an "Edit field"
- * action that opens [`EditMetadataDialog`]. Mutations invalidate the
- * `["books", "detail", id]` cache slot so the canonical fields, the
- * pending list, and the version-count badge refetch in lockstep.
- */
+/** Pending metadata proposals and field-owned review outcomes. */
+import { useEffect, useRef, useState, useTransition, type ReactElement } from "react";
 import {
-  useMutation,
-  useMutationState,
-  useQueryClient,
-  type MutationState,
-} from "@tanstack/react-query";
-import { useState, type ReactElement } from "react";
+  useLazyLoadQuery,
+  usePaginationFragment,
+  useRelayEnvironment,
+  useSubscribeToInvalidationState,
+} from "react-relay";
+import { commitLocalUpdate } from "relay-runtime";
+import { encodeGraphQLId, executeEditingOnce, GraphQLExecutionError } from "@/api/graphql";
+import { readerVersions, readerVersionsQuery } from "@/lib/relay/reader";
+import {
+  mutationsAcceptMetadataVersionMutation,
+  mutationsRejectMetadataVersionMutation,
+  mutationsRevertMetadataFieldMutation,
+} from "@/lib/relay/mutations";
+import type { readerVersionsQuery as VersionsQuery } from "@/lib/relay/__generated__/readerVersionsQuery.graphql";
+import type { readerVersionsPaginationQuery as VersionsPagination } from "@/lib/relay/__generated__/readerVersionsPaginationQuery.graphql";
+import type { readerVersions$key } from "@/lib/relay/__generated__/readerVersions.graphql";
+import type { mutationsAcceptMetadataVersionMutation as AcceptVersion } from "@/lib/relay/__generated__/mutationsAcceptMetadataVersionMutation.graphql";
+import type { mutationsRejectMetadataVersionMutation as RejectVersion } from "@/lib/relay/__generated__/mutationsRejectMetadataVersionMutation.graphql";
+import type { mutationsRevertMetadataFieldMutation as RevertField } from "@/lib/relay/__generated__/mutationsRevertMetadataFieldMutation.graphql";
 import { FieldError } from "@/components/ui/field";
 
-import {
-  ApiError,
-  acceptVersion,
-  rejectVersion,
-  revertField,
-  type BookDetail,
-  type MetadataVersionRow,
-} from "@/api";
+import { ApiError, type BookDetail } from "@/api";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -35,7 +34,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { queryKeys } from "@/lib/query/keys";
 
 import { EditMetadataDialog } from "./EditMetadataDialog";
 
@@ -51,35 +49,73 @@ const FIELD_LABEL: Record<string, string> = {
 };
 
 type VersionsTabProps = {
-  book: BookDetail;
+  book: Pick<
+    BookDetail,
+    "id" | "title" | "description" | "language" | "isbn_10" | "isbn_13" | "publisher" | "pub_date"
+  >;
 };
 
 type FieldActionVariables = { field: string } & (
   | { action: "clear" }
   | { row: MetadataVersionRow; action: "accept" | "reject" }
 );
-type FieldActionState = MutationState<void, Error, FieldActionVariables>;
-
-function fieldActionKey(manifestationId: string) {
-  return [...queryKeys.books.detail(manifestationId), "version-action"] as const;
-}
+type MetadataVersionRow = {
+  id: string;
+  field_name: string;
+  source: string;
+  match_type: string;
+  confidence_score: number;
+  new_value: unknown;
+};
+type FieldActionState = {
+  status: "pending" | "success" | "error";
+  variables: FieldActionVariables;
+  error?: Error;
+};
 
 /**
  * Versions tab with field-owned action outcomes and an Edit dialog.
  */
 export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
-  const grouped = groupByField(book.metadata_versions);
-  const actions = useMutationState<FieldActionState>({
-    filters: { mutationKey: fieldActionKey(book.id) },
+  const query = useLazyLoadQuery<VersionsQuery>(readerVersionsQuery, {
+    id: encodeGraphQLId("Manifestation", book.id),
   });
+  const { data, hasNext, isLoadingNext, loadNext, refetch } = usePaginationFragment<
+    VersionsPagination,
+    readerVersions$key
+  >(readerVersions, query.manifestation);
+  const [pageError, setPageError] = useState<Error | null>(null);
+  const [, startTransition] = useTransition();
+  useEffect(() => {
+    if (hasNext && !isLoadingNext)
+      loadNext(20, {
+        onComplete: (error) => {
+          if (error !== null) setPageError(error);
+        },
+      });
+  }, [hasNext, isLoadingNext, loadNext]);
+  if (pageError !== null) throw pageError;
+  const rows =
+    data?.versions.pending.edges.map(({ node }) => ({
+      id: node.id,
+      field_name: node.fieldName,
+      source: node.source,
+      match_type: node.matchType,
+      confidence_score: node.confidenceScore,
+      new_value: node.newValue,
+    })) ?? [];
+  const grouped = groupByField(rows);
+  const [actions, setActions] = useState<FieldActionState[]>([]);
+  const refresh = (): void => {
+    startTransition(() => {
+      refetch({}, { fetchPolicy: "network-only" });
+    });
+  };
+  useSubscribeToInvalidationState([encodeGraphQLId("Manifestation", book.id)], refresh);
   const retainedFields = actions.flatMap((action) =>
-    (action.status === "pending" || action.status === "error") && action.variables !== undefined
-      ? [action.variables.field]
-      : [],
+    action.status === "pending" || action.status === "error" ? [action.variables.field] : [],
   );
-  // Name/label defs only: EditMetadataDialog seeds each field's canonical
-  // value itself from a fresh GET, not from this (possibly stale) `book`.
   const editableFields = (
     ["title", "description", "language", "publisher", "pub_date", "isbn_10", "isbn_13"] as const
   ).map((name) => ({
@@ -94,14 +130,24 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
     ]),
   ].sort((a, b) => a.localeCompare(b));
 
+  const pendingCount = data?.versions.pendingCount ?? 0;
+  const plural = pendingCount === 1 ? "" : "s";
+  let pendingText = "No pending drafts. Manually edit any field below.";
+  if (pendingCount !== 0)
+    pendingText = `${String(pendingCount)} pending draft${plural} await review.`;
+
+  function recordAction(action: FieldActionState): void {
+    const replaceAction = (current: FieldActionState[]): FieldActionState[] => [
+      ...current.filter((previous) => previous.variables.field !== action.variables.field),
+      action,
+    ];
+    setActions(replaceAction);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <p className="text-fg-muted text-sm">
-          {book.metadata_version_summary.pending === 0
-            ? "No pending drafts. Manually edit any field below."
-            : `${String(book.metadata_version_summary.pending)} pending draft${book.metadata_version_summary.pending === 1 ? "" : "s"} await review.`}
-        </p>
+        <p className="text-fg-muted text-sm">{pendingText}</p>
         <Button
           variant="outline"
           onPress={() => {
@@ -120,7 +166,8 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
             field={field}
             canonical={canonicalValue(book, field)}
             rows={grouped[field] ?? []}
-            actionState={actions.findLast((action) => action.variables?.field === field)}
+            actionState={actions.findLast((action) => action.variables.field === field)}
+            onAction={recordAction}
           />
         ))}
       </div>
@@ -141,6 +188,7 @@ type FieldGroupProps = {
   canonical: string | null;
   rows: MetadataVersionRow[];
   actionState: FieldActionState | undefined;
+  onAction: (action: FieldActionState) => void;
 };
 
 /** One field's section: current canonical row + pending alternatives. */
@@ -150,38 +198,97 @@ function FieldGroup({
   canonical,
   rows,
   actionState,
+  onAction,
 }: Readonly<FieldGroupProps>): ReactElement | null {
-  const queryClient = useQueryClient();
+  const environment = useRelayEnvironment();
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const lifetime = new AbortController();
+    controller.current = lifetime;
+    return () => {
+      lifetime.abort();
+    };
+  }, []);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const pending = actionState?.status === "pending";
   const submitted = actionState?.variables;
   const clearPending = pending && submitted?.action === "clear";
-  const invalidate = () =>
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.books.all,
-    });
-
-  const mutationKey = [...fieldActionKey(manifestationId), field];
-  const action = useMutation({
-    mutationKey,
-    mutationFn: (variables: FieldActionVariables) => {
-      if (variables.action === "clear") return revertField(manifestationId, variables.field, null);
-      return variables.action === "accept"
-        ? acceptVersion(manifestationId, variables.row.id)
-        : rejectVersion(manifestationId, variables.row.id);
-    },
-    onSuccess: () => {
-      const cache = queryClient.getMutationCache();
-      for (const failure of cache.findAll({ mutationKey, exact: true, status: "error" })) {
-        cache.remove(failure);
+  async function mutate(variables: FieldActionVariables): Promise<void> {
+    if (pending) return;
+    onAction({ status: "pending", variables });
+    const id = encodeGraphQLId("Manifestation", manifestationId);
+    try {
+      let metadata: AcceptVersion["response"]["acceptMetadataVersion"]["metadata"];
+      if (variables.action === "clear") {
+        const response = await executeEditingOnce<RevertField>(
+          environment,
+          mutationsRevertMetadataFieldMutation,
+          { id, fieldName: variables.field, versionId: null },
+          controller.current?.signal,
+        );
+        if (response === undefined) return;
+        metadata = response.revertMetadataField.metadata;
+      } else if (variables.action === "accept") {
+        const response = await executeEditingOnce<AcceptVersion>(
+          environment,
+          mutationsAcceptMetadataVersionMutation,
+          { id, versionId: variables.row.id },
+          controller.current?.signal,
+        );
+        if (response === undefined) return;
+        metadata = response.acceptMetadataVersion.metadata;
+      } else {
+        const response = await executeEditingOnce<RejectVersion>(
+          environment,
+          mutationsRejectMetadataVersionMutation,
+          { id, versionId: variables.row.id },
+          controller.current?.signal,
+        );
+        if (response === undefined) return;
       }
-      return invalidate();
-    },
-    onError: (error) => {
+      commitLocalUpdate(environment, (store) => {
+        const edition = store.get(id);
+        const work =
+          metadata == null ? edition?.getLinkedRecord("work") : store.get(metadata.workId);
+        if (metadata != null) {
+          for (const key of [
+            "title",
+            "subtitle",
+            "description",
+            "language",
+            "contentRating",
+          ] as const)
+            work?.setValue(metadata[key], key);
+          for (const key of [
+            "isbn10",
+            "isbn13",
+            "isbnMismatch",
+            "publisher",
+            "publicationDate",
+            "pages",
+          ] as const)
+            edition?.setValue(metadata[key], key);
+        }
+        work?.invalidateRecord();
+        edition?.invalidateRecord();
+      });
+      onAction({ status: "success", variables });
+    } catch (error) {
+      if (controller.current?.signal.aborted) return;
+      commitLocalUpdate(environment, (store) => {
+        const edition = store.get(id);
+        const work = edition?.getLinkedRecord("work");
+        work?.invalidateRecord();
+        edition?.invalidateRecord();
+      });
       console.error("[VersionsTab] field action failed", error);
-      void invalidate();
-    },
-  });
+      onAction({
+        status: "error",
+        variables,
+        error: error instanceof Error ? error : new Error("Request failed."),
+      });
+    }
+  }
   if (rows.length === 0 && actionState?.status !== "error" && !pending) return null;
   return (
     <section
@@ -219,10 +326,10 @@ function FieldGroup({
             rejecting={pending && submitted?.action === "reject" && submitted.row.id === row.id}
             busy={pending}
             onAccept={() => {
-              action.mutate({ field, row, action: "accept" });
+              void mutate({ field, row, action: "accept" });
             }}
             onReject={() => {
-              action.mutate({ field, row, action: "reject" });
+              void mutate({ field, row, action: "reject" });
             }}
           />
         ))}
@@ -240,7 +347,7 @@ function FieldGroup({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onPress={() => {
-              action.mutate({ field, action: "clear" });
+              void mutate({ field, action: "clear" });
               setConfirmOpen(false);
             }}
           >
@@ -256,7 +363,7 @@ function FieldOutcome({
   actionState,
   rows,
 }: Readonly<Pick<FieldGroupProps, "actionState" | "rows">>): ReactElement | null {
-  if (actionState === undefined || actionState.variables === undefined) return null;
+  if (actionState === undefined) return null;
   const variables = actionState.variables;
   if (variables.action === "clear") {
     return actionState.status === "error" ? (
@@ -268,7 +375,9 @@ function FieldOutcome({
     return (
       <FieldError>
         {row.source} draft:{" "}
-        {actionState.error instanceof ApiError && actionState.error.status === 404
+        {(actionState.error instanceof ApiError && actionState.error.status === 404) ||
+        (actionState.error instanceof GraphQLExecutionError &&
+          actionState.error.errors.some((error) => error.extensions?.code === "not-found"))
           ? "This draft is no longer available."
           : formatError(actionState.error)}
       </FieldError>
@@ -355,7 +464,7 @@ function groupByField(rows: readonly MetadataVersionRow[]): Record<string, Metad
   return out;
 }
 
-function canonicalValue(book: BookDetail, field: string): string | null {
+function canonicalValue(book: VersionsTabProps["book"], field: string): string | null {
   switch (field) {
     case "title":
       return book.title;

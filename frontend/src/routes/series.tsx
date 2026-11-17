@@ -1,47 +1,26 @@
-/**
- * Route module for `/series/:id`. Exports `loader`
- * (prefetches the series detail into the shared `QueryClient`) and
- * `Component` (the page renderer).
- *
- * react-router data-mode requires loader and component in the same
- * module, so the `react/only-export-components` rule is disabled at
- * file scope because data routes have no fast-refresh-friendly
- * alternative.
- */
 /* oxlint-disable react/only-export-components */
 import type { LoaderFunctionArgs } from "react-router";
+import { z } from "zod";
 
-import { getSeries, type SeriesDetail } from "@/api";
-import type { TitleData } from "@/components/shell/crumbs";
-import { queryClient } from "@/lib/query/client";
-import { queryKeys } from "@/lib/query/keys";
+import { encodeGraphQLId } from "@/api/graphql";
+import { prepareReader, type PreparedReader } from "@/lib/relay/environment";
+import { readerSeriesQuery } from "@/lib/relay/reader";
+import type { readerSeriesQuery as ReaderQuery } from "@/lib/relay/__generated__/readerSeriesQuery.graphql";
 
-/**
- * Loader for `/series/:id`. Prefetches the series detail so the
- * page's `useSuspenseQuery` hits a hot cache, then returns `{ title }`
- * for the utility strip's breadcrumb. The prefetch swallows fetch
- * errors — a cold cache degrades to `null` (crumb renders "Library"
- * alone).
- *
- * Throws a `Response` on a missing id — react-router's documented
- * loader-bailout mechanism (same guard as the `/b/:id` loader); the
- * alternative would send `GET /series/` with an empty id segment.
- */
-export async function loader({ params }: LoaderFunctionArgs): Promise<TitleData | null> {
-  const id = params.id;
-  if (typeof id !== "string" || id.length === 0) {
-    // oxlint-disable-next-line typescript/only-throw-error -- react-router's loader-bailout convention is `throw new Response(...)`.
-    throw new Response("Missing series id", { status: 404 });
+/** Prepare the route's reader query and breadcrumb before rendering. */
+export async function loader({
+  params,
+  request,
+}: LoaderFunctionArgs): Promise<(PreparedReader<ReaderQuery> & { title: string | null }) | null> {
+  const parsed = z.uuid().safeParse(params.id);
+  if (!parsed.success) throw new Response("Not found", { status: 404 });
+  const id = encodeGraphQLId("Series", parsed.data);
+  const prepared = await prepareReader<ReaderQuery>(readerSeriesQuery, { id }, request.signal);
+  if (prepared !== null && prepared.data?.series == null) {
+    prepared.dispose();
+    throw new Response("Not found", { status: 404 });
   }
-  await queryClient
-    .query({
-      queryKey: queryKeys.series.detail(id),
-      queryFn: ({ signal }) => getSeries(id, signal),
-    })
-    .catch(() => {});
-  const detail = queryClient.getQueryData<SeriesDetail>(queryKeys.series.detail(id));
-  return detail === undefined ? null : ({ title: detail.name } satisfies TitleData);
+  return prepared === null ? null : { ...prepared, title: prepared.data?.series?.name ?? null };
 }
 
-/** Component export consumed by the route's `lazy()` callback. */
 export { SeriesPage as Component } from "@/pages/series/SeriesPage";

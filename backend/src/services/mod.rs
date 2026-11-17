@@ -20,6 +20,7 @@ pub mod mail;
 /// Metadata extraction, drafting, sanitisation, ISBN normalisation,
 /// and the value-vs-canonical inversion helpers.
 pub mod metadata;
+pub(crate) mod preferences;
 pub(crate) mod reader;
 /// Periodic reaper deleting expired rows from `tower_sessions.session`.
 pub mod session_sweep;

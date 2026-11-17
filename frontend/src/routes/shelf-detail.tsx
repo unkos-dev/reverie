@@ -1,24 +1,29 @@
 /* oxlint-disable react/only-export-components */
-/**
- * Route module for `/shelves/:id`.
- */
 import type { LoaderFunctionArgs } from "react-router";
+import { z } from "zod";
 
-import { getShelf } from "@/api";
-import { queryClient } from "@/lib/query/client";
-import { queryKeys } from "@/lib/query/keys";
+import { encodeGraphQLId } from "@/api/graphql";
+import { prepareReader, type PreparedReader } from "@/lib/relay/environment";
+import { readerShelfQuery } from "@/lib/relay/reader";
+import type { readerShelfQuery as ReaderQuery } from "@/lib/relay/__generated__/readerShelfQuery.graphql";
 
-/** Loader for `/shelves/:id` — prefetches the shelf detail. */
-export async function loader({ params }: LoaderFunctionArgs): Promise<null> {
-  const id = params.id ?? "";
-  await queryClient
-    .query({
-      queryKey: queryKeys.shelves.detail(id),
-      queryFn: ({ signal }) => getShelf(id, signal),
-    })
-    .catch(() => {});
-  return null;
+/** Prepare the caller-owned shelf read before rendering. */
+export async function loader({
+  params,
+  request,
+}: LoaderFunctionArgs): Promise<PreparedReader<ReaderQuery> | null> {
+  const parsed = z.uuid().safeParse(params.id);
+  if (!parsed.success) throw new Response("Not found", { status: 404 });
+  const prepared = await prepareReader<ReaderQuery>(
+    readerShelfQuery,
+    { id: encodeGraphQLId("Shelf", parsed.data) },
+    request.signal,
+  );
+  if (prepared !== null && prepared.data?.shelf == null) {
+    prepared.dispose();
+    throw new Response("Not found", { status: 404 });
+  }
+  return prepared;
 }
 
-/** Component export consumed by the route's `lazy()` callback. */
 export { ShelfDetailPage as Component } from "@/pages/shelves/ShelfDetailPage";

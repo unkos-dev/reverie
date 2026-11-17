@@ -51,23 +51,12 @@ export type {
   ArrayParamKey,
   UpdateBookMetadataFields,
 } from "./books";
-export { searchLibrary } from "./search";
 export type { SearchHit, SearchHitKind, SearchResponse } from "./search";
-export { suggestVocab, resolveAuthors, resolveSeries, MAX_RESOLVE_IDS } from "./suggest";
+export { MAX_RESOLVE_IDS } from "./suggest";
 export type { Suggestion, SuggestKind } from "./suggest";
 export { acceptVersion, rejectVersion, revertField } from "./metadata";
-export { getSeries } from "./series";
 export type { SeriesDetail, SeriesWork, SeriesWorkManifestation } from "./series";
-export {
-  listShelves,
-  getShelf,
-  createShelf,
-  renameShelf,
-  deleteShelf,
-  addShelfItem,
-  removeShelfItem,
-} from "./shelves";
-export type { Shelf, ShelfItem, ShelfWithItems } from "./shelves";
+export type { Shelf } from "./shelves";
 export {
   listUsers,
   updateUserRole,
@@ -77,13 +66,7 @@ export {
   setAccountStatus,
 } from "./users";
 export type { User, Role as UserRole, UpdateUserFields, CreateUserInput } from "./users";
-export {
-  getPreferences,
-  updatePreferences,
-  isLibraryView,
-  DENSITIES,
-  LIBRARY_VIEWS,
-} from "./preferences";
+export { isLibraryView, DENSITIES, LIBRARY_VIEWS } from "./preferences";
 export type {
   Density,
   LibraryView,
