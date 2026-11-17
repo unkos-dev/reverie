@@ -20,6 +20,7 @@ satisfies:
   - "REV-REQ-0079"
 governed-by:
   - "REV-ADR-0077"
+  - "REV-ADR-0078"
 ---
 
 # GraphQL execution and Relay browser data
@@ -33,22 +34,27 @@ account screens retain their HTTP adapters and Query ownership. Authentication p
 
 ## Structure
 
-`backend/src/graphql/mod.rs` builds one async-graphql schema with query and mutation roots and no subscriptions.
-Ordinary queries use `ReadScope`; mutations and `metadataOperation` use `WriteScope`, independently of HTTP POST. The
-adapter uses `ApiJson<Envelope>` and async-graphql-axum's `GraphQLResponse`. Its OpenAPI router joins `pilot_router`
-before the API CSP, CSRF and session layers. OpenAPI describes the HTTP envelope; the generated GraphQL schema describes
+`backend/src/graphql/mod.rs` builds one Juniper `RootNode` with query and mutation roots and an empty subscription root.
+Every root field first calls `RequestContext::require`: ordinary queries require read scope, and mutations and
+`metadataOperation` require write scope, independently of HTTP POST. The adapter reads `ApiJson<Envelope>`, validates
+the document with Juniper's `ValidatedOperation`, runs Reverie's cost and depth pass, then executes. It writes
+`{"data", "errors"}` itself as `application/graphql-response+json`. Its OpenAPI router joins `pilot_router` before the
+API CSP, CSRF and session layers. OpenAPI describes the HTTP envelope; the generated GraphQL schema describes
 application fields.
 
-The schema holds the execution policy, never caller identity. Each request supplies its own `CurrentUser` and
-application state, pool, actual tower Session and request-local DataLoader to the executor. The viewer reads the
-caller's display name through a transaction from `acquire_with_rls` and returns the encoded `User` identity. It exposes
-no other account's data.
+The schema holds the execution policy and limits, never caller identity. Each request builds a `RequestContext` holding
+its own `CurrentUser`, application state, actual tower Session and request-local loaders. The viewer reads the caller's
+display name through a transaction from `acquire_with_rls` and returns the encoded `User` identity. It exposes no other
+account's data.
 
 `backend/src/graphql/library.rs` defines Work, Manifestation, Shelf and Series objects and their connections.
 `backend/src/services/reader.rs` owns the transport-independent reads used by HTTP adapters and graph fields.
-`loaders.rs` batches keys through caller-scoped transactions and caches results only for one execution request. Every
-GraphQL Work, Series and relation requires at least one manifestation visible to the caller, including typed and Node
-lookups. Shelf reads retain explicit owner predicates.
+`loaders.rs` batches keys through caller-scoped transactions and caches results only for one execution request. A load
+queues its keys and yields so that sibling fields can queue theirs. One caller then loads every queued key in one batch
+and wakes all waiting loads together, so the next level of sibling fields also batches. Each batch's rows, absences and
+failures stay cached for the request, and list fields prime the cache with the rows they already read. Every GraphQL
+Work, Series and relation requires at least one manifestation visible to the caller, including typed and Node lookups.
+Shelf reads retain explicit owner predicates.
 
 Work holds shared metadata, contributors and the selected series. Manifestation holds file metadata and caller-owned
 reading state. Contributor role and series position belong to edges. Metadata editing snapshots carry their matching
@@ -56,10 +62,10 @@ values, domain IDs and entity-tag from one database snapshot. They do not depend
 
 ## Interfaces and dependencies
 
-The importing backend declares async-graphql and async-graphql-axum 7.2.1. The frontend declares Relay runtime,
-react-relay, compiler and Babel plugin 21.0.1. Vite+ applies the Relay Babel transform through `@rolldown/plugin-babel`
-0.3.1 alongside `react({ compiler: true })` in production and Browser Mode. Generated TypeScript artefacts live in
-`frontend/src/lib/relay/__generated__`.
+The importing backend declares `juniper` 0.18.0 with the `schema-language` feature, which exports the SDL. The frontend
+declares Relay runtime, react-relay, compiler and Babel plugin 21.0.1. Vite+ applies the Relay Babel transform through
+`@rolldown/plugin-babel` 0.3.1 alongside `react({ compiler: true })` in production and Browser Mode. Generated
+TypeScript artefacts live in `frontend/src/lib/relay/__generated__`.
 
 `just rust::regen` exports `backend/schema.graphql`; `just rust::drift` compares it without writing.
 `just js::relay-gen` generates operations and the document map from `frontend/relay.config.json`. It starts the map
@@ -71,12 +77,14 @@ IDs use standard padded base64 of `Type:<uuid>`, with distinct Work, Manifestati
 `Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed lookup roots return null for malformed,
 wrong-type, hidden and missing records. The User variant resolves only the caller. Reading state has no global ID.
 
-Work, Series, Shelf and Manifestation declare `@fetchable(field_name: "id")`. Their nullable concrete lookup roots are
-`fetch__Work(id: ID!)`, `fetch__Series(id: ID!)`, `fetch__Shelf(id: ID!)` and `fetch__Manifestation(id: ID!)`. They
-share the typed roots' read scope guards and visibility checks. Paging fragments on these types set
-`@refetchable(preferFetchable: true)` so Relay refetches through the concrete root. The concrete parent preserves
-async-graphql's page complexity multipliers when validating named fragment spreads. Query paging fragments use their
-Query root directly.
+Paging fragments on Work, Series, Shelf and Manifestation refetch through `node(id:)`, Relay's default, which shares the
+typed roots' read scope check and visibility rules. The cost pass reads a named fragment spread beneath `node` by its
+type condition, so page multipliers apply. Query paging fragments use their Query root directly.
+
+Connections are concrete `<Type>Connection` and `<Type>Edge` objects generated by the `connection!` macro in `mod.rs`,
+each with `pageInfo`, `edges` and `nodes`. Contributor edges add `role` and `position`; series work edges add
+`position`. The `JSON` scalar for proposal values is a hand-written `GraphQLType` in `versions.rs`, because Juniper's
+derived scalars output a single scalar value.
 
 `frontend/src/lib/relay/reader.ts` supplies Library, detail, shelves, series, search, active suggestions and label
 reads. The basic detail includes only the small pending-version count. The Versions tab requests and pages pending
@@ -101,8 +109,10 @@ state remains in `api/csrf.ts`, outside Relay records.
 
 Release builds always select production policy; debug builds select development policy. There is no environment setting.
 Production refuses submitted text and unknown IDs before execution, with no runtime registration. Development accepts
-text for tooling. Both modes validate variables and enforce root-field scope. Production disables schema introspection;
-development retains it. `__typename` remains available.
+text for tooling. Both modes validate variables and enforce root-field scope. Before validation runs on variables, the
+adapter fills absent input-object fields that have schema defaults, such as `BooksFilter` lists, because Juniper 0.18's
+variable validation refuses them. Production refuses documents that select `__schema` or `__type`; development retains
+introspection. `__typename` remains available.
 
 Every connection and output list costs one plus its effective bound times child complexity. A capped relation is always
 a connection with `pageInfo`, so nothing is silently truncated. Continuation cursors keep the remainder reachable.
@@ -123,11 +133,15 @@ The sizes above are explicit representative operation arguments, not server defa
 20-result bound, suggestions their shared 10-result default and 1-20 clamp, and labels their validated input count up to
 60. Zero-size connections still cost one. Checked arithmetic refuses overflow and excessive cost.
 
-The complexity limit is 200,000 in both policies. async-graphql `Analyzer` measurements of every trusted operation use
-maximum variable sizes: 100 for primary pages, 50 for pending pages and 60 IDs for labels. Literal sizes remain as
-written. The maximum measured cost is 17,904 and the maximum measured depth is 8 across all 57 trusted documents. The
-depth limit is 12. Library initial and pagination reads cost 7,201, Series initial reads cost 8,957, and Series
-pagination costs 17,904. Sixty-ID label requests cost 121. Admission limits remain 200,000 and depth 12.
+The complexity limit is 200,000 in both policies. `complexity.rs` walks the selected operation of the parsed document,
+expanding fragments inline under their type conditions, and refuses a document with "Query is too complex." or "Query is
+nested too deep." before execution. Those refusals take precedence over per-field size refusals such as "Invalid page
+size.". Arguments resolve from the request variables and the operation's variable defaults. Measurements by that pass of
+every trusted operation use maximum variable sizes: 100 for primary pages, 50 for pending pages and 60 IDs for labels.
+Literal sizes remain as written. The maximum measured cost is 17,904 and the maximum measured depth is 8 across all 57
+trusted documents. The depth limit is 12. Library initial and pagination reads cost 7,201, Series initial reads cost
+8,957, and Series pagination costs 17,904. Sixty-ID label requests cost 121. Admission limits remain 200,000 and depth
+12.
 
 | Operation                          | Maximum cost | Depth |
 | ---------------------------------- | -----------: | ----: |
@@ -136,7 +150,8 @@ pagination costs 17,904. Sixty-ID label requests cost 121. Admission limits rema
 | `readerSeriesWorksPaginationQuery` |       17,904 |     8 |
 | `readerSeriesQuery`                |        8,957 |     8 |
 
-Both policies refuse excess cost and depth. async-graphql excludes `__typename` from these counts. Axum's default 2 MiB
+Both policies refuse excess cost and depth. The pass excludes `__typename` from both counts. Juniper's parser separately
+refuses documents beyond its default limits of 64 nesting levels, 15,000 tokens and 15,000 fields. Axum's default 2 MiB
 JSON-body limit still applies.
 
 `versions.rs` resolves only a selected Manifestation `versions` field. The pending count is exact across all eligible
@@ -161,12 +176,11 @@ projection loads. HTTP asks for its complete result. Whole-list editing needs ev
 continuation pages remain available through the concrete Manifestation lookup. Selected pages are keyed by parent, field
 or role, and effective `first`/`after` arguments, including distinct aliases.
 
-Selection inspection uses async-graphql look-ahead. It expands fragments without applying their type conditions or
-fragment-level `@include`/`@skip`, so it may load extra fields beyond the executed selection. Resolver defaults apply
-where arguments are omitted. There is no custom fragment traversal.
-
-Development raw queries can assign too little cost to named fragments spread beneath `node`'s Node interface in
-async-graphql 7.2.1. Production admits only trusted documents, and none uses that pattern.
+Selection inspection uses Juniper look-ahead. It expands fragments and applies `@include` and `@skip`. Resolver defaults
+apply where arguments are omitted. There is no custom fragment traversal. When one selection set repeats a response key
+directly, Juniper gives every occurrence the first occurrence's children. A later occurrence with different page
+arguments then fails with an internal error ("Snapshot page was not materialised") instead of returning wrong data.
+Occurrences in separate fragments are unaffected, and no trusted document repeats a direct response key.
 
 The Relay network sends generated IDs and variables through `apiFetch` with same-origin credentials and an abort signal.
 It validates the response envelope before publication. The viewer has no custom scalar or editing snapshot. Reader
@@ -174,14 +188,14 @@ proposal JSON reaches the lazy Versions view. Editing documents validate their s
 Execution faults are errors and do not publish partial data or trigger a resend.
 
 `frontend/src/lib/relay/mutations.ts` contains selected title, form, author and reading reads and acknowledgements, plus
-the other protected actions. `readerAuthorEditing` refetches through `fetch__Manifestation`. The network checks each
-editing document's selected snapshot, domain IDs, UUID handles, strong validators, timestamps and PageInfo before
-`sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment reads, `fetchQuery`,
-store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor chain with one pair
-of domain IDs and one revision. Library cells, the metadata dialog, Versions actions and batch Set status use these
-selected raw executions. Preferences read and sparse update share the canonical service with HTTP; defaults hide
-Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata refresh schedules the
-canonical claim-preserving enrichment operation with write scope and non-child authorisation.
+the other protected actions. `readerAuthorEditing` refetches through `node`. The network checks each editing document's
+selected snapshot, domain IDs, UUID handles, strong validators, timestamps and PageInfo before `sink.next`.
+`executeEditing` captures a detached raw execution payload, without using fragment reads, `fetchQuery`, store lookups or
+`commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor chain with one pair of domain IDs and
+one revision. Library cells, the metadata dialog, Versions actions and batch Set status use these selected raw
+executions. Preferences read and sparse update share the canonical service with HTTP; defaults hide Subtitle while
+explicit arrays, including an empty override, retain their meaning. Metadata refresh schedules the canonical
+claim-preserving enrichment operation with write scope and non-child authorisation.
 
 ## Failure and recovery
 

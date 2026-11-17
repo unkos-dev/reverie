@@ -149,10 +149,10 @@ revert.
 
 ## GraphQL schema and trusted documents
 
-The authenticated GraphQL endpoint is `POST /api/graphql`, built with async-graphql and async-graphql-axum 7.2.1 in the
-existing process. Ordinary query roots use read scope and caller-scoped transactions. Mutations and operation resolution
-use write scope. Session POST requests retain CSRF enforcement. Retained `/api/v1`, authentication, OPDS and binary
-endpoints keep their HTTP contracts and OpenAPI documentation.
+The authenticated GraphQL endpoint is `POST /api/graphql`, built with Juniper 0.18 in the existing process. Ordinary
+query roots use read scope and caller-scoped transactions. Mutations and operation resolution use write scope. Session
+POST requests retain CSRF enforcement. Retained `/api/v1`, authentication, OPDS and binary endpoints keep their HTTP
+contracts and OpenAPI documentation.
 
 Run `just rust::regen` to export `backend/schema.graphql`, then `just js::relay-gen` from the repository root to
 generate the matching frontend operations and `backend/graphql-documents.json`. Commit all generated output together.
@@ -171,13 +171,11 @@ pages and revisions are materialised in one transaction, and HTTP keeps its comp
 
 Graph request-local loaders batch Work, Manifestation, Shelf, Series and relation keys without sharing caller records
 across requests. IDs use padded base64 of `Type:<uuid>`. Typed roots and `node(id:)` return null for invalid, hidden or
-missing identities. Work, Series, Shelf and Manifestation declare `@fetchable(field_name: "id")` and expose guarded
-concrete roots `fetch__Work`, `fetch__Series`, `fetch__Shelf` and `fetch__Manifestation`, each taking `id: ID!`. Their
-paging fragments set `@refetchable(preferFetchable: true)` so Relay refetches through the concrete type and validation
-retains page complexity multipliers. Connections use keyset SQL and configured page bounds. Metadata values and their
-matching entity-tags stay together. Selecting `versions` loads proposals separately, with a required `first`, 50-row
-maximum and an early child exclusion. Representative operations request 20 rows. Pending PageInfo keeps remaining rows
-reachable.
+missing identities. Paging fragments on Work, Series, Shelf and Manifestation refetch through `node(id:)`, and the cost
+analysis applies page multipliers to fragments spread beneath it. Connections use keyset SQL and configured page bounds.
+Metadata values and their matching entity-tags stay together. Selecting `versions` loads proposals separately, with a
+required `first`, 50-row maximum and an early child exclusion. Representative operations request 20 rows. Pending
+PageInfo keeps remaining rows reachable.
 
 Reader operations live in `frontend/src/lib/relay/reader.ts` and `mutations.ts`, including the 50-row Library page,
 prepared detail, shelf and series reads, and the lazy versions query. The browser uses one account-scoped Relay owner
