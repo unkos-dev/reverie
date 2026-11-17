@@ -57,6 +57,7 @@ export default defineConfig({
     },
   },
   test: {
+    attachmentsDir: "./test-results/browser",
     projects: [
       {
         extends: false,
@@ -91,7 +92,6 @@ export default defineConfig({
           browser: {
             enabled: true,
             headless: true,
-            screenshotDirectory: "./test-results/browser",
             provider: playwright({ contextOptions: { locale: "en-AU", timezoneId: "UTC" } }),
             instances: [{ browser: "chromium", viewport: { width: 1280, height: 800 } }],
           },
