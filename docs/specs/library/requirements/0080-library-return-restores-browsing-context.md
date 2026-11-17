@@ -15,8 +15,7 @@ the reader's place. Restoration MUST NOT override a newer filter, sort, view, na
 ## Rationale
 
 Opening a book should not lose the reader's place in a large collection. Independent visits can use the same filters and
-sort while retaining different amounts of the collection. Returning to either visit must preserve its own context while
-current results load.
+sort while retaining different amounts of the collection. Returning to either visit must preserve its own context.
 
 ## Acceptance criteria
 
