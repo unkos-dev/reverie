@@ -10,7 +10,9 @@
   ],
   "configMigration": true,
   "timezone": "Australia/Perth",
-  "dependencyDashboardTitle": "Dependency dashboard: Renovate",
+  "dependencyDashboard": {
+    "title": "Dependency dashboard: Renovate"
+  },
   "labels": ["dependencies"],
   "prHourlyLimit": 4,
   "prConcurrentLimit": 10,
