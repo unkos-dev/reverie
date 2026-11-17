@@ -1,42 +1,44 @@
-type Author {
-  id: ID!
-  name: String!
+schema {
+  query: Query
+  mutation: Mutation
 }
 
-type AuthorConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [AuthorEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Author!]!
+enum ContentRatingInput {
+  EVERYONE
+  TEEN
+  MATURE
+  ADULT
+  EXPLICIT
 }
 
-"""
-An edge in a connection.
-"""
-type AuthorEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Author!
-  role: String!
-  position: Int!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+enum Direction {
+  ASC
+  DESC
 }
 
-type AuthorSuggestion {
-  entityId: ID
-  value: String!
+enum LibraryDensityInput {
+  COMFORTABLE
+  COMPACT
+}
+
+enum LibraryViewInput {
+  GRID
+  TABLE
+}
+
+enum ReadingStatusInput {
+  WANT_TO_READ
+  READING
+  ON_HOLD
+  FINISHED
+  ABANDONED
+}
+
+enum SortField {
+  title
+  author
+  created_at
+  pages
 }
 
 input BooksFilter {
@@ -77,23 +79,88 @@ input BooksFilter {
   q: String
 }
 
-enum ContentRatingInput {
-  EVERYONE
-  TEEN
-  MATURE
-  ADULT
-  EXPLICIT
-}
-
 input ContributorPatch {
   author: [String!]
   editor: [String!]
   translator: [String!]
 }
 
-enum Direction {
-  ASC
-  DESC
+input IdentifierPatch {
+  scheme: String!
+  value: String
+}
+
+input LibraryPreferencesPatch {
+  hiddenColumns: [String!]
+  density: LibraryDensityInput
+  view: LibraryViewInput
+  sortStack: String
+}
+
+input MetadataPatch {
+  title: String
+  subtitle: String
+  description: String
+  language: String
+  publisher: String
+  publicationDate: String
+  isbn10: String
+  isbn13: String
+  pages: Int
+  contentRating: ContentRatingInput
+  genres: [String!]
+  moods: [String!]
+  tags: [String!]
+  contributors: ContributorPatch
+  workIdentifiers: [IdentifierPatch!]
+  manifestationIdentifiers: [IdentifierPatch!]
+}
+
+input ReadingPatch {
+  status: ReadingStatusInput
+  rating: Int
+  notes: String
+}
+
+input SortLevel {
+  column: SortField!
+  direction: Direction!
+}
+
+interface Node {
+  id: ID!
+}
+
+"A scalar that can represent any JSON value."
+scalar JSON
+
+type Author {
+  id: ID!
+  name: String!
+}
+
+type AuthorConnection {
+  "Information to aid in pagination."
+  pageInfo: PageInfo!
+  "A list of edges."
+  edges: [AuthorEdge!]!
+  "A list of nodes."
+  nodes: [Author!]!
+}
+
+"An edge in a connection."
+type AuthorEdge {
+  "The item at the end of the edge"
+  node: Author!
+  role: String!
+  position: Int!
+  "A cursor for use in pagination"
+  cursor: String!
+}
+
+type AuthorSuggestion {
+  entityId: ID
+  value: String!
 }
 
 type ExternalIdentifier {
@@ -103,31 +170,19 @@ type ExternalIdentifier {
 }
 
 type ExternalIdentifierConnection {
-  """
-  Information to aid in pagination.
-  """
+  "Information to aid in pagination."
   pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
+  "A list of edges."
   edges: [ExternalIdentifierEdge!]!
-  """
-  A list of nodes.
-  """
+  "A list of nodes."
   nodes: [ExternalIdentifier!]!
 }
 
-"""
-An edge in a connection.
-"""
+"An edge in a connection."
 type ExternalIdentifierEdge {
-  """
-  The item at the end of the edge
-  """
+  "The item at the end of the edge"
   node: ExternalIdentifier!
-  """
-  A cursor for use in pagination
-  """
+  "A cursor for use in pagination"
   cursor: String!
 }
 
@@ -140,31 +195,19 @@ type ExternalRating {
 }
 
 type ExternalRatingConnection {
-  """
-  Information to aid in pagination.
-  """
+  "Information to aid in pagination."
   pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
+  "A list of edges."
   edges: [ExternalRatingEdge!]!
-  """
-  A list of nodes.
-  """
+  "A list of nodes."
   nodes: [ExternalRating!]!
 }
 
-"""
-An edge in a connection.
-"""
+"An edge in a connection."
 type ExternalRatingEdge {
-  """
-  The item at the end of the edge
-  """
+  "The item at the end of the edge"
   node: ExternalRating!
-  """
-  A cursor for use in pagination
-  """
+  "A cursor for use in pagination"
   cursor: String!
 }
 
@@ -181,52 +224,25 @@ type Genre {
 }
 
 type GenreConnection {
-  """
-  Information to aid in pagination.
-  """
+  "Information to aid in pagination."
   pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
+  "A list of edges."
   edges: [GenreEdge!]!
-  """
-  A list of nodes.
-  """
+  "A list of nodes."
   nodes: [Genre!]!
 }
 
-"""
-An edge in a connection.
-"""
+"An edge in a connection."
 type GenreEdge {
-  """
-  The item at the end of the edge
-  """
+  "The item at the end of the edge"
   node: Genre!
-  """
-  A cursor for use in pagination
-  """
+  "A cursor for use in pagination"
   cursor: String!
 }
 
 type GenreSuggestion {
   entityId: ID
   value: String!
-}
-
-input IdentifierPatch {
-  scheme: String!
-  value: String
-}
-
-"""
-A scalar that can represent any JSON value.
-"""
-scalar JSON
-
-enum LibraryDensityInput {
-  COMFORTABLE
-  COMPACT
 }
 
 type LibraryPreferenceDefaults {
@@ -244,19 +260,7 @@ type LibraryPreferences {
   defaults: LibraryPreferenceDefaults!
 }
 
-input LibraryPreferencesPatch {
-  hiddenColumns: [String!]
-  density: LibraryDensityInput
-  view: LibraryViewInput
-  sortStack: String
-}
-
-enum LibraryViewInput {
-  GRID
-  TABLE
-}
-
-type Manifestation implements Node @fetchable(field_name: "id") {
+type Manifestation implements Node {
   id: ID!
   versions: MetadataVersions!
   work: Work
@@ -283,31 +287,19 @@ type Manifestation implements Node @fetchable(field_name: "id") {
 }
 
 type ManifestationConnection {
-  """
-  Information to aid in pagination.
-  """
+  "Information to aid in pagination."
   pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
+  "A list of edges."
   edges: [ManifestationEdge!]!
-  """
-  A list of nodes.
-  """
+  "A list of nodes."
   nodes: [Manifestation!]!
 }
 
-"""
-An edge in a connection.
-"""
+"An edge in a connection."
 type ManifestationEdge {
-  """
-  The item at the end of the edge
-  """
+  "The item at the end of the edge"
   node: Manifestation!
-  """
-  A cursor for use in pagination
-  """
+  "A cursor for use in pagination"
   cursor: String!
 }
 
@@ -315,25 +307,6 @@ type MetadataOperation {
   outcome: String!
   operations: [FieldOperation!]!
   metadata: MetadataSnapshot!
-}
-
-input MetadataPatch {
-  title: String
-  subtitle: String
-  description: String
-  language: String
-  publisher: String
-  publicationDate: String
-  isbn10: String
-  isbn13: String
-  pages: Int
-  contentRating: ContentRatingInput
-  genres: [String!]
-  moods: [String!]
-  tags: [String!]
-  contributors: ContributorPatch
-  workIdentifiers: [IdentifierPatch!]
-  manifestationIdentifiers: [IdentifierPatch!]
 }
 
 type MetadataRefresh {
@@ -387,31 +360,19 @@ type MetadataVersion {
 }
 
 type MetadataVersionConnection {
-  """
-  Information to aid in pagination.
-  """
+  "Information to aid in pagination."
   pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
+  "A list of edges."
   edges: [MetadataVersionEdge!]!
-  """
-  A list of nodes.
-  """
+  "A list of nodes."
   nodes: [MetadataVersion!]!
 }
 
-"""
-An edge in a connection.
-"""
+"An edge in a connection."
 type MetadataVersionEdge {
-  """
-  The item at the end of the edge
-  """
+  "The item at the end of the edge"
   node: MetadataVersion!
-  """
-  A cursor for use in pagination
-  """
+  "A cursor for use in pagination"
   cursor: String!
 }
 
@@ -427,31 +388,19 @@ type Mood {
 }
 
 type MoodConnection {
-  """
-  Information to aid in pagination.
-  """
+  "Information to aid in pagination."
   pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
+  "A list of edges."
   edges: [MoodEdge!]!
-  """
-  A list of nodes.
-  """
+  "A list of nodes."
   nodes: [Mood!]!
 }
 
-"""
-An edge in a connection.
-"""
+"An edge in a connection."
 type MoodEdge {
-  """
-  The item at the end of the edge
-  """
+  "The item at the end of the edge"
   node: Mood!
-  """
-  A cursor for use in pagination
-  """
+  "A cursor for use in pagination"
   cursor: String!
 }
 
@@ -478,29 +427,15 @@ type Mutation {
   undoMetadata(id: ID!, baseline: String, operationId: String!): MetadataOperation!
 }
 
-interface Node {
-  id: ID!
-}
-
-"""
-Information about pagination in a connection
-"""
+"Information about pagination in a connection"
 type PageInfo {
-  """
-  When paginating backwards, are there more items?
-  """
+  "When paginating backwards, are there more items?"
   hasPreviousPage: Boolean!
-  """
-  When paginating forwards, are there more items?
-  """
+  "When paginating forwards, are there more items?"
   hasNextPage: Boolean!
-  """
-  When paginating backwards, the cursor to continue.
-  """
+  "When paginating backwards, the cursor to continue."
   startCursor: String
-  """
-  When paginating forwards, the cursor to continue.
-  """
+  "When paginating forwards, the cursor to continue."
   endCursor: String
 }
 
@@ -518,16 +453,7 @@ type Query {
   manifestation(id: ID!): Manifestation
   shelf(id: ID!): Shelf
   series(id: ID!): Series
-  fetch__Series(id: ID!): Series
-  fetch__Work(id: ID!): Work
-  fetch__Shelf(id: ID!): Shelf
-  fetch__Manifestation(id: ID!): Manifestation
-  books(    first: Int!,    after: String,    filter: BooksFilter,
-    """
-    Omitted or null sort uses the installation default.
-    """
-    sort: [SortLevel!]
-  ): ManifestationConnection!
+  books(first: Int!, after: String, filter: BooksFilter, "Omitted or null sort uses the installation default." sort: [SortLevel!]): ManifestationConnection!
   shelves(first: Int!, after: String): ShelfConnection!
   search(q: String!): [SearchHit!]!
   authorLabels(ids: [ID!]!): [AuthorSuggestion!]!
@@ -538,12 +464,6 @@ type Query {
   moodSuggestions(q: String!, limit: Int): [MoodSuggestion!]!
   tagSuggestions(q: String!, limit: Int): [TagSuggestion!]!
   publisherSuggestions(q: String!, limit: Int): [PublisherSuggestion!]!
-}
-
-input ReadingPatch {
-  status: ReadingStatusInput
-  rating: Int
-  notes: String
 }
 
 type ReadingState {
@@ -557,14 +477,6 @@ type ReadingState {
   lastReadAt: String
 }
 
-enum ReadingStatusInput {
-  WANT_TO_READ
-  READING
-  ON_HOLD
-  FINISHED
-  ABANDONED
-}
-
 type SearchHit {
   manifestation: Manifestation
   snippet: String
@@ -575,7 +487,7 @@ type SelectedSeries {
   position: Float
 }
 
-type Series implements Node @fetchable(field_name: "id") {
+type Series implements Node {
   id: ID!
   name: String!
   sortName: String!
@@ -587,7 +499,7 @@ type SeriesSuggestion {
   value: String!
 }
 
-type Shelf implements Node @fetchable(field_name: "id") {
+type Shelf implements Node {
   id: ID!
   itemCount: Int!
   name: String!
@@ -603,44 +515,20 @@ type ShelfChange {
 }
 
 type ShelfConnection {
-  """
-  Information to aid in pagination.
-  """
+  "Information to aid in pagination."
   pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
+  "A list of edges."
   edges: [ShelfEdge!]!
-  """
-  A list of nodes.
-  """
+  "A list of nodes."
   nodes: [Shelf!]!
 }
 
-"""
-An edge in a connection.
-"""
+"An edge in a connection."
 type ShelfEdge {
-  """
-  The item at the end of the edge
-  """
+  "The item at the end of the edge"
   node: Shelf!
-  """
-  A cursor for use in pagination
-  """
+  "A cursor for use in pagination"
   cursor: String!
-}
-
-enum SortField {
-  title
-  author
-  created_at
-  pages
-}
-
-input SortLevel {
-  column: SortField!
-  direction: Direction!
 }
 
 type Tag {
@@ -649,31 +537,19 @@ type Tag {
 }
 
 type TagConnection {
-  """
-  Information to aid in pagination.
-  """
+  "Information to aid in pagination."
   pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
+  "A list of edges."
   edges: [TagEdge!]!
-  """
-  A list of nodes.
-  """
+  "A list of nodes."
   nodes: [Tag!]!
 }
 
-"""
-An edge in a connection.
-"""
+"An edge in a connection."
 type TagEdge {
-  """
-  The item at the end of the edge
-  """
+  "The item at the end of the edge"
   node: Tag!
-  """
-  A cursor for use in pagination
-  """
+  "A cursor for use in pagination"
   cursor: String!
 }
 
@@ -682,16 +558,14 @@ type TagSuggestion {
   value: String!
 }
 
-"""
-Caller-owned identity, independent of existing browser account projections.
-"""
+"Caller-owned identity, independent of existing browser account projections."
 type Viewer implements Node {
   id: ID!
   isChild: Boolean!
   displayName: String!
 }
 
-type Work implements Node @fetchable(field_name: "id") {
+type Work implements Node {
   id: ID!
   title: String!
   subtitle: String
@@ -705,45 +579,19 @@ type Work implements Node @fetchable(field_name: "id") {
 }
 
 type WorkConnection {
-  """
-  Information to aid in pagination.
-  """
+  "Information to aid in pagination."
   pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
+  "A list of edges."
   edges: [WorkEdge!]!
-  """
-  A list of nodes.
-  """
+  "A list of nodes."
   nodes: [Work!]!
 }
 
-"""
-An edge in a connection.
-"""
+"An edge in a connection."
 type WorkEdge {
-  """
-  The item at the end of the edge
-  """
+  "The item at the end of the edge"
   node: Work!
   position: Float
-  """
-  A cursor for use in pagination
-  """
+  "A cursor for use in pagination"
   cursor: String!
-}
-
-directive @fetchable(field_name: String!) on OBJECT
-"""
-Directs the executor to include this field or fragment only when the `if` argument is true.
-"""
-directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
-"""
-Directs the executor to skip this field or fragment when the `if` argument is true.
-"""
-directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
-schema {
-  query: Query
-  mutation: Mutation
 }

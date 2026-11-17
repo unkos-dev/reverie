@@ -1,151 +1,208 @@
-use super::loaders::{ReaderLoader, RequestLoader, batch_error};
+use super::{GraphResult, RequestContext, safe_error};
 use crate::error::AppError;
 use crate::services::reader::{self, VersionSet};
-use async_graphql::dataloader::Loader;
-use async_graphql::{ComplexObject, Context, ID, Json, SimpleObject};
-use std::collections::HashMap;
+use juniper::{
+    ExecutionResult, Executor, FromInputValue, GraphQLObject, GraphQLType, GraphQLValue,
+    GraphQLValueAsync, ID, InputValue, ParseScalarResult, ParseScalarValue, Registry, ScalarToken,
+    ScalarValue, Selection, Value, graphql_object, marker, meta::MetaType,
+};
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-struct VersionsKey(Uuid);
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-struct CanonicalKey(Uuid);
+connection!(
+    MetadataVersionConnection,
+    MetadataVersionEdge,
+    MetadataVersion
+);
 
-impl Loader<VersionsKey> for ReaderLoader {
-    type Value = Arc<VersionSet>;
-    type Error = Arc<AppError>;
-    async fn load(
-        &self,
-        keys: &[VersionsKey],
-    ) -> Result<HashMap<VersionsKey, Self::Value>, Self::Error> {
-        let ids: Vec<_> = keys.iter().map(|key| key.0).collect();
-        reader::versions(&self.user, &self.state, &ids)
-            .await
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|(id, row)| (VersionsKey(id), Arc::new(row)))
-                    .collect()
-            })
-            .map_err(Arc::new)
-    }
-}
-impl Loader<CanonicalKey> for ReaderLoader {
-    type Value = i32;
-    type Error = Arc<AppError>;
-    async fn load(
-        &self,
-        keys: &[CanonicalKey],
-    ) -> Result<HashMap<CanonicalKey, Self::Value>, Self::Error> {
-        let ids: Vec<_> = keys.iter().map(|key| key.0).collect();
-        reader::canonical_counts(&self.user, &self.state, &ids)
-            .await
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|(id, row)| (CanonicalKey(id), row))
-                    .collect()
-            })
-            .map_err(Arc::new)
-    }
-}
-
-impl Loader<reader::PendingKey> for ReaderLoader {
-    type Value = reader::PendingPage;
-    type Error = Arc<AppError>;
-    async fn load(
-        &self,
-        keys: &[reader::PendingKey],
-    ) -> Result<HashMap<reader::PendingKey, Self::Value>, Self::Error> {
-        reader::pending_pages(&self.user, &self.state, keys)
-            .await
-            .map_err(Arc::new)
-    }
-}
-
-#[derive(SimpleObject)]
-#[graphql(complex)]
 pub(super) struct MetadataVersions {
     pending_count: i32,
-    #[graphql(skip)]
     parent: Uuid,
-    #[graphql(skip)]
     record: Arc<VersionSet>,
 }
-#[ComplexObject]
+
+#[graphql_object]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 impl MetadataVersions {
-    async fn accepted_count(&self, ctx: &Context<'_>) -> async_graphql::Result<i32> {
+    const fn pending_count(&self) -> i32 {
+        self.pending_count
+    }
+    async fn accepted_count(&self, context: &RequestContext) -> GraphResult<i32> {
         if let Some(count) = self.record.accepted {
             return Ok(count);
         }
-        ctx.data::<RequestLoader>()?
-            .load_one(CanonicalKey(self.parent))
-            .await
-            .map_err(|error| batch_error(&error))?
-            .ok_or_else(|| super::safe_error(AppError::NotFound))
+        context
+            .loaders
+            .canonical_count(self.parent)
+            .await?
+            .ok_or_else(|| safe_error(AppError::NotFound))
     }
-    #[graphql(complexity = "super::complexity::pending(first, child_complexity)?")]
     async fn pending(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<async_graphql::connection::Connection<String, MetadataVersion>> {
-        let first = super::complexity::pending_size(first).map_err(super::safe_error)?;
-        let page = ctx
-            .data::<RequestLoader>()?
-            .load_one(reader::PendingKey {
+    ) -> GraphResult<MetadataVersionConnection> {
+        let first = super::complexity::pending_size(first)?;
+        let page = context
+            .loaders
+            .pending(reader::PendingKey {
                 parent: self.parent,
                 first,
                 after,
             })
-            .await
-            .map_err(|error| batch_error(&error))?
-            .ok_or_else(|| super::safe_error(AppError::NotFound))?;
-        let mut connection =
-            async_graphql::connection::Connection::new(page.has_previous, page.has_next);
-        for (cursor, row) in page.edges {
-            connection.edges.push(async_graphql::connection::Edge::new(
-                cursor,
-                MetadataVersion {
-                    id: super::id::encode("MetadataVersion", row.id),
-                    field_name: row.field_name,
-                    source: row.source,
-                    new_value: Json(row.new_value),
-                    status: row.status,
-                    confidence_score: f64::from(row.confidence_score),
-                    match_type: row.match_type,
-                    observation_count: row.observation_count,
-                },
-            ));
-        }
-        Ok(connection)
+            .await?
+            .ok_or_else(|| safe_error(AppError::NotFound))?;
+        let edges = page
+            .edges
+            .into_iter()
+            .map(|(cursor, row)| {
+                MetadataVersionEdge::new(
+                    cursor,
+                    MetadataVersion {
+                        id: super::id::encode("MetadataVersion", row.id),
+                        field_name: row.field_name,
+                        source: row.source,
+                        new_value: Json(row.new_value),
+                        status: row.status,
+                        confidence_score: f64::from(row.confidence_score),
+                        match_type: row.match_type,
+                        observation_count: row.observation_count,
+                    },
+                )
+            })
+            .collect();
+        Ok(MetadataVersionConnection::new(
+            page.has_previous,
+            page.has_next,
+            edges,
+        ))
     }
 }
-#[derive(SimpleObject)]
-struct MetadataVersion {
+
+#[derive(Clone, GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
+pub(super) struct MetadataVersion {
     id: ID,
     field_name: String,
     source: String,
-    new_value: Json<serde_json::Value>,
+    new_value: Json,
     status: String,
     confidence_score: f64,
     match_type: String,
     observation_count: i32,
 }
 
+#[derive(Clone)]
+pub(super) struct Json(serde_json::Value);
+
+fn json_output<S: ScalarValue>(value: &serde_json::Value) -> Value<S> {
+    match value {
+        serde_json::Value::Null => Value::null(),
+        serde_json::Value::Bool(value) => Value::scalar(*value),
+        serde_json::Value::Number(number) => number
+            .as_i64()
+            .and_then(|value| i32::try_from(value).ok())
+            .map_or_else(
+                || number.as_f64().map_or_else(Value::null, Value::scalar),
+                Value::scalar,
+            ),
+        serde_json::Value::String(value) => Value::scalar(value.clone()),
+        serde_json::Value::Array(items) => Value::list(items.iter().map(json_output).collect()),
+        serde_json::Value::Object(fields) => Value::object(
+            fields
+                .iter()
+                .map(|(name, value)| (name.clone(), json_output(value)))
+                .collect(),
+        ),
+    }
+}
+
+impl<S: ScalarValue> marker::IsInputType<S> for Json {}
+impl<S: ScalarValue> marker::IsOutputType<S> for Json {}
+
+impl<S: ScalarValue> GraphQLType<S> for Json {
+    fn name(&(): &Self::TypeInfo) -> Option<juniper::ArcStr> {
+        Some(juniper::arcstr::literal!("JSON"))
+    }
+
+    fn meta(info: &Self::TypeInfo, registry: &mut Registry<S>) -> MetaType<S> {
+        registry
+            .build_scalar_type::<Self>(info)
+            .description("A scalar that can represent any JSON value.")
+            .into_meta()
+    }
+}
+
+impl<S: ScalarValue> GraphQLValue<S> for Json {
+    type Context = ();
+    type TypeInfo = ();
+
+    fn type_name(&self, info: &Self::TypeInfo) -> Option<juniper::ArcStr> {
+        <Self as GraphQLType<S>>::name(info)
+    }
+
+    fn resolve(
+        &self,
+        &(): &(),
+        _: Option<&[Selection<'_, S>]>,
+        _: &Executor<'_, '_, (), S>,
+    ) -> ExecutionResult<S> {
+        Ok(json_output(&self.0))
+    }
+}
+
+impl<S: ScalarValue + Send + Sync> GraphQLValueAsync<S> for Json {
+    fn resolve_async<'b>(
+        &'b self,
+        info: &'b (),
+        selection_set: Option<&'b [Selection<'_, S>]>,
+        executor: &'b Executor<'_, '_, (), S>,
+    ) -> juniper::BoxFuture<'b, ExecutionResult<S>> {
+        let value = self.resolve(info, selection_set, executor);
+        Box::pin(std::future::ready(value))
+    }
+}
+
+impl<S: ScalarValue> FromInputValue<S> for Json {
+    type Error = juniper::FieldError<S>;
+
+    fn from_input_value(input: &InputValue<S>) -> Result<Self, Self::Error> {
+        serde_json::to_value(input)
+            .map(Self)
+            .map_err(|_| juniper::FieldError::from("Invalid JSON value."))
+    }
+}
+
+impl<S: ScalarValue> ParseScalarValue<S> for Json {
+    fn from_str(token: ScalarToken<'_>) -> ParseScalarResult<S> {
+        <String as ParseScalarValue<S>>::from_str(token)
+    }
+}
+
+impl<S> juniper::macros::reflect::BaseType<S> for Json {
+    const NAME: juniper::macros::reflect::Type = "JSON";
+}
+
+impl<S> juniper::macros::reflect::BaseSubTypes<S> for Json {
+    const NAMES: juniper::macros::reflect::Types = &["JSON"];
+}
+
+impl<S> juniper::macros::reflect::WrappedType<S> for Json {
+    const VALUE: juniper::macros::reflect::WrappedValue = 1;
+}
+
 pub(super) async fn resolve(
-    ctx: &Context<'_>,
+    context: &RequestContext,
     parent: Uuid,
-) -> async_graphql::Result<MetadataVersions> {
-    let record = ctx
-        .data::<RequestLoader>()?
-        .load_one(VersionsKey(parent))
-        .await
-        .map_err(|error| batch_error(&error))?
-        .ok_or_else(|| super::safe_error(AppError::NotFound))?;
-    let pending_count = record.pending_count;
+) -> GraphResult<MetadataVersions> {
+    let record = context
+        .loaders
+        .versions(parent)
+        .await?
+        .ok_or_else(|| safe_error(AppError::NotFound))?;
     Ok(MetadataVersions {
-        pending_count,
+        pending_count: record.pending_count,
         parent,
         record,
     })

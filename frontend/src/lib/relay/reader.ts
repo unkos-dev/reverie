@@ -53,7 +53,7 @@ export const readerLibraryBook = graphql`
 export const readerWorkAuthors = graphql`
   fragment readerWorkAuthors on Work
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
-  @refetchable(queryName: "readerWorkAuthorsPaginationQuery", preferFetchable: true) {
+  @refetchable(queryName: "readerWorkAuthorsPaginationQuery") {
     id
     authors(first: $count, after: $cursor) @connection(key: "readerWorkAuthors_authors") {
       edges {
@@ -69,7 +69,7 @@ export const readerWorkAuthors = graphql`
 export const readerDetailTags = graphql`
   fragment readerDetailTags on Manifestation
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
-  @refetchable(queryName: "readerDetailTagsPaginationQuery", preferFetchable: true) {
+  @refetchable(queryName: "readerDetailTagsPaginationQuery") {
     id
     tags(first: $count, after: $cursor) @connection(key: "readerDetailTags_tags") {
       edges {
@@ -171,7 +171,7 @@ export const readerDetailQuery = graphql`
 export const readerVersions = graphql`
   fragment readerVersions on Manifestation
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
-  @refetchable(queryName: "readerVersionsPaginationQuery", preferFetchable: true) {
+  @refetchable(queryName: "readerVersionsPaginationQuery") {
     id
     versions {
       pendingCount
@@ -204,7 +204,7 @@ export const readerVersionsQuery = graphql`
 export const readerShelfItems = graphql`
   fragment readerShelfItems on Shelf
   @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
-  @refetchable(queryName: "readerShelfItemsPaginationQuery", preferFetchable: true) {
+  @refetchable(queryName: "readerShelfItemsPaginationQuery") {
     items(first: $count, after: $cursor) @connection(key: "readerShelfItems_items") {
       edges {
         node {
@@ -263,7 +263,7 @@ export const readerShelvesQuery = graphql`
 export const readerSeriesWorks = graphql`
   fragment readerSeriesWorks on Series
   @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
-  @refetchable(queryName: "readerSeriesWorksPaginationQuery", preferFetchable: true) {
+  @refetchable(queryName: "readerSeriesWorksPaginationQuery") {
     works(first: $count, after: $cursor) @connection(key: "readerSeriesWorks_works") {
       edges {
         position
@@ -421,7 +421,7 @@ export const readerNodeQuery = graphql`
 export const readerAuthorEditing = graphql`
   fragment readerAuthorEditing on Manifestation
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
-  @refetchable(queryName: "readerAuthorEditingPaginationQuery", preferFetchable: true) {
+  @refetchable(queryName: "readerAuthorEditingPaginationQuery") {
     id
     metadata {
       workId

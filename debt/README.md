@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Juniper variable input defaults](2026-11-18-juniper-variable-input-defaults.md): lifts when a released Juniper
+  version applies input-field defaults in variable validation and the GraphQL backend tests pass without the helper.
 - [React Aria transition cancellation](2026-11-09-react-aria-transition-cancellation.md): lifts when a released React
   Aria version includes the upstream cancellation fix and the Settings browser tests pass without the local patch.
 - [Licence checker glob overrides](2026-11-05-licence-checker-glob-overrides.md): lifts when the licence checker's

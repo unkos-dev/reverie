@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<747722fd37f997f3c613be133712dff7>>
+ * @generated SignedSource<<84f2f49a4383eda73e84dc6554371914>>
  * @lightSyntaxTransform
  */
 
@@ -69,7 +69,7 @@ const node: ReaderFragment = (function () {
           backward: null,
           path: v0 /*:: as any*/,
         },
-        fragmentPathInResult: ["fetch__Work"],
+        fragmentPathInResult: ["node"],
         operation: readerWorkAuthorsPaginationQuery_graphql,
         identifierInfo: {
           identifierField: "id",
@@ -166,6 +166,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "cb6326f621995644010373b8aa37110d";
+(node as any).hash = "5df23097978c20b9c141ab3679ad6313";
 
 export default node;

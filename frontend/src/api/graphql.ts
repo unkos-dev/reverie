@@ -134,11 +134,11 @@ const readerProjections = new Map<string, z.ZodType>([
         .nullable(),
     }),
   ],
-  ["readerWorkAuthorsPaginationQuery", z.object({ fetch__Work: workProjection.nullable() })],
+  ["readerWorkAuthorsPaginationQuery", z.object({ node: workProjection.nullable() })],
   [
     "readerDetailTagsPaginationQuery",
     z.object({
-      fetch__Manifestation: z
+      node: z
         .object({
           id: domainId("Manifestation"),
           tags: connection(z.object({ id: domainId("Tag") })),
@@ -149,9 +149,9 @@ const readerProjections = new Map<string, z.ZodType>([
   ["readerShelvesQuery", z.object({ shelves: connection(shelfProjection) })],
   ["readerShelvesPaginationQuery", z.object({ shelves: connection(shelfProjection) })],
   ["readerShelfQuery", z.object({ shelf: shelfProjection.extend(shelfItems.shape).nullable() })],
-  ["readerShelfItemsPaginationQuery", z.object({ fetch__Shelf: shelfItems.nullable() })],
+  ["readerShelfItemsPaginationQuery", z.object({ node: shelfItems.nullable() })],
   ["readerSeriesQuery", z.object({ series: seriesWorks.nullable() })],
-  ["readerSeriesWorksPaginationQuery", z.object({ fetch__Series: seriesWorks.nullable() })],
+  ["readerSeriesWorksPaginationQuery", z.object({ node: seriesWorks.nullable() })],
   [
     "readerSearchQuery",
     z.object({
@@ -168,10 +168,7 @@ const readerProjections = new Map<string, z.ZodType>([
     }),
   ],
   ["readerVersionsQuery", z.object({ manifestation: versionProjection.nullable() })],
-  [
-    "readerVersionsPaginationQuery",
-    z.object({ fetch__Manifestation: versionProjection.nullable() }),
-  ],
+  ["readerVersionsPaginationQuery", z.object({ node: versionProjection.nullable() })],
 ]);
 for (const kind of ["Author", "Series", "Genre", "Mood", "Tag", "Publisher"]) {
   for (const action of kind === "Author" || kind === "Series"
@@ -273,9 +270,7 @@ for (const [name, snapshot] of [
 editingProjections.set(
   "readerAuthorEditingPaginationQuery",
   z.object({
-    fetch__Manifestation: z
-      .object({ id: domainId("Manifestation"), metadata: authorSnapshot })
-      .nullable(),
+    node: z.object({ id: domainId("Manifestation"), metadata: authorSnapshot }).nullable(),
   }),
 );
 

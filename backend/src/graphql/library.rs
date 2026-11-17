@@ -1,6 +1,4 @@
-use super::loaders::{RequestLoader, SeriesKey, ShelfKey, WorkKey, batch_error};
-use super::{Viewer, id, safe_error};
-use crate::auth::middleware::CurrentUser;
+use super::{GraphResult, RequestContext, Viewer, id, safe_error};
 use crate::error::AppError;
 use crate::routes::etag::MetadataRevision;
 use crate::routes::library::ListParams;
@@ -9,29 +7,46 @@ use crate::services::reader::{
     self, BookRecord, RelationKey, RelationKind, RelationPage, RelationRow, SeriesRecord,
     ShelfRecord, WorkRecord,
 };
-use crate::state::AppState;
-use async_graphql::connection::{Connection, Edge, EmptyFields};
-use async_graphql::{ComplexObject, Context, ID, InputObject, Interface, SimpleObject};
 use chrono::SecondsFormat;
+use juniper::{
+    DefaultScalarValue, Executor, GraphQLEnum, GraphQLInputObject, GraphQLObject, ID,
+    LookAheadSelection, LookAheadValue, ScalarValue, graphql_interface, graphql_object,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[derive(Interface)]
-#[graphql(field(name = "id", ty = "&ID"))]
-pub(super) enum Node {
-    Work(Work),
-    Manifestation(Manifestation),
-    Shelf(Shelf),
-    Series(Series),
-    Viewer(Viewer),
+#[graphql_interface]
+#[graphql(
+    for = [Work, Manifestation, Shelf, Series, Viewer],
+    scalar = juniper::DefaultScalarValue,
+    context = RequestContext
+)]
+#[expect(
+    dead_code,
+    reason = "Juniper reads this trait as the interface definition; values use NodeValue."
+)]
+pub(super) trait Node {
+    fn id(&self) -> &ID;
 }
 
-#[derive(Clone, SimpleObject)]
-#[graphql(complex, directive = super::fetchable::apply("id".to_owned()))]
+connection!(ManifestationConnection, ManifestationEdge, Manifestation);
+connection!(ShelfConnection, ShelfEdge, Shelf);
+connection!(WorkConnection, WorkEdge, Work, position: Option<f64>);
+connection!(AuthorConnection, AuthorEdge, Author, role: String, position: i32);
+connection!(GenreConnection, GenreEdge, Genre);
+connection!(MoodConnection, MoodEdge, Mood);
+connection!(TagConnection, TagEdge, Tag);
+connection!(
+    ExternalIdentifierConnection,
+    ExternalIdentifierEdge,
+    ExternalIdentifier
+);
+connection!(ExternalRatingConnection, ExternalRatingEdge, ExternalRating);
+
+#[derive(Clone)]
 pub(super) struct Work {
     id: ID,
-    #[graphql(skip)]
     record: Arc<WorkRecord>,
 }
 
@@ -44,108 +59,91 @@ impl Work {
     }
 }
 
-#[ComplexObject]
+#[graphql_object]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext, impl = NodeValue)]
 impl Work {
-    async fn title(&self) -> &str {
+    const fn id(&self) -> &ID {
+        &self.id
+    }
+    fn title(&self) -> &str {
         &self.record.title
     }
-    async fn subtitle(&self) -> Option<&str> {
+    fn subtitle(&self) -> Option<&str> {
         self.record.subtitle.as_deref()
     }
-    async fn description(&self) -> Option<&str> {
+    fn description(&self) -> Option<&str> {
         self.record.description.as_deref()
     }
-    async fn language(&self) -> Option<&str> {
+    fn language(&self) -> Option<&str> {
         self.record.language.as_deref()
     }
     async fn selected_series(
         &self,
-        ctx: &Context<'_>,
-    ) -> async_graphql::Result<Option<SelectedSeries>> {
+        context: &RequestContext,
+    ) -> GraphResult<Option<SelectedSeries>> {
         let Some(series_id) = self.record.series_id else {
             return Ok(None);
         };
-        Ok(ctx
-            .data::<RequestLoader>()?
-            .load_one(SeriesKey(series_id))
-            .await
-            .map_err(|error| batch_error(&error))?
+        Ok(context
+            .loaders
+            .series(series_id)
+            .await?
             .map(|record| SelectedSeries {
                 node: Series::new(record),
                 position: self.record.series_position,
             }))
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::WorkIdentifiers, first, child_complexity)?"
-    )]
     async fn identifiers(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, ExternalIdentifier>> {
-        term_connection(
-            relation(
-                ctx,
-                RelationKind::WorkIdentifiers,
-                self.record.id,
-                first,
-                after,
-            )
-            .await?,
-            |row| {
-                Ok(ExternalIdentifier {
-                    level: "work".into(),
-                    scheme: required(row.name)?,
-                    value: required(row.value)?,
-                })
-            },
+    ) -> GraphResult<ExternalIdentifierConnection> {
+        let page = relation(
+            context,
+            RelationKind::WorkIdentifiers,
+            self.record.id,
+            first,
+            after,
         )
+        .await?;
+        identifier_connection(page, |_| Ok("work"))
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Manifestations, first, child_complexity)?"
-    )]
     async fn manifestations(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Manifestation>> {
+    ) -> GraphResult<ManifestationConnection> {
         let page = relation(
-            ctx,
+            context,
             RelationKind::Manifestations,
             self.record.id,
             first,
             after,
         )
         .await?;
-        manifestation_connection(ctx, page).await
+        manifestation_connection(context, page).await
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Authors, first, child_complexity)?"
-    )]
     async fn authors(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
+    ) -> GraphResult<AuthorConnection> {
         contributor_connection(
-            relation(ctx, RelationKind::Authors, self.record.id, first, after).await?,
+            relation(context, RelationKind::Authors, self.record.id, first, after).await?,
         )
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Contributors, first, child_complexity)?"
-    )]
     async fn contributors(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
+    ) -> GraphResult<AuthorConnection> {
         contributor_connection(
             relation(
-                ctx,
+                context,
                 RelationKind::Contributors,
                 self.record.id,
                 first,
@@ -156,12 +154,10 @@ impl Work {
     }
 }
 
-#[derive(Clone, SimpleObject)]
-#[graphql(complex, directive = super::fetchable::apply("id".to_owned()))]
+#[derive(Clone)]
 pub(super) struct Manifestation {
     id: ID,
-    #[graphql(skip)]
-    pub(super) record: BookRecord,
+    record: BookRecord,
 }
 
 impl Manifestation {
@@ -173,71 +169,68 @@ impl Manifestation {
     }
 }
 
-#[ComplexObject]
+#[graphql_object]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext, impl = NodeValue)]
 impl Manifestation {
+    const fn id(&self) -> &ID {
+        &self.id
+    }
     async fn versions(
         &self,
-        ctx: &Context<'_>,
-    ) -> async_graphql::Result<super::versions::MetadataVersions> {
-        super::versions::resolve(ctx, self.record.detail.id).await
+        context: &RequestContext,
+    ) -> GraphResult<super::versions::MetadataVersions> {
+        super::versions::resolve(context, self.record.detail.id).await
     }
-    async fn work(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<Work>> {
-        Ok(ctx
-            .data::<RequestLoader>()?
-            .load_one(WorkKey(self.record.detail.work_id))
-            .await
-            .map_err(|error| batch_error(&error))?
+    async fn work(&self, context: &RequestContext) -> GraphResult<Option<Work>> {
+        Ok(context
+            .loaders
+            .work(self.record.detail.work_id)
+            .await?
             .map(Work::new))
     }
-    async fn isbn_13(&self) -> Option<&str> {
+    fn isbn_13(&self) -> Option<&str> {
         self.record.detail.isbn_13.as_deref()
     }
-    async fn isbn_10(&self) -> Option<&str> {
+    fn isbn_10(&self) -> Option<&str> {
         self.record.detail.isbn_10.as_deref()
     }
-    async fn isbn_mismatch(&self) -> bool {
+    fn isbn_mismatch(&self) -> bool {
         self.record.detail.isbn_mismatch()
     }
-    async fn pages(&self) -> Option<i32> {
+    fn pages(&self) -> Option<i32> {
         self.record.detail.pages
     }
-    async fn publisher(&self) -> Option<&str> {
+    fn publisher(&self) -> Option<&str> {
         self.record.detail.publisher.as_deref()
     }
-    async fn publication_date(&self) -> Option<&str> {
+    fn publication_date(&self) -> Option<&str> {
         self.record.detail.pub_date.as_deref()
     }
-    async fn created_at(&self) -> String {
-        self.record
-            .detail
-            .created_at
-            .to_rfc3339_opts(SecondsFormat::AutoSi, true)
+    fn created_at(&self) -> String {
+        timestamp(self.record.detail.created_at)
     }
-    async fn updated_at(&self) -> String {
-        self.record
-            .detail
-            .updated_at
-            .to_rfc3339_opts(SecondsFormat::AutoSi, true)
+    fn updated_at(&self) -> String {
+        timestamp(self.record.detail.updated_at)
     }
-    async fn cover_url(&self) -> String {
+    fn cover_url(&self) -> String {
         format!("/api/v1/books/{}/cover/thumb", self.record.detail.id)
     }
-    async fn content_rating(&self) -> Option<&'static str> {
+    fn content_rating(&self) -> Option<&'static str> {
         self.record
             .detail
             .content_rating
             .map(crate::models::content_rating::ContentRating::as_str)
     }
-    async fn ingestion_status(&self) -> &str {
+    fn ingestion_status(&self) -> &str {
         &self.record.detail.ingestion_status
     }
-    async fn validation_status(&self) -> &'static str {
+    fn validation_status(&self) -> &'static str {
         self.record.detail.validation_status.as_str()
     }
-    async fn enrichment_status(&self) -> &str {
+    fn enrichment_status(&self) -> &str {
         &self.record.detail.enrichment_status
     }
-    async fn reading_state(&self) -> ReadingState {
+    fn reading_state(&self) -> ReadingState {
         let row = &self.record.reading;
         ReadingState {
             etag: self.record.reading_etag.clone(),
@@ -250,17 +243,21 @@ impl Manifestation {
             last_read_at: row.last_read_at.map(timestamp),
         }
     }
-    async fn metadata(&self, ctx: &Context<'_>) -> async_graphql::Result<MetadataSnapshot> {
-        let pages = snapshot_pages(&ctx.look_ahead())?;
+    async fn metadata(
+        &self,
+        context: &RequestContext,
+        executor: &Executor<'_, '_, RequestContext>,
+    ) -> GraphResult<MetadataSnapshot> {
+        let pages = snapshot_pages(executor.look_ahead().children())?;
         if !pages.is_empty() {
             let snapshot = required(
-                ctx.data::<RequestLoader>()?
-                    .load_one(SnapshotKey {
+                context
+                    .loaders
+                    .snapshot(SnapshotKey {
                         manifestation_id: self.record.detail.id,
                         pages,
                     })
-                    .await
-                    .map_err(|error| batch_error(&error))?,
+                    .await?,
             )?;
             return MetadataSnapshot::from_domain(&snapshot);
         }
@@ -289,140 +286,113 @@ impl Manifestation {
             content_rating: row.content_rating.map(|value| value.as_str().to_owned()),
         })
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Genres, first, child_complexity)?"
-    )]
     async fn genres(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Genre>> {
-        term_connection(
-            relation(
-                ctx,
-                RelationKind::Genres,
-                self.record.detail.id,
-                first,
-                after,
-            )
-            .await?,
-            |row| {
-                Ok(Genre {
-                    id: id::encode("Genre", required(row.id)?),
-                    name: required(row.name)?,
-                })
-            },
+    ) -> GraphResult<GenreConnection> {
+        let page = relation(
+            context,
+            RelationKind::Genres,
+            self.record.detail.id,
+            first,
+            after,
         )
+        .await?;
+        genre_connection(page)
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Moods, first, child_complexity)?"
-    )]
     async fn moods(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Mood>> {
-        term_connection(
-            relation(
-                ctx,
-                RelationKind::Moods,
-                self.record.detail.id,
-                first,
-                after,
-            )
-            .await?,
-            |row| {
-                Ok(Mood {
-                    id: id::encode("Mood", required(row.id)?),
-                    name: required(row.name)?,
-                })
-            },
+    ) -> GraphResult<MoodConnection> {
+        let page = relation(
+            context,
+            RelationKind::Moods,
+            self.record.detail.id,
+            first,
+            after,
         )
+        .await?;
+        mood_connection(page)
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Tags, first, child_complexity)?"
-    )]
     async fn tags(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Tag>> {
-        term_connection(
-            relation(ctx, RelationKind::Tags, self.record.detail.id, first, after).await?,
-            |row| {
-                Ok(Tag {
-                    id: id::encode("Tag", required(row.id)?),
-                    name: required(row.name)?,
-                })
-            },
+    ) -> GraphResult<TagConnection> {
+        let page = relation(
+            context,
+            RelationKind::Tags,
+            self.record.detail.id,
+            first,
+            after,
         )
+        .await?;
+        tag_connection(page)
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Identifiers, first, child_complexity)?"
-    )]
     async fn identifiers(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, ExternalIdentifier>> {
-        term_connection(
-            relation(
-                ctx,
-                RelationKind::Identifiers,
-                self.record.detail.id,
-                first,
-                after,
-            )
-            .await?,
-            |row| {
-                Ok(ExternalIdentifier {
-                    level: if required(row.level)? == 0 {
-                        "work".into()
-                    } else {
-                        "manifestation".into()
-                    },
-                    scheme: required(row.name)?,
-                    value: required(row.value)?,
-                })
-            },
+    ) -> GraphResult<ExternalIdentifierConnection> {
+        let page = relation(
+            context,
+            RelationKind::Identifiers,
+            self.record.detail.id,
+            first,
+            after,
         )
+        .await?;
+        identifier_connection(page, |row| {
+            Ok(if required(row.level)? == 0 {
+                "work"
+            } else {
+                "manifestation"
+            })
+        })
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Ratings, first, child_complexity)?"
-    )]
     async fn ratings(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, ExternalRating>> {
-        term_connection(
-            relation(
-                ctx,
-                RelationKind::Ratings,
-                self.record.detail.id,
-                first,
-                after,
-            )
-            .await?,
-            |row| {
-                Ok(ExternalRating {
+    ) -> GraphResult<ExternalRatingConnection> {
+        let page = relation(
+            context,
+            RelationKind::Ratings,
+            self.record.detail.id,
+            first,
+            after,
+        )
+        .await?;
+        let mut edges = Vec::with_capacity(page.edges.len());
+        for (cursor, row) in page.edges {
+            edges.push(ExternalRatingEdge::new(
+                cursor,
+                ExternalRating {
                     source: required(row.name)?,
                     rating: required(row.rating)?,
                     scale: required(row.scale)?,
                     review_count: row.reviews,
                     fetched_at: row.created_at.map(timestamp),
-                })
-            },
-        )
+                },
+            ));
+        }
+        Ok(ExternalRatingConnection::new(
+            page.has_previous,
+            page.has_next,
+            edges,
+        ))
     }
 }
 
-#[derive(SimpleObject)]
+#[derive(GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 pub(super) struct ReadingState {
     etag: String,
     status: Option<String>,
@@ -434,15 +404,12 @@ pub(super) struct ReadingState {
     last_read_at: Option<String>,
 }
 impl ReadingState {
-    pub(super) fn from_row(
-        row: &crate::services::reading::ReadingStateRow,
-    ) -> async_graphql::Result<Self> {
+    pub(super) fn from_row(row: &crate::services::reading::ReadingStateRow) -> GraphResult<Self> {
         Ok(Self {
             etag: row
-                .etag()
-                .map_err(safe_error)?
+                .etag()?
                 .to_str()
-                .map_err(|e| safe_error(AppError::Internal(e.into())))?
+                .map_err(|e| AppError::Internal(e.into()))?
                 .to_owned(),
             status: row.status.map(|v| v.as_str().to_owned()),
             rating: row.rating.map(i32::from),
@@ -454,12 +421,9 @@ impl ReadingState {
         })
     }
 }
-#[derive(SimpleObject)]
-#[graphql(complex)]
+
 pub(super) struct MetadataSnapshot {
-    #[graphql(skip)]
     revision: MetadataRevision,
-    #[graphql(skip)]
     relation_pages: HashMap<RelationKey, RelationPage>,
     isbn_mismatch: bool,
     work_id: ID,
@@ -476,58 +440,55 @@ pub(super) struct MetadataSnapshot {
     publication_date: Option<String>,
     content_rating: Option<String>,
 }
-pub(super) fn snapshot_pages(
-    look: &async_graphql::Lookahead<'_>,
-) -> async_graphql::Result<Vec<SnapshotPage>> {
+
+pub(super) fn snapshot_pages<'a>(
+    fields: impl IntoIterator<Item = LookAheadSelection<'a, DefaultScalarValue>>,
+) -> GraphResult<Vec<SnapshotPage>> {
     let mut pages = Vec::new();
-    for root in look.selection_fields() {
-        for field in root.selection_set() {
-            let kind = match field.name() {
-                "authors" => RelationKind::Authors,
-                "contributors" => RelationKind::Contributors,
-                "genres" => RelationKind::Genres,
-                "moods" => RelationKind::Moods,
-                "tags" => RelationKind::Tags,
-                "workIdentifiers" => RelationKind::WorkIdentifiers,
-                "manifestationIdentifiers" => RelationKind::Identifiers,
-                _ => continue,
-            };
-            let arguments = field.arguments()?;
-            let first = arguments
-                .iter()
-                .find(|(name, _)| name == "first")
-                .and_then(|(_, value)| match value {
-                    async_graphql::Value::Number(n) => {
-                        n.as_i64().and_then(|v| i32::try_from(v).ok())
-                    }
-                    _ => None,
-                })
-                .ok_or_else(|| safe_error(AppError::Validation("Missing page size.".into())))?;
-            let after = arguments.iter().find(|(name, _)| name == "after").and_then(
-                |(_, value)| match value {
-                    async_graphql::Value::String(value) => Some(value.clone()),
-                    _ => None,
-                },
-            );
-            let page = SnapshotPage {
-                kind,
-                first: super::complexity::nested_size(kind, first).map_err(safe_error)?,
-                after,
-            };
-            if !pages.contains(&page) {
-                pages.push(page);
-            }
+    for field in fields {
+        let kind = match field.field_original_name() {
+            "authors" => RelationKind::Authors,
+            "contributors" => RelationKind::Contributors,
+            "genres" => RelationKind::Genres,
+            "moods" => RelationKind::Moods,
+            "tags" => RelationKind::Tags,
+            "workIdentifiers" => RelationKind::WorkIdentifiers,
+            "manifestationIdentifiers" => RelationKind::Identifiers,
+            _ => continue,
+        };
+        let first = field
+            .argument("first")
+            .and_then(|argument| match argument.value() {
+                LookAheadValue::Scalar(value) => value.try_to_int(),
+                _ => None,
+            })
+            .ok_or_else(|| AppError::Validation("Missing page size.".into()))?;
+        let after = field
+            .argument("after")
+            .and_then(|argument| match argument.value() {
+                LookAheadValue::Scalar(value) => value.try_to_string(),
+                _ => None,
+            });
+        let page = SnapshotPage {
+            kind,
+            first: super::complexity::nested_size(kind, first)?,
+            after,
+        };
+        if !pages.contains(&page) {
+            pages.push(page);
         }
     }
     Ok(pages)
 }
-pub(super) fn snapshot_selection(
-    look: &async_graphql::Lookahead<'_>,
-) -> async_graphql::Result<SnapshotSelection> {
-    snapshot_pages(look).map(SnapshotSelection::Selected)
+
+pub(super) fn snapshot_selection<'a>(
+    fields: impl IntoIterator<Item = LookAheadSelection<'a, DefaultScalarValue>>,
+) -> GraphResult<SnapshotSelection> {
+    snapshot_pages(fields).map(SnapshotSelection::Selected)
 }
+
 impl MetadataSnapshot {
-    pub(super) fn from_domain(snapshot: &editing::MetadataSnapshot) -> async_graphql::Result<Self> {
+    pub(super) fn from_domain(snapshot: &editing::MetadataSnapshot) -> GraphResult<Self> {
         let row = &snapshot.values;
         Ok(Self {
             revision: MetadataRevision {
@@ -541,10 +502,9 @@ impl MetadataSnapshot {
             manifestation_id: id::encode("Manifestation", snapshot.revision.manifestation_id),
             etag: snapshot
                 .revision
-                .etag()
-                .map_err(safe_error)?
+                .etag()?
                 .to_str()
-                .map_err(|e| safe_error(AppError::Internal(e.into())))?
+                .map_err(|e| AppError::Internal(e.into()))?
                 .to_owned(),
             title: row.title.clone(),
             subtitle: row.subtitle.clone(),
@@ -564,173 +524,141 @@ impl MetadataSnapshot {
         kind: RelationKind,
         first: i32,
         after: Option<String>,
-    ) -> impl std::future::Future<Output = async_graphql::Result<RelationPage>> {
-        std::future::ready((|| {
-            let key = SnapshotPage {
-                kind,
-                first: super::complexity::nested_size(kind, first).map_err(safe_error)?,
-                after,
-            }
-            .key(&self.revision);
-            self.relation_pages.get(&key).cloned().ok_or_else(|| {
-                safe_error(AppError::Internal(anyhow::anyhow!(
-                    "Snapshot page was not materialised"
-                )))
-            })
-        })())
+    ) -> GraphResult<RelationPage> {
+        let key = SnapshotPage {
+            kind,
+            first: super::complexity::nested_size(kind, first)?,
+            after,
+        }
+        .key(&self.revision);
+        self.relation_pages.get(&key).cloned().ok_or_else(|| {
+            safe_error(AppError::Internal(anyhow::anyhow!(
+                "Snapshot page was not materialised"
+            )))
+        })
     }
 }
-#[ComplexObject]
+
+#[graphql_object]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 impl MetadataSnapshot {
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Authors, first, child_complexity)?"
-    )]
-    async fn authors(
-        &self,
-        first: i32,
-        after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
-        contributor_connection(self.page(RelationKind::Authors, first, after).await?)
+    const fn isbn_mismatch(&self) -> bool {
+        self.isbn_mismatch
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Contributors, first, child_complexity)?"
-    )]
-    async fn contributors(
-        &self,
-        first: i32,
-        after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
-        contributor_connection(self.page(RelationKind::Contributors, first, after).await?)
+    const fn work_id(&self) -> &ID {
+        &self.work_id
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Genres, first, child_complexity)?"
-    )]
-    async fn genres(
+    const fn manifestation_id(&self) -> &ID {
+        &self.manifestation_id
+    }
+    fn etag(&self) -> &str {
+        &self.etag
+    }
+    fn title(&self) -> &str {
+        &self.title
+    }
+    fn subtitle(&self) -> Option<&str> {
+        self.subtitle.as_deref()
+    }
+    fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+    fn language(&self) -> Option<&str> {
+        self.language.as_deref()
+    }
+    fn isbn_10(&self) -> Option<&str> {
+        self.isbn_10.as_deref()
+    }
+    fn isbn_13(&self) -> Option<&str> {
+        self.isbn_13.as_deref()
+    }
+    const fn pages(&self) -> Option<i32> {
+        self.pages
+    }
+    fn publisher(&self) -> Option<&str> {
+        self.publisher.as_deref()
+    }
+    fn publication_date(&self) -> Option<&str> {
+        self.publication_date.as_deref()
+    }
+    fn content_rating(&self) -> Option<&str> {
+        self.content_rating.as_deref()
+    }
+    fn authors(&self, first: i32, after: Option<String>) -> GraphResult<AuthorConnection> {
+        contributor_connection(self.page(RelationKind::Authors, first, after)?)
+    }
+    fn contributors(&self, first: i32, after: Option<String>) -> GraphResult<AuthorConnection> {
+        contributor_connection(self.page(RelationKind::Contributors, first, after)?)
+    }
+    fn genres(&self, first: i32, after: Option<String>) -> GraphResult<GenreConnection> {
+        genre_connection(self.page(RelationKind::Genres, first, after)?)
+    }
+    fn moods(&self, first: i32, after: Option<String>) -> GraphResult<MoodConnection> {
+        mood_connection(self.page(RelationKind::Moods, first, after)?)
+    }
+    fn tags(&self, first: i32, after: Option<String>) -> GraphResult<TagConnection> {
+        tag_connection(self.page(RelationKind::Tags, first, after)?)
+    }
+    fn work_identifiers(
         &self,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Genre>> {
-        term_connection(
-            self.page(RelationKind::Genres, first, after).await?,
-            |row| {
-                Ok(Genre {
-                    id: id::encode("Genre", required(row.id)?),
-                    name: required(row.name)?,
-                })
-            },
+    ) -> GraphResult<ExternalIdentifierConnection> {
+        identifier_connection(
+            self.page(RelationKind::WorkIdentifiers, first, after)?,
+            |_| Ok("work"),
         )
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Moods, first, child_complexity)?"
-    )]
-    async fn moods(
+    fn manifestation_identifiers(
         &self,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Mood>> {
-        term_connection(self.page(RelationKind::Moods, first, after).await?, |row| {
-            Ok(Mood {
-                id: id::encode("Mood", required(row.id)?),
-                name: required(row.name)?,
-            })
+    ) -> GraphResult<ExternalIdentifierConnection> {
+        identifier_connection(self.page(RelationKind::Identifiers, first, after)?, |_| {
+            Ok("manifestation")
         })
-    }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Tags, first, child_complexity)?"
-    )]
-    async fn tags(
-        &self,
-        first: i32,
-        after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Tag>> {
-        term_connection(self.page(RelationKind::Tags, first, after).await?, |row| {
-            Ok(Tag {
-                id: id::encode("Tag", required(row.id)?),
-                name: required(row.name)?,
-            })
-        })
-    }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::WorkIdentifiers, first, child_complexity)?"
-    )]
-    async fn work_identifiers(
-        &self,
-        first: i32,
-        after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, ExternalIdentifier>> {
-        term_connection(
-            self.page(RelationKind::WorkIdentifiers, first, after)
-                .await?,
-            |row| {
-                Ok(ExternalIdentifier {
-                    level: "work".to_owned(),
-                    scheme: required(row.name)?,
-                    value: required(row.value)?,
-                })
-            },
-        )
-    }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::Identifiers, first, child_complexity)?"
-    )]
-    async fn manifestation_identifiers(
-        &self,
-        first: i32,
-        after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, ExternalIdentifier>> {
-        term_connection(
-            self.page(RelationKind::Identifiers, first, after).await?,
-            |row| {
-                Ok(ExternalIdentifier {
-                    level: "manifestation".to_owned(),
-                    scheme: required(row.name)?,
-                    value: required(row.value)?,
-                })
-            },
-        )
     }
 }
-#[derive(SimpleObject)]
+
+#[derive(GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 pub(super) struct SelectedSeries {
     node: Series,
     position: Option<f64>,
 }
-#[derive(SimpleObject)]
+#[derive(Clone, GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 pub(super) struct Author {
     id: ID,
     name: String,
 }
-#[derive(SimpleObject)]
-pub(super) struct ContributorFields {
-    role: String,
-    position: i32,
-}
-#[derive(SimpleObject)]
-pub(super) struct MembershipFields {
-    position: Option<f64>,
-}
-#[derive(SimpleObject)]
+#[derive(Clone, GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 pub(super) struct Genre {
     id: ID,
     name: String,
 }
-#[derive(SimpleObject)]
+#[derive(Clone, GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 pub(super) struct Mood {
     id: ID,
     name: String,
 }
-#[derive(SimpleObject)]
+#[derive(Clone, GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 pub(super) struct Tag {
     id: ID,
     name: String,
 }
-#[derive(SimpleObject)]
+#[derive(Clone, GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 pub(super) struct ExternalIdentifier {
     level: String,
     scheme: String,
     value: String,
 }
-#[derive(SimpleObject)]
+#[derive(Clone, GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 pub(super) struct ExternalRating {
     source: String,
     rating: f64,
@@ -739,16 +667,14 @@ pub(super) struct ExternalRating {
     fetched_at: Option<String>,
 }
 
-#[derive(Clone, SimpleObject)]
-#[graphql(complex, directive = super::fetchable::apply("id".to_owned()))]
+#[derive(Clone)]
 pub(super) struct Shelf {
     id: ID,
     item_count: i32,
-    #[graphql(skip)]
     record: Arc<ShelfRecord>,
 }
 impl Shelf {
-    pub(super) fn from_model(row: crate::models::shelf::Shelf) -> async_graphql::Result<Self> {
+    pub(super) fn from_model(row: crate::models::shelf::Shelf) -> GraphResult<Self> {
         Self::new(Arc::new(ShelfRecord {
             id: row.id,
             name: row.name,
@@ -758,55 +684,57 @@ impl Shelf {
             item_count: row.item_count,
         }))
     }
-    fn new(record: Arc<ShelfRecord>) -> async_graphql::Result<Self> {
+    fn new(record: Arc<ShelfRecord>) -> GraphResult<Self> {
         Ok(Self {
             id: id::encode("Shelf", record.id),
             item_count: i32::try_from(record.item_count)
-                .map_err(|e| safe_error(AppError::Internal(e.into())))?,
+                .map_err(|e| AppError::Internal(e.into()))?,
             record,
         })
     }
 }
-#[ComplexObject]
+#[graphql_object]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext, impl = NodeValue)]
 impl Shelf {
-    async fn name(&self) -> &str {
+    const fn id(&self) -> &ID {
+        &self.id
+    }
+    const fn item_count(&self) -> i32 {
+        self.item_count
+    }
+    fn name(&self) -> &str {
         &self.record.name
     }
-    async fn is_system(&self) -> bool {
+    fn is_system(&self) -> bool {
         self.record.is_system
     }
-    async fn created_at(&self) -> String {
-        self.record
-            .created_at
-            .to_rfc3339_opts(SecondsFormat::AutoSi, true)
+    fn created_at(&self) -> String {
+        timestamp(self.record.created_at)
     }
-    async fn updated_at(&self) -> String {
-        self.record
-            .updated_at
-            .to_rfc3339_opts(SecondsFormat::AutoSi, true)
+    fn updated_at(&self) -> String {
+        timestamp(self.record.updated_at)
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::ShelfItems, first, child_complexity)?"
-    )]
     async fn items(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Manifestation>> {
-        manifestation_connection(
-            ctx,
-            relation(ctx, RelationKind::ShelfItems, self.record.id, first, after).await?,
+    ) -> GraphResult<ManifestationConnection> {
+        let page = relation(
+            context,
+            RelationKind::ShelfItems,
+            self.record.id,
+            first,
+            after,
         )
-        .await
+        .await?;
+        manifestation_connection(context, page).await
     }
 }
 
-#[derive(Clone, SimpleObject)]
-#[graphql(complex, directive = super::fetchable::apply("id".to_owned()))]
+#[derive(Clone)]
 pub(super) struct Series {
     id: ID,
-    #[graphql(skip)]
     record: Arc<SeriesRecord>,
 }
 impl Series {
@@ -817,54 +745,56 @@ impl Series {
         }
     }
 }
-#[ComplexObject]
+#[graphql_object]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext, impl = NodeValue)]
 impl Series {
-    async fn name(&self) -> &str {
+    const fn id(&self) -> &ID {
+        &self.id
+    }
+    fn name(&self) -> &str {
         &self.record.name
     }
-    async fn sort_name(&self) -> &str {
+    fn sort_name(&self) -> &str {
         &self.record.sort_name
     }
-    #[graphql(
-        complexity = "super::complexity::nested(RelationKind::SeriesWorks, first, child_complexity)?"
-    )]
     async fn works(
         &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Work, EmptyFields, MembershipFields>> {
-        let page = relation(ctx, RelationKind::SeriesWorks, self.record.id, first, after).await?;
+    ) -> GraphResult<WorkConnection> {
+        let page = relation(
+            context,
+            RelationKind::SeriesWorks,
+            self.record.id,
+            first,
+            after,
+        )
+        .await?;
         let keys = page
             .edges
             .iter()
-            .map(|(_, row)| required(row.id).map(WorkKey))
-            .collect::<async_graphql::Result<Vec<_>>>()?;
-        let records = ctx
-            .data::<RequestLoader>()?
-            .load_many(keys)
-            .await
-            .map_err(|error| batch_error(&error))?;
-        let mut connection = Connection::new(page.has_previous, page.has_next);
+            .map(|(_, row)| required(row.id))
+            .collect::<GraphResult<Vec<_>>>()?;
+        let records = context.loaders.works(&keys).await?;
+        let mut edges = Vec::with_capacity(page.edges.len());
         for (cursor, row) in page.edges {
-            if let Some(record) = records.get(&WorkKey(required(row.id)?)) {
-                connection.edges.push(Edge::with_additional_fields(
+            if let Some(record) = records.get(&required(row.id)?) {
+                edges.push(WorkEdge::new(
                     cursor,
                     Work::new(record.clone()),
-                    MembershipFields {
-                        position: row.position,
-                    },
+                    row.position,
                 ));
             }
         }
-        Ok(connection)
+        Ok(WorkConnection::new(page.has_previous, page.has_next, edges))
     }
 }
 
 fn timestamp(value: chrono::DateTime<chrono::Utc>) -> String {
     value.to_rfc3339_opts(SecondsFormat::AutoSi, true)
 }
-fn required<T>(value: Option<T>) -> async_graphql::Result<T> {
+fn required<T>(value: Option<T>) -> GraphResult<T> {
     value.ok_or_else(|| {
         safe_error(AppError::Internal(anyhow::anyhow!(
             "Missing reader projection field"
@@ -872,139 +802,170 @@ fn required<T>(value: Option<T>) -> async_graphql::Result<T> {
     })
 }
 
-pub(super) fn page_size(first: i32) -> async_graphql::Result<i32> {
-    super::complexity::effective_page(first, reader::PAGE_MAX).map_err(safe_error)
+pub(super) fn page_size(first: i32) -> GraphResult<i32> {
+    Ok(super::complexity::effective_page(first, reader::PAGE_MAX)?)
 }
 async fn relation(
-    ctx: &Context<'_>,
+    context: &RequestContext,
     kind: RelationKind,
     parent: Uuid,
     first: i32,
     after: Option<String>,
-) -> async_graphql::Result<RelationPage> {
+) -> GraphResult<RelationPage> {
     let key = RelationKey {
         kind,
         parent,
-        first: super::complexity::nested_size(kind, first).map_err(safe_error)?,
+        first: super::complexity::nested_size(kind, first)?,
         after,
     };
-    required(
-        ctx.data::<RequestLoader>()?
-            .load_one(key)
-            .await
-            .map_err(|error| batch_error(&error))?,
-    )
+    required(context.loaders.relation(key).await?)
 }
-fn term_connection<T: async_graphql::OutputType>(
-    page: RelationPage,
-    convert: impl Fn(RelationRow) -> async_graphql::Result<T>,
-) -> async_graphql::Result<Connection<String, T>> {
-    let mut connection = Connection::new(page.has_previous, page.has_next);
+fn genre_connection(page: RelationPage) -> GraphResult<GenreConnection> {
+    let mut edges = Vec::with_capacity(page.edges.len());
     for (cursor, row) in page.edges {
-        connection.edges.push(Edge::new(cursor, convert(row)?));
+        edges.push(GenreEdge::new(
+            cursor,
+            Genre {
+                id: id::encode("Genre", required(row.id)?),
+                name: required(row.name)?,
+            },
+        ));
     }
-    Ok(connection)
+    Ok(GenreConnection::new(
+        page.has_previous,
+        page.has_next,
+        edges,
+    ))
 }
-fn contributor_connection(
+fn mood_connection(page: RelationPage) -> GraphResult<MoodConnection> {
+    let mut edges = Vec::with_capacity(page.edges.len());
+    for (cursor, row) in page.edges {
+        edges.push(MoodEdge::new(
+            cursor,
+            Mood {
+                id: id::encode("Mood", required(row.id)?),
+                name: required(row.name)?,
+            },
+        ));
+    }
+    Ok(MoodConnection::new(page.has_previous, page.has_next, edges))
+}
+fn tag_connection(page: RelationPage) -> GraphResult<TagConnection> {
+    let mut edges = Vec::with_capacity(page.edges.len());
+    for (cursor, row) in page.edges {
+        edges.push(TagEdge::new(
+            cursor,
+            Tag {
+                id: id::encode("Tag", required(row.id)?),
+                name: required(row.name)?,
+            },
+        ));
+    }
+    Ok(TagConnection::new(page.has_previous, page.has_next, edges))
+}
+fn identifier_connection(
     page: RelationPage,
-) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
-    let mut connection = Connection::new(page.has_previous, page.has_next);
+    level: impl Fn(&RelationRow) -> GraphResult<&'static str>,
+) -> GraphResult<ExternalIdentifierConnection> {
+    let mut edges = Vec::with_capacity(page.edges.len());
+    for (cursor, row) in page.edges {
+        let level = level(&row)?.to_owned();
+        edges.push(ExternalIdentifierEdge::new(
+            cursor,
+            ExternalIdentifier {
+                level,
+                scheme: required(row.name)?,
+                value: required(row.value)?,
+            },
+        ));
+    }
+    Ok(ExternalIdentifierConnection::new(
+        page.has_previous,
+        page.has_next,
+        edges,
+    ))
+}
+fn contributor_connection(page: RelationPage) -> GraphResult<AuthorConnection> {
+    let mut edges = Vec::with_capacity(page.edges.len());
     for (cursor, row) in page.edges {
         let position = required(row.position_index)?;
-        connection.edges.push(Edge::with_additional_fields(
+        let role = match required(row.role)? {
+            crate::models::contributor_role::ContributorRole::Author => "author",
+            crate::models::contributor_role::ContributorRole::Editor => "editor",
+            crate::models::contributor_role::ContributorRole::Translator => "translator",
+            crate::models::contributor_role::ContributorRole::Narrator => "narrator",
+        };
+        edges.push(AuthorEdge::new(
             cursor,
             Author {
                 id: id::encode("Author", required(row.id)?),
                 name: required(row.name)?,
             },
-            ContributorFields {
-                role: match required(row.role)? {
-                    crate::models::contributor_role::ContributorRole::Author => "author",
-                    crate::models::contributor_role::ContributorRole::Editor => "editor",
-                    crate::models::contributor_role::ContributorRole::Translator => "translator",
-                    crate::models::contributor_role::ContributorRole::Narrator => "narrator",
-                }
-                .to_owned(),
-                position,
-            },
+            role.to_owned(),
+            position,
         ));
     }
-    Ok(connection)
+    Ok(AuthorConnection::new(
+        page.has_previous,
+        page.has_next,
+        edges,
+    ))
 }
 async fn manifestation_connection(
-    ctx: &Context<'_>,
+    context: &RequestContext,
     page: RelationPage,
-) -> async_graphql::Result<Connection<String, Manifestation>> {
+) -> GraphResult<ManifestationConnection> {
     let ids = page
         .edges
         .iter()
         .map(|(_, row)| required(row.id))
-        .collect::<async_graphql::Result<Vec<_>>>()?;
-    let records = ctx
-        .data::<RequestLoader>()?
-        .load_many(ids)
-        .await
-        .map_err(|error| batch_error(&error))?;
-    let mut connection = Connection::new(page.has_previous, page.has_next);
+        .collect::<GraphResult<Vec<_>>>()?;
+    let records = context.loaders.books(&ids).await?;
+    let mut edges = Vec::with_capacity(page.edges.len());
     for (cursor, row) in page.edges {
         if let Some(record) = records.get(&required(row.id)?) {
-            connection
-                .edges
-                .push(Edge::new(cursor, Manifestation::new(record.clone())));
+            edges.push(ManifestationEdge::new(
+                cursor,
+                Manifestation::new(record.clone()),
+            ));
         }
     }
-    Ok(connection)
+    Ok(ManifestationConnection::new(
+        page.has_previous,
+        page.has_next,
+        edges,
+    ))
 }
 
 pub(super) async fn manifestation(
-    ctx: &Context<'_>,
+    context: &RequestContext,
     id: &ID,
-) -> async_graphql::Result<Option<Manifestation>> {
+) -> GraphResult<Option<Manifestation>> {
     let Some(id) = id::decode("Manifestation", id) else {
         return Ok(None);
     };
-    Ok(ctx
-        .data::<RequestLoader>()?
-        .load_one(id)
-        .await
-        .map_err(|error| batch_error(&error))?
-        .map(Manifestation::new))
+    Ok(context.loaders.book(id).await?.map(Manifestation::new))
 }
-pub(super) async fn work(ctx: &Context<'_>, id: &ID) -> async_graphql::Result<Option<Work>> {
+pub(super) async fn work(context: &RequestContext, id: &ID) -> GraphResult<Option<Work>> {
     let Some(id) = id::decode("Work", id) else {
         return Ok(None);
     };
-    let loader = ctx.data::<RequestLoader>()?;
-    Ok(loader
-        .load_one(WorkKey(id))
-        .await
-        .map_err(|error| batch_error(&error))?
-        .map(Work::new))
+    Ok(context.loaders.work(id).await?.map(Work::new))
 }
-pub(super) async fn shelf(ctx: &Context<'_>, id: &ID) -> async_graphql::Result<Option<Shelf>> {
+pub(super) async fn shelf(context: &RequestContext, id: &ID) -> GraphResult<Option<Shelf>> {
     let Some(id) = id::decode("Shelf", id) else {
         return Ok(None);
     };
-    ctx.data::<RequestLoader>()?
-        .load_one(ShelfKey(id))
-        .await
-        .map_err(|error| batch_error(&error))?
-        .map(Shelf::new)
-        .transpose()
+    context.loaders.shelf(id).await?.map(Shelf::new).transpose()
 }
-pub(super) async fn series(ctx: &Context<'_>, id: &ID) -> async_graphql::Result<Option<Series>> {
+pub(super) async fn series(context: &RequestContext, id: &ID) -> GraphResult<Option<Series>> {
     let Some(id) = id::decode("Series", id) else {
         return Ok(None);
     };
-    Ok(ctx
-        .data::<RequestLoader>()?
-        .load_one(SeriesKey(id))
-        .await
-        .map_err(|error| batch_error(&error))?
-        .map(Series::new))
+    Ok(context.loaders.series(id).await?.map(Series::new))
 }
 
-#[derive(Default, InputObject)]
+#[derive(Default, GraphQLInputObject)]
 pub(super) struct BooksFilter {
     #[graphql(default)]
     author: Vec<ID>,
@@ -1053,49 +1014,29 @@ pub(super) struct BooksFilter {
     status_any: Vec<String>,
     #[graphql(default)]
     status_none: Vec<String>,
-    rating_gte: Option<i16>,
-    rating_lte: Option<i16>,
+    rating_gte: Option<i32>,
+    rating_lte: Option<i32>,
     rating_empty: Option<bool>,
     q: Option<String>,
 }
 impl BooksFilter {
-    fn params(self) -> async_graphql::Result<ListParams> {
+    fn params(self) -> GraphResult<ListParams> {
         Ok(ListParams {
-            author: self
-                .author
-                .iter()
-                .map(|value| filter_id("Author", value))
-                .collect::<async_graphql::Result<Vec<_>>>()?,
-            author_any: self
-                .author_any
-                .iter()
-                .map(|value| filter_id("Author", value))
-                .collect::<async_graphql::Result<Vec<_>>>()?,
-            author_none: self
-                .author_none
-                .iter()
-                .map(|value| filter_id("Author", value))
-                .collect::<async_graphql::Result<Vec<_>>>()?,
+            author: filter_ids("Author", &self.author)?,
+            author_any: filter_ids("Author", &self.author_any)?,
+            author_none: filter_ids("Author", &self.author_none)?,
             series: self
                 .series
                 .as_ref()
                 .map(|value| filter_id("Series", value))
                 .transpose()?,
-            series_any: self
-                .series_any
-                .iter()
-                .map(|value| filter_id("Series", value))
-                .collect::<async_graphql::Result<Vec<_>>>()?,
+            series_any: filter_ids("Series", &self.series_any)?,
             shelf: self
                 .shelf
                 .as_ref()
                 .map(|value| filter_id("Shelf", value))
                 .transpose()?,
-            shelf_any: self
-                .shelf_any
-                .iter()
-                .map(|value| filter_id("Shelf", value))
-                .collect::<async_graphql::Result<Vec<_>>>()?,
+            shelf_any: filter_ids("Shelf", &self.shelf_any)?,
             tag: self.tag,
             genre: self.genre,
             genre_any: self.genre_any,
@@ -1128,8 +1069,8 @@ impl BooksFilter {
                 .transpose()?,
             status_any: self.status_any,
             status_none: self.status_none,
-            rating_gte: self.rating_gte,
-            rating_lte: self.rating_lte,
+            rating_gte: self.rating_gte.map(small_int).transpose()?,
+            rating_lte: self.rating_lte.map(small_int).transpose()?,
             rating_empty: self.rating_empty,
             q: self.q,
             ..ListParams::default()
@@ -1137,17 +1078,37 @@ impl BooksFilter {
     }
 }
 
-fn filter_id(kind: &str, value: &ID) -> async_graphql::Result<Uuid> {
+pub(super) fn small_int(value: i32) -> GraphResult<i16> {
+    i16::try_from(value).map_err(|_| {
+        safe_error(AppError::Validation(
+            "Only integers from -32768 to 32767 are accepted.".into(),
+        ))
+    })
+}
+fn filter_ids(kind: &str, values: &[ID]) -> GraphResult<Vec<Uuid>> {
+    values.iter().map(|value| filter_id(kind, value)).collect()
+}
+fn filter_id(kind: &str, value: &ID) -> GraphResult<Uuid> {
     id::decode(kind, value)
         .ok_or_else(|| safe_error(AppError::Validation("Invalid filter identity.".into())))
 }
-fn filter_timestamp(value: &str) -> async_graphql::Result<chrono::DateTime<chrono::Utc>> {
+fn filter_timestamp(value: &str) -> GraphResult<chrono::DateTime<chrono::Utc>> {
     chrono::DateTime::parse_from_rfc3339(value)
         .map(|value| value.with_timezone(&chrono::Utc))
         .map_err(|_| safe_error(AppError::Validation("Invalid timestamp bound.".into())))
 }
 
-input_enum!(SortField { Title => "title", Author => "author", CreatedAt => "created_at", Pages => "pages" });
+#[derive(Clone, Copy, PartialEq, Eq, GraphQLEnum)]
+pub(super) enum SortField {
+    #[graphql(name = "title")]
+    Title,
+    #[graphql(name = "author")]
+    Author,
+    #[graphql(name = "created_at")]
+    CreatedAt,
+    #[graphql(name = "pages")]
+    Pages,
+}
 impl SortField {
     const fn wire(self) -> &'static str {
         match self {
@@ -1158,20 +1119,24 @@ impl SortField {
         }
     }
 }
-input_enum!(Direction { Asc => "ASC", Desc => "DESC" });
-#[derive(InputObject)]
+#[derive(Clone, Copy, PartialEq, Eq, GraphQLEnum)]
+pub(super) enum Direction {
+    Asc,
+    Desc,
+}
+#[derive(GraphQLInputObject)]
 pub(super) struct SortLevel {
     column: SortField,
     direction: Direction,
 }
 
 pub(super) async fn books(
-    ctx: &Context<'_>,
+    context: &RequestContext,
     first: i32,
     after: Option<String>,
     filter: Option<BooksFilter>,
     sort: Option<Vec<SortLevel>>,
-) -> async_graphql::Result<Connection<String, Manifestation>> {
+) -> GraphResult<ManifestationConnection> {
     let first = page_size(first)?;
     let mut params = filter.unwrap_or_default().params()?;
     params.cursor = after;
@@ -1192,45 +1157,35 @@ pub(super) async fn books(
             .collect::<Vec<_>>()
             .join(",")
     });
-    let page = reader::books_connection(
-        ctx.data::<CurrentUser>()?,
-        ctx.data::<AppState>()?,
-        &params,
-        i64::from(first),
-    )
-    .await
-    .map_err(safe_error)?;
-    let mut connection = Connection::new(page.has_previous, page.has_next);
-    ctx.data::<RequestLoader>()?
-        .feed_many(
-            page.edges
-                .iter()
-                .map(|(_, record)| (record.detail.id, record.clone())),
-        )
-        .await;
-    for (cursor, record) in page.edges {
-        connection
-            .edges
-            .push(Edge::new(cursor, Manifestation::new(record)));
-    }
-    Ok(connection)
+    let page =
+        reader::books_connection(&context.user, &context.state, &params, i64::from(first)).await?;
+    context.loaders.prime_books(
+        page.edges
+            .iter()
+            .map(|(_, record)| (record.detail.id, record.clone())),
+    );
+    let edges = page
+        .edges
+        .into_iter()
+        .map(|(cursor, record)| ManifestationEdge::new(cursor, Manifestation::new(record)))
+        .collect();
+    Ok(ManifestationConnection::new(
+        page.has_previous,
+        page.has_next,
+        edges,
+    ))
 }
 
 pub(super) async fn shelves(
-    ctx: &Context<'_>,
+    context: &RequestContext,
     first: i32,
     after: Option<String>,
-) -> async_graphql::Result<Connection<String, Shelf>> {
+) -> GraphResult<ShelfConnection> {
     let first = page_size(first)?;
-    let state = ctx.data::<AppState>()?;
-    let user = ctx.data::<CurrentUser>()?;
-    let (rows, _, has_next) = reader::shelves(user, state, after.as_deref(), i64::from(first))
-        .await
-        .map_err(safe_error)?;
-    let previous = reader::shelf_has_previous(user, state, after.as_deref())
-        .await
-        .map_err(safe_error)?;
-    let mut connection = Connection::new(previous, has_next);
+    let (user, state) = (&context.user, &context.state);
+    let (rows, _, has_next) =
+        reader::shelves(user, state, after.as_deref(), i64::from(first)).await?;
+    let previous = reader::shelf_has_previous(user, state, after.as_deref()).await?;
     let records: Vec<_> = rows
         .into_iter()
         .map(|row| {
@@ -1251,35 +1206,28 @@ pub(super) async fn shelves(
             (cursor, record)
         })
         .collect();
-    ctx.data::<RequestLoader>()?
-        .feed_many(
-            records
-                .iter()
-                .map(|(_, record)| (ShelfKey(record.id), record.clone())),
-        )
-        .await;
+    context.loaders.prime_shelves(
+        records
+            .iter()
+            .map(|(_, record)| (record.id, record.clone())),
+    );
+    let mut edges = Vec::with_capacity(records.len());
     for (cursor, record) in records {
-        connection
-            .edges
-            .push(Edge::new(cursor, Shelf::new(record)?));
+        edges.push(ShelfEdge::new(cursor, Shelf::new(record)?));
     }
-    Ok(connection)
+    Ok(ShelfConnection::new(previous, has_next, edges))
 }
 
-#[derive(SimpleObject)]
+#[derive(GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
 pub(super) struct SearchHit {
     manifestation: Option<Manifestation>,
     snippet: Option<String>,
 }
-pub(super) async fn search(ctx: &Context<'_>, q: &str) -> async_graphql::Result<Vec<SearchHit>> {
-    let response = reader::search(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, Some(q))
-        .await
-        .map_err(safe_error)?;
-    let records = ctx
-        .data::<RequestLoader>()?
-        .load_many(response.items.iter().map(|item| item.id))
-        .await
-        .map_err(|error| batch_error(&error))?;
+pub(super) async fn search(context: &RequestContext, q: &str) -> GraphResult<Vec<SearchHit>> {
+    let response = reader::search(&context.user, &context.state, Some(q)).await?;
+    let ids: Vec<_> = response.items.iter().map(|item| item.id).collect();
+    let records = context.loaders.books(&ids).await?;
     Ok(response
         .items
         .into_iter()
@@ -1292,24 +1240,19 @@ pub(super) async fn search(ctx: &Context<'_>, q: &str) -> async_graphql::Result<
 
 macro_rules! suggestion {
     ($name:ident, $function:ident, $operation:ident, $kind:literal) => {
-        #[derive(SimpleObject)]
+        #[derive(GraphQLObject)]
+        #[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
         pub(super) struct $name {
             entity_id: Option<ID>,
             value: String,
         }
         pub(super) async fn $function(
-            ctx: &Context<'_>,
+            context: &RequestContext,
             q: &str,
             limit: Option<i32>,
-        ) -> async_graphql::Result<Vec<$name>> {
-            let rows = reader::$operation(
-                ctx.data::<CurrentUser>()?,
-                ctx.data::<AppState>()?,
-                q,
-                limit.map(i64::from),
-            )
-            .await
-            .map_err(safe_error)?;
+        ) -> GraphResult<Vec<$name>> {
+            let rows =
+                reader::$operation(&context.user, &context.state, q, limit.map(i64::from)).await?;
             Ok(rows
                 .into_iter()
                 .map(|row| $name {
@@ -1343,16 +1286,11 @@ suggestion!(
 );
 
 pub(super) async fn author_labels(
-    ctx: &Context<'_>,
+    context: &RequestContext,
     ids: &[ID],
-) -> async_graphql::Result<Vec<AuthorSuggestion>> {
-    let ids = ids
-        .iter()
-        .map(|id| filter_id("Author", id))
-        .collect::<async_graphql::Result<Vec<_>>>()?;
-    let rows = reader::author_labels(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &ids)
-        .await
-        .map_err(safe_error)?;
+) -> GraphResult<Vec<AuthorSuggestion>> {
+    let ids = filter_ids("Author", ids)?;
+    let rows = reader::author_labels(&context.user, &context.state, &ids).await?;
     Ok(rows
         .into_iter()
         .map(|row| AuthorSuggestion {
@@ -1362,16 +1300,11 @@ pub(super) async fn author_labels(
         .collect())
 }
 pub(super) async fn series_labels(
-    ctx: &Context<'_>,
+    context: &RequestContext,
     ids: &[ID],
-) -> async_graphql::Result<Vec<SeriesSuggestion>> {
-    let ids = ids
-        .iter()
-        .map(|id| filter_id("Series", id))
-        .collect::<async_graphql::Result<Vec<_>>>()?;
-    let rows = reader::series_labels(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &ids)
-        .await
-        .map_err(safe_error)?;
+) -> GraphResult<Vec<SeriesSuggestion>> {
+    let ids = filter_ids("Series", ids)?;
+    let rows = reader::series_labels(&context.user, &context.state, &ids).await?;
     Ok(rows
         .into_iter()
         .map(|row| SeriesSuggestion {

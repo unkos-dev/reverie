@@ -3,9 +3,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use async_graphql::{Context, EmptySubscription, ErrorExtensions, Object, Schema};
-use async_graphql_axum::GraphQLResponse;
 use axum::extract::{Extension, State};
+use juniper::{
+    EmptySubscription, FieldError, GraphQLError, ID, IntoFieldError, Object, RootNode, ScalarValue,
+    ValidatedOperation, Value, Variables, graphql_object,
+};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::auth::{middleware::CurrentUser, scope::Scope};
@@ -13,41 +15,74 @@ use crate::error::AppError;
 use crate::extract::ApiJson;
 use crate::state::AppState;
 
-macro_rules! input_enum {
-    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
-        #[derive(Clone, Copy, PartialEq, Eq)]
-        pub(super) enum $name { $($variant),+ }
-        impl async_graphql::resolver_utils::EnumType for $name {
-            fn items() -> &'static [async_graphql::resolver_utils::EnumItem<Self>] {
-                &[$(async_graphql::resolver_utils::EnumItem { name: $wire, value: Self::$variant }),+]
+macro_rules! connection {
+    ($connection:ident, $edge:ident, $node:ty $(, $extra:ident: $extra_ty:ty)* $(,)?) => {
+        pub(super) struct $edge {
+            cursor: String,
+            node: $node,
+            $($extra: $extra_ty,)*
+        }
+
+        impl $edge {
+            pub(super) const fn new(cursor: String, node: $node $(, $extra: $extra_ty)*) -> Self {
+                Self { cursor, node $(, $extra)* }
             }
         }
-        impl async_graphql::InputType for $name {
-            type RawValueType = Self;
-            fn type_name() -> std::borrow::Cow<'static, str> { stringify!($name).into() }
-            fn create_type_info(registry: &mut async_graphql::registry::Registry) -> String {
-                registry.create_input_type::<Self, _>(async_graphql::registry::MetaTypeId::Enum, |_| {
-                    async_graphql::registry::MetaType::Enum {
-                        name: stringify!($name).into(), description: None,
-                        enum_values: [$(($wire.into(), async_graphql::registry::MetaEnumValue {
-                            name: $wire.into(), description: None,
-                            deprecation: async_graphql::registry::Deprecation::NoDeprecated,
-                            visible: None, inaccessible: false, tags: Vec::new(), directive_invocations: Vec::new(),
-                        })),+].into_iter().collect(),
-                        visible: None, inaccessible: false, tags: Vec::new(),
-                        rust_typename: Some(std::any::type_name::<Self>()),
-                        directive_invocations: Vec::new(), requires_scopes: Vec::new(),
-                    }
-                })
+
+        #[juniper::graphql_object]
+        #[graphql(scalar = juniper::DefaultScalarValue, context = super::RequestContext, description = "An edge in a connection.")]
+        impl $edge {
+            #[graphql(description = "The item at the end of the edge")]
+            const fn node(&self) -> &$node {
+                &self.node
             }
-            fn parse(value: Option<async_graphql::Value>) -> async_graphql::InputValueResult<Self> {
-                async_graphql::resolver_utils::parse_enum(value.unwrap_or(async_graphql::Value::Null))
+            $(
+                fn $extra(&self) -> $extra_ty {
+                    self.$extra.clone()
+                }
+            )*
+            #[graphql(description = "A cursor for use in pagination")]
+            fn cursor(&self) -> &str {
+                &self.cursor
             }
-            fn to_value(&self) -> async_graphql::Value { async_graphql::resolver_utils::enum_value(*self) }
-            fn as_raw_value(&self) -> Option<&Self> { Some(self) }
+        }
+
+        pub(super) struct $connection {
+            edges: Vec<$edge>,
+            page_info: super::PageInfo,
+        }
+
+        impl $connection {
+            pub(super) fn new(has_previous: bool, has_next: bool, edges: Vec<$edge>) -> Self {
+                let page_info = super::PageInfo {
+                    has_previous_page: has_previous,
+                    has_next_page: has_next,
+                    start_cursor: edges.first().map(|edge| edge.cursor.clone()),
+                    end_cursor: edges.last().map(|edge| edge.cursor.clone()),
+                };
+                Self { edges, page_info }
+            }
+        }
+
+        #[juniper::graphql_object]
+        #[graphql(scalar = juniper::DefaultScalarValue, context = super::RequestContext)]
+        impl $connection {
+            #[graphql(description = "Information to aid in pagination.")]
+            const fn page_info(&self) -> &super::PageInfo {
+                &self.page_info
+            }
+            #[graphql(description = "A list of edges.")]
+            fn edges(&self) -> &[$edge] {
+                &self.edges
+            }
+            #[graphql(description = "A list of nodes.")]
+            fn nodes(&self) -> Vec<&$node> {
+                self.edges.iter().map(|edge| &edge.node).collect()
+            }
         }
     };
 }
+
 mod complexity;
 mod id;
 mod library;
@@ -74,400 +109,363 @@ impl ExecutionPolicy {
     }
 }
 
+/// Caller identity, application state, session and loaders for one execution request.
+pub struct RequestContext {
+    user: CurrentUser,
+    state: AppState,
+    session: tower_sessions::Session,
+    loaders: loaders::Loaders,
+}
+
+impl juniper::Context for RequestContext {}
+
+impl RequestContext {
+    fn new(user: CurrentUser, state: AppState, session: tower_sessions::Session) -> Self {
+        Self {
+            loaders: loaders::Loaders::new(user.clone(), state.clone()),
+            user,
+            state,
+            session,
+        }
+    }
+
+    fn require(&self, scope: Scope) -> GraphResult<&CurrentUser> {
+        // THREAT: each root field enforces its declared scope independently of HTTP POST.
+        self.user.require_scope(scope)?;
+        Ok(&self.user)
+    }
+}
+
+// THREAT: no `Display` impl, so `?` cannot route internal text through Juniper's `From<Display>`.
+pub(super) struct GraphError(FieldError);
+
+impl<S: ScalarValue> IntoFieldError<S> for GraphError {
+    fn into_field_error(self) -> FieldError<S> {
+        self.0.map_scalar_value()
+    }
+}
+
+impl From<AppError> for GraphError {
+    fn from(error: AppError) -> Self {
+        safe_error(error)
+    }
+}
+
+pub(super) type GraphResult<T> = Result<T, GraphError>;
+
+#[derive(juniper::GraphQLObject)]
+#[graphql(
+    scalar = juniper::DefaultScalarValue, context = RequestContext,
+    description = "Information about pagination in a connection"
+)]
+pub(super) struct PageInfo {
+    #[graphql(description = "When paginating backwards, are there more items?")]
+    has_previous_page: bool,
+    #[graphql(description = "When paginating forwards, are there more items?")]
+    has_next_page: bool,
+    #[graphql(description = "When paginating backwards, the cursor to continue.")]
+    start_cursor: Option<String>,
+    #[graphql(description = "When paginating forwards, the cursor to continue.")]
+    end_cursor: Option<String>,
+}
+
 /// Root queries, with scopes declared on each field.
 pub struct Query;
 
-struct ReadScope;
-struct WriteScope;
-impl async_graphql::Guard for WriteScope {
-    fn check(
-        &self,
-        ctx: &Context<'_>,
-    ) -> impl std::future::Future<Output = async_graphql::Result<()>> {
-        std::future::ready(
-            ctx.data::<CurrentUser>()
-                .and_then(|user| user.require_scope(Scope::Write).map_err(safe_error)),
-        )
-    }
-}
-
-impl async_graphql::Guard for ReadScope {
-    fn check(
-        &self,
-        ctx: &Context<'_>,
-    ) -> impl std::future::Future<Output = async_graphql::Result<()>> {
-        std::future::ready(
-            ctx.data::<CurrentUser>()
-                .and_then(|user| user.require_scope(Scope::Read).map_err(safe_error)),
-        )
-    }
-}
-
-#[async_graphql::TypeDirective(location = "Object", rename_args = "snake_case")]
-fn fetchable(field_name: String) {}
-
 /// Caller-owned identity, independent of existing browser account projections.
-#[derive(async_graphql::SimpleObject)]
+#[derive(juniper::GraphQLObject)]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext, impl = library::NodeValue)]
 pub struct Viewer {
-    id: async_graphql::ID,
+    id: ID,
     is_child: bool,
     display_name: String,
 }
 
-#[Object]
-impl Query {
-    #[graphql(guard = "ReadScope")]
-    async fn library_preferences(
-        &self,
-        ctx: &Context<'_>,
-    ) -> async_graphql::Result<mutations::LibraryPreferences> {
-        crate::services::preferences::get_preferences(ctx.data()?, ctx.data()?)
+async fn viewer(context: &RequestContext) -> GraphResult<Viewer> {
+    let user = &context.user;
+    let mut tx = crate::db::acquire_with_rls(&context.state.pool, user.user_id)
+        .await
+        .map_err(|error| AppError::Internal(error.into()))?;
+    let display_name =
+        sqlx::query_scalar!("SELECT display_name FROM users WHERE id = $1", user.user_id)
+            .fetch_one(&mut *tx)
             .await
-            .map(Into::into)
-            .map_err(safe_error)
+            .map_err(|error| AppError::Internal(error.into()))?;
+    tx.commit()
+        .await
+        .map_err(|error| AppError::Internal(error.into()))?;
+    Ok(Viewer {
+        display_name,
+        id: id::encode("User", user.user_id),
+        is_child: user.is_child(),
+    })
+}
+
+#[graphql_object]
+#[graphql(scalar = juniper::DefaultScalarValue, context = RequestContext)]
+impl Query {
+    async fn library_preferences(
+        context: &RequestContext,
+    ) -> GraphResult<mutations::LibraryPreferences> {
+        let user = context.require(Scope::Read)?;
+        Ok(
+            crate::services::preferences::get_preferences(&context.state.pool, user)
+                .await?
+                .into(),
+        )
     }
 
-    #[graphql(guard = "WriteScope")]
     async fn metadata_operation(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
+        context: &RequestContext,
+        executor: &juniper::Executor<'_, '_, RequestContext>,
+        id: ID,
         request_id: Option<String>,
         operation_id: Option<String>,
-    ) -> async_graphql::Result<mutations::MetadataOperation> {
-        mutations::metadata_operation(ctx, id, request_id, operation_id).await
+    ) -> GraphResult<mutations::MetadataOperation> {
+        context.require(Scope::Write)?;
+        mutations::metadata_operation(context, executor, &id, request_id, operation_id).await
     }
 
-    #[graphql(guard = "ReadScope")]
-    async fn viewer(&self, ctx: &Context<'_>) -> async_graphql::Result<Viewer> {
-        let user = ctx.data::<CurrentUser>()?;
-        let pool = ctx.data::<sqlx::PgPool>()?;
-        let mut tx = crate::db::acquire_with_rls(pool, user.user_id)
-            .await
-            .map_err(|error| safe_error(AppError::Internal(error.into())))?;
-        let display_name =
-            sqlx::query_scalar!("SELECT display_name FROM users WHERE id = $1", user.user_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|error| safe_error(AppError::Internal(error.into())))?;
-        tx.commit()
-            .await
-            .map_err(|error| safe_error(AppError::Internal(error.into())))?;
-        Ok(Viewer {
-            display_name,
-            id: id::encode("User", user.user_id),
-            is_child: user.is_child(),
-        })
+    async fn viewer(context: &RequestContext) -> GraphResult<Viewer> {
+        context.require(Scope::Read)?;
+        viewer(context).await
     }
-    #[graphql(guard = "ReadScope")]
-    async fn node(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
-    ) -> async_graphql::Result<Option<library::Node>> {
+
+    async fn node(context: &RequestContext, id: ID) -> GraphResult<Option<library::NodeValue>> {
+        let user = context.require(Scope::Read)?;
         if let Some(user_id) = id::decode("User", &id) {
-            if user_id == ctx.data::<CurrentUser>()?.user_id {
-                return self
-                    .viewer(ctx)
-                    .await
-                    .map(|viewer| Some(library::Node::Viewer(viewer)));
+            if user_id == user.user_id {
+                return viewer(context).await.map(|viewer| Some(viewer.into()));
             }
             return Ok(None);
         }
         if id::decode("Work", &id).is_some() {
-            return library::work(ctx, &id)
-                .await
-                .map(|value| value.map(library::Node::Work));
+            return Ok(library::work(context, &id).await?.map(Into::into));
         }
         if id::decode("Manifestation", &id).is_some() {
-            return library::manifestation(ctx, &id)
-                .await
-                .map(|value| value.map(library::Node::Manifestation));
+            return Ok(library::manifestation(context, &id).await?.map(Into::into));
         }
         if id::decode("Shelf", &id).is_some() {
-            return library::shelf(ctx, &id)
-                .await
-                .map(|value| value.map(library::Node::Shelf));
+            return Ok(library::shelf(context, &id).await?.map(Into::into));
         }
         if id::decode("Series", &id).is_some() {
-            return library::series(ctx, &id)
-                .await
-                .map(|value| value.map(library::Node::Series));
+            return Ok(library::series(context, &id).await?.map(Into::into));
         }
         Ok(None)
     }
-    #[graphql(guard = "ReadScope")]
-    async fn work(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
-    ) -> async_graphql::Result<Option<library::Work>> {
-        library::work(ctx, &id).await
+
+    async fn work(context: &RequestContext, id: ID) -> GraphResult<Option<library::Work>> {
+        context.require(Scope::Read)?;
+        library::work(context, &id).await
     }
-    #[graphql(guard = "ReadScope")]
+
     async fn manifestation(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
-    ) -> async_graphql::Result<Option<library::Manifestation>> {
-        library::manifestation(ctx, &id).await
+        context: &RequestContext,
+        id: ID,
+    ) -> GraphResult<Option<library::Manifestation>> {
+        context.require(Scope::Read)?;
+        library::manifestation(context, &id).await
     }
-    #[graphql(guard = "ReadScope")]
-    async fn shelf(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
-    ) -> async_graphql::Result<Option<library::Shelf>> {
-        library::shelf(ctx, &id).await
+
+    async fn shelf(context: &RequestContext, id: ID) -> GraphResult<Option<library::Shelf>> {
+        context.require(Scope::Read)?;
+        library::shelf(context, &id).await
     }
-    #[graphql(guard = "ReadScope")]
-    async fn series(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
-    ) -> async_graphql::Result<Option<library::Series>> {
-        library::series(ctx, &id).await
+
+    async fn series(context: &RequestContext, id: ID) -> GraphResult<Option<library::Series>> {
+        context.require(Scope::Read)?;
+        library::series(context, &id).await
     }
-    #[graphql(name = "fetch__Series", guard = "ReadScope")]
-    async fn fetch_series(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
-    ) -> async_graphql::Result<Option<library::Series>> {
-        library::series(ctx, &id).await
-    }
-    #[graphql(name = "fetch__Work", guard = "ReadScope")]
-    async fn fetch_work(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
-    ) -> async_graphql::Result<Option<library::Work>> {
-        library::work(ctx, &id).await
-    }
-    #[graphql(name = "fetch__Shelf", guard = "ReadScope")]
-    async fn fetch_shelf(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
-    ) -> async_graphql::Result<Option<library::Shelf>> {
-        library::shelf(ctx, &id).await
-    }
-    #[graphql(name = "fetch__Manifestation", guard = "ReadScope")]
-    async fn fetch_manifestation(
-        &self,
-        ctx: &Context<'_>,
-        id: async_graphql::ID,
-    ) -> async_graphql::Result<Option<library::Manifestation>> {
-        library::manifestation(ctx, &id).await
-    }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::page(first, child_complexity)?"
-    )]
+
     async fn books(
-        &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
         filter: Option<library::BooksFilter>,
-        #[graphql(desc = "Omitted or null sort uses the installation default.")] sort: Option<
-            Vec<library::SortLevel>,
-        >,
-    ) -> async_graphql::Result<async_graphql::connection::Connection<String, library::Manifestation>>
-    {
-        library::books(ctx, first, after, filter, sort).await
+        #[graphql(description = "Omitted or null sort uses the installation default.")]
+        sort: Option<Vec<library::SortLevel>>,
+    ) -> GraphResult<library::ManifestationConnection> {
+        context.require(Scope::Read)?;
+        library::books(context, first, after, filter, sort).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::page(first, child_complexity)?"
-    )]
+
     async fn shelves(
-        &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<async_graphql::connection::Connection<String, library::Shelf>> {
-        library::shelves(ctx, first, after).await
+    ) -> GraphResult<library::ShelfConnection> {
+        context.require(Scope::Read)?;
+        library::shelves(context, first, after).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::weighted(usize::from(crate::services::reader::SEARCH_LIMIT), child_complexity)?"
-    )]
-    async fn search(
-        &self,
-        ctx: &Context<'_>,
-        q: String,
-    ) -> async_graphql::Result<Vec<library::SearchHit>> {
-        library::search(ctx, &q).await
+
+    async fn search(context: &RequestContext, q: String) -> GraphResult<Vec<library::SearchHit>> {
+        context.require(Scope::Read)?;
+        library::search(context, &q).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::labels(ids.len(), child_complexity)?"
-    )]
+
     async fn author_labels(
-        &self,
-        ctx: &Context<'_>,
-        ids: Vec<async_graphql::ID>,
-    ) -> async_graphql::Result<Vec<library::AuthorSuggestion>> {
-        library::author_labels(ctx, &ids).await
+        context: &RequestContext,
+        ids: Vec<ID>,
+    ) -> GraphResult<Vec<library::AuthorSuggestion>> {
+        context.require(Scope::Read)?;
+        library::author_labels(context, &ids).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::labels(ids.len(), child_complexity)?"
-    )]
+
     async fn series_labels(
-        &self,
-        ctx: &Context<'_>,
-        ids: Vec<async_graphql::ID>,
-    ) -> async_graphql::Result<Vec<library::SeriesSuggestion>> {
-        library::series_labels(ctx, &ids).await
+        context: &RequestContext,
+        ids: Vec<ID>,
+    ) -> GraphResult<Vec<library::SeriesSuggestion>> {
+        context.require(Scope::Read)?;
+        library::series_labels(context, &ids).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::suggestions(limit, child_complexity)?"
-    )]
+
     async fn author_suggestions(
-        &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::AuthorSuggestion>> {
-        library::author_suggestions(ctx, &q, limit).await
+    ) -> GraphResult<Vec<library::AuthorSuggestion>> {
+        context.require(Scope::Read)?;
+        library::author_suggestions(context, &q, limit).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::suggestions(limit, child_complexity)?"
-    )]
+
     async fn series_suggestions(
-        &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::SeriesSuggestion>> {
-        library::series_suggestions(ctx, &q, limit).await
+    ) -> GraphResult<Vec<library::SeriesSuggestion>> {
+        context.require(Scope::Read)?;
+        library::series_suggestions(context, &q, limit).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::suggestions(limit, child_complexity)?"
-    )]
+
     async fn genre_suggestions(
-        &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::GenreSuggestion>> {
-        library::genre_suggestions(ctx, &q, limit).await
+    ) -> GraphResult<Vec<library::GenreSuggestion>> {
+        context.require(Scope::Read)?;
+        library::genre_suggestions(context, &q, limit).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::suggestions(limit, child_complexity)?"
-    )]
+
     async fn mood_suggestions(
-        &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::MoodSuggestion>> {
-        library::mood_suggestions(ctx, &q, limit).await
+    ) -> GraphResult<Vec<library::MoodSuggestion>> {
+        context.require(Scope::Read)?;
+        library::mood_suggestions(context, &q, limit).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::suggestions(limit, child_complexity)?"
-    )]
+
     async fn tag_suggestions(
-        &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::TagSuggestion>> {
-        library::tag_suggestions(ctx, &q, limit).await
+    ) -> GraphResult<Vec<library::TagSuggestion>> {
+        context.require(Scope::Read)?;
+        library::tag_suggestions(context, &q, limit).await
     }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::suggestions(limit, child_complexity)?"
-    )]
+
     async fn publisher_suggestions(
-        &self,
-        ctx: &Context<'_>,
+        context: &RequestContext,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::PublisherSuggestion>> {
-        library::publisher_suggestions(ctx, &q, limit).await
+    ) -> GraphResult<Vec<library::PublisherSuggestion>> {
+        context.require(Scope::Read)?;
+        library::publisher_suggestions(context, &q, limit).await
     }
 }
 
-/// Schema for the authenticated browser API.
-pub type AppSchema = Schema<Query, mutations::Mutation, EmptySubscription>;
+type Root = RootNode<Query, mutations::Mutation, EmptySubscription<RequestContext>>;
+
+/// Schema for the authenticated browser API, with its admission limits.
+pub struct AppSchema {
+    root: Root,
+    limits: complexity::Limits,
+}
+
+impl AppSchema {
+    /// The schema in GraphQL schema definition language.
+    #[must_use]
+    pub fn sdl(&self) -> String {
+        self.root.as_sdl()
+    }
+}
 
 /// Construct a schema with finite execution limits and an explicit admission policy.
 #[must_use]
 pub fn schema(policy: ExecutionPolicy) -> AppSchema {
-    schema_builder(policy).finish()
+    schema_with_limits(
+        policy,
+        complexity::Limits {
+            cost: complexity::LIMIT,
+            depth: complexity::DEPTH,
+        },
+    )
 }
 
-fn schema_builder(
-    policy: ExecutionPolicy,
-) -> async_graphql::SchemaBuilder<Query, mutations::Mutation, EmptySubscription> {
-    let builder = Schema::build(Query, mutations::Mutation, EmptySubscription)
-        .limit_depth(complexity::DEPTH)
-        .limit_complexity(complexity::LIMIT)
-        .data(policy);
-    if policy == ExecutionPolicy::Production {
-        builder.disable_introspection()
-    } else {
-        builder
+fn schema_with_limits(policy: ExecutionPolicy, limits: complexity::Limits) -> AppSchema {
+    let root = Root::new(Query, mutations::Mutation, EmptySubscription::new());
+    AppSchema {
+        root: if policy == ExecutionPolicy::Production {
+            root.disable_introspection()
+        } else {
+            root
+        },
+        limits,
     }
 }
 
-fn safe_error(error: AppError) -> async_graphql::Error {
+fn extensions(code: &str, extra: Vec<(&str, Value)>) -> Value {
+    let mut object = Object::with_capacity(extra.len() + 1);
+    object.add_field("code", Value::scalar(code.to_owned()));
+    for (name, value) in extra {
+        object.add_field(name, value);
+    }
+    Value::object(object)
+}
+
+fn safe_error(error: AppError) -> GraphError {
+    safe_error_with(error, Vec::new())
+}
+
+fn safe_error_with(error: AppError, mut extra: Vec<(&str, Value)>) -> GraphError {
     // THREAT: internal Display text can contain credentials and database diagnostics.
     let (message, code) = match error {
         AppError::FieldValidation { detail, errors } => {
             let fields = errors
                 .into_iter()
-                .map(|(name, message)| {
-                    (
-                        async_graphql::Name::new(name),
-                        async_graphql::Value::String(message),
-                    )
-                })
+                .map(|(name, message)| (name, Value::scalar(message)))
                 .collect();
-            return async_graphql::Error::new(detail).extend_with(|_, extensions| {
-                extensions.set("code", "validation");
-                extensions.set("errors", async_graphql::Value::Object(fields));
-            });
+            extra.push(("errors", Value::object(fields)));
+            (detail, "validation")
         }
-        AppError::Validation(detail) => {
-            return async_graphql::Error::new(detail)
-                .extend_with(|_, extensions| extensions.set("code", "validation"));
-        }
-        AppError::Forbidden => ("Forbidden", "forbidden"),
-        AppError::NotFound => ("Not found", "not-found"),
-        AppError::IfMatchRequired => ("A baseline is required.", "if-match-required"),
-        AppError::IfMatchMismatch => ("The baseline is stale.", "if-match-mismatch"),
-        AppError::MalformedHeader(detail) => {
-            return async_graphql::Error::new(detail)
-                .extend_with(|_, extensions| extensions.set("code", "malformed-header"));
-        }
-        AppError::UndoUnavailable => ("Metadata Undo is unavailable.", "undo-unavailable"),
-        AppError::UndoConflict => ("Metadata Undo state conflicts.", "undo-conflict"),
-        AppError::SystemShelfImmutable => {
-            ("System shelf cannot be modified.", "system-shelf-immutable")
-        }
+        AppError::Validation(detail) => (detail, "validation"),
+        AppError::Forbidden => ("Forbidden".to_owned(), "forbidden"),
+        AppError::NotFound => ("Not found".to_owned(), "not-found"),
+        AppError::IfMatchRequired => ("A baseline is required.".to_owned(), "if-match-required"),
+        AppError::IfMatchMismatch => ("The baseline is stale.".to_owned(), "if-match-mismatch"),
+        AppError::MalformedHeader(detail) => (detail, "malformed-header"),
+        AppError::UndoUnavailable => (
+            "Metadata Undo is unavailable.".to_owned(),
+            "undo-unavailable",
+        ),
+        AppError::UndoConflict => ("Metadata Undo state conflicts.".to_owned(), "undo-conflict"),
+        AppError::SystemShelfImmutable => (
+            "System shelf cannot be modified.".to_owned(),
+            "system-shelf-immutable",
+        ),
         AppError::FieldLocked(fields) => {
-            return async_graphql::Error::new("Metadata fields are locked.").extend_with(
-                |_, extensions| {
-                    extensions.set("code", "field-locked");
-                    extensions.set("lockedFields", fields);
-                },
-            );
+            extra.push((
+                "lockedFields",
+                Value::list(fields.into_iter().map(Value::scalar).collect()),
+            ));
+            ("Metadata fields are locked.".to_owned(), "field-locked")
         }
         error => {
             tracing::error!(error = ?error, "GraphQL execution failed");
-            ("An internal error occurred.", "internal")
+            ("An internal error occurred.".to_owned(), "internal")
         }
     };
-    async_graphql::Error::new(message).extend_with(|_, extensions| extensions.set("code", code))
+    GraphError(FieldError::new(message, extensions(code, extra)))
 }
 
 #[derive(serde::Deserialize)]
@@ -507,9 +505,135 @@ fn document(
     ))
 }
 
+fn response(data: serde_json::Value, mut errors: Vec<serde_json::Value>) -> serde_json::Value {
+    for error in &mut errors {
+        if let Some(error) = error.as_object_mut() {
+            error
+                .entry("extensions")
+                .or_insert_with(|| serde_json::json!({"code": "validation"}));
+        }
+    }
+    let mut body = serde_json::Map::new();
+    body.insert("data".to_owned(), data);
+    if !errors.is_empty() {
+        body.insert("errors".to_owned(), serde_json::Value::Array(errors));
+    }
+    serde_json::Value::Object(body)
+}
+
+fn refusal(error: &GraphQLError) -> Result<serde_json::Value, AppError> {
+    let errors = match serde_json::to_value(error).map_err(|e| AppError::Internal(e.into()))? {
+        serde_json::Value::Array(errors) => errors,
+        error => vec![error],
+    };
+    Ok(response(serde_json::Value::Null, errors))
+}
+
+// Juniper 0.18 refuses a variable's input object when a non-null field with a default is absent.
+fn with_input_defaults(
+    schema: &juniper::SchemaType<juniper::DefaultScalarValue>,
+    operation: Option<&juniper::Operation<'_, juniper::DefaultScalarValue>>,
+    variables: &Variables,
+) -> Variables {
+    let mut variables = variables.clone();
+    for (name, definition) in operation
+        .and_then(|operation| operation.variables_definition.as_ref())
+        .iter()
+        .flat_map(|definitions| definitions.item.items.iter())
+    {
+        if let Some(value) = variables.get_mut(name.item) {
+            fill_input_defaults(schema, definition.var_type.item.innermost_name(), value);
+        }
+    }
+    variables
+}
+
+fn fill_input_defaults(
+    schema: &juniper::SchemaType<juniper::DefaultScalarValue>,
+    type_name: &str,
+    value: &mut juniper::InputValue,
+) {
+    match value {
+        juniper::InputValue::List(items) => {
+            for item in items {
+                fill_input_defaults(schema, type_name, &mut item.item);
+            }
+        }
+        juniper::InputValue::Object(fields) => {
+            let Some(juniper::meta::MetaType::InputObject(meta)) =
+                schema.concrete_type_by_name(type_name)
+            else {
+                return;
+            };
+            for input in &meta.input_fields {
+                if let Some((_, present)) = fields
+                    .iter_mut()
+                    .find(|(name, _)| name.item == input.name.as_str())
+                {
+                    fill_input_defaults(schema, input.arg_type.innermost_name(), &mut present.item);
+                } else if let Some(default) = &input.default_value {
+                    fields.push((
+                        juniper::Spanning::unlocated(input.name.to_string()),
+                        juniper::Spanning::unlocated(default.clone()),
+                    ));
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn run(
+    schema: &AppSchema,
+    text: &str,
+    operation_name: Option<&str>,
+    variables: &Variables,
+    context: &RequestContext,
+) -> Result<serde_json::Value, AppError> {
+    let operation = match ValidatedOperation::new(text, operation_name, &schema.root) {
+        Ok(operation) => operation,
+        Err(error) => return refusal(&error),
+    };
+    let document = match juniper::parser::parse_document_source(text, &schema.root.schema) {
+        Ok(document) => document,
+        Err(error) => return refusal(&GraphQLError::ParseError(error)),
+    };
+    let variables = &with_input_defaults(
+        &schema.root.schema,
+        complexity::selected_operation(&document, operation_name),
+        variables,
+    );
+    if let Err(messages) = complexity::check(
+        &schema.root.schema,
+        &document,
+        operation_name,
+        variables,
+        schema.limits,
+    ) {
+        return Ok(response(
+            serde_json::Value::Null,
+            messages
+                .into_iter()
+                .map(|message| serde_json::json!({ "message": message }))
+                .collect(),
+        ));
+    }
+    match operation.execute(variables, context).await {
+        Ok((data, errors)) => Ok(response(
+            serde_json::to_value(&data).map_err(|e| AppError::Internal(e.into()))?,
+            errors
+                .iter()
+                .map(serde_json::to_value)
+                .collect::<Result<_, _>>()
+                .map_err(|e| AppError::Internal(e.into()))?,
+        )),
+        Err(error) => refusal(&error),
+    }
+}
+
 #[derive(Clone)]
 struct Service {
-    schema: AppSchema,
+    schema: Arc<AppSchema>,
     policy: ExecutionPolicy,
     documents: Arc<BTreeMap<String, String>>,
 }
@@ -531,29 +655,27 @@ async fn execute(
     ApiJson(envelope): ApiJson<Envelope>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     let text = document(&envelope, service.policy, &service.documents)?;
-    let mut request = async_graphql::Request::new(text)
-        .variables(async_graphql::Variables::from_json(
-            serde_json::Value::Object(envelope.variables),
-        ))
-        .data(loaders::request_loader(user.clone(), state.clone()))
-        .data(state.clone())
-        .data(user)
-        .data(session)
-        .data(state.pool);
-    if let Some(name) = envelope.operation_name {
-        request = request.operation_name(name);
-    }
-    let mut response = service.schema.execute(request).await;
-    for error in &mut response.errors {
-        if error.extensions.is_none() {
-            let mut extensions = async_graphql::ErrorExtensionValues::default();
-            extensions.set("code", "validation");
-            error.extensions = Some(extensions);
-        }
-    }
+    let variables: Variables =
+        serde_json::from_value(serde_json::Value::Object(envelope.variables))
+            .map_err(|_| AppError::Validation("Invalid variables.".into()))?;
+    let context = RequestContext::new(user, state, session);
+    let body = run(
+        &service.schema,
+        &text,
+        envelope.operation_name.as_deref(),
+        &variables,
+        &context,
+    )
+    .await?;
     Ok((
-        [(axum::http::header::CACHE_CONTROL, "no-store")],
-        GraphQLResponse::from(response),
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/graphql-response+json",
+            ),
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+        ],
+        axum::Json(body),
     ))
 }
 
@@ -568,7 +690,7 @@ pub(crate) fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(execute))
         .layer(Extension(Service {
-            schema: schema(policy),
+            schema: Arc::new(schema(policy)),
             policy,
             documents: Arc::new(documents),
         }))
@@ -585,6 +707,24 @@ mod tests {
     use serde_json::json;
     use sqlx::PgPool;
     use tower_sessions::{MemoryStore, Session};
+
+    async fn execute_as(
+        schema: &AppSchema,
+        user: CurrentUser,
+        query: &str,
+        variables: serde_json::Value,
+    ) -> serde_json::Value {
+        let session = Session::new(None, Arc::new(MemoryStore::default()), None);
+        let context = RequestContext::new(user, test_support::test_state(), session);
+        let variables = serde_json::from_value(variables).unwrap();
+        run(schema, query, None, &variables, &context)
+            .await
+            .unwrap()
+    }
+
+    fn extensions_of(error: &GraphError) -> serde_json::Value {
+        serde_json::to_value(error.0.extensions()).unwrap()
+    }
 
     async fn server(pool: &PgPool) -> (TestServer, String, uuid::Uuid) {
         let app = db::app_pool_for(pool).await;
@@ -683,21 +823,18 @@ mod tests {
         let error = safe_error(AppError::Internal(anyhow::anyhow!(
             "private-database-credential"
         )));
-        assert_eq!(error.message, "An internal error occurred.");
-        assert!(!format!("{error:?}").contains("private-database-credential"));
+        assert_eq!(error.0.message(), "An internal error occurred.");
+        assert!(!format!("{:?}", error.0).contains("private-database-credential"));
         let denied = safe_error(AppError::Forbidden);
-        assert_eq!(
-            denied.extensions.unwrap().get("code"),
-            Some(&async_graphql::Value::from("forbidden"))
-        );
+        assert_eq!(extensions_of(&denied)["code"], "forbidden");
         let fields = safe_error(AppError::FieldValidation {
             detail: "Invalid input".into(),
             errors: BTreeMap::from([("name".into(), "Required".into())]),
         });
-        assert_eq!(fields.message, "Invalid input");
+        assert_eq!(fields.0.message(), "Invalid input");
         assert_eq!(
-            fields.extensions.unwrap().get("errors"),
-            Some(&async_graphql::value!({"name": "Required"}))
+            extensions_of(&fields)["errors"],
+            json!({"name": "Required"})
         );
     }
 
@@ -725,18 +862,19 @@ mod tests {
             ));
         }
         let pending=sqlx::query_scalar!("SELECT id FROM metadata_versions WHERE manifestation_id=$1 AND status='pending'::metadata_review_status LIMIT 1",fixture.visible).fetch_one(pool).await.unwrap();
-        let pending = id::encode("MetadataVersion", pending).as_str().to_owned();
-        let id = id::encode("Manifestation", fixture.visible)
-            .as_str()
-            .to_owned();
+        let pending = id::encode("MetadataVersion", pending).to_string();
+        let id = id::encode("Manifestation", fixture.visible).to_string();
         let baseline=reader_query(&fixture,&fixture.admin,TITLE_READ,json!({"id":id})).await["data"]["manifestation"]["metadata"]["etag"].clone();
         let mutations = mutation_shapes(&fixture, &pending, &baseline);
-        let inventory = schema(ExecutionPolicy::Development)
-            .execute("{ __type(name:\"Mutation\") { fields { name } } }")
-            .await;
-        assert_eq!(inventory.errors, []);
-        let inventory = serde_json::to_value(inventory.data).unwrap();
-        let roots: std::collections::BTreeSet<_> = inventory["__type"]["fields"]
+        let inventory = execute_as(
+            &schema(ExecutionPolicy::Development),
+            CurrentUser::without_scopes_for_test(fixture.admin_id),
+            "{ __type(name:\"Mutation\") { fields { name } } }",
+            json!({}),
+        )
+        .await;
+        assert_graph_ok(&inventory);
+        let roots: std::collections::BTreeSet<_> = inventory["data"]["__type"]["fields"]
             .as_array()
             .unwrap()
             .iter()
@@ -801,21 +939,16 @@ mod tests {
     }
 
     async fn work_scope_boundary(fixture: &ReaderFixture) {
-        let query = "query($id:ID!) { fetch__Work(id:$id) { id } }";
-        let denied = schema(ExecutionPolicy::Development)
-            .execute(
-                async_graphql::Request::new(query)
-                    .variables(async_graphql::Variables::from_json(
-                        json!({"id":id::encode("Work",fixture.visible_work)}),
-                    ))
-                    .data(CurrentUser::without_scopes_for_test(fixture.admin_id)),
-            )
-            .await;
-        assert_eq!(denied.errors.len(), 1);
-        assert_eq!(
-            denied.errors[0].extensions.as_ref().unwrap().get("code"),
-            Some(&async_graphql::Value::from("forbidden"))
-        );
+        let query = "query($id:ID!) { node(id:$id) { id } }";
+        let denied = execute_as(
+            &schema(ExecutionPolicy::Development),
+            CurrentUser::without_scopes_for_test(fixture.admin_id),
+            query,
+            json!({"id":id::encode("Work",fixture.visible_work)}),
+        )
+        .await;
+        assert_eq!(denied["errors"].as_array().unwrap().len(), 1);
+        assert_graph_code(&denied, "forbidden");
         let hidden = reader_query(
             fixture,
             &fixture.child,
@@ -824,22 +957,20 @@ mod tests {
         )
         .await;
         assert_graph_ok(&hidden);
-        assert!(hidden["data"]["fetch__Work"].is_null());
+        assert!(hidden["data"]["node"].is_null());
     }
 
     async fn preference_scope_boundary(fixture: &ReaderFixture, read_credential: &str) {
         let preference_read = "{ libraryPreferences { hiddenColumns density view sortStack defaults { hiddenColumns density view sortStack } } }";
-        let denied = schema(ExecutionPolicy::Development)
-            .execute(
-                async_graphql::Request::new(preference_read)
-                    .data(CurrentUser::without_scopes_for_test(fixture.admin_id)),
-            )
-            .await;
-        assert_eq!(denied.errors.len(), 1);
-        assert_eq!(
-            denied.errors[0].extensions.as_ref().unwrap().get("code"),
-            Some(&async_graphql::Value::from("forbidden"))
-        );
+        let denied = execute_as(
+            &schema(ExecutionPolicy::Development),
+            CurrentUser::without_scopes_for_test(fixture.admin_id),
+            preference_read,
+            json!({}),
+        )
+        .await;
+        assert_eq!(denied["errors"].as_array().unwrap().len(), 1);
+        assert_graph_code(&denied, "forbidden");
         let read = reader_query(fixture, read_credential, preference_read, json!({})).await;
         assert_graph_ok(&read);
         assert_eq!(read["data"]["libraryPreferences"]["density"], "compact");
@@ -916,11 +1047,9 @@ mod tests {
         pending: &str,
         baseline: &serde_json::Value,
     ) -> Vec<(&'static str, String)> {
-        let id = id::encode("Manifestation", fixture.visible)
-            .as_str()
-            .to_owned();
-        let shelf = id::encode("Shelf", fixture.shelf_a).as_str().to_owned();
-        let delete_shelf = id::encode("Shelf", fixture.shelf_b).as_str().to_owned();
+        let id = id::encode("Manifestation", fixture.visible).to_string();
+        let shelf = id::encode("Shelf", fixture.shelf_a).to_string();
+        let delete_shelf = id::encode("Shelf", fixture.shelf_b).to_string();
         let tag = serde_json::to_string(&baseline).unwrap();
         vec![
             (
@@ -1035,7 +1164,7 @@ mod tests {
         }
     }
     async fn mutation_child_controls(pool: &PgPool, fixture: &ReaderFixture, id: &str) {
-        let shelf = id::encode("Shelf", fixture.shelf_a).as_str().to_owned();
+        let shelf = id::encode("Shelf", fixture.shelf_a).to_string();
         let own = reader_query(fixture, &fixture.child, READING_READ, json!({"id":id})).await;
         let child_saved=reader_query(fixture,&fixture.child,READING_SAVE,json!({"id":id,"baseline":own["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Child's change"}})).await;
         assert_graph_ok(&child_saved);
@@ -1572,17 +1701,20 @@ mod tests {
             let envelope = serde_json::from_value(request).unwrap();
             assert!(document(&envelope, ExecutionPolicy::Production, &documents).is_err());
         }
+        let user = CurrentUser::without_scopes_for_test(fixture.admin_id);
         for (policy, introspection_allowed) in [
             (ExecutionPolicy::Development, true),
             (ExecutionPolicy::Production, false),
         ] {
-            let schema = schema_builder(policy)
-                .data(test_support::test_state())
-                .finish();
-            let response = schema
-                .execute("{ __schema { queryType { name } } __type(name: \"Viewer\") { name } }")
-                .await;
-            let data = serde_json::to_value(response.data).unwrap();
+            let schema = schema(policy);
+            let response = execute_as(
+                &schema,
+                user.clone(),
+                "{ __schema { queryType { name } } __type(name: \"Viewer\") { name } }",
+                json!({}),
+            )
+            .await;
+            let data = &response["data"];
             if introspection_allowed {
                 assert_eq!(data["__schema"]["queryType"]["name"], "Query");
                 assert_eq!(data["__type"]["name"], "Viewer");
@@ -1590,55 +1722,72 @@ mod tests {
                 assert!(data["__schema"].is_null());
                 assert!(data["__type"].is_null());
             }
-            assert_eq!(schema.execute("{ __typename }").await.errors, []);
-            assert_ne!(
-                schema
-                    .execute("query($show: Boolean!) { __typename @include(if: $show) }")
-                    .await
-                    .errors,
-                []
+            assert_graph_ok(&execute_as(&schema, user.clone(), "{ __typename }", json!({})).await);
+            assert!(
+                execute_as(
+                    &schema,
+                    user.clone(),
+                    "query($show: Boolean!) { __typename @include(if: $show) }",
+                    json!({}),
+                )
+                .await
+                .get("errors")
+                .is_some()
             );
-            assert_eq!(
-                schema
-                    .execute(format!(
-                        "{{ {} }}",
-                        (0..=complexity::LIMIT / 63_000)
-                            .map(|i| format!("alias{i}: series(id: \"malformed\") {{ works(first: 50) {{ edges {{ node {{ manifestations(first: 20) {{ edges {{ node {{ ratings(first: 20) {{ edges {{ node {{ source }} }} }} }} }} }} }} }} }} }}"))
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    ))
-                    .await
-                    .errors[0]
-                    .message,
-                "Query is too complex."
+            let complex = execute_as(
+                &schema,
+                user.clone(),
+                &format!(
+                    "{{ {} }}",
+                    (0..=complexity::LIMIT / 63_000)
+                        .map(|i| format!("alias{i}: series(id: \"malformed\") {{ works(first: 50) {{ edges {{ node {{ manifestations(first: 20) {{ edges {{ node {{ ratings(first: 20) {{ edges {{ node {{ source }} }} }} }} }} }} }} }} }} }}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
+                json!({}),
+            )
+            .await;
+            assert_eq!(complex["errors"][0]["message"], "Query is too complex.");
+            let shallow = schema_with_limits(
+                policy,
+                complexity::Limits {
+                    cost: complexity::LIMIT,
+                    depth: 1,
+                },
             );
-            let depth_response = schema_builder(policy)
-                .limit_depth(1)
-                .finish()
-                .execute("{ viewer { displayName } }")
-                .await;
+            let depth_response = execute_as(
+                &shallow,
+                user.clone(),
+                "{ viewer { displayName } }",
+                json!({}),
+            )
+            .await;
             assert_eq!(
-                depth_response.errors[0].message,
+                depth_response["errors"][0]["message"],
                 "Query is nested too deep."
             );
         }
     }
 
     fn reader_variables(document: &str, fixture: &ReaderFixture) -> serde_json::Value {
-        let id = if document.contains("readerShelfQuery") || document.contains("fetch__Shelf(") {
+        let id = if document.contains("readerShelfQuery")
+            || document.contains("query readerShelfItemsPaginationQuery")
+        {
             id::encode("Shelf", fixture.shelf_a)
-        } else if document.contains("readerSeriesQuery") || document.contains("fetch__Series(") {
+        } else if document.contains("readerSeriesQuery")
+            || document.contains("query readerSeriesWorksPaginationQuery")
+        {
             id::encode("Series", fixture.series)
-        } else if document.contains("fetch__Work(") {
+        } else if document.contains("query readerWorkAuthorsPaginationQuery") {
             id::encode("Work", fixture.visible_work)
         } else {
             id::encode("Manifestation", fixture.visible)
         };
         json!({
-            "id": id.as_str(), "q": "Graph",
+            "id": id.to_string(), "q": "Graph",
             "ids": [if document.contains("authorLabels(") { id::encode("Author",fixture.author) } else { id::encode("Series",fixture.series) }],
-            "authorIds": [id::encode("Author", fixture.author).as_str()],
-            "seriesIds": [id::encode("Series", fixture.series).as_str()]
+            "authorIds": [id::encode("Author", fixture.author).to_string()],
+            "seriesIds": [id::encode("Series", fixture.series).to_string()]
         })
     }
 
@@ -1813,38 +1962,32 @@ mod tests {
         response.json()
     }
 
-    // Authorisation and private-data boundary for the concrete refetch roots.
+    // Authorisation and private-data boundary for Node refetch of paged types.
     #[sqlx::test(migrations = "./migrations")]
-    async fn graphql_fetchable_boundary(pool: PgPool) {
+    async fn graphql_refetch_boundary(pool: PgPool) {
         let fixture = reader_fixture(&pool).await;
         let app = db::app_pool_for(&pool).await;
         let (_, child) = db::create_child_user_and_basic_auth(&app, "fetch-hidden").await;
         let schema = schema(ExecutionPolicy::Development);
-        for (field, id) in [
-            (
-                "fetch__Manifestation",
-                id::encode("Manifestation", fixture.hidden),
-            ),
-            ("fetch__Shelf", id::encode("Shelf", fixture.other_shelf)),
-            ("fetch__Series", id::encode("Series", fixture.series)),
+        let query = "query($id: ID!) { node(id: $id) { id } }";
+        for id in [
+            id::encode("Manifestation", fixture.hidden),
+            id::encode("Shelf", fixture.other_shelf),
+            id::encode("Series", fixture.series),
         ] {
-            let query = format!("query($id: ID!) {{ {field}(id: $id) {{ id }} }}");
-            let variables = json!({"id": id.as_str()});
-            let denied = schema
-                .execute(
-                    async_graphql::Request::new(&query)
-                        .variables(async_graphql::Variables::from_json(variables.clone()))
-                        .data(CurrentUser::without_scopes_for_test(fixture.admin_id)),
-                )
-                .await;
-            assert_eq!(denied.errors.len(), 1, "{denied:?}");
-            assert_eq!(
-                denied.errors[0].extensions.as_ref().unwrap().get("code"),
-                Some(&async_graphql::Value::from("forbidden"))
-            );
-            let hidden = reader_query(&fixture, &child, &query, variables).await;
+            let variables = json!({ "id": id });
+            let denied = execute_as(
+                &schema,
+                CurrentUser::without_scopes_for_test(fixture.admin_id),
+                query,
+                variables.clone(),
+            )
+            .await;
+            assert_eq!(denied["errors"].as_array().unwrap().len(), 1, "{denied}");
+            assert_graph_code(&denied, "forbidden");
+            let hidden = reader_query(&fixture, &child, query, variables).await;
             assert!(hidden.get("errors").is_none(), "{hidden}");
-            assert!(hidden["data"][field].is_null(), "{hidden}");
+            assert!(hidden["data"]["node"].is_null(), "{hidden}");
         }
     }
 
@@ -1867,14 +2010,14 @@ mod tests {
         );
         assert_eq!(
             response["data"]["books"]["edges"][0]["node"]["id"],
-            visible.as_str()
+            visible.to_string()
         );
         let query = "query($id: ID!) { manifestation(id: $id) { id metadata { title etag } readingState { notes etag } work { id authors(first: 5) { edges { node { name } role position } } } } }";
         let response = reader_query(
             &fixture,
             &fixture.child,
             query,
-            json!({"id": visible.as_str()}),
+            json!({"id": visible.to_string()}),
         )
         .await;
         assert!(response.get("errors").is_none(), "{response}");
@@ -1891,7 +2034,7 @@ mod tests {
             &fixture,
             &fixture.other,
             query,
-            json!({"id": visible.as_str()}),
+            json!({"id": visible.to_string()}),
         )
         .await;
         assert!(other.get("errors").is_none(), "{other}");
@@ -1917,16 +2060,16 @@ mod tests {
             assert!(response["data"]["manifestation"].is_null());
             assert!(response["data"]["node"].is_null());
         }
-        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $shelf: ID!, $other: ID!, $caller: ID!) { work(id: $work) { id } shelf(id: $shelf) { id } other: node(id: $other) { id } caller: node(id: $caller) { id } }", json!({"work": id::encode("Work", fixture.hidden_work).as_str(), "shelf": id::encode("Shelf", fixture.other_shelf).as_str(), "other": id::encode("User", fixture.admin_id).as_str(), "caller": id::encode("User", fixture.child_id).as_str()})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $shelf: ID!, $other: ID!, $caller: ID!) { work(id: $work) { id } shelf(id: $shelf) { id } other: node(id: $other) { id } caller: node(id: $caller) { id } }", json!({"work": id::encode("Work", fixture.hidden_work).to_string(), "shelf": id::encode("Shelf", fixture.other_shelf).to_string(), "other": id::encode("User", fixture.admin_id).to_string(), "caller": id::encode("User", fixture.child_id).to_string()})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert!(response["data"]["work"].is_null());
         assert!(response["data"]["shelf"].is_null());
         assert!(response["data"]["other"].is_null());
         assert_eq!(
             response["data"]["caller"]["id"],
-            id::encode("User", fixture.child_id).as_str()
+            id::encode("User", fixture.child_id).to_string()
         );
-        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $series: ID!, $shelf: ID!) { work(id: $work) { manifestations(first: 2) { edges { node { id } } } } series(id: $series) { works(first: 50) { edges { node { id manifestations(first: 2) { edges { node { id } } } } } } } shelf(id: $shelf) { items(first: 50) { edges { node { id } } } } }", json!({"work": id::encode("Work", fixture.visible_work).as_str(), "series": id::encode("Series", fixture.series).as_str(), "shelf": id::encode("Shelf", fixture.child_shelf).as_str()})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $series: ID!, $shelf: ID!) { work(id: $work) { manifestations(first: 2) { edges { node { id } } } } series(id: $series) { works(first: 50) { edges { node { id manifestations(first: 2) { edges { node { id } } } } } } } shelf(id: $shelf) { items(first: 50) { edges { node { id } } } } }", json!({"work": id::encode("Work", fixture.visible_work).to_string(), "series": id::encode("Series", fixture.series).to_string(), "shelf": id::encode("Shelf", fixture.child_shelf).to_string()})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert_eq!(
             response["data"]["work"]["manifestations"]["edges"]
@@ -1944,16 +2087,16 @@ mod tests {
         );
         assert_eq!(
             response["data"]["shelf"]["items"]["edges"][0]["node"]["id"],
-            visible.as_str()
+            visible.to_string()
         );
         for hidden in [
             id::encode("Manifestation", fixture.hidden),
             id::encode("Manifestation", fixture.sibling),
             id::encode("Work", fixture.hidden_work),
         ] {
-            assert!(!response.to_string().contains(hidden.as_str()));
+            assert!(!response.to_string().contains(&*hidden));
         }
-        let response = reader_query(&fixture, &fixture.child, "query($ids: [ID!]!) { authorLabels(ids: $ids) { entityId value } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { value } shelves(first: 50) { edges { node { id name } } } }", json!({"ids": [id::encode("Author", fixture.author).as_str(), id::encode("Author", fixture.hidden_author).as_str()]})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($ids: [ID!]!) { authorLabels(ids: $ids) { entityId value } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { value } shelves(first: 50) { edges { node { id name } } } }", json!({"ids": [id::encode("Author", fixture.author).to_string(), id::encode("Author", fixture.hidden_author).to_string()]})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert_eq!(
             response["data"]["authorLabels"].as_array().unwrap().len(),
@@ -1967,7 +2110,7 @@ mod tests {
             &fixture,
             &fixture.admin,
             versions_query,
-            json!({"id": visible.as_str()}),
+            json!({"id": visible.to_string()}),
         )
         .await;
         assert!(adult_versions.get("errors").is_none(), "{adult_versions}");
@@ -1980,14 +2123,14 @@ mod tests {
             "Unreviewed graph proposal"
         );
         for (query, variables) in [
-            (versions_query, json!({"id": visible.as_str()})),
+            (versions_query, json!({"id": visible.to_string()})),
             (
                 "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } }",
-                json!({"id": visible.as_str()}),
+                json!({"id": visible.to_string()}),
             ),
             (
                 "query($id: ID!) { work(id: $id) { manifestations(first: 2) { edges { node { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } } } }",
-                json!({"id": id::encode("Work", fixture.visible_work).as_str()}),
+                json!({"id": id::encode("Work", fixture.visible_work).to_string()}),
             ),
         ] {
             let response = reader_query(&fixture, &fixture.child, query, variables).await;
@@ -2004,7 +2147,7 @@ mod tests {
             fixture,
             &fixture.admin,
             query,
-            json!({"id":id::encode("Manifestation",fixture.visible).as_str()}),
+            json!({"id":id::encode("Manifestation",fixture.visible).to_string()}),
         )
         .await;
         assert!(page.get("errors").is_none(), "{page}");
@@ -2015,7 +2158,7 @@ mod tests {
             fixture,
             &fixture.admin,
             query,
-            json!({"id":id::encode("Manifestation",fixture.sibling).as_str(),"after":cursor}),
+            json!({"id":id::encode("Manifestation",fixture.sibling).to_string(),"after":cursor}),
         )
         .await;
         assert_eq!(refused["errors"][0]["extensions"]["code"], "validation");
@@ -2037,7 +2180,7 @@ mod tests {
         assert!(next.get("errors").is_none(), "{next}");
         assert_eq!(
             next["data"]["books"]["edges"][0]["node"]["id"],
-            id::encode("Manifestation", fixture.sibling).as_str()
+            id::encode("Manifestation", fixture.sibling).to_string()
         );
         assert_eq!(next["data"]["books"]["pageInfo"]["hasPreviousPage"], true);
         for filter in [
@@ -2155,7 +2298,7 @@ mod tests {
                 &fixture,
                 &fixture.admin,
                 &nested_query,
-                json!({"id": parent_a.as_str()}),
+                json!({"id": parent_a.to_string()}),
             )
             .await;
             assert!(page.get("errors").is_none(), "{page}");
@@ -2167,7 +2310,7 @@ mod tests {
                     &fixture,
                     &fixture.admin,
                     &nested_query,
-                    json!({"id": parent_b.as_str(), "after": nested_cursor}),
+                    json!({"id": parent_b.to_string(), "after": nested_cursor}),
                 )
                 .await,
                 reader_query(
