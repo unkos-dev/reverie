@@ -616,6 +616,13 @@
       "title": "GraphQL and Relay for browser application data"
     },
     {
+      "id": "REV-ADR-0078",
+      "kind": "adr",
+      "path": "docs/adr/0078-use-juniper-as-the-graphql-server-library.md",
+      "status": "proposed",
+      "title": "Use Juniper as the GraphQL server library"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0075",
@@ -1083,7 +1090,8 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0077"
+        "REV-ADR-0077",
+        "REV-ADR-0078"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",
