@@ -57,6 +57,7 @@ export default defineConfig({
     },
   },
   test: {
+    attachmentsDir: "./test-results/browser",
     projects: [
       {
         extends: false,

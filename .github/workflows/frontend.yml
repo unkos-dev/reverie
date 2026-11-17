@@ -108,7 +108,7 @@ jobs:
           path: |
             frontend/test-results/browser/
             frontend/test-results/library/
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   build:
     needs: changes
