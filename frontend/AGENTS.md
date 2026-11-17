@@ -19,6 +19,9 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
 - **Recipes, not tools:** Use `just js::test`, `just js::check`, `just js::a11y` and `just js::detect`. `vp test`,
   `vp build` and `vp lint` are Vite+ built-ins and ignore a `package.json` script of the same name; `vp run <script>`
   runs the script.
+- **Browser support:** The frontend targets the current stable releases of Chrome, Edge, Firefox and Safari. Use any
+  platform feature that is Baseline across them, with no fallback or polyfill. A feature missing from any of them needs
+  approval, unless the page works fully without it.
 
 ## Interaction
 

@@ -58,7 +58,6 @@ displayed rows keep their source key for mutations and undo.
 - Positive: reload and traversal recover a visit without filter-bearing links or edit-level history.
 - Positive: native controls replace application drafts, correction and write-delay machinery.
 - Positive: local-day boundaries remain correct across daylight-saving transitions without backend timezone data.
-- Negative: Library visit persistence requires Navigation-capable recent browsers.
 - Negative: native year-prefix publication can briefly query intermediate dates and show intermediate results.
 - Negative: retained rows require explicit updating feedback and source-key provenance for cache actions.
 - Negative: filters are not portable bookmarks or shared links; a restored old entry may retain an old visit.
