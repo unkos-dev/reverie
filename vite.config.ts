@@ -295,6 +295,16 @@ export default defineConfig({
         },
       },
       {
+        files: [
+          "frontend/src/routes/book.tsx",
+          "frontend/src/routes/series.tsx",
+          "frontend/src/routes/shelf-detail.tsx",
+        ],
+        rules: {
+          "typescript/only-throw-error": ["error", { allow: [{ from: "lib", name: "Response" }] }],
+        },
+      },
+      {
         files: ["frontend/src/components/ui/**", "frontend/**/*.test.{ts,tsx}"],
         rules: {
           "typescript/consistent-type-assertions": "off",

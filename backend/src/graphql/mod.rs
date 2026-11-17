@@ -270,6 +270,7 @@ impl Query {
         first: i32,
         after: Option<String>,
         filter: Option<library::BooksFilter>,
+        #[graphql(desc = "Omitted or null sort uses the installation default.")]
         sort: Option<Vec<library::SortLevel>>,
     ) -> async_graphql::Result<async_graphql::connection::Connection<String, library::Manifestation>>
     {

@@ -522,7 +522,12 @@ type Query {
   fetch__Work(id: ID!): Work
   fetch__Shelf(id: ID!): Shelf
   fetch__Manifestation(id: ID!): Manifestation
-  books(first: Int!, after: String, filter: BooksFilter, sort: [SortLevel!]): ManifestationConnection!
+  books(    first: Int!,    after: String,    filter: BooksFilter,
+    """
+    Omitted or null sort uses the installation default.
+    """
+    sort: [SortLevel!]
+  ): ManifestationConnection!
   shelves(first: Int!, after: String): ShelfConnection!
   search(q: String!): [SearchHit!]!
   authorLabels(ids: [ID!]!): [AuthorSuggestion!]!

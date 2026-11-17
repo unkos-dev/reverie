@@ -119,10 +119,11 @@ the request content is processed, so a caller holding a stale representation lea
 ### Client editing baselines
 
 GraphQL editing documents validate their selected values and revision before Relay publication. `executeEditing` uses
-raw `environment.execute` or `executeMutation` payload data and returns a detached projection. It never derives a
-baseline from a merged store read or `commitMutation.onCompleted`. A whole-list author replacement requires all pages of
-that field at one revision, with a complete cursor chain. `captureAuthorPages` enforces that pairing. A newer token
-without the selected values cannot replace a captured baseline.
+raw `environment.execute` or `executeMutation` payload data to capture validated values and their matching validator
+together in a detached projection. It never derives a baseline from a merged store read or `commitMutation.onCompleted`.
+A whole-list author replacement requires all pages of that field at one revision, with a complete cursor chain.
+`captureAuthorPages` enforces that pairing. A newer token without the selected values cannot replace a captured
+baseline.
 
 `apiFetchWithHeaders` returns a decoded body and response headers without retaining entity-tags. Metadata and reading
 adapters validate the complete body and require the matching strong response ETag before publishing one snapshot. List

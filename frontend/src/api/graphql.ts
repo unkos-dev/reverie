@@ -548,16 +548,9 @@ export function graphqlNetwork(
     accountSignal.addEventListener("abort", cancel, { once: true });
     void (async () => {
       try {
-        const requestVariables = { ...variables };
-        if (
-          (request.name === "readerLibraryQuery" ||
-            request.name === "readerLibraryPaginationQuery") &&
-          requestVariables.sort == null
-        )
-          delete requestVariables.sort;
         const raw = await apiFetch("/api/graphql", {
           method: "POST",
-          body: JSON.stringify({ id: request.id, variables: requestVariables }),
+          body: JSON.stringify({ id: request.id, variables }),
           signal,
         });
         const result = envelope.parse(raw);

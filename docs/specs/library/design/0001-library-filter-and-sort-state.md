@@ -78,8 +78,9 @@ month/year rollovers and daylight-saving changes.
 
 `libraryPreferences` and `updateLibraryPreferences` provide the account overrides and installation defaults through
 `services::preferences`. The HTTP preference endpoints share that service. Sort gestures write `sortStack`; a non-empty
-override becomes ordered typed sort levels. Inheritance omits the `sort` variable. Native query references retain
-connection membership. Each source keeps its operation, variables and detached editing pairs for row actions.
+override becomes ordered typed sort levels. With no override, `sort` is omitted or null and the server uses the
+installation default. Native query references retain connection membership. Each source keeps its operation, variables
+and detached editing pairs for row actions.
 
 ## Data and state
 

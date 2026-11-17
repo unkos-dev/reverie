@@ -32,7 +32,7 @@ const wireRequest = z.object({ id: z.string(), variables: z.record(z.string(), z
 const listVariables = z.object({
   sourceKey: z.string(),
   filter: z.record(z.string(), z.unknown()).nullable().optional(),
-  sort: z.array(z.object({ column: z.string(), direction: z.string() })).optional(),
+  sort: z.array(z.object({ column: z.string(), direction: z.string() })).nullish(),
   cursor: z.string().nullable().optional(),
 });
 const metadataVariables = z.object({
@@ -489,8 +489,9 @@ describe("LibraryPage", () => {
         await expect.element(page.getByText("The Brothers Karamazov").first()).toBeInTheDocument();
         await vi.waitFor(() => {
           const request = fixture.calls.filter((call) => call.name === "readerLibraryQuery").at(-1);
-          expect(request?.variables.sort).toEqual(
-            preferences.sort_stack === null ? undefined : [{ column: "pages", direction: "DESC" }],
+          expect(request).toBeDefined();
+          expect(request?.variables.sort ?? null).toEqual(
+            preferences.sort_stack === null ? null : [{ column: "pages", direction: "DESC" }],
           );
         });
       },
@@ -523,7 +524,7 @@ describe("LibraryPage", () => {
         handler: (name, variables) => {
           if (name === "readerLibraryPreferencesQuery")
             return pending.then((value) => value.clone());
-          if (name === "readerLibraryQuery" && variables.sort !== undefined)
+          if (name === "readerLibraryQuery" && variables.sort != null)
             return response({
               books: {
                 edges: [
@@ -543,8 +544,8 @@ describe("LibraryPage", () => {
       await expect.element(page.getByText("A Sorted Row")).toBeInTheDocument();
       const requests = fixture.calls.filter((call) => call.name === "readerLibraryQuery");
       expect(requests).toHaveLength(3);
-      expect(requests.at(0)?.variables).not.toHaveProperty("sort");
-      expect(requests.at(1)?.variables).not.toHaveProperty("sort");
+      expect(requests.at(0)?.variables.sort ?? null).toBeNull();
+      expect(requests.at(1)?.variables.sort ?? null).toBeNull();
       expect(requests.at(2)?.variables.sort).toEqual([{ column: "pages", direction: "DESC" }]);
     });
   });

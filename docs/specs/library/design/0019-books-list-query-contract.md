@@ -242,10 +242,11 @@ Timestamp bounds are canonical UTC instants in the fingerprint, so equivalent RF
 filter identity. A different instant changes the fingerprint even if the local calendar date is unchanged.
 
 The GraphQL `books(first:, after:, filter:, sort:)` root resolves typed input objects to the same `ListParams`,
-validators, `SortSpec` and filter fingerprint in `backend/src/services/reader.rs`. Missing sort retains server-default
-resolution. Numeric endpoints remain inclusive and timestamps use inclusive lower and exclusive upper instants.
-Equivalent offsets share a fingerprint. Invalid columns, duplicate levels and stacks over three levels fail before SQL.
-Graph execution refusals carry the `validation` classification. HTTP status and envelope contracts remain unchanged.
+validators, `SortSpec` and filter fingerprint in `backend/src/services/reader.rs`. Omitted or null `sort` uses the
+installation default through `SortSpec::default()`, independently of the reader's stored preference. Numeric endpoints
+remain inclusive and timestamps use inclusive lower and exclusive upper instants. Equivalent offsets share a
+fingerprint. Invalid columns, duplicate levels and stacks over three levels fail before SQL. Graph execution refusals
+carry the `validation` classification. HTTP status and envelope contracts remain unchanged.
 
 Books expose native connection edges and PageInfo. Every edge carries its own keyset cursor. One extra row derives
 `hasNextPage`, and a bounded existence query derives `hasPreviousPage`. The non-null `first` argument is required and
@@ -268,9 +269,10 @@ existing full-state hash without adding them to the response. A missing reading 
 matched GET. No per-row query or pre-edit GET supplies these validators.
 
 Browser Library requests project published filters into typed GraphQL arguments and send explicit sort levels only for
-an account override. The visit/source key is a Relay client connection identity, not a server field argument or cursor
-component. Native query references retain membership while detached validated raw list snapshots supply cell baselines.
-Basic detail selects the pending count without opening the proposal connection.
+an account override. With no override, `sort` is omitted or null. The visit/source key is a Relay client connection
+identity, not a server field argument or cursor component. Native query references retain membership while detached
+validated raw list snapshots supply cell baselines. Basic detail selects the pending count without opening the proposal
+connection.
 
 Nothing here is durable. `ListParams`, the parsed `SortSpec`, the filter fingerprint and the decoded `SortCursor` are
 all built fresh from one request's query string and discarded once that request's response is written; the server holds

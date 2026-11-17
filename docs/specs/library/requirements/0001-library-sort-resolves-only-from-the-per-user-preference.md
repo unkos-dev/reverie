@@ -15,17 +15,17 @@ The library surface MUST resolve the active sort stack from the reader's stored 
 back to the installation default when that preference is unset. A component on the library route MUST NOT read or write
 a `?sort=` URL parameter, and every sort gesture MUST persist its result as the reader's `sort_stack` preference. WHEN
 the books list request is built, the client MUST send the reader's non-empty override explicitly as the HTTP `sort`
-query parameter or typed GraphQL `sort` argument. It MUST omit that parameter or argument when the reader has no
-override, so the installation default is never serialised onto the wire.
+query parameter or typed GraphQL `sort` argument. When the reader has no override, the client MUST omit the HTTP
+parameter and MUST omit the GraphQL argument or supply `null`, without serialising the installation-default levels.
 
 ## Rationale
 
 A URL-carried sort and an account-level sort are two sources of truth for one value, and two sources let surfaces
 disagree on the active order, let a clearing gesture write an absent value over an absent value, and give the route
 loader a cache key that cannot match a reader with a stored override. Binding resolution to the one preference removes
-the second source by construction. Sending the installation default explicitly would reintroduce the mismatch, because
-an inheriting reader's list-query key would then depend on server state the route loader cannot see. The decision and
-its drivers are recorded in
+the second source by construction. Sending the installation-default levels explicitly would reintroduce the mismatch,
+because an inheriting reader's list-query key would then depend on server state the route loader cannot see. The
+decision and its drivers are recorded in
 [Library sort is a per-user preference, never URL state](../../../adr/0047-library-sort-is-a-per-user-preference-never-url-state.md).
 
 ## Acceptance criteria
@@ -44,7 +44,7 @@ its drivers are recorded in
   as its `sort` query parameter.
 - WHEN the reader has no override, the books list request carries no `sort` parameter.
 - WHEN the reader has a non-empty override, the GraphQL books request carries the same ordered levels and directions in
-  its typed `sort` argument. With no override, its variables omit `sort`.
+  its typed `sort` argument. With no override, its variables omit `sort` or supply `null`.
 
 ## More information
 
