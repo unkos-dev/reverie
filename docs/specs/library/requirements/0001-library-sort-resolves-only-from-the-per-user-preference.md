@@ -44,7 +44,8 @@ decision and its drivers are recorded in
   as its `sort` query parameter.
 - WHEN the reader has no override, the books list request carries no `sort` parameter.
 - WHEN the reader has a non-empty override, the GraphQL books request carries the same ordered levels and directions in
-  its typed `sort` argument. With no override, its variables omit `sort` or supply `null`.
+  its typed `sort` argument. With no override, the request supplies no sort levels: its variables omit `sort` or supply
+  `null`.
 
 ## More information
 

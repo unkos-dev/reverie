@@ -11,10 +11,10 @@ title: "Browser edits retain the validator belonging to their values"
 
 WHEN the browser client saves book metadata or reading state, it MUST send the validator of the revision from which that
 edit's validated values came. A revision is the resource state a validator identifies. Values and a validator from
-different revisions MUST NOT form an editing baseline. The client MUST retain that baseline through errors and CSRF
-retry until a new editing decision adopts validated values and their matching validator together. A replacement-list
-edit MUST adopt all pages of that selected field at one revision; it MUST NOT adopt an incomplete list or pages from
-different revisions.
+different revisions MUST NOT form an editing baseline. Background reads, refreshes and failed writes MUST NOT advance a
+retained edit's baseline. The client MUST retain that baseline through errors and CSRF retry until a new editing
+decision adopts validated values and their matching validator together. A replacement-list edit MUST adopt all pages of
+that selected field at one revision; it MUST NOT adopt an incomplete list or pages from different revisions.
 
 ## Rationale
 

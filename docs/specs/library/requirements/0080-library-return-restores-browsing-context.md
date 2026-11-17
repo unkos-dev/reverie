@@ -9,9 +9,8 @@ title: "Library return restores browsing context"
 
 ## Statement
 
-WHEN a reader returns from a book to a Library visit, the Library MUST restore that visit's loaded rows and browsing
-position according to its saved anchor and scroll offset. The anchor is the first visible book and its position within
-the viewport when the reader leaves. Restoration MUST yield to a newer filter, sort, view, navigation or user scroll.
+WHEN a reader returns to a Library visit through browser history, the Library MUST restore that visit's loaded books and
+the reader's place. Restoration MUST NOT override a newer filter, sort, view, navigation or user scroll.
 
 ## Rationale
 
@@ -21,14 +20,15 @@ current results load.
 
 ## Acceptance criteria
 
-- R1: Returning to an unchanged visit restores its loaded rows, anchor position and scroll offset. Another visit with
-  identical filters and sort can load a different extent and complete its own return check without changing the earlier
-  visit's retained rows or geometry. Intermediate return pages preserve the displayed rows and position until the
-  replacement is ready, including on repeated returns.
-- R2: If the anchor remains listed but has moved, restoration places it at its saved position within the viewport.
-- R3: If the anchor has left the list, restoration uses the previous absolute scroll offset.
-- R4: If the anchor has left the list and its maximum scroll offset is less than the saved offset, restoration returns
-  to the top. This also applies when the maximum is greater than zero, so clamping to the bottom does not satisfy this
-  criterion.
-- A newer filter, sort, view, navigation or user scroll prevents a delayed completion from restoring the old position or
-  replacing the newer intent.
+- R1a: Returning to an unchanged visit restores its loaded books, with the top book at its previous position within 1
+  CSS pixel.
+- R1b: Two visits with identical filters and sort each restore their own loaded books and place, including when their
+  loaded extents differ.
+- R2: If the top book remains listed but has moved, restoration places it at its saved position within the viewport,
+  within 1 CSS pixel, as far as the scroll range allows.
+- Y1: A newer filter, sort, view, navigation or user scroll prevents a delayed completion from restoring the old
+  position or replacing the newer intent.
+
+Checked by `unchanged returns preserve each visit's books and known-book position` for R1a and R1b,
+`a moved book returns to its saved position` for R2, and `a user scroll wins during a held return` for Y1 in
+`frontend/tests/journeys/library-navigation.spec.ts`.

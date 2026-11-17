@@ -54,6 +54,12 @@ const BOOK = {
   reading_state: null,
   created_at: "2026-10-25T04:00:00Z",
 };
+const RETURN_BOOKS = Array.from({ length: 120 }, (_, index) => ({
+  ...BOOK,
+  id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  work_id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  title: `Journey book ${String(index + 1).padStart(3, "0")}`,
+}));
 const PREFERENCES: Preferences = {
   hidden_columns: null,
   density: null,
@@ -135,9 +141,14 @@ function graphBook(book: typeof BOOK) {
 
 type Fixture = {
   requests: z.infer<typeof variablesSchema>[];
+  books: (typeof BOOK)[];
 };
-async function intercept(page: Page, withFacets = false): Promise<Fixture> {
-  const fixture: Fixture = { requests: [] };
+async function intercept(
+  page: Page,
+  withFacets = false,
+  options: { books?: (typeof BOOK)[]; view?: "table" } = {},
+): Promise<Fixture> {
+  const fixture: Fixture = { requests: [], books: [...(options.books ?? [BOOK])] };
   let preferences = structuredClone(PREFERENCES);
   await page.route(/^https?:\/\/[^/]+\/(?:api|auth)\//, async (route) => {
     const url = new URL(route.request().url());
@@ -153,7 +164,7 @@ async function intercept(page: Page, withFacets = false): Promise<Fixture> {
         fixture.requests.push(variables);
         const filter = variables.filter;
         const q = filter?.q ?? filter?.titleContains ?? filter?.titleEq ?? "";
-        const books = [BOOK].filter(
+        const books = fixture.books.filter(
           (book) =>
             book.title.toLowerCase().includes(q.toLowerCase()) &&
             book.pages >= (filter?.pagesGte ?? 0) &&
@@ -174,7 +185,10 @@ async function intercept(page: Page, withFacets = false): Promise<Fixture> {
         await route.fulfill({ json: { data } });
         return;
       } else if (operation === "readerDetailQuery") {
-        data = { manifestation: graphBook(BOOK) };
+        const book = fixture.books.find(
+          (item) => graphId("Manifestation", item.id) === body.variables.id,
+        );
+        data = { manifestation: book === undefined ? null : graphBook(book) };
       } else if (
         operation === "readerShelvesQuery" ||
         operation === "readerShelvesPaginationQuery"
@@ -200,7 +214,7 @@ async function intercept(page: Page, withFacets = false): Promise<Fixture> {
           libraryPreferences: {
             hiddenColumns: null,
             density: null,
-            view: null,
+            view: options.view ?? null,
             sortStack: null,
             defaults: {
               hiddenColumns: ["subtitle"],
@@ -481,4 +495,262 @@ test("Refine Escape retains live text and range edits and returns focus", async 
   ).toBeVisible();
   await pages.getByRole("button", { name: "Clear Pages filters" }).click();
   await expect(title.getByRole("textbox", { name: "Filter value" })).toHaveValue("The Sea ");
+});
+
+test("unchanged returns preserve each visit's books and known-book position", async ({ page }) => {
+  // REV-REQ-0080 R1a, R1b: identical visits retain independent extents and known-book positions.
+  await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+  await page.goto("/library");
+  await ready(page);
+  const table = page.getByRole("grid", { name: "Library books", exact: true });
+  const first = table.locator('[data-book-id="00000000-0000-4000-8000-000000000009"]');
+  await expect(table).toBeVisible();
+  await table.evaluate((element) => {
+    element.scrollTo({ top: 400, behavior: "instant" });
+  });
+  await expect(first).toBeVisible();
+  await first.getByRole("link", { name: "Journey book 009", exact: true }).focus();
+  const firstScroll = await first.evaluate((element) => {
+    const grid = element.closest('[role="grid"]');
+    const header = grid?.querySelector('[role="columnheader"]');
+    if (grid === null || header == null) throw new Error("The book's table must be rendered.");
+    return new Promise<number>((resolve) => {
+      grid.addEventListener(
+        "scrollend",
+        () => {
+          resolve(grid.scrollTop);
+        },
+        { once: true },
+      );
+      grid.scrollTo({
+        top:
+          grid.scrollTop +
+          element.getBoundingClientRect().top -
+          header.getBoundingClientRect().bottom +
+          8,
+        behavior: "instant",
+      });
+    });
+  });
+  const firstTop = await first.evaluate((element) => element.getBoundingClientRect().top);
+  await expect(page.getByText("50 books loaded", { exact: true }).first()).toBeVisible();
+  await first.getByRole("link", { name: "Journey book 009", exact: true }).press("Enter");
+  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
+  await page.goBack();
+  await ready(page);
+  await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
+  await expect(page.getByText("50 books loaded", { exact: true }).first()).toBeVisible();
+  await expect
+    .poll(async () =>
+      Math.abs((await first.evaluate((element) => element.getBoundingClientRect().top)) - firstTop),
+    )
+    .toBeLessThanOrEqual(1);
+  await expect(table).toHaveJSProperty("scrollTop", firstScroll);
+
+  await page.goForward();
+  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await ready(page);
+  await page.getByRole("button", { name: "Load more", exact: true }).click();
+  await expect(page.getByText("100 books loaded", { exact: true }).first()).toBeVisible();
+  await table.evaluate((element) => {
+    element.scrollTo({ top: 1700, behavior: "instant" });
+  });
+  const second = table.locator('[data-book-id="00000000-0000-4000-8000-000000000039"]');
+  await expect(second).toBeAttached();
+  await second.getByRole("link", { name: "Journey book 039", exact: true }).focus();
+  const secondScroll = await second.evaluate((element) => {
+    const grid = element.closest('[role="grid"]');
+    const header = grid?.querySelector('[role="columnheader"]');
+    if (grid === null || header == null) throw new Error("The book's table must be rendered.");
+    return new Promise<number>((resolve) => {
+      grid.addEventListener(
+        "scrollend",
+        () => {
+          resolve(grid.scrollTop);
+        },
+        { once: true },
+      );
+      grid.scrollTo({
+        top:
+          grid.scrollTop +
+          element.getBoundingClientRect().top -
+          header.getBoundingClientRect().bottom +
+          8,
+        behavior: "instant",
+      });
+    });
+  });
+  const secondTop = await second.evaluate((element) => element.getBoundingClientRect().top);
+  await second.getByRole("link", { name: "Journey book 039", exact: true }).press("Enter");
+  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000039$/);
+  await expect(page.getByRole("heading", { name: "Journey book 039", exact: true })).toBeVisible();
+  await page.goBack();
+  await ready(page);
+  await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
+  await expect(page.getByText("100 books loaded", { exact: true }).first()).toBeVisible();
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await second.evaluate((element) => element.getBoundingClientRect().top)) - secondTop,
+      ),
+    )
+    .toBeLessThanOrEqual(1);
+  await expect(table).toHaveJSProperty("scrollTop", secondScroll);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
+  await page.goBack();
+  await ready(page);
+  await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
+  await expect(page.getByText("50 books loaded", { exact: true }).first()).toBeVisible();
+  await expect
+    .poll(async () =>
+      Math.abs((await first.evaluate((element) => element.getBoundingClientRect().top)) - firstTop),
+    )
+    .toBeLessThanOrEqual(1);
+  await expect(table).toHaveJSProperty("scrollTop", firstScroll);
+});
+
+test("a moved book returns to its saved position", async ({ page }) => {
+  // REV-REQ-0080 R2: a named book keeps its viewport position when its list index changes.
+  const fixture = await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+  await page.goto("/library");
+  await ready(page);
+  const table = page.getByRole("grid", { name: "Library books", exact: true });
+  await expect(table).toBeVisible();
+  await table.evaluate((element) => {
+    element.scrollTo({ top: 400, behavior: "instant" });
+  });
+  const book = table.locator('[data-book-id="00000000-0000-4000-8000-000000000009"]');
+  await expect(book).toBeVisible();
+  await book.getByRole("link", { name: "Journey book 009", exact: true }).focus();
+  await book.evaluate((element) => {
+    const grid = element.closest('[role="grid"]');
+    const header = grid?.querySelector('[role="columnheader"]');
+    if (grid === null || header == null) throw new Error("The book's table must be rendered.");
+    return new Promise<number>((resolve) => {
+      grid.addEventListener(
+        "scrollend",
+        () => {
+          resolve(grid.scrollTop);
+        },
+        { once: true },
+      );
+      grid.scrollTo({
+        top:
+          grid.scrollTop +
+          element.getBoundingClientRect().top -
+          header.getBoundingClientRect().bottom +
+          8,
+        behavior: "instant",
+      });
+    });
+  });
+  const savedTop = await book.evaluate((element) => element.getBoundingClientRect().top);
+  await book.getByRole("link", { name: "Journey book 009", exact: true }).press("Enter");
+  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
+  fixture.books.unshift(
+    {
+      ...BOOK,
+      id: "00000000-0000-4000-8000-000000000121",
+      work_id: "10000000-0000-4000-8000-000000000121",
+      title: "New arrival one",
+      created_at: "2026-11-17T00:00:00Z",
+    },
+    {
+      ...BOOK,
+      id: "00000000-0000-4000-8000-000000000122",
+      work_id: "10000000-0000-4000-8000-000000000122",
+      title: "New arrival two",
+      created_at: "2026-11-17T00:00:00Z",
+    },
+  );
+  const beforeReturn = fixture.requests.length;
+  await page.goBack();
+  await ready(page);
+  await expect.poll(() => fixture.requests.length).toBeGreaterThan(beforeReturn);
+  await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
+  await expect
+    .poll(async () =>
+      Math.abs((await book.evaluate((element) => element.getBoundingClientRect().top)) - savedTop),
+    )
+    .toBeLessThanOrEqual(1);
+});
+
+test("a user scroll wins during a held return", async ({ page }) => {
+  // REV-REQ-0080 Y1: native user scrolling supersedes a delayed return completion.
+  await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+  await page.goto("/library");
+  await ready(page);
+  const table = page.getByRole("grid", { name: "Library books", exact: true });
+  await expect(table).toBeVisible();
+  await table.evaluate((element) => {
+    element.scrollTo({ top: 400, behavior: "instant" });
+  });
+  const original = table.locator('[data-book-id="00000000-0000-4000-8000-000000000009"]');
+  await expect(original).toBeVisible();
+  await original.getByRole("link", { name: "Journey book 009", exact: true }).press("Enter");
+  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
+  let release: (() => void) | undefined;
+  const paused = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const held = page.waitForRequest((request) => {
+    if (!request.url().endsWith("/api/graphql")) return false;
+    const body = z.object({ id: z.string() }).parse(request.postDataJSON());
+    return documents[body.id]?.includes("query readerLibraryQuery(");
+  });
+  await page.route("**/api/graphql", async (route) => {
+    const body = z.object({ id: z.string() }).parse(route.request().postDataJSON());
+    if (documents[body.id]?.includes("query readerLibraryQuery(")) {
+      await paused;
+    }
+    await route.fallback();
+  });
+  await page.goBack();
+  const request = await held;
+  await ready(page);
+  await expect(page.getByText("Updating results…", { exact: true })).toBeVisible();
+  const chosen = table.locator('[data-book-id="00000000-0000-4000-8000-000000000014"]');
+  await expect(chosen).toBeAttached();
+  const chosenScroll = await chosen.evaluate((element) => {
+    const grid = element.closest('[role="grid"]');
+    const header = grid?.querySelector('[role="columnheader"]');
+    if (grid === null || header == null) throw new Error("The book's table must be rendered.");
+    return new Promise<number>((resolve) => {
+      grid.addEventListener(
+        "scrollend",
+        () => {
+          resolve(grid.scrollTop);
+        },
+        { once: true },
+      );
+      grid.scrollTo({
+        top:
+          grid.scrollTop +
+          element.getBoundingClientRect().top -
+          header.getBoundingClientRect().bottom +
+          8,
+        behavior: "instant",
+      });
+    });
+  });
+  const chosenTop = await chosen.evaluate((element) => element.getBoundingClientRect().top);
+  release?.();
+  await request.response();
+  await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await chosen.evaluate((element) => element.getBoundingClientRect().top)) - chosenTop,
+      ),
+    )
+    .toBeLessThanOrEqual(1);
+  await expect(table).toHaveJSProperty("scrollTop", chosenScroll);
 });
