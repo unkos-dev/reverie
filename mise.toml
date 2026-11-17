@@ -64,7 +64,7 @@ filter_bins = "cargo-nextest"
 # CI-only Rust tools. GitHub release tools use published checksums and
 # provenance when available.
 [tools."github:bnjbvr/cargo-machete"]
-version = "0.9.2"
+version = "0.10.0"
 version_prefix = "v"
 filter_bins = "cargo-machete"
 
