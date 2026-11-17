@@ -156,3 +156,23 @@ does not justify keeping it when the chosen tool meets the requirement.
   `DEFAULT_TARGETS`; `A11Y_TARGETS` is a per-run override that CI does not set. A route qualifies only when it renders
   its intended scan state inside a single top-level `<main>`. Required API responses may be supplied by gate fixtures;
   an unintended request-error screen must not stand in for the intended scan state.
+
+## Code Review Rules
+
+### Relay native APIs
+
+Relay owns fetching, normalised data, pagination and mutations for migrated workflows (ADR-0077). Flag diff code that
+hand-rolls one of these Relay capabilities:
+
+- **Pagination:** cursor tracking, page loops or a loading flag written by hand. Native path: `usePaginationFragment`
+  over an `@connection` with `@refetchable` and `@argumentDefinitions`, using `hasNext`, `isLoadingNext` and `loadNext`.
+- **Mutation pending state:** an in-flight flag for a mutation held in React state. Native path: `useMutation`, whose
+  `isInFlight`, `onCompleted` and `onError` own the request lifecycle.
+- **Copied store data:** Relay data copied into React state, refs or side maps, or a mutation result patched into the
+  store by hand. Native path: read through `useFragment`, and spread the reading components' fragments into the mutation
+  response so the store updates them.
+- **Untyped store writes:** a store updater that writes fields by string name. Native path: an `@updatable` fragment
+  read through `readUpdatableFragment`.
+
+A hand-rolled path passes review when the diff, a Design or an ADR names the requirement the native API cannot meet;
+cite that source in the review.
