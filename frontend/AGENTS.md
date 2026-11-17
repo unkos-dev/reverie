@@ -4,16 +4,18 @@ _(Operator detail: see `./README.md`)_
 
 ## Foundations
 
-Vite+, React 19, React Aria Components, Tailwind v4, Vite+'s bundled Vitest and Playwright are Reverie's chosen tools.
-Use their documented defaults. An alternative implementation needs evidence that the default is deficient or incorrect
-for Reverie, with approval governed by the root rules. Existing code follows the same standard: an existing workaround
-does not justify keeping it when the chosen tool meets the requirement.
+Vite+, React 19, React Aria Components, Relay, Tailwind v4, Vite+'s bundled Vitest and Playwright are Reverie's chosen
+tools. Use their documented defaults. An alternative implementation needs evidence that the default is deficient or
+incorrect for Reverie, with approval governed by the root rules. Existing code follows the same standard: an existing
+workaround does not justify keeping it when the chosen tool meets the requirement.
 
 - **Vendor docs first:** Before proposing a React Aria composition, prop or workaround, read the relevant component page
   at `https://react-aria.adobe.com/` and quote the guidance that supports it. Append `.md` to a page URL for Markdown
   (for example, `https://react-aria.adobe.com/Button.md`); the page's Copy for LLM action provides the same format. For
-  forms, also read `https://react-aria.adobe.com/forms.md`. Types show what exists; docs show intended use. Read Vite+
-  guidance at `https://viteplus.dev/guide/`. Prefer vendor Markdown pages when available.
+  forms, also read `https://react-aria.adobe.com/forms.md`. Types show what exists; docs show intended use. Before
+  writing or changing Relay code, read the relevant pages of the version-matched Relay docs installed at
+  `node_modules/relay-runtime/llm-docs/`. Read Vite+ guidance at `https://viteplus.dev/guide/`. Prefer vendor Markdown
+  pages when available.
 - **Recipes, not tools:** Use `just js::test`, `just js::check`, `just js::a11y` and `just js::detect`. `vp test`,
   `vp build` and `vp lint` are Vite+ built-ins and ignore a `package.json` script of the same name; `vp run <script>`
   runs the script.
@@ -156,3 +158,23 @@ does not justify keeping it when the chosen tool meets the requirement.
   `DEFAULT_TARGETS`; `A11Y_TARGETS` is a per-run override that CI does not set. A route qualifies only when it renders
   its intended scan state inside a single top-level `<main>`. Required API responses may be supplied by gate fixtures;
   an unintended request-error screen must not stand in for the intended scan state.
+
+## Code Review Rules
+
+### Relay native APIs
+
+Relay owns fetching, normalised server data and mutations for migrated workflows (ADR-0077). Flag diff code that
+hand-rolls one of these Relay capabilities:
+
+- **Pagination:** cursor tracking, page loops or a loading flag written by hand. Native path: `usePaginationFragment`
+  over an `@connection` with `@refetchable` and `@argumentDefinitions`, using `hasNext`, `isLoadingNext` and `loadNext`.
+- **Mutation pending state:** an in-flight flag for a mutation held in React state. Native path: `useMutation`, whose
+  `isInFlight`, `onCompleted` and `onError` own the request lifecycle.
+- **Copied store data:** Relay data copied into React state, refs or side maps, or a mutation result patched into the
+  store by hand. Native path: read through `useFragment`, and spread the reading components' fragments into the mutation
+  response so the store updates them.
+- **Untyped store writes:** a store updater that writes fields by string name. Native path: an `@updatable` fragment
+  read through `readUpdatableFragment`.
+
+A hand-rolled path passes review when the diff, a Design or an ADR names the requirement the native API cannot meet;
+cite that source in the review.
