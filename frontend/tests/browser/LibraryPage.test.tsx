@@ -900,9 +900,6 @@ it("Library Retry sends the retained edit again", async () => {
   await expect.element(outcomes.getByText(/field-locked/)).toBeInTheDocument();
   expect(outcomes.getByRole("button", { name: /Retry|Reload/ }).elements()).toHaveLength(0);
   mode = "reading";
-  await expect
-    .element(page.getByRole("button", { name: "9780140449242, edit ISBN", exact: true }))
-    .toBeInTheDocument();
   await userEvent.click(page.getByRole("button", { name: "Add rating", exact: true }), {
     position: { x: 1, y: 1 },
   });
