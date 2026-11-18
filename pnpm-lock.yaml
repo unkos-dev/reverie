@@ -22,6 +22,7 @@ overrides:
   form-data: 4.0.6
   glob@13: 14.0.3
   minimatch@10: 11.0.4
+  '@graphql-tools/utils@10': 12.1.0
 
 patchedDependencies:
   react-aria@3.53.1: e7c6e8d01c533392b9fcea2b975f61c199ad1b8c9acc0493318b746db6620348
@@ -961,12 +962,6 @@ packages:
   '@graphql-tools/url-loader@9.1.14':
     resolution: {integrity: sha512-4GYvqG80NJDZ7ZgJiNWb1Kb2SlVB1XC8GeIYm5BiEdezJ/fRHioUN3dMGbryN12mhSIMEdsLLKpK/0Ry73LinQ==}
     engines: {node: '>=20.0.0'}
-    peerDependencies:
-      graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
-
-  '@graphql-tools/utils@10.11.0':
-    resolution: {integrity: sha512-iBFR9GXIs0gCD+yc3hoNswViL1O5josI33dUqiNStFI/MHLCEPduasceAcazRH77YONKNiviHBV8f7OgcT4o2Q==}
-    engines: {node: '>=16.0.0'}
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
@@ -6309,7 +6304,7 @@ snapshots:
     dependencies:
       '@graphql-tools/code-file-loader': 8.1.43(graphql@16.15.0)(supports-color@7.2.0)
       '@graphql-tools/graphql-tag-pluck': 8.3.41(graphql@16.15.0)(supports-color@7.2.0)
-      '@graphql-tools/utils': 10.11.0(graphql@16.15.0)
+      '@graphql-tools/utils': 12.1.0(graphql@16.15.0)
       debug: 4.4.3(supports-color@7.2.0)
       eslint: 10.15.0(jiti@2.7.0)(supports-color@7.2.0)
       fast-glob: 3.3.3
@@ -6497,14 +6492,6 @@ snapshots:
       - bufferutil
       - crossws
       - utf-8-validate
-
-  '@graphql-tools/utils@10.11.0(graphql@16.15.0)':
-    dependencies:
-      '@graphql-typed-document-node/core': 3.2.0(graphql@16.15.0)
-      '@whatwg-node/promise-helpers': 1.3.2
-      cross-inspect: 1.0.1
-      graphql: 16.15.0
-      tslib: 2.9.1
 
   '@graphql-tools/utils@12.1.0(graphql@16.15.0)':
     dependencies:
