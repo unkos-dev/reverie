@@ -14,8 +14,11 @@ path only. The advisories affect `uri-js` 4.4.1, its last release, and Snyk list
 latest ESLint still declares `ajv` `^6.14.0`.
 
 ESLint runs only the schema lint, as a root development dependency. Its `ajv` compiles the rule-option schemas that
-ESLint and its plugins ship, so no input from outside the repository reaches `uri-js`. A `uri-js` copy on any other path
-is still reported.
+ESLint and its plugins ship, so no input from outside the repository reaches `uri-js`. The CI scan still reports a
+`uri-js` copy on any other path.
 
-Each ignore expires on 2027-05-18. Remove the ignores when ESLint no longer resolves `uri-js` 4.4.1. Delete `.snyk`, or
-its three entries, together with this entry and its README link.
+The Snyk pull request check does not apply the `.snyk` ignores, so the `unkos-dev/reverie:package.json` Snyk project
+ignores the same three advisories on every path, as not vulnerable.
+
+Every ignore expires on 2027-05-18. Remove the ignores when ESLint no longer resolves `uri-js` 4.4.1. Delete `.snyk`, or
+its three entries, and the three project ignores, together with this entry and its README link.
