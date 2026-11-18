@@ -222,7 +222,10 @@
       "id": "REV-ADR-0030",
       "kind": "adr",
       "path": "docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0078"
+      ],
       "title": "Adopt oxlint, replacing the ESLint toolchain"
     },
     {
@@ -614,6 +617,16 @@
         "REV-ADR-0016"
       ],
       "title": "GraphQL and Relay for browser application data"
+    },
+    {
+      "id": "REV-ADR-0078",
+      "kind": "adr",
+      "path": "docs/adr/0078-oxlint-with-scoped-bridges-for-relay-and-schema-lint.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0030"
+      ],
+      "title": "oxlint with scoped bridges for Relay and schema lint"
     },
     {
       "governed-by": [

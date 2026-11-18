@@ -3,11 +3,13 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0030"
 title: "Adopt oxlint, replacing the ESLint toolchain"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-05"
 decided-on: "2026-06-27"
 decision-makers:
   - "John Unkovich"
+superseded-by:
+  - "REV-ADR-0078"
 ---
 
 # Adopt oxlint, replacing the ESLint toolchain
