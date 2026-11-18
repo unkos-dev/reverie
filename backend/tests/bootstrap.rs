@@ -146,7 +146,7 @@ async fn smtp_cli_host_links_are_short_lived_and_choose_the_password_route(pool:
             .await
             .unwrap()
             .unwrap();
-        let seconds = (expiry - chrono::Utc::now()).num_seconds();
+        let seconds = (expiry - jiff::Timestamp::now()).as_secs();
         assert!((590..=600).contains(&seconds), "{seconds}");
         assert!(
             credential_link::consume_replacement(&mut tx, account.id, token)

@@ -138,7 +138,7 @@ async fn sweep_throttles(pool: &PgPool, cancel: &CancellationToken) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{DateTime, TimeDelta, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use sqlx::PgPool;
     use tracing::instrument::WithSubscriber;
 
@@ -153,12 +153,12 @@ mod tests {
             .unwrap()
     }
 
-    async fn insert_session(pool: &PgPool, id: &str, expiry: DateTime<Utc>) {
+    async fn insert_session(pool: &PgPool, id: &str, expiry: Timestamp) {
         sqlx::query!(
             "INSERT INTO tower_sessions.session (id, data, expiry_date) VALUES ($1, $2, $3)",
             id,
             &b"payload"[..],
-            expiry,
+            jiff_sqlx::Timestamp::from(expiry),
         )
         .execute(pool)
         .await
@@ -169,13 +169,13 @@ mod tests {
     async fn throttle_reclamation_worker_recovers_after_failure_and_always_reclaims_governors(
         pool: PgPool,
     ) {
-        let now = Utc::now();
+        let now = Timestamp::now();
         crate::models::login_throttle::tests::seed(&pool, "eligible", &[], None).await;
         crate::models::login_throttle::tests::seed(
             &pool,
             "protected",
             &[now],
-            Some(now + TimeDelta::minutes(15)),
+            Some(now + SignedDuration::from_mins(15)),
         )
         .await;
         let readonly = crate::test_support::db::readonly_pool_for(&pool).await;
@@ -233,9 +233,9 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn sweep_deletes_expired_and_keeps_live(pool: PgPool) {
-        let now = Utc::now();
-        insert_session(&pool, "expired", now - TimeDelta::hours(1)).await;
-        insert_session(&pool, "live", now + TimeDelta::hours(1)).await;
+        let now = Timestamp::now();
+        insert_session(&pool, "expired", now - SignedDuration::from_hours(1)).await;
+        insert_session(&pool, "live", now + SignedDuration::from_hours(1)).await;
         assert_eq!(session_count(&pool).await, 2);
 
         let store = PostgresStore::new(pool.clone());

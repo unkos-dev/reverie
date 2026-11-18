@@ -7,7 +7,7 @@
 //! that expired while the caller waited.
 
 use base64ct::{Base64UrlUnpadded, Encoding as _};
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use sha2::{Digest as _, Sha256};
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -36,8 +36,8 @@ impl ProofPurpose {
     /// How long a proof of this purpose stays live: 24 hours for verification,
     /// 15 minutes for recovery.
     #[must_use]
-    pub fn ttl(self) -> TimeDelta {
-        TimeDelta::seconds(i64::from(self.ttl_secs()))
+    pub fn ttl(self) -> SignedDuration {
+        SignedDuration::from_secs(i64::from(self.ttl_secs()))
     }
 
     const fn ttl_secs(self) -> i32 {
@@ -74,7 +74,7 @@ pub struct LockedAccount {
     /// Whether the account is disabled.
     pub disabled: bool,
     /// When Reverie verified the current address.
-    pub email_verified_at: Option<DateTime<Utc>>,
+    pub email_verified_at: Option<Timestamp>,
 }
 
 /// Take the user-row lock every account-sensitive mutation starts with.
@@ -96,14 +96,20 @@ pub async fn lock_account(
     {
         return Ok(None);
     }
-    sqlx::query_as!(
-        LockedAccount,
+    sqlx::query!(
         r#"SELECT email, (disabled_at IS NOT NULL) AS "disabled!", email_verified_at
              FROM users WHERE id = $1"#,
         user_id,
     )
     .fetch_optional(conn)
     .await
+    .map(|row| {
+        row.map(|row| LockedAccount {
+            email: row.email,
+            disabled: row.disabled,
+            email_verified_at: row.email_verified_at.map(jiff_sqlx::Timestamp::to_jiff),
+        })
+    })
 }
 
 /// The SHA-256 digest a proof is stored and referenced by.
@@ -119,7 +125,7 @@ pub struct IssuedProof {
     /// Its stored digest.
     pub token_hash: Vec<u8>,
     /// When the proof stops working.
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 impl std::fmt::Debug for IssuedProof {
@@ -138,9 +144,9 @@ pub struct LiveProof {
     /// Stored digest.
     pub token_hash: Vec<u8>,
     /// When the proof was issued.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// When the proof stops working.
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 impl std::fmt::Debug for LiveProof {
@@ -196,7 +202,7 @@ pub async fn issue(
     Ok(IssuedProof {
         token,
         token_hash,
-        expires_at,
+        expires_at: expires_at.to_jiff(),
     })
 }
 
@@ -352,10 +358,13 @@ mod tests {
         }
         assert_eq!(
             ProofPurpose::Recovery.ttl(),
-            TimeDelta::minutes(15),
+            SignedDuration::from_mins(15),
             "recovery lifetime"
         );
-        assert_eq!(ProofPurpose::Verification.ttl(), TimeDelta::hours(24));
+        assert_eq!(
+            ProofPurpose::Verification.ttl(),
+            SignedDuration::from_hours(24)
+        );
         let mut conn = app.acquire().await.unwrap();
         let live = live(&mut conn, user, ProofPurpose::Recovery).await.unwrap();
         assert_eq!(live.unwrap().token_hash, recovery.token_hash);
@@ -372,7 +381,7 @@ mod tests {
             user,
             MailPurpose::EmailRecovery,
             &first.token_hash,
-            TimeDelta::minutes(15),
+            SignedDuration::from_mins(15),
             ADDRESS,
         )
         .await;
@@ -532,7 +541,7 @@ mod tests {
             user,
             MailPurpose::EmailRecovery,
             &recovery.token_hash,
-            TimeDelta::minutes(15),
+            SignedDuration::from_mins(15),
             ADDRESS,
         )
         .await;
@@ -541,7 +550,7 @@ mod tests {
             user,
             MailPurpose::Verification,
             &verification.token_hash,
-            TimeDelta::hours(24),
+            SignedDuration::from_hours(24),
             ADDRESS,
         )
         .await;
@@ -610,7 +619,7 @@ mod tests {
             user,
             MailPurpose::EmailRecovery,
             &proof.token_hash,
-            TimeDelta::minutes(15),
+            SignedDuration::from_mins(15),
             ADDRESS,
         )
         .await;

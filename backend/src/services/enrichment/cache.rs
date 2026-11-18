@@ -7,7 +7,7 @@
 // Phase B building block: callers are wired in Phase C.  Until then this module
 // is unused from the binary entry point but is fully tested.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use sqlx::PgPool;
 
@@ -37,17 +37,17 @@ pub struct CachedResponse {
     /// `HTTP` status code from the upstream response, if applicable.
     pub http_status: Option<i32>,
     /// Timestamp when the upstream call was made (stored in `UTC`).
-    pub fetched_at: DateTime<Utc>,
+    pub fetched_at: Timestamp,
 }
 
 /// Per-kind `TTL` configuration passed to `write`.
 pub struct CacheTtls {
     /// How long to keep a successful hit before expiry.
-    pub hit: chrono::TimeDelta,
+    pub hit: jiff::SignedDuration,
     /// How long to remember a confirmed miss (avoids immediate re-lookup).
-    pub miss: chrono::TimeDelta,
+    pub miss: jiff::SignedDuration,
     /// How long to suppress retries after a source error.
-    pub error: chrono::TimeDelta,
+    pub error: jiff::SignedDuration,
 }
 
 /// Read a live cache entry for `(source, lookup_key)`.
@@ -84,7 +84,7 @@ pub async fn read(
         response: row.response,
         kind: row.response_kind,
         http_status: row.http_status,
-        fetched_at: row.fetched_at,
+        fetched_at: row.fetched_at.to_jiff(),
     }))
 }
 
@@ -106,7 +106,7 @@ pub async fn write(
     http_status: Option<i32>,
     ttls: &CacheTtls,
 ) -> sqlx::Result<()> {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let ttl = match kind {
         ApiCacheKind::Hit => ttls.hit,
         ApiCacheKind::Miss => ttls.miss,
@@ -129,8 +129,8 @@ pub async fn write(
         response,
         kind as ApiCacheKind,
         http_status,
-        now,
-        expires_at,
+        jiff_sqlx::Timestamp::from(now),
+        jiff_sqlx::Timestamp::from(expires_at),
     )
     .execute(executor)
     .await?;

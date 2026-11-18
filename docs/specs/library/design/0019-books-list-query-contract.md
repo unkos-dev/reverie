@@ -79,10 +79,10 @@ views, indirectly, through the client Design above.
 condition (`title_contains`, `pages_gte`, `status_any`, and so on), decoded by `axum_extra::extract::Query` rather than
 `axum::Query` so a repeated key such as `?tag=a&tag=b` extends a `Vec` instead of failing. Every field decodes at the
 extractor boundary; a value that cannot decode into its declared type (an ill-formed UUID, a non-integer, a non-
-boolean, or a malformed RFC 3339 instant) never reaches this module. Timestamp fields use
-`filters::timestamp_opt::deserialize`, which parses RFC 3339 and normalises offsets to `DateTime<Utc>` before predicates
-or cursor fingerprints use them. `created_at_gte` is inclusive and `created_at_lt` exclusive; both bind their instants
-directly against `m.created_at`, without casting the indexed column.
+boolean, or a malformed timestamp) never reaches this module. Timestamp fields use
+`filters::timestamp_opt::deserialize`, which parses text with an offset or `Z` into a `jiff::Timestamp` before
+predicates or cursor fingerprints use it. `created_at_gte` is inclusive and `created_at_lt` exclusive; both bind their
+instants directly against `m.created_at`, without casting the indexed column.
 
 `validate(&ListParams)` runs once the request has fully decoded, and is the sole home of the semantic-bound checks: a
 multi-value list (`tag`, `genre`, `mood`, `author`, `status_any`/`status_none`, vocabulary `_any`/`_none` variants,
@@ -176,8 +176,8 @@ embedded spec or filter fingerprint to mismatch, so neither variant is reachable
 `manifestations.id` tiebreaker, and the filter fingerprint (serialised as `f`) — rather than the pipe-delimited fields
 `ShelfCursor` and `ShelfItemCursor` use, because a sort stack's boundary values are free text (a title or an author sort
 key) that pipe-splitting cannot safely delimit. `CursorValue` is externally tagged (`Text(Option<String>)`,
-`Ts(DateTime<Utc>)`, `Int(Option<i32>)`) so a forged JSON payload cannot smuggle a value of the wrong SQL type past the
-type check; its `None` arms on `Text`/`Int` mark a boundary sitting in a nullable column's `NULLS LAST` bucket, kept
+`Ts(jiff::Timestamp)`, `Int(Option<i32>)`) so a forged JSON payload cannot smuggle a value of the wrong SQL type past
+the type check; its `None` arms on `Text`/`Int` mark a boundary sitting in a nullable column's `NULLS LAST` bucket, kept
 distinct from an empty string so a three-valued SQL comparison cannot collapse the two and drop rows.
 
 `validate_keys` is the one key-count, kind and null-handling check shared by both directions: `SortCursor::for_spec`
@@ -324,8 +324,8 @@ of them is a code change, not a runtime setting. The HTTP page size is runtime-c
 ## Failure and recovery
 
 - **A filter or path-level query parameter that fails to decode** (an ill-formed UUID on `author`/`series`/`shelf`, a
-  non-integer on a numeric filter, a malformed RFC 3339 instant on a timestamp filter, an unrecognised boolean literal
-  on an `_empty` flag) is rejected by the `Query<ListParams>` extractor before `list`'s body runs, as
+  non-integer on a numeric filter, a malformed timestamp on a timestamp filter, an unrecognised boolean literal on an
+  `_empty` flag) is rejected by the `Query<ListParams>` extractor before `list`'s body runs, as
   `AppError::MalformedQuery` (`400`), via the crate-wide `From<QueryRejection>` conversion.
 - **A `?sort=` value that names an unwhitelisted field, repeats a column, or exceeds three levels** decodes as a
   syntactically valid string (`sort` is a plain `Option<String>` at the extractor boundary) but fails inside

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "WITH inputs AS (SELECT * FROM jsonb_to_recordset($1::jsonb) AS input(\n request integer, parent uuid, first integer, has_after boolean, after_id uuid, after_name text,\n after_position float8, after_ordinal integer, after_created timestamptz, after_level integer)),\n caller AS (SELECT $2::uuid AS id, $3::boolean AS child, $4::text[] AS hidden)\n SELECT q.request AS \"request!\", COALESCE(item.present, FALSE) AS \"present!\",\n item.id AS \"id?: Uuid\",\nitem.name AS \"name?: String\",\nitem.value AS \"value?: String\",\nitem.role AS \"role?: ContributorRole\",\nitem.position AS \"position?: f64\",\nitem.ordinal AS \"ordinal?: i32\",\n item.position_index AS \"position_index?: i32\",\nitem.created_at AS \"created_at?: DateTime<Utc>\",\nitem.level AS \"level?: i32\",\nitem.rating AS \"rating?: f64\",\nitem.scale AS \"scale?: f64\",\nitem.reviews AS \"reviews?: i32\",\n (q.has_after AND EXISTS (SELECT 1 FROM manifestation_genres junction JOIN genres g ON g.id = junction.genre_id WHERE junction.manifestation_id = q.parent AND NOT ((g.name, g.id) > (q.after_name, q.after_id)) LIMIT 1)) AS \"previous!\"\n FROM inputs q CROSS JOIN caller\n LEFT JOIN LATERAL (SELECT TRUE AS present, g.id AS id,\ng.name AS name,\nNULL::text AS value,\nNULL::author_role AS role,\nNULL::float8 AS position,\nNULL::integer AS ordinal,\n NULL::integer AS position_index,\nNULL::timestamptz AS created_at,\nNULL::integer AS level,\nNULL::float8 AS rating,\nNULL::float8 AS scale,\nNULL::integer AS reviews\n FROM manifestation_genres junction JOIN genres g ON g.id = junction.genre_id WHERE junction.manifestation_id = q.parent AND (NOT q.has_after OR (g.name, g.id) > (q.after_name, q.after_id))\n ORDER BY g.name ASC, g.id ASC LIMIT (q.first + 1)) item ON TRUE\n WHERE EXISTS (SELECT 1 FROM manifestations visible WHERE visible.id = q.parent)\n ORDER BY q.request, item.name ASC, item.id ASC",
+  "query": "WITH inputs AS (SELECT * FROM jsonb_to_recordset($1::jsonb) AS input(\n request integer, parent uuid, first integer, has_after boolean, after_id uuid, after_name text,\n after_position float8, after_ordinal integer, after_created timestamptz, after_level integer)),\n caller AS (SELECT $2::uuid AS id, $3::boolean AS child, $4::text[] AS hidden)\n SELECT q.request AS \"request!\", COALESCE(item.present, FALSE) AS \"present!\",\n item.id AS \"id?: Uuid\",\nitem.name AS \"name?: String\",\nitem.value AS \"value?: String\",\nitem.role AS \"role?: ContributorRole\",\nitem.position AS \"position?: f64\",\nitem.ordinal AS \"ordinal?: i32\",\n item.position_index AS \"position_index?: i32\",\nitem.created_at AS \"created_at?\",\nitem.level AS \"level?: i32\",\nitem.rating AS \"rating?: f64\",\nitem.scale AS \"scale?: f64\",\nitem.reviews AS \"reviews?: i32\",\n (q.has_after AND EXISTS (SELECT 1 FROM manifestation_moods junction JOIN moods g ON g.id = junction.mood_id WHERE junction.manifestation_id = q.parent AND NOT ((g.name, g.id) > (q.after_name, q.after_id)) LIMIT 1)) AS \"previous!\"\n FROM inputs q CROSS JOIN caller\n LEFT JOIN LATERAL (SELECT TRUE AS present, g.id AS id,\ng.name AS name,\nNULL::text AS value,\nNULL::author_role AS role,\nNULL::float8 AS position,\nNULL::integer AS ordinal,\n NULL::integer AS position_index,\nNULL::timestamptz AS created_at,\nNULL::integer AS level,\nNULL::float8 AS rating,\nNULL::float8 AS scale,\nNULL::integer AS reviews\n FROM manifestation_moods junction JOIN moods g ON g.id = junction.mood_id WHERE junction.manifestation_id = q.parent AND (NOT q.has_after OR (g.name, g.id) > (q.after_name, q.after_id))\n ORDER BY g.name ASC, g.id ASC LIMIT (q.first + 1)) item ON TRUE\n WHERE EXISTS (SELECT 1 FROM manifestations visible WHERE visible.id = q.parent)\n ORDER BY q.request, item.name ASC, item.id ASC",
   "describe": {
     "columns": [
       {
@@ -21,7 +21,7 @@
         "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "genres",
+            "table": "moods",
             "name": "id"
           }
         }
@@ -32,7 +32,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "genres",
+            "table": "moods",
             "name": "name"
           }
         }
@@ -81,7 +81,7 @@
       },
       {
         "ordinal": 9,
-        "name": "created_at?: DateTime<Utc>",
+        "name": "created_at?",
         "type_info": "Timestamptz",
         "origin": "Expression"
       },
@@ -142,5 +142,5 @@
       null
     ]
   },
-  "hash": "74fe6d6a298398782f539512ce0aa471ec0453508ce0b4bfffd3c84c798f912b"
+  "hash": "f0d409738b2d6fd54a89f9de9db080ac82c858ffe6b6ce71bbc236600db75239"
 }

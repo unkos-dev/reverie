@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use lettre::{Address, message::Mailbox};
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
@@ -143,7 +143,7 @@ pub struct ClaimedJob {
     /// This attempt's number, already persisted.
     pub attempt: i32,
     /// When the job stops being useful.
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
     nonce: Vec<u8>,
     payload: Vec<u8>,
 }
@@ -207,7 +207,7 @@ pub async fn claim_next(pool: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error
         purpose,
         proof_digest: row.proof_digest,
         attempt: row.attempt_count,
-        expires_at: row.expires_at,
+        expires_at: row.expires_at.to_jiff(),
         nonce: row.nonce,
         payload: row.payload,
     }))
@@ -275,7 +275,7 @@ async fn standing(pool: &PgPool, job: &ClaimedJob) -> Result<Option<Standing>, s
         job.user_id,
         job.purpose.authority_kind().map(AuthorityKind::as_str),
         job.proof_digest.as_deref(),
-        job.expires_at,
+        jiff_sqlx::Timestamp::from(job.expires_at),
     )
     .fetch_optional(pool)
     .await
@@ -571,7 +571,7 @@ async fn sleep_or_cancel(duration: Duration, cancel: &CancellationToken) {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeDelta;
+    use jiff::SignedDuration;
 
     use super::*;
     use crate::models::account_email_proof::{self, ProofPurpose, lock_account};
@@ -632,7 +632,7 @@ mod tests {
                 self.user,
                 MailPurpose::AdminLink,
                 digest,
-                TimeDelta::hours(72),
+                SignedDuration::from_hours(72),
                 ADDRESS,
             )
             .await
@@ -739,7 +739,7 @@ mod tests {
             f.user,
             MailPurpose::Verification,
             &proof.token_hash,
-            TimeDelta::hours(24),
+            SignedDuration::from_hours(24),
             ADDRESS,
         )
         .await;
@@ -856,7 +856,7 @@ mod tests {
                 user,
                 MailPurpose::EmailRecovery,
                 &proof.token_hash,
-                TimeDelta::minutes(15),
+                SignedDuration::from_mins(15),
                 &recipient,
             )
             .await;
@@ -934,7 +934,7 @@ mod tests {
             f.user,
             MailPurpose::EmailRecovery,
             &proof.token_hash,
-            TimeDelta::minutes(15),
+            SignedDuration::from_mins(15),
             ADDRESS,
         )
         .await;
@@ -947,7 +947,7 @@ mod tests {
             f.user,
             MailPurpose::EmailRecovery,
             &proof.token_hash,
-            TimeDelta::minutes(15),
+            SignedDuration::from_mins(15),
             ADDRESS,
         )
         .await;

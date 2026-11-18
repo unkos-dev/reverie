@@ -8,7 +8,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -64,7 +64,7 @@ struct CreateTokenResponse {
     /// Capabilities this token carries.
     scopes: Vec<Scope>,
     /// `null` if the token never expires.
-    expires_at: Option<DateTime<Utc>>,
+    expires_at: Option<Timestamp>,
     /// The full Bearer credential (`{prefix}{id}.{secret}`), returned
     /// exactly once, here; only its SHA-256 hash is persisted, so the
     /// plaintext cannot be recovered later. For OPDS / Basic-auth clients,
@@ -84,12 +84,12 @@ struct TokenListItem {
     /// Capabilities this token carries.
     scopes: Vec<Scope>,
     /// `null` if the token never expires.
-    expires_at: Option<DateTime<Utc>>,
+    expires_at: Option<Timestamp>,
     /// Timestamp of the last successful auth with this token; `null` if
     /// the token has never been used.
-    last_used_at: Option<DateTime<Utc>>,
+    last_used_at: Option<Timestamp>,
     /// Token creation timestamp.
-    created_at: DateTime<Utc>,
+    created_at: Timestamp,
 }
 
 /// `POST /api/v1/tokens` — issue a new device token for the caller.
@@ -155,7 +155,7 @@ async fn create_token(
     let expires_at = match body.expires_in_days {
         None => None,
         Some(days @ (30 | 60 | 90 | 365)) => {
-            Some(Utc::now() + chrono::TimeDelta::days(i64::from(days)))
+            Some(Timestamp::now() + jiff::SignedDuration::from_hours(i64::from(days) * 24))
         }
         Some(_) => {
             return Err(AppError::Validation(

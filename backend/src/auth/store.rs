@@ -29,11 +29,11 @@
 
 #![expect(
     clippy::disallowed_types,
-    reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime, converted to DateTime<Utc> by expiry_to_timestamptz before it reaches sqlx; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
+    reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime, converted to a SQLx timestamp by expiry_to_timestamptz; see docs/adr/0078-use-jiff-for-first-party-datetimes.md"
 )]
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::PgPool;
 use time::OffsetDateTime;
 use tower_sessions::session::{Id, Record};
@@ -43,12 +43,8 @@ use tower_sessions::session_store::{self, ExpiredDeletion, SessionStore};
 /// `timestamptz`.
 ///
 /// [`Record::expiry_date`](tower_sessions::session::Record) is a
-/// `time::OffsetDateTime` because the upstream trait defines it that way,
-/// while first-party code and the sqlx `chrono` feature speak
-/// `DateTime<Utc>`. The two are bridged through the epoch, which is exact
-/// in both directions and for instants on either side of it: `time` reports
-/// whole seconds since the epoch plus a non-negative nanosecond-of-second,
-/// which is the same decomposition [`DateTime::from_timestamp`] consumes.
+/// `time::OffsetDateTime` because the upstream trait defines it that way.
+/// Conversion through epoch nanoseconds preserves the instant on either side of the epoch.
 ///
 /// THREAT: this value is the session's expiry, and
 /// [`SessionStore::load`](tower_sessions::session_store::SessionStore::load)
@@ -58,12 +54,14 @@ use tower_sessions::session_store::{self, ExpiredDeletion, SessionStore};
 /// the write instead. It is not reachable from a live session (`Expiry`
 /// values are minutes to hours from now); it exists so no future caller can
 /// make it silent.
-fn expiry_to_timestamptz(expiry: OffsetDateTime) -> session_store::Result<DateTime<Utc>> {
-    DateTime::from_timestamp(expiry.unix_timestamp(), expiry.nanosecond()).ok_or_else(|| {
-        session_store::Error::Encode(format!(
-            "session expiry {expiry} is outside the representable timestamp range"
-        ))
-    })
+fn expiry_to_timestamptz(expiry: OffsetDateTime) -> session_store::Result<jiff_sqlx::Timestamp> {
+    Timestamp::from_nanosecond(expiry.unix_timestamp_nanos())
+        .map(Into::into)
+        .map_err(|_| {
+            session_store::Error::Encode(format!(
+                "session expiry {expiry} is outside the representable timestamp range"
+            ))
+        })
 }
 
 /// Postgres-backed [`SessionStore`](tower_sessions::session_store::SessionStore)
@@ -195,7 +193,7 @@ impl ExpiredDeletion for PostgresStore {
 mod tests {
     use super::expiry_to_timestamptz;
     use crate::test_support::db::readonly_pool_for;
-    use chrono::SecondsFormat;
+
     use sqlx::PgPool;
     use time::OffsetDateTime;
 
@@ -233,13 +231,11 @@ mod tests {
         let expiry = OffsetDateTime::from_unix_timestamp(1_785_000_896).expect("epoch seconds")
             + time::Duration::nanoseconds(123_456_789);
 
-        let converted = expiry_to_timestamptz(expiry).expect("representable");
+        let converted = expiry_to_timestamptz(expiry)
+            .expect("representable")
+            .to_jiff();
 
-        assert_eq!(converted.timestamp(), expiry.unix_timestamp());
-        assert_eq!(converted.timestamp_subsec_nanos(), expiry.nanosecond());
-        assert_eq!(
-            converted.to_rfc3339_opts(SecondsFormat::AutoSi, true),
-            "2026-07-25T17:34:56.123456789Z"
-        );
+        assert_eq!(converted.as_nanosecond(), expiry.unix_timestamp_nanos());
+        assert_eq!(converted.to_string(), "2026-07-25T17:34:56.123456789Z");
     }
 }

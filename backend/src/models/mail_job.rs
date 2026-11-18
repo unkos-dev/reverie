@@ -5,16 +5,16 @@
 //! [`crate::models::account_email_proof::lock_account`]); decisions use
 //! `clock_timestamp()` so a lock wait cannot make a stale instant authoritative.
 
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::services::mail::crypto::{self, CryptoError, QueueKey};
 
 /// Minimum gap between two queued deliveries of one purpose for one account.
-pub const REQUEST_INTERVAL: TimeDelta = TimeDelta::seconds(60);
+pub const REQUEST_INTERVAL: SignedDuration = SignedDuration::from_secs(60);
 /// Window over which public recovery deliveries are counted.
-pub const ROLLING_WINDOW: TimeDelta = TimeDelta::hours(24);
+pub const ROLLING_WINDOW: SignedDuration = SignedDuration::from_hours(24);
 /// Public recovery deliveries allowed per account in [`ROLLING_WINDOW`].
 pub const RECOVERY_DAILY_LIMIT: i64 = 5;
 /// Deliveries per recovery proof: the first plus two requested repeats.
@@ -202,7 +202,7 @@ pub struct NewJob<'a> {
     pub proof_digest: Option<&'a [u8]>,
     /// When a bearer message stops being useful; `None` for notices, which last
     /// 24 hours from their enqueue time.
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<Timestamp>,
     /// The recipient and rendered message.
     pub payload: &'a MailPayload,
 }
@@ -261,7 +261,7 @@ async fn insert_sealed(
     user_id: Uuid,
     purpose: MailPurpose,
     proof_digest: Option<&[u8]>,
-    expires_at: Option<DateTime<Utc>>,
+    expires_at: Option<Timestamp>,
     plaintext: &[u8],
 ) -> Result<Uuid, EnqueueError> {
     let id = Uuid::new_v4();
@@ -278,7 +278,7 @@ async fn insert_sealed(
         purpose.as_str(),
         proof_digest,
         authority,
-        expires_at,
+        expires_at.map(jiff_sqlx::Timestamp::from),
         sealed.nonce,
         sealed.ciphertext,
     )
@@ -327,7 +327,7 @@ pub async fn resend(
         user_id,
         purpose,
         Some(proof_digest),
-        Some(source.expires_at),
+        Some(source.expires_at.to_jiff()),
         &plaintext,
     )
     .await
@@ -468,7 +468,7 @@ pub enum Admission {
 
 struct Usage {
     live_delivery: bool,
-    last_enqueued: Option<DateTime<Utc>>,
+    last_enqueued: Option<jiff_sqlx::Timestamp>,
     recent: i64,
     for_proof: i64,
 }
@@ -477,10 +477,11 @@ struct Usage {
 ///
 /// # Errors
 /// Returns database errors from the query.
-pub async fn database_now(conn: &mut PgConnection) -> Result<DateTime<Utc>, sqlx::Error> {
+pub async fn database_now(conn: &mut PgConnection) -> Result<Timestamp, sqlx::Error> {
     sqlx::query_scalar!(r#"SELECT clock_timestamp() AS "now!""#)
         .fetch_one(conn)
         .await
+        .map(jiff_sqlx::Timestamp::to_jiff)
 }
 
 /// Decide whether a delivery of `purpose` may be queued for `proof_digest`
@@ -511,7 +512,7 @@ pub async fn admission_at(
     user_id: Uuid,
     purpose: MailPurpose,
     proof_digest: Option<&[u8]>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Admission, sqlx::Error> {
     let public_recovery = purpose == MailPurpose::EmailRecovery;
     if !public_recovery && purpose != MailPurpose::Verification {
@@ -529,7 +530,7 @@ pub async fn admission_at(
         user_id,
         purpose.as_str(),
         proof_digest,
-        now - ROLLING_WINDOW,
+        jiff_sqlx::Timestamp::from(now - ROLLING_WINDOW),
     )
     .fetch_one(conn)
     .await?;
@@ -538,7 +539,7 @@ pub async fn admission_at(
     }
     if usage
         .last_enqueued
-        .is_some_and(|last| now - last < REQUEST_INTERVAL)
+        .is_some_and(|last| now - last.to_jiff() < REQUEST_INTERVAL)
     {
         return Ok(Admission::TooSoon);
     }
@@ -830,7 +831,7 @@ mod tests {
             user,
             MailPurpose::Verification,
             &proof.token_hash,
-            TimeDelta::hours(24),
+            SignedDuration::from_hours(24),
             ADDRESS,
         )
         .await;
@@ -839,7 +840,7 @@ mod tests {
             user,
             MailPurpose::EmailRecovery,
             &digest(5),
-            TimeDelta::minutes(15),
+            SignedDuration::from_mins(15),
             ADDRESS,
         )
         .await;

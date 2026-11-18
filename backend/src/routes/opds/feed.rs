@@ -22,7 +22,7 @@
     reason = "all expects write to Cursor<Vec<u8>>, an infallible sink"
 )]
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use std::io::Cursor;
@@ -110,7 +110,7 @@ pub struct AcquisitionEntry {
     /// ISBN-13 preferred; ISBN-10 fallback. `None` emits a `urn:uuid:` id.
     pub isbn: Option<String>,
     /// Entry `<updated>` timestamp (sourced from `manifestations.updated_at`).
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 /// Streaming OPDS feed builder.
@@ -143,7 +143,7 @@ impl FeedBuilder {
         self_path: &str,
         kind: FeedKind,
         title: &str,
-        updated: DateTime<Utc>,
+        updated: Timestamp,
     ) -> Self {
         let mut writer = Writer::new(Cursor::new(Vec::new()));
         writer
@@ -161,11 +161,7 @@ impl FeedBuilder {
 
         write_text_element(&mut writer, "id", &feed_urn(self_path));
         write_text_element(&mut writer, "title", &sanitise_xml_text(title));
-        write_text_element(
-            &mut writer,
-            "updated",
-            &updated.to_rfc3339_opts(SecondsFormat::AutoSi, true),
-        );
+        write_text_element(&mut writer, "updated", &updated.to_string());
 
         // Feed-level <author>. RFC 4287 §4.1.1: a feed element MUST contain
         // one or more atom:author elements unless all of its atom:entry
@@ -238,11 +234,7 @@ impl FeedBuilder {
 
         write_text_element(&mut self.writer, "id", id);
         write_text_element(&mut self.writer, "title", &sanitise_xml_text(title));
-        write_text_element(
-            &mut self.writer,
-            "updated",
-            &Utc::now().to_rfc3339_opts(SecondsFormat::AutoSi, true),
-        );
+        write_text_element(&mut self.writer, "updated", &Timestamp::now().to_string());
 
         let abs_href = self.abs(href);
         let mut link = BytesStart::new("link");
@@ -286,13 +278,7 @@ impl FeedBuilder {
             "title",
             &sanitise_xml_text(&entry.work_title),
         );
-        write_text_element(
-            &mut self.writer,
-            "updated",
-            &entry
-                .updated_at
-                .to_rfc3339_opts(SecondsFormat::AutoSi, true),
-        );
+        write_text_element(&mut self.writer, "updated", &entry.updated_at.to_string());
 
         for creator in &entry.creators {
             self.writer

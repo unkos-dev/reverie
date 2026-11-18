@@ -24,6 +24,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
+use jiff::Timestamp;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
@@ -286,8 +287,8 @@ struct ActivityParams {
 #[derive(serde::Serialize, utoipa::ToSchema)]
 struct BatchRow {
     batch_id: uuid::Uuid,
-    started_at: chrono::DateTime<chrono::Utc>,
-    ended_at: Option<chrono::DateTime<chrono::Utc>>,
+    started_at: Timestamp,
+    ended_at: Option<Timestamp>,
     total: i64,
     completed: i64,
     failed: i64,
@@ -376,8 +377,8 @@ async fn activity(
         .into_iter()
         .map(|r| BatchRow {
             batch_id: r.batch_id,
-            started_at: r.started_at,
-            ended_at: r.ended_at,
+            started_at: r.started_at.to_jiff(),
+            ended_at: r.ended_at.map(jiff_sqlx::Timestamp::to_jiff),
             total: r.total,
             completed: r.completed,
             failed: r.failed,

@@ -3,7 +3,7 @@
 //! See ADR `docs/adr/0012-persist-operator-tunable-settings-to-database-with-live-reload.md` for storage shape,
 //! precedence, and reload decisions.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::models::manifestation_format::ManifestationFormat;
@@ -86,7 +86,8 @@ pub struct Settings {
     // Wire-facing despite this struct also being the in-process settings
     // cache: it is `#[serde(flatten)]`ed into the `GET /api/v1/settings`
     // response.
-    pub updated_at: DateTime<Utc>,
+    #[sqlx(try_from = "jiff_sqlx::Timestamp")]
+    pub updated_at: Timestamp,
 }
 
 // Fields that require a process restart to take effect (env-only:

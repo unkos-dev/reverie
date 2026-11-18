@@ -1523,8 +1523,8 @@ mod tests {
             }
         }
         assert_eq!(probe.calls(), 4);
-        let deadline = chrono::Utc::now() + chrono::TimeDelta::minutes(15);
-        let history = vec![chrono::Utc::now(); 10];
+        let deadline = jiff::Timestamp::now() + jiff::SignedDuration::from_mins(15);
+        let history = vec![jiff::Timestamp::now(); 10];
         let mut body = None;
         for email in [
             "known@example.com",
@@ -1560,7 +1560,13 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn password_admission_route_two_pools_ninth_failure_race(pool: sqlx::PgPool) {
         use crate::models::login_throttle::tests::{seed, snapshot};
-        seed(&pool, "race@example.com", &[chrono::Utc::now(); 9], None).await;
+        seed(
+            &pool,
+            "race@example.com",
+            &[jiff::Timestamp::now(); 9],
+            None,
+        )
+        .await;
         let probe = PasswordProbe::new(Some(PasswordStage::Verify));
         let mut first = password_state(&pool).await;
         let mut second = password_state(&pool).await;
@@ -1668,8 +1674,8 @@ mod tests {
         seed(
             &pool,
             "retry@example.com",
-            &[chrono::Utc::now(); 10],
-            Some(chrono::Utc::now() + chrono::TimeDelta::seconds(900)),
+            &[jiff::Timestamp::now(); 10],
+            Some(jiff::Timestamp::now() + jiff::SignedDuration::from_secs(900)),
         )
         .await;
         let before = snapshot(&pool, "retry@example.com").await;
@@ -2224,9 +2230,9 @@ mod tests {
                 "audience" => fixture.mock.token_with_claims(
                     claims.set_audiences(vec![openidconnect::Audience::new("wrong-client".into())]),
                 ),
-                "expired" => fixture.mock.token_with_claims(
-                    claims.set_expiration(chrono::Utc::now() - chrono::TimeDelta::seconds(1)),
-                ),
+                "expired" => fixture.mock.token_with_claims(claims.set_expiration(
+                    (std::time::SystemTime::now() - std::time::Duration::from_secs(1)).into(),
+                )),
                 _ => fixture.mock.token_with_claims(
                     claims.set_nonce(Some(openidconnect::Nonce::new("wrong-nonce".into()))),
                 ),
@@ -3234,7 +3240,7 @@ mod tests {
                     .expires_datetime()
                     .expect("removal expiry")
                     .unix_timestamp()
-                    < chrono::Utc::now().timestamp()
+                    < jiff::Timestamp::now().as_second()
             );
             let mut headers = Vec::new();
             let mut cookies = Vec::new();
@@ -3960,7 +3966,7 @@ mod tests {
                         &context(),
                         event,
                         email,
-                        chrono::Utc::now() + chrono::TimeDelta::minutes(offset),
+                        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(offset),
                     )
                 })
                 .collect();
@@ -4055,7 +4061,7 @@ mod tests {
                 &context(),
                 "eligible@example.test",
                 &token,
-                proof.expires_at,
+                proof.expires_at.to_jiff(),
             );
             assert_eq!(message.subject, expected.subject);
             assert_eq!(message.body, expected.body);
@@ -4064,10 +4070,10 @@ mod tests {
                     .body
                     .contains(&format!("{ORIGIN}/reset-password#{token}"))
             );
-            let lifetime = proof.expires_at - chrono::Utc::now();
+            let lifetime = proof.expires_at.to_jiff() - jiff::Timestamp::now();
             assert!(
-                lifetime > chrono::TimeDelta::minutes(14)
-                    && lifetime <= chrono::TimeDelta::minutes(15)
+                lifetime > jiff::SignedDuration::from_mins(14)
+                    && lifetime <= jiff::SignedDuration::from_mins(15)
             );
         }
 

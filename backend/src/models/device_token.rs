@@ -4,7 +4,7 @@
 //! module owns the row shape, lifecycle queries (create/list/revoke),
 //! the per-user cap, and the SQL-side debounce on `last_used_at`.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -17,7 +17,7 @@ use crate::auth::scope::Scope;
 /// so JSON responses never leak the stored hash; verification uses
 /// [`crate::auth::token::verify_device_token`] with the hash kept inside
 /// this struct.
-#[derive(Debug, Clone, sqlx::FromRow, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DeviceToken {
     /// Primary key.
     pub id: Uuid,
@@ -30,20 +30,48 @@ pub struct DeviceToken {
     pub token_hash: String,
     /// `now()` of the last successful auth, written by
     /// [`update_last_used`]; `None` if the token has never been used.
-    pub last_used_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<Timestamp>,
     /// Row insert timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// `now()` of revocation; `None` while the token is active.
     /// [`list_for_user`] and [`find_by_id`] return only active rows
     /// (not revoked and not expired).
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<Timestamp>,
     /// Capabilities this token carries. Defaults to `{read}` at the DB
     /// level; a token carries the explicit scopes chosen at mint, bounded by
     /// the owner's role ceiling ([`Scope::grantable_by`]).
     pub scopes: Vec<Scope>,
     /// Optional expiry. `None` = never expires. [`find_by_id`] filters out
     /// expired rows.
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<Timestamp>,
+}
+
+struct DeviceTokenRow {
+    id: Uuid,
+    user_id: Uuid,
+    name: String,
+    token_hash: String,
+    last_used_at: Option<jiff_sqlx::Timestamp>,
+    created_at: jiff_sqlx::Timestamp,
+    revoked_at: Option<jiff_sqlx::Timestamp>,
+    scopes: Vec<Scope>,
+    expires_at: Option<jiff_sqlx::Timestamp>,
+}
+
+impl From<DeviceTokenRow> for DeviceToken {
+    fn from(row: DeviceTokenRow) -> Self {
+        Self {
+            id: row.id,
+            user_id: row.user_id,
+            name: row.name,
+            token_hash: row.token_hash,
+            last_used_at: row.last_used_at.map(jiff_sqlx::Timestamp::to_jiff),
+            created_at: row.created_at.to_jiff(),
+            revoked_at: row.revoked_at.map(jiff_sqlx::Timestamp::to_jiff),
+            scopes: row.scopes,
+            expires_at: row.expires_at.map(jiff_sqlx::Timestamp::to_jiff),
+        }
+    }
 }
 
 /// Test-only token insert without the per-user cap.
@@ -63,7 +91,7 @@ pub async fn create(
     token_hash: &str,
 ) -> Result<DeviceToken, sqlx::Error> {
     sqlx::query_as!(
-        DeviceToken,
+        DeviceTokenRow,
         "INSERT INTO device_tokens (user_id, name, token_hash) \
          VALUES ($1, $2, $3) \
          RETURNING id, user_id, name, token_hash, last_used_at, created_at, revoked_at, \
@@ -74,6 +102,7 @@ pub async fn create(
     )
     .fetch_one(pool)
     .await
+    .map(DeviceToken::from)
 }
 
 /// List active tokens for a user: not revoked and not expired.
@@ -88,7 +117,7 @@ pub async fn create(
 /// Returns [`sqlx::Error`] from the underlying `SELECT`.
 pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceToken>, sqlx::Error> {
     sqlx::query_as!(
-        DeviceToken,
+        DeviceTokenRow,
         "SELECT id, user_id, name, token_hash, last_used_at, created_at, revoked_at, \
                 scopes AS \"scopes: Vec<Scope>\", expires_at \
          FROM device_tokens \
@@ -101,6 +130,7 @@ pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceTok
     )
     .fetch_all(pool)
     .await
+    .map(|rows| rows.into_iter().map(DeviceToken::from).collect())
 }
 
 /// Hard ceiling on rows returned by [`list_for_user`], satisfying the bounded
@@ -122,7 +152,7 @@ const MAX_ACTIVE_TOKENS_LISTED: i64 = 100;
 /// Returns [`sqlx::Error`] from the underlying `SELECT`.
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<DeviceToken>, sqlx::Error> {
     sqlx::query_as!(
-        DeviceToken,
+        DeviceTokenRow,
         "SELECT id, user_id, name, token_hash, last_used_at, created_at, revoked_at, \
                 scopes AS \"scopes: Vec<Scope>\", expires_at \
          FROM device_tokens \
@@ -132,6 +162,7 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<DeviceToken>, 
     )
     .fetch_optional(pool)
     .await
+    .map(|row| row.map(DeviceToken::from))
 }
 
 /// Revoke a token. Scoped to `user_id` to prevent cross-user revocation.
@@ -187,7 +218,7 @@ pub async fn create_with_limit(
     name: &str,
     token_hash: &str,
     scopes: &[Scope],
-    expires_at: Option<DateTime<Utc>>,
+    expires_at: Option<Timestamp>,
 ) -> Result<DeviceToken, CreateError> {
     let mut tx = pool.begin().await.map_err(CreateError::Db)?;
 
@@ -224,7 +255,7 @@ pub async fn create_with_limit(
     }
 
     let dt = sqlx::query_as!(
-        DeviceToken,
+        DeviceTokenRow,
         "INSERT INTO device_tokens (user_id, name, token_hash, scopes, expires_at) \
          VALUES ($1, $2, $3, $4, $5) \
          RETURNING id, user_id, name, token_hash, last_used_at, created_at, revoked_at, \
@@ -233,14 +264,14 @@ pub async fn create_with_limit(
         name,
         token_hash,
         scopes as &[Scope],
-        expires_at,
+        expires_at.map(jiff_sqlx::Timestamp::from),
     )
     .fetch_one(&mut *tx)
     .await
     .map_err(CreateError::Db)?;
 
     tx.commit().await.map_err(CreateError::Db)?;
-    Ok(dt)
+    Ok(dt.into())
 }
 
 /// Update `last_used_at`, debounced SQL-side to at most one UPDATE per token
@@ -267,7 +298,7 @@ pub async fn update_last_used(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeDelta;
+    use jiff::SignedDuration;
 
     use super::*;
 
@@ -331,7 +362,7 @@ mod tests {
             "revoked token must not resolve"
         );
 
-        let expired_at = Utc::now() - TimeDelta::days(1);
+        let expired_at = Timestamp::now() - SignedDuration::from_hours(24);
         let expired = create_with_limit(
             &pool,
             user_id,
@@ -370,7 +401,7 @@ mod tests {
         .await
         .expect("create user");
 
-        let expires_at = Utc::now() + TimeDelta::days(90);
+        let expires_at = Timestamp::now() + SignedDuration::from_hours(90 * 24);
         let token = create_with_limit(
             &pool,
             user_id,
@@ -384,8 +415,8 @@ mod tests {
 
         assert_eq!(token.scopes, vec![Scope::Read, Scope::Write]);
         assert_eq!(
-            token.expires_at.map(|d: DateTime<Utc>| d.timestamp()),
-            Some(expires_at.timestamp())
+            token.expires_at.map(|d: Timestamp| d.as_second()),
+            Some(expires_at.as_second())
         );
     }
 }

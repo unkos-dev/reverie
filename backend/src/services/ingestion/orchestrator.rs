@@ -48,7 +48,7 @@ pub enum DependencyReason {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DependencyObservation {
     pub(crate) reason: DependencyReason,
-    pub(crate) since: chrono::DateTime<chrono::Utc>,
+    pub(crate) since: jiff::Timestamp,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -388,7 +388,7 @@ impl Coordinator {
                 reason,
                 since: observation
                     .as_ref()
-                    .map_or_else(chrono::Utc::now, |previous| previous.since),
+                    .map_or_else(jiff::Timestamp::now, |previous| previous.since),
             });
             true
         });
@@ -637,8 +637,7 @@ impl Coordinator {
             return 2;
         }
         let now = tokio::time::Instant::now();
-        let elapsed = (chrono::Utc::now() - input.observed_at)
-            .to_std()
+        let elapsed = std::time::Duration::try_from(jiff::Timestamp::now() - input.observed_at)
             .unwrap_or_default()
             .min(READINESS);
         let observed = self
@@ -651,10 +650,12 @@ impl Coordinator {
         {
             let index = usize::try_from(retry.count - 1).unwrap_or(RETRIES.len());
             if let Some(delay) = RETRIES.get(index) {
-                let remaining = (failed_at
-                    + chrono::Duration::seconds(i64::try_from(*delay).unwrap_or(i64::MAX))
-                    - chrono::Utc::now())
-                .to_std()
+                let remaining = std::time::Duration::try_from(
+                    failed_at.to_jiff() - jiff::Timestamp::now()
+                        + jiff::SignedDuration::from_secs(
+                            i64::try_from(*delay).unwrap_or(i64::MAX),
+                        ),
+                )
                 .unwrap_or_default();
                 deadline = deadline.max(now + remaining);
             }

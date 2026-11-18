@@ -36,24 +36,20 @@ use crate::models::reading_status::ReadingStatus;
 use super::{ListParams, MAX_TAG_FILTERS};
 
 pub mod timestamp_opt {
-    use chrono::{DateTime, Utc};
+    use jiff::Timestamp;
     use serde::{Deserialize, Deserializer};
 
     /// Decode an optional RFC 3339 instant into UTC for predicates and cursor identity.
     ///
     /// # Errors
     /// Returns a deserialisation error for a malformed timestamp.
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Timestamp>, D::Error>
     where
         D: Deserializer<'de>,
     {
         let raw: Option<String> = Option::deserialize(deserializer)?;
-        raw.map(|text| {
-            DateTime::parse_from_rfc3339(&text)
-                .map(|instant| instant.with_timezone(&Utc))
-                .map_err(serde::de::Error::custom)
-        })
-        .transpose()
+        raw.map(|text| text.parse::<Timestamp>().map_err(serde::de::Error::custom))
+            .transpose()
     }
 }
 
@@ -529,11 +525,11 @@ fn push_pages_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
 fn push_created_at_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     if let Some(instant) = p.created_at_gte {
         qb.push(" AND m.created_at >= ");
-        qb.push_bind(instant);
+        qb.push_bind(jiff_sqlx::Timestamp::from(instant));
     }
     if let Some(instant) = p.created_at_lt {
         qb.push(" AND m.created_at < ");
-        qb.push_bind(instant);
+        qb.push_bind(jiff_sqlx::Timestamp::from(instant));
     }
 }
 

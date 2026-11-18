@@ -5,7 +5,7 @@
 //! logged, and the table is granted to `reverie_app` only (no readonly,
 //! mirroring `device_tokens`).
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -25,10 +25,12 @@ pub struct LocalCredential {
     pub password_hash: String,
     /// Row insert timestamp.
     #[not_sensitive]
-    pub created_at: DateTime<Utc>,
+    #[sqlx(try_from = "jiff_sqlx::Timestamp")]
+    pub created_at: Timestamp,
     /// `now()` of the most recent password change.
     #[not_sensitive]
-    pub updated_at: DateTime<Utc>,
+    #[sqlx(try_from = "jiff_sqlx::Timestamp")]
+    pub updated_at: Timestamp,
 }
 
 /// Whether a user has a local credential, without reading its secret hash.
@@ -143,8 +145,8 @@ mod tests {
         let marker = "local_credentials-distinct-hash-marker";
         let value = LocalCredential {
             user_id: Uuid::from_u128(101),
-            created_at: DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
-            updated_at: DateTime::from_timestamp(1_700_000_001, 0).unwrap(),
+            created_at: Timestamp::new(1_700_000_000, 0).unwrap(),
+            updated_at: Timestamp::new(1_700_000_001, 0).unwrap(),
             password_hash: marker.into(),
         };
         let expected = [

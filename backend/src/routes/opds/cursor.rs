@@ -17,14 +17,14 @@
 //! in RLS, not the cursor.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 /// `(created_at, id)` tuple identifying the boundary row of a feed page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cursor {
     /// Boundary row's `manifestations.created_at`.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Boundary row's `manifestations.id` (tie-breaker for identical
     /// `created_at`).
     pub id: Uuid,
@@ -60,11 +60,11 @@ impl Cursor {
     /// string suitable for use in a feed `?cursor=` query parameter.
     ///
     /// The timestamp is written with the same RFC 3339 spelling serde
-    /// gives a `DateTime<Utc>` on the wire, so a cursor timestamp and a
+    /// gives a `Timestamp` on the wire, so a cursor timestamp and a
     /// feed-entry timestamp for the same instant are byte-identical.
     #[must_use]
     pub fn encode(&self) -> String {
-        let ts = self.created_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
+        let ts = self.created_at.to_string();
         let payload = format!("{ts}|{}", self.id.as_hyphenated());
         Base64UrlUnpadded::encode_string(payload.as_bytes())
     }
@@ -84,9 +84,9 @@ impl Cursor {
         let (ts, uuid) = decoded_str
             .split_once('|')
             .ok_or(CursorError::MissingDelimiter)?;
-        let created_at = DateTime::parse_from_rfc3339(ts)
-            .map_err(|_| CursorError::InvalidTimestamp)?
-            .with_timezone(&Utc);
+        let created_at = ts
+            .parse::<Timestamp>()
+            .map_err(|_| CursorError::InvalidTimestamp)?;
         let id = Uuid::parse_str(uuid).map_err(|_| CursorError::InvalidUuid)?;
         Ok(Self { created_at, id })
     }

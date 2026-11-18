@@ -12,7 +12,8 @@ use crate::services::reader::{
 use crate::state::AppState;
 use async_graphql::connection::{Connection, Edge, EmptyFields};
 use async_graphql::{ComplexObject, Context, ID, InputObject, Interface, SimpleObject};
-use chrono::SecondsFormat;
+use jiff::Timestamp;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -208,16 +209,10 @@ impl Manifestation {
         self.record.detail.pub_date.as_deref()
     }
     async fn created_at(&self) -> String {
-        self.record
-            .detail
-            .created_at
-            .to_rfc3339_opts(SecondsFormat::AutoSi, true)
+        self.record.detail.created_at.to_string()
     }
     async fn updated_at(&self) -> String {
-        self.record
-            .detail
-            .updated_at
-            .to_rfc3339_opts(SecondsFormat::AutoSi, true)
+        self.record.detail.updated_at.to_string()
     }
     async fn cover_url(&self) -> String {
         format!("/api/v1/books/{}/cover/thumb", self.record.detail.id)
@@ -245,9 +240,9 @@ impl Manifestation {
             rating: row.rating.map(i32::from),
             notes: row.notes.clone(),
             progress_pct: row.progress_pct.map(f64::from),
-            started_at: row.started_at.map(timestamp),
-            finished_at: row.finished_at.map(timestamp),
-            last_read_at: row.last_read_at.map(timestamp),
+            started_at: row.started_at.map(|value| timestamp(value.to_jiff())),
+            finished_at: row.finished_at.map(|value| timestamp(value.to_jiff())),
+            last_read_at: row.last_read_at.map(|value| timestamp(value.to_jiff())),
         }
     }
     async fn metadata(&self, ctx: &Context<'_>) -> async_graphql::Result<MetadataSnapshot> {
@@ -415,7 +410,7 @@ impl Manifestation {
                     rating: required(row.rating)?,
                     scale: required(row.scale)?,
                     review_count: row.reviews,
-                    fetched_at: row.created_at.map(timestamp),
+                    fetched_at: row.created_at.map(|value| timestamp(value.to_jiff())),
                 })
             },
         )
@@ -448,9 +443,9 @@ impl ReadingState {
             rating: row.rating.map(i32::from),
             notes: row.notes.clone(),
             progress_pct: row.progress_pct.map(f64::from),
-            started_at: row.started_at.map(timestamp),
-            finished_at: row.finished_at.map(timestamp),
-            last_read_at: row.last_read_at.map(timestamp),
+            started_at: row.started_at.map(|value| timestamp(value.to_jiff())),
+            finished_at: row.finished_at.map(|value| timestamp(value.to_jiff())),
+            last_read_at: row.last_read_at.map(|value| timestamp(value.to_jiff())),
         })
     }
 }
@@ -776,14 +771,10 @@ impl Shelf {
         self.record.is_system
     }
     async fn created_at(&self) -> String {
-        self.record
-            .created_at
-            .to_rfc3339_opts(SecondsFormat::AutoSi, true)
+        self.record.created_at.to_string()
     }
     async fn updated_at(&self) -> String {
-        self.record
-            .updated_at
-            .to_rfc3339_opts(SecondsFormat::AutoSi, true)
+        self.record.updated_at.to_string()
     }
     #[graphql(
         complexity = "super::complexity::nested(RelationKind::ShelfItems, first, child_complexity)?"
@@ -861,8 +852,8 @@ impl Series {
     }
 }
 
-fn timestamp(value: chrono::DateTime<chrono::Utc>) -> String {
-    value.to_rfc3339_opts(SecondsFormat::AutoSi, true)
+fn timestamp(value: Timestamp) -> String {
+    value.to_string()
 }
 fn required<T>(value: Option<T>) -> async_graphql::Result<T> {
     value.ok_or_else(|| {
@@ -1141,9 +1132,9 @@ fn filter_id(kind: &str, value: &ID) -> async_graphql::Result<Uuid> {
     id::decode(kind, value)
         .ok_or_else(|| safe_error(AppError::Validation("Invalid filter identity.".into())))
 }
-fn filter_timestamp(value: &str) -> async_graphql::Result<chrono::DateTime<chrono::Utc>> {
-    chrono::DateTime::parse_from_rfc3339(value)
-        .map(|value| value.with_timezone(&chrono::Utc))
+fn filter_timestamp(value: &str) -> async_graphql::Result<Timestamp> {
+    value
+        .parse::<jiff::Timestamp>()
         .map_err(|_| safe_error(AppError::Validation("Invalid timestamp bound.".into())))
 }
 

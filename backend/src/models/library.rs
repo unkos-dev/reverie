@@ -19,7 +19,7 @@
 //! of them into the paginated base query would emit one row per pair
 //! and break `LIMIT` and the cursor math.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
@@ -95,7 +95,7 @@ pub struct ExternalRatingRef {
     /// Number of reviews backing the score; 0 when unreported.
     pub review_count: i32,
     /// When the enrichment pipeline last refreshed this value.
-    pub fetched_at: DateTime<Utc>,
+    pub fetched_at: Timestamp,
 }
 
 /// One row of a paginated book list.
@@ -174,7 +174,7 @@ pub struct BookListRow {
     pub external_ratings: Vec<ExternalRatingRef>,
     /// `manifestations.created_at`. RFC 3339 on the wire; also the
     /// recent-sort cursor key and the value behind the "Added" sort column.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 /// `/api/v1/books/{id}` response. Carries the [`BookListRow`] fields
@@ -254,9 +254,9 @@ pub struct BookDetail {
     pub metadata_versions: Vec<MetadataVersionRow>,
     /// `manifestations.created_at`. RFC 3339 on the wire, which the
     /// frontend `BookDetailSchema` requires.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// `manifestations.updated_at`. RFC 3339 on the wire (see `created_at`).
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 /// One pending draft row surfaced on the Versions tab.
@@ -412,5 +412,5 @@ pub struct WorkManifestation {
     pub enrichment_status: EnrichmentStatus,
     /// `manifestations.created_at`. RFC 3339 on the wire, which the
     /// frontend `WorkManifestationSchema` requires.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }

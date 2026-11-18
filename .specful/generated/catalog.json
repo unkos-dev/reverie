@@ -352,7 +352,10 @@
       "id": "REV-ADR-0046",
       "kind": "adr",
       "path": "docs/adr/0046-chrono-is-the-first-party-datetime-crate.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0078"
+      ],
       "title": "chrono is the first-party datetime crate"
     },
     {
@@ -614,6 +617,16 @@
         "REV-ADR-0016"
       ],
       "title": "GraphQL and Relay for browser application data"
+    },
+    {
+      "id": "REV-ADR-0078",
+      "kind": "adr",
+      "path": "docs/adr/0078-use-jiff-for-first-party-datetimes.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0046"
+      ],
+      "title": "Use Jiff for first-party datetimes"
     },
     {
       "governed-by": [
