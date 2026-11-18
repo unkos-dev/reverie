@@ -2026,14 +2026,14 @@ mod tests {
     async fn graphql_cursor_contract(pool: PgPool) {
         let fixture = reader_fixture(&pool).await;
         let query = "query($first: Int!, $after: String, $filter: BooksFilter, $sort: [SortLevel!]) { books(first: $first, after: $after, filter: $filter, sort: $sort) { edges { cursor node { id pages createdAt } } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } } }";
-        let first = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-04T00:00:00Z"}})).await;
+        let first = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-04T00:00:00Z"}})).await;
         assert!(first.get("errors").is_none(), "{first}");
         let cursor = first["data"]["books"]["edges"][0]["cursor"]
             .as_str()
             .unwrap();
         assert_eq!(first["data"]["books"]["pageInfo"]["startCursor"], cursor);
         assert_eq!(first["data"]["books"]["pageInfo"]["endCursor"], cursor);
-        let next = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T08:00:00+08:00", "createdAtLt": "2026-01-04T08:00:00+08:00"}})).await;
+        let next = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T08:00:00+08:00", "createdAtLt": "2026-01-04T08:00:00+08:00"}})).await;
         assert!(next.get("errors").is_none(), "{next}");
         assert_eq!(
             next["data"]["books"]["edges"][0]["node"]["id"],
@@ -2069,13 +2069,13 @@ mod tests {
             );
         }
         for variables in [
-            json!({"first": 50, "after": cursor, "sort": [{"column": "title", "direction": "ASC"}]}),
-            json!({"first": 50, "after": cursor, "sort": [{"column": "created_at", "direction": "DESC"}]}),
-            json!({"first": 50, "after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:01Z", "createdAtLt": "2026-01-04T00:00:00Z"}}),
-            json!({"first": 50, "after": cursor, "sort": [{"column": "created_at", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-05T00:00:00Z"}}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "TITLE", "direction": "ASC"}]}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "DESC"}]}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:01Z", "createdAtLt": "2026-01-04T00:00:00Z"}}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-05T00:00:00Z"}}),
             json!({"first": 50, "sort": [{"column": "Title", "direction": "ASC"}]}),
-            json!({"first": 50, "sort": [{"column": "title", "direction": "ASC"}, {"column": "title", "direction": "DESC"}]}),
-            json!({"first": 50, "sort": [{"column": "title", "direction": "ASC"}, {"column": "author", "direction": "ASC"}, {"column": "pages", "direction": "ASC"}, {"column": "created_at", "direction": "ASC"}]}),
+            json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "TITLE", "direction": "DESC"}]}),
+            json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "AUTHOR", "direction": "ASC"}, {"column": "PAGES", "direction": "ASC"}, {"column": "CREATED_AT", "direction": "ASC"}]}),
         ] {
             let response = reader_query(&fixture, &fixture.admin, query, variables).await;
             assert_eq!(
@@ -2084,12 +2084,12 @@ mod tests {
             );
             assert!(response["data"]["books"].is_null());
         }
-        let ordered = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "title", "direction": "ASC"}, {"column": "created_at", "direction": "ASC"}]})).await;
+        let ordered = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "CREATED_AT", "direction": "ASC"}]})).await;
         assert!(ordered.get("errors").is_none(), "{ordered}");
         let ordered_cursor = ordered["data"]["books"]["edges"][0]["cursor"]
             .as_str()
             .unwrap();
-        let refused = reader_query(&fixture, &fixture.admin, query, json!({"first": 50, "after": ordered_cursor, "sort": [{"column": "created_at", "direction": "ASC"}, {"column": "title", "direction": "ASC"}]})).await;
+        let refused = reader_query(&fixture, &fixture.admin, query, json!({"first": 50, "after": ordered_cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}, {"column": "TITLE", "direction": "ASC"}]})).await;
         assert_eq!(
             refused["errors"][0]["extensions"]["code"], "validation",
             "{refused}"

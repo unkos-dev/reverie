@@ -1147,7 +1147,7 @@ fn filter_timestamp(value: &str) -> async_graphql::Result<chrono::DateTime<chron
         .map_err(|_| safe_error(AppError::Validation("Invalid timestamp bound.".into())))
 }
 
-input_enum!(SortField { Title => "title", Author => "author", CreatedAt => "created_at", Pages => "pages" });
+input_enum!(SortField { Title => "TITLE", Author => "AUTHOR", CreatedAt => "CREATED_AT", Pages => "PAGES" });
 impl SortField {
     const fn wire(self) -> &'static str {
         match self {

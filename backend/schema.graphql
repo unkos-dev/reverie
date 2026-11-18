@@ -632,10 +632,10 @@ type ShelfEdge {
 }
 
 enum SortField {
-  title
-  author
-  created_at
-  pages
+  TITLE
+  AUTHOR
+  CREATED_AT
+  PAGES
 }
 
 input SortLevel {
