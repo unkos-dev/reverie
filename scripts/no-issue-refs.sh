@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Reject issue-tracker references (e.g. UNK- followed by digits) in
+# Reject issue-tracker references (UNK- or REV- followed by digits) in
 # public-facing source and docs. These describe the codebase/product, not a
 # private issue tracker; such a reference is usually a symptom that the whole
 # comment or passage narrates process or deferred work that does not belong
@@ -34,7 +34,7 @@
 # Usage: no-issue-refs.sh [ignored-args...]
 set -euo pipefail
 
-pattern='UNK-[0-9]+'
+pattern='(UNK|REV)-[0-9]+'
 
 # Decide whether a path is gated by this guard. `case` globs treat '*' as
 # matching across '/', so a single '*' spans nested directories.
@@ -58,6 +58,7 @@ is_gated() {
 # path every real caller takes.
 self_check() {
   grep -qE "$pattern" <<<'see UNK-123 for context' || return 1
+  grep -qE "$pattern" <<<'see REV-123 for context' || return 1
   # The C locale keeps a line with a stray non-UTF-8 byte matchable, and -I
   # still skips NUL-bearing (binary) input; both are probed because a quiet
   # skip is the one failure this guard must never have.

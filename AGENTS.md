@@ -69,8 +69,8 @@ These are absolute invariants for the Reverie repository.
   rejects an unsigned commit locally, and the DCO app fails its required check on the pull request.
   `.github/CONTRIBUTING.md` carries the Developer Certificate of Origin text and the rest of the contributor process.
 - **Linear Integration:** Treat work as Linear-tracked only when the maintainer says so or the task or current branch
-  already identifies an `UNK-XXX` issue.
-  - For tracked work, include `Closes UNK-XXX` in the PR body; omitting it leaves the issue open.
+  already identifies a `REV-XXX` issue.
+  - For tracked work, include `Closes REV-XXX` in the PR body; omitting it leaves the issue open.
   - Linear's own GitHub app attaches the pull request and transitions the issue: In Progress on open, Done on merge.
   - Nothing in this repository closes issues; there is no workflow or credential behind the transition.
   - The app matches the phrase anywhere in the body, even in prose that only quotes it, and writes on open regardless of
