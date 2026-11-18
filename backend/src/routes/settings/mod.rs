@@ -10,7 +10,7 @@ use axum::extract::State;
 use axum::http::header::ETAG;
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
@@ -116,7 +116,7 @@ async fn get_settings(
 struct ReloadStatusResponse {
     /// Timestamp of the last successful LISTEN/NOTIFY settings reload in
     /// this process; `null` until the first reload.
-    last_successful_reload_at: Option<DateTime<Utc>>,
+    last_successful_reload_at: Option<Timestamp>,
 }
 
 /// `GET /api/v1/settings/reload-status` — health of the live-reload

@@ -44,7 +44,7 @@
 //! No HMAC — same trust model as the OPDS cursor.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -65,7 +65,7 @@ pub enum CursorValue {
     /// silently drop rows under three-valued SQL comparison.
     Text(Option<String>),
     /// Timestamp sort key (`created_at`), RFC 3339 on the wire.
-    Ts(DateTime<Utc>),
+    Ts(Timestamp),
     /// Integer sort key (`pages`); `None` marks a NULL-bucket
     /// boundary row, as with [`Self::Text`].
     Int(Option<i32>),
@@ -358,7 +358,7 @@ impl ShelfCursor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShelfItemCursor {
     /// Boundary item's `shelf_items.added_at`.
-    pub added_at: DateTime<Utc>,
+    pub added_at: Timestamp,
     /// Tiebreaker `shelf_items.manifestation_id`.
     pub manifestation_id: Uuid,
 }
@@ -367,11 +367,11 @@ impl ShelfItemCursor {
     /// Encode as a base64url-unpadded `?cursor=` value.
     ///
     /// The timestamp is written with the same RFC 3339 spelling serde
-    /// gives a `DateTime<Utc>` on the wire, so a cursor timestamp and a
+    /// gives a `Timestamp` on the wire, so a cursor timestamp and a
     /// response-body timestamp for the same instant are byte-identical.
     #[must_use]
     pub fn encode(&self) -> String {
-        let ts = self.added_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
+        let ts = self.added_at.to_string();
         let payload = format!("si|{ts}|{}", self.manifestation_id.as_hyphenated());
         Base64UrlUnpadded::encode_string(payload.as_bytes())
     }
@@ -395,9 +395,9 @@ impl ShelfItemCursor {
             return Err(CursorError::UnknownTag);
         }
         let (ts, id_str) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
-        let added_at = DateTime::parse_from_rfc3339(ts)
-            .map_err(|_| CursorError::MalformedKey)?
-            .with_timezone(&Utc);
+        let added_at = ts
+            .parse::<Timestamp>()
+            .map_err(|_| CursorError::MalformedKey)?;
         let manifestation_id = Uuid::parse_str(id_str).map_err(|_| CursorError::MalformedKey)?;
         Ok(Self {
             added_at,
@@ -499,9 +499,7 @@ mod tests {
 
     #[test]
     fn shelf_rejects_foreign_tags() {
-        let ts = DateTime::parse_from_rfc3339("2026-05-22T09:30:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let ts = "2026-05-22T09:30:00Z".parse::<Timestamp>().unwrap();
         let id = Uuid::new_v4();
         let books = SortCursor {
             spec: SortSpec::default().canonical(),

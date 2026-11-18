@@ -8,8 +8,8 @@
 
 use std::sync::LazyLock;
 
-use chrono::{DateTime, Utc};
 use email_address::{EmailAddress, Options};
+use jiff::Timestamp;
 use regex::Regex;
 use serde::Serialize;
 use sqlx::PgPool;
@@ -27,11 +27,11 @@ struct UserRow {
     email: Option<String>,
     role: Role,
     is_child: bool,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    created_at: jiff_sqlx::Timestamp,
+    updated_at: jiff_sqlx::Timestamp,
     session_version: i32,
     theme_preference: ThemePreference,
-    disabled_at: Option<DateTime<Utc>>,
+    disabled_at: Option<jiff_sqlx::Timestamp>,
 }
 
 /// Public user row exposed to handlers and serialised in API responses.
@@ -59,9 +59,9 @@ pub struct User {
     /// remains the single source of truth across both axes.
     pub is_child: bool,
     /// Row insert timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// `now()` of the most recent change to any user-facing field.
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
     /// Monotonic counter incremented to force-invalidate every active
     /// session for this user; compared per-request by
     /// [`crate::auth::middleware::CurrentUser`].
@@ -72,7 +72,7 @@ pub struct User {
     /// when active. Every auth-resolution path rejects a user with this set, so
     /// a disabled account cannot log in, rehydrate a session, or authenticate a
     /// device token.
-    pub disabled_at: Option<DateTime<Utc>>,
+    pub disabled_at: Option<Timestamp>,
 }
 
 impl From<UserRow> for User {
@@ -84,11 +84,11 @@ impl From<UserRow> for User {
             email: row.email,
             role: row.role,
             is_child: row.is_child,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
+            created_at: row.created_at.to_jiff(),
+            updated_at: row.updated_at.to_jiff(),
             session_version: row.session_version,
             theme_preference: row.theme_preference,
-            disabled_at: row.disabled_at,
+            disabled_at: row.disabled_at.map(jiff_sqlx::Timestamp::to_jiff),
         }
     }
 }
@@ -864,20 +864,6 @@ mod tests {
         );
     }
 
-    // Migration 20260610165400 adds decode-range CHECK constraints on TIMESTAMPTZ
-    // columns, bounding them to years 1..=9999. Postgres accepts values
-    // `DateTime<Utc>` cannot represent (year 294276, and the `infinity`
-    // specials), and such a row (out-of-band mutation only) would panic at
-    // `row.get::<DateTime<Utc>>` on every read path. The write must be
-    // rejected at the schema boundary instead. The bound is tighter than
-    // chrono's own year-262142 ceiling, deliberately: no Reverie timestamp
-    // legitimately falls outside the common era.
-    // `infinity` is undecodable like any year-10000+ value; the finite
-    // upper bound rejects the special value too.
-    // `-infinity` (and any pre-CE date) is equally undecodable; the finite
-    // lower bound rejects it at write time.
-    // The full decodable range stays writable: year 9999 passes the CHECK
-    // and round-trips through DateTime<Utc> decode.
     #[sqlx::test(migrations = "./migrations")]
     async fn concurrent_first_admin_yields_exactly_one(pool: PgPool) {
         // Single-admin invariant: the instance_bootstrap singleton serializes

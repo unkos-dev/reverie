@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use axum::extract::State;
 use axum::response::Response;
 use axum_extra::extract::{Query, QueryRejection};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Deserialize;
 use sqlx::{Postgres, QueryBuilder, Row};
 use url::Url;
@@ -85,7 +85,7 @@ async fn library_root(
 }
 
 pub(super) fn build_subcatalog_root(base: &Url, self_path: &str, title: &str) -> Vec<u8> {
-    let mut fb = FeedBuilder::new(base, self_path, FeedKind::Navigation, title, Utc::now());
+    let mut fb = FeedBuilder::new(base, self_path, FeedKind::Navigation, title);
     fb.add_search_link(&format!("{self_path}/opensearch.xml"));
     fb.add_navigation_entry(
         &feed_urn(&format!("{self_path}/new")),
@@ -381,10 +381,16 @@ fn parse_name_cursor(raw: Option<&str>) -> Result<Option<super::cursor::NameCurs
         .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))
 }
 
+fn decode_timestamp(row: &sqlx::postgres::PgRow, column: &str) -> Result<Timestamp, AppError> {
+    row.try_get(column)
+        .map(jiff_sqlx::Timestamp::to_jiff)
+        .map_err(|e| AppError::Internal(e.into()))
+}
+
 fn push_cursor_predicate(qb: &mut QueryBuilder<Postgres>, cursor: Option<&super::cursor::Cursor>) {
     if let Some(c) = cursor {
         qb.push(" AND (m.created_at, m.id) < (");
-        qb.push_bind(c.created_at);
+        qb.push_bind(jiff_sqlx::Timestamp::from(c.created_at));
         qb.push(", ");
         qb.push_bind(c.id);
         qb.push(")");
@@ -453,11 +459,11 @@ pub(super) async fn emit_new(
     let m_ids: Vec<Uuid> = page_rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
     let tags = load_tags(&mut tx, &m_ids).await?;
 
-    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Acquisition, "New", Utc::now());
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Acquisition, "New");
     for r in page_rows {
         let m_id: Uuid = r.get("id");
         let work_id: Uuid = r.get("work_id");
-        let updated_at: DateTime<Utc> = r.get("updated_at");
+        let updated_at = decode_timestamp(r, "updated_at")?;
         let title: String = r.get("title");
         let description: Option<String> = r.get("description");
         let language: Option<String> = r.get("language");
@@ -481,7 +487,7 @@ pub(super) async fn emit_new(
             reason = "has_more is only true when page_rows is non-empty (split_page guarantees this invariant)"
         )]
         let last = page_rows.last().expect("page non-empty when has_more");
-        let last_created: DateTime<Utc> = last.get("created_at");
+        let last_created = decode_timestamp(last, "created_at")?;
         let last_id: Uuid = last.get("id");
         let next_cursor = super::cursor::Cursor {
             created_at: last_created,
@@ -542,13 +548,7 @@ pub(super) async fn emit_authors(
 
     let (page_rows, has_more) = split_page(&rows, page_size);
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Navigation,
-        "Authors",
-        Utc::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Navigation, "Authors");
     for r in page_rows {
         let id: Uuid = r.get("id");
         let name: String = r.get("name");
@@ -626,17 +626,11 @@ pub(super) async fn emit_author_books(
     let m_ids: Vec<Uuid> = page_rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
     let tags = load_tags(&mut tx, &m_ids).await?;
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Acquisition,
-        "Books by author",
-        Utc::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Acquisition, "Books by author");
     for r in page_rows {
         let m_id: Uuid = r.get("id");
         let work_id: Uuid = r.get("work_id");
-        let updated_at: DateTime<Utc> = r.get("updated_at");
+        let updated_at = decode_timestamp(r, "updated_at")?;
         fb.add_acquisition_entry(&AcquisitionEntry {
             manifestation_id: m_id,
             work_title: r.get("title"),
@@ -658,7 +652,7 @@ pub(super) async fn emit_author_books(
         let last = page_rows.last().expect("has_more implies non-empty");
         let row_id: Uuid = last.get("id");
         let next = super::cursor::Cursor {
-            created_at: last.get("created_at"),
+            created_at: decode_timestamp(last, "created_at")?,
             id: row_id,
         }
         .encode();
@@ -714,7 +708,7 @@ pub(super) async fn emit_series(
 
     let (page_rows, has_more) = split_page(&rows, page_size);
 
-    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Navigation, "Series", Utc::now());
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Navigation, "Series");
     for r in page_rows {
         let id: Uuid = r.get("id");
         let name: String = r.get("name");
@@ -788,17 +782,11 @@ pub(super) async fn emit_series_books(
     let m_ids: Vec<Uuid> = rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
     let tags = load_tags(&mut tx, &m_ids).await?;
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Acquisition,
-        "Series",
-        Utc::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Acquisition, "Series");
     for r in &rows {
         let m_id: Uuid = r.get("id");
         let work_id: Uuid = r.get("work_id");
-        let updated_at: DateTime<Utc> = r.get("updated_at");
+        let updated_at = decode_timestamp(r, "updated_at")?;
         fb.add_acquisition_entry(&AcquisitionEntry {
             manifestation_id: m_id,
             work_title: r.get("title"),
@@ -826,13 +814,7 @@ pub(super) async fn emit_search(
     let self_path = format!("{self_parent}/search");
     let page_size = i64::from(state.config.opds.page_size);
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Acquisition,
-        "Search results",
-        Utc::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Acquisition, "Search results");
 
     // Empty query → empty feed (Moon+ quirk). Skip DB hit entirely.
     let q_trim = q.trim();
@@ -876,7 +858,7 @@ pub(super) async fn emit_search(
     for r in &rows {
         let m_id: Uuid = r.get("id");
         let work_id: Uuid = r.get("work_id");
-        let updated_at: DateTime<Utc> = r.get("updated_at");
+        let updated_at = decode_timestamp(r, "updated_at")?;
         fb.add_acquisition_entry(&AcquisitionEntry {
             manifestation_id: m_id,
             work_title: r.get("title"),

@@ -2,10 +2,10 @@
 //!
 //! THREAT: the row lock spans verification and accounting so replicas cannot verify through a block.
 
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 
-const WINDOW: TimeDelta = TimeDelta::minutes(15);
+const WINDOW: SignedDuration = SignedDuration::from_mins(15);
 const FAILURE_LIMIT: usize = 10;
 
 /// Account admission before any credential lookup or hashing.
@@ -20,33 +20,31 @@ pub enum Admission {
 pub struct Attempt {
     tx: Transaction<'static, Postgres>,
     email: String,
-    failures: Vec<DateTime<Utc>>,
-    locked_until: Option<DateTime<Utc>>,
+    failures: Vec<Timestamp>,
+    locked_until: Option<Timestamp>,
 }
 
-fn retry_after(deadline: Option<DateTime<Utc>>, now: DateTime<Utc>) -> Option<u64> {
+fn retry_after(deadline: Option<Timestamp>, now: Timestamp) -> Option<u64> {
     deadline.filter(|deadline| *deadline > now).map(|deadline| {
         let remaining = deadline - now;
-        (remaining.num_seconds() + i64::from(remaining.subsec_nanos() > 0))
+        (remaining.as_secs() + i64::from(remaining.subsec_nanos() > 0))
             .unsigned_abs()
             .max(1)
     })
 }
 
-fn complete_failure(
-    failures: &mut Vec<DateTime<Utc>>,
-    now: DateTime<Utc>,
-) -> Option<DateTime<Utc>> {
+fn complete_failure(failures: &mut Vec<Timestamp>, now: Timestamp) -> Option<Timestamp> {
     failures.retain(|failure| *failure > now - WINDOW);
     failures.push(now);
     failures.sort_unstable();
     (failures.len() >= FAILURE_LIMIT).then_some(now + WINDOW)
 }
 
-async fn database_time(connection: &mut PgConnection) -> Result<DateTime<Utc>, sqlx::Error> {
+async fn database_time(connection: &mut PgConnection) -> Result<Timestamp, sqlx::Error> {
     sqlx::query_scalar!(r#"SELECT clock_timestamp() AS "now!""#)
         .fetch_one(connection)
         .await
+        .map(jiff_sqlx::Timestamp::to_jiff)
 }
 
 async fn lock(pool: &PgPool, email: &str) -> Result<Attempt, sqlx::Error> {
@@ -63,8 +61,12 @@ async fn lock(pool: &PgPool, email: &str) -> Result<Attempt, sqlx::Error> {
     Ok(Attempt {
         tx,
         email,
-        failures: row.completed_failures,
-        locked_until: row.locked_until,
+        failures: row
+            .completed_failures
+            .into_iter()
+            .map(jiff_sqlx::Timestamp::to_jiff)
+            .collect(),
+        locked_until: row.locked_until.map(jiff_sqlx::Timestamp::to_jiff),
     })
 }
 
@@ -95,11 +97,16 @@ impl Attempt {
     pub async fn fail(mut self) -> Result<(), sqlx::Error> {
         let now = database_time(self.connection()).await?;
         let locked_until = complete_failure(&mut self.failures, now);
+        let failures: Vec<_> = self
+            .failures
+            .into_iter()
+            .map(jiff_sqlx::Timestamp::from)
+            .collect();
         sqlx::query!(
             "UPDATE local_login_throttle SET completed_failures = $2, locked_until = $3 WHERE email_lower = $1",
             self.email,
-            &self.failures,
-            locked_until,
+            failures,
+            locked_until.map(jiff_sqlx::Timestamp::from),
         )
         .execute(&mut *self.tx)
         .await?;
@@ -157,20 +164,28 @@ pub(crate) mod tests {
     pub async fn seed(
         pool: &PgPool,
         email: &str,
-        failures: &[DateTime<Utc>],
-        deadline: Option<DateTime<Utc>>,
+        failures: &[Timestamp],
+        deadline: Option<Timestamp>,
     ) {
-        sqlx::query!("INSERT INTO local_login_throttle (email_lower, completed_failures, locked_until) VALUES ($1, $2, $3) ON CONFLICT (email_lower) DO UPDATE SET completed_failures = EXCLUDED.completed_failures, locked_until = EXCLUDED.locked_until", email.to_lowercase(), failures, deadline)
+        let failures: Vec<_> = failures
+            .iter()
+            .copied()
+            .map(jiff_sqlx::Timestamp::from)
+            .collect();
+        sqlx::query!("INSERT INTO local_login_throttle (email_lower, completed_failures, locked_until) VALUES ($1, $2, $3) ON CONFLICT (email_lower) DO UPDATE SET completed_failures = EXCLUDED.completed_failures, locked_until = EXCLUDED.locked_until", email.to_lowercase(), failures, deadline.map(jiff_sqlx::Timestamp::from))
             .execute(pool).await.unwrap();
     }
 
-    pub async fn snapshot(
-        pool: &PgPool,
-        email: &str,
-    ) -> (Vec<DateTime<Utc>>, Option<DateTime<Utc>>) {
+    pub async fn snapshot(pool: &PgPool, email: &str) -> (Vec<Timestamp>, Option<Timestamp>) {
         let row = sqlx::query!("SELECT completed_failures, locked_until FROM local_login_throttle WHERE email_lower = $1", email.to_lowercase())
             .fetch_one(pool).await.unwrap();
-        (row.completed_failures, row.locked_until)
+        (
+            row.completed_failures
+                .into_iter()
+                .map(jiff_sqlx::Timestamp::to_jiff)
+                .collect(),
+            row.locked_until.map(jiff_sqlx::Timestamp::to_jiff),
+        )
     }
 
     async fn allowed(pool: &PgPool, email: &str) -> Attempt {
@@ -182,35 +197,35 @@ pub(crate) mod tests {
 
     #[test]
     fn password_admission_exact_window_and_block_boundaries() {
-        let now = DateTime::parse_from_rfc3339("2026-10-19T00:15:01Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let mut failures = vec![now - WINDOW, now - WINDOW + TimeDelta::microseconds(1)];
+        let now = "2026-10-19T00:15:01Z".parse::<Timestamp>().unwrap();
+        let mut failures = vec![now - WINDOW, now - WINDOW + SignedDuration::from_micros(1)];
         assert!(complete_failure(&mut failures, now).is_none());
         assert_eq!(
             failures,
-            vec![now - WINDOW + TimeDelta::microseconds(1), now]
+            vec![now - WINDOW + SignedDuration::from_micros(1), now]
         );
         assert_eq!(retry_after(Some(now), now), None);
         assert_eq!(
-            retry_after(Some(now + TimeDelta::microseconds(1)), now),
+            retry_after(Some(now + SignedDuration::from_micros(1)), now),
             Some(1)
         );
         assert_eq!(
             retry_after(
-                Some(now + TimeDelta::seconds(1) + TimeDelta::microseconds(1)),
+                Some(now + SignedDuration::from_secs(1) + SignedDuration::from_micros(1)),
                 now
             ),
             Some(2)
         );
         assert_eq!(
-            retry_after(Some(now - TimeDelta::microseconds(1)), now),
+            retry_after(Some(now - SignedDuration::from_micros(1)), now),
             None
         );
-        let start = now - TimeDelta::minutes(15) - TimeDelta::seconds(1);
+        let start = now - SignedDuration::from_mins(15) - SignedDuration::from_secs(1);
         let mut failures = vec![start];
         failures.extend(vec![
-            start + TimeDelta::minutes(14) + TimeDelta::seconds(59);
+            start
+                + SignedDuration::from_mins(14)
+                + SignedDuration::from_secs(59);
             8
         ]);
         assert!(complete_failure(&mut failures, now).is_none());

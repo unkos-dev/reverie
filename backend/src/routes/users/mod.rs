@@ -29,7 +29,7 @@
 use axum::extract::State;
 use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -103,14 +103,46 @@ struct UserResponse {
     /// Whether child content-visibility rules apply to this user.
     is_child: bool,
     /// Row creation timestamp.
-    created_at: DateTime<Utc>,
+    created_at: Timestamp,
     /// Last mutation timestamp.
-    updated_at: DateTime<Utc>,
+    updated_at: Timestamp,
     /// Whether the account is soft-disabled (cannot authenticate). Derived from
     /// `disabled_at`; the timestamp itself is not exposed on the wire.
     disabled: bool,
     has_password: bool,
-    credential_link_expires_at: Option<DateTime<Utc>>,
+    credential_link_expires_at: Option<Timestamp>,
+}
+
+struct UserResponseRow {
+    id: Uuid,
+    display_name: String,
+    email: Option<String>,
+    role: Role,
+    is_child: bool,
+    created_at: Timestamp,
+    updated_at: Timestamp,
+    disabled: bool,
+    has_password: bool,
+    credential_link_expires_at: Option<jiff_sqlx::Timestamp>,
+}
+
+impl From<UserResponseRow> for UserResponse {
+    fn from(row: UserResponseRow) -> Self {
+        Self {
+            id: row.id,
+            display_name: row.display_name,
+            email: row.email,
+            role: row.role,
+            is_child: row.is_child,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            disabled: row.disabled,
+            has_password: row.has_password,
+            credential_link_expires_at: row
+                .credential_link_expires_at
+                .map(jiff_sqlx::Timestamp::to_jiff),
+        }
+    }
 }
 
 /// Defensive bound on the users list (the justified
@@ -147,7 +179,7 @@ async fn list_users(
     current_user.require_admin()?;
 
     let rows = sqlx::query_as!(
-        UserResponse,
+        UserResponseRow,
         r#"SELECT users.id,
                   users.display_name,
                   users.email,
@@ -169,7 +201,9 @@ async fn list_users(
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
 
-    Ok(axum::Json(rows))
+    Ok(axum::Json(
+        rows.into_iter().map(UserResponse::from).collect::<Vec<_>>(),
+    ))
 }
 
 /// Body for `PUT /api/v1/users/{id}/role`.
@@ -251,7 +285,7 @@ async fn update_role(
     }
 
     let row = sqlx::query_as!(
-        UserResponse,
+        UserResponseRow,
         r#"WITH changed AS (UPDATE users
               SET role = ($1::text)::user_role,
                   is_child = ($1::text = 'child'),
@@ -283,7 +317,7 @@ async fn update_role(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    Ok(axum::Json(row))
+    Ok(axum::Json(UserResponse::from(row)))
 }
 
 /// Body for `PUT /api/v1/users/{id}/child-status`.
@@ -376,7 +410,7 @@ async fn update_child_status(
     };
 
     let row = sqlx::query_as!(
-        UserResponse,
+        UserResponseRow,
         r#"WITH changed AS (UPDATE users
               SET is_child = $1,
                   role = ($2::text)::user_role,
@@ -409,7 +443,7 @@ async fn update_child_status(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    Ok(axum::Json(row))
+    Ok(axum::Json(UserResponse::from(row)))
 }
 
 /// Body for `POST /api/v1/users`.
@@ -428,7 +462,7 @@ struct CreateUserRequest {
 #[derive(Serialize, utoipa::ToSchema)]
 struct CredentialLinkResponse {
     token: String,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -619,7 +653,7 @@ async fn update_account_status(
     }
 
     let row = sqlx::query_as!(
-        UserResponse,
+        UserResponseRow,
         r#"SELECT users.id,
                   users.display_name,
                   users.email,
@@ -643,7 +677,7 @@ async fn update_account_status(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    Ok(axum::Json(row))
+    Ok(axum::Json(UserResponse::from(row)))
 }
 
 /// Issue or replace an enabled account's credential link.
@@ -1504,7 +1538,7 @@ async fn update_user(
     }
 
     let row = sqlx::query_as!(
-        UserResponse,
+        UserResponseRow,
         r#"SELECT users.id,
                   users.display_name,
                   users.email,
@@ -1529,5 +1563,5 @@ async fn update_user(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    Ok(axum::Json(row))
+    Ok(axum::Json(UserResponse::from(row)))
 }

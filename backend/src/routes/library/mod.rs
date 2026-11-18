@@ -30,7 +30,7 @@ use axum::extract::{OriginalUri, State};
 use axum::http::{HeaderMap, HeaderValue, header::LINK};
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -226,10 +226,10 @@ pub(crate) struct ListParams {
     pub(crate) pages_empty: Option<bool>,
     /// Inclusive lower bound on the added timestamp, as an RFC 3339 instant.
     #[serde(default, deserialize_with = "filters::timestamp_opt::deserialize")]
-    pub(crate) created_at_gte: Option<DateTime<Utc>>,
+    pub(crate) created_at_gte: Option<Timestamp>,
     /// Exclusive upper bound on the added timestamp, as an RFC 3339 instant.
     #[serde(default, deserialize_with = "filters::timestamp_opt::deserialize")]
-    pub(crate) created_at_lt: Option<DateTime<Utc>>,
+    pub(crate) created_at_lt: Option<Timestamp>,
     /// Any-of reading-status filter. Each value is a `reading_status` wire
     /// name or the `unread` pseudo-value (no status set); a row qualifies
     /// when it matches at least one.

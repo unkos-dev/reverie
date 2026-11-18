@@ -285,12 +285,12 @@ sidecar within the same library. Neither has a live production input. Staging do
 ## Runtime behaviour
 
 Publication observations reach the existing journal before conversion. The pure `metadata::publication_date::normalise`
-function validates trimmed ASCII text using Chrono and the W3C Date and Time Formats profile: `YYYY`, `YYYY-MM`,
-`YYYY-MM-DD`, `YYYY-MM-DDThh:mmTZD`, `YYYY-MM-DDThh:mm:ssTZD` and `YYYY-MM-DDThh:mm:ss.sTZD`. Years range from 1 to
-9999; calendar components are valid; `TZD` is uppercase `Z` or an explicit `+hh:mm` or `-hh:mm`. Fractions contain one
-or more digits with no maximum precision. Accepted text retains its trimmed spelling, offset and every fractional digit.
-Blank source text supplies no candidate. Invalid non-empty text stays reviewable in the journal and cannot become
-canonical. No locale, named-month or missing-component inference runs.
+function checks trimmed ASCII text against the W3C Date and Time Formats profile and validates calendar components with
+`jiff::civil::Date`. It accepts `YYYY`, `YYYY-MM`, `YYYY-MM-DD`, `YYYY-MM-DDThh:mmTZD`, `YYYY-MM-DDThh:mm:ssTZD` and
+`YYYY-MM-DDThh:mm:ss.sTZD`. Years range from 1 to 9999. `TZD` is uppercase `Z` or an explicit `+hh:mm` or `-hh:mm`.
+Fractions contain one or more digits with no maximum precision. Accepted text retains its trimmed spelling, offset and
+every fractional digit. Blank source text supplies no candidate. Invalid non-empty text stays reviewable in the journal
+and cannot become canonical. No locale, named-month or missing-component inference runs.
 
 Full accepted text determines journal identity, so a date and a timestamp on that date remain distinct. Identical
 observations increment their existing row; refused observations use ordinary string identity. Ingestion validates

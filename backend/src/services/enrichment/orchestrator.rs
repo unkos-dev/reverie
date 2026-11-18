@@ -371,11 +371,7 @@ pub(super) async fn run_queued_with_sources(
     let ua = config.user_agent();
     let http = api_client(&ua);
 
-    let ttls = CacheTtls {
-        hit: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_hit_days)),
-        miss: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_miss_days)),
-        error: chrono::TimeDelta::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
-    };
+    let ttls = CacheTtls::from_config(&config.enrichment);
     let results = fan_out_with_deadline(
         pool,
         sources,
@@ -1554,11 +1550,7 @@ pub(crate) async fn fan_out_for_dry_run_with_sources(
     }
     let ua = config.user_agent();
     let http = api_client(&ua);
-    let ttls = CacheTtls {
-        hit: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_hit_days)),
-        miss: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_miss_days)),
-        error: chrono::TimeDelta::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
-    };
+    let ttls = CacheTtls::from_config(&config.enrichment);
     let results = fan_out_with_deadline(
         pool,
         sources,

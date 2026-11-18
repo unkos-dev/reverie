@@ -217,9 +217,7 @@ impl From<undo::UndoOperation> for FieldOperation {
         Self {
             operation_id: value.operation_id.to_string(),
             field_name: value.field_name,
-            expires_at: value
-                .expires_at
-                .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true),
+            expires_at: value.expires_at.to_string(),
             status: match value.status {
                 undo::OperationStatus::Eligible => "eligible",
                 undo::OperationStatus::Locked => "locked",

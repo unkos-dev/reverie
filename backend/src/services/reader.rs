@@ -26,7 +26,7 @@ use crate::routes::{
     sort_spec::{SortColumn, SortDirection, SortSpec},
 };
 use crate::{db, error::AppError, state::AppState};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use sqlx::{Postgres, QueryBuilder, Row};
 use std::collections::{HashMap, HashSet};
@@ -180,7 +180,7 @@ fn push_typed_bind(qb: &mut QueryBuilder<Postgres>, value: &CursorValue) {
             qb.push_bind(*v);
         }
         CursorValue::Ts(ts) => {
-            qb.push_bind(*ts);
+            qb.push_bind(jiff_sqlx::Timestamp::from(*ts));
         }
     }
 }
@@ -289,7 +289,9 @@ fn next_cursor_for_row(
         let value = match level.column {
             SortColumn::Title => CursorValue::Text(Some(decode_cursor_column(row, alias)?)),
             SortColumn::Author => CursorValue::Text(decode_cursor_column(row, alias)?),
-            SortColumn::CreatedAt => CursorValue::Ts(decode_cursor_column(row, alias)?),
+            SortColumn::CreatedAt => {
+                CursorValue::Ts(decode_cursor_column::<jiff_sqlx::Timestamp>(row, alias)?.to_jiff())
+            }
             SortColumn::Pages => CursorValue::Int(decode_cursor_column(row, alias)?),
         };
         keys.push(value);
@@ -527,7 +529,7 @@ async fn load_external_ratings(
                 rating: r.rating,
                 rating_scale: r.rating_scale,
                 review_count: r.review_count,
-                fetched_at: r.fetched_at,
+                fetched_at: r.fetched_at.to_jiff(),
             });
     }
     Ok(out)
@@ -825,8 +827,8 @@ pub struct DetailRow {
     pub publisher: Option<String>,
     pub pub_date: Option<String>,
     pub pages: Option<i32>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
     pub ingestion_status: String,
     pub validation_status: ValidationStatus,
     pub enrichment_status: String,
@@ -1004,7 +1006,10 @@ pub async fn list_books(
                 .get(&m_id)
                 .cloned()
                 .unwrap_or_default(),
-            created_at: r.get("created_at"),
+            created_at: r
+                .try_get::<jiff_sqlx::Timestamp, _>("created_at")
+                .map_err(|e| AppError::Internal(e.into()))?
+                .to_jiff(),
         });
     }
 
@@ -1222,7 +1227,7 @@ pub async fn work_detail(
             ingestion_status: parse_ingestion(&r.ingestion_status)?,
             validation_status: r.validation_status,
             enrichment_status: parse_enrichment(&r.enrichment_status)?,
-            created_at: r.created_at,
+            created_at: r.created_at.to_jiff(),
         });
     }
 
@@ -1339,7 +1344,7 @@ pub async fn series_detail(
                 ingestion_status: parse_ingestion(&r.ingestion_status)?,
                 validation_status: r.validation_status,
                 enrichment_status: parse_enrichment(&r.enrichment_status)?,
-                created_at: r.created_at,
+                created_at: r.created_at.to_jiff(),
             });
     }
 
@@ -1597,15 +1602,23 @@ pub async fn shelves(
 
     let items: Vec<Shelf> = page_rows
         .iter()
-        .map(|r| Shelf {
-            id: r.get("id"),
-            name: r.get("name"),
-            is_system: r.get("is_system"),
-            created_at: r.get("created_at"),
-            updated_at: r.get("updated_at"),
-            item_count: r.get("item_count"),
+        .map(|r| {
+            Ok(Shelf {
+                id: r.get("id"),
+                name: r.get("name"),
+                is_system: r.get("is_system"),
+                created_at: r
+                    .try_get::<jiff_sqlx::Timestamp, _>("created_at")
+                    .map_err(|e| AppError::Internal(e.into()))?
+                    .to_jiff(),
+                updated_at: r
+                    .try_get::<jiff_sqlx::Timestamp, _>("updated_at")
+                    .map_err(|e| AppError::Internal(e.into()))?
+                    .to_jiff(),
+                item_count: r.get("item_count"),
+            })
         })
-        .collect();
+        .collect::<Result<_, AppError>>()?;
 
     let next_cursor = match page_rows.last() {
         Some(last) if has_more => Some(
@@ -1663,7 +1676,7 @@ pub async fn shelf_items(
         // manifestation_id tiebreaker is load-bearing: added_at is not
         // unique per shelf.
         qb.push(" AND (added_at, manifestation_id) > (");
-        qb.push_bind(c.added_at);
+        qb.push_bind(jiff_sqlx::Timestamp::from(c.added_at));
         qb.push(", ");
         qb.push_bind(c.manifestation_id);
         qb.push(")");
@@ -1681,18 +1694,26 @@ pub async fn shelf_items(
 
     let items: Vec<ShelfItem> = page_rows
         .iter()
-        .map(|r| ShelfItem {
-            manifestation_id: r.get("manifestation_id"),
-            added_at: r.get("added_at"),
+        .map(|r| {
+            Ok(ShelfItem {
+                manifestation_id: r.get("manifestation_id"),
+                added_at: r
+                    .try_get::<jiff_sqlx::Timestamp, _>("added_at")
+                    .map_err(|e| AppError::Internal(e.into()))?
+                    .to_jiff(),
+            })
         })
-        .collect();
+        .collect::<Result<_, AppError>>()?;
 
     let next_cursor = match page_rows.last() {
         Some(last) if has_more => {
             let manifestation_id: Uuid = last.get("manifestation_id");
             Some(
                 ShelfItemCursor {
-                    added_at: last.get("added_at"),
+                    added_at: last
+                        .try_get::<jiff_sqlx::Timestamp, _>("added_at")
+                        .map_err(|e| AppError::Internal(e.into()))?
+                        .to_jiff(),
                     manifestation_id,
                 }
                 .encode(),
@@ -1705,8 +1726,8 @@ pub async fn shelf_items(
         id: shelf.id,
         name: shelf.name,
         is_system: shelf.is_system,
-        created_at: shelf.created_at,
-        updated_at: shelf.updated_at,
+        created_at: shelf.created_at.to_jiff(),
+        updated_at: shelf.updated_at.to_jiff(),
         items,
         next_cursor,
     })
@@ -1720,9 +1741,9 @@ pub struct ShelfDetailResponse {
     pub is_system: bool,
     // This envelope re-declares the model's timestamps rather than
     // embedding `Shelf`.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// `shelves.updated_at`.
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
     /// One page of items ordered by `added_at ASC, manifestation_id ASC`.
     pub items: Vec<crate::models::shelf::ShelfItem>,
     /// Opaque cursor for the next items page; `null` on the last page.
@@ -1961,8 +1982,8 @@ pub struct ShelfRecord {
     pub id: Uuid,
     pub name: String,
     pub is_system: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
     pub item_count: i64,
 }
 
@@ -2060,7 +2081,7 @@ struct Boundary {
     name: Option<String>,
     position: Option<f64>,
     ordinal: Option<i32>,
-    created_at: Option<DateTime<Utc>>,
+    created_at: Option<Timestamp>,
     level: Option<i32>,
 }
 
@@ -2083,7 +2104,7 @@ struct RelationInput {
     after_name: Option<String>,
     after_position: Option<f64>,
     after_ordinal: Option<i32>,
-    after_created: Option<DateTime<Utc>>,
+    after_created: Option<Timestamp>,
     after_level: Option<i32>,
 }
 
@@ -2098,7 +2119,7 @@ pub struct RelationRow {
     pub position: Option<f64>,
     pub ordinal: Option<i32>,
     pub position_index: Option<i32>,
-    pub created_at: Option<DateTime<Utc>>,
+    pub created_at: Option<jiff_sqlx::Timestamp>,
     pub level: Option<i32>,
     pub rating: Option<f64>,
     pub scale: Option<f64>,
@@ -2208,9 +2229,15 @@ fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppEr
             Some(
                 SortCursor::for_spec(
                     &spec,
-                    vec![CursorValue::Ts(row.created_at.ok_or_else(|| {
-                        AppError::Internal(anyhow::anyhow!("Missing manifestation boundary"))
-                    })?)],
+                    vec![CursorValue::Ts(
+                        row.created_at
+                            .ok_or_else(|| {
+                                AppError::Internal(anyhow::anyhow!(
+                                    "Missing manifestation boundary"
+                                ))
+                            })?
+                            .to_jiff(),
+                    )],
                     row.id.ok_or_else(|| {
                         AppError::Internal(anyhow::anyhow!("Missing manifestation identity"))
                     })?,
@@ -2225,7 +2252,8 @@ fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppEr
             crate::routes::cursor::ShelfItemCursor {
                 added_at: row
                     .created_at
-                    .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Missing shelf boundary")))?,
+                    .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Missing shelf boundary")))?
+                    .to_jiff(),
                 manifestation_id: row.id.ok_or_else(|| {
                     AppError::Internal(anyhow::anyhow!("Missing shelf item identity"))
                 })?,
@@ -2242,7 +2270,7 @@ fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppEr
             name: row.name.clone(),
             position: row.position,
             ordinal: row.ordinal,
-            created_at: row.created_at,
+            created_at: row.created_at.map(jiff_sqlx::Timestamp::to_jiff),
             level: row.level,
         }
     };
@@ -2388,7 +2416,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2432,7 +2460,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2478,7 +2506,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2522,7 +2550,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2566,7 +2594,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2610,7 +2638,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2654,7 +2682,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2698,7 +2726,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2742,7 +2770,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2785,7 +2813,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -2829,7 +2857,7 @@ item.role AS "role?: ContributorRole",
 item.position AS "position?: f64",
 item.ordinal AS "ordinal?: i32",
  item.position_index AS "position_index?: i32",
-item.created_at AS "created_at?: DateTime<Utc>",
+item.created_at AS "created_at?",
 item.level AS "level?: i32",
 item.rating AS "rating?: f64",
 item.scale AS "scale?: f64",
@@ -3053,7 +3081,7 @@ impl PendingPage {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PendingCursor {
     parent: Uuid,
-    seen: DateTime<Utc>,
+    seen: Timestamp,
     id: Uuid,
 }
 #[derive(serde::Serialize)]
@@ -3062,7 +3090,7 @@ struct PendingInput {
     parent: Uuid,
     canonical: Vec<Uuid>,
     first: i32,
-    seen: Option<DateTime<Utc>>,
+    seen: Option<Timestamp>,
     id: Option<Uuid>,
 }
 
@@ -3160,7 +3188,7 @@ pub async fn pending_pages(
             has_next: false,
         });
         if let Some(id) = row.id {
-            let seen = pending_required(row.seen)?;
+            let seen = pending_required(row.seen)?.to_jiff();
             let cursor = Base64UrlUnpadded::encode_string(
                 &serde_json::to_vec(&PendingCursor {
                     parent: key.parent,

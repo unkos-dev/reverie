@@ -3,11 +3,13 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0046"
 title: "chrono is the first-party datetime crate"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-06"
 decided-on: "2026-08-05"
 decision-makers:
   - "John Unkovich"
+superseded-by:
+  - "REV-ADR-0078"
 ---
 
 # chrono is the first-party datetime crate

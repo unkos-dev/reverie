@@ -7,7 +7,7 @@ use crate::models::reading_state::{ReadingState, ReadingStateSummary};
 use crate::models::reading_status::ReadingStatus;
 use crate::routes::etag::{Conditional, StrongEntityTag, hash_etag};
 use crate::{db, error::AppError, state::AppState};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -44,9 +44,9 @@ pub struct ReadingStateRow {
     pub rating: Option<i16>,
     pub notes: Option<String>,
     pub progress_pct: Option<f32>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub finished_at: Option<DateTime<Utc>>,
-    pub last_read_at: Option<DateTime<Utc>>,
+    pub started_at: Option<jiff_sqlx::Timestamp>,
+    pub finished_at: Option<jiff_sqlx::Timestamp>,
+    pub last_read_at: Option<jiff_sqlx::Timestamp>,
 }
 
 impl From<&ReadingStateRow> for ReadingStateSummary {
@@ -55,8 +55,8 @@ impl From<&ReadingStateRow> for ReadingStateSummary {
             status: r.status,
             rating: r.rating,
             progress_pct: r.progress_pct,
-            started_at: r.started_at,
-            finished_at: r.finished_at,
+            started_at: r.started_at.map(jiff_sqlx::Timestamp::to_jiff),
+            finished_at: r.finished_at.map(jiff_sqlx::Timestamp::to_jiff),
         }
     }
 }
@@ -68,9 +68,9 @@ impl From<ReadingStateRow> for ReadingState {
             rating: r.rating,
             notes: r.notes,
             progress_pct: r.progress_pct,
-            started_at: r.started_at,
-            finished_at: r.finished_at,
-            last_read_at: r.last_read_at,
+            started_at: r.started_at.map(jiff_sqlx::Timestamp::to_jiff),
+            finished_at: r.finished_at.map(jiff_sqlx::Timestamp::to_jiff),
+            last_read_at: r.last_read_at.map(jiff_sqlx::Timestamp::to_jiff),
         }
     }
 }
@@ -86,9 +86,9 @@ struct ReadingEtagFields<'a> {
     rating: Option<i16>,
     notes: Option<&'a str>,
     progress_pct: Option<f32>,
-    started_at: Option<DateTime<Utc>>,
-    finished_at: Option<DateTime<Utc>>,
-    last_read_at: Option<DateTime<Utc>>,
+    started_at: Option<Timestamp>,
+    finished_at: Option<Timestamp>,
+    last_read_at: Option<Timestamp>,
 }
 
 impl ReadingStateRow {
@@ -98,9 +98,9 @@ impl ReadingStateRow {
             rating: self.rating,
             notes: self.notes.as_deref(),
             progress_pct: self.progress_pct,
-            started_at: self.started_at,
-            finished_at: self.finished_at,
-            last_read_at: self.last_read_at,
+            started_at: self.started_at.map(jiff_sqlx::Timestamp::to_jiff),
+            finished_at: self.finished_at.map(jiff_sqlx::Timestamp::to_jiff),
+            last_read_at: self.last_read_at.map(jiff_sqlx::Timestamp::to_jiff),
         })
     }
 }
@@ -153,12 +153,16 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
     let (progress_pct, started_at, finished_at, last_read_at) = match req.status.flatten() {
         Some(ReadingStatus::Reading) => (
             existing.progress_pct,
-            Some(existing.started_at.unwrap_or_else(Utc::now)),
+            Some(
+                existing
+                    .started_at
+                    .unwrap_or_else(|| Timestamp::now().into()),
+            ),
             existing.finished_at,
             existing.last_read_at,
         ),
         Some(ReadingStatus::Finished) => {
-            let now = Utc::now();
+            let now = jiff_sqlx::Timestamp::from(Timestamp::now());
             (Some(100.0_f32), existing.started_at, Some(now), Some(now))
         }
         _ => (

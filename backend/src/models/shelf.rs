@@ -4,7 +4,7 @@
 //! (`docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md`): snake_case field names,
 //! `Option<T>` for nullable, RFC 3339 timestamps.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -22,9 +22,9 @@ pub struct Shelf {
     /// on the mutating handlers).
     pub is_system: bool,
     /// `shelves.created_at`.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// `shelves.updated_at`; moves on every item add and remove.
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
     /// Count of `shelf_items` rows on this shelf. Computed inline via
     /// a correlated scalar subquery on the list endpoint and surfaces
     /// in the sidebar without a follow-up request per shelf.
@@ -40,7 +40,7 @@ pub struct ShelfItem {
     /// `shelf_items.manifestation_id`.
     pub manifestation_id: Uuid,
     /// `shelf_items.added_at`.
-    pub added_at: DateTime<Utc>,
+    pub added_at: Timestamp,
 }
 
 // `GET /api/v1/shelves/{id}`'s envelope (`ShelfDetailResponse`) lives in

@@ -34,11 +34,8 @@ cap-std-ext = "5.1.2"
 cap-tempfile = "4.0.3"
 rustix = { version = "1.1.5", features = ["fs"] }
 base64ct = { version = "1.8.3", features = ["std"] }
-# First-party datetime crate. `DateTime<Utc>` carries the UTC invariant in the
-# type parameter, and its serde default is RFC 3339 both directions, so the
-# published wire contract holds without a per-field adapter attribute.
-# See docs/adr/0046-chrono-is-the-first-party-datetime-crate.md.
-chrono = { version = "0.4.44", features = ["serde"] }
+jiff = { version = "1.0", features = ["serde"] }
+jiff-sqlx = { version = "1.0", features = ["postgres"] }
 crc = "3.4.0"
 email_address = "0.2.9"
 encoding_rs = "0.8.35"
@@ -47,7 +44,7 @@ futures = "0.3.32"
 governor = { version = "0.10.4", features = ["dashmap"] }
 hickory-resolver = "0.26.1"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
-lettre = { version = "0.11.23", default-features = false, features = [
+lettre = { version = "0.11.24", default-features = false, features = [
   "smtp-transport",
   "builder",
   "tokio1",
@@ -77,14 +74,14 @@ sqlx = { version = "0.9.0", features = [
   "tls-rustls",
   "postgres",
   "uuid",
-  "chrono",
+  "sqlx-toml",
   "json",
   "macros",
   "migrate",
 ] }
 thiserror = "2.0.18"
 task-supervisor = "0.5.2"
-# Boundary-only. First-party code uses chrono; `time` is declared because three
+# Boundary-only. First-party code uses Jiff; `time` is declared because three
 # third-party signatures take its types directly (tower-sessions `Expiry` and
 # `Record`, and the cookie builder's `max_age`). clippy's `disallowed-types`
 # in clippy.toml holds that list, and each site carries a scoped `#[expect]`.
@@ -109,11 +106,11 @@ validator = { version = "0.21.0", features = ["derive"] }
 schemars = { version = "1.2.1", features = ["url2"] }
 percent-encoding = "2.3.2"
 # OpenAPI 3.1 contract generated code-first from the handlers (docs-as-done;
-# docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md). The `chrono`/`uuid`
+# docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md). The `jiff_0_2`/`uuid`
 # features map those types into the schema as `string`/`date-time` and
 # `string`/`uuid`. utoipa-axum's `OpenApiRouter` makes a handler routed without
 # `#[utoipa::path]` a compile error.
-utoipa = { version = "6.0", features = ["axum_extras", "chrono", "uuid"] }
+utoipa = { version = "6.0", features = ["axum_extras", "jiff_0_2", "uuid"] }
 utoipa-axum = "0.3"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 # Server-side password-strength estimator (NIST SP 800-63B strength floor,

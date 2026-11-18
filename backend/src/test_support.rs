@@ -220,7 +220,7 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
         },
         provider_visibility: serde_json::json!({}),
         revision: 0,
-        updated_at: chrono::Utc::now(),
+        updated_at: jiff::Timestamp::now(),
     }))
 }
 
@@ -352,7 +352,7 @@ pub fn assert_problem(
 /// Panics when `field` is absent, is not a JSON string, does not carry
 /// the UTC `Z` designator, or does not parse as RFC 3339. Intended for
 /// test code only, where the panic is the assertion-failure surface.
-pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> chrono::DateTime<chrono::Utc> {
+pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> jiff::Timestamp {
     let raw = body[field]
         .as_str()
         .unwrap_or_else(|| panic!("`{field}` must be a JSON string, got: {}", body[field]));
@@ -360,9 +360,8 @@ pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> chrono::DateTime
         raw.ends_with('Z'),
         "`{field}` must be UTC and `Z`-terminated, got: {raw}",
     );
-    chrono::DateTime::parse_from_rfc3339(raw)
+    raw.parse::<jiff::Timestamp>()
         .unwrap_or_else(|e| panic!("`{field}` must be RFC 3339, got {raw}: {e}"))
-        .with_timezone(&chrono::Utc)
 }
 
 /// Wait for matching requests to reach a database lock in the isolated test database.
@@ -629,7 +628,7 @@ pub mod db {
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
         mut config: crate::config::Config,
-        last_reload: Option<chrono::DateTime<chrono::Utc>>,
+        last_reload: Option<jiff::Timestamp>,
         mail: Option<std::sync::Arc<crate::services::mail::queue::MailRuntime>>,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
@@ -1279,10 +1278,7 @@ pub mod oidc_mock {
             name: Option<&str>,
             nonce: &str,
         ) -> CoreIdToken {
-            // CoreIdTokenClaims::new takes chrono::DateTime<Utc> for the
-            // expiration and issued_at parameters, which is what first-party
-            // code uses anyway.
-            use chrono::{TimeDelta, Utc};
+            use std::time::{Duration, SystemTime};
             let issuer_url = IssuerUrl::new(self.issuer.clone()).expect("valid issuer url");
 
             let mut standard_claims =
@@ -1301,8 +1297,8 @@ pub mod oidc_mock {
             let claims = CoreIdTokenClaims::new(
                 issuer_url,
                 vec![Audience::new(self.client_id.clone())],
-                Utc::now() + TimeDelta::seconds(300),
-                Utc::now(),
+                (SystemTime::now() + Duration::from_secs(300)).into(),
+                SystemTime::now().into(),
                 standard_claims,
                 EmptyAdditionalClaims {},
             )
@@ -1438,7 +1434,7 @@ impl CapturedLogs {
 pub mod mail {
     use std::sync::{Arc, Mutex};
 
-    use chrono::{TimeDelta, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use lettre::message::Mailbox;
     use sqlx::PgPool;
     use tokio::{
@@ -1624,7 +1620,7 @@ pub mod mail {
         user: Uuid,
         purpose: MailPurpose,
         proof_digest: &[u8],
-        lifetime: TimeDelta,
+        lifetime: SignedDuration,
         recipient: &str,
     ) -> Uuid {
         let mut tx = app.begin().await.unwrap();
@@ -1636,7 +1632,7 @@ pub mod mail {
                 user_id: user,
                 purpose,
                 proof_digest: Some(proof_digest),
-                expires_at: Some(Utc::now() + lifetime),
+                expires_at: Some(Timestamp::now() + lifetime),
                 payload: &payload(recipient),
             },
         )

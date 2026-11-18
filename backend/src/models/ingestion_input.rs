@@ -3,7 +3,7 @@
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Component, Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -201,8 +201,8 @@ pub struct Input {
     pub status: InputStatus,
     pub reason: Option<String>,
     pub work_id: Option<Uuid>,
-    pub retry_reset_at: DateTime<Utc>,
-    pub observed_at: DateTime<Utc>,
+    pub retry_reset_at: Timestamp,
+    pub observed_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -586,7 +586,7 @@ pub async fn finish(
 pub struct RetryState {
     pub id: Uuid,
     pub count: i64,
-    pub failed_at: Option<DateTime<Utc>>,
+    pub failed_at: Option<jiff_sqlx::Timestamp>,
     pub needs_change: bool,
     pub exhausted: bool,
 }
@@ -614,7 +614,7 @@ pub async fn transient_count(pool: &PgPool, input: &Input) -> sqlx::Result<i64> 
          WHERE input_id = $1 AND input_generation = $2 AND created_at >= $3 AND outcome = 'transient_input'",
         input.id,
         input.generation,
-        input.retry_reset_at,
+        jiff_sqlx::Timestamp::from(input.retry_reset_at),
     )
     .fetch_one(pool)
     .await

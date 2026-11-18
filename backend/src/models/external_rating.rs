@@ -11,7 +11,7 @@
 //! `source` FKs `rating_sources` (the rating-capable subset), so a provenance
 //! source that cannot carry a rating (e.g. `manual`) is rejected at the DB.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 /// One cached rating row for a `(manifestation, source)` pair.
@@ -28,7 +28,8 @@ pub struct ManifestationExternalRating {
     /// Number of reviews backing the score, if the provider reports it.
     pub review_count: i32,
     /// When this cache row was last refreshed.
-    pub fetched_at: DateTime<Utc>,
+    #[sqlx(try_from = "jiff_sqlx::Timestamp")]
+    pub fetched_at: Timestamp,
 }
 
 /// A per-manifestation aggregate rating observed from one provider, valid

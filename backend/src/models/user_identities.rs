@@ -6,7 +6,7 @@
 //! instead of `users.oidc_subject`. Mirrors the private-`Row`/public-type
 //! split used in [`crate::models::user`].
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -20,8 +20,8 @@ struct UserIdentityRow {
     provider: IdentityProvider,
     issuer: String,
     subject: String,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    created_at: jiff_sqlx::Timestamp,
+    updated_at: jiff_sqlx::Timestamp,
 }
 
 /// One external-provider identity link bound to a [`crate::models::user::User`].
@@ -38,9 +38,9 @@ pub struct UserIdentity {
     /// Provider-asserted subject (`sub`), unique only within `issuer`.
     pub subject: String,
     /// Row insert timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// `now()` of the most recent change to this link.
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 impl From<UserIdentityRow> for UserIdentity {
@@ -51,8 +51,8 @@ impl From<UserIdentityRow> for UserIdentity {
             provider: row.provider,
             issuer: row.issuer,
             subject: row.subject,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
+            created_at: row.created_at.to_jiff(),
+            updated_at: row.updated_at.to_jiff(),
         }
     }
 }
