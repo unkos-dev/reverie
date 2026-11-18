@@ -152,6 +152,8 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
   under `tests/journeys/`. Never fabricate geometry, focus or browser APIs.
 - **Browser Mode idiom:** Render with `vitest-browser-react`, query through locators, assert DOM state with
   `await expect.element(...)`, and interact through `userEvent` from `vite-plus/test/browser`.
+- **Relay component tests:** Use `relay-test-utils` (`createMockEnvironment`, `MockPayloadGenerator`) for component
+  tests. Boundary tests keep mocking `fetch` through the real network layer, because that layer is what they prove.
 - **Behaviour, not implementation:** Assert what a user can observe.
 - **Accessibility gate:** CI runs Playwright and axe-core (WCAG 2.2 AA) over the shipped pre-auth routes in
   `scripts/a11y/allowlist.mjs`'s `DEFAULT_TARGETS`. Reproduce locally with `just js::a11y`, which reuses any server

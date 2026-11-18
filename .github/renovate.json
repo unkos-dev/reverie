@@ -206,6 +206,34 @@
       "minimumReleaseAge": null,
       "dependencyDashboardApproval": false,
       "automerge": true
+    },
+    {
+      "description": "Carry the upstream items whose release would unblock recorded GraphQL work into the bump PR.",
+      "matchPackageNames": ["async-graphql", "async-graphql-axum"],
+      "prBodyNotes": [
+        "Watch: check whether this release honours the `onError` request parameter with indexed field paths, and note upstream maintenance activity. Partial field-error publication waits for it."
+      ]
+    },
+    {
+      "description": "Carry the Navigation API watch item into React Router bump PRs.",
+      "matchPackageNames": ["react-router"],
+      "prBodyNotes": [
+        "Watch: check whether this release navigates through the Navigation API (https://github.com/remix-run/react-router/discussions/11046)."
+      ]
+    },
+    {
+      "description": "Carry the field-error watch items into Relay runtime bump PRs.",
+      "matchPackageNames": ["relay-runtime"],
+      "prBodyNotes": [
+        "Watch: check the release notes for `onError` request support and `@semanticNonNull` changes. Partial field-error publication waits for them."
+      ]
+    },
+    {
+      "description": "Carry the oxlint custom-parser watch item into Vite+ bump PRs, because Vite+ bundles oxlint.",
+      "matchPackageNames": ["vite-plus"],
+      "prBodyNotes": [
+        "Watch: check whether the bundled oxlint supports custom file formats and parsers in JS plugins. If it does, GraphQL-ESLint can move under oxlint; see debt/2026-11-18-eslint-for-graphql-schema-lint.md."
+      ]
     }
   ],
   "customManagers": [

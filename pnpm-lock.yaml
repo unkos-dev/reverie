@@ -154,6 +154,9 @@ importers:
       '@types/relay-runtime':
         specifier: 20.1.1
         version: 20.1.1
+      '@types/relay-test-utils':
+        specifier: 19.0.0
+        version: 19.0.0
       '@vitejs/plugin-react':
         specifier: ^6.0.3
         version: 6.3.0(@rolldown/plugin-babel@0.3.1(@babel/core@8.1.2)(@babel/runtime@7.29.14)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(rolldown@1.2.19))(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(oxc-transform-react@0.156.0)
@@ -185,6 +188,9 @@ importers:
         specifier: 1.65.0
         version: 1.65.0
       relay-compiler:
+        specifier: 21.0.1
+        version: 21.0.1
+      relay-test-utils:
         specifier: 21.0.1
         version: 21.0.1
       stylelint:
@@ -2308,6 +2314,9 @@ packages:
 
   '@types/relay-runtime@20.1.1':
     resolution: {integrity: sha512-loM2iJteknnJcsxrynmBVb7pIDkSkJUuCMnAa/oDFcrvaxkDvq8iy0J2UshMdDy14iJJocDblXeAu7c6Q1+Ucw==}
+
+  '@types/relay-test-utils@19.0.0':
+    resolution: {integrity: sha512-yC/wVgDetV+88HrHLKlesIfju3RGsp32vLs0IiwBPKD0npQSTrFddcP3FNPe5Kkk4/Y/kgY3oR/DA8g8Bmmppw==}
 
   '@types/sax@1.2.7':
     resolution: {integrity: sha512-rO73L89PJxeYM3s3pPPjiPgVVcymqU490g0YO5n5By0k2Erzj6tay/4lr1CHAAU4JyOWd1rpQ8bCf6cZfHU96A==}
@@ -4818,6 +4827,9 @@ packages:
 
   relay-runtime@21.0.1:
     resolution: {integrity: sha512-OS+We56sp6gkGVEcce9VCNOeg/sMbxT9unEoerQPgNAICHowSWrXNc6LJxF2OqjypxYF7kaLDSPPiaPii2Pw1g==}
+
+  relay-test-utils@21.0.1:
+    resolution: {integrity: sha512-Or9qrzdGpiNMMXCZ/eKbVeMiBNijILdyFIuf2/FYnV+7YvDkxFq+oE/g4/gZhYqd1G5/Cejjjavv/xqs86MrzA==}
 
   remark-directive@4.0.0:
     resolution: {integrity: sha512-7sxn4RfF1o3izevPV1DheyGDD6X4c9hrGpfdUpm7uC++dqrnJxIZVkk7CoKqcLm0VUMAuOol7Mno3m6g8cfMuA==}
@@ -7581,6 +7593,12 @@ snapshots:
 
   '@types/relay-runtime@20.1.1': {}
 
+  '@types/relay-test-utils@19.0.0':
+    dependencies:
+      '@types/react': 19.3.0
+      '@types/react-relay': 18.2.1
+      '@types/relay-runtime': 20.1.1
+
   '@types/sax@1.2.7':
     dependencies:
       '@types/node': 26.6.6
@@ -10055,6 +10073,15 @@ snapshots:
       '@babel/runtime': 7.29.14
       fbjs: 3.0.5
       invariant: 2.2.4
+    transitivePeerDependencies:
+      - encoding
+
+  relay-test-utils@21.0.1:
+    dependencies:
+      '@babel/runtime': 7.29.14
+      fbjs: 3.0.5
+      invariant: 2.2.4
+      relay-runtime: 21.0.1
     transitivePeerDependencies:
       - encoding
 

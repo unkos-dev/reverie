@@ -1096,7 +1096,8 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0077"
+        "REV-ADR-0077",
+        "REV-ADR-0078"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",
