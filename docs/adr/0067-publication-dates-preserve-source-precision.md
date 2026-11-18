@@ -24,7 +24,7 @@ a representation that retains what the source actually supplies.
 - Preserve known publication precision without inventing missing components.
 - Keep one editable publication value across the API, catalogue and EPUB.
 - Retain unusable source observations for correction while protecting canonical metadata.
-- Reuse Chrono and the existing metadata journal.
+- Reuse the first-party date library and the existing metadata journal.
 
 ## Considered options
 
@@ -36,9 +36,9 @@ a representation that retains what the source actually supplies.
 
 Chosen option: **Nullable publication text with deterministic validation and full-precision identity**, because it
 preserves every supported source precision in one field without supplying unknown components. The accepted W3C Date and
-Time Formats grammar bounds conversion; Chrono validates calendar components. Accepted text retains its trimmed
-spelling, offset and fractional digits. A complete date and a timestamp on that date have distinct journal identities;
-identical observations retain existing deduplication.
+Time Formats grammar bounds conversion. Jiff validates calendar components. Accepted text retains its trimmed spelling,
+offset and fractional digits. A complete date and a timestamp on that date have distinct journal identities; identical
+observations retain existing deduplication.
 
 ### Consequences
 

@@ -10,7 +10,7 @@
 //! `Option<T>` for nullable (never `skip_serializing_if`), RFC 3339
 //! timestamps.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 
 use crate::models::reading_status::ReadingStatus;
@@ -35,12 +35,12 @@ pub struct ReadingState {
     pub progress_pct: Option<f32>,
     /// `reading_state.started_at`: stamped when a patch first sets `status`
     /// to [`ReadingStatus::Reading`]; not re-stamped on later re-entries.
-    pub started_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Timestamp>,
     /// `reading_state.finished_at`: stamped each time a patch sets `status`
     /// to [`ReadingStatus::Finished`].
-    pub finished_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<Timestamp>,
     /// `reading_state.last_read_at`.
-    pub last_read_at: Option<DateTime<Utc>>,
+    pub last_read_at: Option<Timestamp>,
 }
 
 /// Reading-state slice embedded in each `GET /api/v1/books` list row.
@@ -63,9 +63,9 @@ pub struct ReadingStateSummary {
     /// `reading_state.progress_pct`, 0-100.
     pub progress_pct: Option<f32>,
     /// `reading_state.started_at`; see [`ReadingState::started_at`].
-    pub started_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Timestamp>,
     /// `reading_state.finished_at`; see [`ReadingState::finished_at`].
-    pub finished_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<Timestamp>,
 }
 
 #[cfg(test)]
@@ -75,7 +75,7 @@ mod tests {
         app_pool_for, create_adult_and_basic_auth, ingestion_pool_for,
         insert_work_and_manifestation,
     };
-    use chrono::Utc;
+    use jiff::Timestamp;
     use sqlx::PgPool;
 
     #[sqlx::test(migrations = "./migrations")]
@@ -94,7 +94,7 @@ mod tests {
             alice,
             m_id,
             42.0_f32,
-            Utc::now(),
+            jiff_sqlx::Timestamp::from(Timestamp::now()),
         )
         .execute(&mut *tx)
         .await
@@ -127,7 +127,7 @@ mod tests {
             alice,
             m_id,
             99.0_f32,
-            Utc::now(),
+            jiff_sqlx::Timestamp::from(Timestamp::now()),
         )
         .execute(&mut *tx)
         .await;

@@ -20,7 +20,7 @@ satisfies:
   - "REV-REQ-0079"
 governed-by:
   - "REV-ADR-0077"
-  - "REV-ADR-0078"
+  - "REV-ADR-0079"
 ---
 
 # GraphQL execution and Relay browser data

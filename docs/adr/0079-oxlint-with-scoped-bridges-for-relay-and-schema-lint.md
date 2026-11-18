@@ -1,7 +1,7 @@
 ---
 type: ADR
 profile-version: 1
-id: "REV-ADR-0078"
+id: "REV-ADR-0079"
 title: "oxlint with scoped bridges for Relay and schema lint"
 status: "accepted"
 recorded-on: "2026-11-18"

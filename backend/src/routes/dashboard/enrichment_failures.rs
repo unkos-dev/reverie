@@ -4,7 +4,7 @@ use axum::Json;
 use axum::extract::{OriginalUri, State};
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -115,9 +115,9 @@ struct FailureItem {
     status: EnrichmentStatus,
     attempt_count: i32,
     /// When the latest attempt started.
-    attempted_at: Option<DateTime<Utc>>,
+    attempted_at: Option<Timestamp>,
     /// Set while a provider's `Retry-After` defers the next attempt: the queue will not retry before it.
-    retry_not_before: Option<DateTime<Utc>>,
+    retry_not_before: Option<Timestamp>,
     /// The failure the book is listed and counted under.
     primary: FailureRef,
     /// Failures from other sources in the same attempt; never counted.
@@ -310,8 +310,8 @@ async fn list_failures(
             title: row.title,
             status: row.status,
             attempt_count: row.attempt_count,
-            attempted_at: row.attempted_at,
-            retry_not_before: row.retry_not_before,
+            attempted_at: row.attempted_at.map(jiff_sqlx::Timestamp::to_jiff),
+            retry_not_before: row.retry_not_before.map(jiff_sqlx::Timestamp::to_jiff),
             primary: FailureRef {
                 source: row.primary_source,
                 class: FailureClass::from_stored(&row.primary_class),

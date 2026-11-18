@@ -1,7 +1,7 @@
 //! Account-bound, single-use authority to set a password.
 
 use base64ct::{Base64UrlUnpadded, Encoding as _};
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use sha2::{Digest as _, Sha256};
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
@@ -10,7 +10,7 @@ use crate::models::account_email_proof::{self, ProofPurpose};
 use crate::models::mail_job::{self, AuthorityKind};
 
 /// Lifetime of an administrator-issued credential link.
-pub const CREDENTIAL_LINK_TTL: TimeDelta = TimeDelta::hours(72);
+pub const CREDENTIAL_LINK_TTL: SignedDuration = SignedDuration::from_hours(72);
 
 /// Account context exposed only after a valid link lookup.
 pub struct LinkAccount {
@@ -32,8 +32,8 @@ pub struct LinkAccount {
 pub async fn issue(
     conn: &mut PgConnection,
     user_id: Uuid,
-    lifetime: TimeDelta,
-) -> Result<(String, DateTime<Utc>), sqlx::Error> {
+    lifetime: SignedDuration,
+) -> Result<(String, Timestamp), sqlx::Error> {
     let mut bytes = [0_u8; 32];
     rand::fill(&mut bytes);
     let token = Base64UrlUnpadded::encode_string(&bytes);
@@ -47,11 +47,11 @@ pub async fn issue(
          expires_at = EXCLUDED.expires_at, created_at = now() RETURNING expires_at",
         user_id,
         token_hash,
-        lifetime.num_seconds(),
+        lifetime.as_secs(),
     )
     .fetch_one(&mut *conn)
     .await?;
-    Ok((token, expires_at))
+    Ok((token, expires_at.to_jiff()))
 }
 
 /// Resolve a live administrator or host link, or an eligible email recovery
@@ -103,7 +103,7 @@ pub async fn live_expiry(
     conn: &mut PgConnection,
     user_id: Uuid,
     token: &str,
-) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
+) -> Result<Option<Timestamp>, sqlx::Error> {
     if token.len() != 43 || Base64UrlUnpadded::decode_vec(token).is_err() {
         return Ok(None);
     }
@@ -116,6 +116,7 @@ pub async fn live_expiry(
     )
     .fetch_optional(conn)
     .await
+    .map(|expiry| expiry.map(jiff_sqlx::Timestamp::to_jiff))
 }
 
 /// Cancel the account's link, including an already expired link, and withdraw
@@ -223,8 +224,8 @@ mod tests {
         .unwrap();
         assert_eq!(first.len(), 43);
         assert!(
-            (expiry - Utc::now() - CREDENTIAL_LINK_TTL)
-                .num_seconds()
+            (expiry - Timestamp::now() - CREDENTIAL_LINK_TTL)
+                .as_secs()
                 .abs()
                 < 2
         );

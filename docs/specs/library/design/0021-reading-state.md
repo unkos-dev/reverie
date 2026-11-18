@@ -205,8 +205,8 @@ before/after diff, so repeating the current status re-applies its stamp):
 
 - A patch naming `status: "finished"` always stamps `progress_pct = 100`, `finished_at = now()` and
   `last_read_at = now()`, whatever they held before and whatever the row's previous status was.
-- A patch naming `status: "reading"` stamps `started_at` only when it holds no value
-  (`existing.started_at.unwrap_or_else(Utc::now)`); re-entering `reading` a second time leaves the original timestamp.
+- A patch naming `status: "reading"` stamps an unset `started_at` from the server clock. Re-entering `reading` keeps the
+  original timestamp.
 - Any other patched status (`want_to_read`, `on_hold`, `abandoned`), an explicit `null` clearing `status`, or a patch
   that omits `status` entirely, leaves all four fields — `progress_pct`, `started_at`, `finished_at`, `last_read_at` —
   exactly as they were. Clearing `status` after finishing a book does not erase the record that it was finished.
@@ -270,10 +270,9 @@ visibility probe:
 - **Two concurrent first writes to the same book.** Resolved by the seed-then-lock sequence in Runtime behaviour, never
   a silent lost update: under the default `READ COMMITTED` isolation the loser gets a clean `412` to retry against;
   under a stricter isolation level it gets a serialization-failure `500` instead, covered there.
-- **A value that would decode to a timestamp outside the representable range** (`'infinity'`, `'-infinity'`). Rejected
-  by a `CHECK` constraint on each timestamp column (`reading_state_started_at_ts_decode_range` and its siblings) at the
-  database layer. No field this subject's `PATCH` accepts can produce such a value — every timestamp it writes comes
-  from `Utc::now()` — so this constraint guards a write path outside this subject's own handlers, not the API.
+- **An infinite timestamp** (`'infinity'`, `'-infinity'`). The database rejects it through each timestamp column's
+  `CHECK` constraint (`reading_state_started_at_ts_decode_range` and its siblings). The `PATCH` handler supplies its
+  timestamps from the server clock.
 
 ## Security and operations
 

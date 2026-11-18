@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "WITH inputs AS (SELECT * FROM jsonb_to_recordset($1::jsonb) AS input(\n request integer, parent uuid, first integer, has_after boolean, after_id uuid, after_name text,\n after_position float8, after_ordinal integer, after_created timestamptz, after_level integer)),\n caller AS (SELECT $2::uuid AS id, $3::boolean AS child, $4::text[] AS hidden)\n SELECT q.request AS \"request!\", COALESCE(item.present, FALSE) AS \"present!\",\n item.id AS \"id?: Uuid\",\nitem.name AS \"name?: String\",\nitem.value AS \"value?: String\",\nitem.role AS \"role?: ContributorRole\",\nitem.position AS \"position?: f64\",\nitem.ordinal AS \"ordinal?: i32\",\n item.position_index AS \"position_index?: i32\",\nitem.created_at AS \"created_at?: DateTime<Utc>\",\nitem.level AS \"level?: i32\",\nitem.rating AS \"rating?: f64\",\nitem.scale AS \"scale?: f64\",\nitem.reviews AS \"reviews?: i32\",\n (q.has_after AND EXISTS (SELECT 1 FROM manifestations m WHERE m.work_id = q.parent AND NOT ((m.created_at, m.id) > (q.after_created, q.after_id)) LIMIT 1)) AS \"previous!\"\n FROM inputs q CROSS JOIN caller\n LEFT JOIN LATERAL (SELECT TRUE AS present, m.id AS id,\nNULL::text AS name,\nNULL::text AS value,\nNULL::author_role AS role,\nNULL::float8 AS position,\nNULL::integer AS ordinal,\n NULL::integer AS position_index,\nm.created_at AS created_at,\nNULL::integer AS level,\nNULL::float8 AS rating,\nNULL::float8 AS scale,\nNULL::integer AS reviews\n FROM manifestations m WHERE m.work_id = q.parent AND (NOT q.has_after OR (m.created_at, m.id) > (q.after_created, q.after_id))\n ORDER BY m.created_at ASC, m.id ASC LIMIT (q.first + 1)) item ON TRUE\n WHERE TRUE\n ORDER BY q.request, item.created_at ASC, item.id ASC",
+  "query": "WITH inputs AS (SELECT * FROM jsonb_to_recordset($1::jsonb) AS input(\n request integer, parent uuid, first integer, has_after boolean, after_id uuid, after_name text,\n after_position float8, after_ordinal integer, after_created timestamptz, after_level integer)),\n caller AS (SELECT $2::uuid AS id, $3::boolean AS child, $4::text[] AS hidden)\n SELECT q.request AS \"request!\", COALESCE(item.present, FALSE) AS \"present!\",\n item.id AS \"id?: Uuid\",\nitem.name AS \"name?: String\",\nitem.value AS \"value?: String\",\nitem.role AS \"role?: ContributorRole\",\nitem.position AS \"position?: f64\",\nitem.ordinal AS \"ordinal?: i32\",\n item.position_index AS \"position_index?: i32\",\nitem.created_at AS \"created_at?\",\nitem.level AS \"level?: i32\",\nitem.rating AS \"rating?: f64\",\nitem.scale AS \"scale?: f64\",\nitem.reviews AS \"reviews?: i32\",\n (q.has_after AND EXISTS (SELECT 1 FROM manifestation_external_ratings x WHERE x.manifestation_id = q.parent AND NOT (x.source = ANY(caller.hidden)) AND NOT (x.source > q.after_name) LIMIT 1)) AS \"previous!\"\n FROM inputs q CROSS JOIN caller\n LEFT JOIN LATERAL (SELECT TRUE AS present, NULL::uuid AS id,\nx.source AS name,\nNULL::text AS value,\nNULL::author_role AS role,\nNULL::float8 AS position,\nNULL::integer AS ordinal,\n NULL::integer AS position_index,\nx.fetched_at AS created_at,\nNULL::integer AS level,\nx.rating::float8 AS rating,\nx.rating_scale::float8 AS scale,\nx.review_count AS reviews\n FROM manifestation_external_ratings x WHERE x.manifestation_id = q.parent AND NOT (x.source = ANY(caller.hidden)) AND (NOT q.has_after OR x.source > q.after_name)\n ORDER BY x.source ASC LIMIT (q.first + 1)) item ON TRUE\n WHERE EXISTS (SELECT 1 FROM manifestations visible WHERE visible.id = q.parent)\n ORDER BY q.request, item.name ASC",
   "describe": {
     "columns": [
       {
@@ -19,18 +19,18 @@
         "ordinal": 2,
         "name": "id?: Uuid",
         "type_info": "Uuid",
-        "origin": {
-          "Table": {
-            "table": "manifestations",
-            "name": "id"
-          }
-        }
+        "origin": "Expression"
       },
       {
         "ordinal": 3,
         "name": "name?: String",
         "type_info": "Text",
-        "origin": "Expression"
+        "origin": {
+          "Table": {
+            "table": "manifestation_external_ratings",
+            "name": "source"
+          }
+        }
       },
       {
         "ordinal": 4,
@@ -76,12 +76,12 @@
       },
       {
         "ordinal": 9,
-        "name": "created_at?: DateTime<Utc>",
+        "name": "created_at?",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
-            "table": "manifestations",
-            "name": "created_at"
+            "table": "manifestation_external_ratings",
+            "name": "fetched_at"
           }
         }
       },
@@ -107,7 +107,12 @@
         "ordinal": 13,
         "name": "reviews?: i32",
         "type_info": "Int4",
-        "origin": "Expression"
+        "origin": {
+          "Table": {
+            "table": "manifestation_external_ratings",
+            "name": "review_count"
+          }
+        }
       },
       {
         "ordinal": 14,
@@ -127,20 +132,20 @@
     "nullable": [
       null,
       null,
-      false,
-      null,
-      null,
-      null,
-      null,
-      null,
       null,
       false,
       null,
       null,
       null,
       null,
+      null,
+      false,
+      null,
+      null,
+      null,
+      false,
       null
     ]
   },
-  "hash": "99f19739dcf35b28c6c4332839a1fd2799da0281d606bd2c22969905aae5d220"
+  "hash": "ef3271cb917517957cd58c265c5416ab1c75756c313749c57e9980e3ee0a91c6"
 }

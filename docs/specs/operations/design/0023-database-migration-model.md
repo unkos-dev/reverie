@@ -169,13 +169,10 @@ without a migration credential.
 ### The `TIMESTAMPTZ` decode-range convention
 
 Every first-party `TIMESTAMPTZ` column in `backend/migrations/20260810000000_initial_schema.up.sql` carries a `CHECK`
-constraint named `<table>_<column>_ts_decode_range`, bounding the column between the year `0001` and the year `10000`,
-across both the `public` and `tower_sessions` schemas. PostgreSQL's `TIMESTAMPTZ` range extends to year 294276 and
-includes the `-infinity`/`infinity` specials, none of which `chrono::DateTime<Utc>` can represent; an out-of-range value
-read through `sqlx`'s decode path panics rather than returning an error. The constraint rejects such a value at write
-time instead, so the panicking decode path is unreachable for any column the constraint covers as long as every
-first-party column carries one. A new `TIMESTAMPTZ` column follows the convention by declaring its own constraint; no
-check enforces it.
+constraint named `<table>_<column>_ts_decode_range`, across both the `public` and `tower_sessions` schemas. These
+constraints allow years `0001` through `9999`, so stored timestamps fit the four-digit year in RFC 3339. The SQLx
+adapter returns a decode error if a stored instant exceeds `jiff::Timestamp::MAX`. A new `TIMESTAMPTZ` column follows
+the convention by declaring its own constraint.
 
 ## Interfaces and dependencies
 

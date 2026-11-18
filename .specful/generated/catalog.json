@@ -224,7 +224,7 @@
       "path": "docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md",
       "status": "superseded",
       "superseded-by": [
-        "REV-ADR-0078"
+        "REV-ADR-0079"
       ],
       "title": "Adopt oxlint, replacing the ESLint toolchain"
     },
@@ -355,7 +355,10 @@
       "id": "REV-ADR-0046",
       "kind": "adr",
       "path": "docs/adr/0046-chrono-is-the-first-party-datetime-crate.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0078"
+      ],
       "title": "chrono is the first-party datetime crate"
     },
     {
@@ -621,7 +624,17 @@
     {
       "id": "REV-ADR-0078",
       "kind": "adr",
-      "path": "docs/adr/0078-oxlint-with-scoped-bridges-for-relay-and-schema-lint.md",
+      "path": "docs/adr/0078-use-jiff-for-first-party-datetimes.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0046"
+      ],
+      "title": "Use Jiff for first-party datetimes"
+    },
+    {
+      "id": "REV-ADR-0079",
+      "kind": "adr",
+      "path": "docs/adr/0079-oxlint-with-scoped-bridges-for-relay-and-schema-lint.md",
       "status": "accepted",
       "supersedes": [
         "REV-ADR-0030"
@@ -1097,7 +1110,7 @@
     {
       "governed-by": [
         "REV-ADR-0077",
-        "REV-ADR-0078"
+        "REV-ADR-0079"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",

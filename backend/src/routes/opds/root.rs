@@ -4,7 +4,6 @@
 use axum::extract::State;
 use axum::http::{StatusCode, header};
 use axum::response::Response;
-use chrono::Utc;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
@@ -75,7 +74,7 @@ async fn opds_root(
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
 
-    let mut fb = FeedBuilder::new(&base, "/opds", FeedKind::Navigation, "Reverie", Utc::now());
+    let mut fb = FeedBuilder::new(&base, "/opds", FeedKind::Navigation, "Reverie");
     fb.add_search_link("/opds/library/opensearch.xml");
     fb.add_navigation_entry(&feed_urn("/opds/library"), "Library", "/opds/library", true);
     for row in shelves {

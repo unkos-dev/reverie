@@ -7,8 +7,8 @@ use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
 use axum::http::HeaderValue;
-use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
@@ -551,7 +551,7 @@ pub struct UndoOperation {
     /// Canonical field key selected by this operation.
     pub field_name: String,
     /// Original deadline, unchanged by resolution or lock refusal.
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
     /// Current server decision for this operation.
     pub status: OperationStatus,
 }
@@ -709,7 +709,7 @@ async fn capture_save(
         result.push(UndoOperation {
             operation_id: id,
             field_name: field,
-            expires_at: expires,
+            expires_at: expires.to_jiff(),
             status: OperationStatus::Eligible,
         });
     }
@@ -1460,7 +1460,7 @@ pub async fn undo_metadata(
         operations: vec![UndoOperation {
             operation_id: request.operation_id,
             field_name: op.field_name,
-            expires_at: op.expires_at,
+            expires_at: op.expires_at.to_jiff(),
             status: OperationStatus::Consumed,
         }],
     }))
@@ -1549,7 +1549,7 @@ pub async fn resolve_metadata(
         operations.push(UndoOperation {
             operation_id: row.id,
             field_name: row.field_name,
-            expires_at: row.expires_at,
+            expires_at: row.expires_at.to_jiff(),
             status,
         });
     }

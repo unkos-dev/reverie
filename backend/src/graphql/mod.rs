@@ -1741,13 +1741,13 @@ mod tests {
             .unwrap();
         }
         for (book, pages, day) in [(visible, 10, 1), (sibling, 20, 2), (hidden, 20, 3)] {
-            let created =
-                chrono::DateTime::parse_from_rfc3339(&format!("2026-01-{day:02}T00:00:00Z"))
-                    .unwrap();
+            let created = format!("2026-01-{day:02}T00:00:00Z")
+                .parse::<jiff::Timestamp>()
+                .unwrap();
             sqlx::query!(
                 "UPDATE manifestations SET pages = $1, created_at = $2 WHERE id = $3",
                 pages,
-                created,
+                jiff_sqlx::Timestamp::from(created),
                 book
             )
             .execute(pool)

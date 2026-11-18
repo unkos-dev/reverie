@@ -19,7 +19,7 @@ use axum::http::header::LINK;
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -68,7 +68,7 @@ enum IngestionBlocker {
     PausedByAdmin,
     Dependency {
         reason: services::ingestion::DependencyReason,
-        since: DateTime<Utc>,
+        since: Timestamp,
     },
     Restarting,
 }
@@ -280,8 +280,8 @@ struct InputItem {
     /// Every class that applies, primary first. Secondary classes are never
     /// counted.
     reasons: Vec<InputReason>,
-    observed_at: DateTime<Utc>,
-    completed_at: Option<DateTime<Utc>>,
+    observed_at: Timestamp,
+    completed_at: Option<Timestamp>,
     /// The book a `duplicate` input matched; null for every other class and once that book no longer exists.
     matched: Option<MatchedBook>,
 }
@@ -417,8 +417,8 @@ async fn list_inputs(
                 outcome: row.outcome,
                 primary_reason: primary,
                 reasons,
-                observed_at: row.observed_at,
-                completed_at: row.completed_at,
+                observed_at: row.observed_at.to_jiff(),
+                completed_at: row.completed_at.map(jiff_sqlx::Timestamp::to_jiff),
                 matched: match (row.matched_id, row.matched_work_id, row.matched_title) {
                     (Some(manifestation_id), Some(work_id), Some(title)) => Some(MatchedBook {
                         manifestation_id,

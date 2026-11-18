@@ -3,7 +3,7 @@
 //! Every link is `{origin}/route#{token}` with the origin taken from the
 //! configured public URL, and every date is written out in full in UTC.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::models::mail_job::MailPurpose;
 
@@ -67,8 +67,8 @@ impl Notice {
 /// Write an instant as `{weekday} {day} {month} at {hour}:{minute} {am|pm} UTC`,
 /// for example `Saturday 25 October at 2:00 pm UTC`.
 #[must_use]
-pub fn format_date(at: DateTime<Utc>) -> String {
-    at.format("%A %-d %B at %-I:%M %P UTC").to_string()
+pub fn format_date(at: Timestamp) -> String {
+    at.strftime("%A %-d %B at %-I:%M %P UTC").to_string()
 }
 
 /// The email an administrator chooses to send for a credential link.
@@ -78,7 +78,7 @@ pub fn admin_link(
     kind: LinkKind,
     email: &str,
     token: &str,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 ) -> Message {
     let Context { origin, support } = context;
     let expiry = format_date(expires_at);
@@ -114,7 +114,7 @@ pub fn admin_link(
 
 /// The email a password recovery request sends to an eligible account.
 #[must_use]
-pub fn recovery(context: &Context, email: &str, token: &str, expires_at: DateTime<Utc>) -> Message {
+pub fn recovery(context: &Context, email: &str, token: &str, expires_at: Timestamp) -> Message {
     let Context { origin, support } = context;
     let expiry = format_date(expires_at);
     Message {
@@ -134,12 +134,7 @@ pub fn recovery(context: &Context, email: &str, token: &str, expires_at: DateTim
 
 /// The email that carries a mailbox verification challenge.
 #[must_use]
-pub fn verification(
-    context: &Context,
-    email: &str,
-    token: &str,
-    expires_at: DateTime<Utc>,
-) -> Message {
+pub fn verification(context: &Context, email: &str, token: &str, expires_at: Timestamp) -> Message {
     let Context { origin, support } = context;
     let expiry = format_date(expires_at);
     Message {
@@ -160,7 +155,7 @@ pub fn verification(
 /// A security notice. `email` is the account address the event concerns; the
 /// two address notices do not quote it because they go to the former address.
 #[must_use]
-pub fn notice(context: &Context, event: Notice, email: &str, at: DateTime<Utc>) -> Message {
+pub fn notice(context: &Context, event: Notice, email: &str, at: Timestamp) -> Message {
     let Context { origin, support } = context;
     let time = format_date(at);
     match event {
@@ -200,7 +195,6 @@ pub fn notice(context: &Context, event: Notice, email: &str, at: DateTime<Utc>) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone as _;
 
     fn context() -> Context {
         Context {
@@ -209,8 +203,9 @@ mod tests {
         }
     }
 
-    fn at(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 10, day, hour, minute, 0)
+    fn at(day: u32, hour: u32, minute: u32) -> Timestamp {
+        format!("2026-10-{day:02}T{hour:02}:{minute:02}:00Z")
+            .parse()
             .unwrap()
     }
 

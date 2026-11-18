@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::PgPool;
 use tokio::sync::RwLock;
 
@@ -72,7 +72,7 @@ async fn read<'a>(
         },
         provider_visibility: row.provider_visibility,
         revision: row.revision,
-        updated_at: row.updated_at,
+        updated_at: row.updated_at.to_jiff(),
     })
 }
 
@@ -316,7 +316,7 @@ pub async fn save<'a>(
 pub async fn listen_loop(
     pool: &PgPool,
     settings: &Arc<RwLock<Settings>>,
-    last_reload: &Arc<RwLock<Option<DateTime<Utc>>>>,
+    last_reload: &Arc<RwLock<Option<Timestamp>>>,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<(), sqlx::Error> {
     let mut listener = sqlx::postgres::PgListener::connect_with(pool).await?;
@@ -349,7 +349,7 @@ pub async fn listen_loop(
 async fn refresh(
     pool: &PgPool,
     settings: &Arc<RwLock<Settings>>,
-    last_reload: &Arc<RwLock<Option<DateTime<Utc>>>>,
+    last_reload: &Arc<RwLock<Option<Timestamp>>>,
 ) {
     match load(pool).await {
         Ok(new_settings) => {
@@ -359,11 +359,12 @@ async fn refresh(
             apply_if_newer(&mut guard, new_settings);
             drop(guard);
             let mut ts = last_reload.write().await;
-            *ts = Some(Utc::now());
+            *ts = Some(Timestamp::now());
         }
         Err(e) => {
             let last = *last_reload.read().await;
-            let cache_age_secs = last.map_or(-1, |ts| Utc::now().timestamp() - ts.timestamp());
+            let cache_age_secs =
+                last.map_or(-1, |ts| Timestamp::now().as_second() - ts.as_second());
             tracing::error!(
                 error = %e,
                 cache_age_secs,

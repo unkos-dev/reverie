@@ -21,7 +21,7 @@
 
 #![expect(
     clippy::disallowed_types,
-    reason = "the cookie builder's `max_age` takes a time::Duration and accepts no chrono equivalent; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
+    reason = "the cookie builder's `max_age` takes a time::Duration; see docs/adr/0078-use-jiff-for-first-party-datetimes.md"
 )]
 
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};

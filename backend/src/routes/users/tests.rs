@@ -1060,7 +1060,7 @@ mod mail_flow {
     use crate::services::mail::render::{self, Context, LinkKind, Notice};
     use crate::test_support::mail::{self, Behaviour, FakeRelay, ORIGIN, PASSWORD, SUPPORT};
     use axum_test::{TestResponse, TestServer};
-    use chrono::{DateTime, Utc};
+    use jiff::Timestamp;
     use std::sync::Arc;
     use tokio_util::sync::CancellationToken;
 
@@ -1157,16 +1157,14 @@ mod mail_flow {
             .await
     }
 
-    fn instant(value: &serde_json::Value) -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339(value.as_str().unwrap())
-            .unwrap()
-            .with_timezone(&Utc)
+    fn instant(value: &serde_json::Value) -> Timestamp {
+        value.as_str().unwrap().parse::<Timestamp>().unwrap()
     }
 
     struct Invitee {
         id: Uuid,
         token: String,
-        expires_at: DateTime<Utc>,
+        expires_at: Timestamp,
     }
 
     async fn invite(env: &Env, csrf: &str, email: &str) -> Invitee {
@@ -1186,7 +1184,7 @@ mod mail_flow {
         }
     }
 
-    async fn reissue(env: &Env, csrf: &str, id: Uuid) -> (String, DateTime<Utc>) {
+    async fn reissue(env: &Env, csrf: &str, id: Uuid) -> (String, Timestamp) {
         let response = post_empty(
             &env.server,
             csrf,
@@ -1225,7 +1223,7 @@ mod mail_flow {
                     &context(),
                     event,
                     email,
-                    Utc::now() + chrono::TimeDelta::minutes(offset),
+                    Timestamp::now() + jiff::SignedDuration::from_mins(offset),
                 )
             })
             .collect();
@@ -1997,7 +1995,7 @@ mod mail_flow {
                 &context(),
                 Notice::AddressChanged,
                 "holder@example.test",
-                Utc::now()
+                Timestamp::now()
             )
             .subject
         );

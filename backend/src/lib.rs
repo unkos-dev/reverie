@@ -87,7 +87,7 @@ pub fn build_router(state: AppState) -> Router {
 /// Production builds use `PostgresStore` via [`build_router`].
 #[expect(
     clippy::disallowed_types,
-    reason = "tower_sessions::Expiry::OnInactivity takes a time::Duration and accepts no chrono equivalent; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
+    reason = "tower_sessions::Expiry::OnInactivity takes a time::Duration; see docs/adr/0078-use-jiff-for-first-party-datetimes.md"
 )]
 pub(crate) fn build_router_with_session_store<S>(state: AppState, session_store: S) -> Router
 where
@@ -983,7 +983,7 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
         .context("read password state")?
         .is_some();
     let (token, _) =
-        models::credential_link::issue(&mut tx, user.id, chrono::TimeDelta::minutes(10))
+        models::credential_link::issue(&mut tx, user.id, jiff::SignedDuration::from_mins(10))
             .await
             .context("issue recovery link")?;
     tx.commit().await.context("commit recovery link")?;
@@ -1178,7 +1178,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     #[expect(
         clippy::disallowed_types,
-        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0078-use-jiff-for-first-party-datetimes.md"
     )]
     async fn expired_session_is_not_returned(pool: sqlx::PgPool) {
         use std::collections::HashMap;
@@ -1215,7 +1215,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     #[expect(
         clippy::disallowed_types,
-        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0078-use-jiff-for-first-party-datetimes.md"
     )]
     async fn store_delete_removes_record(pool: sqlx::PgPool) {
         use std::collections::HashMap;

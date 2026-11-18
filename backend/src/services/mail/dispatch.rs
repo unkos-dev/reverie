@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
@@ -78,7 +78,7 @@ impl Outbox {
         account_email: &str,
         recipient: &str,
     ) -> Result<Uuid, DispatchError> {
-        let message = render::notice(&self.context, event, account_email, Utc::now());
+        let message = render::notice(&self.context, event, account_email, Timestamp::now());
         Ok(mail_job::enqueue(
             conn,
             self.runtime.key(),
@@ -150,7 +150,7 @@ impl Outbox {
         recipient: &str,
         has_password: bool,
         token: &str,
-        link_expires_at: DateTime<Utc>,
+        link_expires_at: Timestamp,
     ) -> Result<Uuid, DispatchError> {
         let digest = account_email_proof::digest(token);
         if let Some(existing) = mail_job::live_delivery(conn, user_id, &digest).await? {

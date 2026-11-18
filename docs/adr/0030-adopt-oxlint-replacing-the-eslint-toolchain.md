@@ -9,7 +9,7 @@ decided-on: "2026-06-27"
 decision-makers:
   - "John Unkovich"
 superseded-by:
-  - "REV-ADR-0078"
+  - "REV-ADR-0079"
 ---
 
 # Adopt oxlint, replacing the ESLint toolchain

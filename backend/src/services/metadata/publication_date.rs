@@ -1,4 +1,4 @@
-use chrono::format::{Parsed, StrftimeItems, parse};
+use jiff::civil::Date;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -34,21 +34,21 @@ pub fn normalise(input: &str) -> Result<Option<String>, PublicationDateError> {
     if !GRAMMAR.is_match(value) {
         return Err(PublicationDateError::Malformed);
     }
-    let mut parsed = Parsed::new();
-    let date_len = value.len().min(10);
-    let format = match date_len {
-        4 => "%Y",
-        7 => "%Y-%m",
-        _ => "%Y-%m-%d",
+    let number = |part: &str| {
+        part.parse::<u8>()
+            .map_err(|_| PublicationDateError::Malformed)
     };
-    parse(&mut parsed, &value[..date_len], StrftimeItems::new(format))
-        .map_err(|_| PublicationDateError::Malformed)?;
-    if parsed.year() == Some(0) {
+    if (value.len() >= 7 && !(1..=12).contains(&number(&value[5..7])?))
+        || (value.len() >= 10 && !(1..=31).contains(&number(&value[8..10])?))
+    {
+        return Err(PublicationDateError::Malformed);
+    }
+    if value.starts_with("0000") {
         return Err(PublicationDateError::YearOutOfRange);
     }
-    if parsed.day().is_some() {
-        parsed
-            .to_naive_date()
+    if value.len() >= 10 {
+        value[..10]
+            .parse::<Date>()
             .map_err(|_| PublicationDateError::Malformed)?;
     }
     if value.len() > 10 {
@@ -60,10 +60,6 @@ pub fn normalise(input: &str) -> Result<Option<String>, PublicationDateError> {
             },
             |time| (time, None),
         );
-        let number = |part: &str| {
-            part.parse::<u32>()
-                .map_err(|_| PublicationDateError::Malformed)
-        };
         if number(&time[..2])? > 23
             || number(&time[3..5])? > 59
             || (time.len() > 5 && number(&time[6..8])? > 59)

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use tokio::sync::RwLock;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::auth::oidc::OidcRuntime;
 use crate::auth::rate_limit::LoginLimiter;
@@ -64,7 +64,7 @@ pub struct AppState {
     /// the initial `load()` at startup does not count. Exposed in
     /// `GET /api/v1/settings` so operators can verify the live-reload
     /// mechanism is healthy.
-    pub last_settings_reload: Arc<RwLock<Option<DateTime<Utc>>>>,
+    pub last_settings_reload: Arc<RwLock<Option<Timestamp>>>,
     /// Authentication mail runtime. `None` when SMTP is disabled: nothing is
     /// queued and no submission worker runs.
     pub mail: Option<Arc<crate::services::mail::queue::MailRuntime>>,

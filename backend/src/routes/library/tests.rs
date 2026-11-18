@@ -285,7 +285,7 @@ async fn insert_book_at(
     ingestion_pool: &PgPool,
     marker: &str,
     title: &str,
-    created_at: chrono::DateTime<chrono::Utc>,
+    created_at: jiff::Timestamp,
 ) -> (Uuid, Uuid) {
     let work_id: Uuid = sqlx::query_scalar!(
         "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
@@ -307,7 +307,7 @@ async fn insert_book_at(
         work_id,
         file_path,
         hash,
-        created_at,
+        jiff_sqlx::Timestamp::from(created_at),
     )
     .fetch_one(ingestion_pool)
     .await
@@ -331,9 +331,8 @@ async fn set_pages(ingestion_pool: &PgPool, m_id: Uuid, pages: i32) {
 /// Deterministic `created_at` boundary value for walk tests: seconds
 /// past a fixed epoch, so relative ordering across fixture rows is
 /// exact rather than depending on wall-clock insert timing.
-fn ts(offset_seconds: i64) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::from_timestamp(1_700_000_000 + offset_seconds, 0)
-        .expect("valid unix timestamp")
+fn ts(offset_seconds: i64) -> jiff::Timestamp {
+    jiff::Timestamp::new(1_700_000_000 + offset_seconds, 0).expect("valid unix timestamp")
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -385,7 +384,9 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
     let default_spec = crate::routes::sort_spec::SortSpec::default();
     let recent = crate::routes::cursor::SortCursor {
         spec: default_spec.canonical(),
-        keys: vec![crate::routes::cursor::CursorValue::Ts(chrono::Utc::now())],
+        keys: vec![crate::routes::cursor::CursorValue::Ts(
+            jiff::Timestamp::now(),
+        )],
         id: Uuid::new_v4(),
         // Inert here: the sort mismatch is detected before the fingerprint.
         filter_fp: String::new(),
@@ -960,9 +961,7 @@ async fn filter_created_at_inclusive_lower_exclusive_upper_and_cursor_identity(p
             &ingestion_pool,
             marker,
             title,
-            chrono::DateTime::parse_from_rfc3339(instant)
-                .unwrap()
-                .with_timezone(&chrono::Utc),
+            instant.parse::<jiff::Timestamp>().unwrap(),
         )
         .await;
     }
