@@ -222,7 +222,10 @@
       "id": "REV-ADR-0030",
       "kind": "adr",
       "path": "docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0079"
+      ],
       "title": "Adopt oxlint, replacing the ESLint toolchain"
     },
     {
@@ -627,6 +630,16 @@
         "REV-ADR-0046"
       ],
       "title": "Use Jiff for first-party datetimes"
+    },
+    {
+      "id": "REV-ADR-0079",
+      "kind": "adr",
+      "path": "docs/adr/0079-oxlint-with-scoped-bridges-for-relay-and-schema-lint.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0030"
+      ],
+      "title": "oxlint with scoped bridges for Relay and schema lint"
     },
     {
       "governed-by": [
@@ -1096,7 +1109,8 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0077"
+        "REV-ADR-0077",
+        "REV-ADR-0079"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",

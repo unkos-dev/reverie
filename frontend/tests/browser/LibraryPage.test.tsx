@@ -491,7 +491,7 @@ describe("LibraryPage", () => {
           const request = fixture.calls.filter((call) => call.name === "readerLibraryQuery").at(-1);
           expect(request).toBeDefined();
           expect(request?.variables.sort ?? null).toEqual(
-            preferences.sort_stack === null ? null : [{ column: "pages", direction: "DESC" }],
+            preferences.sort_stack === null ? null : [{ column: "PAGES", direction: "DESC" }],
           );
         });
       },
@@ -546,7 +546,7 @@ describe("LibraryPage", () => {
       expect(requests).toHaveLength(3);
       expect(requests.at(0)?.variables.sort ?? null).toBeNull();
       expect(requests.at(1)?.variables.sort ?? null).toBeNull();
-      expect(requests.at(2)?.variables.sort).toEqual([{ column: "pages", direction: "DESC" }]);
+      expect(requests.at(2)?.variables.sort).toEqual([{ column: "PAGES", direction: "DESC" }]);
     });
   });
 });

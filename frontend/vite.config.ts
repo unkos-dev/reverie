@@ -61,8 +61,9 @@ export default defineConfig({
     projects: [
       {
         extends: false,
-        // React Aria's virtualiser reads process.env.VIRT_ON whenever NODE_ENV is "test".
-        define: { "process.env.VIRT_ON": JSON.stringify("1") },
+        // React Aria's virtualiser reads process.env.VIRT_ON whenever NODE_ENV is "test", and
+        // relay-test-utils' createMockEnvironment reads Node's `global`.
+        define: { "process.env.VIRT_ON": JSON.stringify("1"), global: "globalThis" },
         optimizeDeps: {
           include: [
             "react-aria",

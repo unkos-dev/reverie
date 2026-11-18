@@ -1,0 +1,29 @@
+# Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
+version: v1.25.1
+# ignores vulnerabilities until expiry date; change duration by modifying expiry date
+ignore:
+  SNYK-JS-URIJS-19963963:
+    - eslint > ajv > uri-js:
+        reason: >-
+          Reached only through ESLint's ajv 6, which compiles the rule-option
+          schemas ESLint and its plugins ship; no input from outside the
+          repository reaches uri-js, and no fixed uri-js release exists.
+        expires: 2027-05-18T00:00:00.000Z
+        created: 2026-11-18T14:33:22.951Z
+  SNYK-JS-URIJS-19963961:
+    - eslint > ajv > uri-js:
+        reason: >-
+          Reached only through ESLint's ajv 6, which compiles the rule-option
+          schemas ESLint and its plugins ship; no input from outside the
+          repository reaches uri-js, and no fixed uri-js release exists.
+        expires: 2027-05-18T00:00:00.000Z
+        created: 2026-11-18T14:33:27.678Z
+  SNYK-JS-URIJS-20341609:
+    - eslint > ajv > uri-js:
+        reason: >-
+          Reached only through ESLint's ajv 6, which compiles the rule-option
+          schemas ESLint and its plugins ship; no input from outside the
+          repository reaches uri-js, and no fixed uri-js release exists.
+        expires: 2027-05-18T00:00:00.000Z
+        created: 2026-11-18T14:33:36.430Z
+patch: {}

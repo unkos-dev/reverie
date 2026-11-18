@@ -19,8 +19,12 @@ import {
   parseSortParam,
   type BookListItem,
   type ListBooksParams,
+  type SortField,
 } from "./books";
-import type { readerLibraryQuery$variables } from "@/lib/relay/__generated__/readerLibraryQuery.graphql";
+import type {
+  SortField as GraphQLSortField,
+  readerLibraryQuery$variables,
+} from "@/lib/relay/__generated__/readerLibraryQuery.graphql";
 import type { mutationsAuthorPageQuery } from "@/lib/relay/__generated__/mutationsAuthorPageQuery.graphql";
 import { mutationsAuthorPageQuery as authorPageDocument } from "@/lib/relay/mutations";
 import { ApiError } from "./errors";
@@ -577,6 +581,13 @@ export function graphqlNetwork(
   });
 }
 
+const SORT_COLUMNS = {
+  title: "TITLE",
+  author: "AUTHOR",
+  created_at: "CREATED_AT",
+  pages: "PAGES",
+} as const satisfies Record<SortField, GraphQLSortField>;
+
 export function libraryVariables(
   params: ListBooksParams,
   sourceKey: string,
@@ -626,7 +637,7 @@ export function libraryVariables(
       ? {}
       : {
           sort: parseSortParam(params.sort).map((level) => ({
-            column: level.field,
+            column: SORT_COLUMNS[level.field],
             direction: level.desc ? "DESC" : "ASC",
           })),
         }),

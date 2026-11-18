@@ -20,6 +20,7 @@ satisfies:
   - "REV-REQ-0079"
 governed-by:
   - "REV-ADR-0077"
+  - "REV-ADR-0079"
 ---
 
 # GraphQL execution and Relay browser data
@@ -66,6 +67,14 @@ react-relay, compiler and Babel plugin 21.0.1. Vite+ applies the Relay Babel tra
 empty to prune removed operations. `just js::relay-check` generates in a temporary directory and compares both the map
 and artefacts. An empty operation selection fails. Frontend build and test recipes run that check. Path filters select
 backend checks for frontend operations and frontend checks for GraphQL schema changes.
+
+oxlint loads `eslint-plugin-relay` 2.1.0 through its JS-plugin bridge and enforces `graphql-syntax`,
+`no-future-added-value`, `generated-typescript-types`, `hook-required-argument` and `function-required-argument` on
+frontend sources. `just js::schema-lint` runs GraphQL-ESLint 4.4.2 under ESLint over `backend/schema.graphql` only. It
+checks Relay connection, edge and `PageInfo` shapes, forward pagination arguments and the plugin's recommended naming;
+`@fetchable`'s `fetch__*` roots and `field_name` argument are exempt. The Relay compiler sets
+`requireCustomScalarTypes`, so a custom scalar without a `customScalarTypes` mapping fails generation. Component tests
+use `relay-test-utils` 21.0.1.
 
 IDs use standard padded base64 of `Type:<uuid>`, with distinct Work, Manifestation, Shelf, Series and User prefixes. The
 `Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed lookup roots return null for malformed,

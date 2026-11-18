@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<1578d85775cd127d79b4c6ef118b40b3>>
+ * @generated SignedSource<<7dbf321a3f69a817bed5859054150c92>>
  * @relayHash 93280cd2056ae60a8fad45268329d146
  * @lightSyntaxTransform
  */
@@ -13,7 +13,7 @@
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
 export type Direction = "ASC" | "DESC" | "%future added value";
-export type SortField = "author" | "created_at" | "pages" | "title" | "%future added value";
+export type SortField = "AUTHOR" | "CREATED_AT" | "PAGES" | "TITLE" | "%future added value";
 export type BooksFilter = {
   author?: ReadonlyArray<string>;
   authorAny?: ReadonlyArray<string>;

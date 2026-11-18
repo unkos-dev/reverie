@@ -85,4 +85,4 @@ capability is deficient for Reverie, with approval governed by the root rules.
   [ADR-0035](../docs/adr/0035-lint-suppressions-self-purge-expect-with-a-reason-never-allow.md).
 - **Logging:** Use `tracing` with structured fields. Never use `println!` for diagnostics.
 - **Artifact regeneration:** Editing a config/ or API-surface doc-comment regenerates artifacts. Run `just rust::regen`
-  and commit them in the same PR; drift tests gate CI.
+  and commit them in the same PR; drift tests gate CI. A GraphQL schema change also passes `just js::schema-lint`.
