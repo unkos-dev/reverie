@@ -9,7 +9,7 @@ specifiers = ["0.9.0"]
 
 [tools."cargo:sqlx-cli".options]
 default-features = "false"
-features = "postgres rustls"
+features = "postgres rustls sqlx-toml"
 locked = "false"
 
 [[tools."github:EmbarkStudios/cargo-deny"]]
