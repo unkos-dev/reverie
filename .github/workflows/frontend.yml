@@ -51,6 +51,9 @@ jobs:
       - name: Stylelint
         run: just js::stylelint
 
+      - name: Schema lint
+        run: just js::schema-lint
+
       # Advisory until the known bg-black findings in stock shadcn overlays are addressed.
       - name: Detect (impeccable, advisory)
         run: just js::detect

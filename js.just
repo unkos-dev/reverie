@@ -97,9 +97,14 @@ fmt:
 fmt-check:
     vp fmt --check .
 
-# Frontend lint surface: oxlint, stylelint, then root-CWD markdownlint.
+# GraphQL-ESLint over the exported schema only (--max-warnings 0, matching CI).
 [group('js')]
-lint: oxlint stylelint markdownlint
+schema-lint:
+    vp exec eslint --max-warnings 0 backend/schema.graphql
+
+# Frontend lint surface: oxlint, stylelint, schema lint, then root-CWD markdownlint.
+[group('js')]
+lint: oxlint stylelint schema-lint markdownlint
 
 # WCAG axe-core scan against the shipped routes in DEFAULT_TARGETS
 # (frontend/scripts/a11y/allowlist.mjs). Playwright's webServer owns the

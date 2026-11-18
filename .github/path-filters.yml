@@ -55,6 +55,7 @@ frontend:
   - "pnpm-lock.yaml"
   - "pnpm-workspace.yaml"
   - "vite.config.ts"
+  - "eslint.config.mjs"
   - "js.just"
   - ".github/workflows/ci.yml"
   - ".github/workflows/frontend.yml"
