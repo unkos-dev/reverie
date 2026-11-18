@@ -140,7 +140,7 @@ body:
     attributes:
       label: Linear issue (optional)
       description: If you've already filed a related Linear issue, paste the URL or ID here.
-      placeholder: UNK-123 or https://linear.app/unkos/issue/UNK-123
+      placeholder: REV-123 or https://linear.app/unkos/issue/REV-123
     validations:
       required: false
 
