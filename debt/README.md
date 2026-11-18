@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [ESLint runs beside oxlint for schema lint](2026-11-18-eslint-for-graphql-schema-lint.md): lifts when the oxlint
+  bundled with vite-plus lets JS plugins lint non-JavaScript file formats, so GraphQL-ESLint runs under oxlint.
 - [React Aria transition cancellation](2026-11-09-react-aria-transition-cancellation.md): lifts when a released React
   Aria version includes the upstream cancellation fix and the Settings browser tests pass without the local patch.
 - [Licence checker glob overrides](2026-11-05-licence-checker-glob-overrides.md): lifts when the licence checker's
