@@ -288,6 +288,11 @@ export default defineConfig({
           "react/unsupported-syntax": "error",
           "react/use-memo": "error",
           "react/void-use-memo": "error",
+          "relay/graphql-syntax": "error",
+          "relay/no-future-added-value": "error",
+          "relay/generated-typescript-types": "error",
+          "relay/hook-required-argument": "error",
+          "relay/function-required-argument": "error",
         },
         env: {
           es2020: true,
@@ -356,6 +361,10 @@ export default defineConfig({
       {
         name: "vite-plus",
         specifier: "vite-plus/oxlint-plugin",
+      },
+      {
+        name: "relay",
+        specifier: "eslint-plugin-relay",
       },
     ],
     rules: {
