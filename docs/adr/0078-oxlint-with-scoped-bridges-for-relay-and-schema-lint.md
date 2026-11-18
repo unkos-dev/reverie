@@ -20,10 +20,9 @@ Reverie lints JavaScript and TypeScript with oxlint. The decision this record su
 only, and rejected the JS-plugin bridge because it keeps the ESLint ecosystem installed.
 
 Relay is the browser's GraphQL client, and its conventions now reach both the frontend sources and the exported schema
-in `backend/schema.graphql`. The reader's Relay migration (#1881) hand-rolled state that Relay already provides and
-shipped two defects that review did not catch. Nothing mechanical checks either side today. Relay documents
-`eslint-plugin-relay` as its lint plugin, and oxlint has no native equivalent. The standard schema linter,
-GraphQL-ESLint, parses `.graphql` files, and oxlint's JS plugins accept only JavaScript and TypeScript.
+in `backend/schema.graphql`. Nothing mechanical checks either side today. Relay documents `eslint-plugin-relay` as its
+lint plugin, and oxlint has no native equivalent. The standard schema linter, GraphQL-ESLint, parses `.graphql` files,
+and oxlint's JS plugins accept only JavaScript and TypeScript.
 
 Which lint engines may Reverie run, and for which inputs?
 
@@ -65,7 +64,7 @@ removed.
 
 - Positive: keeps the full-removal outcome of the superseded decision, with no bridge and no second engine.
 - Negative: the compiler checks names and generated types, but not connection shapes, required hook arguments or schema
-  conventions. Review missed defects of that kind.
+  conventions.
 
 ### Deferring schema lint until oxlint supports other file formats
 
