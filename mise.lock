@@ -23,18 +23,18 @@ url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/carg
 url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471598214"
 
 [[tools."github:bnjbvr/cargo-machete"]]
-version = "0.10.0"
+version = "0.10.1"
 backend = "github:bnjbvr/cargo-machete"
-specifiers = ["0.10.0"]
+specifiers = ["0.10.1"]
 
 [tools."github:bnjbvr/cargo-machete".options]
 version_prefix = "v"
 
 [tools."github:bnjbvr/cargo-machete"."platforms.linux-x64"]
-checksum = "sha256:a29820e830f3cbfadb176c5e5653803ca04a4afd6964fc7ebca2d08a485f10eb"
+checksum = "sha256:785d381985140ffa172246d82089adeb7f2eb9c774d961c48f77a4494023afb5"
 checksum_source = "mise-versions"
-url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.0/cargo-machete-v0.10.0-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/747940643"
+url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.10.1/cargo-machete-v0.10.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/752025688"
 
 [[tools."github:nextest-rs/nextest"]]
 version = "0.9.152"
