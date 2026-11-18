@@ -85,13 +85,7 @@ async fn library_root(
 }
 
 pub(super) fn build_subcatalog_root(base: &Url, self_path: &str, title: &str) -> Vec<u8> {
-    let mut fb = FeedBuilder::new(
-        base,
-        self_path,
-        FeedKind::Navigation,
-        title,
-        Timestamp::now(),
-    );
+    let mut fb = FeedBuilder::new(base, self_path, FeedKind::Navigation, title);
     fb.add_search_link(&format!("{self_path}/opensearch.xml"));
     fb.add_navigation_entry(
         &feed_urn(&format!("{self_path}/new")),
@@ -465,13 +459,7 @@ pub(super) async fn emit_new(
     let m_ids: Vec<Uuid> = page_rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
     let tags = load_tags(&mut tx, &m_ids).await?;
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Acquisition,
-        "New",
-        Timestamp::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Acquisition, "New");
     for r in page_rows {
         let m_id: Uuid = r.get("id");
         let work_id: Uuid = r.get("work_id");
@@ -560,13 +548,7 @@ pub(super) async fn emit_authors(
 
     let (page_rows, has_more) = split_page(&rows, page_size);
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Navigation,
-        "Authors",
-        Timestamp::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Navigation, "Authors");
     for r in page_rows {
         let id: Uuid = r.get("id");
         let name: String = r.get("name");
@@ -644,13 +626,7 @@ pub(super) async fn emit_author_books(
     let m_ids: Vec<Uuid> = page_rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
     let tags = load_tags(&mut tx, &m_ids).await?;
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Acquisition,
-        "Books by author",
-        Timestamp::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Acquisition, "Books by author");
     for r in page_rows {
         let m_id: Uuid = r.get("id");
         let work_id: Uuid = r.get("work_id");
@@ -732,13 +708,7 @@ pub(super) async fn emit_series(
 
     let (page_rows, has_more) = split_page(&rows, page_size);
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Navigation,
-        "Series",
-        Timestamp::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Navigation, "Series");
     for r in page_rows {
         let id: Uuid = r.get("id");
         let name: String = r.get("name");
@@ -812,13 +782,7 @@ pub(super) async fn emit_series_books(
     let m_ids: Vec<Uuid> = rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
     let tags = load_tags(&mut tx, &m_ids).await?;
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Acquisition,
-        "Series",
-        Timestamp::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Acquisition, "Series");
     for r in &rows {
         let m_id: Uuid = r.get("id");
         let work_id: Uuid = r.get("work_id");
@@ -850,13 +814,7 @@ pub(super) async fn emit_search(
     let self_path = format!("{self_parent}/search");
     let page_size = i64::from(state.config.opds.page_size);
 
-    let mut fb = FeedBuilder::new(
-        base,
-        &self_path,
-        FeedKind::Acquisition,
-        "Search results",
-        Timestamp::now(),
-    );
+    let mut fb = FeedBuilder::new(base, &self_path, FeedKind::Acquisition, "Search results");
 
     // Empty query → empty feed (Moon+ quirk). Skip DB hit entirely.
     let q_trim = q.trim();

@@ -50,6 +50,18 @@ pub struct CacheTtls {
     pub error: jiff::SignedDuration,
 }
 
+impl CacheTtls {
+    /// Build the per-kind `TTL`s from the enrichment configuration.
+    #[must_use]
+    pub fn from_config(config: &crate::config::EnrichmentConfig) -> Self {
+        Self {
+            hit: jiff::SignedDuration::from_hours(i64::from(config.cache_ttl_hit_days) * 24),
+            miss: jiff::SignedDuration::from_hours(i64::from(config.cache_ttl_miss_days) * 24),
+            error: jiff::SignedDuration::from_mins(i64::from(config.cache_ttl_error_mins)),
+        }
+    }
+}
+
 /// Read a live cache entry for `(source, lookup_key)`.
 ///
 /// Returns `None` if no row exists or the row is expired (`expires_at <= now()`).

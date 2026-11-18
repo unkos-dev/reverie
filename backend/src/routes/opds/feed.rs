@@ -138,13 +138,7 @@ impl FeedBuilder {
     /// does not happen: the writer backs onto a `Vec<u8>` and has no I/O to
     /// fail.
     #[must_use]
-    pub fn new(
-        base_url: &Url,
-        self_path: &str,
-        kind: FeedKind,
-        title: &str,
-        updated: Timestamp,
-    ) -> Self {
+    pub fn new(base_url: &Url, self_path: &str, kind: FeedKind, title: &str) -> Self {
         let mut writer = Writer::new(Cursor::new(Vec::new()));
         writer
             .write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))
@@ -161,7 +155,7 @@ impl FeedBuilder {
 
         write_text_element(&mut writer, "id", &feed_urn(self_path));
         write_text_element(&mut writer, "title", &sanitise_xml_text(title));
-        write_text_element(&mut writer, "updated", &updated.to_string());
+        write_text_element(&mut writer, "updated", &Timestamp::now().to_string());
 
         // Feed-level <author>. RFC 4287 §4.1.1: a feed element MUST contain
         // one or more atom:author elements unless all of its atom:entry
