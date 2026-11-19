@@ -10,8 +10,9 @@ use crate::services::{
     reading, shelves,
 };
 use crate::state::AppState;
+use async_graphql::connection::{Edge, EmptyFields};
 use async_graphql::{
-    Context, ErrorExtensions, ID, InputObject, MaybeUndefined, Object, SimpleObject,
+    Context, ErrorExtensions, ID, InputObject, MaybeUndefined, Object, SimpleObject, Union,
 };
 use std::collections::BTreeMap;
 use tower_sessions::Session;
@@ -276,9 +277,107 @@ impl MetadataReview {
     }
 }
 #[derive(SimpleObject)]
-struct ShelfChange {
+pub(super) struct NotFound {
+    message: String,
+}
+impl NotFound {
+    fn new() -> Self {
+        Self {
+            message: "Not found".to_owned(),
+        }
+    }
+}
+#[derive(SimpleObject)]
+pub(super) struct SystemShelfImmutable {
+    message: String,
+}
+impl SystemShelfImmutable {
+    fn new() -> Self {
+        Self {
+            message: "System shelf cannot be modified.".to_owned(),
+        }
+    }
+}
+#[derive(SimpleObject)]
+pub(super) struct ShelfNameInvalid {
+    message: String,
+}
+
+#[derive(InputObject)]
+pub(super) struct CreateShelfInput {
+    name: String,
+}
+#[derive(InputObject)]
+pub(super) struct RenameShelfInput {
+    id: ID,
+    name: String,
+}
+#[derive(InputObject)]
+pub(super) struct DeleteShelfInput {
+    id: ID,
+}
+#[derive(InputObject)]
+pub(super) struct AddShelfItemInput {
     shelf_id: ID,
-    manifestation_id: Option<ID>,
+    manifestation_id: ID,
+}
+#[derive(InputObject)]
+pub(super) struct RemoveShelfItemInput {
+    shelf_id: ID,
+    manifestation_id: ID,
+}
+
+#[derive(SimpleObject)]
+pub(super) struct ShelfCreated {
+    shelf: library::Shelf,
+    edge: Edge<String, library::Shelf, EmptyFields>,
+}
+#[derive(SimpleObject)]
+pub(super) struct ShelfRenamed {
+    shelf: library::Shelf,
+}
+#[derive(SimpleObject)]
+pub(super) struct ShelfDeleted {
+    deleted_shelf_id: ID,
+}
+#[derive(SimpleObject)]
+pub(super) struct ShelfItemAdded {
+    shelf: library::Shelf,
+    edge: Edge<String, library::Manifestation, EmptyFields>,
+}
+#[derive(SimpleObject)]
+pub(super) struct ShelfItemRemoved {
+    shelf: library::Shelf,
+    deleted_manifestation_id: ID,
+}
+
+#[derive(Union)]
+pub(super) enum CreateShelfResult {
+    ShelfCreated(ShelfCreated),
+    ShelfNameInvalid(ShelfNameInvalid),
+}
+#[derive(Union)]
+pub(super) enum RenameShelfResult {
+    ShelfRenamed(ShelfRenamed),
+    ShelfNameInvalid(ShelfNameInvalid),
+    SystemShelfImmutable(SystemShelfImmutable),
+    NotFound(NotFound),
+}
+#[derive(Union)]
+pub(super) enum DeleteShelfResult {
+    ShelfDeleted(ShelfDeleted),
+    SystemShelfImmutable(SystemShelfImmutable),
+    NotFound(NotFound),
+}
+#[derive(Union)]
+pub(super) enum AddShelfItemResult {
+    ShelfItemAdded(ShelfItemAdded),
+    NotFound(NotFound),
+}
+#[derive(Union)]
+pub(super) enum RemoveShelfItemResult {
+    ShelfItemRemoved(ShelfItemRemoved),
+    NotFound(NotFound),
 }
 
 fn target<K: id::Kind>(value: &ID) -> async_graphql::Result<Uuid> {
@@ -425,77 +524,122 @@ impl Mutation {
     async fn create_shelf(
         &self,
         ctx: &Context<'_>,
-        name: String,
-    ) -> async_graphql::Result<library::Shelf> {
-        library::Shelf::from_model(
-            shelves::create_shelf(ctx.data()?, ctx.data()?, &name)
-                .await
-                .map_err(safe_error)?,
-        )
+        input: CreateShelfInput,
+    ) -> async_graphql::Result<CreateShelfResult> {
+        match shelves::create_shelf(ctx.data()?, ctx.data()?, &input.name).await {
+            Ok(row) => {
+                let cursor = crate::routes::cursor::ShelfCursor {
+                    is_system: row.is_system,
+                    name: row.name.clone(),
+                    id: row.id,
+                }
+                .encode();
+                let created = library::Shelf::from_model(row)?;
+                Ok(CreateShelfResult::ShelfCreated(ShelfCreated {
+                    edge: Edge::new(cursor, created.clone()),
+                    shelf: created,
+                }))
+            }
+            Err(AppError::Validation(message)) => Ok(ShelfNameInvalid { message }.into()),
+            Err(error) => Err(safe_error(error)),
+        }
     }
     #[graphql(guard = "WriteScope")]
     async fn rename_shelf(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-        name: String,
-    ) -> async_graphql::Result<library::Shelf> {
-        library::Shelf::from_model(
-            shelves::rename_shelf(ctx.data()?, ctx.data()?, target::<id::Shelf>(&id)?, &name)
-                .await
-                .map_err(safe_error)?,
-        )
+        input: RenameShelfInput,
+    ) -> async_graphql::Result<RenameShelfResult> {
+        let Some(shelf_id) = id::Shelf::decode(&input.id) else {
+            return Ok(NotFound::new().into());
+        };
+        match shelves::rename_shelf(ctx.data()?, ctx.data()?, shelf_id, &input.name).await {
+            Ok(row) => Ok(RenameShelfResult::ShelfRenamed(ShelfRenamed {
+                shelf: library::Shelf::from_model(row)?,
+            })),
+            Err(AppError::Validation(message)) => Ok(ShelfNameInvalid { message }.into()),
+            Err(AppError::NotFound) => Ok(NotFound::new().into()),
+            Err(AppError::SystemShelfImmutable) => Ok(SystemShelfImmutable::new().into()),
+            Err(error) => Err(safe_error(error)),
+        }
     }
     #[graphql(guard = "WriteScope")]
-    async fn delete_shelf(&self, ctx: &Context<'_>, id: ID) -> async_graphql::Result<ShelfChange> {
-        let target_id = target::<id::Shelf>(&id)?;
-        shelves::delete_shelf(ctx.data()?, ctx.data()?, target_id)
-            .await
-            .map_err(safe_error)?;
-        Ok(ShelfChange {
-            shelf_id: id,
-            manifestation_id: None,
-        })
+    async fn delete_shelf(
+        &self,
+        ctx: &Context<'_>,
+        input: DeleteShelfInput,
+    ) -> async_graphql::Result<DeleteShelfResult> {
+        let Some(shelf_id) = id::Shelf::decode(&input.id) else {
+            return Ok(NotFound::new().into());
+        };
+        match shelves::delete_shelf(ctx.data()?, ctx.data()?, shelf_id).await {
+            Ok(()) => Ok(DeleteShelfResult::ShelfDeleted(ShelfDeleted {
+                deleted_shelf_id: input.id,
+            })),
+            Err(AppError::NotFound) => Ok(NotFound::new().into()),
+            Err(AppError::SystemShelfImmutable) => Ok(SystemShelfImmutable::new().into()),
+            Err(error) => Err(safe_error(error)),
+        }
     }
     #[graphql(guard = "WriteScope")]
     async fn add_shelf_item(
         &self,
         ctx: &Context<'_>,
-        shelf_id: ID,
-        manifestation_id: ID,
-    ) -> async_graphql::Result<ShelfChange> {
-        shelves::add_shelf_item(
-            ctx.data()?,
-            ctx.data()?,
-            target::<id::Shelf>(&shelf_id)?,
-            target::<id::Manifestation>(&manifestation_id)?,
-        )
-        .await
-        .map_err(safe_error)?;
-        Ok(ShelfChange {
-            shelf_id,
-            manifestation_id: Some(manifestation_id),
-        })
+        input: AddShelfItemInput,
+    ) -> async_graphql::Result<AddShelfItemResult> {
+        let (Some(shelf_id), Some(manifestation_id)) = (
+            id::Shelf::decode(&input.shelf_id),
+            id::Manifestation::decode(&input.manifestation_id),
+        ) else {
+            return Ok(NotFound::new().into());
+        };
+        let added_at =
+            match shelves::add_shelf_item(ctx.data()?, ctx.data()?, shelf_id, manifestation_id)
+                .await
+            {
+                Ok(added_at) => added_at,
+                Err(AppError::NotFound) => return Ok(NotFound::new().into()),
+                Err(error) => return Err(safe_error(error)),
+            };
+        let (Some(updated), Some(manifestation)) = (
+            library::shelf(ctx, &input.shelf_id).await?,
+            library::manifestation(ctx, &input.manifestation_id).await?,
+        ) else {
+            return Ok(NotFound::new().into());
+        };
+        let cursor =
+            crate::services::reader::shelf_item_cursor(shelf_id, manifestation_id, added_at)
+                .map_err(safe_error)?;
+        Ok(AddShelfItemResult::ShelfItemAdded(ShelfItemAdded {
+            shelf: updated,
+            edge: Edge::new(cursor, manifestation),
+        }))
     }
     #[graphql(guard = "WriteScope")]
     async fn remove_shelf_item(
         &self,
         ctx: &Context<'_>,
-        shelf_id: ID,
-        manifestation_id: ID,
-    ) -> async_graphql::Result<ShelfChange> {
-        shelves::remove_shelf_item(
-            ctx.data()?,
-            ctx.data()?,
-            target::<id::Shelf>(&shelf_id)?,
-            target::<id::Manifestation>(&manifestation_id)?,
-        )
-        .await
-        .map_err(safe_error)?;
-        Ok(ShelfChange {
-            shelf_id,
-            manifestation_id: Some(manifestation_id),
-        })
+        input: RemoveShelfItemInput,
+    ) -> async_graphql::Result<RemoveShelfItemResult> {
+        let (Some(shelf_id), Some(manifestation_id)) = (
+            id::Shelf::decode(&input.shelf_id),
+            id::Manifestation::decode(&input.manifestation_id),
+        ) else {
+            return Ok(NotFound::new().into());
+        };
+        match shelves::remove_shelf_item(ctx.data()?, ctx.data()?, shelf_id, manifestation_id).await
+        {
+            Ok(()) => {}
+            Err(AppError::NotFound) => return Ok(NotFound::new().into()),
+            Err(error) => return Err(safe_error(error)),
+        }
+        let Some(updated) = library::shelf(ctx, &input.shelf_id).await? else {
+            return Ok(NotFound::new().into());
+        };
+        Ok(RemoveShelfItemResult::ShelfItemRemoved(ShelfItemRemoved {
+            shelf: updated,
+            deleted_manifestation_id: input.manifestation_id,
+        }))
     }
     #[graphql(guard = "WriteScope")]
     async fn accept_metadata_version(

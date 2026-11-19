@@ -158,7 +158,7 @@ pub async fn add_shelf_item(
     state: &AppState,
     id: Uuid,
     manifestation_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<jiff::Timestamp, AppError> {
     current_user.require_scope(Scope::Write)?;
 
     // RLS-scoped probe: confirm the caller can see the target
@@ -207,6 +207,14 @@ pub async fn add_shelf_item(
     .execute(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
+    let added_at = sqlx::query_scalar!(
+        "SELECT added_at FROM shelf_items WHERE shelf_id = $1 AND manifestation_id = $2",
+        id,
+        manifestation_id,
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
     sqlx::query!("UPDATE shelves SET updated_at = now() WHERE id = $1", id)
         .execute(&mut *tx)
         .await
@@ -215,7 +223,7 @@ pub async fn add_shelf_item(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    Ok(())
+    Ok(added_at.to_jiff())
 }
 
 pub async fn remove_shelf_item(

@@ -23,6 +23,7 @@ governed-by:
   - "REV-ADR-0079"
   - "REV-ADR-0080"
   - "REV-ADR-0081"
+  - "REV-ADR-0082"
 ---
 
 # GraphQL execution and Relay browser data
@@ -171,8 +172,15 @@ independent of parent count.
 `mutations.rs` calls the shared metadata editing and Undo, reading and shelf operations. Typed patches preserve absent
 and null values. Metadata save, reading and Undo take explicit nullable baselines. Review and shelves keep their
 existing preconditions. Scope, adult status, caller visibility, shelf ownership and credential ceilings remain separate
-checks. Exact Undo and resolution require the real live issuing browser session and retain expiry, budgets and
-non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
+checks.
+
+Shelf mutations take one `input` object named `<Mutation>Input` and return a `<Mutation>Result` union of one success
+member, named for the event (`ShelfCreated`), and their expected outcomes. Outcome types are shared across mutations and
+carry a `message`: `NotFound`, `SystemShelfImmutable` and `ShelfNameInvalid`. A malformed or caller-invisible target is
+a `NotFound` member. Forbidden, internal and malformed-header failures remain execution errors. Clients branch on
+`__typename` in `onCompleted` and treat `onError` as the unexpected class. The other mutations keep classified
+execution-error codes. Exact Undo and resolution require the real live issuing browser session and retain expiry,
+budgets and non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
 
 A selected metadata snapshot pairs scalar values and bounded editable relation pages with one aggregate revision. Read
 loaders batch core rows and selected pages in one caller-scoped REPEATABLE READ transaction. Write operations

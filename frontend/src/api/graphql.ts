@@ -370,29 +370,61 @@ editingProjections.set(
   "mutationsReadingMutation",
   z.object({ updateReadingState: readingSnapshot }),
 );
-for (const action of ["Create", "Rename"] as const)
-  editingProjections.set(
-    `mutations${action}ShelfMutation`,
-    z.object({ [`${action.toLowerCase()}Shelf`]: shelf }),
-  );
+const refusal = <T extends string>(typename: T) =>
+  z.object({ __typename: z.literal(typename), message: z.string() });
+editingProjections.set(
+  "mutationsCreateShelfMutation",
+  z.object({
+    createShelf: z.discriminatedUnion("__typename", [
+      z.object({
+        __typename: z.literal("ShelfCreated"),
+        edge: z.object({ cursor: z.string(), node: shelf }),
+      }),
+      refusal("ShelfNameInvalid"),
+    ]),
+  }),
+);
+editingProjections.set(
+  "mutationsRenameShelfMutation",
+  z.object({
+    renameShelf: z.discriminatedUnion("__typename", [
+      z.object({
+        __typename: z.literal("ShelfRenamed"),
+        shelf: shelf.pick({ id: true, name: true, updatedAt: true }),
+      }),
+      refusal("ShelfNameInvalid"),
+      refusal("SystemShelfImmutable"),
+      refusal("NotFound"),
+    ]),
+  }),
+);
 editingProjections.set(
   "mutationsDeleteShelfMutation",
-  z.object({ deleteShelf: z.object({ shelfId: domainId("Shelf") }) }),
+  z.object({
+    deleteShelf: z.discriminatedUnion("__typename", [
+      z.object({ __typename: z.literal("ShelfDeleted"), deletedShelfId: domainId("Shelf") }),
+      refusal("SystemShelfImmutable"),
+      refusal("NotFound"),
+    ]),
+  }),
 );
 editingProjections.set(
   "mutationsRefreshMetadataMutation",
   z.object({ refreshMetadata: z.object({ manifestationId: domainId("Manifestation") }) }),
 );
-for (const action of ["Add", "Remove"] as const)
-  editingProjections.set(
-    `mutations${action}ShelfItemMutation`,
-    z.object({
-      [`${action.toLowerCase()}ShelfItem`]: z.object({
-        shelfId: domainId("Shelf"),
-        manifestationId: domainId("Manifestation"),
+editingProjections.set(
+  "mutationsAddShelfItemMutation",
+  z.object({
+    addShelfItem: z.discriminatedUnion("__typename", [
+      z.object({
+        __typename: z.literal("ShelfItemAdded"),
+        shelf: shelf.pick({ id: true, itemCount: true, updatedAt: true }),
+        edge: z.object({ cursor: z.string(), node: z.object({ id: domainId("Manifestation") }) }),
       }),
-    }),
-  );
+      refusal("NotFound"),
+    ]),
+  }),
+);
 for (const [action, root] of [
   ["AcceptMetadataVersion", "acceptMetadataVersion"],
   ["RevertMetadataField", "revertMetadataField"],
