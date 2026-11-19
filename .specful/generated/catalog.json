@@ -649,6 +649,13 @@
       "title": "Honest non-null schema with client-handled GraphQL field errors"
     },
     {
+      "id": "REV-ADR-0081",
+      "kind": "adr",
+      "path": "docs/adr/0081-typeid-global-identifiers-carried-in-browser-urls.md",
+      "status": "accepted",
+      "title": "TypeID global identifiers carried in browser URLs"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0075",
@@ -1118,7 +1125,8 @@
       "governed-by": [
         "REV-ADR-0077",
         "REV-ADR-0079",
-        "REV-ADR-0080"
+        "REV-ADR-0080",
+        "REV-ADR-0081"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",

@@ -40,6 +40,8 @@ capability is deficient for Reverie, with approval governed by the root rules.
   require write scope or the higher declared scope. Keep role, child status, ownership and credential ceilings separate.
   Supply caller identity through execution-request data, never schema-global data. Transport failures use Problem
   Details; execution faults carry safe classifications and fixed internal messages. Never expose internal Display text.
+- **GraphQL IDs:** Encode and decode global IDs only through the `Kind` types in `src/graphql/id.rs`, which bind each
+  TypeID prefix at compile time. A new prefix is a maintainer decision.
 - **Extractor order:** The request body extractor (e.g., `Json<T>`, `String`, `Bytes`) is the last argument in the
   handler signature.
 - **State:** Use `axum::extract::State` for application dependencies. Request extensions carry request-scoped data set

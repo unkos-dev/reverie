@@ -13,7 +13,7 @@ import {
   type PreloadedQuery,
 } from "react-relay";
 import { ConnectionHandler, commitLocalUpdate } from "relay-runtime";
-import { encodeGraphQLId, executeEditingOnce } from "@/api/graphql";
+import { executeEditingOnce } from "@/api/graphql";
 import { useShelves } from "@/api/shelves";
 import { readerShelvesQuery } from "@/lib/relay/reader";
 import {
@@ -105,7 +105,7 @@ function ShelvesContent({
       const response = await executeEditingOnce<RenameShelf>(
         environment,
         mutationsRenameShelfMutation,
-        { shelfId: encodeGraphQLId("Shelf", renameTarget.id), name },
+        { shelfId: renameTarget.id, name },
         controller.current?.signal,
       );
       if (response !== undefined) {
@@ -125,7 +125,7 @@ function ShelvesContent({
       const response = await executeEditingOnce<DeleteShelf>(
         environment,
         mutationsDeleteShelfMutation,
-        { shelfId: encodeGraphQLId("Shelf", shelf.id) },
+        { shelfId: shelf.id },
         controller.current?.signal,
       );
       if (response === undefined) return;

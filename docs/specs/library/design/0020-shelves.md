@@ -145,7 +145,7 @@ Browser readers use the generated shelf operations in `reader.ts` and mutations 
 records and connection membership. Targeted native updates and refetches publish changed membership, names and counts.
 Public HTTP adapters retain their response and ownership contracts.
 
-Graph shelf roots and request-local loaders call the owner-scoped reads in `reader.rs`. `Shelf` has a base64 domain ID
+Graph shelf roots and request-local loaders call the owner-scoped reads in `reader.rs`. `Shelf` has a TypeID domain ID
 and exposes scalar shelf metadata plus a bounded `items(first:, after:)` connection. GraphQL shelves and items require
 `first` from 0 through 100, independently of `REVERIE_OPDS_PAGE_SIZE`. The root `shelves` connection retains
 system-first, name, then ID ordering. Items retain addition time, then manifestation ID ordering, with the shelf ID

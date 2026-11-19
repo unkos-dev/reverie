@@ -1,3 +1,4 @@
+use super::id::Kind as _;
 use super::loaders::{RequestLoader, SeriesKey, ShelfKey, WorkKey, batch_error};
 use super::{Viewer, id, safe_error};
 use crate::auth::middleware::CurrentUser;
@@ -39,7 +40,7 @@ pub(super) struct Work {
 impl Work {
     fn new(record: Arc<WorkRecord>) -> Self {
         Self {
-            id: id::encode("Work", record.id),
+            id: id::Work::encode(record.id),
             record,
         }
     }
@@ -168,7 +169,7 @@ pub(super) struct Manifestation {
 impl Manifestation {
     pub(super) fn new(record: BookRecord) -> Self {
         Self {
-            id: id::encode("Manifestation", record.detail.id),
+            id: id::Manifestation::encode(record.detail.id),
             record,
         }
     }
@@ -269,8 +270,8 @@ impl Manifestation {
             },
             relation_pages: HashMap::new(),
             isbn_mismatch: row.isbn_mismatch(),
-            work_id: id::encode("Work", row.work_id),
-            manifestation_id: id::encode("Manifestation", row.id),
+            work_id: id::Work::encode(row.work_id),
+            manifestation_id: id::Manifestation::encode(row.id),
             etag: self.record.metadata_etag.clone(),
             title: row.title.clone(),
             subtitle: row.subtitle.clone(),
@@ -304,7 +305,7 @@ impl Manifestation {
             .await?,
             |row| {
                 Ok(Genre {
-                    id: id::encode("Genre", required(row.id)?),
+                    id: id::Genre::encode(required(row.id)?),
                     name: required(row.name)?,
                 })
             },
@@ -330,7 +331,7 @@ impl Manifestation {
             .await?,
             |row| {
                 Ok(Mood {
-                    id: id::encode("Mood", required(row.id)?),
+                    id: id::Mood::encode(required(row.id)?),
                     name: required(row.name)?,
                 })
             },
@@ -349,7 +350,7 @@ impl Manifestation {
             relation(ctx, RelationKind::Tags, self.record.detail.id, first, after).await?,
             |row| {
                 Ok(Tag {
-                    id: id::encode("Tag", required(row.id)?),
+                    id: id::Tag::encode(required(row.id)?),
                     name: required(row.name)?,
                 })
             },
@@ -532,8 +533,8 @@ impl MetadataSnapshot {
                 manifestation_revision: snapshot.revision.manifestation_revision,
             },
             relation_pages: snapshot.pages.clone(),
-            work_id: id::encode("Work", snapshot.revision.work_id),
-            manifestation_id: id::encode("Manifestation", snapshot.revision.manifestation_id),
+            work_id: id::Work::encode(snapshot.revision.work_id),
+            manifestation_id: id::Manifestation::encode(snapshot.revision.manifestation_id),
             etag: snapshot
                 .revision
                 .etag()
@@ -609,7 +610,7 @@ impl MetadataSnapshot {
             self.page(RelationKind::Genres, first, after).await?,
             |row| {
                 Ok(Genre {
-                    id: id::encode("Genre", required(row.id)?),
+                    id: id::Genre::encode(required(row.id)?),
                     name: required(row.name)?,
                 })
             },
@@ -625,7 +626,7 @@ impl MetadataSnapshot {
     ) -> async_graphql::Result<Connection<String, Mood>> {
         term_connection(self.page(RelationKind::Moods, first, after).await?, |row| {
             Ok(Mood {
-                id: id::encode("Mood", required(row.id)?),
+                id: id::Mood::encode(required(row.id)?),
                 name: required(row.name)?,
             })
         })
@@ -640,7 +641,7 @@ impl MetadataSnapshot {
     ) -> async_graphql::Result<Connection<String, Tag>> {
         term_connection(self.page(RelationKind::Tags, first, after).await?, |row| {
             Ok(Tag {
-                id: id::encode("Tag", required(row.id)?),
+                id: id::Tag::encode(required(row.id)?),
                 name: required(row.name)?,
             })
         })
@@ -755,7 +756,7 @@ impl Shelf {
     }
     fn new(record: Arc<ShelfRecord>) -> async_graphql::Result<Self> {
         Ok(Self {
-            id: id::encode("Shelf", record.id),
+            id: id::Shelf::encode(record.id),
             item_count: i32::try_from(record.item_count)
                 .map_err(|e| safe_error(AppError::Internal(e.into())))?,
             record,
@@ -803,7 +804,7 @@ pub(super) struct Series {
 impl Series {
     fn new(record: Arc<SeriesRecord>) -> Self {
         Self {
-            id: id::encode("Series", record.id),
+            id: id::Series::encode(record.id),
             record,
         }
     }
@@ -905,7 +906,7 @@ fn contributor_connection(
         connection.edges.push(Edge::with_additional_fields(
             cursor,
             Author {
-                id: id::encode("Author", required(row.id)?),
+                id: id::Author::encode(required(row.id)?),
                 name: required(row.name)?,
             },
             ContributorFields {
@@ -951,7 +952,7 @@ pub(super) async fn manifestation(
     ctx: &Context<'_>,
     id: &ID,
 ) -> async_graphql::Result<Option<Manifestation>> {
-    let Some(id) = id::decode("Manifestation", id) else {
+    let Some(id) = id::Manifestation::decode(id) else {
         return Ok(None);
     };
     Ok(ctx
@@ -962,7 +963,7 @@ pub(super) async fn manifestation(
         .map(Manifestation::new))
 }
 pub(super) async fn work(ctx: &Context<'_>, id: &ID) -> async_graphql::Result<Option<Work>> {
-    let Some(id) = id::decode("Work", id) else {
+    let Some(id) = id::Work::decode(id) else {
         return Ok(None);
     };
     let loader = ctx.data::<RequestLoader>()?;
@@ -973,7 +974,7 @@ pub(super) async fn work(ctx: &Context<'_>, id: &ID) -> async_graphql::Result<Op
         .map(Work::new))
 }
 pub(super) async fn shelf(ctx: &Context<'_>, id: &ID) -> async_graphql::Result<Option<Shelf>> {
-    let Some(id) = id::decode("Shelf", id) else {
+    let Some(id) = id::Shelf::decode(id) else {
         return Ok(None);
     };
     ctx.data::<RequestLoader>()?
@@ -984,7 +985,7 @@ pub(super) async fn shelf(ctx: &Context<'_>, id: &ID) -> async_graphql::Result<O
         .transpose()
 }
 pub(super) async fn series(ctx: &Context<'_>, id: &ID) -> async_graphql::Result<Option<Series>> {
-    let Some(id) = id::decode("Series", id) else {
+    let Some(id) = id::Series::decode(id) else {
         return Ok(None);
     };
     Ok(ctx
@@ -1055,37 +1056,37 @@ impl BooksFilter {
             author: self
                 .author
                 .iter()
-                .map(|value| filter_id("Author", value))
+                .map(filter_id::<id::Author>)
                 .collect::<async_graphql::Result<Vec<_>>>()?,
             author_any: self
                 .author_any
                 .iter()
-                .map(|value| filter_id("Author", value))
+                .map(filter_id::<id::Author>)
                 .collect::<async_graphql::Result<Vec<_>>>()?,
             author_none: self
                 .author_none
                 .iter()
-                .map(|value| filter_id("Author", value))
+                .map(filter_id::<id::Author>)
                 .collect::<async_graphql::Result<Vec<_>>>()?,
             series: self
                 .series
                 .as_ref()
-                .map(|value| filter_id("Series", value))
+                .map(filter_id::<id::Series>)
                 .transpose()?,
             series_any: self
                 .series_any
                 .iter()
-                .map(|value| filter_id("Series", value))
+                .map(filter_id::<id::Series>)
                 .collect::<async_graphql::Result<Vec<_>>>()?,
             shelf: self
                 .shelf
                 .as_ref()
-                .map(|value| filter_id("Shelf", value))
+                .map(filter_id::<id::Shelf>)
                 .transpose()?,
             shelf_any: self
                 .shelf_any
                 .iter()
-                .map(|value| filter_id("Shelf", value))
+                .map(filter_id::<id::Shelf>)
                 .collect::<async_graphql::Result<Vec<_>>>()?,
             tag: self.tag,
             genre: self.genre,
@@ -1128,8 +1129,8 @@ impl BooksFilter {
     }
 }
 
-fn filter_id(kind: &str, value: &ID) -> async_graphql::Result<Uuid> {
-    id::decode(kind, value)
+fn filter_id<K: id::Kind>(value: &ID) -> async_graphql::Result<Uuid> {
+    K::decode(value)
         .ok_or_else(|| safe_error(AppError::Validation("Invalid filter identity.".into())))
 }
 fn filter_timestamp(value: &str) -> async_graphql::Result<Timestamp> {
@@ -1282,7 +1283,7 @@ pub(super) async fn search(ctx: &Context<'_>, q: &str) -> async_graphql::Result<
 }
 
 macro_rules! suggestion {
-    ($name:ident, $function:ident, $operation:ident, $kind:literal) => {
+    ($name:ident, $function:ident, $operation:ident, $kind:ident) => {
         #[derive(SimpleObject)]
         pub(super) struct $name {
             entity_id: Option<ID>,
@@ -1304,7 +1305,7 @@ macro_rules! suggestion {
             Ok(rows
                 .into_iter()
                 .map(|row| $name {
-                    entity_id: row.id.map(|id| id::encode($kind, id)),
+                    entity_id: row.id.map(id::$kind::encode),
                     value: row.value,
                 })
                 .collect())
@@ -1315,22 +1316,17 @@ suggestion!(
     AuthorSuggestion,
     author_suggestions,
     suggest_authors,
-    "Author"
+    Author
 );
-suggestion!(
-    SeriesSuggestion,
-    series_suggestions,
-    suggest_series,
-    "Series"
-);
-suggestion!(GenreSuggestion, genre_suggestions, suggest_genres, "Genre");
-suggestion!(MoodSuggestion, mood_suggestions, suggest_moods, "Mood");
-suggestion!(TagSuggestion, tag_suggestions, suggest_tags, "Tag");
+suggestion!(SeriesSuggestion, series_suggestions, suggest_series, Series);
+suggestion!(GenreSuggestion, genre_suggestions, suggest_genres, Genre);
+suggestion!(MoodSuggestion, mood_suggestions, suggest_moods, Mood);
+suggestion!(TagSuggestion, tag_suggestions, suggest_tags, Tag);
 suggestion!(
     PublisherSuggestion,
     publisher_suggestions,
     suggest_publishers,
-    "Publisher"
+    Publisher
 );
 
 pub(super) async fn author_labels(
@@ -1339,7 +1335,7 @@ pub(super) async fn author_labels(
 ) -> async_graphql::Result<Vec<AuthorSuggestion>> {
     let ids = ids
         .iter()
-        .map(|id| filter_id("Author", id))
+        .map(filter_id::<id::Author>)
         .collect::<async_graphql::Result<Vec<_>>>()?;
     let rows = reader::author_labels(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &ids)
         .await
@@ -1347,7 +1343,7 @@ pub(super) async fn author_labels(
     Ok(rows
         .into_iter()
         .map(|row| AuthorSuggestion {
-            entity_id: row.id.map(|id| id::encode("Author", id)),
+            entity_id: row.id.map(id::Author::encode),
             value: row.value,
         })
         .collect())
@@ -1358,7 +1354,7 @@ pub(super) async fn series_labels(
 ) -> async_graphql::Result<Vec<SeriesSuggestion>> {
     let ids = ids
         .iter()
-        .map(|id| filter_id("Series", id))
+        .map(filter_id::<id::Series>)
         .collect::<async_graphql::Result<Vec<_>>>()?;
     let rows = reader::series_labels(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &ids)
         .await
@@ -1366,7 +1362,7 @@ pub(super) async fn series_labels(
     Ok(rows
         .into_iter()
         .map(|row| SeriesSuggestion {
-            entity_id: Some(id::encode("Series", row.id)),
+            entity_id: Some(id::Series::encode(row.id)),
             value: row.value,
         })
         .collect())

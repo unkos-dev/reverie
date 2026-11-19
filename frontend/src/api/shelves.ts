@@ -17,7 +17,6 @@
 import { useEffect, useState, useTransition } from "react";
 import { fetchQuery, usePaginationFragment, useRelayEnvironment } from "react-relay";
 import { createOperationDescriptor, getRequest } from "relay-runtime";
-import { decodeGraphQLId } from "./graphql";
 import { readerShelves, readerShelvesQuery } from "@/lib/relay/reader";
 import type { readerShelves$key } from "@/lib/relay/__generated__/readerShelves.graphql";
 import type { readerShelvesQuery as ShelvesQuery } from "@/lib/relay/__generated__/readerShelvesQuery.graphql";
@@ -85,7 +84,7 @@ export function useShelves(
   return {
     data:
       data?.shelves.edges.map(({ node }) => ({
-        id: decodeGraphQLId("Shelf", node.id),
+        id: node.id,
         name: node.name,
         is_system: node.isSystem,
         item_count: node.itemCount,

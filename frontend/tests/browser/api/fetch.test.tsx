@@ -7,7 +7,7 @@ import { getReadingState, updateReadingState } from "@/api/reading";
 import { apiFetch } from "@/api/fetch";
 
 import { createOperationDescriptor, getRequest } from "relay-runtime";
-import { captureAuthorPages, executeEditing } from "@/api/graphql";
+import { captureAuthorPages, encodeGraphQLId, executeEditing } from "@/api/graphql";
 import { forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
 import { relayEnvironment } from "@/lib/relay/environment";
 import {
@@ -412,8 +412,8 @@ test("metadata and reading edits keep their baseline", async () => {
 async function graphqlBaselines(): Promise<void> {
   rememberActiveUser("editing-account");
   const environment = relayEnvironment();
-  const id = btoa("Manifestation:12345678-1234-4234-8234-123456789abc");
-  const workId = btoa("Work:22345678-1234-4234-8234-123456789abc");
+  const id = encodeGraphQLId("Manifestation", "12345678-1234-4234-8234-123456789abc");
+  const workId = encodeGraphQLId("Work", "22345678-1234-4234-8234-123456789abc");
   const tag = '"aaaaaaaaaaaaaaaaaaaaaa"';
   const newer = '"bbbbbbbbbbbbbbbbbbbbbb"';
   const latest = '"cccccccccccccccccccccc"';
@@ -558,8 +558,9 @@ async function graphqlBaselines(): Promise<void> {
         {
           cursor,
           node: {
-            id: btoa(
-              `Author:${cursor === "one" ? "32345678" : "42345678"}-1234-4234-8234-123456789abc`,
+            id: encodeGraphQLId(
+              "Author",
+              `${cursor === "one" ? "32345678" : "42345678"}-1234-4234-8234-123456789abc`,
             ),
             name,
           },

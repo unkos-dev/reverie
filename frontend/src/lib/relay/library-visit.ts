@@ -1,12 +1,7 @@
 import { loadQuery, type PreloadedQuery } from "react-relay";
 import { createOperationDescriptor, getRequest, type Environment } from "relay-runtime";
 
-import {
-  GraphQLExecutionError,
-  decodeGraphQLId,
-  executeEditingOnce,
-  libraryVariables,
-} from "@/api/graphql";
+import { GraphQLExecutionError, executeEditingOnce, libraryVariables } from "@/api/graphql";
 import type { ListBooksParams } from "@/api/books";
 import type { LibraryPosition } from "@/routes/library-params";
 import { readerLibraryQuery } from "./reader";
@@ -63,7 +58,7 @@ export class LibrarySource {
       controller.signal,
       (payload) => {
         for (const edge of payload.books.edges)
-          this.rows.set(decodeGraphQLId("Manifestation", edge.node.id), {
+          this.rows.set(edge.node.id, {
             metadata: edge.node.metadata,
             readingState: edge.node.readingState,
           });

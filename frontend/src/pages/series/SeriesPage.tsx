@@ -10,7 +10,6 @@ import {
   useQueryLoader,
   type PreloadedQuery,
 } from "react-relay";
-import { decodeGraphQLId } from "@/api/graphql";
 import {
   readerSeriesQuery,
   readerSeries,
@@ -115,7 +114,7 @@ function SeriesWorkRow({
           {edge.position == null ? "" : `#${String(edge.position)}`}
         </p>
         <Link
-          to={`/b/${decodeGraphQLId("Manifestation", edition?.id ?? "")}`}
+          to={`/b/${edition?.id ?? ""}`}
           className="text-fg block truncate text-base font-medium hover:underline"
         >
           {work.title}

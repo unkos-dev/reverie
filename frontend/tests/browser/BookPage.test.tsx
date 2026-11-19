@@ -115,7 +115,7 @@ describe("BookPage", () => {
           },
         },
       ],
-      { initialEntries: ["/b/11111111-1111-4111-8111-111111111111"] },
+      { initialEntries: [`/b/${id}`] },
     );
     await render(
       <RelayEnvironmentProvider environment={environment}>

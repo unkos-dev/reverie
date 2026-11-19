@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { fetchQuery, getRequest } from "relay-runtime";
 
-import { GraphQLExecutionError, graphqlNetwork } from "@/api/graphql";
+import { GraphQLExecutionError, encodeGraphQLId, graphqlNetwork } from "@/api/graphql";
 import { ApiError } from "@/api/errors";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import {
@@ -145,7 +145,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
     fetch.mockResolvedValueOnce(json(malformed));
     await expect(request()).rejects.toThrow();
   }
-  const id = btoa("Manifestation:12345678-1234-4234-8234-123456789abc");
+  const id = encodeGraphQLId("Manifestation", "12345678-1234-4234-8234-123456789abc");
   const operation = {
     operationId: "22345678-1234-4234-8234-123456789abc",
     fieldName: "title",
@@ -158,7 +158,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
       operations: [operation],
       metadata: {
         manifestationId: id,
-        workId: btoa("Work:42345678-1234-4234-8234-123456789abc"),
+        workId: encodeGraphQLId("Work", "42345678-1234-4234-8234-123456789abc"),
         etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
         title: "Saved",
       },

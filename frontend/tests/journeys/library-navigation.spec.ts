@@ -10,7 +10,22 @@ const documents = z
       readFileSync(new URL("../../../backend/graphql-documents.json", import.meta.url), "utf8"),
     ),
   );
-const graphId = (kind: string, id: string) => Buffer.from(`${kind}:${id}`).toString("base64");
+const ID_PREFIXES: Record<string, string> = {
+  Author: "author",
+  Manifestation: "book",
+  Series: "series",
+  Shelf: "shelf",
+  Work: "work",
+};
+const graphId = (kind: string, id: string) => {
+  let bits = BigInt(`0x${id.replaceAll("-", "")}`);
+  let suffix = "";
+  for (let index = 0; index < 26; index += 1) {
+    suffix = "0123456789abcdefghjkmnpqrstvwxyz".charAt(Number(bits & 31n)) + suffix;
+    bits >>= 5n;
+  }
+  return `${ID_PREFIXES[kind]}_${suffix}`;
+};
 const variablesSchema = z
   .object({
     sourceKey: z.string(),
@@ -410,7 +425,7 @@ test("book Back and Forward restore a visit; Back past Library does not undo edi
     .getByRole("link", { name: /The Sea/ })
     .last()
     .click();
-  await expect(page).toHaveURL(new RegExp(`/b/${BOOK.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/b/${graphId("Manifestation", BOOK.id)}$`));
   await page.goBack();
   await ready(page);
   await expect(search(page)).toHaveValue("The Sea");
@@ -503,7 +518,9 @@ test("unchanged returns preserve each visit's books and known-book position", as
   await page.goto("/library");
   await ready(page);
   const table = page.getByRole("grid", { name: "Library books", exact: true });
-  const first = table.locator('[data-book-id="00000000-0000-4000-8000-000000000009"]');
+  const first = table.locator(
+    `[data-book-id="${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}"]`,
+  );
   await expect(table).toBeVisible();
   await table.evaluate((element) => {
     element.scrollTo({ top: 400, behavior: "instant" });
@@ -535,7 +552,9 @@ test("unchanged returns preserve each visit's books and known-book position", as
   const firstTop = await first.evaluate((element) => element.getBoundingClientRect().top);
   await expect(page.getByText("50 books loaded", { exact: true }).first()).toBeVisible();
   await first.getByRole("link", { name: "Journey book 009", exact: true }).press("Enter");
-  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page).toHaveURL(
+    new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
+  );
   await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
   await page.goBack();
   await ready(page);
@@ -549,7 +568,9 @@ test("unchanged returns preserve each visit's books and known-book position", as
   await expect(table).toHaveJSProperty("scrollTop", firstScroll);
 
   await page.goForward();
-  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page).toHaveURL(
+    new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
+  );
   await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Library", exact: true }).first().click();
   await ready(page);
@@ -558,7 +579,9 @@ test("unchanged returns preserve each visit's books and known-book position", as
   await table.evaluate((element) => {
     element.scrollTo({ top: 1700, behavior: "instant" });
   });
-  const second = table.locator('[data-book-id="00000000-0000-4000-8000-000000000039"]');
+  const second = table.locator(
+    `[data-book-id="${graphId("Manifestation", "00000000-0000-4000-8000-000000000039")}"]`,
+  );
   await expect(second).toBeAttached();
   await second.getByRole("link", { name: "Journey book 039", exact: true }).focus();
   const secondScroll = await second.evaluate((element) => {
@@ -585,7 +608,9 @@ test("unchanged returns preserve each visit's books and known-book position", as
   });
   const secondTop = await second.evaluate((element) => element.getBoundingClientRect().top);
   await second.getByRole("link", { name: "Journey book 039", exact: true }).press("Enter");
-  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000039$/);
+  await expect(page).toHaveURL(
+    new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000039")}$`),
+  );
   await expect(page.getByRole("heading", { name: "Journey book 039", exact: true })).toBeVisible();
   await page.goBack();
   await ready(page);
@@ -601,7 +626,9 @@ test("unchanged returns preserve each visit's books and known-book position", as
   await expect(table).toHaveJSProperty("scrollTop", secondScroll);
 
   await page.goBack();
-  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page).toHaveURL(
+    new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
+  );
   await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
   await page.goBack();
   await ready(page);
@@ -625,7 +652,9 @@ test("a moved book returns to its saved position", async ({ page }) => {
   await table.evaluate((element) => {
     element.scrollTo({ top: 400, behavior: "instant" });
   });
-  const book = table.locator('[data-book-id="00000000-0000-4000-8000-000000000009"]');
+  const book = table.locator(
+    `[data-book-id="${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}"]`,
+  );
   await expect(book).toBeVisible();
   await book.getByRole("link", { name: "Journey book 009", exact: true }).focus();
   await book.evaluate((element) => {
@@ -652,7 +681,9 @@ test("a moved book returns to its saved position", async ({ page }) => {
   });
   const savedTop = await book.evaluate((element) => element.getBoundingClientRect().top);
   await book.getByRole("link", { name: "Journey book 009", exact: true }).press("Enter");
-  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page).toHaveURL(
+    new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
+  );
   await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
   fixture.books.unshift(
     {
@@ -692,10 +723,14 @@ test("a user scroll wins during a held return", async ({ page }) => {
   await table.evaluate((element) => {
     element.scrollTo({ top: 400, behavior: "instant" });
   });
-  const original = table.locator('[data-book-id="00000000-0000-4000-8000-000000000009"]');
+  const original = table.locator(
+    `[data-book-id="${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}"]`,
+  );
   await expect(original).toBeVisible();
   await original.getByRole("link", { name: "Journey book 009", exact: true }).press("Enter");
-  await expect(page).toHaveURL(/\/b\/00000000-0000-4000-8000-000000000009$/);
+  await expect(page).toHaveURL(
+    new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
+  );
   await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
   let release: (() => void) | undefined;
   const paused = new Promise<void>((resolve) => {
@@ -717,7 +752,9 @@ test("a user scroll wins during a held return", async ({ page }) => {
   const request = await held;
   await ready(page);
   await expect(page.getByText("Updating results…", { exact: true })).toBeVisible();
-  const chosen = table.locator('[data-book-id="00000000-0000-4000-8000-000000000014"]');
+  const chosen = table.locator(
+    `[data-book-id="${graphId("Manifestation", "00000000-0000-4000-8000-000000000014")}"]`,
+  );
   await expect(chosen).toBeAttached();
   const chosenScroll = await chosen.evaluate((element) => {
     const grid = element.closest('[role="grid"]');

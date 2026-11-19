@@ -7,7 +7,7 @@ import {
   useSubscribeToInvalidationState,
 } from "react-relay";
 import { commitLocalUpdate } from "relay-runtime";
-import { encodeGraphQLId, executeEditingOnce, GraphQLExecutionError } from "@/api/graphql";
+import { executeEditingOnce, GraphQLExecutionError } from "@/api/graphql";
 import { readerVersions, readerVersionsQuery } from "@/lib/relay/reader";
 import {
   mutationsAcceptMetadataVersionMutation,
@@ -79,7 +79,7 @@ type FieldActionState = {
 export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const query = useLazyLoadQuery<VersionsQuery>(readerVersionsQuery, {
-    id: encodeGraphQLId("Manifestation", book.id),
+    id: book.id,
   });
   const { data, hasNext, isLoadingNext, loadNext, refetch } = usePaginationFragment<
     VersionsPagination,
@@ -112,7 +112,7 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
       refetch({}, { fetchPolicy: "network-only" });
     });
   };
-  useSubscribeToInvalidationState([encodeGraphQLId("Manifestation", book.id)], refresh);
+  useSubscribeToInvalidationState([book.id], refresh);
   const retainedFields = actions.flatMap((action) =>
     action.status === "pending" || action.status === "error" ? [action.variables.field] : [],
   );
@@ -216,7 +216,7 @@ function FieldGroup({
   async function mutate(variables: FieldActionVariables): Promise<void> {
     if (pending) return;
     onAction({ status: "pending", variables });
-    const id = encodeGraphQLId("Manifestation", manifestationId);
+    const id = manifestationId;
     try {
       let metadata: AcceptVersion["response"]["acceptMetadataVersion"]["metadata"];
       if (variables.action === "clear") {

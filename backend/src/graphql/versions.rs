@@ -1,3 +1,4 @@
+use super::id::Kind as _;
 use super::loaders::{ReaderLoader, RequestLoader, batch_error};
 use crate::error::AppError;
 use crate::services::reader::{self, VersionSet};
@@ -107,7 +108,7 @@ impl MetadataVersions {
             connection.edges.push(async_graphql::connection::Edge::new(
                 cursor,
                 MetadataVersion {
-                    id: super::id::encode("MetadataVersion", row.id),
+                    id: super::id::MetadataVersion::encode(row.id),
                     field_name: row.field_name,
                     source: row.source,
                     new_value: Json(row.new_value),

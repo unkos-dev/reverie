@@ -1,5 +1,6 @@
 //! Write-scoped adapters for the canonical editing operations.
 
+use super::id::Kind as _;
 use super::{WriteScope, id, library, safe_error};
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
@@ -267,7 +268,7 @@ impl MetadataReview {
         snapshot: Option<&editing::MetadataSnapshot>,
     ) -> async_graphql::Result<Self> {
         Ok(Self {
-            manifestation_id: id::encode("Manifestation", edition),
+            manifestation_id: id::Manifestation::encode(edition),
             metadata: snapshot
                 .map(library::MetadataSnapshot::from_domain)
                 .transpose()?,
@@ -280,9 +281,9 @@ struct ShelfChange {
     manifestation_id: Option<ID>,
 }
 
-fn target(kind: &str, value: &ID) -> async_graphql::Result<Uuid> {
-    id::decode(kind, value)
-        .ok_or_else(|| safe_error(AppError::Validation(format!("Invalid {kind} ID."))))
+fn target<K: id::Kind>(value: &ID) -> async_graphql::Result<Uuid> {
+    K::decode(value)
+        .ok_or_else(|| safe_error(AppError::Validation(format!("Invalid {} ID.", K::NAME))))
 }
 fn uuid(value: &str) -> async_graphql::Result<Uuid> {
     value.parse().map_err(|_| {
@@ -347,7 +348,7 @@ impl Mutation {
             .map_err(|error| safe_error(AppError::Internal(error.into())))?;
         let changed = crate::services::enrichment::reset_retries(
             &mut tx,
-            &[target("Manifestation", &id)?],
+            &[target::<id::Manifestation>(&id)?],
             crate::services::enrichment::RetryTiming::ClearProviderDelay,
         )
         .await
@@ -380,7 +381,7 @@ impl Mutation {
                 ctx.data()?,
                 ctx.data()?,
                 ctx.data()?,
-                target("Manifestation", &id)?,
+                target::<id::Manifestation>(&id)?,
                 supplied,
                 patch.domain(request_id)?,
                 &selection,
@@ -407,7 +408,7 @@ impl Mutation {
             reading::patch_reading(
                 ctx.data()?,
                 ctx.data()?,
-                target("Manifestation", &id)?,
+                target::<id::Manifestation>(&id)?,
                 supplied,
                 reading::UpdateReadingRequest {
                     status: patch.status.map_value(Into::into).into(),
@@ -440,14 +441,14 @@ impl Mutation {
         name: String,
     ) -> async_graphql::Result<library::Shelf> {
         library::Shelf::from_model(
-            shelves::rename_shelf(ctx.data()?, ctx.data()?, target("Shelf", &id)?, &name)
+            shelves::rename_shelf(ctx.data()?, ctx.data()?, target::<id::Shelf>(&id)?, &name)
                 .await
                 .map_err(safe_error)?,
         )
     }
     #[graphql(guard = "WriteScope")]
     async fn delete_shelf(&self, ctx: &Context<'_>, id: ID) -> async_graphql::Result<ShelfChange> {
-        let target_id = target("Shelf", &id)?;
+        let target_id = target::<id::Shelf>(&id)?;
         shelves::delete_shelf(ctx.data()?, ctx.data()?, target_id)
             .await
             .map_err(safe_error)?;
@@ -466,8 +467,8 @@ impl Mutation {
         shelves::add_shelf_item(
             ctx.data()?,
             ctx.data()?,
-            target("Shelf", &shelf_id)?,
-            target("Manifestation", &manifestation_id)?,
+            target::<id::Shelf>(&shelf_id)?,
+            target::<id::Manifestation>(&manifestation_id)?,
         )
         .await
         .map_err(safe_error)?;
@@ -486,8 +487,8 @@ impl Mutation {
         shelves::remove_shelf_item(
             ctx.data()?,
             ctx.data()?,
-            target("Shelf", &shelf_id)?,
-            target("Manifestation", &manifestation_id)?,
+            target::<id::Shelf>(&shelf_id)?,
+            target::<id::Manifestation>(&manifestation_id)?,
         )
         .await
         .map_err(safe_error)?;
@@ -504,7 +505,7 @@ impl Mutation {
         version_id: ID,
     ) -> async_graphql::Result<MetadataReview> {
         adult(ctx)?;
-        let edition = target("Manifestation", &id)?;
+        let edition = target::<id::Manifestation>(&id)?;
         let look = ctx.look_ahead().field("metadata");
         let selection = if look.exists() {
             Some(library::snapshot_selection(&look)?)
@@ -516,7 +517,7 @@ impl Mutation {
             ctx.data()?,
             edition,
             editing::VersionPayload {
-                version_id: target("MetadataVersion", &version_id)?,
+                version_id: target::<id::MetadataVersion>(&version_id)?,
             },
             selection.as_ref(),
         )
@@ -532,7 +533,7 @@ impl Mutation {
         version_id: ID,
     ) -> async_graphql::Result<MetadataReview> {
         adult(ctx)?;
-        let edition = target("Manifestation", &id)?;
+        let edition = target::<id::Manifestation>(&id)?;
         let look = ctx.look_ahead().field("metadata");
         let selection = if look.exists() {
             Some(library::snapshot_selection(&look)?)
@@ -544,7 +545,7 @@ impl Mutation {
             ctx.data()?,
             edition,
             editing::VersionPayload {
-                version_id: target("MetadataVersion", &version_id)?,
+                version_id: target::<id::MetadataVersion>(&version_id)?,
             },
             selection.as_ref(),
         )
@@ -561,7 +562,7 @@ impl Mutation {
         version_id: Option<ID>,
     ) -> async_graphql::Result<MetadataReview> {
         adult(ctx)?;
-        let edition = target("Manifestation", &id)?;
+        let edition = target::<id::Manifestation>(&id)?;
         let look = ctx.look_ahead().field("metadata");
         let selection = if look.exists() {
             Some(library::snapshot_selection(&look)?)
@@ -575,7 +576,7 @@ impl Mutation {
             editing::RevertPayload {
                 field_name,
                 version_id: version_id
-                    .map(|value| target("MetadataVersion", &value))
+                    .map(|value| target::<id::MetadataVersion>(&value))
                     .transpose()?,
             },
             selection.as_ref(),
@@ -593,7 +594,7 @@ impl Mutation {
         entity_type: String,
     ) -> async_graphql::Result<MetadataReview> {
         adult(ctx)?;
-        let edition = target("Manifestation", &id)?;
+        let edition = target::<id::Manifestation>(&id)?;
         let look = ctx.look_ahead().field("metadata");
         let selection = if look.exists() {
             Some(library::snapshot_selection(&look)?)
@@ -623,7 +624,7 @@ impl Mutation {
         entity_type: String,
     ) -> async_graphql::Result<MetadataReview> {
         adult(ctx)?;
-        let edition = target("Manifestation", &id)?;
+        let edition = target::<id::Manifestation>(&id)?;
         let look = ctx.look_ahead().field("metadata");
         let selection = if look.exists() {
             Some(library::snapshot_selection(&look)?)
@@ -661,7 +662,7 @@ impl Mutation {
                 ctx.data()?,
                 ctx.data()?,
                 ctx.data()?,
-                target("Manifestation", &id)?,
+                target::<id::Manifestation>(&id)?,
                 supplied,
                 undo::UndoRequest {
                     operation_id: uuid(&operation_id)?,
@@ -686,7 +687,7 @@ pub(super) async fn metadata_operation(
             ctx.data::<CurrentUser>()?,
             ctx.data::<AppState>()?,
             ctx.data::<Session>()?,
-            target("Manifestation", &id)?,
+            target::<id::Manifestation>(&id)?,
             undo::ResolveRequest {
                 request_id: request_id.map(|value| uuid(&value)).transpose()?,
                 operation_id: operation_id.map(|value| uuid(&value)).transpose()?,

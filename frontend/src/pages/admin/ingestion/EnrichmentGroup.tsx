@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
-import { ApiError } from "@/api";
+import { ApiError, bookPath } from "@/api";
 import {
   listEnrichmentFailures,
   triggerEnrichment,
@@ -103,7 +103,7 @@ function FailureRow({ item }: Readonly<{ item: FailureItem }>): ReactElement {
     <TableRow className="border-border hover:bg-transparent">
       <TableCell className="py-2.5 pl-12 align-top whitespace-normal">
         <Link
-          to={`/b/${item.manifestation_id}`}
+          to={bookPath(item.manifestation_id)}
           className="font-bold underline underline-offset-[3px]"
         >
           {item.title}

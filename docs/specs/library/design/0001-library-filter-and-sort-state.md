@@ -48,17 +48,17 @@ Vocabulary filters compose multiple-selection ComboBoxes with a limit of 20 valu
 Associated description text explains how to make room; oversized selections use controlled invalidity and FieldError
 feedback.
 
-Shelf and series selections are UUID arrays, matching ANY within a facet and AND between facets. A native multiple
+Shelf and series selections are GraphQL ID arrays, matching ANY within a facet and AND between facets. A native multiple
 ListBox keeps the independently fetched owned shelf options visible. Toggle selection and select-all publish actual IDs;
 empty selection is unrestricted, including unassigned books. Oversized selection remains editable with associated
 feedback while list requests stay blocked. Section Clear and per-ID chip removal use the same visit owner.
 
-Series uses the multiple ComboBox and TagGroup composition with UUID identity. Native `allowsCustomValue` retains free
-search text on commit and dismissal; only selected UUID items publish predicates. Its independent server suggestions
-require two query characters and return up to twenty ranked choices. Controlled query text remains after selection and
-does not depend on narrowed Library results. `useSeriesLabels` reads the independent bounded `readerSeriesLabelsQuery`
-for restored chips and selections; missing or failed labels retain the selected UUID with a short-ID fallback. No
-response writes filter intent.
+Series uses the multiple ComboBox and TagGroup composition with GraphQL ID identity. Native `allowsCustomValue` retains
+free search text on commit and dismissal; only selected identified items publish predicates. Its independent server
+suggestions require two query characters and return up to twenty ranked choices. Controlled query text remains after
+selection and does not depend on narrowed Library results. `useSeriesLabels` reads the independent bounded
+`readerSeriesLabelsQuery` for restored chips and selections; missing or failed labels retain the selected ID with a
+fallback showing the first eight characters of its UUID. No response writes filter intent.
 
 `useLibraryPreferences()` resolves sort and display preferences. The page supplies its one sort intent handler to the
 filter panel, Covers sort control and table headers. `useLibraryBooks` owns one displayed Relay source and a candidate

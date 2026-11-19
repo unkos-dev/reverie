@@ -2,6 +2,7 @@ import { getLocalTimeZone, parseDate } from "@internationalized/date";
 import { z } from "zod";
 
 import { ReadingStatusSchema, type ArrayParamKey, type ListBooksParams } from "@/api";
+import { domainId } from "@/api/graphql";
 
 export type { LibraryView } from "@/api";
 
@@ -40,14 +41,15 @@ const rangeFilterSchema = (min: number, max: number) =>
     empty: z.boolean().optional(),
   });
 const tokens = z.array(z.string());
-const ids = z.array(z.uuid());
-const facetIds = z.union([ids, z.uuid().transform((id) => [id])]).default([]);
-const setFilterSchema = (values: typeof tokens | typeof ids) =>
+const ids = (kind: "Author" | "Series" | "Shelf") => z.array(domainId(kind));
+const facetIds = (kind: "Series" | "Shelf") =>
+  z.union([ids(kind), domainId(kind).transform((id) => [id])]).default([]);
+const setFilterSchema = (values: z.ZodArray<z.ZodType<string>>) =>
   z.strictObject({ all: values, any: values, none: values });
 const statuses = z.array(z.enum([...ReadingStatusSchema.options, "unread"]));
 
 const LibraryPositionSchema = z.strictObject({
-  anchorId: z.uuid().nullable(),
+  anchorId: domainId("Manifestation").nullable(),
   anchorOffset: z.number(),
   offset: z.number().nonnegative(),
   extent: z.number().int().nonnegative(),
@@ -66,12 +68,12 @@ export const LibraryVisitSchema = z.strictObject({
     addedAfter: z.iso.date().optional(),
     addedBefore: z.iso.date().optional(),
     status: z.strictObject({ any: statuses, none: statuses }),
-    authors: setFilterSchema(ids),
+    authors: setFilterSchema(ids("Author")),
     tags: setFilterSchema(tokens),
     genres: setFilterSchema(tokens),
     moods: setFilterSchema(tokens),
-    series: facetIds,
-    shelf: facetIds,
+    series: facetIds("Series"),
+    shelf: facetIds("Shelf"),
   }),
   view: z.enum(["grid", "table"]).optional(),
   position: LibraryPositionSchema.optional(),

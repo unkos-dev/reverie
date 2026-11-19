@@ -22,6 +22,7 @@ governed-by:
   - "REV-ADR-0077"
   - "REV-ADR-0079"
   - "REV-ADR-0080"
+  - "REV-ADR-0081"
 ---
 
 # GraphQL execution and Relay browser data
@@ -77,9 +78,18 @@ checks Relay connection, edge and `PageInfo` shapes, forward pagination argument
 `requireCustomScalarTypes`, so a custom scalar without a `customScalarTypes` mapping fails generation. Component tests
 use `relay-test-utils` 21.0.1.
 
-IDs use standard padded base64 of `Type:<uuid>`, with distinct Work, Manifestation, Shelf, Series and User prefixes. The
-`Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed lookup roots return null for malformed,
-wrong-type, hidden and missing records. The User variant resolves only the caller. Reading state has no global ID.
+IDs are TypeIDs: a lowercase type prefix, `_`, then the record UUID in 26 lowercase characters of the TypeID base32
+alphabet. The prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`, `tag`, `genre`, `mood`,
+`metadata_version` and `user`. `publisher` is reserved and never sent, because publisher suggestions carry no entity ID.
+`backend/src/graphql/id.rs` binds each prefix to its type at compile time through `type-safe-id` 0.3.4 and refuses an ID
+longer than 80 characters before parsing. The `Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed
+lookup roots return null for malformed, wrong-type, overlong, hidden and missing records. The User variant resolves only
+the caller. Reading state has no global ID.
+
+Browser routes carry these IDs: `/b/:id`, `/series/:id` and `/shelves/:id` loaders pass the path parameter unaltered to
+their query, and a null result is a not-found route. Links, Library rows, visit filters and the restoration anchor use
+the IDs that queries return. The client converts an ID to a UUID only for display fallbacks that show a short UUID, and
+converts a UUID to an ID only for Book links built from retained HTTP responses.
 
 Work, Series, Shelf and Manifestation declare `@fetchable(field_name: "id")`. Their nullable concrete lookup roots are
 `fetch__Work(id: ID!)`, `fetch__Series(id: ID!)`, `fetch__Shelf(id: ID!)` and `fetch__Manifestation(id: ID!)`. They

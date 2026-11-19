@@ -12,6 +12,7 @@ use crate::auth::{middleware::CurrentUser, scope::Scope};
 use crate::error::AppError;
 use crate::extract::ApiJson;
 use crate::state::AppState;
+use id::Kind as _;
 
 macro_rules! input_enum {
     ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
@@ -155,7 +156,7 @@ impl Query {
             .map_err(|error| safe_error(AppError::Internal(error.into())))?;
         Ok(Viewer {
             display_name,
-            id: id::encode("User", user.user_id),
+            id: id::User::encode(user.user_id),
             is_child: user.is_child(),
         })
     }
@@ -165,7 +166,7 @@ impl Query {
         ctx: &Context<'_>,
         id: async_graphql::ID,
     ) -> async_graphql::Result<Option<library::Node>> {
-        if let Some(user_id) = id::decode("User", &id) {
+        if let Some(user_id) = id::User::decode(&id) {
             if user_id == ctx.data::<CurrentUser>()?.user_id {
                 return self
                     .viewer(ctx)
@@ -174,22 +175,22 @@ impl Query {
             }
             return Ok(None);
         }
-        if id::decode("Work", &id).is_some() {
+        if id::Work::decode(&id).is_some() {
             return library::work(ctx, &id)
                 .await
                 .map(|value| value.map(library::Node::Work));
         }
-        if id::decode("Manifestation", &id).is_some() {
+        if id::Manifestation::decode(&id).is_some() {
             return library::manifestation(ctx, &id)
                 .await
                 .map(|value| value.map(library::Node::Manifestation));
         }
-        if id::decode("Shelf", &id).is_some() {
+        if id::Shelf::decode(&id).is_some() {
             return library::shelf(ctx, &id)
                 .await
                 .map(|value| value.map(library::Node::Shelf));
         }
-        if id::decode("Series", &id).is_some() {
+        if id::Series::decode(&id).is_some() {
             return library::series(ctx, &id)
                 .await
                 .map(|value| value.map(library::Node::Series));
@@ -581,7 +582,6 @@ mod tests {
     use crate::models::device_token;
     use crate::test_support::{self, db};
     use axum_test::TestServer;
-    use base64ct::Encoding;
     use serde_json::json;
     use sqlx::PgPool;
     use tower_sessions::{MemoryStore, Session};
@@ -626,7 +626,7 @@ mod tests {
         response.assert_status_ok();
         assert_eq!(
             response.json::<serde_json::Value>()["data"]["viewer"]["id"],
-            base64ct::Base64::encode_string(format!("User:{user_id}").as_bytes())
+            id::User::encode(user_id).as_str()
         );
         assert!(
             response
@@ -725,8 +725,8 @@ mod tests {
             ));
         }
         let pending=sqlx::query_scalar!("SELECT id FROM metadata_versions WHERE manifestation_id=$1 AND status='pending'::metadata_review_status LIMIT 1",fixture.visible).fetch_one(pool).await.unwrap();
-        let pending = id::encode("MetadataVersion", pending).as_str().to_owned();
-        let id = id::encode("Manifestation", fixture.visible)
+        let pending = id::MetadataVersion::encode(pending).as_str().to_owned();
+        let id = id::Manifestation::encode(fixture.visible)
             .as_str()
             .to_owned();
         let baseline=reader_query(&fixture,&fixture.admin,TITLE_READ,json!({"id":id})).await["data"]["manifestation"]["metadata"]["etag"].clone();
@@ -806,7 +806,7 @@ mod tests {
             .execute(
                 async_graphql::Request::new(query)
                     .variables(async_graphql::Variables::from_json(
-                        json!({"id":id::encode("Work",fixture.visible_work)}),
+                        json!({"id":id::Work::encode(fixture.visible_work)}),
                     ))
                     .data(CurrentUser::without_scopes_for_test(fixture.admin_id)),
             )
@@ -820,7 +820,7 @@ mod tests {
             fixture,
             &fixture.child,
             query,
-            json!({"id":id::encode("Work",fixture.hidden_work)}),
+            json!({"id":id::Work::encode(fixture.hidden_work)}),
         )
         .await;
         assert_graph_ok(&hidden);
@@ -898,7 +898,7 @@ mod tests {
         }
         let after_refusal = reader_query(fixture, &fixture.child, preference_read, json!({})).await;
         assert!(after_refusal["data"]["libraryPreferences"]["density"].is_null());
-        let missing = id::encode("Manifestation", uuid::Uuid::new_v4());
+        let missing = id::Manifestation::encode(uuid::Uuid::new_v4());
         assert_graph_code(
             &reader_query(
                 fixture,
@@ -916,11 +916,11 @@ mod tests {
         pending: &str,
         baseline: &serde_json::Value,
     ) -> Vec<(&'static str, String)> {
-        let id = id::encode("Manifestation", fixture.visible)
+        let id = id::Manifestation::encode(fixture.visible)
             .as_str()
             .to_owned();
-        let shelf = id::encode("Shelf", fixture.shelf_a).as_str().to_owned();
-        let delete_shelf = id::encode("Shelf", fixture.shelf_b).as_str().to_owned();
+        let shelf = id::Shelf::encode(fixture.shelf_a).as_str().to_owned();
+        let delete_shelf = id::Shelf::encode(fixture.shelf_b).as_str().to_owned();
         let tag = serde_json::to_string(&baseline).unwrap();
         vec![
             (
@@ -1035,7 +1035,7 @@ mod tests {
         }
     }
     async fn mutation_child_controls(pool: &PgPool, fixture: &ReaderFixture, id: &str) {
-        let shelf = id::encode("Shelf", fixture.shelf_a).as_str().to_owned();
+        let shelf = id::Shelf::encode(fixture.shelf_a).as_str().to_owned();
         let own = reader_query(fixture, &fixture.child, READING_READ, json!({"id":id})).await;
         let child_saved=reader_query(fixture,&fixture.child,READING_SAVE,json!({"id":id,"baseline":own["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Child's change"}})).await;
         assert_graph_ok(&child_saved);
@@ -1044,7 +1044,7 @@ mod tests {
             adult["data"]["manifestation"]["readingState"]["notes"],
             "Admin note"
         );
-        let hidden = id::encode("Manifestation", fixture.hidden);
+        let hidden = id::Manifestation::encode(fixture.hidden);
         assert_graph_code(&reader_query(fixture,&fixture.child,READING_SAVE,json!({"id":hidden,"baseline":own["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Hidden"}})).await,"not-found");
         let membership = "mutation($shelf:ID!,$id:ID!) { addShelfItem(shelfId:$shelf,manifestationId:$id) { shelfId manifestationId } }";
         assert_graph_ok(
@@ -1052,7 +1052,7 @@ mod tests {
                 fixture,
                 &fixture.child,
                 membership,
-                json!({"shelf":id::encode("Shelf",fixture.child_shelf),"id":id}),
+                json!({"shelf":id::Shelf::encode(fixture.child_shelf),"id":id}),
             )
             .await,
         );
@@ -1061,7 +1061,7 @@ mod tests {
                 fixture,
                 &fixture.child,
                 membership,
-                json!({"shelf":id::encode("Shelf",fixture.child_shelf),"id":hidden}),
+                json!({"shelf":id::Shelf::encode(fixture.child_shelf),"id":hidden}),
             )
             .await,
             "not-found",
@@ -1071,7 +1071,7 @@ mod tests {
                 fixture,
                 &fixture.admin,
                 membership,
-                json!({"shelf":id::encode("Shelf",fixture.other_shelf),"id":id}),
+                json!({"shelf":id::Shelf::encode(fixture.other_shelf),"id":id}),
             )
             .await,
             "not-found",
@@ -1139,7 +1139,7 @@ mod tests {
         let (_, server, csrf) = editing_browser(&pool, "graph-edits").await;
         let ing = db::ingestion_pool_for(&pool).await;
         let (_, edition) = db::insert_work_and_manifestation(&ing, "graph-edits").await;
-        let id = id::encode("Manifestation", edition);
+        let id = id::Manifestation::encode(edition);
         let vars = json!({"id":id});
         let initial = browser_graph(&server, &csrf, TITLE_READ, vars.clone()).await;
         assert_graph_ok(&initial);
@@ -1339,8 +1339,8 @@ mod tests {
         let (_, edition) = db::insert_work_and_manifestation(&ing, "graph-undo").await;
         let (_, other_edition) =
             db::insert_work_and_manifestation(&ing, "graph-other-edition").await;
-        let id = id::encode("Manifestation", edition);
-        let other_id = id::encode("Manifestation", other_edition);
+        let id = id::Manifestation::encode(edition);
+        let other_id = id::Manifestation::encode(other_edition);
         let read = browser_graph(&server, &csrf, TITLE_READ, json!({"id":id})).await;
         let original = &read["data"]["manifestation"]["metadata"];
         let saved = browser_graph(&server,&csrf,TITLE_SAVE,json!({"id":id,"baseline":original["etag"],"request":uuid::Uuid::new_v4(),"patch":{"title":"Undo this"}})).await;
@@ -1500,7 +1500,7 @@ mod tests {
         let ing = db::ingestion_pool_for(pool).await;
         let (_, edition) = db::insert_work_and_manifestation(&ing, &fixture_name).await;
         let shelf = db::create_shelf(&app, user, "Trusted shelf").await;
-        let id = id::encode("Manifestation", edition);
+        let id = id::Manifestation::encode(edition);
         if text.contains("removeShelfItem(") {
             db::add_to_shelf(&app, shelf, edition).await;
         }
@@ -1531,9 +1531,9 @@ mod tests {
             request = serde_json::Value::Null;
         }
         let response=server.post("/api/graphql").add_header("x-csrf-token",csrf).json(&json!({"id":document_id,"variables":{
-            "id":id,"shelfId":id::encode("Shelf",shelf),"name":"Trusted shelf change",
+            "id":id,"shelfId":id::Shelf::encode(shelf),"name":"Trusted shelf change",
             "baseline":baseline,"patch":patch,"requestId":request,"operationId":operation,
-            "versionId":id::encode("MetadataVersion",version),"fieldName":"description","entityType":"work","first":20,"count":20
+            "versionId":id::MetadataVersion::encode(version),"fieldName":"description","entityType":"work","first":20,"count":20
         }})).await;
         response.assert_status_ok();
         assert_graph_ok(&response.json());
@@ -1626,19 +1626,19 @@ mod tests {
 
     fn reader_variables(document: &str, fixture: &ReaderFixture) -> serde_json::Value {
         let id = if document.contains("readerShelfQuery") || document.contains("fetch__Shelf(") {
-            id::encode("Shelf", fixture.shelf_a)
+            id::Shelf::encode(fixture.shelf_a)
         } else if document.contains("readerSeriesQuery") || document.contains("fetch__Series(") {
-            id::encode("Series", fixture.series)
+            id::Series::encode(fixture.series)
         } else if document.contains("fetch__Work(") {
-            id::encode("Work", fixture.visible_work)
+            id::Work::encode(fixture.visible_work)
         } else {
-            id::encode("Manifestation", fixture.visible)
+            id::Manifestation::encode(fixture.visible)
         };
         json!({
             "id": id.as_str(), "q": "Graph",
-            "ids": [if document.contains("authorLabels(") { id::encode("Author",fixture.author) } else { id::encode("Series",fixture.series) }],
-            "authorIds": [id::encode("Author", fixture.author).as_str()],
-            "seriesIds": [id::encode("Series", fixture.series).as_str()]
+            "ids": [if document.contains("authorLabels(") { id::Author::encode(fixture.author) } else { id::Series::encode(fixture.series) }],
+            "authorIds": [id::Author::encode(fixture.author).as_str()],
+            "seriesIds": [id::Series::encode(fixture.series).as_str()]
         })
     }
 
@@ -1823,10 +1823,10 @@ mod tests {
         for (field, id) in [
             (
                 "fetch__Manifestation",
-                id::encode("Manifestation", fixture.hidden),
+                id::Manifestation::encode(fixture.hidden),
             ),
-            ("fetch__Shelf", id::encode("Shelf", fixture.other_shelf)),
-            ("fetch__Series", id::encode("Series", fixture.series)),
+            ("fetch__Shelf", id::Shelf::encode(fixture.other_shelf)),
+            ("fetch__Series", id::Series::encode(fixture.series)),
         ] {
             let query = format!("query($id: ID!) {{ {field}(id: $id) {{ id }} }}");
             let variables = json!({"id": id.as_str()});
@@ -1852,7 +1852,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_reader_boundary(pool: PgPool) {
         let fixture = reader_fixture(&pool).await;
-        let visible = id::encode("Manifestation", fixture.visible);
+        let visible = id::Manifestation::encode(fixture.visible);
         let response = reader_query(
             &fixture,
             &fixture.child,
@@ -1900,11 +1900,11 @@ mod tests {
             "Other reader note"
         );
         for invalid in [
-            "not-base64".to_owned(),
+            "not-a-type-id".to_owned(),
             fixture.visible.to_string(),
-            id::encode("Shelf", fixture.visible).to_string(),
-            id::encode("Manifestation", fixture.hidden).to_string(),
-            id::encode("Manifestation", uuid::Uuid::new_v4()).to_string(),
+            id::Shelf::encode(fixture.visible).to_string(),
+            id::Manifestation::encode(fixture.hidden).to_string(),
+            id::Manifestation::encode(uuid::Uuid::new_v4()).to_string(),
         ] {
             let response = reader_query(
                 &fixture,
@@ -1917,16 +1917,16 @@ mod tests {
             assert!(response["data"]["manifestation"].is_null());
             assert!(response["data"]["node"].is_null());
         }
-        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $shelf: ID!, $other: ID!, $caller: ID!) { work(id: $work) { id } shelf(id: $shelf) { id } other: node(id: $other) { id } caller: node(id: $caller) { id } }", json!({"work": id::encode("Work", fixture.hidden_work).as_str(), "shelf": id::encode("Shelf", fixture.other_shelf).as_str(), "other": id::encode("User", fixture.admin_id).as_str(), "caller": id::encode("User", fixture.child_id).as_str()})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $shelf: ID!, $other: ID!, $caller: ID!) { work(id: $work) { id } shelf(id: $shelf) { id } other: node(id: $other) { id } caller: node(id: $caller) { id } }", json!({"work": id::Work::encode(fixture.hidden_work).as_str(), "shelf": id::Shelf::encode(fixture.other_shelf).as_str(), "other": id::User::encode(fixture.admin_id).as_str(), "caller": id::User::encode(fixture.child_id).as_str()})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert!(response["data"]["work"].is_null());
         assert!(response["data"]["shelf"].is_null());
         assert!(response["data"]["other"].is_null());
         assert_eq!(
             response["data"]["caller"]["id"],
-            id::encode("User", fixture.child_id).as_str()
+            id::User::encode(fixture.child_id).as_str()
         );
-        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $series: ID!, $shelf: ID!) { work(id: $work) { manifestations(first: 2) { edges { node { id } } } } series(id: $series) { works(first: 50) { edges { node { id manifestations(first: 2) { edges { node { id } } } } } } } shelf(id: $shelf) { items(first: 50) { edges { node { id } } } } }", json!({"work": id::encode("Work", fixture.visible_work).as_str(), "series": id::encode("Series", fixture.series).as_str(), "shelf": id::encode("Shelf", fixture.child_shelf).as_str()})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($work: ID!, $series: ID!, $shelf: ID!) { work(id: $work) { manifestations(first: 2) { edges { node { id } } } } series(id: $series) { works(first: 50) { edges { node { id manifestations(first: 2) { edges { node { id } } } } } } } shelf(id: $shelf) { items(first: 50) { edges { node { id } } } } }", json!({"work": id::Work::encode(fixture.visible_work).as_str(), "series": id::Series::encode(fixture.series).as_str(), "shelf": id::Shelf::encode(fixture.child_shelf).as_str()})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert_eq!(
             response["data"]["work"]["manifestations"]["edges"]
@@ -1947,13 +1947,13 @@ mod tests {
             visible.as_str()
         );
         for hidden in [
-            id::encode("Manifestation", fixture.hidden),
-            id::encode("Manifestation", fixture.sibling),
-            id::encode("Work", fixture.hidden_work),
+            id::Manifestation::encode(fixture.hidden),
+            id::Manifestation::encode(fixture.sibling),
+            id::Work::encode(fixture.hidden_work),
         ] {
             assert!(!response.to_string().contains(hidden.as_str()));
         }
-        let response = reader_query(&fixture, &fixture.child, "query($ids: [ID!]!) { authorLabels(ids: $ids) { entityId value } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { value } shelves(first: 50) { edges { node { id name } } } }", json!({"ids": [id::encode("Author", fixture.author).as_str(), id::encode("Author", fixture.hidden_author).as_str()]})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($ids: [ID!]!) { authorLabels(ids: $ids) { entityId value } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { value } shelves(first: 50) { edges { node { id name } } } }", json!({"ids": [id::Author::encode(fixture.author).as_str(), id::Author::encode(fixture.hidden_author).as_str()]})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert_eq!(
             response["data"]["authorLabels"].as_array().unwrap().len(),
@@ -1987,7 +1987,7 @@ mod tests {
             ),
             (
                 "query($id: ID!) { work(id: $id) { manifestations(first: 2) { edges { node { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } } } }",
-                json!({"id": id::encode("Work", fixture.visible_work).as_str()}),
+                json!({"id": id::Work::encode(fixture.visible_work).as_str()}),
             ),
         ] {
             let response = reader_query(&fixture, &fixture.child, query, variables).await;
@@ -2004,7 +2004,7 @@ mod tests {
             fixture,
             &fixture.admin,
             query,
-            json!({"id":id::encode("Manifestation",fixture.visible).as_str()}),
+            json!({"id":id::Manifestation::encode(fixture.visible).as_str()}),
         )
         .await;
         assert!(page.get("errors").is_none(), "{page}");
@@ -2015,7 +2015,7 @@ mod tests {
             fixture,
             &fixture.admin,
             query,
-            json!({"id":id::encode("Manifestation",fixture.sibling).as_str(),"after":cursor}),
+            json!({"id":id::Manifestation::encode(fixture.sibling).as_str(),"after":cursor}),
         )
         .await;
         assert_eq!(refused["errors"][0]["extensions"]["code"], "validation");
@@ -2037,7 +2037,7 @@ mod tests {
         assert!(next.get("errors").is_none(), "{next}");
         assert_eq!(
             next["data"]["books"]["edges"][0]["node"]["id"],
-            id::encode("Manifestation", fixture.sibling).as_str()
+            id::Manifestation::encode(fixture.sibling).as_str()
         );
         assert_eq!(next["data"]["books"]["pageInfo"]["hasPreviousPage"], true);
         for filter in [
@@ -2134,13 +2134,13 @@ mod tests {
         for (field, parent_a, parent_b) in [
             (
                 "work",
-                id::encode("Work", fixture.visible_work),
-                id::encode("Work", fixture.hidden_work),
+                id::Work::encode(fixture.visible_work),
+                id::Work::encode(fixture.hidden_work),
             ),
             (
                 "shelf",
-                id::encode("Shelf", fixture.shelf_a),
-                id::encode("Shelf", fixture.shelf_b),
+                id::Shelf::encode(fixture.shelf_a),
+                id::Shelf::encode(fixture.shelf_b),
             ),
         ] {
             let relation = if field == "work" {

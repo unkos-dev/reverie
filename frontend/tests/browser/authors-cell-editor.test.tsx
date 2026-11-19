@@ -3,6 +3,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { RelayEnvironmentProvider } from "react-relay";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
+import { encodeGraphQLId } from "@/api/graphql";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
 import type { BookListItem } from "@/api";
 import { AuthorsCell } from "@/pages/library/table/cells";
@@ -10,8 +11,8 @@ import { AuthorsCell } from "@/pages/library/table/cells";
 const book: BookListItem = {
   metadata_etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
   reading_etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
-  id: "11111111-1111-4111-8111-111111111111",
-  work_id: "22222222-2222-4222-8222-222222222222",
+  id: encodeGraphQLId("Manifestation", "11111111-1111-4111-8111-111111111111"),
+  work_id: encodeGraphQLId("Work", "22222222-2222-4222-8222-222222222222"),
   title: "A Shared Work",
   subtitle: null,
   authors: ["Ann Able", "Ben Baker", "Cal Cole"],
@@ -45,16 +46,19 @@ test("saving stores the displayed authors in displayed order, including a typed 
       JSON.stringify({
         data: {
           manifestation: {
-            id: btoa(`Manifestation:${book.id}`),
+            id: book.id,
             metadata: {
-              manifestationId: btoa(`Manifestation:${book.id}`),
-              workId: btoa(`Work:${book.work_id}`),
+              manifestationId: book.id,
+              workId: book.work_id,
               etag: book.metadata_etag,
               authors: {
                 edges: book.authors.map((name, index) => ({
                   cursor: String(index),
                   node: {
-                    id: btoa(`Author:30000000-0000-4000-8000-${String(index).padStart(12, "0")}`),
+                    id: encodeGraphQLId(
+                      "Author",
+                      `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+                    ),
                     name,
                   },
                 })),

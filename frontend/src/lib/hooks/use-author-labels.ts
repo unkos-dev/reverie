@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchQuery, useRelayEnvironment } from "react-relay";
-import { encodeGraphQLId, decodeGraphQLId } from "@/api/graphql";
+import { decodeGraphQLId } from "@/api/graphql";
 import { readerAuthorLabelsQuery } from "@/lib/relay/reader";
 import type { readerAuthorLabelsQuery as LabelsQuery } from "@/lib/relay/__generated__/readerAuthorLabelsQuery.graphql";
 
@@ -20,7 +20,7 @@ export function useAuthorLabels(ids: readonly string[]): { labelFor: (id: string
     const subscription = fetchQuery<LabelsQuery>(
       environment,
       readerAuthorLabelsQuery,
-      { ids: token.split(",").map((id) => encodeGraphQLId("Author", id)) },
+      { ids: token.split(",") },
       { fetchPolicy: "store-or-network" },
     ).subscribe({
       next: (data) => {
@@ -38,8 +38,7 @@ export function useAuthorLabels(ids: readonly string[]): { labelFor: (id: string
   const data = result.token === token ? result.data : undefined;
   return {
     labelFor: (id) =>
-      data?.authorLabels.find(
-        (row) => row.entityId != null && decodeGraphQLId("Author", row.entityId) === id,
-      )?.value ?? `Author ${id.slice(0, 8)}…`,
+      data?.authorLabels.find((row) => row.entityId === id)?.value ??
+      `Author ${decodeGraphQLId("Author", id).slice(0, 8)}…`,
   };
 }

@@ -7,7 +7,6 @@ import {
   useSubscribeToInvalidationState,
   type PreloadedQuery,
 } from "react-relay";
-import { decodeGraphQLId } from "@/api/graphql";
 import {
   readerDetailBook,
   readerDetailQuery,
@@ -114,14 +113,14 @@ function BookContent({
   if (data?.work == null) throw new Error("Book not found.");
   const series = data.work.selectedSeries;
   const book: DisplayBook = {
-    id: decodeGraphQLId("Manifestation", data.id),
+    id: data.id,
     title: data.work.title,
     authors: authorData?.authors.edges.map(({ node }) => node.name) ?? [],
     series:
       series == null
         ? null
         : {
-            id: decodeGraphQLId("Series", series.node.id),
+            id: series.node.id,
             name: series.node.name,
             position: series.position ?? null,
           },

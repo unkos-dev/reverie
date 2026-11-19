@@ -3972,6 +3972,7 @@ dependencies = [
  "tower-sessions",
  "tracing",
  "tracing-subscriber",
+ "type-safe-id",
  "unicode-normalization",
  "url",
  "utoipa",
@@ -5552,6 +5553,18 @@ dependencies = [
  "rand 0.9.5",
  "sha1 0.10.7",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "type-safe-id"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0361b099262ebd03337711ff9fda47a9a31c9ccadf12948d49cb51c797c285e3"
+dependencies = [
+ "arrayvec",
+ "rand 0.9.5",
+ "thiserror 2.0.21",
+ "uuid",
 ]
 
 [[package]]

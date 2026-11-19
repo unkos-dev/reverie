@@ -113,6 +113,7 @@ percent-encoding = "2.3.2"
 utoipa = { version = "6.0", features = ["axum_extras", "jiff_0_2", "uuid"] }
 utoipa-axum = "0.3"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
+type-safe-id = "0.3.4"
 # Server-side password-strength estimator (NIST SP 800-63B strength floor,
 # docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md). Pure Rust, no network.
 zxcvbn = "3"
