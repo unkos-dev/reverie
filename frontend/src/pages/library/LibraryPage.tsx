@@ -574,12 +574,7 @@ export function LibraryPage(): ReactElement {
         const result = await sendBatchItem(attempt, id);
         if (result === undefined) break;
         if (result.saved) succeeded.push(id);
-        else
-          failed.push(
-            result.message === undefined
-              ? { id, action: result.action }
-              : { id, action: result.action, message: result.message },
-          );
+        else failed.push({ id, action: result.action, message: result.message });
       } catch (error) {
         console.error("[LibraryPage] batch action failed", { id, error });
         failed.push({
