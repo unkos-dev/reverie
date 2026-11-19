@@ -110,7 +110,7 @@ RUN PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm --filter frontend run build
 # that a directory scan cannot follow. Syft's default dir scan excludes its
 # JavaScript cataloger, so it must be selected explicitly.
 FROM js-toolchain AS frontend-sbom
-COPY --from=anchore/syft:v1.57.1@sha256:03215d0e98b661d0ecbc8575dbc14d65be1743b5de5df6410aecb7e80f95b060 /syft /usr/local/bin/syft
+COPY --from=anchore/syft:v1.57.2@sha256:e97e20b6e6d1699c60296b66ab337941724f9bd06ac279d893eda89601fc4b2a /syft /usr/local/bin/syft
 RUN pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree \
     && syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
       -o cyclonedx-json > /build/frontend.cdx.json
