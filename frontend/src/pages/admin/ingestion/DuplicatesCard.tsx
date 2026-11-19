@@ -2,6 +2,7 @@ import { type ReactElement } from "react";
 import { Info } from "lucide-react";
 import { Link } from "react-router";
 
+import { bookPath } from "@/api";
 import { listInputs } from "@/api/ingestion";
 import type { InputCounts, InputItem } from "@/api/ingestion";
 import { Button } from "@/components/ui/button";
@@ -108,7 +109,7 @@ function DuplicateRow({ item }: Readonly<{ item: InputItem }>): ReactElement {
       <TableCell className="py-2.5 align-top whitespace-normal text-[13px]">
         {item.matched ? (
           <Link
-            to={`/b/${item.matched.manifestation_id}`}
+            to={bookPath(item.matched.manifestation_id)}
             className="font-bold underline underline-offset-[3px]"
           >
             {item.matched.title}

@@ -6,9 +6,7 @@ import {
 } from "react-relay";
 import {
   GraphQLExecutionError,
-  decodeGraphQLId,
   readerBook,
-  encodeGraphQLId,
   executeEditingOnce,
   editingFailureAction,
   type ReaderBook as BookListItem,
@@ -195,7 +193,7 @@ function LoadedLibraryRows({
   const items = useMemo(
     () =>
       data.map((book) => {
-        const snapshot = source.rows.get(decodeGraphQLId("Manifestation", book.id));
+        const snapshot = source.rows.get(book.id);
         if (snapshot === undefined)
           throw new Error("A matched Library editing snapshot is required.");
         return readerBook(book, snapshot);
@@ -531,8 +529,8 @@ export function LibraryPage(): ReactElement {
       environment,
       mutationsAddShelfItemMutation,
       {
-        shelfId: encodeGraphQLId("Shelf", shelfId),
-        id: encodeGraphQLId("Manifestation", id),
+        shelfId,
+        id,
       },
       batchController.current?.signal,
     );
@@ -547,7 +545,7 @@ export function LibraryPage(): ReactElement {
     const response = await executeEditingOnce<RefreshMetadata>(
       environment,
       mutationsRefreshMetadataMutation,
-      { id: encodeGraphQLId("Manifestation", id) },
+      { id },
       batchController.current?.signal,
     );
     if (response === undefined) return;

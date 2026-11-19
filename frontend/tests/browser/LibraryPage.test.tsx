@@ -247,7 +247,7 @@ async function renderLibrary({
       return Promise.resolve(
         response({
           seriesLabels: seriesLabels.map((label) => ({
-            entityId: encodeGraphQLId("Series", label.id),
+            entityId: label.id,
             value: label.value,
           })),
         }),
@@ -381,8 +381,11 @@ describe("LibraryPage", () => {
 
   test("clearing all filters preserves the visit view and the stored sort", async () => {
     // REV-REQ-0002: Clear removes every condition and preserves view and sort.
-    const series = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"];
-    const shelf = ["cccccccc-cccc-4ccc-8ccc-cccccccccccc"];
+    const series = [
+      encodeGraphQLId("Series", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+      encodeGraphQLId("Series", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+    ];
+    const shelf = [encodeGraphQLId("Shelf", "cccccccc-cccc-4ccc-8ccc-cccccccccccc")];
     await renderLibrary({
       items: [],
 
@@ -406,9 +409,9 @@ describe("LibraryPage", () => {
   describe("filter chips", () => {
     test("a chip's remove control drops exactly that filter param", async () => {
       // REV-REQ-0002: a condition edit and section Clear preserve sibling sections.
-      const first = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-      const second = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-      const shelfId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+      const first = encodeGraphQLId("Series", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+      const second = encodeGraphQLId("Series", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+      const shelfId = encodeGraphQLId("Shelf", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
       const shelf = [shelfId];
       await renderLibrary({
         items: [bookFixture()],

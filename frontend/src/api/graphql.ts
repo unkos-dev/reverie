@@ -51,19 +51,34 @@ const envelope = z.object({
 });
 
 const uuid = z.uuid();
-function domainId(kind: string) {
-  return z.string().refine((value) => {
-    try {
-      const decoded = atob(value);
-      return (
-        btoa(decoded) === value &&
-        decoded.startsWith(`${kind}:`) &&
-        uuid.safeParse(decoded.slice(kind.length + 1)).success
-      );
-    } catch {
-      return false;
-    }
-  }, `Invalid ${kind} ID.`);
+const ID_PREFIXES = {
+  Author: "author",
+  Genre: "genre",
+  Manifestation: "book",
+  MetadataVersion: "metadata_version",
+  Mood: "mood",
+  Publisher: "publisher",
+  Series: "series",
+  Shelf: "shelf",
+  Tag: "tag",
+  User: "user",
+  Work: "work",
+} as const;
+type IdKind = keyof typeof ID_PREFIXES;
+const CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz";
+const TYPE_ID_SUFFIX = /^[0-7][0-9a-hjkmnp-tv-z]{25}$/;
+
+function typeIdUuid(kind: IdKind, value: string): string | undefined {
+  const prefix = `${ID_PREFIXES[kind]}_`;
+  const suffix = value.slice(prefix.length);
+  if (!value.startsWith(prefix) || !TYPE_ID_SUFFIX.test(suffix)) return undefined;
+  let bits = 0n;
+  for (const char of suffix) bits = (bits << 5n) | BigInt(CROCKFORD.indexOf(char));
+  const hex = bits.toString(16).padStart(32, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+export function domainId(kind: IdKind): z.ZodType<string> {
+  return z.string().refine((value) => typeIdUuid(kind, value) !== undefined, `Invalid ${kind} ID.`);
 }
 const revision = z.object({
   workId: domainId("Work"),
@@ -177,7 +192,7 @@ const readerProjections = new Map<string, z.ZodType>([
     z.object({ fetch__Manifestation: versionProjection.nullable() }),
   ],
 ]);
-for (const kind of ["Author", "Series", "Genre", "Mood", "Tag", "Publisher"]) {
+for (const kind of ["Author", "Series", "Genre", "Mood", "Tag", "Publisher"] as const) {
   for (const action of kind === "Author" || kind === "Series"
     ? ["Suggestions", "Labels"]
     : ["Suggestions"]) {
@@ -323,12 +338,25 @@ type EditingResponse<T extends OperationType> = T extends { readonly rawResponse
   ? Raw
   : T["response"];
 
-export function encodeGraphQLId(kind: string, value: string): string {
-  return btoa(`${kind}:${uuid.parse(value)}`);
+export function encodeGraphQLId(kind: IdKind, value: string): string {
+  let bits = BigInt(`0x${uuid.parse(value).replaceAll("-", "")}`);
+  let suffix = "";
+  for (let index = 0; index < 26; index += 1) {
+    suffix = CROCKFORD.charAt(Number(bits & 31n)) + suffix;
+    bits >>= 5n;
+  }
+  return `${ID_PREFIXES[kind]}_${suffix}`;
 }
 
-export function decodeGraphQLId(kind: string, value: string): string {
-  return atob(domainId(kind).parse(value)).slice(kind.length + 1);
+/** The Book route for a manifestation UUID from a retained HTTP response. */
+export function bookPath(manifestationId: string): string {
+  return `/b/${encodeGraphQLId("Manifestation", manifestationId)}`;
+}
+
+export function decodeGraphQLId(kind: IdKind, value: string): string {
+  const id = typeIdUuid(kind, value);
+  if (id === undefined) throw new TypeError(`Invalid ${kind} ID.`);
+  return id;
 }
 editingProjections.set(
   "mutationsReadingQuery",
@@ -491,7 +519,7 @@ export async function loadAuthorField(
         environment,
         authorPageDocument,
         {
-          id: encodeGraphQLId("Manifestation", id),
+          id,
           first: 20,
           after,
         },
@@ -594,13 +622,13 @@ export function libraryVariables(
 ): readerLibraryQuery$variables {
   const filter = {
     q: params.q,
-    author: params.author?.map((id) => encodeGraphQLId("Author", id)),
-    authorAny: params.author_any?.map((id) => encodeGraphQLId("Author", id)),
-    authorNone: params.author_none?.map((id) => encodeGraphQLId("Author", id)),
-    series: params.series === undefined ? undefined : encodeGraphQLId("Series", params.series),
-    seriesAny: params.series_any?.map((id) => encodeGraphQLId("Series", id)),
-    shelf: params.shelf === undefined ? undefined : encodeGraphQLId("Shelf", params.shelf),
-    shelfAny: params.shelf_any?.map((id) => encodeGraphQLId("Shelf", id)),
+    author: params.author,
+    authorAny: params.author_any,
+    authorNone: params.author_none,
+    series: params.series,
+    seriesAny: params.series_any,
+    shelf: params.shelf,
+    shelfAny: params.shelf_any,
     tag: params.tag,
     tagAny: params.tag_any,
     tagNone: params.tag_none,
@@ -667,8 +695,8 @@ export function readerBook(
 ): ReaderBook {
   const series = data.work?.selectedSeries;
   return {
-    id: decodeGraphQLId("Manifestation", data.id),
-    work_id: decodeGraphQLId("Work", snapshot.metadata.workId),
+    id: data.id,
+    work_id: snapshot.metadata.workId,
     metadata_etag: snapshot.metadata.etag,
     reading_etag: snapshot.readingState.etag,
     title: snapshot.metadata.title,
@@ -680,7 +708,7 @@ export function readerBook(
       series == null
         ? null
         : {
-            id: decodeGraphQLId("Series", series.node.id),
+            id: series.node.id,
             name: series.node.name,
             position: series.position ?? null,
           },

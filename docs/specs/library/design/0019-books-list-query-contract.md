@@ -269,10 +269,11 @@ existing full-state hash without adding them to the response. A missing reading 
 matched GET. No per-row query or pre-edit GET supplies these validators.
 
 Browser Library requests project published filters into typed GraphQL arguments and send explicit sort levels only for
-an account override. With no override, `sort` is omitted or null. The visit/source key is a Relay client connection
-identity, not a server field argument or cursor component. Native query references retain membership while detached
-validated raw list snapshots supply cell baselines. Basic detail selects the pending count without opening the proposal
-connection.
+an account override. Author, series and shelf filters pass the visit's GraphQL IDs unaltered; a malformed or wrong-type
+filter ID refuses the request with the `validation` classification. With no override, `sort` is omitted or null. The
+visit/source key is a Relay client connection identity, not a server field argument or cursor component. Native query
+references retain membership while detached validated raw list snapshots supply cell baselines. Basic detail selects the
+pending count without opening the proposal connection.
 
 Nothing here is durable. `ListParams`, the parsed `SortSpec`, the filter fingerprint and the decoded `SortCursor` are
 all built fresh from one request's query string and discarded once that request's response is written; the server holds

@@ -420,7 +420,7 @@ export function VocabEditor({
   );
 
   function handleChange(next: TypeaheadOption[]): void {
-    // Authors store the id (uuid) as the URL token; other vocabularies store
+    // Authors store the GraphQL ID as the visit token; other vocabularies store
     // the display value, which is the token itself.
     const tokens = next.map((option) => (isAuthors ? (option.id ?? option.value) : option.value));
     // A token lives in at most one mode: writing it to the active mode drops

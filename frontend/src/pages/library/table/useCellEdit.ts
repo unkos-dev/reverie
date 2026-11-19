@@ -8,7 +8,6 @@ import { ApiError } from "@/api/errors";
 import {
   GraphQLExecutionError,
   editingFailureAction,
-  encodeGraphQLId,
   executeEditingOnce,
   loadAuthorField,
   type ReaderBook,
@@ -270,7 +269,7 @@ export function useCellEdit({
     if (previous !== undefined)
       attempt.source.rows.set(attempt.row.id, { ...previous, readingState: snapshot });
     commitLocalUpdate(environment, (store) => {
-      const edition = store.get(encodeGraphQLId("Manifestation", attempt.row.id));
+      const edition = store.get(attempt.row.id);
       const reading = edition?.getLinkedRecord("readingState");
       for (const [key, value] of Object.entries(snapshot)) reading?.setValue(value, key);
       edition?.invalidateRecord();
@@ -316,7 +315,7 @@ export function useCellEdit({
 
   async function resolve(attempt: Attempt, operationId?: string) {
     const variables = {
-      id: encodeGraphQLId("Manifestation", attempt.row.id),
+      id: attempt.row.id,
       ...(operationId === undefined ? { requestId: attempt.id } : { operationId }),
     };
     if (attempt.columnKey === "authors") {
@@ -338,7 +337,7 @@ export function useCellEdit({
   }
 
   async function sendMetadata(attempt: Attempt & { pipeline: "metadata" }) {
-    const id = encodeGraphQLId("Manifestation", attempt.row.id);
+    const id = attempt.row.id;
     const variables = {
       id,
       baseline: attempt.baseline,
@@ -369,7 +368,7 @@ export function useCellEdit({
       environment,
       mutationsReadingMutation,
       {
-        id: encodeGraphQLId("Manifestation", attempt.row.id),
+        id: attempt.row.id,
         baseline: attempt.baseline,
         patch: attempt.patch,
       },
@@ -389,7 +388,7 @@ export function useCellEdit({
     const response = await executeEditingOnce<ReadingQuery>(
       environment,
       mutationsReadingQuery,
-      { id: encodeGraphQLId("Manifestation", attempt.row.id) },
+      { id: attempt.row.id },
       controller.current?.signal,
     );
     const reading = response?.manifestation?.readingState;
@@ -492,7 +491,7 @@ export function useCellEdit({
         const response = await executeEditingOnce<ReadingQuery>(
           environment,
           mutationsReadingQuery,
-          { id: encodeGraphQLId("Manifestation", attempt.row.id) },
+          { id: attempt.row.id },
           controller.current?.signal,
         );
         if (response?.manifestation === undefined || response.manifestation === null) return;
@@ -526,7 +525,7 @@ export function useCellEdit({
         const response = await executeEditingOnce<CellsQuery>(
           environment,
           mutationsCellsQuery,
-          { id: encodeGraphQLId("Manifestation", attempt.row.id) },
+          { id: attempt.row.id },
           controller.current?.signal,
         );
         if (response?.manifestation === undefined || response.manifestation === null) return;
@@ -737,7 +736,7 @@ export function useCellEdit({
   async function undoEntry(entry: UndoEntry): Promise<void> {
     const attempt = entry.attempt;
     const variables = {
-      id: encodeGraphQLId("Manifestation", attempt.row.id),
+      id: attempt.row.id,
       operationId: entry.operation.operationId,
       baseline: entry.baseline,
     };

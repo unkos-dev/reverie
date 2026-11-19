@@ -216,7 +216,7 @@ The migration grants `SELECT` and `DELETE` on works and manifestations to both r
 database context" is the authority on that grant boundary and on the policies that further narrow `manifestations` and
 its three vocabulary junctions.
 
-Graph Work and Manifestation records have distinct base64 domain identities. Shared metadata, contributors and the
+Graph Work and Manifestation records have distinct TypeID domain identities. Shared metadata, contributors and the
 selected series belong to Work. File metadata and caller reading state belong to Manifestation. Growing relations use
 bounded keyset connections. Contributor role and membership position live on edges, without surrogate membership IDs.
 The selected series orders position ascending with nulls last, then series ID. Work manifestations order creation time

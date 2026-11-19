@@ -1,3 +1,4 @@
+import { decodeGraphQLId } from "@/api/graphql";
 import { useShelves } from "@/api/shelves";
 /**
  * Active-filter chips row: one removable chip per filter condition, plus
@@ -49,7 +50,8 @@ export function FilterChips({
 
   const segments = buildFilterSummary(filters, {
     authorLabel: authorNames.labelFor,
-    shelfName: (id) => shelves.find((shelf) => shelf.id === id)?.name ?? shortId(id),
+    shelfName: (id) =>
+      shelves.find((shelf) => shelf.id === id)?.name ?? shortId(decodeGraphQLId("Shelf", id)),
     seriesName: seriesNames.labelFor,
   });
 

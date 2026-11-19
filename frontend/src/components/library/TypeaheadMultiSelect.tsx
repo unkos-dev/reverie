@@ -1,10 +1,9 @@
 /**
  * Controlled vocabulary selection over server-ranked suggestions without local text filtering.
- * Callers own persisted selections; author and series identity use UUIDs while other vocabularies use labels.
+ * Callers own persisted selections; author and series identity use GraphQL IDs while other vocabularies use labels.
  */
 import { fetchQuery, useRelayEnvironment } from "react-relay";
 import type { Observable } from "relay-runtime";
-import { decodeGraphQLId } from "@/api/graphql";
 import {
   readerAuthorSuggestionsQuery,
   readerSeriesSuggestionsQuery,
@@ -38,7 +37,7 @@ import { X } from "lucide-react";
 
 import { type SuggestKind } from "@/api";
 
-/** A display label with an author or series UUID; other vocabularies use the label as identity. */
+/** A display label with an author or series GraphQL ID; other vocabularies use the label as identity. */
 export type TypeaheadOption = { id?: string; value: string };
 
 type Props = {
@@ -117,9 +116,10 @@ export function TypeaheadMultiSelect({
   const suggestions =
     trimmed.length >= 2
       ? (data ?? []).map((row) => {
-          let id: string | undefined;
-          if (row.entityId != null && (kind === "authors" || kind === "series"))
-            id = decodeGraphQLId(kind === "authors" ? "Author" : "Series", row.entityId);
+          const id =
+            row.entityId != null && (kind === "authors" || kind === "series")
+              ? row.entityId
+              : undefined;
           return { id, value: row.value };
         })
       : [];

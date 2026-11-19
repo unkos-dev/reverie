@@ -3,7 +3,6 @@
  * React Aria owns modal focus and dismissal.
  */
 import { graphql, usePreloadedQuery, useQueryLoader, type PreloadedQuery } from "react-relay";
-import { decodeGraphQLId } from "@/api/graphql";
 import type { CommandPaletteQuery as SearchQuery } from "@/lib/relay/__generated__/CommandPaletteQuery.graphql";
 import { Suspense, useState, type ReactElement } from "react";
 import { ErrorBoundary } from "react-error-boundary";
@@ -153,7 +152,7 @@ function LoadedSearchResults({
       ? []
       : [
           {
-            id: decodeGraphQLId("Manifestation", manifestation.id),
+            id: manifestation.id,
             title: manifestation.work.title,
             authors: manifestation.work.authors.edges.map(({ node }) => node.name),
             snippet: snippet ?? null,

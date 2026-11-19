@@ -14,12 +14,7 @@ import { Popover, PopoverContent } from "@/components/ui/popover";
 import { FieldError } from "@/components/ui/field";
 
 import { ApiError, UpdateBookMetadataFieldsSchema, type UpdateBookMetadataFields } from "@/api";
-import {
-  GraphQLExecutionError,
-  editingFailureAction,
-  encodeGraphQLId,
-  executeEditingOnce,
-} from "@/api/graphql";
+import { GraphQLExecutionError, editingFailureAction, executeEditingOnce } from "@/api/graphql";
 import { useRelayEnvironment } from "react-relay";
 import { commitLocalUpdate } from "relay-runtime";
 import {
@@ -168,7 +163,7 @@ function EditMetadataForm({
     void executeEditingOnce<FormQuery>(
       environment,
       mutationsFormQuery,
-      { id: encodeGraphQLId("Manifestation", manifestationId) },
+      { id: manifestationId },
       controller.signal,
     )
       .then((response) => {
@@ -374,7 +369,7 @@ function EditMetadataFields({
         const requestId = unchanged ? previous.requestId : crypto.randomUUID();
         attempt.current = { body, requestId };
         const variables = {
-          id: encodeGraphQLId("Manifestation", manifestationId),
+          id: manifestationId,
           patch: body,
           baseline: baseline.etag,
           requestId,

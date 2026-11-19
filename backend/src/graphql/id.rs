@@ -1,27 +1,50 @@
-use base64ct::{Base64, Encoding};
+use type_safe_id::{StaticType, TypeSafeId};
 use uuid::Uuid;
 
-pub(super) fn encode(kind: &str, id: Uuid) -> async_graphql::ID {
-    async_graphql::ID(Base64::encode_string(format!("{kind}:{id}").as_bytes()))
+pub(super) trait Kind: StaticType {
+    const NAME: &'static str;
+
+    fn encode(id: Uuid) -> async_graphql::ID {
+        async_graphql::ID(TypeSafeId::<Self>::from_uuid(id).to_string())
+    }
+
+    fn decode(id: &async_graphql::ID) -> Option<Uuid> {
+        // THREAT: malformed and wrong-type IDs have the same outcome as hidden or missing records.
+        // The parser copies a mismatched prefix of any length, so the length cap applies first.
+        if id.as_str().len() > 80 {
+            return None;
+        }
+        id.as_str()
+            .parse::<TypeSafeId<Self>>()
+            .ok()
+            .map(|value| value.uuid())
+    }
 }
 
-pub(super) fn decode(kind: &str, id: &async_graphql::ID) -> Option<Uuid> {
-    // THREAT: malformed and wrong-type IDs have the same outcome as hidden or missing records.
-    if id.as_str().len() > 80 {
-        return None;
-    }
-    let Ok(bytes) = Base64::decode_vec(id.as_str()) else {
-        return None;
-    };
-    let Ok(text) = std::str::from_utf8(&bytes) else {
-        return None;
-    };
-    let (actual_kind, value) = text.split_once(':')?;
-    if actual_kind != kind {
-        return None;
-    }
-    let Ok(value) = Uuid::parse_str(value) else {
-        return None;
-    };
-    Some(value)
+macro_rules! kinds {
+    ($($name:ident => $prefix:literal),* $(,)?) => {$(
+        #[derive(Default)]
+        pub(super) struct $name;
+        impl StaticType for $name {
+            const TYPE: &'static str = $prefix;
+        }
+        impl Kind for $name {
+            const NAME: &'static str = stringify!($name);
+        }
+        const _: () = assert!($name::TYPE_PREFIX_IS_VALID);
+    )*};
+}
+
+kinds! {
+    Author => "author",
+    Genre => "genre",
+    Manifestation => "book",
+    MetadataVersion => "metadata_version",
+    Mood => "mood",
+    Publisher => "publisher",
+    Series => "series",
+    Shelf => "shelf",
+    Tag => "tag",
+    User => "user",
+    Work => "work",
 }
