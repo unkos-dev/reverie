@@ -2366,9 +2366,9 @@ dependencies = [
 
 [[package]]
 name = "isbn"
-version = "0.8.20261115"
+version = "0.8.20261116"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80d54fa0a932397ad99f1dc30b4ea4e7e5ccdacfa2336083db7a8220ffcb4ae3"
+checksum = "2d61cd7635d54cdaf12293451c663580ec25477e64f882cd2b3960e6d9963702"
 dependencies = [
  "arrayvec",
  "codegen",
