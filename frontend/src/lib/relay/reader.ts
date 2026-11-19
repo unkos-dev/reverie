@@ -172,6 +172,7 @@ export const readerDetailQuery = graphql`
 
 export const readerVersions = graphql`
   fragment readerVersions on Manifestation
+  @throwOnFieldError
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
   @refetchable(queryName: "readerVersionsPaginationQuery", preferFetchable: true) {
     id
@@ -196,7 +197,7 @@ export const readerVersions = graphql`
 `;
 
 export const readerVersionsQuery = graphql`
-  query readerVersionsQuery($id: ID!, $count: Int = 20, $cursor: String) {
+  query readerVersionsQuery($id: ID!, $count: Int = 20, $cursor: String) @throwOnFieldError {
     manifestation(id: $id) {
       ...readerVersions @arguments(count: $count, cursor: $cursor)
     }
@@ -240,6 +241,7 @@ export const readerShelfQuery = graphql`
 
 export const readerShelves = graphql`
   fragment readerShelves on Query
+  @throwOnFieldError
   @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
   @refetchable(queryName: "readerShelvesPaginationQuery") {
     shelves(first: $count, after: $cursor) @connection(key: "readerShelves_shelves") {
