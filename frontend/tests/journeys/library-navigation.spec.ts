@@ -727,7 +727,9 @@ test("a user scroll wins during a held return", async ({ page }) => {
     `[data-book-id="${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}"]`,
   );
   await expect(original).toBeVisible();
-  await original.getByRole("link", { name: "Journey book 009", exact: true }).press("Enter");
+  await original
+    .getByRole("link", { name: "Journey book 009", exact: true })
+    .dispatchEvent("click");
   await expect(page).toHaveURL(
     new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
   );
