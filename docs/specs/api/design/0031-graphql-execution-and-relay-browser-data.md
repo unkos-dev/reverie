@@ -80,11 +80,11 @@ use `relay-test-utils` 21.0.1.
 
 IDs are TypeIDs: a lowercase type prefix, `_`, then the record UUID in 26 lowercase characters of the TypeID base32
 alphabet. The prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`, `tag`, `genre`, `mood`,
-`metadata_version` and `user`. Publisher suggestions carry no entity ID. `backend/src/graphql/id.rs` binds each prefix
-to its type at compile time through `type-safe-id` 0.3.4 and refuses an ID longer than 80 characters before parsing. The
-`Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed lookup roots return null for malformed,
-wrong-type, overlong, hidden and missing records. The User variant resolves only the caller. Reading state has no global
-ID.
+`metadata_version` and `user`. `publisher` is reserved and never sent, because publisher suggestions carry no entity ID.
+`backend/src/graphql/id.rs` binds each prefix to its type at compile time through `type-safe-id` 0.3.4 and refuses an ID
+longer than 80 characters before parsing. The `Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed
+lookup roots return null for malformed, wrong-type, overlong, hidden and missing records. The User variant resolves only
+the caller. Reading state has no global ID.
 
 Browser routes carry these IDs: `/b/:id`, `/series/:id` and `/shelves/:id` loaders pass the path parameter unaltered to
 their query, and a null result is a not-found route. Links, Library rows, visit filters and the restoration anchor use

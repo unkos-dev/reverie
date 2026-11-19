@@ -47,8 +47,9 @@ unaltered.
 
 An ID is a lowercase type prefix, `_`, then the record's UUID in 26 base32 characters (TypeID specification 0.3.0). The
 prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`, `tag`, `genre`, `mood`, `metadata_version` and
-`user`. The backend binds each prefix to its type at compile time through the `type-safe-id` crate. Retained HTTP
-responses, downloads, covers and OPDS keep UUID values.
+`user`. `publisher` is reserved and never sent, because publisher suggestions carry no entity ID. The backend binds each
+prefix to its type at compile time through the `type-safe-id` crate. Retained HTTP responses, downloads, covers and OPDS
+keep UUID values.
 
 ### Consequences
 
@@ -71,7 +72,7 @@ responses, downloads, covers and OPDS keep UUID values.
 
 - Positive: path-safe and keeps the existing type tag with a one-line encoding change.
 - Negative: a Reverie-specific format with no specification or shared implementations.
-- Negative: 55 to 67 characters, unreadable to people looking at a URL or log.
+- Negative: 54 to 70 characters, unreadable to people looking at a URL or log.
 
 ### UUID values in URLs with a separate `uuid` field
 
