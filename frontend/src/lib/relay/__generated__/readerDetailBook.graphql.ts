@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<1b7ba57a397117ab322e9a074cfbb6f0>>
+ * @generated SignedSource<<2bde9de604d75df052f5e5498f120857>>
  * @lightSyntaxTransform
  */
 
@@ -63,7 +63,9 @@ const node: ReaderFragment = (function () {
   return {
     argumentDefinitions: [],
     kind: "Fragment",
-    metadata: null,
+    metadata: {
+      throwOnFieldError: true,
+    },
     name: "readerDetailBook",
     selections: [
       v0 /*:: as any*/,
@@ -241,6 +243,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "21f12a26f22093fac45d964bc3aafe9b";
+(node as any).hash = "fb92b34bd41d8fe9c969544bb7413828";
 
 export default node;

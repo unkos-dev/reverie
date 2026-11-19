@@ -642,6 +642,13 @@
       "title": "oxlint with scoped bridges for Relay and schema lint"
     },
     {
+      "id": "REV-ADR-0080",
+      "kind": "adr",
+      "path": "docs/adr/0080-honest-non-null-schema-with-client-handled-graphql-field-errors.md",
+      "status": "proposed",
+      "title": "Honest non-null schema with client-handled GraphQL field errors"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0075",
@@ -1110,7 +1117,8 @@
     {
       "governed-by": [
         "REV-ADR-0077",
-        "REV-ADR-0079"
+        "REV-ADR-0079",
+        "REV-ADR-0080"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",

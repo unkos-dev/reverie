@@ -2,11 +2,11 @@
  * Global library search using server-ranked results and safe snippet highlighting.
  * React Aria owns modal focus and dismissal.
  */
-import { fetchQuery, useRelayEnvironment } from "react-relay";
+import { graphql, usePreloadedQuery, useQueryLoader, type PreloadedQuery } from "react-relay";
 import { decodeGraphQLId } from "@/api/graphql";
-import { readerSearchQuery } from "@/lib/relay/reader";
-import type { readerSearchQuery as SearchQuery } from "@/lib/relay/__generated__/readerSearchQuery.graphql";
-import { useEffect, useState, type ReactElement } from "react";
+import type { CommandPaletteQuery as SearchQuery } from "@/lib/relay/__generated__/CommandPaletteQuery.graphql";
+import { Suspense, useState, type ReactElement } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import {
   Autocomplete,
   Button,
@@ -28,63 +28,55 @@ type SearchItem = Pick<SearchHit, "id" | "title" | "authors" | "snippet">;
 const SNIPPET_HL_START = "\u0002";
 const SNIPPET_HL_END = "\u0003";
 
+const commandPaletteQuery = graphql`
+  query CommandPaletteQuery($q: String!) @throwOnFieldError {
+    search(q: $q) {
+      snippet
+      manifestation {
+        id
+        work {
+          title
+          authors(first: 5) {
+            edges {
+              node {
+                name
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** Searches from two characters and navigates to the selected book without changing library filters. */
 export function CommandPalette({
   isOpen,
   onOpenChange,
 }: Readonly<{ isOpen: boolean; onOpenChange: (open: boolean) => void }>): ReactElement {
   const [query, setQuery] = useState("");
+  const [reference, loadSearch, disposeSearch] = useQueryLoader<SearchQuery>(commandPaletteQuery);
   const trimmed = query.trim();
-  const environment = useRelayEnvironment();
-  const [result, setResult] = useState<{
-    query: string;
-    data?: SearchQuery["response"];
-    error?: Error;
-  }>();
-  const enabled = isOpen && trimmed.length >= 2;
-  useEffect(() => {
-    if (!enabled) return;
-    const subscription = fetchQuery<SearchQuery>(environment, readerSearchQuery, {
-      q: trimmed,
-    }).subscribe({
-      next: (data) => {
-        setResult({ query: trimmed, data });
-      },
-      error: (error: Error) => {
-        console.error("[CommandPalette] search failed", error);
-        setResult({ query: trimmed, error });
-      },
-    });
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [environment, enabled, trimmed]);
-  const data = result?.query === trimmed ? result.data : undefined;
-  const isError = result?.query === trimmed && result.error !== undefined;
-  const isFetching = enabled && data === undefined && !isError;
-  const items =
-    data?.search.flatMap(({ manifestation, snippet }) =>
-      manifestation?.work == null
-        ? []
-        : [
-            {
-              id: decodeGraphQLId("Manifestation", manifestation.id),
-              title: manifestation.work.title,
-              authors: manifestation.work.authors.edges.map(({ node }) => node.name),
-              snippet: snippet ?? null,
-            },
-          ],
-    ) ?? [];
+  function changeQuery(next: string): void {
+    setQuery(next);
+    const q = next.trim();
+    if (q.length < 2) disposeSearch();
+    else if (q !== trimmed || reference == null) loadSearch({ q }, { fetchPolicy: "network-only" });
+  }
   function changeOpen(next: boolean): void {
     onOpenChange(next);
-    if (!next) setQuery("");
+    if (!next) {
+      setQuery("");
+      disposeSearch();
+    }
   }
-
-  let status: string | null = null;
-  if (trimmed.length < 2) status = "Type to search your library.";
-  else if (isError) status = "Search failed. Try again in a moment.";
-  else if (isFetching && items.length === 0) status = "Searching…";
-  else if (items.length === 0) status = "No results.";
+  function close(): void {
+    changeOpen(false);
+  }
 
   return (
     <ModalOverlay
@@ -101,7 +93,7 @@ export function CommandPalette({
           <Text slot="description" className="sr-only">
             Search by title, description, or author across your library.
           </Text>
-          <Autocomplete inputValue={query} onInputChange={setQuery}>
+          <Autocomplete inputValue={query} onInputChange={changeQuery}>
             <SearchField
               aria-label="Search library"
               className="flex items-center gap-2 border-b border-border px-3"
@@ -116,39 +108,23 @@ export function CommandPalette({
                 ×
               </Button>
             </SearchField>
-            {status && (
-              <p role="status" className="p-6 text-center text-sm text-fg-muted">
-                {status}
-              </p>
+            {reference == null || trimmed.length < 2 ? (
+              <SearchResults status="Type to search your library." onClose={close} />
+            ) : (
+              <ErrorBoundary
+                resetKeys={[reference]}
+                onError={(error) => {
+                  console.error("[CommandPalette] search failed", error);
+                }}
+                fallback={
+                  <SearchResults status="Search failed. Try again in a moment." onClose={close} />
+                }
+              >
+                <Suspense fallback={<SearchResults status="Searching…" onClose={close} />}>
+                  <LoadedSearchResults reference={reference} onClose={close} />
+                </Suspense>
+              </ErrorBoundary>
             )}
-            <Menu
-              aria-label="Books"
-              items={items}
-              className="max-h-72 overflow-y-auto p-1 outline-none"
-              onClose={() => {
-                changeOpen(false);
-              }}
-            >
-              {(hit: SearchItem) => (
-                <MenuItem
-                  id={hit.id}
-                  href={`/b/${encodeURIComponent(hit.id)}`}
-                  textValue={hit.title}
-                  className="cursor-default rounded-md px-2 py-1.5 outline-none data-focused:bg-muted"
-                >
-                  <Text slot="label">
-                    <span className="block text-sm font-medium">{hit.title}</span>{" "}
-                    <span className="block text-xs text-fg-muted">{hit.authors.join(", ")}</span>
-                    {hit.snippet && (
-                      <HighlightedSnippet
-                        text={hit.snippet}
-                        className="block text-xs text-fg-muted"
-                      />
-                    )}
-                  </Text>
-                </MenuItem>
-              )}
-            </Menu>
           </Autocomplete>
           <div className="border-border text-fg-muted flex items-center gap-4 border-t px-3 py-2 font-mono text-[0.65rem] tracking-wide">
             <span>
@@ -164,6 +140,71 @@ export function CommandPalette({
         </Dialog>
       </Modal>
     </ModalOverlay>
+  );
+}
+
+function LoadedSearchResults({
+  reference,
+  onClose,
+}: Readonly<{ reference: PreloadedQuery<SearchQuery>; onClose: () => void }>): ReactElement {
+  const data = usePreloadedQuery<SearchQuery>(commandPaletteQuery, reference);
+  const items = data.search.flatMap(({ manifestation, snippet }) =>
+    manifestation?.work == null
+      ? []
+      : [
+          {
+            id: decodeGraphQLId("Manifestation", manifestation.id),
+            title: manifestation.work.title,
+            authors: manifestation.work.authors.edges.map(({ node }) => node.name),
+            snippet: snippet ?? null,
+          },
+        ],
+  );
+  return (
+    <SearchResults
+      status={items.length === 0 ? "No results." : null}
+      items={items}
+      onClose={onClose}
+    />
+  );
+}
+
+function SearchResults({
+  status,
+  items = [],
+  onClose,
+}: Readonly<{ status: string | null; items?: SearchItem[]; onClose: () => void }>): ReactElement {
+  return (
+    <>
+      {status && (
+        <p role="status" className="p-6 text-center text-sm text-fg-muted">
+          {status}
+        </p>
+      )}
+      <Menu
+        aria-label="Books"
+        items={items}
+        className="max-h-72 overflow-y-auto p-1 outline-none"
+        onClose={onClose}
+      >
+        {(hit: SearchItem) => (
+          <MenuItem
+            id={hit.id}
+            href={`/b/${encodeURIComponent(hit.id)}`}
+            textValue={hit.title}
+            className="cursor-default rounded-md px-2 py-1.5 outline-none data-focused:bg-muted"
+          >
+            <Text slot="label">
+              <span className="block text-sm font-medium">{hit.title}</span>{" "}
+              <span className="block text-xs text-fg-muted">{hit.authors.join(", ")}</span>
+              {hit.snippet && (
+                <HighlightedSnippet text={hit.snippet} className="block text-xs text-fg-muted" />
+              )}
+            </Text>
+          </MenuItem>
+        )}
+      </Menu>
+    </>
   );
 }
 

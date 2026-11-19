@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<6fa427bc45e23208fbc0320c3bd96dc7>>
+ * @generated SignedSource<<80a45785a7e3d2a26b8058e3e6112ab9>>
  * @relayHash bc7dd8d98d9805c686fea03bad6ddd61
  * @lightSyntaxTransform
  */
@@ -61,7 +61,9 @@ const node: ConcreteRequest = (function () {
     fragment: {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
-      metadata: null,
+      metadata: {
+        throwOnFieldError: true,
+      },
       name: "readerShelfQuery",
       selections: [
         {
@@ -231,6 +233,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "333d82aab38dc6e6c833ba41125cf630";
+(node as any).hash = "aeea27ff93daea1d3a3cf8a66a129cab";
 
 export default node;
