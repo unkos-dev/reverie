@@ -645,7 +645,7 @@
       "id": "REV-ADR-0080",
       "kind": "adr",
       "path": "docs/adr/0080-honest-non-null-schema-with-client-handled-graphql-field-errors.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Honest non-null schema with client-handled GraphQL field errors"
     },
     {

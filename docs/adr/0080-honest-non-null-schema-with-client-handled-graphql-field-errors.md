@@ -3,8 +3,9 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0080"
 title: "Honest non-null schema with client-handled GraphQL field errors"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-11-19"
+decided-on: "2026-11-17"
 decision-makers:
   - "John Unkovich"
 ---
