@@ -2,7 +2,7 @@ use type_safe_id::{StaticType, TypeSafeId};
 use uuid::Uuid;
 
 pub(super) trait Kind: StaticType {
-    const NAME: &'static str;
+    const NAME: &str;
 
     fn encode(id: Uuid) -> async_graphql::ID {
         async_graphql::ID(TypeSafeId::<Self>::from_uuid(id).to_string())
