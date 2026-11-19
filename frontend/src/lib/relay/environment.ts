@@ -60,30 +60,38 @@ export async function prepareReader<T extends OperationType>(
   const account = await queryClient.query(authMeQueryOptions);
   if (account === null || signal.aborted) return null;
   const environment = relayEnvironment();
-  const data = await Observable.create<T["response"]>((sink) => {
-    if (signal.aborted) {
-      sink.complete();
-      return;
-    }
-    const cancel = () => {
-      sink.complete();
-    };
-    signal.addEventListener("abort", cancel, { once: true });
-    const subscription = fetchQuery<T>(environment, document, variables).subscribe(sink);
-    return () => {
-      signal.removeEventListener("abort", cancel);
-      subscription.unsubscribe();
-    };
-  }).toPromise();
-  signal.throwIfAborted();
-  if (current?.environment !== environment) {
-    return null;
-  }
-  const reference = loadQuery<T>(environment, document, variables, { fetchPolicy: "store-only" });
+  const reference = loadQuery<T>(environment, document, variables, {
+    fetchPolicy: "network-only",
+  });
   const dispose = () => {
     signal.removeEventListener("abort", dispose);
     reference.dispose();
   };
   signal.addEventListener("abort", dispose, { once: true });
-  return { reference, data, dispose };
+  try {
+    const data = await Observable.create<T["response"]>((sink) => {
+      if (signal.aborted) {
+        sink.complete();
+        return;
+      }
+      const cancel = () => {
+        sink.complete();
+      };
+      signal.addEventListener("abort", cancel, { once: true });
+      const subscription = fetchQuery<T>(environment, document, variables).subscribe(sink);
+      return () => {
+        signal.removeEventListener("abort", cancel);
+        subscription.unsubscribe();
+      };
+    }).toPromise();
+    signal.throwIfAborted();
+    if (current?.environment !== environment) {
+      dispose();
+      return null;
+    }
+    return { reference, data, dispose };
+  } catch (error) {
+    dispose();
+    throw error;
+  }
 }

@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<96fcad3ea445ad8394d5f7899e5102bf>>
+ * @generated SignedSource<<facfa9fa64aca5136c3e32eda4d17feb>>
  * @lightSyntaxTransform
  */
 
@@ -76,6 +76,7 @@ const node: ReaderFragment = (function () {
           identifierQueryVariableName: "id",
         },
       },
+      throwOnFieldError: true,
     },
     name: "readerDetailTags",
     selections: [
@@ -166,6 +167,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "07ac3674bdd36230718fbaf3bff5ab79";
+(node as any).hash = "2603d982ceda6796cab9171c93feb18c";
 
 export default node;

@@ -21,6 +21,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0077"
   - "REV-ADR-0079"
+  - "REV-ADR-0080"
 ---
 
 # GraphQL execution and Relay browser data
@@ -87,11 +88,11 @@ share the typed roots' read scope guards and visibility checks. Paging fragments
 async-graphql's page complexity multipliers when validating named fragment spreads. Query paging fragments use their
 Query root directly.
 
-`frontend/src/lib/relay/reader.ts` supplies Library, detail, shelves, series, search, active suggestions and label
-reads. The basic detail includes only the small pending-version count. The Versions tab requests and pages pending
-proposals when it opens. Required Work authors, tags, shelves, shelf items and series works complete their bounded
-native pages. Reader route loaders prepare native references, and the confirmed-account provider owns their shared
-environment.
+`frontend/src/lib/relay/reader.ts` supplies Library, detail, shelves, series, active suggestions and label reads. The
+command palette defines its search query, `CommandPaletteQuery`, beside the component that reads it. The basic detail
+includes only the small pending-version count. The Versions tab requests and pages pending proposals when it opens.
+Required Work authors, tags, shelves, shelf items and series works complete their bounded native pages. The
+confirmed-account provider owns the shared environment.
 
 ## Data and state
 
@@ -181,6 +182,18 @@ The Relay network sends generated IDs and variables through `apiFetch` with same
 It validates the response envelope before publication. The viewer has no custom scalar or editing snapshot. Reader
 proposal JSON reaches the lazy Versions view. Editing documents validate their selected projections before publication.
 Execution faults are errors and do not publish partial data or trigger a resend.
+
+The book, series, shelf and shelves route queries, the fragments those pages read, and `CommandPaletteQuery` carry
+`@throwOnFieldError`. A field error or data missing after a graph relationship change throws to the nearest error
+boundary: the route `errorElement`, or the command palette's own boundary. The schema marks a field non-null when null
+is not a valid domain value.
+
+Each reader route loader starts its query with `loadQuery`, which retains the operation from load start. The loader
+awaits the same in-flight request for its not-found check and breadcrumb title. Abort, failure, a not-found result or an
+account change during the load releases the reference. Otherwise the page's `useQueryLoader` takes the reference and
+releases it on unmount or replacement. The command palette loads its query from the input handler through
+`useQueryLoader`. A newer query or a closed palette releases the previous reference, so an obsolete search contributes
+no result.
 
 `frontend/src/lib/relay/mutations.ts` contains selected title, form, author and reading reads and acknowledgements, plus
 the other protected actions. `readerAuthorEditing` refetches through `fetch__Manifestation`. The network checks each

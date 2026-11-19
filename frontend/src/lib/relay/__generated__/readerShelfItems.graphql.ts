@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<c1bc00025aad49047472b71f02bdb4ba>>
+ * @generated SignedSource<<344e03fcca96a73d5fe6f82cf0e2461a>>
  * @lightSyntaxTransform
  */
 
@@ -75,6 +75,7 @@ const node: ReaderFragment = (function () {
           identifierQueryVariableName: "id",
         },
       },
+      throwOnFieldError: true,
     },
     name: "readerShelfItems",
     selections: [
@@ -158,6 +159,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "5d49e580c124c267249eebdcf10755e4";
+(node as any).hash = "f366d894eff54bc4877dd3881a7fb59f";
 
 export default node;

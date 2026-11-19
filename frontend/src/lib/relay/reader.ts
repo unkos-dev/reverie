@@ -52,6 +52,7 @@ export const readerLibraryBook = graphql`
 
 export const readerWorkAuthors = graphql`
   fragment readerWorkAuthors on Work
+  @throwOnFieldError
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
   @refetchable(queryName: "readerWorkAuthorsPaginationQuery", preferFetchable: true) {
     id
@@ -68,6 +69,7 @@ export const readerWorkAuthors = graphql`
 
 export const readerDetailTags = graphql`
   fragment readerDetailTags on Manifestation
+  @throwOnFieldError
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
   @refetchable(queryName: "readerDetailTagsPaginationQuery", preferFetchable: true) {
     id
@@ -83,7 +85,7 @@ export const readerDetailTags = graphql`
 `;
 
 export const readerDetailBook = graphql`
-  fragment readerDetailBook on Manifestation {
+  fragment readerDetailBook on Manifestation @throwOnFieldError {
     id
     coverUrl
     isbn13
@@ -157,7 +159,7 @@ export const readerLibraryQuery = graphql`
 `;
 
 export const readerDetailQuery = graphql`
-  query readerDetailQuery($id: ID!) {
+  query readerDetailQuery($id: ID!) @throwOnFieldError {
     manifestation(id: $id) {
       id
       work {
@@ -170,6 +172,7 @@ export const readerDetailQuery = graphql`
 
 export const readerVersions = graphql`
   fragment readerVersions on Manifestation
+  @throwOnFieldError
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
   @refetchable(queryName: "readerVersionsPaginationQuery", preferFetchable: true) {
     id
@@ -194,7 +197,7 @@ export const readerVersions = graphql`
 `;
 
 export const readerVersionsQuery = graphql`
-  query readerVersionsQuery($id: ID!, $count: Int = 20, $cursor: String) {
+  query readerVersionsQuery($id: ID!, $count: Int = 20, $cursor: String) @throwOnFieldError {
     manifestation(id: $id) {
       ...readerVersions @arguments(count: $count, cursor: $cursor)
     }
@@ -203,6 +206,7 @@ export const readerVersionsQuery = graphql`
 
 export const readerShelfItems = graphql`
   fragment readerShelfItems on Shelf
+  @throwOnFieldError
   @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
   @refetchable(queryName: "readerShelfItemsPaginationQuery", preferFetchable: true) {
     items(first: $count, after: $cursor) @connection(key: "readerShelfItems_items") {
@@ -216,7 +220,7 @@ export const readerShelfItems = graphql`
 `;
 
 export const readerShelf = graphql`
-  fragment readerShelf on Shelf {
+  fragment readerShelf on Shelf @throwOnFieldError {
     id
     name
     isSystem
@@ -228,7 +232,7 @@ export const readerShelf = graphql`
 `;
 
 export const readerShelfQuery = graphql`
-  query readerShelfQuery($id: ID!) {
+  query readerShelfQuery($id: ID!) @throwOnFieldError {
     shelf(id: $id) {
       ...readerShelf
     }
@@ -237,6 +241,7 @@ export const readerShelfQuery = graphql`
 
 export const readerShelves = graphql`
   fragment readerShelves on Query
+  @throwOnFieldError
   @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
   @refetchable(queryName: "readerShelvesPaginationQuery") {
     shelves(first: $count, after: $cursor) @connection(key: "readerShelves_shelves") {
@@ -255,13 +260,14 @@ export const readerShelves = graphql`
 `;
 
 export const readerShelvesQuery = graphql`
-  query readerShelvesQuery {
+  query readerShelvesQuery @throwOnFieldError {
     ...readerShelves
   }
 `;
 
 export const readerSeriesWorks = graphql`
   fragment readerSeriesWorks on Series
+  @throwOnFieldError
   @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
   @refetchable(queryName: "readerSeriesWorksPaginationQuery", preferFetchable: true) {
     works(first: $count, after: $cursor) @connection(key: "readerSeriesWorks_works") {
@@ -290,7 +296,7 @@ export const readerSeriesWorks = graphql`
 `;
 
 export const readerSeries = graphql`
-  fragment readerSeries on Series {
+  fragment readerSeries on Series @throwOnFieldError {
     id
     name
     ...readerSeriesWorks
@@ -298,42 +304,11 @@ export const readerSeries = graphql`
 `;
 
 export const readerSeriesQuery = graphql`
-  query readerSeriesQuery($id: ID!) {
+  query readerSeriesQuery($id: ID!) @throwOnFieldError {
     series(id: $id) {
       id
       name
       ...readerSeries
-    }
-  }
-`;
-
-export const readerSearchHit = graphql`
-  fragment readerSearchHit on Manifestation {
-    id
-    work {
-      title
-      authors(first: 5) {
-        edges {
-          node {
-            name
-          }
-        }
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
-      }
-    }
-  }
-`;
-
-export const readerSearchQuery = graphql`
-  query readerSearchQuery($q: String!) {
-    search(q: $q) {
-      snippet
-      manifestation {
-        ...readerSearchHit @relay(mask: false)
-      }
     }
   }
 `;

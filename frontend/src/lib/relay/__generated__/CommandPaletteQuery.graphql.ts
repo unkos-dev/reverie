@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<1220f3069a0dad32afd5e1858db99da9>>
- * @relayHash 9a235f9ccdbf500f57582277f5723c85
+ * @generated SignedSource<<d900b5a3c316c05e9177dfdeb5229bfb>>
+ * @relayHash 1303d57aa449acf525f37afc195997bd
  * @lightSyntaxTransform
  */
 
@@ -8,13 +8,13 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID dca5376c4d949cebb82377c49614c9aae801309feaf99fee32284a4b365c93c7
+// @relayRequestID 4263f0ad8e894f31bafa49df4e334bc15c3c75fdf8ffc67c215ef16058ce9d32
 
 import { ConcreteRequest } from "relay-runtime";
-export type readerSearchQuery$variables = {
+export type CommandPaletteQuery$variables = {
   q: string;
 };
-export type readerSearchQuery$data = {
+export type CommandPaletteQuery$data = {
   readonly search: ReadonlyArray<{
     readonly manifestation:
       | {
@@ -42,9 +42,9 @@ export type readerSearchQuery$data = {
     readonly snippet: string | null | undefined;
   }>;
 };
-export type readerSearchQuery = {
-  response: readerSearchQuery$data;
-  variables: readerSearchQuery$variables;
+export type CommandPaletteQuery = {
+  response: CommandPaletteQuery$data;
+  variables: CommandPaletteQuery$variables;
 };
 
 const node: ConcreteRequest = (function () {
@@ -126,8 +126,10 @@ const node: ConcreteRequest = (function () {
     fragment: {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
-      metadata: null,
-      name: "readerSearchQuery",
+      metadata: {
+        throwOnFieldError: true,
+      },
+      name: "CommandPaletteQuery",
       selections: [
         {
           alias: null,
@@ -206,7 +208,7 @@ const node: ConcreteRequest = (function () {
     operation: {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
-      name: "readerSearchQuery",
+      name: "CommandPaletteQuery",
       selections: [
         {
           alias: null,
@@ -281,15 +283,15 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "dca5376c4d949cebb82377c49614c9aae801309feaf99fee32284a4b365c93c7",
+      id: "4263f0ad8e894f31bafa49df4e334bc15c3c75fdf8ffc67c215ef16058ce9d32",
       metadata: {},
-      name: "readerSearchQuery",
+      name: "CommandPaletteQuery",
       operationKind: "query",
       text: null,
     },
   };
 })();
 
-(node as any).hash = "2fcfa3b0cce7837f970178b7d4637782";
+(node as any).hash = "2dfc0467aa4d3cf221d7fa0801248e82";
 
 export default node;

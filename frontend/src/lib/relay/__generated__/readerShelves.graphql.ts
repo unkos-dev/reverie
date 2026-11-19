@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<428f2795f9a4d023bb20ecd133281b24>>
+ * @generated SignedSource<<18999132f9103ce9365f9803b5a48d15>>
  * @lightSyntaxTransform
  */
 
@@ -68,6 +68,7 @@ const node: ReaderFragment = (function () {
         fragmentPathInResult: [],
         operation: readerShelvesPaginationQuery_graphql,
       },
+      throwOnFieldError: true,
     },
     name: "readerShelves",
     selections: [
@@ -191,6 +192,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "6f8a062f713d31665ff196180212df50";
+(node as any).hash = "ae07c9c1baff71f5559041111b3c337c";
 
 export default node;

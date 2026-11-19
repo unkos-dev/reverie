@@ -181,6 +181,11 @@ hand-rolls one of these Relay capabilities:
   response so the store updates them.
 - **Untyped store writes:** a store updater that writes fields by string name. Native path: an `@updatable` fragment
   read through `readUpdatableFragment`.
+- **Effect-driven reads:** `fetchQuery` in an Effect whose result feeds render. Native path: a route loader's
+  `prepareReader` reference, or `useQueryLoader` called from the event handler, read through `usePreloadedQuery` under
+  Suspense and an error boundary.
+- **Unhandled field errors:** a query or fragment in the diff without `@throwOnFieldError` (ADR-0080). Use `@catch` on a
+  field whose failure the component handles itself.
 
 A hand-rolled path passes review when the diff, a Design or an ADR names the requirement the native API cannot meet;
 cite that source in the review.

@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<00236d177736f4a350cd21c2cd66667c>>
+ * @generated SignedSource<<0582bac457a570b1d0eb72d48a776392>>
  * @lightSyntaxTransform
  */
 
@@ -23,7 +23,9 @@ export type readerSeries$key = {
 const node: ReaderFragment = {
   argumentDefinitions: [],
   kind: "Fragment",
-  metadata: null,
+  metadata: {
+    throwOnFieldError: true,
+  },
   name: "readerSeries",
   selections: [
     {
@@ -50,6 +52,6 @@ const node: ReaderFragment = {
   abstractKey: null,
 };
 
-(node as any).hash = "e3cd02e73baa3cbce0cc8793ddc3ee05";
+(node as any).hash = "f1fde15276e2d6666e9196704200ad36";
 
 export default node;

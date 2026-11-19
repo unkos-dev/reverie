@@ -157,7 +157,7 @@ const readerProjections = new Map<string, z.ZodType>([
   ["readerSeriesQuery", z.object({ series: seriesWorks.nullable() })],
   ["readerSeriesWorksPaginationQuery", z.object({ fetch__Series: seriesWorks.nullable() })],
   [
-    "readerSearchQuery",
+    "CommandPaletteQuery",
     z.object({
       search: z.array(
         z.object({
