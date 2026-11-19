@@ -33,7 +33,7 @@ jobs:
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.11.8"
+          version: "2026.11.9"
           install_args: github:EmbarkStudios/cargo-deny
 
       # Advisories only; license/bans/sources policy is checked PR-time (ci.yml).
@@ -91,7 +91,7 @@ jobs:
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.11.8"
+          version: "2026.11.9"
           install_args: trivy
 
       # --platform is load-bearing: :main is an arm64-only manifest list, and
