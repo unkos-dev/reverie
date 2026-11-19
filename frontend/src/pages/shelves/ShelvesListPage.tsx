@@ -3,17 +3,10 @@
  *
  * Lists the caller's shelves with create / rename / delete. System
  * shelves render with disabled rename/delete affordances; the backend
- * rejects mutations on `is_system = TRUE` shelves with HTTP 409
- * `system-shelf-immutable`.
+ * refuses changes to them with a `SystemShelfImmutable` result.
  */
-import {
-  usePreloadedQuery,
-  useQueryLoader,
-  useRelayEnvironment,
-  type PreloadedQuery,
-} from "react-relay";
-import { ConnectionHandler, commitLocalUpdate } from "relay-runtime";
-import { executeEditingOnce } from "@/api/graphql";
+import { useMutation, usePreloadedQuery, useQueryLoader, type PreloadedQuery } from "react-relay";
+import { ConnectionHandler, ROOT_ID } from "relay-runtime";
 import { useShelves } from "@/api/shelves";
 import { readerShelvesQuery } from "@/lib/relay/reader";
 import {
@@ -26,12 +19,12 @@ import type { mutationsCreateShelfMutation as CreateShelf } from "@/lib/relay/__
 import type { mutationsRenameShelfMutation as RenameShelf } from "@/lib/relay/__generated__/mutationsRenameShelfMutation.graphql";
 import type { mutationsDeleteShelfMutation as DeleteShelf } from "@/lib/relay/__generated__/mutationsDeleteShelfMutation.graphql";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, Suspense, useActionState, useRef, useState, type ReactElement } from "react";
+import { Suspense, useActionState, useState, type ReactElement } from "react";
 import { Form, TextField, Input as AriaInput, Label as AriaLabel } from "react-aria-components";
 import { z } from "zod";
 import { Link, useLoaderData } from "react-router";
 
-import { ApiError, type Shelf } from "@/api";
+import { type Shelf } from "@/api";
 import { Button } from "@/components/ui/button";
 import { DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FieldError } from "@/components/ui/field";
@@ -40,6 +33,8 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import type { loader } from "@/routes/shelves";
+
+const SHELVES_CONNECTION = ConnectionHandler.getConnectionID(ROOT_ID, "readerShelves_shelves");
 
 /** Top-level page component (Suspense boundary + content). */
 export function ShelvesListPage(): ReactElement | null {
@@ -57,97 +52,84 @@ function ShelvesContent({
 }: Readonly<{ reference: PreloadedQuery<ShelvesQuery> }>): ReactElement {
   const [current] = useQueryLoader<ShelvesQuery>(readerShelvesQuery, reference);
   const query = usePreloadedQuery<ShelvesQuery>(readerShelvesQuery, current ?? reference);
-  const environment = useRelayEnvironment();
   const shelvesQuery = useShelves(query);
   const { data: shelves, error } = shelvesQuery;
-  const controller = useRef<AbortController | null>(null);
-  useEffect(() => {
-    const lifetime = new AbortController();
-    controller.current = lifetime;
-    return () => {
-      lifetime.abort();
-    };
-  }, []);
+  const [commitCreate, createPending] = useMutation<CreateShelf>(mutationsCreateShelfMutation);
+  const [commitRename, renamePending] = useMutation<RenameShelf>(mutationsRenameShelfMutation);
+  const [commitDelete, deletePending] = useMutation<DeleteShelf>(mutationsDeleteShelfMutation);
   const [createOpen, setCreateOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Shelf | null>(null);
-  const [createPending, setCreatePending] = useState(false);
-  const [renamePending, setRenamePending] = useState(false);
-  const [deletion, setDeletion] = useState<{
-    shelf: Shelf;
-    pending: boolean;
-    error: Error | null;
-  }>();
+  const [deletion, setDeletion] = useState<{ shelf: Shelf; error: string | null }>();
   if (error !== null) throw error;
-  async function create(name: string): Promise<void> {
-    setCreatePending(true);
-    try {
-      const response = await executeEditingOnce<CreateShelf>(
-        environment,
-        mutationsCreateShelfMutation,
-        { name },
-        controller.current?.signal,
-      );
-      if (response !== undefined) {
-        shelvesQuery.refetch();
-        setCreateOpen(false);
-      }
-      setCreatePending(false);
-    } catch (error_) {
-      setCreatePending(false);
-      shelvesQuery.refetch();
-      throw error_;
-    }
-  }
-  async function rename(name: string): Promise<void> {
-    if (renameTarget === null) return;
-    setRenamePending(true);
-    try {
-      const response = await executeEditingOnce<RenameShelf>(
-        environment,
-        mutationsRenameShelfMutation,
-        { shelfId: renameTarget.id, name },
-        controller.current?.signal,
-      );
-      if (response !== undefined) {
-        shelvesQuery.refetch();
-        setRenameTarget(null);
-      }
-      setRenamePending(false);
-    } catch (error_) {
-      setRenamePending(false);
-      shelvesQuery.refetch();
-      throw error_;
-    }
-  }
-  async function remove(shelf: Shelf): Promise<void> {
-    setDeletion({ shelf, pending: true, error: null });
-    try {
-      const response = await executeEditingOnce<DeleteShelf>(
-        environment,
-        mutationsDeleteShelfMutation,
-        { shelfId: shelf.id },
-        controller.current?.signal,
-      );
-      if (response === undefined) return;
-      commitLocalUpdate(environment, (store) => {
-        const connection = ConnectionHandler.getConnection(
-          store.getRoot(),
-          "readerShelves_shelves",
-        );
-        if (connection != null)
-          ConnectionHandler.deleteNode(connection, response.deleteShelf.shelfId);
-        store.delete(response.deleteShelf.shelfId);
+  function create(name: string): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+      commitCreate({
+        variables: { input: { name }, connections: [SHELVES_CONNECTION] },
+        onCompleted: ({ createShelf }) => {
+          if (createShelf.__typename === "ShelfCreated") {
+            setCreateOpen(false);
+            resolve(null);
+          } else if (createShelf.__typename === "ShelfNameInvalid") {
+            resolve(createShelf.message);
+          } else {
+            reject(new Error("Unexpected shelf result."));
+          }
+        },
+        onError: (failure) => {
+          shelvesQuery.refetch();
+          reject(failure);
+        },
       });
-      setDeletion(undefined);
-    } catch (error_) {
-      if (controller.current?.signal.aborted) return;
-      setDeletion({
-        shelf,
-        pending: false,
-        error: error_ instanceof Error ? error_ : new Error("Request failed."),
+    });
+  }
+  function rename(name: string): Promise<string | null> {
+    const target = renameTarget;
+    if (target === null) return Promise.resolve(null);
+    return new Promise((resolve, reject) => {
+      commitRename({
+        variables: { input: { id: target.id, name } },
+        onCompleted: ({ renameShelf }) => {
+          if (renameShelf.__typename === "ShelfRenamed") {
+            setRenameTarget(null);
+            resolve(null);
+          } else if (
+            renameShelf.__typename === "ShelfNameInvalid" ||
+            renameShelf.__typename === "SystemShelfImmutable" ||
+            renameShelf.__typename === "NotFound"
+          ) {
+            resolve(renameShelf.message);
+          } else {
+            reject(new Error("Unexpected shelf result."));
+          }
+        },
+        onError: (failure) => {
+          shelvesQuery.refetch();
+          reject(failure);
+        },
       });
-      shelvesQuery.refetch();
-    }
+    });
+  }
+  function remove(shelf: Shelf): void {
+    setDeletion({ shelf, error: null });
+    commitDelete({
+      variables: { input: { id: shelf.id }, connections: [SHELVES_CONNECTION] },
+      onCompleted: ({ deleteShelf }) => {
+        if (deleteShelf.__typename === "ShelfDeleted") setDeletion(undefined);
+        else
+          setDeletion({
+            shelf,
+            error:
+              deleteShelf.__typename === "SystemShelfImmutable" ||
+              deleteShelf.__typename === "NotFound"
+                ? deleteShelf.message
+                : "Request failed.",
+          });
+      },
+      onError: (failure) => {
+        setDeletion({ shelf, error: failure.message });
+        shelvesQuery.refetch();
+      },
+    });
   }
   return (
     <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
@@ -171,7 +153,7 @@ function ShelvesContent({
 
       {deletion?.error ? (
         <FieldError>
-          Could not delete {deletion.shelf.name}: {deletion.error.message}
+          Could not delete {deletion.shelf.name}: {deletion.error}
         </FieldError>
       ) : null}
       <ul className="space-y-2">
@@ -212,10 +194,10 @@ function ShelvesContent({
                   size="icon"
                   aria-label="Delete shelf"
                   onPress={() => {
-                    void remove(shelf);
+                    remove(shelf);
                   }}
-                  isPending={deletion?.pending === true && deletion.shelf.id === shelf.id}
-                  isDisabled={deletion?.pending === true && deletion.shelf.id !== shelf.id}
+                  isPending={deletePending && deletion?.shelf.id === shelf.id}
+                  isDisabled={deletePending && deletion?.shelf.id !== shelf.id}
                 >
                   <Trash2 className="size-4" aria-hidden="true" />
                 </Button>
@@ -260,7 +242,7 @@ type NameDialogProps = {
   initialName?: string;
   pending: boolean;
   onClose: () => void;
-  onSubmit: (name: string) => Promise<void>;
+  onSubmit: (name: string) => Promise<string | null>;
 };
 
 function NameDialog({
@@ -277,10 +259,10 @@ function NameDialog({
       const trimmed = name.trim();
       if (trimmed.length === 0 || pending) return { name, error: null };
       try {
-        await onSubmit(trimmed);
-        return { name: initialName, error: null };
-      } catch (err) {
-        return { name, error: err instanceof ApiError ? err.detail : "Could not save shelf." };
+        const refusal = await onSubmit(trimmed);
+        return refusal === null ? { name: initialName, error: null } : { name, error: refusal };
+      } catch {
+        return { name, error: "Could not save shelf." };
       }
     },
     { name: initialName, error: null },

@@ -343,53 +343,90 @@ export const mutationsResolveAuthorsQuery = graphql`
 `;
 
 export const mutationsCreateShelfMutation = graphql`
-  mutation mutationsCreateShelfMutation($name: String!) {
-    createShelf(name: $name) {
-      id
-      name
-      isSystem
-      itemCount
-      createdAt
-      updatedAt
+  mutation mutationsCreateShelfMutation($input: CreateShelfInput!, $connections: [ID!]!) {
+    createShelf(input: $input) {
+      __typename
+      ... on ShelfCreated {
+        edge @appendEdge(connections: $connections) {
+          cursor
+          node {
+            id
+            name
+            isSystem
+            itemCount
+            createdAt
+            updatedAt
+          }
+        }
+      }
+      ... on ShelfNameInvalid {
+        message
+      }
     }
   }
 `;
 
 export const mutationsRenameShelfMutation = graphql`
-  mutation mutationsRenameShelfMutation($shelfId: ID!, $name: String!) {
-    renameShelf(id: $shelfId, name: $name) {
-      id
-      name
-      isSystem
-      itemCount
-      createdAt
-      updatedAt
+  mutation mutationsRenameShelfMutation($input: RenameShelfInput!) {
+    renameShelf(input: $input) {
+      __typename
+      ... on ShelfRenamed {
+        shelf {
+          id
+          name
+          updatedAt
+        }
+      }
+      ... on ShelfNameInvalid {
+        message
+      }
+      ... on SystemShelfImmutable {
+        message
+      }
+      ... on NotFound {
+        message
+      }
     }
   }
 `;
 
 export const mutationsDeleteShelfMutation = graphql`
-  mutation mutationsDeleteShelfMutation($shelfId: ID!) {
-    deleteShelf(id: $shelfId) {
-      shelfId
+  mutation mutationsDeleteShelfMutation($input: DeleteShelfInput!, $connections: [ID!]!) {
+    deleteShelf(input: $input) {
+      __typename
+      ... on ShelfDeleted {
+        deletedShelfId @deleteEdge(connections: $connections)
+      }
+      ... on SystemShelfImmutable {
+        message
+      }
+      ... on NotFound {
+        message
+      }
     }
   }
 `;
 
 export const mutationsAddShelfItemMutation = graphql`
-  mutation mutationsAddShelfItemMutation($shelfId: ID!, $id: ID!) {
-    addShelfItem(shelfId: $shelfId, manifestationId: $id) {
-      shelfId
-      manifestationId
-    }
-  }
-`;
-
-export const mutationsRemoveShelfItemMutation = graphql`
-  mutation mutationsRemoveShelfItemMutation($shelfId: ID!, $id: ID!) {
-    removeShelfItem(shelfId: $shelfId, manifestationId: $id) {
-      shelfId
-      manifestationId
+  mutation mutationsAddShelfItemMutation($input: AddShelfItemInput!, $connections: [ID!]!) {
+    addShelfItem(input: $input) {
+      __typename
+      ... on ShelfItemAdded {
+        shelf {
+          id
+          itemCount
+          updatedAt
+        }
+        edge @appendEdge(connections: $connections) {
+          cursor
+          node {
+            id
+          }
+        }
+      }
+      ... on NotFound {
+        message
+      }
     }
   }
 `;

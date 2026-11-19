@@ -11,6 +11,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0011"
   - "REV-ADR-0077"
+  - "REV-ADR-0082"
 ---
 
 # API error contract and OpenAPI
@@ -173,10 +174,11 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
   uncertain failures offer explicit retained-input Retry. Conflicts use authoritative resolution and matched Reload,
   validation stays with the existing native form, and permanent refusals do not expose an unchanged resend.
 
-GraphQL execution errors preserve safe domain slugs for validation, forbidden and missing targets, missing or stale
-preconditions, malformed baselines, field locks, unavailable or conflicting Undo, and immutable system shelves.
-`safe_error` carries field-validation messages and `lockedFields`. A stale conditional result adds `currentEtag` only
-after caller-visible target resolution. Internal failures retain the fixed message and no private diagnostics. The
+Shelf mutations return union results: their expected outcomes are union members, and only forbidden and internal
+failures arrive as execution errors. Other GraphQL execution errors preserve safe domain slugs for validation, forbidden
+and missing targets, missing or stale preconditions, malformed baselines, field locks, and unavailable or conflicting
+Undo. `safe_error` carries field-validation messages and `lockedFields`. A stale conditional result adds `currentEtag`
+only after caller-visible target resolution. Internal failures retain the fixed message and no private diagnostics. The
 network validates these extensions and refuses partial data without replaying the operation.
 
 ## Data and state

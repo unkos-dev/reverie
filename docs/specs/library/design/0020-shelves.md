@@ -9,6 +9,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0056"
   - "REV-ADR-0011"
+  - "REV-ADR-0082"
 ---
 
 # Shelves
@@ -82,10 +83,11 @@ selection to shelf" action — all described below only as consumers, since none
 - `frontend/src/api/shelves.ts` supplies the shared complete shelf-list read for `FilterRail`, `FilterChips` and
   `LibraryPage`. These auxiliary consumers keep their existing degraded state and log read failures. The module's
   consumer list records the primary, loader and auxiliary error tiers.
-- Shelf create and rename publish returned native records and refetch the list to restore server ordering. Deletion
-  removes the native connection edge and record. A failed create acknowledgement triggers a recovery read, never an
-  automatic create replay. Library membership writes run serially, retain per-target outcomes, refresh shelf counts and
-  refetch the active filtered Library connection.
+- Shelf create appends the returned edge to the shelf list connection, so a new shelf shows last until the list next
+  loads in server order. Rename updates the shelf record in place. Deletion removes the edge through `@deleteEdge`. A
+  failed create or rename acknowledgement triggers a recovery read, never an automatic replay. Library membership writes
+  run serially and retain per-target outcomes. Each publishes the shelf's count and, when that shelf's items are in the
+  store, appends the item edge; the active filtered Library connection then refreshes.
 
 ### State-writer census
 
@@ -141,9 +143,9 @@ a shelf.
 handler uses; their rejection behaviour is the API error contract's concern, referenced here only as the extractors in
 use.
 
-Browser readers use the generated shelf operations in `reader.ts` and mutations in `mutations.ts`. Relay owns normalised
-records and connection membership. Targeted native updates and refetches publish changed membership, names and counts.
-Public HTTP adapters retain their response and ownership contracts.
+Browser readers use the generated shelf operations in `reader.ts` and mutations in `mutations.ts`, committed through
+`useMutation` and `commitMutation`. Relay owns normalised records and connection membership. Mutation results publish
+changed names, counts and edges. Public HTTP adapters retain their response and ownership contracts.
 
 Graph shelf roots and request-local loaders call the owner-scoped reads in `reader.rs`. `Shelf` has a TypeID domain ID
 and exposes scalar shelf metadata plus a bounded `items(first:, after:)` connection. GraphQL shelves and items require
@@ -155,10 +157,14 @@ Typed and Node lookups return null for foreign, hidden, missing or invalid shelf
 manifestation visibility through the caller's transaction. Relay is the browser owner of these records; read execution
 adds no shelf writer.
 
-GraphQL create, rename, delete and membership mutations call `services::shelves` with write scope. They preserve adult
-CRUD, owner predicates, system-shelf refusals and child membership permissions. Create and rename return the shelf;
-deletion and membership changes identify the affected records. These actions introduce no shelf precondition. Browser
-workflows use these generated mutations through their existing page and Library action owners.
+`createShelf`, `renameShelf`, `deleteShelf`, `addShelfItem` and `removeShelfItem` each take one `input` object and
+return a union result. The success members are `ShelfCreated` (the shelf and its list edge), `ShelfRenamed` (the shelf),
+`ShelfDeleted` (the deleted shelf ID), `ShelfItemAdded` (the shelf and the item edge, with an `items` cursor) and
+`ShelfItemRemoved` (the shelf and the removed manifestation ID). The expected outcomes are `ShelfNameInvalid` for an
+empty name, `SystemShelfImmutable` for renaming or deleting a system shelf, and `NotFound` for a malformed, foreign,
+missing or invisible target. Forbidden and internal failures remain execution errors. The mutations call
+`services::shelves` with write scope and preserve adult CRUD, owner predicates and child membership permissions. They
+introduce no shelf precondition. Browser workflows use them through their existing page and Library action owners.
 
 ## Data and state
 
@@ -232,7 +238,7 @@ identity.
   ownership mismatch.
 - **System-shelf mutation.** `rename_shelf` and `delete_shelf` return `AppError::SystemShelfImmutable` (409) once
   ownership has already been confirmed; a caller learns "this shelf is mine but immutable" only after the ownership
-  check, never before it.
+  check, never before it. GraphQL reports the same order of checks as `NotFound` and `SystemShelfImmutable` results.
 - **Cursor from another list.** `ShelfCursor::parse` and `ShelfItemCursor::parse` accept only their own tag (`sh`, `si`)
   and refuse a cursor minted by the books list or by the other shelf list with `AppError::Validation` (422), so a cursor
   never positions a walk in a list it was not cut from.

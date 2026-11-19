@@ -1,3 +1,10 @@
+input AddShelfItemInput {
+  shelfId: ID!
+  manifestationId: ID!
+}
+
+union AddShelfItemResult = ShelfItemAdded | NotFound
+
 type Author {
   id: ID!
   name: String!
@@ -90,6 +97,18 @@ input ContributorPatch {
   editor: [String!]
   translator: [String!]
 }
+
+input CreateShelfInput {
+  name: String!
+}
+
+union CreateShelfResult = ShelfCreated | ShelfNameInvalid
+
+input DeleteShelfInput {
+  id: ID!
+}
+
+union DeleteShelfResult = ShelfDeleted | SystemShelfImmutable | NotFound
 
 enum Direction {
   ASC
@@ -465,11 +484,11 @@ type Mutation {
   refreshMetadata(id: ID!): MetadataRefresh!
   updateMetadata(id: ID!, baseline: String, requestId: String, patch: MetadataPatch!): MetadataSave!
   updateReadingState(id: ID!, baseline: String, patch: ReadingPatch!): ReadingState!
-  createShelf(name: String!): Shelf!
-  renameShelf(id: ID!, name: String!): Shelf!
-  deleteShelf(id: ID!): ShelfChange!
-  addShelfItem(shelfId: ID!, manifestationId: ID!): ShelfChange!
-  removeShelfItem(shelfId: ID!, manifestationId: ID!): ShelfChange!
+  createShelf(input: CreateShelfInput!): CreateShelfResult!
+  renameShelf(input: RenameShelfInput!): RenameShelfResult!
+  deleteShelf(input: DeleteShelfInput!): DeleteShelfResult!
+  addShelfItem(input: AddShelfItemInput!): AddShelfItemResult!
+  removeShelfItem(input: RemoveShelfItemInput!): RemoveShelfItemResult!
   acceptMetadataVersion(id: ID!, versionId: ID!): MetadataReview!
   rejectMetadataVersion(id: ID!, versionId: ID!): MetadataReview!
   revertMetadataField(id: ID!, fieldName: String!, versionId: ID): MetadataReview!
@@ -480,6 +499,10 @@ type Mutation {
 
 interface Node {
   id: ID!
+}
+
+type NotFound {
+  message: String!
 }
 
 """
@@ -565,6 +588,20 @@ enum ReadingStatusInput {
   ABANDONED
 }
 
+input RemoveShelfItemInput {
+  shelfId: ID!
+  manifestationId: ID!
+}
+
+union RemoveShelfItemResult = ShelfItemRemoved | NotFound
+
+input RenameShelfInput {
+  id: ID!
+  name: String!
+}
+
+union RenameShelfResult = ShelfRenamed | ShelfNameInvalid | SystemShelfImmutable | NotFound
+
 type SearchHit {
   manifestation: Manifestation
   snippet: String
@@ -597,11 +634,6 @@ type Shelf implements Node @fetchable(field_name: "id") {
   items(first: Int!, after: String): ManifestationConnection!
 }
 
-type ShelfChange {
-  shelfId: ID!
-  manifestationId: ID
-}
-
 type ShelfConnection {
   """
   Information to aid in pagination.
@@ -615,6 +647,15 @@ type ShelfConnection {
   A list of nodes.
   """
   nodes: [Shelf!]!
+}
+
+type ShelfCreated {
+  shelf: Shelf!
+  edge: ShelfEdge!
+}
+
+type ShelfDeleted {
+  deletedShelfId: ID!
 }
 
 """
@@ -631,6 +672,24 @@ type ShelfEdge {
   cursor: String!
 }
 
+type ShelfItemAdded {
+  shelf: Shelf!
+  edge: ManifestationEdge!
+}
+
+type ShelfItemRemoved {
+  shelf: Shelf!
+  deletedManifestationId: ID!
+}
+
+type ShelfNameInvalid {
+  message: String!
+}
+
+type ShelfRenamed {
+  shelf: Shelf!
+}
+
 enum SortField {
   TITLE
   AUTHOR
@@ -641,6 +700,10 @@ enum SortField {
 input SortLevel {
   column: SortField!
   direction: Direction!
+}
+
+type SystemShelfImmutable {
+  message: String!
 }
 
 type Tag {

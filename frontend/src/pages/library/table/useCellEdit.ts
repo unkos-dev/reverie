@@ -139,7 +139,7 @@ export type CellEditReport = { row: ReaderBook; previousRow: ReaderBook; columnK
 export type StatusTarget = {
   id: string;
   attemptId: string;
-  send: () => Promise<{ saved: boolean; action: RecoveryAction } | undefined>;
+  send: () => Promise<{ saved: boolean; action: RecoveryAction; message?: string } | undefined>;
 };
 export type UseCellEditResult = {
   pendingCells: ReadonlyMap<string, string>;

@@ -2221,6 +2221,39 @@ fn relation_input(key: &RelationKey, request: i32) -> Result<RelationInput, AppE
     })
 }
 
+/// The `items` connection cursor for one shelf item, as its own pages encode it.
+pub fn shelf_item_cursor(
+    shelf_id: Uuid,
+    manifestation_id: Uuid,
+    added_at: jiff::Timestamp,
+) -> Result<String, AppError> {
+    relation_cursor(
+        &RelationKey {
+            kind: RelationKind::ShelfItems,
+            parent: shelf_id,
+            first: 0,
+            after: None,
+        },
+        &RelationRow {
+            request: 0,
+            present: true,
+            id: Some(manifestation_id),
+            name: None,
+            value: None,
+            role: None,
+            position: None,
+            ordinal: None,
+            position_index: None,
+            created_at: Some(added_at.into()),
+            level: None,
+            rating: None,
+            scale: None,
+            reviews: None,
+            previous: false,
+        },
+    )
+}
+
 fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppError> {
     use base64ct::{Base64UrlUnpadded, Encoding};
     let inner = match key.kind {

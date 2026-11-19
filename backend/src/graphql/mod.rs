@@ -760,7 +760,7 @@ mod tests {
                 assert_ne!(code, "validation", "{name}: {admitted}");
                 if *name == "createShelf" {
                     assert_graph_ok(&admitted);
-                    assert_eq!(admitted["data"][name]["name"], "Scoped shelf");
+                    assert_eq!(admitted["data"][name]["shelf"]["name"], "Scoped shelf");
                 }
             }
             if matches!(
@@ -943,26 +943,26 @@ mod tests {
             ),
             (
                 "createShelf",
-                "createShelf(name:\"Scoped shelf\") { id name }".to_owned(),
+                "createShelf(input:{name:\"Scoped shelf\"}) { ... on ShelfCreated { shelf { id name } } }".to_owned(),
             ),
             (
                 "renameShelf",
-                format!("renameShelf(id:\"{shelf}\",name:\"Scoped rename\") {{ id name }}"),
+                format!("renameShelf(input:{{id:\"{shelf}\",name:\"Scoped rename\"}}) {{ __typename }}"),
             ),
             (
                 "deleteShelf",
-                format!("deleteShelf(id:\"{delete_shelf}\") {{ shelfId }}"),
+                format!("deleteShelf(input:{{id:\"{delete_shelf}\"}}) {{ __typename }}"),
             ),
             (
                 "addShelfItem",
                 format!(
-                    "addShelfItem(shelfId:\"{shelf}\",manifestationId:\"{id}\") {{ shelfId manifestationId }}"
+                    "addShelfItem(input:{{shelfId:\"{shelf}\",manifestationId:\"{id}\"}}) {{ __typename }}"
                 ),
             ),
             (
                 "removeShelfItem",
                 format!(
-                    "removeShelfItem(shelfId:\"{shelf}\",manifestationId:\"{id}\") {{ shelfId manifestationId }}"
+                    "removeShelfItem(input:{{shelfId:\"{shelf}\",manifestationId:\"{id}\"}}) {{ __typename }}"
                 ),
             ),
             (
@@ -1046,8 +1046,8 @@ mod tests {
         );
         let hidden = id::Manifestation::encode(fixture.hidden);
         assert_graph_code(&reader_query(fixture,&fixture.child,READING_SAVE,json!({"id":hidden,"baseline":own["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Hidden"}})).await,"not-found");
-        let membership = "mutation($shelf:ID!,$id:ID!) { addShelfItem(shelfId:$shelf,manifestationId:$id) { shelfId manifestationId } }";
-        assert_graph_ok(
+        let membership = "mutation($shelf:ID!,$id:ID!) { addShelfItem(input:{shelfId:$shelf,manifestationId:$id}) { __typename } }";
+        assert_graph_result(
             &reader_query(
                 fixture,
                 &fixture.child,
@@ -1055,8 +1055,10 @@ mod tests {
                 json!({"shelf":id::Shelf::encode(fixture.child_shelf),"id":id}),
             )
             .await,
+            "addShelfItem",
+            "ShelfItemAdded",
         );
-        assert_graph_code(
+        assert_graph_result(
             &reader_query(
                 fixture,
                 &fixture.child,
@@ -1064,9 +1066,10 @@ mod tests {
                 json!({"shelf":id::Shelf::encode(fixture.child_shelf),"id":hidden}),
             )
             .await,
-            "not-found",
+            "addShelfItem",
+            "NotFound",
         );
-        assert_graph_code(
+        assert_graph_result(
             &reader_query(
                 fixture,
                 &fixture.admin,
@@ -1074,7 +1077,8 @@ mod tests {
                 json!({"shelf":id::Shelf::encode(fixture.other_shelf),"id":id}),
             )
             .await,
-            "not-found",
+            "addShelfItem",
+            "NotFound",
         );
         sqlx::query!(
             "UPDATE shelves SET is_system=TRUE WHERE id=$1",
@@ -1083,13 +1087,22 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
-        for query in [
-            format!("mutation {{ renameShelf(id:\"{shelf}\",name:\"Refused\") {{ id }} }}"),
-            format!("mutation {{ deleteShelf(id:\"{shelf}\") {{ shelfId }} }}"),
+        for (field, query) in [
+            (
+                "renameShelf",
+                format!(
+                    "mutation {{ renameShelf(input:{{id:\"{shelf}\",name:\"Refused\"}}) {{ __typename }} }}"
+                ),
+            ),
+            (
+                "deleteShelf",
+                format!("mutation {{ deleteShelf(input:{{id:\"{shelf}\"}}) {{ __typename }} }}"),
+            ),
         ] {
-            assert_graph_code(
+            assert_graph_result(
                 &reader_query(fixture, &fixture.admin, &query, json!({})).await,
-                "system-shelf-immutable",
+                field,
+                "SystemShelfImmutable",
             );
         }
     }
@@ -1123,6 +1136,10 @@ mod tests {
     }
     fn assert_graph_code(value: &serde_json::Value, code: &str) {
         assert_eq!(value["errors"][0]["extensions"]["code"], code, "{value}");
+    }
+    fn assert_graph_result(value: &serde_json::Value, field: &str, typename: &str) {
+        assert_graph_ok(value);
+        assert_eq!(value["data"][field]["__typename"], typename, "{value}");
     }
     const TITLE_READ: &str =
         "query($id: ID!) { manifestation(id: $id) { metadata { title etag } } }";
@@ -1501,9 +1518,6 @@ mod tests {
         let (_, edition) = db::insert_work_and_manifestation(&ing, &fixture_name).await;
         let shelf = db::create_shelf(&app, user, "Trusted shelf").await;
         let id = id::Manifestation::encode(edition);
-        if text.contains("removeShelfItem(") {
-            db::add_to_shelf(&app, shelf, edition).await;
-        }
         if text.contains("unlockMetadataField(") {
             let locked = browser_graph(&server, &csrf, "mutation($id:ID!) { lockMetadataField(id:$id,fieldName:\"description\",entityType:\"work\") { manifestationId } }", json!({"id":id})).await;
             assert_graph_ok(&locked);
@@ -1530,13 +1544,39 @@ mod tests {
             operation = saved["data"]["updateMetadata"]["operations"][0]["operationId"].clone();
             request = serde_json::Value::Null;
         }
+        let shelf_id = id::Shelf::encode(shelf);
+        let input = if text.contains("createShelf(") {
+            json!({"name":"Trusted shelf change"})
+        } else if text.contains("renameShelf(") {
+            json!({"id":shelf_id,"name":"Trusted shelf change"})
+        } else if text.contains("deleteShelf(") {
+            json!({"id":shelf_id})
+        } else if text.contains("addShelfItem(") {
+            json!({"shelfId":shelf_id,"manifestationId":id})
+        } else {
+            serde_json::Value::Null
+        };
         let response=server.post("/api/graphql").add_header("x-csrf-token",csrf).json(&json!({"id":document_id,"variables":{
-            "id":id,"shelfId":id::Shelf::encode(shelf),"name":"Trusted shelf change",
+            "id":id,"shelfId":shelf_id,"name":"Trusted shelf change","input":input,"connections":[],
             "baseline":baseline,"patch":patch,"requestId":request,"operationId":operation,
             "versionId":id::MetadataVersion::encode(version),"fieldName":"description","entityType":"work","first":20,"count":20
         }})).await;
         response.assert_status_ok();
-        assert_graph_ok(&response.json());
+        let body: serde_json::Value = response.json();
+        assert_graph_ok(&body);
+        for result in body["data"]
+            .as_object()
+            .into_iter()
+            .flat_map(|data| data.values())
+        {
+            assert!(
+                !matches!(
+                    result["__typename"].as_str(),
+                    Some("NotFound" | "SystemShelfImmutable" | "ShelfNameInvalid")
+                ),
+                "{document_id}: {body}"
+            );
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]

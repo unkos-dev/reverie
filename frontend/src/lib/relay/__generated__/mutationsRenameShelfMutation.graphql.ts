@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<b7ea997dc419c38dff2e0537e3ad8e70>>
- * @relayHash 03b100749a1650d8ae8e189272e8638b
+ * @generated SignedSource<<af50e1f95cb6a4bbdd4959de28a08729>>
+ * @relayHash 8b9c5656311efb3e62c543ba1e46ee54
  * @lightSyntaxTransform
  */
 
@@ -8,22 +8,43 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID bb45a4b5c562000335fe8f63b015e51f79716d90776fe53ae73ecc8a6629f4d3
+// @relayRequestID 60fae5847eed4d077c2037f5d1d3e7f0c4d6182e4e51f62ef593928bd4119c74
 
 import { ConcreteRequest } from "relay-runtime";
-export type mutationsRenameShelfMutation$variables = {
+export type RenameShelfInput = {
+  id: string;
   name: string;
-  shelfId: string;
+};
+export type mutationsRenameShelfMutation$variables = {
+  input: RenameShelfInput;
 };
 export type mutationsRenameShelfMutation$data = {
-  readonly renameShelf: {
-    readonly createdAt: string;
-    readonly id: string;
-    readonly isSystem: boolean;
-    readonly itemCount: number;
-    readonly name: string;
-    readonly updatedAt: string;
-  };
+  readonly renameShelf:
+    | {
+        readonly __typename: "NotFound";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "ShelfNameInvalid";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "ShelfRenamed";
+        readonly shelf: {
+          readonly id: string;
+          readonly name: string;
+          readonly updatedAt: string;
+        };
+      }
+    | {
+        readonly __typename: "SystemShelfImmutable";
+        readonly message: string;
+      }
+    | {
+        // This will never be '%other', but we need some
+        // value in case none of the concrete values match.
+        readonly __typename: "%other";
+      };
 };
 export type mutationsRenameShelfMutation = {
   response: mutationsRenameShelfMutation$data;
@@ -31,32 +52,33 @@ export type mutationsRenameShelfMutation = {
 };
 
 const node: ConcreteRequest = (function () {
-  var v0 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "name",
-    },
-    v1 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "shelfId",
-    },
+  var v0 = [
+      {
+        defaultValue: null,
+        kind: "LocalArgument",
+        name: "input",
+      },
+    ],
+    v1 = [
+      {
+        alias: null,
+        args: null,
+        kind: "ScalarField",
+        name: "message",
+        storageKey: null,
+      },
+    ],
     v2 = [
       {
         alias: null,
         args: [
           {
             kind: "Variable",
-            name: "id",
-            variableName: "shelfId",
-          },
-          {
-            kind: "Variable",
-            name: "name",
-            variableName: "name",
+            name: "input",
+            variableName: "input",
           },
         ],
-        concreteType: "Shelf",
+        concreteType: null,
         kind: "LinkedField",
         name: "renameShelf",
         plural: false,
@@ -65,43 +87,65 @@ const node: ConcreteRequest = (function () {
             alias: null,
             args: null,
             kind: "ScalarField",
-            name: "id",
+            name: "__typename",
             storageKey: null,
           },
           {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "name",
-            storageKey: null,
+            kind: "InlineFragment",
+            selections: [
+              {
+                alias: null,
+                args: null,
+                concreteType: "Shelf",
+                kind: "LinkedField",
+                name: "shelf",
+                plural: false,
+                selections: [
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "id",
+                    storageKey: null,
+                  },
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "name",
+                    storageKey: null,
+                  },
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "updatedAt",
+                    storageKey: null,
+                  },
+                ],
+                storageKey: null,
+              },
+            ],
+            type: "ShelfRenamed",
+            abstractKey: null,
           },
           {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "isSystem",
-            storageKey: null,
+            kind: "InlineFragment",
+            selections: v1 /*:: as any*/,
+            type: "ShelfNameInvalid",
+            abstractKey: null,
           },
           {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "itemCount",
-            storageKey: null,
+            kind: "InlineFragment",
+            selections: v1 /*:: as any*/,
+            type: "SystemShelfImmutable",
+            abstractKey: null,
           },
           {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "createdAt",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "updatedAt",
-            storageKey: null,
+            kind: "InlineFragment",
+            selections: v1 /*:: as any*/,
+            type: "NotFound",
+            abstractKey: null,
           },
         ],
         storageKey: null,
@@ -109,7 +153,7 @@ const node: ConcreteRequest = (function () {
     ];
   return {
     fragment: {
-      argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/],
+      argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
       metadata: null,
       name: "mutationsRenameShelfMutation",
@@ -119,13 +163,13 @@ const node: ConcreteRequest = (function () {
     },
     kind: "Request",
     operation: {
-      argumentDefinitions: [v1 /*:: as any*/, v0 /*:: as any*/],
+      argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
       name: "mutationsRenameShelfMutation",
       selections: v2 /*:: as any*/,
     },
     params: {
-      id: "bb45a4b5c562000335fe8f63b015e51f79716d90776fe53ae73ecc8a6629f4d3",
+      id: "60fae5847eed4d077c2037f5d1d3e7f0c4d6182e4e51f62ef593928bd4119c74",
       metadata: {},
       name: "mutationsRenameShelfMutation",
       operationKind: "mutation",
@@ -134,6 +178,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "cc72dc9cc05e956db13a0326c2692cfa";
+(node as any).hash = "be9137a01b4f0da8d068b9a2d3284323";
 
 export default node;

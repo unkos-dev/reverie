@@ -656,6 +656,13 @@
       "title": "TypeID global identifiers carried in browser URLs"
     },
     {
+      "id": "REV-ADR-0082",
+      "kind": "adr",
+      "path": "docs/adr/0082-expected-graphql-mutation-outcomes-as-union-results.md",
+      "status": "accepted",
+      "title": "Expected GraphQL mutation outcomes as union results"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0075",
@@ -736,7 +743,8 @@
     {
       "governed-by": [
         "REV-ADR-0011",
-        "REV-ADR-0077"
+        "REV-ADR-0077",
+        "REV-ADR-0082"
       ],
       "id": "REV-DESIGN-0006",
       "kind": "design",
@@ -973,7 +981,8 @@
     {
       "governed-by": [
         "REV-ADR-0056",
-        "REV-ADR-0011"
+        "REV-ADR-0011",
+        "REV-ADR-0082"
       ],
       "id": "REV-DESIGN-0020",
       "kind": "design",
@@ -1126,7 +1135,8 @@
         "REV-ADR-0077",
         "REV-ADR-0079",
         "REV-ADR-0080",
-        "REV-ADR-0081"
+        "REV-ADR-0081",
+        "REV-ADR-0082"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",

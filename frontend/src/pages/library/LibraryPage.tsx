@@ -21,7 +21,7 @@ import type { readerLibraryQuery as LibraryQuery } from "@/lib/relay/__generated
 import type { readerLibrary$key } from "@/lib/relay/__generated__/readerLibrary.graphql";
 import type { readerLibraryBook$key } from "@/lib/relay/__generated__/readerLibraryBook.graphql";
 import type { LibraryFilters } from "@/lib/hooks/use-library-filters";
-import { commitLocalUpdate } from "relay-runtime";
+import { ConnectionHandler, commitMutation } from "relay-runtime";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { useShelves } from "@/api/shelves";
 import {
@@ -524,21 +524,25 @@ export function LibraryPage(): ReactElement {
     if (selectedIds.size > 0) setSelectedIds(new Set());
   }
 
-  async function sendBatchShelf(id: string, shelfId: string): ReturnType<StatusTarget["send"]> {
-    const response = await executeEditingOnce<AddShelfItem>(
-      environment,
-      mutationsAddShelfItemMutation,
-      {
-        shelfId,
-        id,
-      },
-      batchController.current?.signal,
-    );
-    if (response === undefined) return;
-    commitLocalUpdate(environment, (store) => {
-      store.get(response.addShelfItem.shelfId)?.invalidateRecord();
+  function sendBatchShelf(id: string, shelfId: string): ReturnType<StatusTarget["send"]> {
+    const items = ConnectionHandler.getConnectionID(shelfId, "readerShelfItems_items");
+    return new Promise((resolve, reject) => {
+      commitMutation<AddShelfItem>(environment, {
+        mutation: mutationsAddShelfItemMutation,
+        variables: {
+          input: { shelfId, manifestationId: id },
+          connections: environment.getStore().getSource().has(items) ? [items] : [],
+        },
+        onCompleted: ({ addShelfItem }) => {
+          if (addShelfItem.__typename === "ShelfItemAdded")
+            resolve({ saved: true, action: "none" });
+          else if (addShelfItem.__typename === "NotFound")
+            resolve({ saved: false, action: "none", message: addShelfItem.message });
+          else reject(new Error("Unexpected shelf result."));
+        },
+        onError: reject,
+      });
     });
-    return { saved: true, action: "none" };
   }
 
   async function sendBatchRefresh(id: string): ReturnType<StatusTarget["send"]> {
@@ -570,7 +574,12 @@ export function LibraryPage(): ReactElement {
         const result = await sendBatchItem(attempt, id);
         if (result === undefined) break;
         if (result.saved) succeeded.push(id);
-        else failed.push({ id, action: result.action });
+        else
+          failed.push(
+            result.message === undefined
+              ? { id, action: result.action }
+              : { id, action: result.action, message: result.message },
+          );
       } catch (error) {
         console.error("[LibraryPage] batch action failed", { id, error });
         failed.push({
@@ -608,7 +617,6 @@ export function LibraryPage(): ReactElement {
       succeeded.length > 0 &&
       attempt.action.kind !== "refresh"
     ) {
-      if (attempt.action.kind === "shelf") shelvesQuery.refetch();
       await visit.refresh();
     }
     release?.();
