@@ -53,5 +53,7 @@ to resolve the original request and offer Reload, not Retry or correction.
 - GraphQL metadata and reading mutations refuse a stale baseline as stale without changing stored values, and admit a
   matching baseline. A stale unchanged resend of a committed metadata save is refused as stale, not as a reused request.
   Checked by `graphql_edit_baselines`.
+- A GraphQL metadata save with a stale baseline and a patch that would fail semantic validation is refused as stale, not
+  as invalid. Checked by `graphql_edit_baselines`.
 - GraphQL exact Undo refuses a stale baseline as stale without consuming the operation. Checked by
   `graphql_undo_boundary`.

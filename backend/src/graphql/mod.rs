@@ -1206,7 +1206,7 @@ mod tests {
         );
     }
 
-    // REV-REQ-0018/0020 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
+    // REV-REQ-0018/0020/0082 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_edit_baselines(pool: PgPool) {
         let (_, server, csrf) = editing_browser(&pool, "graph-edits").await;
@@ -1235,6 +1235,14 @@ mod tests {
         stale["baseline"] = json!("\"stale\"");
         assert_graph_result(
             &browser_graph(&server, &csrf, TITLE_SAVE, stale).await,
+            "updateMetadata",
+            "StaleBaseline",
+        );
+        let mut stale_invalid = attempt.clone();
+        stale_invalid["baseline"] = json!("\"stale\"");
+        stale_invalid["patch"] = json!({});
+        assert_graph_result(
+            &browser_graph(&server, &csrf, TITLE_SAVE, stale_invalid).await,
             "updateMetadata",
             "StaleBaseline",
         );

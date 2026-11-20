@@ -431,6 +431,10 @@ mod tests {
         let (_user_id, basic) =
             test_support::db::create_adult_and_basic_auth(&app_pool, "no-if-match").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        let before = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
 
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
@@ -442,6 +446,12 @@ mod tests {
             problems::IF_MATCH_REQUIRED,
             StatusCode::PRECONDITION_REQUIRED,
         );
+        let after = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(etag_value(after.headers()), etag_value(before.headers()));
+        assert_eq!(after.text(), before.text());
     }
 
     #[sqlx::test(migrations = "./migrations")]
