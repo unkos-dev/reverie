@@ -297,16 +297,16 @@ the mounted form for correction. Publication guidance recommends YYYY-MM-DD or Y
 Accepted formats button opens the native popover with the full supported list and a format-reference link. General
 failures appear inline; structured field refusals use native field feedback. Ordinary failures and successful saves use
 the changed content and local feedback. ETag conflicts remain beside the refused inputs. Discard edits and reload
-explicitly replaces them with a fresh metadata read; a failed reload retains the draft. Review failures stay in their
-field section outside removable draft rows. Pending, clear-confirmation and successful closure retain their owners.
-Metadata fields remain read-only while Save is pending or its outcome remains unresolved. Their values can still be
-selected. After the request settles, Save can resend the unchanged draft with its original request ID and baseline. A
-confirmed save closes the dialog without a further read. Its acknowledgement updates Book detail and links the new
-revision. A save confirmed only through request resolution invalidates the manifestation, so Book detail refetches.
-Validation refusals retain submitted values for correction. Temporary or uncertain failures expose explicit Retry of the
-retained request. A conflict not confirmed as saved exposes the existing matched Reload path. Offline recovery keeps one
-local failure message. Confirmation closes only its originating mounted form. Cache reconciliation continues after
-dismissal.
+explicitly replaces them with a fresh metadata read; a failed reload retains the draft. A reload that finds the book no
+longer visible shows Book detail's not-found state. Review failures stay in their field section outside removable draft
+rows. Pending, clear-confirmation and successful closure retain their owners. Metadata fields remain read-only while
+Save is pending or its outcome remains unresolved. Their values can still be selected. After the request settles, Save
+can resend the unchanged draft with its original request ID and baseline. A confirmed save closes the dialog without a
+further read. Its acknowledgement updates Book detail and links the new revision. A save confirmed only through request
+resolution invalidates the manifestation, so Book detail refetches. Validation refusals retain submitted values for
+correction. Temporary or uncertain failures expose explicit Retry of the retained request. A conflict not confirmed as
+saved exposes the existing matched Reload path. Offline recovery keeps one local failure message. Confirmation closes
+only its originating mounted form. Cache reconciliation continues after dismissal.
 
 **An operator edits publisher and clears publication date in the metadata form.**
 
