@@ -155,7 +155,7 @@ test("awaits save, retains publication-date errors and other edits, and closes a
       return response({
         metadataOperation: {
           metadata: snapshot("Updated Subtitle", '"bbbbbbbbbbbbbbbbbbbbbb"'),
-          outcome: resolutions === 1 ? "unknown" : "saved",
+          outcome: resolutions === 1 ? "UNKNOWN" : "SAVED",
         },
       });
     },

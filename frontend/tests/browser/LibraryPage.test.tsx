@@ -626,7 +626,7 @@ test("metadata Undo survives table refreshes", async () => {
     operationId: "33333333-3333-4333-8333-333333333333",
     fieldName: "title",
     expiresAt: new Date(Date.now() + 3600000).toISOString(),
-    status: "eligible",
+    status: "ELIGIBLE",
   };
   const pagesOperation = {
     ...titleOperation,
@@ -669,7 +669,7 @@ test("metadata Undo survives table refreshes", async () => {
         else expect(variables.operationId).toBe(titleOperation.operationId);
         return response({
           metadataOperation: {
-            outcome: "saved",
+            outcome: "SAVED",
             metadata: metadata(current),
             operations: [titleOperation],
           },
@@ -679,7 +679,7 @@ test("metadata Undo survives table refreshes", async () => {
         if (variables.operationId === pagesOperation.operationId) {
           current = { ...current, pages: 100, metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
           owner.books = [current];
-          return restoredCells(current, { ...pagesOperation, status: "consumed" });
+          return restoredCells(current, { ...pagesOperation, status: "CONSUMED" });
         }
         titleUndoCalls += 1;
         if (titleUndoCalls === 1)
@@ -726,7 +726,7 @@ test("metadata Undo survives table refreshes", async () => {
     metadata_etag: '"ffffffffffffffffffffff"',
   };
   fixture.books = [current];
-  finishUndo?.(restoredCells(current, { ...titleOperation, status: "consumed" }));
+  finishUndo?.(restoredCells(current, { ...titleOperation, status: "CONSUMED" }));
   await expect
     .element(page.getByText(/Title for “The Brothers Karamazov” restored/))
     .toBeInTheDocument();
@@ -777,7 +777,7 @@ it("Library Retry sends the retained edit again", async () => {
     operationId: "33333333-3333-4333-8333-333333333333",
     fieldName: "title",
     expiresAt: new Date(Date.now() + 3600000).toISOString(),
-    status: "eligible",
+    status: "ELIGIBLE",
   };
   let saved = false;
   let rejectDelayed: ((error: Error) => void) | undefined;
@@ -821,7 +821,7 @@ it("Library Retry sends the retained edit again", async () => {
       if (name === "mutationsResolveCellsQuery")
         return response({
           metadataOperation: {
-            outcome: saved && mode === "conflict" ? "saved" : "unknown",
+            outcome: saved && mode === "conflict" ? "SAVED" : "UNKNOWN",
             metadata: metadata(current),
             operations: saved ? [operation] : [],
           },
@@ -829,7 +829,7 @@ it("Library Retry sends the retained edit again", async () => {
       if (name === "mutationsCellsQuery")
         return response({ manifestation: { id: variables.id, metadata: metadata(current) } });
       if (name === "mutationsUndoCellsMutation")
-        return restoredCells(original, { ...operation, status: "consumed" });
+        return restoredCells(original, { ...operation, status: "CONSUMED" });
       if (name === "mutationsReadingMutation") {
         const write = readingVariables.parse(variables);
         readingWrites.push(write);

@@ -663,6 +663,13 @@
       "title": "Expected GraphQL mutation outcomes as union results"
     },
     {
+      "id": "REV-ADR-0083",
+      "kind": "adr",
+      "path": "docs/adr/0083-graphql-and-relay-for-browser-application-data-with-server-typed-formats.md",
+      "status": "proposed",
+      "title": "GraphQL and Relay for browser application data with server-typed formats"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0075",

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<50b77100e06f4ea1fe32c5276dab5906>>
- * @relayHash 8ff8faf19b114becc259cae3fddc2f12
+ * @generated SignedSource<<340b60e1a792766ba83bd1e0b3194ba3>>
+ * @relayHash 04e98a3ba3d01886d37568311694057d
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 730240e821b530abf2d9e3a77f7e7402e868d327585a53b8b090d04e4ae594ed
+// @relayRequestID 3873d36af1abcbf8c06379ff2f20f94291375d28379ee129a72d61d0611810a2
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -396,13 +396,6 @@ const node: ConcreteRequest = (function () {
                           name: "pages",
                           storageKey: null,
                         },
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "contentRating",
-                          storageKey: null,
-                        },
                       ],
                       storageKey: null,
                     },
@@ -704,7 +697,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "730240e821b530abf2d9e3a77f7e7402e868d327585a53b8b090d04e4ae594ed",
+      id: "3873d36af1abcbf8c06379ff2f20f94291375d28379ee129a72d61d0611810a2",
       metadata: {},
       name: "mutationsAcceptMetadataVersionMutation",
       operationKind: "mutation",

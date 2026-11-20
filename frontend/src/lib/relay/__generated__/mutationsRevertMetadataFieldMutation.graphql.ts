@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<a0bae8543d44002088343d0a2acd660b>>
- * @relayHash 75c1bb257012308a69a0dfe2dee9b449
+ * @generated SignedSource<<3aed64d446a15af7f8db82e80d982f56>>
+ * @relayHash 682e052fd61b5431f358c72e10024a2b
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 5160b3098871c7e86a0a314c9ec08070a4fa219b3d97a372375ed32420998fe1
+// @relayRequestID f9693d66fd7526031815842ad1df8deb40d848b3f3ca6bc597ed39f1ac19b911
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -397,13 +397,6 @@ const node: ConcreteRequest = (function () {
                           name: "pages",
                           storageKey: null,
                         },
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "contentRating",
-                          storageKey: null,
-                        },
                       ],
                       storageKey: null,
                     },
@@ -705,7 +698,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "5160b3098871c7e86a0a314c9ec08070a4fa219b3d97a372375ed32420998fe1",
+      id: "f9693d66fd7526031815842ad1df8deb40d848b3f3ca6bc597ed39f1ac19b911",
       metadata: {},
       name: "mutationsRevertMetadataFieldMutation",
       operationKind: "mutation",

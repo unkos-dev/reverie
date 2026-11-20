@@ -45,6 +45,10 @@ capability is deficient for Reverie, with approval governed by the root rules.
   shared outcome types in `src/graphql/mutations.rs`. Forbidden, internal and malformed-header failures stay execution
   errors. A metadata success member returns `manifestation` through `Manifestation::with_metadata`, carrying the
   revision the write projected inside its transaction, so the acknowledgement never mixes revisions.
+- **GraphQL formats:** A format-bearing value uses a Reverie custom scalar in `src/graphql/library.rs` (`ETag`, `UUID`,
+  `DateTime`) whose `@specifiedBy` URL points at Design 0031's custom scalars section. A closed set of values is an
+  enum; declare an output enum with `output_enum!` and an input enum with `input_enum!`, because `derive(Enum)` trips
+  clippy's `unused_async_trait_impl` inside the derive expansion.
 - **GraphQL IDs:** Encode and decode global IDs only through the `Kind` types in `src/graphql/id.rs`, which bind each
   TypeID prefix at compile time. A new prefix is a maintainer decision.
 - **Extractor order:** The request body extractor (e.g., `Json<T>`, `String`, `Bytes`) is the last argument in the

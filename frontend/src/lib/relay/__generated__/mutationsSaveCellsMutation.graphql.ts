@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<d0341d6d8dd7a162ce8a14ba5cd34db3>>
+ * @generated SignedSource<<43704c1d0db2abd6bbc0a49bd786966d>>
  * @relayHash 7376a362d7924181c1345a76e518a9df
  * @lightSyntaxTransform
  */
@@ -17,6 +17,12 @@ export type ContentRatingInput =
   | "EXPLICIT"
   | "MATURE"
   | "TEEN"
+  | "%future added value";
+export type FieldOperationStatus =
+  | "CONSUMED"
+  | "ELIGIBLE"
+  | "LOCKED"
+  | "UNAVAILABLE"
   | "%future added value";
 export type UpdateMetadataInput = {
   baseline: string;
@@ -92,7 +98,7 @@ export type mutationsSaveCellsMutation$data = {
           readonly expiresAt: string;
           readonly fieldName: string;
           readonly operationId: string;
-          readonly status: string;
+          readonly status: FieldOperationStatus;
         }>;
         readonly requestId: string | null | undefined;
       }

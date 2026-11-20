@@ -324,7 +324,7 @@ function EditMetadataFields({
         { id: manifestationId, requestId },
         { fetchPolicy: "network-only" },
       ).toPromise();
-      if (resolution?.metadataOperation.outcome !== "saved") return false;
+      if (resolution?.metadataOperation.outcome !== "SAVED") return false;
       commitLocalUpdate(environment, (store) => {
         store.get(manifestationId)?.invalidateRecord();
       });

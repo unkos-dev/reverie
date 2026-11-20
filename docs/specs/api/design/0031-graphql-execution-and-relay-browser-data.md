@@ -81,6 +81,23 @@ checks Relay connection, edge and `PageInfo` shapes, forward pagination argument
 `requireCustomScalarTypes`, so a custom scalar without a `customScalarTypes` mapping fails generation. Component tests
 use `relay-test-utils` 21.0.1.
 
+### Custom scalars
+
+The metadata operations carry three Reverie scalars. Each declares `@specifiedBy` with a URL to this section, and the
+Relay compiler maps each to `string`.
+
+- `ETag` is a strong RFC 9110 §8.8.3 entity-tag in its quoted wire form. Input accepts one strong tag and refuses the
+  `*` wildcard, a weak `W/` tag, a list and an unquoted value. Output is the tag the server issued.
+- `UUID` accepts only the 36-character hyphenated form as input, in either case. Output is lower-case hyphenated.
+- `DateTime` is an instant. Input must be RFC 3339 text ending in `Z`. Output is RFC 3339 in UTC ending in `Z`, with
+  fractional seconds only when they are not zero.
+
+A value that fails input coercion is an execution error with code `validation` on the field that received it, so the
+operation begins no write. Output values come from typed server state. `FieldOperationStatus` and `OperationOutcome` are
+enums. ISBN-10, ISBN-13, publication date and language stay `String`: their inputs must remain `String` so that domain
+validation can return field feedback, and stored values such as year-only publication dates must stay readable. Reading
+state still carries its validator, timestamps and status as `String`.
+
 IDs are TypeIDs: a lowercase type prefix, `_`, then the record UUID in 26 lowercase characters of the TypeID base32
 alphabet. The prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`, `tag`, `genre`, `mood`,
 `metadata_version` and `user`. `publisher` is reserved and never sent, because publisher suggestions carry no entity ID.
@@ -184,12 +201,12 @@ union of one success member, named for the event (`ShelfCreated`, `MetadataSaved
 `MetadataVersionAccepted`), and their expected outcomes. Outcome types are shared across mutations and carry a
 `message`: `NotFound`, `SystemShelfImmutable`, `ShelfNameInvalid`, `StaleBaseline`, `MetadataInvalid`, `FieldsLocked`,
 `EditTooLarge`, `UndoUnavailable` and `UndoConflict`. A malformed or caller-invisible target is a `NotFound` member.
-Forbidden, internal and malformed-header failures remain execution errors, as does a committed metadata write whose
-manifestation cannot be read back, so the client resolves the request. Metadata success members return the
-`manifestation`. Its `metadata` field answers with the revision the write projected inside its transaction, selected
-through look-ahead on `manifestation.metadata`. Relay normalisation then points the manifestation at the new revision
-without an updater. Clients branch on `__typename` in `onCompleted` and treat `onError` as the unexpected class. The
-Library cell adapters carry a refusal member as `MetadataRefusal` through their existing recovery flow.
+Forbidden and internal failures remain execution errors, as do an input that fails scalar coercion and a committed
+metadata write whose manifestation cannot be read back, so the client resolves the request. Metadata success members
+return the `manifestation`. Its `metadata` field answers with the revision the write projected inside its transaction,
+selected through look-ahead on `manifestation.metadata`. Relay normalisation then points the manifestation at the new
+revision without an updater. Clients branch on `__typename` in `onCompleted` and treat `onError` as the unexpected
+class. The Library cell adapters carry a refusal member as `MetadataRefusal` through their existing recovery flow.
 `refreshMetadata`, the reading patch and preferences keep classified execution-error codes. Exact Undo and resolution
 require the real live issuing browser session and retain expiry, budgets and non-consuming refusals. Basic and device
 tokens may save metadata but receive no Undo capability.
@@ -209,9 +226,11 @@ Development raw queries can assign too little cost to named fragments spread ben
 async-graphql 7.2.1. Production admits only trusted documents, and none uses that pattern.
 
 The Relay network sends generated IDs and variables through `apiFetch` with same-origin credentials and an abort signal.
-It validates the response envelope before publication. The viewer has no custom scalar or editing snapshot. Reader
-proposal JSON reaches the lazy Versions view. Editing documents validate their selected projections before publication.
-Execution faults are errors and do not publish partial data or trigger a resend.
+It validates the response envelope before publication. Server scalar and enum coercion guarantees the formats of the
+metadata operations, so their payloads publish without a client projection. Operations that have not moved keep a
+selected projection in `editingProjections` or `readerProjections` (`frontend/src/api/graphql.ts`), which the network
+checks by operation name before publication. Reader proposal JSON reaches the lazy Versions view. Execution faults are
+errors and do not publish partial data or trigger a resend.
 
 The book, series, shelf and shelves route queries, the fragments those pages read, and `CommandPaletteQuery` carry
 `@throwOnFieldError`. A field error or data missing after a graph relationship change throws to the nearest error
@@ -232,15 +251,14 @@ own error boundary. Its explicit Reload calls `fetchQuery` with `network-only` f
 stays mounted until the fresh revision arrives.
 
 `frontend/src/lib/relay/mutations.ts` contains selected title, form, author and reading reads and acknowledgements, plus
-the other protected actions. `readerAuthorEditing` refetches through `fetch__Manifestation`. The network checks each
-editing document's selected revision with its `metadata_rev` ID, domain IDs, UUID handles, strong validators, timestamps
-and PageInfo before `sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment
-reads, `fetchQuery`, store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor
-chain with one pair of domain IDs and one revision. Library cells and batch Set status use these selected raw
-executions. The metadata dialog and Versions actions use `useMutation`, and the network validates their payloads by
-operation name in the same way. Preferences read and sparse update share the canonical service with HTTP; defaults hide
-Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata refresh schedules the
-canonical claim-preserving enrichment operation with write scope and non-child authorisation.
+the other protected actions. `readerAuthorEditing` refetches through `fetch__Manifestation`. For the author-list
+documents, the network checks the selected revision with its `metadata_rev` ID, domain IDs, strong validators and
+PageInfo before `sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment reads,
+`fetchQuery`, store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor chain
+with one pair of domain IDs and one revision. Library cells and batch Set status use these selected raw executions. The
+metadata dialog and Versions actions use `useMutation`. Preferences read and sparse update share the canonical service
+with HTTP; defaults hide Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata
+refresh schedules the canonical claim-preserving enrichment operation with write scope and non-child authorisation.
 
 ## Failure and recovery
 

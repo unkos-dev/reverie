@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<92700d43dc6837b1cda1ec0448250fc3>>
+ * @generated SignedSource<<84148aa392a8973555ae31e13815f572>>
  * @lightSyntaxTransform
  */
 
@@ -10,7 +10,6 @@
 import { ReaderFragment } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
 export type mutationsFormSnapshot$data = {
-  readonly contentRating: string | null | undefined;
   readonly description: string | null | undefined;
   readonly etag: string;
   readonly id: string;
@@ -138,18 +137,11 @@ const node: ReaderFragment = {
       name: "pages",
       storageKey: null,
     },
-    {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "contentRating",
-      storageKey: null,
-    },
   ],
   type: "MetadataRevision",
   abstractKey: null,
 };
 
-(node as any).hash = "c748c7b37d04753581ae1c3aac882e08";
+(node as any).hash = "2ba59eeeb0919b0b87eaf2aa2d2d45c8";
 
 export default node;

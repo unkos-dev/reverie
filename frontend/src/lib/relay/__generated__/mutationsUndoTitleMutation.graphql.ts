@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<b0bc93b0a2b8f40f634aa7a48fe510d9>>
+ * @generated SignedSource<<3c2a48f6d6be5f475a8528b0914843db>>
  * @relayHash 8ad53958173f163a75412f9b9062b513
  * @lightSyntaxTransform
  */
@@ -11,6 +11,12 @@
 // @relayRequestID 23cfeff4bceb77845d43fc5bace259c05669cc73028c694ad52a516affdbd438
 
 import { ConcreteRequest } from "relay-runtime";
+export type FieldOperationStatus =
+  | "CONSUMED"
+  | "ELIGIBLE"
+  | "LOCKED"
+  | "UNAVAILABLE"
+  | "%future added value";
 export type UndoMetadataInput = {
   baseline: string;
   id: string;
@@ -46,7 +52,7 @@ export type mutationsUndoTitleMutation$data = {
           readonly expiresAt: string;
           readonly fieldName: string;
           readonly operationId: string;
-          readonly status: string;
+          readonly status: FieldOperationStatus;
         };
       }
     | {

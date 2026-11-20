@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<dafbbdd0407f9f5711a23e603d88e897>>
- * @relayHash 3b5da98002bead8d384e253d6113cba0
+ * @generated SignedSource<<a6035ce1929fd42714e3d91df67caeef>>
+ * @relayHash 8d6239173336a446fd943b0617c8ed2f
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID cf2fdcd385b450accd501ac1b52f28ff9581fd2cfa9a9ee7a3bba0f858f57b8a
+// @relayRequestID dffe1817cf3de9ee088c30e56e89702b26d93a1c05f1cb3249e9268b9c47d055
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -209,13 +209,6 @@ const node: ConcreteRequest = (function () {
                   name: "pages",
                   storageKey: null,
                 },
-                {
-                  alias: null,
-                  args: null,
-                  kind: "ScalarField",
-                  name: "contentRating",
-                  storageKey: null,
-                },
               ],
               storageKey: null,
             },
@@ -225,7 +218,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "cf2fdcd385b450accd501ac1b52f28ff9581fd2cfa9a9ee7a3bba0f858f57b8a",
+      id: "dffe1817cf3de9ee088c30e56e89702b26d93a1c05f1cb3249e9268b9c47d055",
       metadata: {},
       name: "mutationsFormQuery",
       operationKind: "query",

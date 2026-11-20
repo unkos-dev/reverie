@@ -96,13 +96,14 @@ the resource's current `ETag` into it, so a caller can recover in one round trip
 ### The precondition contract's evaluation order
 
 Metadata save, reading patch, exact metadata Undo and settings writes apply this contract. HTTP reads the baseline from
-`If-Match`. GraphQL metadata saves and exact Undo take a non-null `baseline` in their `input` object, so omission or
-null is a request error before execution. The GraphQL reading patch takes a nullable `baseline` argument whose omission
-or null produces `if-match-required`. Both GraphQL forms reuse the same strong-tag parser: malformed input produces
-`malformed-header`. A locked mismatch returns the `StaleBaseline` union member for metadata saves and Undo, and
-`if-match-mismatch` with `currentEtag` for the reading patch. Both transports call the same operations. Their relative
-order is: `CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header and
-rejecting it as absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
+`If-Match`. GraphQL metadata saves and exact Undo take a non-null `ETag` baseline in their `input` object, so omission
+or null is a request error before execution, and a malformed tag fails scalar coercion with code `validation` before the
+operation runs. The GraphQL reading patch takes a nullable `baseline` argument whose omission or null produces
+`if-match-required` and whose malformed input produces `malformed-header`. Every form uses the same strong-tag parser. A
+locked mismatch returns the `StaleBaseline` union member for metadata saves and Undo, and `if-match-mismatch` with
+`currentEtag` for the reading patch. Both transports call the same operations. Their relative order is:
+`CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header and rejecting it as
+absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
 
 For metadata and reading, the request then resolves whether the target manifestation exists and is visible to the
 caller, returning `404` when it does not. `update_book_metadata` uses a `SELECT ... FOR UPDATE` whose locked row the

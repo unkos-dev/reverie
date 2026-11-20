@@ -4,7 +4,12 @@
   "language": "typescript",
   "artifactDirectory": "./src/lib/relay/__generated__",
   "eagerEsModules": true,
-  "customScalarTypes": { "JSON": "unknown" },
+  "customScalarTypes": {
+    "JSON": "unknown",
+    "ETag": "string",
+    "UUID": "string",
+    "DateTime": "string"
+  },
   "requireCustomScalarTypes": true,
   "persistConfig": {
     "file": "../backend/graphql-documents.json",

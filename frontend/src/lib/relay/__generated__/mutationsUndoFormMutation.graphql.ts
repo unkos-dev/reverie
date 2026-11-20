@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<586507dce36441f7e904d3ad8289b7de>>
- * @relayHash 9433353327acf3f52016cb25016ff925
+ * @generated SignedSource<<12f0a995afa099f30b63d74168c3c8d9>>
+ * @relayHash a6865171a5d149f98720be7a43845aaf
  * @lightSyntaxTransform
  */
 
@@ -8,10 +8,16 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID b188d3f5b6ed4c1c509a0dff58d5f7a2f15e0ecdb7d88371f1747bfe4b0f0cf9
+// @relayRequestID e783ccdd6de543695a23efc961f01cd4c67380a46d378551dd07893d98d04fb6
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
+export type FieldOperationStatus =
+  | "CONSUMED"
+  | "ELIGIBLE"
+  | "LOCKED"
+  | "UNAVAILABLE"
+  | "%future added value";
 export type UndoMetadataInput = {
   baseline: string;
   id: string;
@@ -43,7 +49,7 @@ export type mutationsUndoFormMutation$data = {
           readonly expiresAt: string;
           readonly fieldName: string;
           readonly operationId: string;
-          readonly status: string;
+          readonly status: FieldOperationStatus;
         };
       }
     | {
@@ -387,13 +393,6 @@ const node: ConcreteRequest = (function () {
                           name: "pages",
                           storageKey: null,
                         },
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "contentRating",
-                          storageKey: null,
-                        },
                       ],
                       storageKey: null,
                     },
@@ -420,7 +419,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "b188d3f5b6ed4c1c509a0dff58d5f7a2f15e0ecdb7d88371f1747bfe4b0f0cf9",
+      id: "e783ccdd6de543695a23efc961f01cd4c67380a46d378551dd07893d98d04fb6",
       metadata: {},
       name: "mutationsUndoFormMutation",
       operationKind: "mutation",

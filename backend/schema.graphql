@@ -111,6 +111,8 @@ input CreateShelfInput {
 
 union CreateShelfResult = ShelfCreated | ShelfNameInvalid
 
+scalar DateTime @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")
+
 input DeleteShelfInput {
   id: ID!
 }
@@ -121,6 +123,8 @@ enum Direction {
   ASC
   DESC
 }
+
+scalar ETag @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")
 
 type EditTooLarge {
   message: String!
@@ -209,10 +213,17 @@ enum FieldLockScope {
 }
 
 type FieldOperation {
-  operationId: String!
+  operationId: UUID!
   fieldName: String!
-  expiresAt: String!
-  status: String!
+  expiresAt: DateTime!
+  status: FieldOperationStatus!
+}
+
+enum FieldOperationStatus {
+  ELIGIBLE
+  LOCKED
+  UNAVAILABLE
+  CONSUMED
 }
 
 type FieldsLocked {
@@ -382,7 +393,7 @@ type MetadataInvalid {
 }
 
 type MetadataOperation {
-  outcome: String!
+  outcome: OperationOutcome!
   operations: [FieldOperation!]!
   metadata: MetadataRevision!
 }
@@ -420,7 +431,7 @@ type MetadataRevision {
   isbnMismatch: Boolean!
   workId: ID!
   manifestationId: ID!
-  etag: String!
+  etag: ETag!
   title: String!
   subtitle: String
   description: String
@@ -441,7 +452,7 @@ type MetadataRevision {
 }
 
 type MetadataSaved {
-  requestId: String
+  requestId: UUID
   operations: [FieldOperation!]!
   manifestation: Manifestation!
 }
@@ -565,6 +576,12 @@ type NotFound {
   message: String!
 }
 
+enum OperationOutcome {
+  SAVED
+  RESTORED
+  UNKNOWN
+}
+
 """
 Information about pagination in a connection
 """
@@ -594,7 +611,7 @@ type PublisherSuggestion {
 
 type Query {
   libraryPreferences: LibraryPreferences!
-  metadataOperation(id: ID!, requestId: String, operationId: String): MetadataOperation!
+  metadataOperation(id: ID!, requestId: UUID, operationId: UUID): MetadataOperation!
   viewer: Viewer!
   node(id: ID!): Node
   work(id: ID!): Work
@@ -962,14 +979,16 @@ type TagSuggestion {
   value: String!
 }
 
+scalar UUID @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")
+
 type UndoConflict {
   message: String!
 }
 
 input UndoMetadataInput {
   id: ID!
-  baseline: String!
-  operationId: String!
+  baseline: ETag!
+  operationId: UUID!
 }
 
 union UndoMetadataResult = MetadataRestored | StaleBaseline | UndoUnavailable | UndoConflict | FieldsLocked | EditTooLarge | NotFound
@@ -988,8 +1007,8 @@ union UnlockMetadataFieldResult = MetadataFieldLockRemoved | NotFound
 
 input UpdateMetadataInput {
   id: ID!
-  baseline: String!
-  requestId: String
+  baseline: ETag!
+  requestId: UUID
   patch: MetadataPatch!
 }
 
@@ -1056,6 +1075,10 @@ directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 Directs the executor to skip this field or fragment when the `if` argument is true.
 """
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Provides a scalar specification URL for specifying the behavior of custom scalar types.
+"""
+directive @specifiedBy(url: String!) on SCALAR
 schema {
   query: Query
   mutation: Mutation

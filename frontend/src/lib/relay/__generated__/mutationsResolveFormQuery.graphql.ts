@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<7cd1465a3b3428ad2164d078a48a51b0>>
- * @relayHash eb5d011bef07bebc847de9a99022bd1f
+ * @generated SignedSource<<0c9ebfe9b332281c1c0221f4935a3720>>
+ * @relayHash fb406e0149d4adb4c7e6ee00b6190675
  * @lightSyntaxTransform
  */
 
@@ -8,10 +8,11 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID e27db75e86521a41a304dea91984d0ed4f7028434a5a7ef4089a12abc1d4a105
+// @relayRequestID 4f942cd9cbe67f8ac8ca55b8a395013620b22d0f349610ea1f668370161bf2f5
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
+export type OperationOutcome = "RESTORED" | "SAVED" | "UNKNOWN" | "%future added value";
 export type mutationsResolveFormQuery$variables = {
   id: string;
   operationId?: string | null | undefined;
@@ -22,7 +23,7 @@ export type mutationsResolveFormQuery$data = {
     readonly metadata: {
       readonly " $fragmentSpreads": FragmentRefs<"mutationsFormSnapshot">;
     };
-    readonly outcome: string;
+    readonly outcome: OperationOutcome;
   };
 };
 export type mutationsResolveFormQuery = {
@@ -232,13 +233,6 @@ const node: ConcreteRequest = (function () {
                   name: "pages",
                   storageKey: null,
                 },
-                {
-                  alias: null,
-                  args: null,
-                  kind: "ScalarField",
-                  name: "contentRating",
-                  storageKey: null,
-                },
               ],
               storageKey: null,
             },
@@ -248,7 +242,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "e27db75e86521a41a304dea91984d0ed4f7028434a5a7ef4089a12abc1d4a105",
+      id: "4f942cd9cbe67f8ac8ca55b8a395013620b22d0f349610ea1f668370161bf2f5",
       metadata: {},
       name: "mutationsResolveFormQuery",
       operationKind: "query",
@@ -257,6 +251,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "4d4adee88d7350d4efbaa821e8a1d4d8";
+(node as any).hash = "4e97f2a13c8e671a13db1f252453e220";
 
 export default node;

@@ -49,6 +49,42 @@ macro_rules! input_enum {
         }
     };
 }
+macro_rules! output_enum {
+    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        pub(super) enum $name { $($variant),+ }
+        impl async_graphql::resolver_utils::EnumType for $name {
+            fn items() -> &'static [async_graphql::resolver_utils::EnumItem<Self>] {
+                &[$(async_graphql::resolver_utils::EnumItem { name: $wire, value: Self::$variant }),+]
+            }
+        }
+        impl async_graphql::OutputType for $name {
+            fn type_name() -> std::borrow::Cow<'static, str> { stringify!($name).into() }
+            fn create_type_info(registry: &mut async_graphql::registry::Registry) -> String {
+                registry.create_output_type::<Self, _>(async_graphql::registry::MetaTypeId::Enum, |_| {
+                    async_graphql::registry::MetaType::Enum {
+                        name: stringify!($name).into(), description: None,
+                        enum_values: [$(($wire.into(), async_graphql::registry::MetaEnumValue {
+                            name: $wire.into(), description: None,
+                            deprecation: async_graphql::registry::Deprecation::NoDeprecated,
+                            visible: None, inaccessible: false, tags: Vec::new(), directive_invocations: Vec::new(),
+                        })),+].into_iter().collect(),
+                        visible: None, inaccessible: false, tags: Vec::new(),
+                        rust_typename: Some(std::any::type_name::<Self>()),
+                        directive_invocations: Vec::new(), requires_scopes: Vec::new(),
+                    }
+                })
+            }
+            fn resolve(
+                &self,
+                _: &async_graphql::ContextSelectionSet<'_>,
+                _: &async_graphql::Positioned<async_graphql::parser::types::Field>,
+            ) -> impl std::future::Future<Output = async_graphql::ServerResult<async_graphql::Value>> + Send {
+                std::future::ready(Ok(async_graphql::resolver_utils::enum_value(*self)))
+            }
+        }
+    };
+}
 mod complexity;
 mod id;
 mod library;
@@ -133,8 +169,8 @@ impl Query {
         &self,
         ctx: &Context<'_>,
         id: async_graphql::ID,
-        request_id: Option<String>,
-        operation_id: Option<String>,
+        request_id: Option<library::UuidValue>,
+        operation_id: Option<library::UuidValue>,
     ) -> async_graphql::Result<mutations::MetadataOperation> {
         mutations::metadata_operation(ctx, id, request_id, operation_id).await
     }
@@ -1037,7 +1073,7 @@ mod tests {
             )
             .await;
             assert_graph_ok(&resolved);
-            assert_eq!(resolved["data"]["metadataOperation"]["outcome"], "saved");
+            assert_eq!(resolved["data"]["metadataOperation"]["outcome"], "SAVED");
             let restored = browser_graph(&browser, &csrf, UNDO, json!({"id":id,"baseline":saved["data"]["updateMetadata"]["manifestation"]["metadata"]["etag"],"operation":operation})).await;
             assert_graph_result(&restored, "undoMetadata", "MetadataRestored");
         }
@@ -1192,10 +1228,9 @@ mod tests {
         assert_request_error(&browser_graph(&server, &csrf, TITLE_SAVE, omitted).await);
         let mut weak = attempt.clone();
         weak["baseline"] = json!("weak");
-        assert_graph_code(
-            &browser_graph(&server, &csrf, TITLE_SAVE, weak).await,
-            "malformed-header",
-        );
+        let weak = browser_graph(&server, &csrf, TITLE_SAVE, weak).await;
+        assert_request_error(&weak);
+        assert_graph_code(&weak, "validation");
         let mut stale = attempt.clone();
         stale["baseline"] = json!("\"stale\"");
         assert_graph_result(
@@ -1220,7 +1255,7 @@ mod tests {
         let resolved =
             browser_graph(&server, &csrf, RESOLVE, json!({"id":id,"request":request})).await;
         assert_graph_ok(&resolved);
-        assert_eq!(resolved["data"]["metadataOperation"]["outcome"], "saved");
+        assert_eq!(resolved["data"]["metadataOperation"]["outcome"], "SAVED");
         assert_eq!(
             resolved["data"]["metadataOperation"]["operations"],
             saved["data"]["updateMetadata"]["operations"]
@@ -1240,7 +1275,7 @@ mod tests {
             json!({"id":id,"request":uuid::Uuid::new_v4()}),
         )
         .await;
-        assert_eq!(unknown["data"]["metadataOperation"]["outcome"], "unknown");
+        assert_eq!(unknown["data"]["metadataOperation"]["outcome"], "UNKNOWN");
         let sparse = "mutation($id:ID!, $baseline:String!, $patch:MetadataPatch!) { updateMetadata(input:{id:$id,baseline:$baseline,patch:$patch}) { ... on MetadataSaved { manifestation { metadata { title subtitle etag } } } } }";
         let subtitle = browser_graph(
             &server,
@@ -1386,7 +1421,7 @@ mod tests {
         assert_graph_ok(&saved);
         let result = &saved["data"]["updateMetadata"];
         let operation = &result["operations"][0]["operationId"];
-        assert_eq!(result["operations"][0]["status"], "eligible");
+        assert_eq!(result["operations"][0]["status"], "ELIGIBLE");
         let input = json!({"id":id,"baseline":result["manifestation"]["metadata"]["etag"],"operation":operation});
         let mut missing = input.clone();
         missing["baseline"] = serde_json::Value::Null;
@@ -1396,10 +1431,9 @@ mod tests {
         assert_request_error(&browser_graph(&server, &csrf, UNDO, omitted).await);
         let mut wildcard = input.clone();
         wildcard["baseline"] = json!("*");
-        assert_graph_code(
-            &browser_graph(&server, &csrf, UNDO, wildcard).await,
-            "malformed-header",
-        );
+        let wildcard = browser_graph(&server, &csrf, UNDO, wildcard).await;
+        assert_request_error(&wildcard);
+        assert_graph_code(&wildcard, "validation");
         let mut stale = input.clone();
         stale["baseline"] = original["etag"].clone();
         assert_graph_result(
@@ -1431,7 +1465,7 @@ mod tests {
         .await;
         assert_eq!(
             second_resolve["data"]["metadataOperation"]["outcome"],
-            "unknown"
+            "UNKNOWN"
         );
         let other = browser_graph(&server, &csrf, TITLE_READ, json!({"id":other_id})).await;
         assert_graph_result(&browser_graph(&server,&csrf,UNDO,json!({"id":other_id,"baseline":other["data"]["manifestation"]["metadata"]["etag"],"operation":operation})).await,"undoMetadata","UndoUnavailable");
@@ -1483,7 +1517,7 @@ mod tests {
         assert_graph_ok(&resolved);
         assert_eq!(
             resolved["data"]["metadataOperation"]["operations"][0]["status"],
-            "locked"
+            "LOCKED"
         );
         assert_eq!(
             resolved["data"]["metadataOperation"]["operations"][0]["expiresAt"],
@@ -1513,7 +1547,7 @@ mod tests {
         );
         assert_eq!(
             restored["data"]["undoMetadata"]["operation"]["status"],
-            "consumed"
+            "CONSUMED"
         );
         let after = browser_graph(&server, &csrf, TITLE_READ, json!({"id":id})).await;
         assert_eq!(
@@ -1527,7 +1561,7 @@ mod tests {
             json!({"id":id,"operation":operation}),
         )
         .await;
-        assert_eq!(resolved["data"]["metadataOperation"]["outcome"], "restored");
+        assert_eq!(resolved["data"]["metadataOperation"]["outcome"], "RESTORED");
         let expiring=browser_graph(&server,&csrf,TITLE_SAVE,json!({"id":id,"baseline":after["data"]["manifestation"]["metadata"]["etag"],"patch":{"title":"Expires"}})).await;
         assert_graph_ok(&expiring);
         let expiring_id: uuid::Uuid =

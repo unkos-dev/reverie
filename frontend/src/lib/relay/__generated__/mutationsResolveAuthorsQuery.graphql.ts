@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<6450c2fd18d0662342613768fc34573e>>
- * @relayHash d362e8918847f2be6e23afc013dd6047
+ * @generated SignedSource<<e0601b551819fb0ccd8168a20895275b>>
+ * @relayHash 2ab1919b503cb4d7d9df93674ef1dbd1
  * @lightSyntaxTransform
  */
 
@@ -8,9 +8,16 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 6a99102cceded2e75d27c435555df505814ee87460794e51542cb0f38f498a4f
+// @relayRequestID 5361854cda8108e3fd1889a145a165082b5a649362b430d78571c38555b3793f
 
 import { ConcreteRequest } from "relay-runtime";
+export type FieldOperationStatus =
+  | "CONSUMED"
+  | "ELIGIBLE"
+  | "LOCKED"
+  | "UNAVAILABLE"
+  | "%future added value";
+export type OperationOutcome = "RESTORED" | "SAVED" | "UNKNOWN" | "%future added value";
 export type mutationsResolveAuthorsQuery$variables = {
   id: string;
   operationId?: string | null | undefined;
@@ -44,9 +51,9 @@ export type mutationsResolveAuthorsQuery$data = {
       readonly expiresAt: string;
       readonly fieldName: string;
       readonly operationId: string;
-      readonly status: string;
+      readonly status: FieldOperationStatus;
     }>;
-    readonly outcome: string;
+    readonly outcome: OperationOutcome;
   };
 };
 export type mutationsResolveAuthorsQuery = {
@@ -335,7 +342,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "6a99102cceded2e75d27c435555df505814ee87460794e51542cb0f38f498a4f",
+      id: "5361854cda8108e3fd1889a145a165082b5a649362b430d78571c38555b3793f",
       metadata: {},
       name: "mutationsResolveAuthorsQuery",
       operationKind: "query",
@@ -344,6 +351,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "fec9f6dab3df85d9c323b10329e16b61";
+(node as any).hash = "87d16695b0f4689304c713d7b6d94f6e";
 
 export default node;

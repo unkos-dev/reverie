@@ -26,7 +26,6 @@ export const mutationsFormSnapshot = graphql`
     isbn13
     isbnMismatch
     pages
-    contentRating
   }
 `;
 
@@ -151,7 +150,7 @@ export const mutationsUndoTitleMutation = graphql`
 `;
 
 export const mutationsResolveTitleQuery = graphql`
-  query mutationsResolveTitleQuery($id: ID!, $requestId: String, $operationId: String) {
+  query mutationsResolveTitleQuery($id: ID!, $requestId: UUID, $operationId: UUID) {
     metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
       outcome
       operations {
@@ -221,7 +220,7 @@ export const mutationsUndoFormMutation = graphql`
 `;
 
 export const mutationsResolveFormQuery = graphql`
-  query mutationsResolveFormQuery($id: ID!, $requestId: String, $operationId: String)
+  query mutationsResolveFormQuery($id: ID!, $requestId: UUID, $operationId: UUID)
   @throwOnFieldError {
     metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
       outcome
@@ -380,7 +379,7 @@ export const mutationsUndoAuthorsMutation = graphql`
 `;
 
 export const mutationsResolveAuthorsQuery = graphql`
-  query mutationsResolveAuthorsQuery($id: ID!, $requestId: String, $operationId: String) {
+  query mutationsResolveAuthorsQuery($id: ID!, $requestId: UUID, $operationId: UUID) {
     metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
       outcome
       operations {
@@ -706,7 +705,7 @@ export const mutationsUndoCellsMutation = graphql`
 `;
 
 export const mutationsResolveCellsQuery = graphql`
-  query mutationsResolveCellsQuery($id: ID!, $requestId: String, $operationId: String) {
+  query mutationsResolveCellsQuery($id: ID!, $requestId: UUID, $operationId: UUID) {
     metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
       outcome
       operations {
