@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<56b2b8db69b6e2292d7af6213eec4546>>
+ * @generated SignedSource<<92700d43dc6837b1cda1ec0448250fc3>>
  * @lightSyntaxTransform
  */
 
@@ -35,7 +35,9 @@ export type mutationsFormSnapshot$key = {
 const node: ReaderFragment = {
   argumentDefinitions: [],
   kind: "Fragment",
-  metadata: null,
+  metadata: {
+    throwOnFieldError: true,
+  },
   name: "mutationsFormSnapshot",
   selections: [
     {
@@ -148,6 +150,6 @@ const node: ReaderFragment = {
   abstractKey: null,
 };
 
-(node as any).hash = "33e9162afda879ba6052b1708fe383ef";
+(node as any).hash = "c748c7b37d04753581ae1c3aac882e08";
 
 export default node;

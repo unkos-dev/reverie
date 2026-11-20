@@ -215,8 +215,11 @@ Execution faults are errors and do not publish partial data or trigger a resend.
 
 The book, series, shelf and shelves route queries, the fragments those pages read, and `CommandPaletteQuery` carry
 `@throwOnFieldError`. A field error or data missing after a graph relationship change throws to the nearest error
-boundary: the route `errorElement`, or the command palette's own boundary. The schema marks a field non-null when null
-is not a valid domain value.
+boundary: the route `errorElement`, or the command palette's own boundary. The edit sheet's `mutationsFormQuery` and the
+`mutationsFormSnapshot` fragment it reads carry the directive too. Refusal selections shared through
+`@relay(mask: false)` spreads in mutation payloads (`mutationsSaveRefusal`, `mutationsUndoRefusal`) carry none, because
+Relay accepts the directive only on queries and fragments read as their own unit. The schema marks a field non-null when
+null is not a valid domain value.
 
 Each reader route loader starts its query with `loadQuery`, which retains the operation from load start. The loader
 awaits the same in-flight request for its not-found check and breadcrumb title. Abort, failure, a not-found result or an

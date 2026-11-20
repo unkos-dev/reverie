@@ -49,9 +49,10 @@ Chosen option: **Honest non-null with client-handled field errors**, because it 
 schema truthful and follows the working group's `onError` direction, which Relay's field-error directives already
 anticipate.
 
-The schema marks a field non-null (`!`) when null is not a valid value in the domain. Every Relay query and fragment
-carries `@throwOnFieldError`. A component that handles a failure itself uses `@catch` on that field. The Relay network
-keeps refusing responses with errors until a released async-graphql honours `onError`. The client then sends
+The schema marks a field non-null (`!`) when null is not a valid value in the domain. Every Relay query, and every
+fragment read as its own unit, carries `@throwOnFieldError`. Relay does not accept the directive on a mutation or on a
+selection spread unmasked into one. A component that handles a failure itself uses `@catch` on that field. The Relay
+network keeps refusing responses with errors until a released async-graphql honours `onError`. The client then sends
 `onError: "NULL"` and publishes partial data, and the same directives decide where each error lands.
 
 ### Consequences

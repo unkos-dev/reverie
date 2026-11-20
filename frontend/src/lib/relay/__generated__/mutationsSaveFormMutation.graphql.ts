@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<e5066d9b19537d0ce22ee28406a5eeb6>>
- * @relayHash 0313523f00546d09cffb347be0e16fbd
+ * @generated SignedSource<<603b9c07d8c553b7355d374c1e7d42fa>>
+ * @relayHash 031b53a5cb9e96688d93c2c55a23715c
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 2849120ec3583b88ee934e26845b5b34464a5798c4fd24d0176d85c6cf41699b
+// @relayRequestID 3c73557d5b2e0b3beee16681d3163b552f8a4917375b0dcab8357b885fc3d0d6
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -81,7 +81,7 @@ export type mutationsSaveFormMutation$data = {
           readonly metadata: {
             readonly " $fragmentSpreads": FragmentRefs<"mutationsFormSnapshot">;
           };
-          readonly " $fragmentSpreads": FragmentRefs<"readerDetailEditable">;
+          readonly " $fragmentSpreads": FragmentRefs<"readerDetailEditable" | "readerVersions">;
         };
       }
     | {
@@ -255,7 +255,14 @@ const node: ConcreteRequest = (function () {
       kind: "ScalarField",
       name: "isbnMismatch",
       storageKey: null,
-    };
+    },
+    v19 = [
+      {
+        kind: "Literal",
+        name: "first",
+        value: 20,
+      },
+    ];
   return {
     fragment: {
       argumentDefinitions: v0 /*:: as any*/,
@@ -304,6 +311,11 @@ const node: ConcreteRequest = (function () {
                       args: null,
                       kind: "FragmentSpread",
                       name: "readerDetailEditable",
+                    },
+                    {
+                      args: null,
+                      kind: "FragmentSpread",
+                      name: "readerVersions",
                     },
                   ],
                   storageKey: null,
@@ -433,6 +445,149 @@ const node: ConcreteRequest = (function () {
                       ],
                       storageKey: null,
                     },
+                    {
+                      alias: null,
+                      args: null,
+                      concreteType: "MetadataVersions",
+                      kind: "LinkedField",
+                      name: "versions",
+                      plural: false,
+                      selections: [
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "pendingCount",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: v19 /*:: as any*/,
+                          concreteType: "MetadataVersionConnection",
+                          kind: "LinkedField",
+                          name: "pending",
+                          plural: false,
+                          selections: [
+                            {
+                              alias: null,
+                              args: null,
+                              concreteType: "MetadataVersionEdge",
+                              kind: "LinkedField",
+                              name: "edges",
+                              plural: true,
+                              selections: [
+                                {
+                                  alias: null,
+                                  args: null,
+                                  concreteType: "MetadataVersion",
+                                  kind: "LinkedField",
+                                  name: "node",
+                                  plural: false,
+                                  selections: [
+                                    v3 /*:: as any*/,
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "fieldName",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "source",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "newValue",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "confidenceScore",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "matchType",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "status",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "observationCount",
+                                      storageKey: null,
+                                    },
+                                    v2 /*:: as any*/,
+                                  ],
+                                  storageKey: null,
+                                },
+                                {
+                                  alias: null,
+                                  args: null,
+                                  kind: "ScalarField",
+                                  name: "cursor",
+                                  storageKey: null,
+                                },
+                              ],
+                              storageKey: null,
+                            },
+                            {
+                              alias: null,
+                              args: null,
+                              concreteType: "PageInfo",
+                              kind: "LinkedField",
+                              name: "pageInfo",
+                              plural: false,
+                              selections: [
+                                {
+                                  alias: null,
+                                  args: null,
+                                  kind: "ScalarField",
+                                  name: "endCursor",
+                                  storageKey: null,
+                                },
+                                {
+                                  alias: null,
+                                  args: null,
+                                  kind: "ScalarField",
+                                  name: "hasNextPage",
+                                  storageKey: null,
+                                },
+                              ],
+                              storageKey: null,
+                            },
+                          ],
+                          storageKey: "pending(first:20)",
+                        },
+                        {
+                          alias: null,
+                          args: v19 /*:: as any*/,
+                          filters: null,
+                          handle: "connection",
+                          key: "readerVersions_pending",
+                          kind: "LinkedHandle",
+                          name: "pending",
+                        },
+                      ],
+                      storageKey: null,
+                    },
                   ],
                   storageKey: null,
                 },
@@ -455,7 +610,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "2849120ec3583b88ee934e26845b5b34464a5798c4fd24d0176d85c6cf41699b",
+      id: "3c73557d5b2e0b3beee16681d3163b552f8a4917375b0dcab8357b885fc3d0d6",
       metadata: {},
       name: "mutationsSaveFormMutation",
       operationKind: "mutation",
@@ -464,6 +619,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "069347e5945e13613e5f9ddf16ec37b6";
+(node as any).hash = "d0f9e86325930c71aea8443fb494df02";
 
 export default node;

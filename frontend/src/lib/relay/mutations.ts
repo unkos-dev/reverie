@@ -11,7 +11,7 @@ export const mutationsTitleSnapshot = graphql`
 `;
 
 export const mutationsFormSnapshot = graphql`
-  fragment mutationsFormSnapshot on MetadataRevision {
+  fragment mutationsFormSnapshot on MetadataRevision @throwOnFieldError {
     id
     workId
     manifestationId
@@ -189,6 +189,7 @@ export const mutationsSaveFormMutation = graphql`
             ...mutationsFormSnapshot
           }
           ...readerDetailEditable
+          ...readerVersions
         }
       }
       ...mutationsSaveRefusal @relay(mask: false)
@@ -210,7 +211,7 @@ export const mutationsUndoFormMutation = graphql`
         manifestation {
           id
           metadata {
-            ...mutationsFormSnapshot @relay(mask: false)
+            ...mutationsFormSnapshot
           }
         }
       }

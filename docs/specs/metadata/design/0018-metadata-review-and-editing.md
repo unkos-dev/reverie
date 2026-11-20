@@ -335,8 +335,9 @@ only its originating mounted form. Cache reconciliation continues after dismissa
 7. The operation materialises the selected matched acknowledgement inside the transaction. The response contains its
    aggregate baseline, selected canonical fields, request ID and exact field operations. HTTP retains its complete
    canonical response.
-8. The edit sheet's mutation payload spreads the form snapshot and `readerDetailEditable` under the returned
-   manifestation. Relay normalisation updates Book detail and links the new revision, and the sheet closes its
+8. The edit sheet's mutation payload spreads the form snapshot, `readerDetailEditable` and `readerVersions` under the
+   returned manifestation. Relay normalisation updates Book detail and links the new revision. The replaced pending
+   connection shows a previous canonical value that the save returned to the review queue, and the sheet closes its
    originating mounted form. Versions reads are lazy and complete their native pending connection. Field-owned review
    outcomes survive proposal removal. A successful review action returns the manifestation with `readerDetailBook` and
    `readerVersions`, which replaces the pending connection's first page and updates the pending count. Accept and Clear
