@@ -2,19 +2,20 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0020"
-title: "A precondition-protected write answers 428 without If-Match"
+title: "A precondition-protected write without its validator is refused before it begins"
 governed-by:
   - "REV-ADR-0011"
 ---
 
-# A precondition-protected write answers 428 without If-Match
+# A precondition-protected write without its validator is refused before it begins
 
 ## Statement
 
 WHEN a `PATCH` request to a book's metadata resource, a `PATCH` request to a book's reading-state resource, or a `PUT`
-request to the settings resource carries no `If-Match` header, the server MUST answer `428 Precondition Required` and
-MUST NOT begin a database write for that request. WHEN a GraphQL metadata, reading-state or exact metadata Undo mutation
-carries an omitted, null or malformed baseline, the server MUST refuse it before a database write can begin.
+request to the settings resource carries no `If-Match` header, or a GraphQL metadata, reading-state or exact metadata
+Undo mutation carries an omitted, null or malformed baseline, which is the entity-tag the caller's values came from, the
+server MUST refuse the write and leave stored state unchanged, answering the HTTP requests with
+`428 Precondition Required`.
 
 ## Rationale
 
@@ -26,10 +27,11 @@ silently overwrites the first's changes with neither client aware a conflict occ
 
 ## Acceptance criteria
 
-- A `PATCH` to a book's metadata with no `If-Match` header answers `428`. Checked by
-  `patch_metadata_without_if_match_returns_428` in `backend/src/routes/metadata.rs`.
-- A `PATCH` to a book's reading state with no `If-Match` header answers `428`. Checked by
-  `patch_reading_without_if_match_returns_428` in `backend/src/routes/reading.rs`.
+- A `PATCH` to a book's metadata with no `If-Match` header answers `428`, and a read afterwards returns the same values
+  and `ETag` as before. Checked by `patch_metadata_without_if_match_returns_428` in `backend/src/routes/metadata.rs`.
+- A `PATCH` to a book's reading state with no `If-Match` header answers `428`, and a read afterwards returns the same
+  values and `ETag` as before. Checked by `patch_reading_without_if_match_returns_428` in
+  `backend/src/routes/reading.rs`.
 - A `PUT` to the settings resource with no `If-Match` header answers `428` and leaves the stored settings unchanged.
   Checked by `put_settings_without_if_match_returns_428_and_leaves_settings_unchanged` in
   `backend/src/routes/settings/tests.rs`.
@@ -37,9 +39,3 @@ silently overwrites the first's changes with neither client aware a conflict occ
   unchanged afterwards. Checked by `graphql_edit_baselines`.
 - GraphQL exact Undo with an omitted, null or malformed baseline is refused without consuming the operation. Checked by
   `graphql_undo_boundary`.
-
-## More information
-
-The first two tests above assert the response status. Neither independently re-reads the resource afterwards to confirm
-its state is unchanged; that guarantee follows from each handler checking for the header before it opens the database
-transaction the write would run in, so a request missing the header never reaches a point where a write could begin.

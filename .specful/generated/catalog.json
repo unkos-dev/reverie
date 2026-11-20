@@ -663,6 +663,13 @@
       "title": "Expected GraphQL mutation outcomes as union results"
     },
     {
+      "id": "REV-ADR-0083",
+      "kind": "adr",
+      "path": "docs/adr/0083-graphql-and-relay-for-browser-application-data-with-server-typed-formats.md",
+      "status": "proposed",
+      "title": "GraphQL and Relay for browser application data with server-typed formats"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0075",
@@ -768,7 +775,9 @@
       "satisfies": [
         "REV-REQ-0018",
         "REV-REQ-0019",
-        "REV-REQ-0020"
+        "REV-REQ-0020",
+        "REV-REQ-0082",
+        "REV-REQ-0083"
       ],
       "title": "Conditional requests and optimistic concurrency"
     },
@@ -1155,7 +1164,9 @@
         "REV-REQ-0023",
         "REV-REQ-0035",
         "REV-REQ-0036",
-        "REV-REQ-0079"
+        "REV-REQ-0079",
+        "REV-REQ-0082",
+        "REV-REQ-0083"
       ],
       "title": "GraphQL execution and Relay browser data"
     },
@@ -1308,7 +1319,7 @@
       "id": "REV-REQ-0018",
       "kind": "req",
       "path": "docs/specs/api/requirements/0018-metadata-and-reading-state-patch-compare-if-match-byte-for-byte.md",
-      "title": "Precondition-protected writes compare If-Match byte for byte"
+      "title": "Precondition-protected writes compare their validator byte for byte"
     },
     {
       "id": "REV-REQ-0019",
@@ -1323,7 +1334,7 @@
       "id": "REV-REQ-0020",
       "kind": "req",
       "path": "docs/specs/api/requirements/0020-a-precondition-protected-write-answers-428-without-if-match.md",
-      "title": "A precondition-protected write answers 428 without If-Match"
+      "title": "A precondition-protected write without its validator is refused before it begins"
     },
     {
       "governed-by": [
@@ -1826,6 +1837,18 @@
       "kind": "req",
       "path": "docs/specs/library/requirements/0081-failed-library-saves-support-explicit-retry.md",
       "title": "Failed Library saves support explicit Retry"
+    },
+    {
+      "id": "REV-REQ-0082",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0082-graphql-edit-acknowledgements-carry-the-validator-of-their-values.md",
+      "title": "GraphQL edit acknowledgements carry the validator of their values"
+    },
+    {
+      "id": "REV-REQ-0083",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0083-editing-baselines-form-only-from-complete-values-of-one-revision.md",
+      "title": "Editing baselines form only from complete values of one revision"
     }
   ]
 }

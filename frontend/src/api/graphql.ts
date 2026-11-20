@@ -13,7 +13,6 @@ import { z } from "zod";
 
 import { invokeUnauthenticatedHandler } from "@/lib/query/client";
 import {
-  ContentRatingSchema,
   ReadingStatusSchema,
   ResourceEtagSchema,
   parseSortParam,
@@ -92,18 +91,6 @@ const cellsSnapshot = titleSnapshot.extend({
   subtitle: z.string().nullable(),
   isbn13: z.string().nullable(),
   pages: z.number().int().nullable(),
-});
-const formSnapshot = titleSnapshot.extend({
-  subtitle: z.string().nullable(),
-  description: z.string().nullable(),
-  language: z.string().nullable(),
-  publisher: z.string().nullable(),
-  publicationDate: z.string().nullable(),
-  isbn10: z.string().nullable(),
-  isbn13: z.string().nullable(),
-  isbnMismatch: z.boolean(),
-  pages: z.number().int().nullable(),
-  contentRating: ContentRatingSchema.nullable(),
 });
 const pageInfo = z.object({
   hasNextPage: z.boolean(),
@@ -237,7 +224,7 @@ const operations = z.array(
     operationId: uuid,
     fieldName: z.string(),
     expiresAt: z.iso.datetime(),
-    status: z.enum(["eligible", "locked", "unavailable", "consumed"]),
+    status: z.enum(["ELIGIBLE", "LOCKED", "UNAVAILABLE", "CONSUMED"]),
   }),
 );
 const shelf = z.object({
@@ -279,66 +266,49 @@ function acknowledgement(snapshot: z.ZodType) {
   return z.object({ id: domainId("Manifestation"), metadata: snapshot });
 }
 const editingProjections = new Map<string, z.ZodType>();
-for (const [name, snapshot] of [
-  ["Title", titleSnapshot],
-  ["Cells", cellsSnapshot],
-  ["Form", formSnapshot],
-  ["Authors", authorSnapshot],
-] as const) {
-  const saved =
-    name === "Form"
-      ? z.object({
-          __typename: z.literal("MetadataSaved"),
-          manifestation: acknowledgement(snapshot),
-        })
-      : z.object({
-          __typename: z.literal("MetadataSaved"),
-          requestId: uuid.nullable(),
-          operations,
-          manifestation: acknowledgement(snapshot),
-        });
-  editingProjections.set(
-    `mutationsSave${name}Mutation`,
-    z.object({ updateMetadata: z.discriminatedUnion("__typename", [saved, ...saveRefusals]) }),
-  );
-  editingProjections.set(
-    `mutationsUndo${name}Mutation`,
-    z.object({
-      undoMetadata: z.discriminatedUnion("__typename", [
-        z.object({
-          __typename: z.literal("MetadataRestored"),
-          operation: operations.element,
-          manifestation: acknowledgement(snapshot),
-        }),
-        ...undoRefusals,
-      ]),
+editingProjections.set(
+  "mutationsSaveAuthorsMutation",
+  z.object({
+    updateMetadata: z.discriminatedUnion("__typename", [
+      z.object({
+        __typename: z.literal("MetadataSaved"),
+        requestId: uuid.nullable(),
+        operations,
+        manifestation: acknowledgement(authorSnapshot),
+      }),
+      ...saveRefusals,
+    ]),
+  }),
+);
+editingProjections.set(
+  "mutationsUndoAuthorsMutation",
+  z.object({
+    undoMetadata: z.discriminatedUnion("__typename", [
+      z.object({
+        __typename: z.literal("MetadataRestored"),
+        operation: operations.element,
+        manifestation: acknowledgement(authorSnapshot),
+      }),
+      ...undoRefusals,
+    ]),
+  }),
+);
+editingProjections.set(
+  "mutationsResolveAuthorsQuery",
+  z.object({
+    metadataOperation: z.object({
+      outcome: z.enum(["SAVED", "RESTORED", "UNKNOWN"]),
+      operations,
+      metadata: authorSnapshot,
     }),
-  );
-  const outcome = z.enum(["saved", "restored", "unknown"]);
-  editingProjections.set(
-    `mutationsResolve${name}Query`,
-    z.object({
-      metadataOperation:
-        name === "Form"
-          ? z.object({ outcome, metadata: snapshot })
-          : z.object({ outcome, operations, metadata: snapshot }),
-    }),
-  );
-}
-for (const [name, snapshot] of [
-  ["Title", titleSnapshot],
-  ["Cells", cellsSnapshot],
-  ["Form", formSnapshot],
-  ["Revision", revision],
-  ["AuthorPage", authorSnapshot],
-] as const) {
-  editingProjections.set(
-    `mutations${name}Query`,
-    z.object({
-      manifestation: z.object({ id: domainId("Manifestation"), metadata: snapshot }).nullable(),
-    }),
-  );
-}
+  }),
+);
+editingProjections.set(
+  "mutationsAuthorPageQuery",
+  z.object({
+    manifestation: z.object({ id: domainId("Manifestation"), metadata: authorSnapshot }).nullable(),
+  }),
+);
 editingProjections.set(
   "readerAuthorEditingPaginationQuery",
   z.object({
@@ -473,53 +443,13 @@ editingProjections.set(
     ]),
   }),
 );
-for (const [action, root, success, refusals] of [
-  [
-    "AcceptMetadataVersion",
-    "acceptMetadataVersion",
-    "MetadataVersionAccepted",
-    [fieldsLocked, metadataInvalid, refusal("NotFound")],
-  ],
-  [
-    "RevertMetadataField",
-    "revertMetadataField",
-    "MetadataFieldReverted",
-    [fieldsLocked, metadataInvalid, refusal("NotFound")],
-  ],
-  [
-    "RejectMetadataVersion",
-    "rejectMetadataVersion",
-    "MetadataVersionRejected",
-    [refusal("NotFound")],
-  ],
-  ["LockMetadataField", "lockMetadataField", "MetadataFieldLockAdded", [refusal("NotFound")]],
-  ["UnlockMetadataField", "unlockMetadataField", "MetadataFieldLockRemoved", [refusal("NotFound")]],
-] as const)
-  editingProjections.set(
-    `mutations${action}Mutation`,
-    z.object({
-      [root]: z.discriminatedUnion("__typename", [
-        z.object({
-          __typename: z.literal(success),
-          manifestation:
-            success === "MetadataVersionAccepted" || success === "MetadataFieldReverted"
-              ? acknowledgement(formSnapshot)
-              : z.object({ id: domainId("Manifestation") }),
-        }),
-        ...refusals,
-      ]),
-    }),
-  );
-
-/** Execute an editing document and capture its validated raw projection. */
+/** Execute an editing document and capture its raw response payload. */
 export function executeEditing<T extends OperationType>(
   environment: Environment,
   document: GraphQLTaggedNode,
   variables: T["variables"],
 ): Observable<EditingResponse<T>> {
   const request = getRequest(document);
-  if (!editingProjections.has(request.params.name))
-    throw new Error("An editing document is required.");
   const operation = createOperationDescriptor(request, variables);
   const source =
     request.params.operationKind === "mutation"
@@ -528,7 +458,6 @@ export function executeEditing<T extends OperationType>(
   return source.map((payload) => {
     if (!("data" in payload) || payload.data == null)
       throw new Error("Missing editing projection.");
-    // The network validates the operation's selected projection before publishing this raw payload.
     return structuredClone(payload.data) as EditingResponse<T>;
   });
 }

@@ -306,7 +306,7 @@ export function useCellEdit({
       let entry: UndoEntry | undefined;
       if (
         operation !== undefined &&
-        (operation.status === "eligible" || operation.status === "locked") &&
+        (operation.status === "ELIGIBLE" || operation.status === "LOCKED") &&
         Date.parse(operation.expiresAt) > Date.now()
       ) {
         const release = retainSource(attempt.source);
@@ -395,7 +395,7 @@ export function useCellEdit({
 
   async function recoverMetadata(attempt: Attempt): Promise<boolean> {
     const response = await resolve(attempt);
-    if (response?.outcome !== "saved") return false;
+    if (response?.outcome !== "SAVED") return false;
     acceptMetadata(attempt, response);
     return true;
   }
@@ -724,26 +724,26 @@ export function useCellEdit({
   ) {
     const attempt = entry.attempt;
     const resolution = await resolve(attempt, entry.operation.operationId);
-    if (resolution?.outcome === "restored") response = resolution;
+    if (resolution?.outcome === "RESTORED") response = resolution;
     else {
       const operation = resolution?.operations.find(
         (item) => item.operationId === entry.operation.operationId,
       );
-      if (operation?.status === "locked")
+      if (operation?.status === "LOCKED")
         failure = new ApiError(
           409,
           "/field-locked",
           "Field locked",
           "Unlock this field before retrying Undo.",
         );
-      else if (operation?.status === "unavailable" || operation?.status === "consumed")
+      else if (operation?.status === "UNAVAILABLE" || operation?.status === "CONSUMED")
         failure = new ApiError(
           422,
           "/undo-unavailable",
           "Undo unavailable",
           "This saved edit can no longer be undone.",
         );
-      else if (resolution !== undefined && operation?.status === "eligible") {
+      else if (resolution !== undefined && operation?.status === "ELIGIBLE") {
         const retry = { input: { ...variables.input, baseline: resolution.metadata.etag } };
         response = await sendUndo(attempt, retry);
       }

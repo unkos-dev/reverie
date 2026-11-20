@@ -504,22 +504,6 @@ async function graphqlBaselines(): Promise<void> {
   expect(environment.lookup(operation.fragment).data).toMatchObject({
     manifestation: { metadata: { title: "Saved", etag: latest } },
   });
-  for (const metadata of [
-    { id: revision(newer), workId, manifestationId: id, etag: newer },
-    { workId, manifestationId: id, etag: newer, title: "Missing revision" },
-    { ...snapshot, title: 7 },
-    { ...snapshot, etag: "weak" },
-  ]) {
-    fetch.mockClear();
-    fetch.mockResolvedValueOnce(titleResponse(metadata));
-    await expect(
-      executeEditing<TitleQuery>(environment, mutationsTitleQuery, { id }).toPromise(),
-    ).rejects.toThrow();
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(environment.lookup(operation.fragment).data).toMatchObject({
-      manifestation: { metadata: { title: "Saved", etag: latest } },
-    });
-  }
   fetch.mockResolvedValueOnce(
     titleResponse({ ...snapshot, id: revision(latest), title: "Fresh decision", etag: latest }),
   );

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<472462e15a3d5f9c3b970e09f979418e>>
- * @relayHash 35914ade193ab43987c6c983cf162daf
+ * @generated SignedSource<<675b95192b9ea62151118d5afd727db2>>
+ * @relayHash ac89e7a3354dfacda33d39b1779f8a41
  * @lightSyntaxTransform
  */
 
@@ -8,9 +8,16 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 3b3c91b7b9041b5f555854dfeaedf66ba5b7e5c0ed0edafb61e56bccd6a1d65e
+// @relayRequestID b34928bb0fce9e2c50fbf44793c9e2c26db70c8f51c8fb9c2f567c8c19d80652
 
 import { ConcreteRequest } from "relay-runtime";
+export type FieldOperationStatus =
+  | "CONSUMED"
+  | "ELIGIBLE"
+  | "LOCKED"
+  | "UNAVAILABLE"
+  | "%future added value";
+export type OperationOutcome = "RESTORED" | "SAVED" | "UNKNOWN" | "%future added value";
 export type mutationsResolveTitleQuery$variables = {
   id: string;
   operationId?: string | null | undefined;
@@ -29,9 +36,9 @@ export type mutationsResolveTitleQuery$data = {
       readonly expiresAt: string;
       readonly fieldName: string;
       readonly operationId: string;
-      readonly status: string;
+      readonly status: FieldOperationStatus;
     }>;
-    readonly outcome: string;
+    readonly outcome: OperationOutcome;
   };
 };
 export type mutationsResolveTitleQuery = {
@@ -180,7 +187,9 @@ const node: ConcreteRequest = (function () {
     fragment: {
       argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/, v2 /*:: as any*/],
       kind: "Fragment",
-      metadata: null,
+      metadata: {
+        throwOnFieldError: true,
+      },
       name: "mutationsResolveTitleQuery",
       selections: v3 /*:: as any*/,
       type: "Query",
@@ -194,7 +203,7 @@ const node: ConcreteRequest = (function () {
       selections: v3 /*:: as any*/,
     },
     params: {
-      id: "3b3c91b7b9041b5f555854dfeaedf66ba5b7e5c0ed0edafb61e56bccd6a1d65e",
+      id: "b34928bb0fce9e2c50fbf44793c9e2c26db70c8f51c8fb9c2f567c8c19d80652",
       metadata: {},
       name: "mutationsResolveTitleQuery",
       operationKind: "query",
@@ -203,6 +212,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "7309f6c58f2a9b5bb7a7515dcda46327";
+(node as any).hash = "782dc47c63a4a9dd34c8561e4a646201";
 
 export default node;

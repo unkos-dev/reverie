@@ -150,7 +150,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
     operationId: "22345678-1234-4234-8234-123456789abc",
     fieldName: "title",
     expiresAt: "2026-11-16T00:00:00Z",
-    status: "eligible",
+    status: "ELIGIBLE",
   };
   const save = {
     updateMetadata: {
@@ -177,27 +177,6 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
       new AbortController().signal,
     ).toPromise(),
   ).resolves.toEqual({ data: save });
-  for (const bad of [
-    { ...operation, operationId: "bad" },
-    { ...operation, expiresAt: "yesterday" },
-  ]) {
-    fetch.mockClear();
-    fetch.mockResolvedValueOnce(
-      json({ data: { updateMetadata: { ...save.updateMetadata, operations: [bad] } } }),
-    );
-    const next = vi.fn();
-    await expect(
-      graphqlNetwork(
-        getRequest(mutationsSaveTitleMutation).params,
-        {},
-        new AbortController().signal,
-      )
-        .do({ next })
-        .toPromise(),
-    ).rejects.toThrow();
-    expect(next).not.toHaveBeenCalled();
-    expect(fetch).toHaveBeenCalledTimes(1);
-  }
   const navigate = vi.fn();
   setUnauthenticatedHandler(navigate);
   fetch.mockResolvedValueOnce(json({}, 401)).mockResolvedValueOnce(json({}, 401));

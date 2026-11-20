@@ -19,6 +19,103 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// A strong RFC 9110 entity-tag in its quoted wire form.
+#[derive(Clone, Debug)]
+pub(super) struct ETag(String);
+
+impl ETag {
+    pub(super) fn from_wire(value: String) -> async_graphql::Result<Self> {
+        crate::routes::etag::parse_strong_entity_tag(value.as_bytes()).map_err(|_| {
+            safe_error(AppError::Internal(anyhow::anyhow!(
+                "server produced a malformed entity-tag"
+            )))
+        })?;
+        Ok(Self(value))
+    }
+
+    pub(super) fn strong(&self) -> async_graphql::Result<crate::routes::etag::StrongEntityTag> {
+        crate::routes::etag::parse_strong_entity_tag(self.0.as_bytes()).map_err(safe_error)
+    }
+}
+
+#[async_graphql::Scalar(
+    name = "ETag",
+    specified_by_url = "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars"
+)]
+impl async_graphql::ScalarType for ETag {
+    fn parse(value: async_graphql::Value) -> async_graphql::InputValueResult<Self> {
+        match value {
+            async_graphql::Value::String(text)
+                if crate::routes::etag::parse_strong_entity_tag(text.as_bytes()).is_ok() =>
+            {
+                Ok(Self(text))
+            }
+            async_graphql::Value::String(_) => Err(async_graphql::InputValueError::custom(
+                "Expected a strong entity-tag.",
+            )),
+            other => Err(async_graphql::InputValueError::expected_type(other)),
+        }
+    }
+
+    fn to_value(&self) -> async_graphql::Value {
+        async_graphql::Value::String(self.0.clone())
+    }
+}
+
+/// A UUID in lower-case hyphenated form.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct UuidValue(pub(super) Uuid);
+
+#[async_graphql::Scalar(
+    name = "UUID",
+    specified_by_url = "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars"
+)]
+impl async_graphql::ScalarType for UuidValue {
+    fn parse(value: async_graphql::Value) -> async_graphql::InputValueResult<Self> {
+        match value {
+            async_graphql::Value::String(text) if text.len() == 36 => Uuid::try_parse(&text)
+                .map(Self)
+                .map_err(|_| async_graphql::InputValueError::custom("Expected a hyphenated UUID.")),
+            async_graphql::Value::String(_) => Err(async_graphql::InputValueError::custom(
+                "Expected a hyphenated UUID.",
+            )),
+            other => Err(async_graphql::InputValueError::expected_type(other)),
+        }
+    }
+
+    fn to_value(&self) -> async_graphql::Value {
+        async_graphql::Value::String(self.0.hyphenated().to_string())
+    }
+}
+
+/// An instant as RFC 3339 text in UTC with the `Z` designator.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct DateTime(pub(super) Timestamp);
+
+#[async_graphql::Scalar(
+    name = "DateTime",
+    specified_by_url = "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars"
+)]
+impl async_graphql::ScalarType for DateTime {
+    fn parse(value: async_graphql::Value) -> async_graphql::InputValueResult<Self> {
+        match value {
+            async_graphql::Value::String(text) if text.ends_with('Z') => {
+                text.parse::<Timestamp>().map(Self).map_err(|_| {
+                    async_graphql::InputValueError::custom("Expected an RFC 3339 instant.")
+                })
+            }
+            async_graphql::Value::String(_) => Err(async_graphql::InputValueError::custom(
+                "Expected an RFC 3339 instant in UTC.",
+            )),
+            other => Err(async_graphql::InputValueError::expected_type(other)),
+        }
+    }
+
+    fn to_value(&self) -> async_graphql::Value {
+        async_graphql::Value::String(self.0.to_string())
+    }
+}
+
 #[derive(Interface)]
 #[graphql(field(name = "id", ty = "&ID"))]
 pub(super) enum Node {
@@ -289,7 +386,7 @@ impl Manifestation {
             isbn_mismatch: row.isbn_mismatch(),
             work_id: id::Work::encode(row.work_id),
             manifestation_id: id::Manifestation::encode(row.id),
-            etag: self.record.metadata_etag.clone(),
+            etag: ETag::from_wire(self.record.metadata_etag.clone())?,
             title: row.title.clone(),
             subtitle: row.subtitle.clone(),
             description: row.description.clone(),
@@ -478,7 +575,7 @@ pub(super) struct MetadataRevision {
     isbn_mismatch: bool,
     work_id: ID,
     manifestation_id: ID,
-    etag: String,
+    etag: ETag,
     title: String,
     subtitle: Option<String>,
     description: Option<String>,
@@ -555,13 +652,15 @@ impl MetadataRevision {
             relation_pages: snapshot.pages.clone(),
             work_id: id::Work::encode(snapshot.revision.work_id),
             manifestation_id: id::Manifestation::encode(snapshot.revision.manifestation_id),
-            etag: snapshot
-                .revision
-                .etag()
-                .map_err(safe_error)?
-                .to_str()
-                .map_err(|e| safe_error(AppError::Internal(e.into())))?
-                .to_owned(),
+            etag: ETag::from_wire(
+                snapshot
+                    .revision
+                    .etag()
+                    .map_err(safe_error)?
+                    .to_str()
+                    .map_err(|e| safe_error(AppError::Internal(e.into())))?
+                    .to_owned(),
+            )?,
             title: row.title.clone(),
             subtitle: row.subtitle.clone(),
             description: row.description.clone(),

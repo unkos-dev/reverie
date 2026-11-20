@@ -4055,10 +4055,14 @@ mod tests {
         let (_work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let before = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
 
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
-            .add_header(AUTHORIZATION, basic)
+            .add_header(AUTHORIZATION, basic.clone())
             .json(&serde_json::json!({"title": format!("No If-Match {marker}")}))
             .await;
         test_support::assert_problem(
@@ -4066,6 +4070,12 @@ mod tests {
             problems::IF_MATCH_REQUIRED,
             StatusCode::PRECONDITION_REQUIRED,
         );
+        let after = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(etag_value(after.headers()), etag_value(before.headers()));
+        assert_eq!(after.text(), before.text());
     }
 
     #[sqlx::test(migrations = "./migrations")]

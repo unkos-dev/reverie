@@ -9,29 +9,25 @@ title: "Browser edits retain the validator belonging to their values"
 
 ## Statement
 
-WHEN the browser client saves book metadata or reading state, it MUST send the validator of the revision from which that
-edit's validated values came. A revision is the resource state a validator identifies. Values and a validator from
-different revisions MUST NOT form an editing baseline. Background reads, refreshes and failed writes MUST NOT advance a
-retained edit's baseline. The client MUST retain that baseline through errors and CSRF retry until a new editing
-decision adopts validated values and their matching validator together. A replacement-list edit MUST adopt all pages of
-that selected field at one revision; it MUST NOT adopt an incomplete list or pages from different revisions.
+WHEN the browser client saves book metadata or reading state, it MUST send the validator of the revision its edited
+values came from, and MUST keep that validator through errors, CSRF retry, background reads, refreshes and refused
+writes until a new editing decision replaces the values and their validator together. A validator is the strong
+entity-tag that identifies one revision, a revision is the resource state a validator identifies, and a new editing
+decision is the reader starting an edit from the values on screen or an explicit matched reload or reset.
 
 ## Rationale
 
 A validator from another response can authorise an overwrite of values the reader never saw. Keeping the validator with
-the editing values prevents unrelated reads, background refresh and error responses from advancing a retained draft's
+the edited values prevents unrelated reads, background refresh and error responses from advancing a retained draft's
 write precondition.
 
 ## Acceptance criteria
 
-- Metadata and reading saves send the validator belonging to their editing values as HTTP `If-Match` or an explicit
-  GraphQL baseline argument, including across a CSRF retry.
-- A read of another resource, a background refresh or a 412 response does not replace a retained edit's validator.
-- Missing or malformed values or validators do not publish a replacement editing baseline or authorise another write.
-- A new editing decision adopts validated values and their matching validator together.
-- GraphQL edits retain their selected values and explicit baseline through background record merges, CSRF resend and
-  precondition refusal. A later ETag-only publication cannot give an earlier stored value a replacement baseline.
-- A complete selected list at one revision can supply a replacement-list baseline. Missing pages or different page
-  revisions cannot supply one. Unrelated metadata fields are not required to validate that selection.
-
-Checked by `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.
+- Metadata and reading saves send the validator belonging to their edited values as HTTP `If-Match` or an explicit
+  GraphQL baseline, including across a CSRF retry. Checked by `metadata and reading edits keep their baseline` in
+  `frontend/tests/browser/api/fetch.test.tsx`.
+- A read of another resource, a background refresh or a stale-baseline refusal does not replace a retained edit's
+  validator. Checked by `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`
+  and `a table edit keeps the validator its editor opened with` in `frontend/tests/browser/LibraryPage.test.tsx`.
+- A new editing decision replaces the values and their matching validator together. Checked by
+  `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.

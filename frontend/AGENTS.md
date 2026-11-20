@@ -83,12 +83,16 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
 - **No enums:** `erasableSyntaxOnly` rejects them. Use `as const` objects and union types.
 - **Type assertions:** Assert only to narrow at a boundary the type system cannot see, with the reason beside it.
 - **Boundary validation:** Parse forms, URL inputs and retained REST response bodies through Zod before use. For
-  GraphQL, validate transport failures, execution-error envelopes, custom scalar formats and revision-bearing editing
-  snapshots before publication or use. Generated operation types alone are not runtime validation.
-- **Validate formats, not just types:** A response field with a declared format gets a validator for that format, not
-  `z.string()`. Timestamps use bare `z.iso.datetime()`: the API emits `Z`-terminated RFC 3339, and `{ offset: true }`
-  would also accept `+00:00`, which nothing produces. A malformed wire format once reached production through a
-  `z.string()` field. Request schemas keep matching what the endpoint accepts, which can be looser.
+  GraphQL, the network validates the transport failure and execution-error envelope of every response. An operation
+  whose formats the server types through custom scalars and enums publishes without a client projection; an operation
+  not yet moved keeps its selected projection in `src/api/graphql.ts`. Generated operation types alone are not runtime
+  validation for REST or for an operation that keeps its projection.
+- **Validate formats, not just types:** A REST response field with a declared format gets a validator for that format,
+  not `z.string()`. Timestamps use bare `z.iso.datetime()`: the API emits `Z`-terminated RFC 3339, and
+  `{ offset: true }` would also accept `+00:00`, which nothing produces. A malformed wire format once reached production
+  through a `z.string()` field. Request schemas keep matching what the endpoint accepts, which can be looser. A GraphQL
+  format-bearing value is a server custom scalar with `@specifiedBy`, mapped in `relay.config.json` `customScalarTypes`;
+  do not add a client format check for a field the server types.
 
 ## State ownership
 

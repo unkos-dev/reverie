@@ -206,30 +206,30 @@ struct ReadingPatch {
 
 #[derive(SimpleObject)]
 struct FieldOperation {
-    operation_id: String,
+    operation_id: library::UuidValue,
     field_name: String,
-    expires_at: String,
-    status: String,
+    expires_at: library::DateTime,
+    status: FieldOperationStatus,
 }
+output_enum!(FieldOperationStatus { Eligible => "ELIGIBLE", Locked => "LOCKED", Unavailable => "UNAVAILABLE", Consumed => "CONSUMED" });
 impl From<undo::UndoOperation> for FieldOperation {
     fn from(value: undo::UndoOperation) -> Self {
         Self {
-            operation_id: value.operation_id.to_string(),
+            operation_id: library::UuidValue(value.operation_id),
             field_name: value.field_name,
-            expires_at: value.expires_at.to_string(),
+            expires_at: library::DateTime(value.expires_at),
             status: match value.status {
-                undo::OperationStatus::Eligible => "eligible",
-                undo::OperationStatus::Locked => "locked",
-                undo::OperationStatus::Unavailable => "unavailable",
-                undo::OperationStatus::Consumed => "consumed",
-            }
-            .to_owned(),
+                undo::OperationStatus::Eligible => FieldOperationStatus::Eligible,
+                undo::OperationStatus::Locked => FieldOperationStatus::Locked,
+                undo::OperationStatus::Unavailable => FieldOperationStatus::Unavailable,
+                undo::OperationStatus::Consumed => FieldOperationStatus::Consumed,
+            },
         }
     }
 }
 #[derive(SimpleObject)]
 pub(super) struct MetadataSaved {
-    request_id: Option<String>,
+    request_id: Option<library::UuidValue>,
     #[graphql(complexity = "super::complexity::weighted(144, child_complexity)?")]
     operations: Vec<FieldOperation>,
     manifestation: library::Manifestation,
@@ -309,12 +309,6 @@ impl Refusal {
     }
     fn not_found() -> Self {
         Self::NotFound(NotFound::new())
-    }
-    fn invalid(message: &str) -> Self {
-        Self::Invalid(MetadataInvalid {
-            message: message.to_owned(),
-            field_errors: Vec::new(),
-        })
     }
     fn classify(error: AppError) -> async_graphql::Result<Self> {
         Ok(match error {
@@ -491,15 +485,15 @@ impl FieldLockScope {
 #[derive(InputObject)]
 pub(super) struct UpdateMetadataInput {
     id: ID,
-    baseline: String,
-    request_id: Option<String>,
+    baseline: library::ETag,
+    request_id: Option<library::UuidValue>,
     patch: MetadataPatch,
 }
 #[derive(InputObject)]
 pub(super) struct UndoMetadataInput {
     id: ID,
-    baseline: String,
-    operation_id: String,
+    baseline: library::ETag,
+    operation_id: library::UuidValue,
 }
 #[derive(InputObject)]
 pub(super) struct AcceptMetadataVersionInput {
@@ -560,20 +554,20 @@ async fn acknowledged(
 }
 #[derive(SimpleObject)]
 pub(super) struct MetadataOperation {
-    outcome: String,
+    outcome: OperationOutcome,
     #[graphql(complexity = "super::complexity::weighted(144, child_complexity)?")]
     operations: Vec<FieldOperation>,
     metadata: library::MetadataRevision,
 }
+output_enum!(OperationOutcome { Saved => "SAVED", Restored => "RESTORED", Unknown => "UNKNOWN" });
 impl MetadataOperation {
     fn new(result: undo::OperationResult) -> async_graphql::Result<Self> {
         Ok(Self {
             outcome: match result.outcome {
-                undo::OperationOutcome::Saved => "saved",
-                undo::OperationOutcome::Restored => "restored",
-                undo::OperationOutcome::Unknown => "unknown",
-            }
-            .to_owned(),
+                undo::OperationOutcome::Saved => OperationOutcome::Saved,
+                undo::OperationOutcome::Restored => OperationOutcome::Restored,
+                undo::OperationOutcome::Unknown => OperationOutcome::Unknown,
+            },
             operations: result.operations.into_iter().map(Into::into).collect(),
             metadata: library::MetadataRevision::from_domain(&result.snapshot)?,
         })
@@ -687,16 +681,6 @@ fn target<K: id::Kind>(value: &ID) -> async_graphql::Result<Uuid> {
     K::decode(value)
         .ok_or_else(|| safe_error(AppError::Validation(format!("Invalid {} ID.", K::NAME))))
 }
-fn uuid(value: &str) -> async_graphql::Result<Uuid> {
-    value.parse().map_err(|_| {
-        safe_error(AppError::Validation(
-            "Invalid operation or request UUID.".into(),
-        ))
-    })
-}
-fn strong_baseline(value: &str) -> async_graphql::Result<StrongEntityTag> {
-    parse_strong_entity_tag(value.as_bytes()).map_err(safe_error)
-}
 fn baseline(value: Option<String>) -> async_graphql::Result<Option<StrongEntityTag>> {
     value
         .map(|value| parse_strong_entity_tag(value.as_bytes()).map_err(safe_error))
@@ -776,15 +760,11 @@ impl Mutation {
         input: UpdateMetadataInput,
     ) -> async_graphql::Result<UpdateMetadataResult> {
         adult(ctx)?;
-        let supplied = strong_baseline(&input.baseline)?;
+        let supplied = input.baseline.strong()?;
         let Some(edition) = id::Manifestation::decode(&input.id) else {
             return Refusal::not_found().into();
         };
-        let request_id = match input.request_id.as_deref().map(str::parse::<Uuid>) {
-            None => None,
-            Some(Ok(value)) => Some(value),
-            Some(Err(_)) => return Refusal::invalid("Invalid request UUID.").into(),
-        };
+        let request_id = input.request_id.map(|value| value.0);
         let selection = library::snapshot_selection(
             &ctx.look_ahead().field("manifestation").field("metadata"),
         )?;
@@ -805,7 +785,7 @@ impl Mutation {
         };
         let manifestation = acknowledged(ctx, &input.id, Some(&result.snapshot)).await?;
         Ok(UpdateMetadataResult::MetadataSaved(MetadataSaved {
-            request_id: result.request_id.map(|id| id.to_string()),
+            request_id: result.request_id.map(library::UuidValue),
             operations: result.operations.into_iter().map(Into::into).collect(),
             manifestation,
         }))
@@ -1127,13 +1107,11 @@ impl Mutation {
         if let Err(error) = undo::session_id(ctx.data()?, ctx.data()?) {
             return refused(error);
         }
-        let supplied = strong_baseline(&input.baseline)?;
-        let (Some(edition), Ok(operation_id)) = (
-            id::Manifestation::decode(&input.id),
-            input.operation_id.parse::<Uuid>(),
-        ) else {
+        let supplied = input.baseline.strong()?;
+        let Some(edition) = id::Manifestation::decode(&input.id) else {
             return Refusal::not_found().into();
         };
+        let operation_id = input.operation_id.0;
         let selection = library::snapshot_selection(
             &ctx.look_ahead().field("manifestation").field("metadata"),
         )?;
@@ -1167,8 +1145,8 @@ impl Mutation {
 pub(super) async fn metadata_operation(
     ctx: &Context<'_>,
     id: ID,
-    request_id: Option<String>,
-    operation_id: Option<String>,
+    request_id: Option<library::UuidValue>,
+    operation_id: Option<library::UuidValue>,
 ) -> async_graphql::Result<MetadataOperation> {
     adult(ctx)?;
     let selection = library::snapshot_selection(&ctx.look_ahead().field("metadata"))?;
@@ -1179,8 +1157,8 @@ pub(super) async fn metadata_operation(
             ctx.data::<Session>()?,
             target::<id::Manifestation>(&id)?,
             undo::ResolveRequest {
-                request_id: request_id.map(|value| uuid(&value)).transpose()?,
-                operation_id: operation_id.map(|value| uuid(&value)).transpose()?,
+                request_id: request_id.map(|value| value.0),
+                operation_id: operation_id.map(|value| value.0),
             },
             &selection,
         )
