@@ -14,8 +14,8 @@ use crate::extract::ApiJson;
 use crate::state::AppState;
 use id::Kind as _;
 
-macro_rules! input_enum {
-    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
+macro_rules! enum_items {
+    ($name:ident { $($variant:ident => $wire:literal),+ }) => {
         #[derive(Clone, Copy, PartialEq, Eq)]
         pub(super) enum $name { $($variant),+ }
         impl async_graphql::resolver_utils::EnumType for $name {
@@ -23,22 +23,32 @@ macro_rules! input_enum {
                 &[$(async_graphql::resolver_utils::EnumItem { name: $wire, value: Self::$variant }),+]
             }
         }
+    };
+}
+macro_rules! enum_meta {
+    ($name:ident { $($wire:literal),+ }) => {
+        async_graphql::registry::MetaType::Enum {
+            name: stringify!($name).into(), description: None,
+            enum_values: [$(($wire.into(), async_graphql::registry::MetaEnumValue {
+                name: $wire.into(), description: None,
+                deprecation: async_graphql::registry::Deprecation::NoDeprecated,
+                visible: None, inaccessible: false, tags: Vec::new(), directive_invocations: Vec::new(),
+            })),+].into_iter().collect(),
+            visible: None, inaccessible: false, tags: Vec::new(),
+            rust_typename: Some(std::any::type_name::<Self>()),
+            directive_invocations: Vec::new(), requires_scopes: Vec::new(),
+        }
+    };
+}
+macro_rules! input_enum {
+    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
+        enum_items!($name { $($variant => $wire),+ });
         impl async_graphql::InputType for $name {
             type RawValueType = Self;
             fn type_name() -> std::borrow::Cow<'static, str> { stringify!($name).into() }
             fn create_type_info(registry: &mut async_graphql::registry::Registry) -> String {
                 registry.create_input_type::<Self, _>(async_graphql::registry::MetaTypeId::Enum, |_| {
-                    async_graphql::registry::MetaType::Enum {
-                        name: stringify!($name).into(), description: None,
-                        enum_values: [$(($wire.into(), async_graphql::registry::MetaEnumValue {
-                            name: $wire.into(), description: None,
-                            deprecation: async_graphql::registry::Deprecation::NoDeprecated,
-                            visible: None, inaccessible: false, tags: Vec::new(), directive_invocations: Vec::new(),
-                        })),+].into_iter().collect(),
-                        visible: None, inaccessible: false, tags: Vec::new(),
-                        rust_typename: Some(std::any::type_name::<Self>()),
-                        directive_invocations: Vec::new(), requires_scopes: Vec::new(),
-                    }
+                    enum_meta!($name { $($wire),+ })
                 })
             }
             fn parse(value: Option<async_graphql::Value>) -> async_graphql::InputValueResult<Self> {
@@ -51,28 +61,12 @@ macro_rules! input_enum {
 }
 macro_rules! output_enum {
     ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
-        #[derive(Clone, Copy, PartialEq, Eq)]
-        pub(super) enum $name { $($variant),+ }
-        impl async_graphql::resolver_utils::EnumType for $name {
-            fn items() -> &'static [async_graphql::resolver_utils::EnumItem<Self>] {
-                &[$(async_graphql::resolver_utils::EnumItem { name: $wire, value: Self::$variant }),+]
-            }
-        }
+        enum_items!($name { $($variant => $wire),+ });
         impl async_graphql::OutputType for $name {
             fn type_name() -> std::borrow::Cow<'static, str> { stringify!($name).into() }
             fn create_type_info(registry: &mut async_graphql::registry::Registry) -> String {
                 registry.create_output_type::<Self, _>(async_graphql::registry::MetaTypeId::Enum, |_| {
-                    async_graphql::registry::MetaType::Enum {
-                        name: stringify!($name).into(), description: None,
-                        enum_values: [$(($wire.into(), async_graphql::registry::MetaEnumValue {
-                            name: $wire.into(), description: None,
-                            deprecation: async_graphql::registry::Deprecation::NoDeprecated,
-                            visible: None, inaccessible: false, tags: Vec::new(), directive_invocations: Vec::new(),
-                        })),+].into_iter().collect(),
-                        visible: None, inaccessible: false, tags: Vec::new(),
-                        rust_typename: Some(std::any::type_name::<Self>()),
-                        directive_invocations: Vec::new(), requires_scopes: Vec::new(),
-                    }
+                    enum_meta!($name { $($wire),+ })
                 })
             }
             fn resolve(
