@@ -12,7 +12,7 @@
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@11.28.12",
+  "packageManager": "pnpm@11.28.13",
   "scripts": {
     "prepare": "test ! -e .git || lefthook install",
     "build": "vp run -r build"
