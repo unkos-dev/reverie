@@ -150,7 +150,8 @@ export const mutationsUndoTitleMutation = graphql`
 `;
 
 export const mutationsResolveTitleQuery = graphql`
-  query mutationsResolveTitleQuery($id: ID!, $requestId: UUID, $operationId: UUID) {
+  query mutationsResolveTitleQuery($id: ID!, $requestId: UUID, $operationId: UUID)
+  @throwOnFieldError {
     metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
       outcome
       operations {
@@ -379,7 +380,8 @@ export const mutationsUndoAuthorsMutation = graphql`
 `;
 
 export const mutationsResolveAuthorsQuery = graphql`
-  query mutationsResolveAuthorsQuery($id: ID!, $requestId: UUID, $operationId: UUID) {
+  query mutationsResolveAuthorsQuery($id: ID!, $requestId: UUID, $operationId: UUID)
+  @throwOnFieldError {
     metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
       outcome
       operations {
@@ -705,7 +707,8 @@ export const mutationsUndoCellsMutation = graphql`
 `;
 
 export const mutationsResolveCellsQuery = graphql`
-  query mutationsResolveCellsQuery($id: ID!, $requestId: UUID, $operationId: UUID) {
+  query mutationsResolveCellsQuery($id: ID!, $requestId: UUID, $operationId: UUID)
+  @throwOnFieldError {
     metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
       outcome
       operations {

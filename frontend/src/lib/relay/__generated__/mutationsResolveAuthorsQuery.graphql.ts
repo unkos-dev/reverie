@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<e0601b551819fb0ccd8168a20895275b>>
+ * @generated SignedSource<<2c2211566993685ea0214f0df58ff25e>>
  * @relayHash 2ab1919b503cb4d7d9df93674ef1dbd1
  * @lightSyntaxTransform
  */
@@ -274,7 +274,9 @@ const node: ConcreteRequest = (function () {
     fragment: {
       argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/, v2 /*:: as any*/],
       kind: "Fragment",
-      metadata: null,
+      metadata: {
+        throwOnFieldError: true,
+      },
       name: "mutationsResolveAuthorsQuery",
       selections: [
         {
@@ -351,6 +353,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "87d16695b0f4689304c713d7b6d94f6e";
+(node as any).hash = "47fa9bcbd86713a053cf75c924040292";
 
 export default node;

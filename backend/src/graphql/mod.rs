@@ -1187,12 +1187,12 @@ mod tests {
     }
     const TITLE_READ: &str =
         "query($id: ID!) { manifestation(id: $id) { metadata { title etag } } }";
-    const TITLE_SAVE: &str = "mutation($id: ID!, $baseline: String!, $request: String, $patch: MetadataPatch!) { updateMetadata(input: {id: $id, baseline: $baseline, requestId: $request, patch: $patch}) { __typename ... on MetadataSaved { requestId operations { operationId fieldName expiresAt status } manifestation { metadata { title etag } } } } }";
+    const TITLE_SAVE: &str = "mutation($id: ID!, $baseline: ETag!, $request: UUID, $patch: MetadataPatch!) { updateMetadata(input: {id: $id, baseline: $baseline, requestId: $request, patch: $patch}) { __typename ... on MetadataSaved { requestId operations { operationId fieldName expiresAt status } manifestation { metadata { title etag } } } } }";
     const READING_READ: &str =
         "query($id: ID!) { manifestation(id: $id) { readingState { notes rating status etag } } }";
     const READING_SAVE: &str = "mutation($id: ID!, $baseline: String, $patch: ReadingPatch!) { updateReadingState(id: $id, baseline: $baseline, patch: $patch) { notes rating status etag } }";
-    const RESOLVE: &str = "query($id: ID!, $request: String, $operation: String) { metadataOperation(id: $id, requestId: $request, operationId: $operation) { outcome operations { operationId fieldName expiresAt status } metadata { title etag } } }";
-    const UNDO: &str = "mutation($id: ID!, $baseline: String!, $operation: String!) { undoMetadata(input: {id: $id, baseline: $baseline, operationId: $operation}) { __typename ... on MetadataRestored { operation { operationId fieldName expiresAt status } manifestation { metadata { title etag } } } ... on FieldsLocked { fields } } }";
+    const RESOLVE: &str = "query($id: ID!, $request: UUID, $operation: UUID) { metadataOperation(id: $id, requestId: $request, operationId: $operation) { outcome operations { operationId fieldName expiresAt status } metadata { title etag } } }";
+    const UNDO: &str = "mutation($id: ID!, $baseline: ETag!, $operation: UUID!) { undoMetadata(input: {id: $id, baseline: $baseline, operationId: $operation}) { __typename ... on MetadataRestored { operation { operationId fieldName expiresAt status } manifestation { metadata { title etag } } } ... on FieldsLocked { fields } } }";
     fn assert_request_error(value: &serde_json::Value) {
         assert!(
             value["errors"]
@@ -1276,7 +1276,7 @@ mod tests {
         )
         .await;
         assert_eq!(unknown["data"]["metadataOperation"]["outcome"], "UNKNOWN");
-        let sparse = "mutation($id:ID!, $baseline:String!, $patch:MetadataPatch!) { updateMetadata(input:{id:$id,baseline:$baseline,patch:$patch}) { ... on MetadataSaved { manifestation { metadata { title subtitle etag } } } } }";
+        let sparse = "mutation($id:ID!, $baseline:ETag!, $patch:MetadataPatch!) { updateMetadata(input:{id:$id,baseline:$baseline,patch:$patch}) { ... on MetadataSaved { manifestation { metadata { title subtitle etag } } } } }";
         let subtitle = browser_graph(
             &server,
             &csrf,
@@ -1330,7 +1330,7 @@ mod tests {
         );
         let now = browser_graph(&server, &csrf, TITLE_READ, vars.clone()).await;
         let names: Vec<_> = (0..22).map(|n| format!("Author {n:02}")).collect();
-        let author_save = "mutation($id:ID!, $baseline:String!, $patch:MetadataPatch!) { updateMetadata(input:{id:$id,baseline:$baseline,patch:$patch}) { ... on MetadataSaved { manifestation { metadata { etag authors(first:20) { edges { cursor node { name } } pageInfo { hasNextPage hasPreviousPage endCursor } } } } } } }";
+        let author_save = "mutation($id:ID!, $baseline:ETag!, $patch:MetadataPatch!) { updateMetadata(input:{id:$id,baseline:$baseline,patch:$patch}) { ... on MetadataSaved { manifestation { metadata { etag authors(first:20) { edges { cursor node { name } } pageInfo { hasNextPage hasPreviousPage endCursor } } } } } } }";
         let authors = browser_graph(&server,&csrf,author_save,json!({"id":id,"baseline":now["data"]["manifestation"]["metadata"]["etag"],"patch":{"contributors":{"author":names}}})).await;
         assert_graph_ok(&authors);
         let first = &authors["data"]["updateMetadata"]["manifestation"]["metadata"];
