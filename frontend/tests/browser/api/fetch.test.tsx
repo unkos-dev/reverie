@@ -417,7 +417,8 @@ async function graphqlBaselines(): Promise<void> {
   const tag = '"aaaaaaaaaaaaaaaaaaaaaa"';
   const newer = '"bbbbbbbbbbbbbbbbbbbbbb"';
   const latest = '"cccccccccccccccccccccc"';
-  const snapshot = { workId, manifestationId: id, etag: tag, title: "Original" };
+  const revision = (etag: string) => `metadata_rev_${etag.replaceAll('"', "")}`;
+  const snapshot = { id: revision(tag), workId, manifestationId: id, etag: tag, title: "Original" };
   const fetch = vi.spyOn(globalThis, "fetch");
   fetch.mockClear();
   const titleResponse = (metadata: unknown) =>
@@ -428,16 +429,20 @@ async function graphqlBaselines(): Promise<void> {
   }).toPromise();
   const baseline = initial?.manifestation?.metadata;
   if (baseline === undefined) throw new Error("Expected title baseline.");
-  fetch.mockResolvedValueOnce(titleResponse({ ...snapshot, title: "Background", etag: newer }));
+  fetch.mockResolvedValueOnce(
+    titleResponse({ ...snapshot, id: revision(newer), title: "Background", etag: newer }),
+  );
   await executeEditing<TitleQuery>(environment, mutationsTitleQuery, { id }).toPromise();
-  fetch.mockResolvedValueOnce(titleResponse({ workId, manifestationId: id, etag: latest }));
+  fetch.mockResolvedValueOnce(
+    titleResponse({ id: revision(latest), workId, manifestationId: id, etag: latest }),
+  );
   const sparse = await executeEditing<RevisionQuery>(environment, mutationsRevisionQuery, {
     id,
   }).toPromise();
   expect(sparse?.manifestation?.metadata).not.toHaveProperty("title");
   const operation = createOperationDescriptor(getRequest(mutationsTitleQuery), { id });
   expect(environment.lookup(operation.fragment).data).toMatchObject({
-    manifestation: { metadata: { title: "Background", etag: latest } },
+    manifestation: { metadata: { title: undefined, etag: latest } },
   });
   expect(baseline).toEqual(snapshot);
   const requestId = crypto.randomUUID();
@@ -457,7 +462,7 @@ async function graphqlBaselines(): Promise<void> {
         updateMetadata: {
           requestId,
           operations: [],
-          metadata: { ...snapshot, title: "Saved", etag: latest },
+          metadata: { ...snapshot, id: revision(latest), title: "Saved", etag: latest },
         },
       },
     }),
@@ -487,7 +492,7 @@ async function graphqlBaselines(): Promise<void> {
     errors: [{ extensions: { code: "if-match-mismatch", currentEtag: latest } }],
   });
   for (const metadata of [
-    { workId, manifestationId: id, etag: newer },
+    { id: revision(newer), workId, manifestationId: id, etag: newer },
     { ...snapshot, title: 7 },
     { ...snapshot, etag: "weak" },
   ]) {
@@ -498,11 +503,11 @@ async function graphqlBaselines(): Promise<void> {
     ).rejects.toThrow();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(environment.lookup(operation.fragment).data).toMatchObject({
-      manifestation: { metadata: { title: "Background", etag: latest } },
+      manifestation: { metadata: { title: "Saved", etag: latest } },
     });
   }
   fetch.mockResolvedValueOnce(
-    titleResponse({ ...snapshot, title: "Fresh decision", etag: latest }),
+    titleResponse({ ...snapshot, id: revision(latest), title: "Fresh decision", etag: latest }),
   );
   const fresh = await executeEditing<TitleQuery>(environment, mutationsTitleQuery, {
     id,
@@ -550,6 +555,7 @@ async function graphqlBaselines(): Promise<void> {
   ).toMatchObject({ variables: { baseline: tag } });
   expect(readBaseline).toEqual(reading);
   const authorPage = (name: string, cursor: string, hasNextPage: boolean, etag = tag) => ({
+    id: revision(etag),
     workId,
     manifestationId: id,
     etag,
@@ -558,11 +564,13 @@ async function graphqlBaselines(): Promise<void> {
         {
           cursor,
           node: {
-            id: encodeGraphQLId(
-              "Author",
-              `${cursor === "one" ? "32345678" : "42345678"}-1234-4234-8234-123456789abc`,
-            ),
             name,
+            author: {
+              id: encodeGraphQLId(
+                "Author",
+                `${cursor === "one" ? "32345678" : "42345678"}-1234-4234-8234-123456789abc`,
+              ),
+            },
           },
         },
       ],

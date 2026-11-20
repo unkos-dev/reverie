@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<a9e204efb5c58286cedb02eee1fd47fd>>
- * @relayHash ba74df637488d9a240ade4ad082d393f
+ * @generated SignedSource<<abf5ed9ac2f3633a27814559cd823acb>>
+ * @relayHash 3239afe4c89f44a1e8b5f528848582bf
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 6677f79cc5be38987d876a1840861b2e9634364b4a780b589e0fb0254ddf795e
+// @relayRequestID 9ff7b6755eec26908541476ffd1bb817d0787d4c0ef0c60118bc28680967ada9
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsAcceptMetadataVersionMutation$variables = {
@@ -23,6 +23,7 @@ export type mutationsAcceptMetadataVersionMutation$data = {
           readonly contentRating: string | null | undefined;
           readonly description: string | null | undefined;
           readonly etag: string;
+          readonly id: string;
           readonly isbn10: string | null | undefined;
           readonly isbn13: string | null | undefined;
           readonly isbnMismatch: boolean;
@@ -88,11 +89,18 @@ const node: ConcreteRequest = (function () {
           {
             alias: null,
             args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "id",
+                storageKey: null,
+              },
               {
                 alias: null,
                 args: null,
@@ -210,7 +218,7 @@ const node: ConcreteRequest = (function () {
       selections: v2 /*:: as any*/,
     },
     params: {
-      id: "6677f79cc5be38987d876a1840861b2e9634364b4a780b589e0fb0254ddf795e",
+      id: "9ff7b6755eec26908541476ffd1bb817d0787d4c0ef0c60118bc28680967ada9",
       metadata: {},
       name: "mutationsAcceptMetadataVersionMutation",
       operationKind: "mutation",

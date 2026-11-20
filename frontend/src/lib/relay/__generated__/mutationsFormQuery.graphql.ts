@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<2b7cf01d3ef9b6e72926459974b9c303>>
- * @relayHash 6f50c94ab6276d10d79ffa34ed4bcf38
+ * @generated SignedSource<<4d1885b73bc284164dcf44837eb54809>>
+ * @relayHash adaa22f2e2c7d1e2cc54075ed638af9b
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID fe24a5219c040281081ec3d584c7e484f5defeee0dfbf62d9cb0fcdb5598e395
+// @relayRequestID dcdf42bc760194e1cfba2dcd4e25b42bc058f046919aa4de586d4ece99ae65d1
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsFormQuery$variables = {
@@ -22,6 +22,7 @@ export type mutationsFormQuery$data = {
           readonly contentRating: string | null | undefined;
           readonly description: string | null | undefined;
           readonly etag: string;
+          readonly id: string;
           readonly isbn10: string | null | undefined;
           readonly isbn13: string | null | undefined;
           readonly isbnMismatch: boolean;
@@ -51,7 +52,14 @@ const node: ConcreteRequest = (function () {
         name: "id",
       },
     ],
-    v1 = [
+    v1 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
+    v2 = [
       {
         alias: null,
         args: [
@@ -66,21 +74,16 @@ const node: ConcreteRequest = (function () {
         name: "manifestation",
         plural: false,
         selections: [
+          v1 /*:: as any*/,
           {
             alias: null,
             args: null,
-            kind: "ScalarField",
-            name: "id",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              v1 /*:: as any*/,
               {
                 alias: null,
                 args: null,
@@ -192,7 +195,7 @@ const node: ConcreteRequest = (function () {
       kind: "Fragment",
       metadata: null,
       name: "mutationsFormQuery",
-      selections: v1 /*:: as any*/,
+      selections: v2 /*:: as any*/,
       type: "Query",
       abstractKey: null,
     },
@@ -201,10 +204,10 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
       name: "mutationsFormQuery",
-      selections: v1 /*:: as any*/,
+      selections: v2 /*:: as any*/,
     },
     params: {
-      id: "fe24a5219c040281081ec3d584c7e484f5defeee0dfbf62d9cb0fcdb5598e395",
+      id: "dcdf42bc760194e1cfba2dcd4e25b42bc058f046919aa4de586d4ece99ae65d1",
       metadata: {},
       name: "mutationsFormQuery",
       operationKind: "query",

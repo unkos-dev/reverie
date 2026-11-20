@@ -48,6 +48,7 @@ test("saving stores the displayed authors in displayed order, including a typed 
           manifestation: {
             id: book.id,
             metadata: {
+              id: `metadata_rev_${book.id}_${book.metadata_etag.replaceAll('"', "")}`,
               manifestationId: book.id,
               workId: book.work_id,
               etag: book.metadata_etag,
@@ -55,11 +56,13 @@ test("saving stores the displayed authors in displayed order, including a typed 
                 edges: book.authors.map((name, index) => ({
                   cursor: String(index),
                   node: {
-                    id: encodeGraphQLId(
-                      "Author",
-                      `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-                    ),
                     name,
+                    author: {
+                      id: encodeGraphQLId(
+                        "Author",
+                        `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+                      ),
+                    },
                   },
                 })),
                 pageInfo: {

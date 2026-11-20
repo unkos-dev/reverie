@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<41522e16800c9efb7fb15fb0c78b17a4>>
- * @relayHash 8ab6902201c9a433852bf7f1ebdbba8c
+ * @generated SignedSource<<978951aab38f40cc7bb634a1d348a037>>
+ * @relayHash df32d139fe3250d365717d6504c00cd1
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 508510ab512898fbfdfbf99d07467106a87a10691f0f87ac04d8c01ffec2606e
+// @relayRequestID 8c2833e944884994fa9e33f2ffd803639273aa0ef7ebe8c83c44816e43d77aef
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsUndoFormMutation$variables = {
@@ -22,6 +22,7 @@ export type mutationsUndoFormMutation$data = {
       readonly contentRating: string | null | undefined;
       readonly description: string | null | undefined;
       readonly etag: string;
+      readonly id: string;
       readonly isbn10: string | null | undefined;
       readonly isbn13: string | null | undefined;
       readonly isbnMismatch: boolean;
@@ -138,11 +139,18 @@ const node: ConcreteRequest = (function () {
           {
             alias: null,
             args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "id",
+                storageKey: null,
+              },
               {
                 alias: null,
                 args: null,
@@ -266,7 +274,7 @@ const node: ConcreteRequest = (function () {
       selections: v3 /*:: as any*/,
     },
     params: {
-      id: "508510ab512898fbfdfbf99d07467106a87a10691f0f87ac04d8c01ffec2606e",
+      id: "8c2833e944884994fa9e33f2ffd803639273aa0ef7ebe8c83c44816e43d77aef",
       metadata: {},
       name: "mutationsUndoFormMutation",
       operationKind: "mutation",

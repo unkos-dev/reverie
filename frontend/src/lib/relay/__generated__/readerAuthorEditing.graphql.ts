@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<e39d1f73ca288c9757c0531384aaa060>>
+ * @generated SignedSource<<e97a0070a3d574d11ab4e67532d72de2>>
  * @lightSyntaxTransform
  */
 
@@ -16,7 +16,9 @@ export type readerAuthorEditing$data = {
       readonly edges: ReadonlyArray<{
         readonly cursor: string;
         readonly node: {
-          readonly id: string;
+          readonly author: {
+            readonly id: string;
+          };
           readonly name: string;
         };
       }>;
@@ -95,7 +97,7 @@ const node: ReaderFragment = (function () {
       {
         alias: null,
         args: null,
-        concreteType: "MetadataSnapshot",
+        concreteType: "MetadataRevision",
         kind: "LinkedField",
         name: "metadata",
         plural: false,
@@ -124,7 +126,7 @@ const node: ReaderFragment = (function () {
           {
             alias: "authors",
             args: null,
-            concreteType: "AuthorConnection",
+            concreteType: "RevisionContributorConnection",
             kind: "LinkedField",
             name: "__readerAuthorEditing_authors_connection",
             plural: false,
@@ -132,7 +134,7 @@ const node: ReaderFragment = (function () {
               {
                 alias: null,
                 args: null,
-                concreteType: "AuthorEdge",
+                concreteType: "RevisionContributorEdge",
                 kind: "LinkedField",
                 name: "edges",
                 plural: true,
@@ -147,17 +149,26 @@ const node: ReaderFragment = (function () {
                   {
                     alias: null,
                     args: null,
-                    concreteType: "Author",
+                    concreteType: "RevisionContributor",
                     kind: "LinkedField",
                     name: "node",
                     plural: false,
                     selections: [
-                      v1 /*:: as any*/,
                       {
                         alias: null,
                         args: null,
                         kind: "ScalarField",
                         name: "name",
+                        storageKey: null,
+                      },
+                      {
+                        alias: null,
+                        args: null,
+                        concreteType: "Author",
+                        kind: "LinkedField",
+                        name: "author",
+                        plural: false,
+                        selections: [v1 /*:: as any*/],
                         storageKey: null,
                       },
                       {
@@ -224,6 +235,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "0ff4a9809ba6f6c766915e146999a535";
+(node as any).hash = "6640b823801bbb9fa2b7455b9cb9518d";
 
 export default node;

@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<a34c7c2ef596257afece32741020130a>>
+ * @generated SignedSource<<f847dc577b90e6f55d876d2b93591659>>
  * @lightSyntaxTransform
  */
 
@@ -251,7 +251,7 @@ const node: ReaderFragment = (function () {
       {
         alias: null,
         args: null,
-        concreteType: "MetadataSnapshot",
+        concreteType: "MetadataRevision",
         kind: "LinkedField",
         name: "metadata",
         plural: false,

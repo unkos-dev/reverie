@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<451276ec3dfdb10b86a600b6df796f46>>
- * @relayHash 3b19076ad9ddcbd85943465734aa4d26
+ * @generated SignedSource<<8673a2c6f3623d9e916b3e2469861b4d>>
+ * @relayHash f62a0e6d5c4e176c4424fe0a2a16123d
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID f0f870b50efb58cbab7c1f4aa8b2c0c95843fec719ad87bdbb3d7db7e83650dc
+// @relayRequestID 48d9a3151ea5d3be8246d2a1d51dc2354b957a5ef38d2bc4354e738fca33679d
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsAuthorPageQuery$variables = {
@@ -25,7 +25,9 @@ export type mutationsAuthorPageQuery$data = {
             readonly edges: ReadonlyArray<{
               readonly cursor: string;
               readonly node: {
-                readonly id: string;
+                readonly author: {
+                  readonly id: string;
+                };
                 readonly name: string;
               };
             }>;
@@ -65,170 +67,178 @@ const node: ConcreteRequest = (function () {
       kind: "LocalArgument",
       name: "id",
     },
-    v3 = {
+    v3 = [
+      {
+        kind: "Variable",
+        name: "id",
+        variableName: "id",
+      },
+    ],
+    v4 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "id",
       storageKey: null,
     },
-    v4 = [
-      {
-        alias: null,
-        args: [
-          {
-            kind: "Variable",
-            name: "id",
-            variableName: "id",
-          },
-        ],
-        concreteType: "Manifestation",
-        kind: "LinkedField",
-        name: "manifestation",
-        plural: false,
-        selections: [
-          v3 /*:: as any*/,
-          {
-            alias: null,
-            args: null,
-            concreteType: "MetadataSnapshot",
-            kind: "LinkedField",
-            name: "metadata",
-            plural: false,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "workId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "manifestationId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "etag",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: [
-                  {
-                    kind: "Variable",
-                    name: "after",
-                    variableName: "after",
-                  },
-                  {
-                    kind: "Variable",
-                    name: "first",
-                    variableName: "first",
-                  },
-                ],
-                concreteType: "AuthorConnection",
-                kind: "LinkedField",
-                name: "authors",
-                plural: false,
-                selections: [
-                  {
-                    alias: null,
-                    args: null,
-                    concreteType: "AuthorEdge",
-                    kind: "LinkedField",
-                    name: "edges",
-                    plural: true,
-                    selections: [
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "cursor",
-                        storageKey: null,
-                      },
-                      {
-                        alias: null,
-                        args: null,
-                        concreteType: "Author",
-                        kind: "LinkedField",
-                        name: "node",
-                        plural: false,
-                        selections: [
-                          v3 /*:: as any*/,
-                          {
-                            alias: null,
-                            args: null,
-                            kind: "ScalarField",
-                            name: "name",
-                            storageKey: null,
-                          },
-                        ],
-                        storageKey: null,
-                      },
-                    ],
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    concreteType: "PageInfo",
-                    kind: "LinkedField",
-                    name: "pageInfo",
-                    plural: false,
-                    selections: [
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "hasNextPage",
-                        storageKey: null,
-                      },
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "hasPreviousPage",
-                        storageKey: null,
-                      },
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "startCursor",
-                        storageKey: null,
-                      },
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "endCursor",
-                        storageKey: null,
-                      },
-                    ],
-                    storageKey: null,
-                  },
-                ],
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-        ],
-        storageKey: null,
-      },
-    ];
+    v5 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "workId",
+      storageKey: null,
+    },
+    v6 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "manifestationId",
+      storageKey: null,
+    },
+    v7 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "etag",
+      storageKey: null,
+    },
+    v8 = {
+      alias: null,
+      args: [
+        {
+          kind: "Variable",
+          name: "after",
+          variableName: "after",
+        },
+        {
+          kind: "Variable",
+          name: "first",
+          variableName: "first",
+        },
+      ],
+      concreteType: "RevisionContributorConnection",
+      kind: "LinkedField",
+      name: "authors",
+      plural: false,
+      selections: [
+        {
+          alias: null,
+          args: null,
+          concreteType: "RevisionContributorEdge",
+          kind: "LinkedField",
+          name: "edges",
+          plural: true,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "cursor",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              concreteType: "RevisionContributor",
+              kind: "LinkedField",
+              name: "node",
+              plural: false,
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "name",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "Author",
+                  kind: "LinkedField",
+                  name: "author",
+                  plural: false,
+                  selections: [v4 /*:: as any*/],
+                  storageKey: null,
+                },
+              ],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          concreteType: "PageInfo",
+          kind: "LinkedField",
+          name: "pageInfo",
+          plural: false,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "hasNextPage",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "hasPreviousPage",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "startCursor",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "endCursor",
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
+      storageKey: null,
+    };
   return {
     fragment: {
       argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/, v2 /*:: as any*/],
       kind: "Fragment",
       metadata: null,
       name: "mutationsAuthorPageQuery",
-      selections: v4 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v3 /*:: as any*/,
+          concreteType: "Manifestation",
+          kind: "LinkedField",
+          name: "manifestation",
+          plural: false,
+          selections: [
+            v4 /*:: as any*/,
+            {
+              alias: null,
+              args: null,
+              concreteType: "MetadataRevision",
+              kind: "LinkedField",
+              name: "metadata",
+              plural: false,
+              selections: [v5 /*:: as any*/, v6 /*:: as any*/, v7 /*:: as any*/, v8 /*:: as any*/],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
       type: "Query",
       abstractKey: null,
     },
@@ -237,10 +247,39 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: [v2 /*:: as any*/, v1 /*:: as any*/, v0 /*:: as any*/],
       kind: "Operation",
       name: "mutationsAuthorPageQuery",
-      selections: v4 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v3 /*:: as any*/,
+          concreteType: "Manifestation",
+          kind: "LinkedField",
+          name: "manifestation",
+          plural: false,
+          selections: [
+            v4 /*:: as any*/,
+            {
+              alias: null,
+              args: null,
+              concreteType: "MetadataRevision",
+              kind: "LinkedField",
+              name: "metadata",
+              plural: false,
+              selections: [
+                v5 /*:: as any*/,
+                v6 /*:: as any*/,
+                v7 /*:: as any*/,
+                v8 /*:: as any*/,
+                v4 /*:: as any*/,
+              ],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
     },
     params: {
-      id: "f0f870b50efb58cbab7c1f4aa8b2c0c95843fec719ad87bdbb3d7db7e83650dc",
+      id: "48d9a3151ea5d3be8246d2a1d51dc2354b957a5ef38d2bc4354e738fca33679d",
       metadata: {},
       name: "mutationsAuthorPageQuery",
       operationKind: "query",
@@ -249,6 +288,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "a548b3f522d5f721c1d0ff4295ef16cb";
+(node as any).hash = "b2a8c9348e6c0b6dc9534e32df5bd6e5";
 
 export default node;

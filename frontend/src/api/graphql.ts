@@ -211,7 +211,7 @@ const authorSnapshot = revision.extend({
     edges: z.array(
       z.object({
         cursor: z.string(),
-        node: z.object({ id: domainId("Author"), name: z.string() }),
+        node: z.object({ name: z.string(), author: z.object({ id: domainId("Author") }) }),
       }),
     ),
     pageInfo: pageInfo.refine(
@@ -527,7 +527,9 @@ export function captureAuthorPages(pages: readonly AuthorPage[]): {
       (after === null && snapshot.authors.pageInfo.hasPreviousPage)
     )
       throw new Error("Author pages do not form one matched field.");
-    authors.push(...snapshot.authors.edges.map((edge) => edge.node));
+    authors.push(
+      ...snapshot.authors.edges.map(({ node }) => ({ id: node.author.id, name: node.name })),
+    );
     after = snapshot.authors.pageInfo.endCursor;
     hasNext = snapshot.authors.pageInfo.hasNextPage;
     if (hasNext && after === null) throw new Error("An author continuation cursor is required.");

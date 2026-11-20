@@ -126,6 +126,7 @@ function graphBook(book: typeof BOOK) {
       selectedSeries: null,
     },
     metadata: {
+      id: `metadata_rev_${book.id}_${book.metadata_etag.replaceAll('"', "")}`,
       manifestationId: graphId("Manifestation", book.id),
       workId: graphId("Work", book.work_id),
       etag: book.metadata_etag,

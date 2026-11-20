@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<7dbf321a3f69a817bed5859054150c92>>
- * @relayHash 93280cd2056ae60a8fad45268329d146
+ * @generated SignedSource<<316c6b97c30f688b2096be33bd75678f>>
+ * @relayHash 79da138859394384b08b58fa798edb09
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 242de783e8572bcd63626db7184bae8c65fc0481f1dc0e315907aaa5c44c4c1f
+// @relayRequestID c8787f0458a960eda7da660ac969f1efc294c76a0ec92b04eb65c73643884030
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -77,6 +77,7 @@ export type readerLibraryQuery$rawResponse = {
         readonly isbn13: string | null | undefined;
         readonly metadata: {
           readonly etag: string;
+          readonly id: string;
           readonly isbn13: string | null | undefined;
           readonly manifestationId: string;
           readonly pages: number | null | undefined;
@@ -436,7 +437,7 @@ const node: ConcreteRequest = (function () {
                     {
                       alias: null,
                       args: null,
-                      concreteType: "MetadataSnapshot",
+                      concreteType: "MetadataRevision",
                       kind: "LinkedField",
                       name: "metadata",
                       plural: false,
@@ -460,6 +461,7 @@ const node: ConcreteRequest = (function () {
                         v12 /*:: as any*/,
                         v9 /*:: as any*/,
                         v10 /*:: as any*/,
+                        v8 /*:: as any*/,
                       ],
                       storageKey: null,
                     },
@@ -560,7 +562,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "242de783e8572bcd63626db7184bae8c65fc0481f1dc0e315907aaa5c44c4c1f",
+      id: "c8787f0458a960eda7da660ac969f1efc294c76a0ec92b04eb65c73643884030",
       metadata: {},
       name: "readerLibraryQuery",
       operationKind: "query",

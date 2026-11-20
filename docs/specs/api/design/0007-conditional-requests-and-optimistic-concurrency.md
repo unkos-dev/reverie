@@ -190,9 +190,10 @@ hostile party (the server always recomputes the tag from its own row rather than
 data).
 
 Reader editing snapshots live in their retained raw execution owner and owning draft. Relay owns normalised display
-records. A retained dialog draft owns its initial snapshot until an explicit matched reset. The Library table-editing
-owner holds at most ten field operations in memory. Leaving Library or table editing clears them; filtering, sorting,
-loading and empty results preserve them.
+records. Each metadata revision is its own Relay record, so a store merge cannot pair one revision's values with another
+revision's entity-tag. A retained dialog draft owns its initial snapshot until an explicit matched reset. The Library
+table-editing owner holds at most ten field operations in memory. Leaving Library or table editing clears them;
+filtering, sorting, loading and empty results preserve them.
 
 ## Runtime behaviour
 

@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<cf4af2176bcf7a394ca0fe86cbfc8b4a>>
+ * @generated SignedSource<<56b2b8db69b6e2292d7af6213eec4546>>
  * @lightSyntaxTransform
  */
 
@@ -13,6 +13,7 @@ export type mutationsFormSnapshot$data = {
   readonly contentRating: string | null | undefined;
   readonly description: string | null | undefined;
   readonly etag: string;
+  readonly id: string;
   readonly isbn10: string | null | undefined;
   readonly isbn13: string | null | undefined;
   readonly isbnMismatch: boolean;
@@ -37,6 +38,13 @@ const node: ReaderFragment = {
   metadata: null,
   name: "mutationsFormSnapshot",
   selections: [
+    {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
     {
       alias: null,
       args: null,
@@ -136,10 +144,10 @@ const node: ReaderFragment = {
       storageKey: null,
     },
   ],
-  type: "MetadataSnapshot",
+  type: "MetadataRevision",
   abstractKey: null,
 };
 
-(node as any).hash = "f4c9b1ee732273562bf07e3327a21aec";
+(node as any).hash = "33e9162afda879ba6052b1708fe383ef";
 
 export default node;

@@ -293,7 +293,7 @@ type Manifestation implements Node @fetchable(field_name: "id") {
   validationStatus: String!
   enrichmentStatus: String!
   readingState: ReadingState!
-  metadata: MetadataSnapshot!
+  metadata: MetadataRevision!
   genres(first: Int!, after: String): GenreConnection!
   moods(first: Int!, after: String): MoodConnection!
   tags(first: Int!, after: String): TagConnection!
@@ -333,7 +333,7 @@ type ManifestationEdge {
 type MetadataOperation {
   outcome: String!
   operations: [FieldOperation!]!
-  metadata: MetadataSnapshot!
+  metadata: MetadataRevision!
 }
 
 input MetadataPatch {
@@ -361,16 +361,11 @@ type MetadataRefresh {
 
 type MetadataReview {
   manifestationId: ID!
-  metadata: MetadataSnapshot
+  metadata: MetadataRevision
 }
 
-type MetadataSave {
-  requestId: String
-  operations: [FieldOperation!]!
-  metadata: MetadataSnapshot!
-}
-
-type MetadataSnapshot {
+type MetadataRevision {
+  id: ID!
   isbnMismatch: Boolean!
   workId: ID!
   manifestationId: ID!
@@ -385,13 +380,19 @@ type MetadataSnapshot {
   publisher: String
   publicationDate: String
   contentRating: String
-  authors(first: Int!, after: String): AuthorConnection!
-  contributors(first: Int!, after: String): AuthorConnection!
-  genres(first: Int!, after: String): GenreConnection!
-  moods(first: Int!, after: String): MoodConnection!
-  tags(first: Int!, after: String): TagConnection!
+  authors(first: Int!, after: String): RevisionContributorConnection!
+  contributors(first: Int!, after: String): RevisionContributorConnection!
+  genres(first: Int!, after: String): RevisionGenreConnection!
+  moods(first: Int!, after: String): RevisionMoodConnection!
+  tags(first: Int!, after: String): RevisionTagConnection!
   workIdentifiers(first: Int!, after: String): ExternalIdentifierConnection!
   manifestationIdentifiers(first: Int!, after: String): ExternalIdentifierConnection!
+}
+
+type MetadataSave {
+  requestId: String
+  operations: [FieldOperation!]!
+  metadata: MetadataRevision!
 }
 
 type MetadataVersion {
@@ -601,6 +602,144 @@ input RenameShelfInput {
 }
 
 union RenameShelfResult = ShelfRenamed | ShelfNameInvalid | SystemShelfImmutable | NotFound
+
+type RevisionContributor {
+  name: String!
+  author: Author!
+}
+
+type RevisionContributorConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [RevisionContributorEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [RevisionContributor!]!
+}
+
+"""
+An edge in a connection.
+"""
+type RevisionContributorEdge {
+  """
+  The item at the end of the edge
+  """
+  node: RevisionContributor!
+  role: String!
+  position: Int!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type RevisionGenre {
+  name: String!
+  genre: Genre!
+}
+
+type RevisionGenreConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [RevisionGenreEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [RevisionGenre!]!
+}
+
+"""
+An edge in a connection.
+"""
+type RevisionGenreEdge {
+  """
+  The item at the end of the edge
+  """
+  node: RevisionGenre!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type RevisionMood {
+  name: String!
+  mood: Mood!
+}
+
+type RevisionMoodConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [RevisionMoodEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [RevisionMood!]!
+}
+
+"""
+An edge in a connection.
+"""
+type RevisionMoodEdge {
+  """
+  The item at the end of the edge
+  """
+  node: RevisionMood!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
+
+type RevisionTag {
+  name: String!
+  tag: Tag!
+}
+
+type RevisionTagConnection {
+  """
+  Information to aid in pagination.
+  """
+  pageInfo: PageInfo!
+  """
+  A list of edges.
+  """
+  edges: [RevisionTagEdge!]!
+  """
+  A list of nodes.
+  """
+  nodes: [RevisionTag!]!
+}
+
+"""
+An edge in a connection.
+"""
+type RevisionTagEdge {
+  """
+  The item at the end of the edge
+  """
+  node: RevisionTag!
+  """
+  A cursor for use in pagination
+  """
+  cursor: String!
+}
 
 type SearchHit {
   manifestation: Manifestation

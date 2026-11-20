@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<2f2f497eefc45390fa0f801f238d41bd>>
- * @relayHash 3ba2ab1fb6129f9f02e63962dd2ffe4a
+ * @generated SignedSource<<1acc0ea771d32db6623aabd91ffb9adc>>
+ * @relayHash 6355b9b58fbb02f99511809c8fa11c5e
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 5cd8056a2368a9abe2d747ae77027c73a69c90ab88af97c4d1227326560fcf7b
+// @relayRequestID 941ae2c1b433f1a2f53fc0792294e9caaa0ea390a172cc0609bb639ba16cfad7
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsTitleQuery$variables = {
@@ -20,6 +20,7 @@ export type mutationsTitleQuery$data = {
         readonly id: string;
         readonly metadata: {
           readonly etag: string;
+          readonly id: string;
           readonly manifestationId: string;
           readonly title: string;
           readonly workId: string;
@@ -41,7 +42,14 @@ const node: ConcreteRequest = (function () {
         name: "id",
       },
     ],
-    v1 = [
+    v1 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
+    v2 = [
       {
         alias: null,
         args: [
@@ -56,21 +64,16 @@ const node: ConcreteRequest = (function () {
         name: "manifestation",
         plural: false,
         selections: [
+          v1 /*:: as any*/,
           {
             alias: null,
             args: null,
-            kind: "ScalarField",
-            name: "id",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              v1 /*:: as any*/,
               {
                 alias: null,
                 args: null,
@@ -112,7 +115,7 @@ const node: ConcreteRequest = (function () {
       kind: "Fragment",
       metadata: null,
       name: "mutationsTitleQuery",
-      selections: v1 /*:: as any*/,
+      selections: v2 /*:: as any*/,
       type: "Query",
       abstractKey: null,
     },
@@ -121,10 +124,10 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
       name: "mutationsTitleQuery",
-      selections: v1 /*:: as any*/,
+      selections: v2 /*:: as any*/,
     },
     params: {
-      id: "5cd8056a2368a9abe2d747ae77027c73a69c90ab88af97c4d1227326560fcf7b",
+      id: "941ae2c1b433f1a2f53fc0792294e9caaa0ea390a172cc0609bb639ba16cfad7",
       metadata: {},
       name: "mutationsTitleQuery",
       operationKind: "query",

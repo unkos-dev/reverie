@@ -120,6 +120,7 @@ function refusal(code: string, errors?: Record<string, string>): Response {
 const pageInfo = { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null };
 function metadata(book: BookListItem) {
   return {
+    id: `metadata_rev_${book.id}_${book.metadata_etag.replaceAll('"', "")}`,
     workId: encodeGraphQLId("Work", book.work_id),
     manifestationId: encodeGraphQLId("Manifestation", book.id),
     etag: book.metadata_etag,

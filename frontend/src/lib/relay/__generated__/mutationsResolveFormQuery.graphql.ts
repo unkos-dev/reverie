@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<0480bd2933eae5db25e988eac61dbc9e>>
- * @relayHash 1f85a67253fb464323c933020f6b448c
+ * @generated SignedSource<<f8a3c07804921407d3ffdc5662fed35f>>
+ * @relayHash e0c3655509a7746c71a773fe5b9dc6f0
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 15e9cc9dca8d51c00953141bbb203ad50cc3c0dbc050843534702a1ad31e5e16
+// @relayRequestID edbb636abc0dc5755fdfa3c9e7de5bfa211444a3df7b4f5cc7578918ae83d202
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsResolveFormQuery$variables = {
@@ -22,6 +22,7 @@ export type mutationsResolveFormQuery$data = {
       readonly contentRating: string | null | undefined;
       readonly description: string | null | undefined;
       readonly etag: string;
+      readonly id: string;
       readonly isbn10: string | null | undefined;
       readonly isbn13: string | null | undefined;
       readonly isbnMismatch: boolean;
@@ -138,11 +139,18 @@ const node: ConcreteRequest = (function () {
           {
             alias: null,
             args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "id",
+                storageKey: null,
+              },
               {
                 alias: null,
                 args: null,
@@ -266,7 +274,7 @@ const node: ConcreteRequest = (function () {
       selections: v3 /*:: as any*/,
     },
     params: {
-      id: "15e9cc9dca8d51c00953141bbb203ad50cc3c0dbc050843534702a1ad31e5e16",
+      id: "edbb636abc0dc5755fdfa3c9e7de5bfa211444a3df7b4f5cc7578918ae83d202",
       metadata: {},
       name: "mutationsResolveFormQuery",
       operationKind: "query",

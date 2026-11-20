@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<f9db47c4b7cfdd9f57b1a068e44838a6>>
- * @relayHash 06c12f19e154765333f2a5e643851329
+ * @generated SignedSource<<e511c1fb706429855e0d59f77e5190de>>
+ * @relayHash 21047b0f5bdedacb50303b6d7297d680
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID aafae73f8200d776d0356648a5983defe40e08db7533b5b2f3194e6391f152a4
+// @relayRequestID 791814818afcb8dd94d9b326eebf9ff557d6251c5d4481fb4ec54e5b2e36da07
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -130,7 +130,7 @@ const node: ConcreteRequest = (function () {
             {
               alias: null,
               args: null,
-              concreteType: "MetadataSnapshot",
+              concreteType: "MetadataRevision",
               kind: "LinkedField",
               name: "metadata",
               plural: false,
@@ -159,7 +159,7 @@ const node: ConcreteRequest = (function () {
                 {
                   alias: null,
                   args: v3 /*:: as any*/,
-                  concreteType: "AuthorConnection",
+                  concreteType: "RevisionContributorConnection",
                   kind: "LinkedField",
                   name: "authors",
                   plural: false,
@@ -167,7 +167,7 @@ const node: ConcreteRequest = (function () {
                     {
                       alias: null,
                       args: null,
-                      concreteType: "AuthorEdge",
+                      concreteType: "RevisionContributorEdge",
                       kind: "LinkedField",
                       name: "edges",
                       plural: true,
@@ -182,17 +182,26 @@ const node: ConcreteRequest = (function () {
                         {
                           alias: null,
                           args: null,
-                          concreteType: "Author",
+                          concreteType: "RevisionContributor",
                           kind: "LinkedField",
                           name: "node",
                           plural: false,
                           selections: [
-                            v2 /*:: as any*/,
                             {
                               alias: null,
                               args: null,
                               kind: "ScalarField",
                               name: "name",
+                              storageKey: null,
+                            },
+                            {
+                              alias: null,
+                              args: null,
+                              concreteType: "Author",
+                              kind: "LinkedField",
+                              name: "author",
+                              plural: false,
+                              selections: [v2 /*:: as any*/],
                               storageKey: null,
                             },
                             {
@@ -259,6 +268,7 @@ const node: ConcreteRequest = (function () {
                   kind: "LinkedHandle",
                   name: "authors",
                 },
+                v2 /*:: as any*/,
               ],
               storageKey: null,
             },
@@ -268,7 +278,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "aafae73f8200d776d0356648a5983defe40e08db7533b5b2f3194e6391f152a4",
+      id: "791814818afcb8dd94d9b326eebf9ff557d6251c5d4481fb4ec54e5b2e36da07",
       metadata: {},
       name: "readerAuthorEditingPaginationQuery",
       operationKind: "query",
@@ -277,6 +287,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "0ff4a9809ba6f6c766915e146999a535";
+(node as any).hash = "6640b823801bbb9fa2b7455b9cb9518d";
 
 export default node;

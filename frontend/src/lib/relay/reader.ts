@@ -406,8 +406,10 @@ export const readerAuthorEditing = graphql`
         edges {
           cursor
           node {
-            id
             name
+            author {
+              id
+            }
           }
         }
         pageInfo {
