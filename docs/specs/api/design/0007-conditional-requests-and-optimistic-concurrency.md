@@ -7,6 +7,8 @@ satisfies:
   - "REV-REQ-0018"
   - "REV-REQ-0019"
   - "REV-REQ-0020"
+  - "REV-REQ-0082"
+  - "REV-REQ-0083"
 governed-by:
   - "REV-ADR-0011"
   - "REV-ADR-0069"
@@ -25,8 +27,8 @@ them; the shared hash-based tag constructor and `If-Match` parser in `backend/sr
 `StrongEntityTag`, `parse_if_match`, `if_match_mismatch`); the precondition contract common to every protected endpoint
 (missing header returns `428`, a mismatched tag returns `412`, a malformed or policy-refused header is rejected before
 either) and the point in each handler where that contract is evaluated relative to the existence check and the request
-body's own semantic validation; and the explicit client baselines in `frontend/src/api/books.ts`, `reading.ts` and
-`fetch.ts`.
+body's own semantic validation; and the explicit client baselines in `frontend/src/api/books.ts`, `reading.ts`,
+`fetch.ts` and `graphql.ts`.
 
 It does not own the business logic of any endpoint that uses this contract: what fields
 `PATCH /api/v1/books/{id}/reading` may change and its transition-stamp rules (the Design "Reading state"), the per-field
@@ -82,16 +84,15 @@ that changes without a revision, the last successful live reload, is served sepa
 `parse_if_match` reads the request's `If-Match` header and returns `Ok(None)` when absent, `Ok(Some(StrongEntityTag))`
 for one well-formed strong tag, or `Err(AppError::MalformedHeader)`. It rejects more than one `If-Match` header instance
 before reading either value (the list form expressed as repeated field instances). For the single value it then parses,
-`parse_strong_entity_tag` trims RFC 9110 §5.6.3 `OWS` (space and horizontal tab only) from the edges, operating on bytes
-rather than `&str` because the grammar's `obs-text` range (`%x80`-`%xFF`) is not valid UTF-8; `str::trim`'s Unicode
-whitespace handling would both mishandle `obs-text` and strip octets the grammar treats as legitimate content. It
-rejects the `*` wildcard before the quoting check, so a wildcard gets its own message rather than "not quoted"; rejects
-a `W/` weak-validator prefix; rejects a value with no matching surrounding quotes; and rejects an inner `DQUOTE` (a
-comma-separated list's boundary, or garbage) before the general `etagc` grammar check. The resulting `StrongEntityTag`
-is the only way past this function, so any value reaching a handler is already known to satisfy the grammar and carry no
-weak prefix. Its `matches` method compares the stored quoted wire form against a `HeaderValue`'s bytes with octet
-equality, no normalisation or case-folding. `if_match_mismatch` builds the `412` response for a stale tag and inserts
-the resource's current `ETag` into it, so a caller can recover in one round trip instead of issuing a follow-up `GET`.
+`parse_strong_entity_tag` trims RFC 9110 §5.6.3 `OWS` (space and horizontal tab only) from the edges. It operates on
+bytes rather than `&str`, so the grammar's `obs-text` range (`%x80`-`%xFF`), which is not valid UTF-8, parses as
+content. It rejects the `*` wildcard before the quoting check, so a wildcard gets its own message rather than "not
+quoted"; rejects a `W/` weak-validator prefix; rejects a value with no matching surrounding quotes; and rejects an inner
+`DQUOTE` (a comma-separated list's boundary, or garbage) before the general `etagc` grammar check. The resulting
+`StrongEntityTag` is the only way past this function, so any value reaching a handler is already known to satisfy the
+grammar and carry no weak prefix. Its `matches` method compares the stored quoted wire form against a `HeaderValue`'s
+bytes with octet equality, no normalisation or case-folding. `if_match_mismatch` builds the `412` response for a stale
+tag and inserts the resource's current `ETag` into it.
 
 ### The precondition contract's evaluation order
 
@@ -101,7 +102,7 @@ or null is a request error before execution, and a malformed tag fails scalar co
 operation runs. The GraphQL reading patch takes a nullable `baseline` argument whose omission or null produces
 `if-match-required` and whose malformed input produces `malformed-header`. Every form uses the same strong-tag parser. A
 locked mismatch returns the `StaleBaseline` union member for metadata saves and Undo, and `if-match-mismatch` with
-`currentEtag` for the reading patch. Both transports call the same operations. Their relative order is:
+`currentEtag` for the reading patch. Both transports call the same operations. Over HTTP, their relative order is:
 `CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header and rejecting it as
 absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
 
@@ -116,17 +117,17 @@ same lock.
 
 The entity-tag comparison against the locked row runs next, returning `412` on a mismatch. Semantic body validation runs
 only once the precondition holds: an empty patch, an out-of-range rating, or settings field validation and the
-provider-key registry check. RFC 9110 §13.2.1 places precondition evaluation after the normal request checks and before
-the request content is processed, so a caller holding a stale representation learns that first and refetches.
+provider-key registry check. This order follows RFC 9110 §13.2.1, which places precondition evaluation after the normal
+request checks and before the request content is processed.
 
 ### Client editing baselines
 
-GraphQL editing documents validate their selected values and revision before Relay publication. `executeEditing` uses
-raw `environment.execute` or `executeMutation` payload data to capture validated values and their matching validator
-together in a detached projection. It never derives a baseline from a merged store read or `commitMutation.onCompleted`.
-A whole-list author replacement requires all pages of that field at one revision, with a complete cursor chain.
-`captureAuthorPages` enforces that pairing. A newer token without the selected values cannot replace a captured
-baseline.
+GraphQL editing responses publish only with a valid envelope. Server-typed scalars and enums guarantee the formats of
+metadata values and validators, and the author-list documents keep a selected projection. `executeEditing` captures
+values and their matching validator together from the raw `environment.execute` or `executeMutation` payload, in a
+detached copy. It never derives a baseline from a merged store read or `commitMutation.onCompleted`. A whole-list author
+replacement requires all pages of that field at one revision, with a complete cursor chain. `captureAuthorPages`
+enforces that pairing. A newer token without the selected values cannot replace a captured baseline.
 
 `apiFetchWithHeaders` returns a decoded body and response headers without retaining entity-tags. Metadata and reading
 adapters validate the complete body and require the matching strong response ETag before publishing one snapshot. List
@@ -155,11 +156,6 @@ a `428` the same as a `412` for recovery purposes: reload a matched representati
 
 ## Interfaces and dependencies
 
-Exact metadata Undo uses the same strong aggregate precondition as PATCH. It requires `If-Match` before database writes
-and compares it under edition and work locks. Selected-field eligibility is an additional decision, independent of
-aggregate freshness. Operation resolution supplies current complete metadata and its matching ETag without replaying
-writes. It cannot authorise an ordinary save from retained draft values.
-
 - `hash_etag<T: Serialize>(state: &T) -> Result<HeaderValue, AppError>` and
   `parse_if_match(headers: &HeaderMap) -> Result<Option<StrongEntityTag>, AppError>` build and read a tag;
   `StrongEntityTag::matches(&self, current: &HeaderValue) -> bool` compares one, and
@@ -186,11 +182,9 @@ an explicit database snapshot:
 
 No shelf endpoint emits an `ETag` or reads an `If-Match` header.
 
-`ETAG_HASH_BYTES` (16, i.e. 128 bits of the SHA-256 digest) is the only adjustable value in the hashing path;
-`etag.rs`'s own comment records the rationale as collision resistance sufficient for concurrency checks between a
-handful of concurrent editors, traded against header compactness, not a cryptographic integrity guarantee against a
-hostile party (the server always recomputes the tag from its own row rather than trusting a client-supplied hash as
-data).
+`ETAG_HASH_BYTES` (16, i.e. 128 bits of the SHA-256 digest) is the only adjustable value in the hashing path. A tag is a
+concurrency validator, not an integrity guarantee: the server always recomputes the tag from its own row and never
+trusts a client-supplied hash as data.
 
 Reader editing snapshots live in their retained raw execution owner and owning draft. Relay owns normalised display
 records. Each metadata revision is its own Relay record, so a store merge cannot pair one revision's values with another
@@ -211,6 +205,11 @@ Conflicts not confirmed as saved offer matched Reload, validation failures retai
 refusals retain specific feedback. Neither flow automatically replays a save or infers metadata success from equal
 values. A saved resolution adopts its selected values and matching ETag; table resolutions retain eligible operations
 once.
+
+Exact metadata Undo uses the same strong aggregate precondition as PATCH. It requires its baseline before database
+writes and compares it under edition and work locks. Selected-field eligibility is an additional decision, independent
+of aggregate freshness. Operation resolution supplies current complete metadata and its matching ETag without replaying
+writes. It cannot authorise an ordinary save from retained draft values.
 
 Undo sends one operation and its retained aggregate validator. After uncertainty or a stale baseline, a selected raw
 execution resolves that same operation and retries once only when the server confirms it eligible and unlocked. The
@@ -245,14 +244,10 @@ endpoints, the scope/role check (`require_scope`, and `require_not_child` or `re
 row-level-security or ownership check both run independently of the `If-Match` comparison, and both run before it (see
 Structure's evaluation-order description) — a caller who lacks read access to a resource is refused with
 `401`/`403`/`404` before the entity-tag comparison ever executes, so the `412` response's echoed current tag never
-reaches a caller who could not already read the resource through its own `GET`. Rejecting the `*` wildcard, weak
-validators, and entity-tag lists is a deliberate policy choice on top of the RFC 9110 grammar: `etag.rs`'s own doc
-comment states the wildcard is refused because "accepting the wildcard would let a caller opt out of the freshness check
-it exists to enforce" — accepting any of these forms as satisfying `If-Match` would let a caller skip the comparison
-this subject exists to perform, not gain unauthorised access. The byte-level, obs-text-aware grammar parsing in the
-shared module exists to avoid rejecting a well-formed opaque tag, not as a defence against a crafted header; `http`'s
-own header-value construction already refuses the C0 control characters and DEL that the parser tests exercise
-defensively for inputs a `HeaderValue` cannot itself represent in production.
+reaches a caller who could not already read the resource through its own `GET`. The shared parser refuses the `*`
+wildcard, weak validators and entity-tag lists on top of the RFC 9110 grammar, so no `If-Match` form satisfies the
+precondition without a strong comparison. Its byte-level grammar parsing is not a defence against a crafted header:
+`http`'s header-value construction already refuses C0 control characters and DEL.
 
 The shared module's `400` conforms to the status REV-ADR-0011's own status-code-selection rule assigns to a
 syntactically refused header form. Every malformed or policy-refused form is refused as satisfying nothing on all three

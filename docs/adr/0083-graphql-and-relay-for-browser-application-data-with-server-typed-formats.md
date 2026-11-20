@@ -19,8 +19,9 @@ whose formats are wrong before a reader acts on it. A client check written per o
 any operation it does not list, while the server already holds the typed value each field is produced from. Where should
 the formats of browser GraphQL data be guaranteed, and what does the browser still check?
 
-The decision also restates the surrounding choices it depends on: GraphQL and Relay for browser application data,
-trusted-document admission, the retained HTTP contracts and the GraphQL server library.
+This record would replace REV-ADR-0077, which chose GraphQL and Relay for browser application data with browser checks
+of custom scalar formats. It restates the surrounding choices from that record that it depends on: GraphQL and Relay for
+browser application data, trusted-document admission, the retained HTTP contracts and the GraphQL server library.
 
 ## Decision drivers
 

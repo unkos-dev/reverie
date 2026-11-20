@@ -18,6 +18,8 @@ satisfies:
   - "REV-REQ-0035"
   - "REV-REQ-0036"
   - "REV-REQ-0079"
+  - "REV-REQ-0082"
+  - "REV-REQ-0083"
 governed-by:
   - "REV-ADR-0077"
   - "REV-ADR-0079"
@@ -94,9 +96,9 @@ Relay compiler maps each to `string`.
 
 A value that fails input coercion is an execution error with code `validation` on the field that received it, so the
 operation begins no write. Output values come from typed server state. `FieldOperationStatus` and `OperationOutcome` are
-enums. ISBN-10, ISBN-13, publication date and language stay `String`: their inputs must remain `String` so that domain
-validation can return field feedback, and stored values such as year-only publication dates must stay readable. Reading
-state still carries its validator, timestamps and status as `String`.
+enums. ISBN-10, ISBN-13, publication date and language stay `String`. Domain validation checks their input and returns
+field feedback, and a stored year-only publication date reads as written. Reading state still carries its validator,
+timestamps and status as `String`.
 
 IDs are TypeIDs: a lowercase type prefix, `_`, then the record UUID in 26 lowercase characters of the TypeID base32
 alphabet. The prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`, `tag`, `genre`, `mood`,
@@ -234,11 +236,12 @@ errors and do not publish partial data or trigger a resend.
 
 The book, series, shelf and shelves route queries, the fragments those pages read, and `CommandPaletteQuery` carry
 `@throwOnFieldError`. A field error or data missing after a graph relationship change throws to the nearest error
-boundary: the route `errorElement`, or the command palette's own boundary. The edit sheet's `mutationsFormQuery` and the
-`mutationsFormSnapshot` fragment it reads carry the directive too. Refusal selections shared through
-`@relay(mask: false)` spreads in mutation payloads (`mutationsSaveRefusal`, `mutationsUndoRefusal`) carry none, because
-Relay accepts the directive only on queries and fragments read as their own unit. The schema marks a field non-null when
-null is not a valid domain value.
+boundary: the route `errorElement`, or the command palette's own boundary. The edit sheet's `mutationsFormQuery`, the
+`mutationsFormSnapshot` fragment it reads, and the title, author and cell resolution queries carry the directive too.
+The resolution queries run as raw executions, where the directive does not change the failure path. Refusal selections
+shared through `@relay(mask: false)` spreads in mutation payloads (`mutationsSaveRefusal`, `mutationsUndoRefusal`) carry
+none. Relay accepts the directive only on queries and fragments read as their own unit. The schema marks a field
+non-null when null is not a valid domain value.
 
 Each reader route loader starts its query with `loadQuery`, which retains the operation from load start. The loader
 awaits the same in-flight request for its not-found check and breadcrumb title. Abort, failure, a not-found result or an

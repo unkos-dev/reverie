@@ -2,19 +2,20 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0020"
-title: "A precondition-protected write answers 428 without If-Match"
+title: "A precondition-protected write without its validator is refused before it begins"
 governed-by:
   - "REV-ADR-0011"
 ---
 
-# A precondition-protected write answers 428 without If-Match
+# A precondition-protected write without its validator is refused before it begins
 
 ## Statement
 
 WHEN a `PATCH` request to a book's metadata resource, a `PATCH` request to a book's reading-state resource, or a `PUT`
 request to the settings resource carries no `If-Match` header, the server MUST answer `428 Precondition Required` and
 MUST NOT begin a database write for that request. WHEN a GraphQL metadata, reading-state or exact metadata Undo mutation
-carries an omitted, null or malformed baseline, the server MUST refuse it before a database write can begin.
+carries an omitted, null or malformed baseline, which is the entity-tag the caller's values came from, the server MUST
+refuse it before a database write can begin.
 
 ## Rationale
 
