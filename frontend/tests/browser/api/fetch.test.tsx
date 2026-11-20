@@ -417,7 +417,12 @@ async function graphqlBaselines(): Promise<void> {
   const tag = '"aaaaaaaaaaaaaaaaaaaaaa"';
   const newer = '"bbbbbbbbbbbbbbbbbbbbbb"';
   const latest = '"cccccccccccccccccccccc"';
-  const revision = (etag: string) => `metadata_rev_${etag.replaceAll('"', "")}`;
+  const revisions = new Map([
+    [tag, encodeGraphQLId("MetadataRevision", "52345678-1234-4234-8234-123456789abc")],
+    [newer, encodeGraphQLId("MetadataRevision", "62345678-1234-4234-8234-123456789abc")],
+    [latest, encodeGraphQLId("MetadataRevision", "72345678-1234-4234-8234-123456789abc")],
+  ]);
+  const revision = (etag: string) => revisions.get(etag) ?? "";
   const snapshot = { id: revision(tag), workId, manifestationId: id, etag: tag, title: "Original" };
   const fetch = vi.spyOn(globalThis, "fetch");
   fetch.mockClear();
@@ -493,6 +498,7 @@ async function graphqlBaselines(): Promise<void> {
   });
   for (const metadata of [
     { id: revision(newer), workId, manifestationId: id, etag: newer },
+    { workId, manifestationId: id, etag: newer, title: "Missing revision" },
     { ...snapshot, title: 7 },
     { ...snapshot, etag: "weak" },
   ]) {

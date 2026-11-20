@@ -55,6 +55,7 @@ const ID_PREFIXES = {
   Author: "author",
   Genre: "genre",
   Manifestation: "book",
+  MetadataRevision: "metadata_rev",
   MetadataVersion: "metadata_version",
   Mood: "mood",
   Publisher: "publisher",
@@ -81,6 +82,7 @@ export function domainId(kind: IdKind): z.ZodType<string> {
   return z.string().refine((value) => typeIdUuid(kind, value) !== undefined, `Invalid ${kind} ID.`);
 }
 const revision = z.object({
+  id: domainId("MetadataRevision"),
   workId: domainId("Work"),
   manifestationId: domainId("Manifestation"),
   etag: ResourceEtagSchema,

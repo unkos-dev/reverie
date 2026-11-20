@@ -24,8 +24,17 @@ const saveSchema = z.object({
     publicationDate: z.string().nullable().optional(),
   }),
 });
+const revisionIds = new Map<string, string>();
+function revisionId(etag: string): string {
+  const known = revisionIds.get(etag);
+  if (known !== undefined) return known;
+  const created = encodeGraphQLId("MetadataRevision", crypto.randomUUID());
+  revisionIds.set(etag, created);
+  return created;
+}
 function snapshot(subtitle = "Original Subtitle", etag = '"aaaaaaaaaaaaaaaaaaaaaa"') {
   return {
+    id: revisionId(etag),
     workId: encodeGraphQLId("Work", WORK),
     manifestationId: encodeGraphQLId("Manifestation", ID),
     etag,
@@ -107,7 +116,12 @@ test("seeds from a fresh metadata snapshot and reopens with saved values", async
       return response({ manifestation: { id: current.manifestationId, metadata: current } });
     },
     save: ({ patch }) => {
-      current = { ...current, subtitle: patch.subtitle ?? "", etag: '"bbbbbbbbbbbbbbbbbbbbbb"' };
+      current = {
+        ...current,
+        id: revisionId('"bbbbbbbbbbbbbbbbbbbbbb"'),
+        subtitle: patch.subtitle ?? "",
+        etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
+      };
       return response({ updateMetadata: { metadata: current, operations: [], requestId: null } });
     },
   });

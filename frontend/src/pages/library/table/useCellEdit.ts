@@ -251,17 +251,8 @@ export function useCellEdit({
         work?.setValue(snapshot.subtitle, "subtitle");
         edition?.setValue(snapshot.isbn13, "isbn13");
         edition?.setValue(snapshot.pages, "pages");
-        const previous = edition?.getLinkedRecord("metadata");
-        const selected = store.get(snapshot.id) ?? store.create(snapshot.id, "MetadataRevision");
-        if (previous != null && previous.getDataID() !== snapshot.id)
-          selected.copyFieldsFrom(previous);
-        selected.setValue(snapshot.id, "id");
-        selected.setValue(snapshot.etag, "etag");
-        selected.setValue(snapshot.title, "title");
-        selected.setValue(snapshot.subtitle, "subtitle");
-        selected.setValue(snapshot.isbn13, "isbn13");
-        selected.setValue(snapshot.pages, "pages");
-        edition?.setLinkedRecord(selected, "metadata");
+        const revision = store.get(snapshot.id);
+        if (revision != null) edition?.setLinkedRecord(revision, "metadata");
       }
       work?.invalidateRecord();
       edition?.invalidateRecord();

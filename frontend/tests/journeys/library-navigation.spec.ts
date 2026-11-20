@@ -16,6 +16,7 @@ const ID_PREFIXES: Record<string, string> = {
   Series: "series",
   Shelf: "shelf",
   Work: "work",
+  MetadataRevision: "metadata_rev",
 };
 const graphId = (kind: string, id: string) => {
   let bits = BigInt(`0x${id.replaceAll("-", "")}`);
@@ -25,6 +26,13 @@ const graphId = (kind: string, id: string) => {
     bits >>= 5n;
   }
   return `${ID_PREFIXES[kind]}_${suffix}`;
+};
+const revisionIds = new Map<string, string>();
+const revisionId = (bookId: string, etag: string) => {
+  const key = `${bookId} ${etag}`;
+  const created = revisionIds.get(key) ?? graphId("MetadataRevision", crypto.randomUUID());
+  revisionIds.set(key, created);
+  return created;
 };
 const variablesSchema = z
   .object({
@@ -126,7 +134,7 @@ function graphBook(book: typeof BOOK) {
       selectedSeries: null,
     },
     metadata: {
-      id: `metadata_rev_${book.id}_${book.metadata_etag.replaceAll('"', "")}`,
+      id: revisionId(book.id, book.metadata_etag),
       manifestationId: graphId("Manifestation", book.id),
       workId: graphId("Work", book.work_id),
       etag: book.metadata_etag,

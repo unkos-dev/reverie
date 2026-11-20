@@ -25,6 +25,16 @@ import { LibraryPage } from "@/pages/library/LibraryPage";
 vi.mock("@/lib/theme/ThemeProvider", () => ({
   useTheme: () => ({ preference: "system", effective: "dark", setPreference: vi.fn() }),
 }));
+const revisionIds = new Map<string, string>();
+function revisionId(bookId: string, etag: string): string {
+  const key = `${bookId} ${etag}`;
+  const known = revisionIds.get(key);
+  if (known !== undefined) return known;
+  const created = encodeGraphQLId("MetadataRevision", crypto.randomUUID());
+  revisionIds.set(key, created);
+  return created;
+}
+
 const originalState: unknown = navigation.currentEntry?.getState();
 const originalURL = window.location.href;
 const documents: Record<string, string> = trustedDocuments;
@@ -120,7 +130,7 @@ function refusal(code: string, errors?: Record<string, string>): Response {
 const pageInfo = { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null };
 function metadata(book: BookListItem) {
   return {
-    id: `metadata_rev_${book.id}_${book.metadata_etag.replaceAll('"', "")}`,
+    id: revisionId(book.id, book.metadata_etag),
     workId: encodeGraphQLId("Work", book.work_id),
     manifestationId: encodeGraphQLId("Manifestation", book.id),
     etag: book.metadata_etag,

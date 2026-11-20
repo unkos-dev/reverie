@@ -220,13 +220,13 @@ no result.
 
 `frontend/src/lib/relay/mutations.ts` contains selected title, form, author and reading reads and acknowledgements, plus
 the other protected actions. `readerAuthorEditing` refetches through `fetch__Manifestation`. The network checks each
-editing document's selected snapshot, domain IDs, UUID handles, strong validators, timestamps and PageInfo before
-`sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment reads, `fetchQuery`,
-store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor chain with one pair
-of domain IDs and one revision. Library cells, the metadata dialog, Versions actions and batch Set status use these
-selected raw executions. Preferences read and sparse update share the canonical service with HTTP; defaults hide
-Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata refresh schedules the
-canonical claim-preserving enrichment operation with write scope and non-child authorisation.
+editing document's selected revision with its `metadata_rev` ID, domain IDs, UUID handles, strong validators, timestamps
+and PageInfo before `sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment
+reads, `fetchQuery`, store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor
+chain with one pair of domain IDs and one revision. Library cells, the metadata dialog, Versions actions and batch Set
+status use these selected raw executions. Preferences read and sparse update share the canonical service with HTTP;
+defaults hide Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata refresh
+schedules the canonical claim-preserving enrichment operation with write scope and non-child authorisation.
 
 ## Failure and recovery
 

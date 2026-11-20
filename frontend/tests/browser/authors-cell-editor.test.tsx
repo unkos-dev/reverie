@@ -8,6 +8,16 @@ import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
 import type { BookListItem } from "@/api";
 import { AuthorsCell } from "@/pages/library/table/cells";
 
+const revisionIds = new Map<string, string>();
+function revisionId(bookId: string, etag: string): string {
+  const key = `${bookId} ${etag}`;
+  const known = revisionIds.get(key);
+  if (known !== undefined) return known;
+  const created = encodeGraphQLId("MetadataRevision", crypto.randomUUID());
+  revisionIds.set(key, created);
+  return created;
+}
+
 const book: BookListItem = {
   metadata_etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
   reading_etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
@@ -48,7 +58,7 @@ test("saving stores the displayed authors in displayed order, including a typed 
           manifestation: {
             id: book.id,
             metadata: {
-              id: `metadata_rev_${book.id}_${book.metadata_etag.replaceAll('"', "")}`,
+              id: revisionId(book.id, book.metadata_etag),
               manifestationId: book.id,
               workId: book.work_id,
               etag: book.metadata_etag,
