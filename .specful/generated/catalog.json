@@ -665,9 +665,9 @@
     {
       "id": "REV-ADR-0083",
       "kind": "adr",
-      "path": "docs/adr/0083-graphql-and-relay-for-browser-application-data-with-server-typed-formats.md",
-      "status": "proposed",
-      "title": "GraphQL and Relay for browser application data with server-typed formats"
+      "path": "docs/adr/0083-server-typed-scalars-and-enums-for-graphql-data-formats.md",
+      "status": "accepted",
+      "title": "Server-typed scalars and enums for GraphQL data formats"
     },
     {
       "governed-by": [
@@ -1145,7 +1145,8 @@
         "REV-ADR-0079",
         "REV-ADR-0080",
         "REV-ADR-0081",
-        "REV-ADR-0082"
+        "REV-ADR-0082",
+        "REV-ADR-0083"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",
