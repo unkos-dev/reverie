@@ -46,10 +46,11 @@ published specification with maintained implementations, so routes, links and vi
 unaltered.
 
 An ID is a lowercase type prefix, `_`, then the record's UUID in 26 base32 characters (TypeID specification 0.3.0). The
-prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`, `tag`, `genre`, `mood`, `metadata_version` and
-`user`. `publisher` is reserved and never sent, because publisher suggestions carry no entity ID. The backend binds each
-prefix to its type at compile time through the `type-safe-id` crate. Retained HTTP responses, downloads, covers and OPDS
-keep UUID values.
+prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`, `tag`, `genre`, `mood`, `metadata_version`,
+`metadata_rev` (MetadataRevision) and `user`. A `metadata_rev` ID carries a name-based UUID derived from the revision,
+because a revision has no stored UUID. `publisher` is reserved and never sent, because publisher suggestions carry no
+entity ID. The backend binds each prefix to its type at compile time through the `type-safe-id` crate. Retained HTTP
+responses, downloads, covers and OPDS keep UUID values.
 
 ### Consequences
 

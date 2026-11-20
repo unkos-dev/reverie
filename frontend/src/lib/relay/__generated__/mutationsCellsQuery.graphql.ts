@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<25022dd4d0602cf805c0f40f9e9000ed>>
- * @relayHash ecf58f90b24f8ac92f73e10658eb1a90
+ * @generated SignedSource<<cf1b3e6dbced9c29ac6b4cf711bd1d9b>>
+ * @relayHash f5a99e324d10014b404709bffdba97fc
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID da59e05805993815f680c01e9d6742914e65e521f444c784614559f6e587a2f2
+// @relayRequestID 1387bbe2a013b26043bf6d3f7477ad5104bba44a888d5100f2fd9b1a94982dec
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsCellsQuery$variables = {
@@ -20,6 +20,7 @@ export type mutationsCellsQuery$data = {
         readonly id: string;
         readonly metadata: {
           readonly etag: string;
+          readonly id: string;
           readonly isbn13: string | null | undefined;
           readonly manifestationId: string;
           readonly pages: number | null | undefined;
@@ -44,7 +45,14 @@ const node: ConcreteRequest = (function () {
         name: "id",
       },
     ],
-    v1 = [
+    v1 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
+    v2 = [
       {
         alias: null,
         args: [
@@ -59,21 +67,16 @@ const node: ConcreteRequest = (function () {
         name: "manifestation",
         plural: false,
         selections: [
+          v1 /*:: as any*/,
           {
             alias: null,
             args: null,
-            kind: "ScalarField",
-            name: "id",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              v1 /*:: as any*/,
               {
                 alias: null,
                 args: null,
@@ -136,7 +139,7 @@ const node: ConcreteRequest = (function () {
       kind: "Fragment",
       metadata: null,
       name: "mutationsCellsQuery",
-      selections: v1 /*:: as any*/,
+      selections: v2 /*:: as any*/,
       type: "Query",
       abstractKey: null,
     },
@@ -145,10 +148,10 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
       name: "mutationsCellsQuery",
-      selections: v1 /*:: as any*/,
+      selections: v2 /*:: as any*/,
     },
     params: {
-      id: "da59e05805993815f680c01e9d6742914e65e521f444c784614559f6e587a2f2",
+      id: "1387bbe2a013b26043bf6d3f7477ad5104bba44a888d5100f2fd9b1a94982dec",
       metadata: {},
       name: "mutationsCellsQuery",
       operationKind: "query",

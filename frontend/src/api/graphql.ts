@@ -55,6 +55,7 @@ const ID_PREFIXES = {
   Author: "author",
   Genre: "genre",
   Manifestation: "book",
+  MetadataRevision: "metadata_rev",
   MetadataVersion: "metadata_version",
   Mood: "mood",
   Publisher: "publisher",
@@ -81,6 +82,7 @@ export function domainId(kind: IdKind): z.ZodType<string> {
   return z.string().refine((value) => typeIdUuid(kind, value) !== undefined, `Invalid ${kind} ID.`);
 }
 const revision = z.object({
+  id: domainId("MetadataRevision"),
   workId: domainId("Work"),
   manifestationId: domainId("Manifestation"),
   etag: ResourceEtagSchema,
@@ -211,7 +213,7 @@ const authorSnapshot = revision.extend({
     edges: z.array(
       z.object({
         cursor: z.string(),
-        node: z.object({ id: domainId("Author"), name: z.string() }),
+        node: z.object({ name: z.string(), author: z.object({ id: domainId("Author") }) }),
       }),
     ),
     pageInfo: pageInfo.refine(
@@ -527,7 +529,9 @@ export function captureAuthorPages(pages: readonly AuthorPage[]): {
       (after === null && snapshot.authors.pageInfo.hasPreviousPage)
     )
       throw new Error("Author pages do not form one matched field.");
-    authors.push(...snapshot.authors.edges.map((edge) => edge.node));
+    authors.push(
+      ...snapshot.authors.edges.map(({ node }) => ({ id: node.author.id, name: node.name })),
+    );
     after = snapshot.authors.pageInfo.endCursor;
     hasNext = snapshot.authors.pageInfo.hasNextPage;
     if (hasNext && after === null) throw new Error("An author continuation cursor is required.");

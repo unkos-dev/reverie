@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<559c78c312dc93d13f3c871a7db5d732>>
+ * @generated SignedSource<<bf7cd5498c69e73b452a4bc74db10841>>
  * @lightSyntaxTransform
  */
 
@@ -11,6 +11,7 @@ import { ReaderFragment } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
 export type mutationsCellsSnapshot$data = {
   readonly etag: string;
+  readonly id: string;
   readonly isbn13: string | null | undefined;
   readonly manifestationId: string;
   readonly pages: number | null | undefined;
@@ -30,6 +31,13 @@ const node: ReaderFragment = {
   metadata: null,
   name: "mutationsCellsSnapshot",
   selections: [
+    {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
     {
       alias: null,
       args: null,
@@ -80,10 +88,10 @@ const node: ReaderFragment = {
       storageKey: null,
     },
   ],
-  type: "MetadataSnapshot",
+  type: "MetadataRevision",
   abstractKey: null,
 };
 
-(node as any).hash = "b65b2633add93e7d0375a6629c7892dc";
+(node as any).hash = "51b87896c02e7218c634a1a48ed46c06";
 
 export default node;

@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<e7c037935b216756882af9ad903bb07a>>
+ * @generated SignedSource<<a257e4ef19568403874a1c228b270d8c>>
  * @lightSyntaxTransform
  */
 
@@ -11,6 +11,7 @@ import { ReaderFragment } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
 export type mutationsTitleSnapshot$data = {
   readonly etag: string;
+  readonly id: string;
   readonly manifestationId: string;
   readonly title: string;
   readonly workId: string;
@@ -27,6 +28,13 @@ const node: ReaderFragment = {
   metadata: null,
   name: "mutationsTitleSnapshot",
   selections: [
+    {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
     {
       alias: null,
       args: null,
@@ -56,10 +64,10 @@ const node: ReaderFragment = {
       storageKey: null,
     },
   ],
-  type: "MetadataSnapshot",
+  type: "MetadataRevision",
   abstractKey: null,
 };
 
-(node as any).hash = "6ac69a738800ac30c7cad6ec49f9ed0d";
+(node as any).hash = "966ac659cf8d4b1ebd43a28e60c57e87";
 
 export default node;

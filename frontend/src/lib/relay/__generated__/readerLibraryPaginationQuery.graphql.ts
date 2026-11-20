@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<9300ec6ceab0d526f0c477a162409c14>>
- * @relayHash 01b26c9cc139632c9298e3a84ff72c60
+ * @generated SignedSource<<b585e9463bbe8cd85fa5fab07c79209f>>
+ * @relayHash 73553c8e3e2f91068847792bbbb9b17d
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID db370f1496e6eb1d01992f2aa3d2f76afd2cf7e9e71f6f8b1bb1b2172f899e69
+// @relayRequestID be2fc92489946c311ad0e49c00849884f134c01c11f7995e412ce46e4b4c33cb
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -77,6 +77,7 @@ export type readerLibraryPaginationQuery$rawResponse = {
         readonly isbn13: string | null | undefined;
         readonly metadata: {
           readonly etag: string;
+          readonly id: string;
           readonly isbn13: string | null | undefined;
           readonly manifestationId: string;
           readonly pages: number | null | undefined;
@@ -426,7 +427,7 @@ const node: ConcreteRequest = (function () {
                     {
                       alias: null,
                       args: null,
-                      concreteType: "MetadataSnapshot",
+                      concreteType: "MetadataRevision",
                       kind: "LinkedField",
                       name: "metadata",
                       plural: false,
@@ -450,6 +451,7 @@ const node: ConcreteRequest = (function () {
                         v8 /*:: as any*/,
                         v5 /*:: as any*/,
                         v6 /*:: as any*/,
+                        v4 /*:: as any*/,
                       ],
                       storageKey: null,
                     },
@@ -550,7 +552,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "db370f1496e6eb1d01992f2aa3d2f76afd2cf7e9e71f6f8b1bb1b2172f899e69",
+      id: "be2fc92489946c311ad0e49c00849884f134c01c11f7995e412ce46e4b4c33cb",
       metadata: {},
       name: "readerLibraryPaginationQuery",
       operationKind: "query",

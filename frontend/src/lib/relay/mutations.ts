@@ -1,7 +1,8 @@
 import { graphql } from "react-relay";
 
 export const mutationsTitleSnapshot = graphql`
-  fragment mutationsTitleSnapshot on MetadataSnapshot {
+  fragment mutationsTitleSnapshot on MetadataRevision {
+    id
     workId
     manifestationId
     etag
@@ -10,7 +11,8 @@ export const mutationsTitleSnapshot = graphql`
 `;
 
 export const mutationsFormSnapshot = graphql`
-  fragment mutationsFormSnapshot on MetadataSnapshot {
+  fragment mutationsFormSnapshot on MetadataRevision {
+    id
     workId
     manifestationId
     etag
@@ -219,8 +221,10 @@ export const mutationsAuthorPageQuery = graphql`
           edges {
             cursor
             node {
-              id
               name
+              author {
+                id
+              }
             }
           }
           pageInfo {
@@ -258,8 +262,10 @@ export const mutationsSaveAuthorsMutation = graphql`
           edges {
             cursor
             node {
-              id
               name
+              author {
+                id
+              }
             }
           }
           pageInfo {
@@ -292,8 +298,10 @@ export const mutationsUndoAuthorsMutation = graphql`
           edges {
             cursor
             node {
-              id
               name
+              author {
+                id
+              }
             }
           }
           pageInfo {
@@ -326,8 +334,10 @@ export const mutationsResolveAuthorsQuery = graphql`
           edges {
             cursor
             node {
-              id
               name
+              author {
+                id
+              }
             }
           }
           pageInfo {
@@ -498,7 +508,8 @@ export const mutationsRefreshMetadataMutation = graphql`
 `;
 
 export const mutationsCellsSnapshot = graphql`
-  fragment mutationsCellsSnapshot on MetadataSnapshot {
+  fragment mutationsCellsSnapshot on MetadataRevision {
+    id
     workId
     manifestationId
     etag

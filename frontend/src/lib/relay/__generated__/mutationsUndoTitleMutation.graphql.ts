@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<2397878caa81ef8e686de2fe54178d11>>
- * @relayHash 4604a448b12ff63b5753e5c9d16c3dff
+ * @generated SignedSource<<d3520efe44531642f783d5785d35b307>>
+ * @relayHash da5efc13eb8f170837d3b036f1cd0f98
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID d9335d73ee2f5ad5dfcd8a5c79bf9d2082392dc1b05570cf4e09f52f4cae8adb
+// @relayRequestID b85e6db0492a05a207cfbe41cbdc23d15ce9b5db666540dadd1f5dd78a9adaa6
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsUndoTitleMutation$variables = {
@@ -20,6 +20,7 @@ export type mutationsUndoTitleMutation$data = {
   readonly undoMetadata: {
     readonly metadata: {
       readonly etag: string;
+      readonly id: string;
       readonly manifestationId: string;
       readonly title: string;
       readonly workId: string;
@@ -128,11 +129,18 @@ const node: ConcreteRequest = (function () {
           {
             alias: null,
             args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "id",
+                storageKey: null,
+              },
               {
                 alias: null,
                 args: null,
@@ -186,7 +194,7 @@ const node: ConcreteRequest = (function () {
       selections: v3 /*:: as any*/,
     },
     params: {
-      id: "d9335d73ee2f5ad5dfcd8a5c79bf9d2082392dc1b05570cf4e09f52f4cae8adb",
+      id: "b85e6db0492a05a207cfbe41cbdc23d15ce9b5db666540dadd1f5dd78a9adaa6",
       metadata: {},
       name: "mutationsUndoTitleMutation",
       operationKind: "mutation",

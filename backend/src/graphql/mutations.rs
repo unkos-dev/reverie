@@ -235,14 +235,14 @@ struct MetadataSave {
     request_id: Option<String>,
     #[graphql(complexity = "super::complexity::weighted(144, child_complexity)?")]
     operations: Vec<FieldOperation>,
-    metadata: library::MetadataSnapshot,
+    metadata: library::MetadataRevision,
 }
 #[derive(SimpleObject)]
 pub(super) struct MetadataOperation {
     outcome: String,
     #[graphql(complexity = "super::complexity::weighted(144, child_complexity)?")]
     operations: Vec<FieldOperation>,
-    metadata: library::MetadataSnapshot,
+    metadata: library::MetadataRevision,
 }
 impl MetadataOperation {
     fn new(result: undo::OperationResult) -> async_graphql::Result<Self> {
@@ -254,14 +254,14 @@ impl MetadataOperation {
             }
             .to_owned(),
             operations: result.operations.into_iter().map(Into::into).collect(),
-            metadata: library::MetadataSnapshot::from_domain(&result.snapshot)?,
+            metadata: library::MetadataRevision::from_domain(&result.snapshot)?,
         })
     }
 }
 #[derive(SimpleObject)]
 struct MetadataReview {
     manifestation_id: ID,
-    metadata: Option<library::MetadataSnapshot>,
+    metadata: Option<library::MetadataRevision>,
 }
 impl MetadataReview {
     fn new(
@@ -271,7 +271,7 @@ impl MetadataReview {
         Ok(Self {
             manifestation_id: id::Manifestation::encode(edition),
             metadata: snapshot
-                .map(library::MetadataSnapshot::from_domain)
+                .map(library::MetadataRevision::from_domain)
                 .transpose()?,
         })
     }
@@ -491,7 +491,7 @@ impl Mutation {
         Ok(MetadataSave {
             request_id: result.request_id.map(|id| id.to_string()),
             operations: result.operations.into_iter().map(Into::into).collect(),
-            metadata: library::MetadataSnapshot::from_domain(&result.snapshot)?,
+            metadata: library::MetadataRevision::from_domain(&result.snapshot)?,
         })
     }
     #[graphql(guard = "WriteScope")]

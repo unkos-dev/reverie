@@ -3,7 +3,7 @@ use super::loaders::{RequestLoader, SeriesKey, ShelfKey, WorkKey, batch_error};
 use super::{Viewer, id, safe_error};
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
-use crate::routes::etag::MetadataRevision;
+use crate::routes::etag::MetadataRevision as Revision;
 use crate::routes::library::ListParams;
 use crate::services::metadata::editing::{self, SnapshotKey, SnapshotPage, SnapshotSelection};
 use crate::services::reader::{
@@ -134,6 +134,7 @@ impl Work {
     ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
         contributor_connection(
             relation(ctx, RelationKind::Authors, self.record.id, first, after).await?,
+            std::convert::identity,
         )
     }
     #[graphql(
@@ -154,6 +155,7 @@ impl Work {
                 after,
             )
             .await?,
+            std::convert::identity,
         )
     }
 }
@@ -246,7 +248,7 @@ impl Manifestation {
             last_read_at: row.last_read_at.map(|value| timestamp(value.to_jiff())),
         }
     }
-    async fn metadata(&self, ctx: &Context<'_>) -> async_graphql::Result<MetadataSnapshot> {
+    async fn metadata(&self, ctx: &Context<'_>) -> async_graphql::Result<MetadataRevision> {
         let pages = snapshot_pages(&ctx.look_ahead())?;
         if !pages.is_empty() {
             let snapshot = required(
@@ -258,16 +260,18 @@ impl Manifestation {
                     .await
                     .map_err(|error| batch_error(&error))?,
             )?;
-            return MetadataSnapshot::from_domain(&snapshot);
+            return MetadataRevision::from_domain(&snapshot);
         }
         let row = &self.record.detail;
-        Ok(MetadataSnapshot {
-            revision: MetadataRevision {
-                work_id: row.work_id,
-                manifestation_id: row.id,
-                work_revision: row.work_revision,
-                manifestation_revision: row.manifestation_revision,
-            },
+        let revision = Revision {
+            work_id: row.work_id,
+            manifestation_id: row.id,
+            work_revision: row.work_revision,
+            manifestation_revision: row.manifestation_revision,
+        };
+        Ok(MetadataRevision {
+            id: id::metadata_revision(&revision).map_err(safe_error)?,
+            revision,
             relation_pages: HashMap::new(),
             isbn_mismatch: row.isbn_mismatch(),
             work_id: id::Work::encode(row.work_id),
@@ -452,9 +456,10 @@ impl ReadingState {
 }
 #[derive(SimpleObject)]
 #[graphql(complex)]
-pub(super) struct MetadataSnapshot {
+pub(super) struct MetadataRevision {
+    id: ID,
     #[graphql(skip)]
-    revision: MetadataRevision,
+    revision: Revision,
     #[graphql(skip)]
     relation_pages: HashMap<RelationKey, RelationPage>,
     isbn_mismatch: bool,
@@ -522,16 +527,18 @@ pub(super) fn snapshot_selection(
 ) -> async_graphql::Result<SnapshotSelection> {
     snapshot_pages(look).map(SnapshotSelection::Selected)
 }
-impl MetadataSnapshot {
+impl MetadataRevision {
     pub(super) fn from_domain(snapshot: &editing::MetadataSnapshot) -> async_graphql::Result<Self> {
         let row = &snapshot.values;
+        let revision = Revision {
+            work_id: snapshot.revision.work_id,
+            manifestation_id: snapshot.revision.manifestation_id,
+            work_revision: snapshot.revision.work_revision,
+            manifestation_revision: snapshot.revision.manifestation_revision,
+        };
         Ok(Self {
-            revision: MetadataRevision {
-                work_id: snapshot.revision.work_id,
-                manifestation_id: snapshot.revision.manifestation_id,
-                work_revision: snapshot.revision.work_revision,
-                manifestation_revision: snapshot.revision.manifestation_revision,
-            },
+            id: id::metadata_revision(&revision).map_err(safe_error)?,
+            revision,
             relation_pages: snapshot.pages.clone(),
             work_id: id::Work::encode(snapshot.revision.work_id),
             manifestation_id: id::Manifestation::encode(snapshot.revision.manifestation_id),
@@ -577,7 +584,7 @@ impl MetadataSnapshot {
     }
 }
 #[ComplexObject]
-impl MetadataSnapshot {
+impl MetadataRevision {
     #[graphql(
         complexity = "super::complexity::nested(RelationKind::Authors, first, child_complexity)?"
     )]
@@ -585,8 +592,13 @@ impl MetadataSnapshot {
         &self,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
-        contributor_connection(self.page(RelationKind::Authors, first, after).await?)
+    ) -> async_graphql::Result<
+        Connection<String, RevisionContributor, EmptyFields, ContributorFields>,
+    > {
+        contributor_connection(
+            self.page(RelationKind::Authors, first, after).await?,
+            RevisionContributor::new,
+        )
     }
     #[graphql(
         complexity = "super::complexity::nested(RelationKind::Contributors, first, child_complexity)?"
@@ -595,8 +607,13 @@ impl MetadataSnapshot {
         &self,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
-        contributor_connection(self.page(RelationKind::Contributors, first, after).await?)
+    ) -> async_graphql::Result<
+        Connection<String, RevisionContributor, EmptyFields, ContributorFields>,
+    > {
+        contributor_connection(
+            self.page(RelationKind::Contributors, first, after).await?,
+            RevisionContributor::new,
+        )
     }
     #[graphql(
         complexity = "super::complexity::nested(RelationKind::Genres, first, child_complexity)?"
@@ -605,13 +622,17 @@ impl MetadataSnapshot {
         &self,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Genre>> {
+    ) -> async_graphql::Result<Connection<String, RevisionGenre>> {
         term_connection(
             self.page(RelationKind::Genres, first, after).await?,
             |row| {
-                Ok(Genre {
-                    id: id::Genre::encode(required(row.id)?),
-                    name: required(row.name)?,
+                let name = required(row.name)?;
+                Ok(RevisionGenre {
+                    genre: Genre {
+                        id: id::Genre::encode(required(row.id)?),
+                        name: name.clone(),
+                    },
+                    name,
                 })
             },
         )
@@ -623,11 +644,15 @@ impl MetadataSnapshot {
         &self,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Mood>> {
+    ) -> async_graphql::Result<Connection<String, RevisionMood>> {
         term_connection(self.page(RelationKind::Moods, first, after).await?, |row| {
-            Ok(Mood {
-                id: id::Mood::encode(required(row.id)?),
-                name: required(row.name)?,
+            let name = required(row.name)?;
+            Ok(RevisionMood {
+                mood: Mood {
+                    id: id::Mood::encode(required(row.id)?),
+                    name: name.clone(),
+                },
+                name,
             })
         })
     }
@@ -638,11 +663,15 @@ impl MetadataSnapshot {
         &self,
         first: i32,
         after: Option<String>,
-    ) -> async_graphql::Result<Connection<String, Tag>> {
+    ) -> async_graphql::Result<Connection<String, RevisionTag>> {
         term_connection(self.page(RelationKind::Tags, first, after).await?, |row| {
-            Ok(Tag {
-                id: id::Tag::encode(required(row.id)?),
-                name: required(row.name)?,
+            let name = required(row.name)?;
+            Ok(RevisionTag {
+                tag: Tag {
+                    id: id::Tag::encode(required(row.id)?),
+                    name: name.clone(),
+                },
+                name,
             })
         })
     }
@@ -685,6 +714,34 @@ impl MetadataSnapshot {
             },
         )
     }
+}
+#[derive(SimpleObject)]
+pub(super) struct RevisionContributor {
+    name: String,
+    author: Author,
+}
+impl RevisionContributor {
+    fn new(author: Author) -> Self {
+        Self {
+            name: author.name.clone(),
+            author,
+        }
+    }
+}
+#[derive(SimpleObject)]
+pub(super) struct RevisionGenre {
+    name: String,
+    genre: Genre,
+}
+#[derive(SimpleObject)]
+pub(super) struct RevisionMood {
+    name: String,
+    mood: Mood,
+}
+#[derive(SimpleObject)]
+pub(super) struct RevisionTag {
+    name: String,
+    tag: Tag,
 }
 #[derive(SimpleObject)]
 pub(super) struct SelectedSeries {
@@ -897,18 +954,19 @@ fn term_connection<T: async_graphql::OutputType>(
     }
     Ok(connection)
 }
-fn contributor_connection(
+fn contributor_connection<T: async_graphql::OutputType>(
     page: RelationPage,
-) -> async_graphql::Result<Connection<String, Author, EmptyFields, ContributorFields>> {
+    node: impl Fn(Author) -> T,
+) -> async_graphql::Result<Connection<String, T, EmptyFields, ContributorFields>> {
     let mut connection = Connection::new(page.has_previous, page.has_next);
     for (cursor, row) in page.edges {
         let position = required(row.position_index)?;
         connection.edges.push(Edge::with_additional_fields(
             cursor,
-            Author {
+            node(Author {
                 id: id::Author::encode(required(row.id)?),
                 name: required(row.name)?,
-            },
+            }),
             ContributorFields {
                 role: match required(row.role)? {
                     crate::models::contributor_role::ContributorRole::Author => "author",

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<5ce7ab0b8b4be6f877c2ef4e5e0cea46>>
- * @relayHash f9fca8205f49c71750d7bf9d3a3551cb
+ * @generated SignedSource<<ce0886c3ffaf847e7fb2aa5da42aa60a>>
+ * @relayHash 9b4684081a84eeb8ded193e5cb784596
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID ffa0174144dd3e54b36669bc9818b003034a3f53be68e9b3947e4ccfb672fe43
+// @relayRequestID 8289c404b72545bc2de0dec6e5f6d61398c049889056c22167d760266bfdd4ac
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsUndoAuthorsMutation$variables = {
@@ -23,7 +23,9 @@ export type mutationsUndoAuthorsMutation$data = {
         readonly edges: ReadonlyArray<{
           readonly cursor: string;
           readonly node: {
-            readonly id: string;
+            readonly author: {
+              readonly id: string;
+            };
             readonly name: string;
           };
         }>;
@@ -70,217 +72,228 @@ const node: ConcreteRequest = (function () {
     },
     v3 = [
       {
-        alias: null,
-        args: [
-          {
-            kind: "Variable",
-            name: "baseline",
-            variableName: "baseline",
-          },
-          {
-            kind: "Variable",
-            name: "id",
-            variableName: "id",
-          },
-          {
-            kind: "Variable",
-            name: "operationId",
-            variableName: "operationId",
-          },
-        ],
-        concreteType: "MetadataOperation",
-        kind: "LinkedField",
-        name: "undoMetadata",
-        plural: false,
-        selections: [
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "outcome",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "FieldOperation",
-            kind: "LinkedField",
-            name: "operations",
-            plural: true,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "operationId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "fieldName",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "expiresAt",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "status",
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "MetadataSnapshot",
-            kind: "LinkedField",
-            name: "metadata",
-            plural: false,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "workId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "manifestationId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "etag",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: [
-                  {
-                    kind: "Literal",
-                    name: "first",
-                    value: 20,
-                  },
-                ],
-                concreteType: "AuthorConnection",
-                kind: "LinkedField",
-                name: "authors",
-                plural: false,
-                selections: [
-                  {
-                    alias: null,
-                    args: null,
-                    concreteType: "AuthorEdge",
-                    kind: "LinkedField",
-                    name: "edges",
-                    plural: true,
-                    selections: [
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "cursor",
-                        storageKey: null,
-                      },
-                      {
-                        alias: null,
-                        args: null,
-                        concreteType: "Author",
-                        kind: "LinkedField",
-                        name: "node",
-                        plural: false,
-                        selections: [
-                          {
-                            alias: null,
-                            args: null,
-                            kind: "ScalarField",
-                            name: "id",
-                            storageKey: null,
-                          },
-                          {
-                            alias: null,
-                            args: null,
-                            kind: "ScalarField",
-                            name: "name",
-                            storageKey: null,
-                          },
-                        ],
-                        storageKey: null,
-                      },
-                    ],
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    concreteType: "PageInfo",
-                    kind: "LinkedField",
-                    name: "pageInfo",
-                    plural: false,
-                    selections: [
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "hasNextPage",
-                        storageKey: null,
-                      },
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "hasPreviousPage",
-                        storageKey: null,
-                      },
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "startCursor",
-                        storageKey: null,
-                      },
-                      {
-                        alias: null,
-                        args: null,
-                        kind: "ScalarField",
-                        name: "endCursor",
-                        storageKey: null,
-                      },
-                    ],
-                    storageKey: null,
-                  },
-                ],
-                storageKey: "authors(first:20)",
-              },
-            ],
-            storageKey: null,
-          },
-        ],
-        storageKey: null,
+        kind: "Variable",
+        name: "baseline",
+        variableName: "baseline",
       },
-    ];
+      {
+        kind: "Variable",
+        name: "id",
+        variableName: "id",
+      },
+      {
+        kind: "Variable",
+        name: "operationId",
+        variableName: "operationId",
+      },
+    ],
+    v4 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "outcome",
+      storageKey: null,
+    },
+    v5 = {
+      alias: null,
+      args: null,
+      concreteType: "FieldOperation",
+      kind: "LinkedField",
+      name: "operations",
+      plural: true,
+      selections: [
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "operationId",
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "fieldName",
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "expiresAt",
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "status",
+          storageKey: null,
+        },
+      ],
+      storageKey: null,
+    },
+    v6 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "workId",
+      storageKey: null,
+    },
+    v7 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "manifestationId",
+      storageKey: null,
+    },
+    v8 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "etag",
+      storageKey: null,
+    },
+    v9 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
+    v10 = {
+      alias: null,
+      args: [
+        {
+          kind: "Literal",
+          name: "first",
+          value: 20,
+        },
+      ],
+      concreteType: "RevisionContributorConnection",
+      kind: "LinkedField",
+      name: "authors",
+      plural: false,
+      selections: [
+        {
+          alias: null,
+          args: null,
+          concreteType: "RevisionContributorEdge",
+          kind: "LinkedField",
+          name: "edges",
+          plural: true,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "cursor",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              concreteType: "RevisionContributor",
+              kind: "LinkedField",
+              name: "node",
+              plural: false,
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "name",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "Author",
+                  kind: "LinkedField",
+                  name: "author",
+                  plural: false,
+                  selections: [v9 /*:: as any*/],
+                  storageKey: null,
+                },
+              ],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          concreteType: "PageInfo",
+          kind: "LinkedField",
+          name: "pageInfo",
+          plural: false,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "hasNextPage",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "hasPreviousPage",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "startCursor",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "endCursor",
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
+      storageKey: "authors(first:20)",
+    };
   return {
     fragment: {
       argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/, v2 /*:: as any*/],
       kind: "Fragment",
       metadata: null,
       name: "mutationsUndoAuthorsMutation",
-      selections: v3 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v3 /*:: as any*/,
+          concreteType: "MetadataOperation",
+          kind: "LinkedField",
+          name: "undoMetadata",
+          plural: false,
+          selections: [
+            v4 /*:: as any*/,
+            v5 /*:: as any*/,
+            {
+              alias: null,
+              args: null,
+              concreteType: "MetadataRevision",
+              kind: "LinkedField",
+              name: "metadata",
+              plural: false,
+              selections: [v6 /*:: as any*/, v7 /*:: as any*/, v8 /*:: as any*/, v10 /*:: as any*/],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
       type: "Mutation",
       abstractKey: null,
     },
@@ -289,10 +302,40 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: [v1 /*:: as any*/, v0 /*:: as any*/, v2 /*:: as any*/],
       kind: "Operation",
       name: "mutationsUndoAuthorsMutation",
-      selections: v3 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v3 /*:: as any*/,
+          concreteType: "MetadataOperation",
+          kind: "LinkedField",
+          name: "undoMetadata",
+          plural: false,
+          selections: [
+            v4 /*:: as any*/,
+            v5 /*:: as any*/,
+            {
+              alias: null,
+              args: null,
+              concreteType: "MetadataRevision",
+              kind: "LinkedField",
+              name: "metadata",
+              plural: false,
+              selections: [
+                v6 /*:: as any*/,
+                v7 /*:: as any*/,
+                v8 /*:: as any*/,
+                v10 /*:: as any*/,
+                v9 /*:: as any*/,
+              ],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
     },
     params: {
-      id: "ffa0174144dd3e54b36669bc9818b003034a3f53be68e9b3947e4ccfb672fe43",
+      id: "8289c404b72545bc2de0dec6e5f6d61398c049889056c22167d760266bfdd4ac",
       metadata: {},
       name: "mutationsUndoAuthorsMutation",
       operationKind: "mutation",
@@ -301,6 +344,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "5d43bebf141487bf5eb72023e4049114";
+(node as any).hash = "cadfe6fe90f26df1d9d0490dae18613a";
 
 export default node;

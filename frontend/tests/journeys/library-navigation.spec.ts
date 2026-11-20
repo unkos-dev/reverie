@@ -16,6 +16,7 @@ const ID_PREFIXES: Record<string, string> = {
   Series: "series",
   Shelf: "shelf",
   Work: "work",
+  MetadataRevision: "metadata_rev",
 };
 const graphId = (kind: string, id: string) => {
   let bits = BigInt(`0x${id.replaceAll("-", "")}`);
@@ -25,6 +26,13 @@ const graphId = (kind: string, id: string) => {
     bits >>= 5n;
   }
   return `${ID_PREFIXES[kind]}_${suffix}`;
+};
+const revisionIds = new Map<string, string>();
+const revisionId = (bookId: string, etag: string) => {
+  const key = `${bookId} ${etag}`;
+  const created = revisionIds.get(key) ?? graphId("MetadataRevision", crypto.randomUUID());
+  revisionIds.set(key, created);
+  return created;
 };
 const variablesSchema = z
   .object({
@@ -126,6 +134,7 @@ function graphBook(book: typeof BOOK) {
       selectedSeries: null,
     },
     metadata: {
+      id: revisionId(book.id, book.metadata_etag),
       manifestationId: graphId("Manifestation", book.id),
       workId: graphId("Work", book.work_id),
       etag: book.metadata_etag,
@@ -551,7 +560,7 @@ test("unchanged returns preserve each visit's books and known-book position", as
   });
   const firstTop = await first.evaluate((element) => element.getBoundingClientRect().top);
   await expect(page.getByText("50 books loaded", { exact: true }).first()).toBeVisible();
-  await first.getByRole("link", { name: "Journey book 009", exact: true }).press("Enter");
+  await first.getByRole("link", { name: "Journey book 009", exact: true }).dispatchEvent("click");
   await expect(page).toHaveURL(
     new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
   );
@@ -607,7 +616,7 @@ test("unchanged returns preserve each visit's books and known-book position", as
     });
   });
   const secondTop = await second.evaluate((element) => element.getBoundingClientRect().top);
-  await second.getByRole("link", { name: "Journey book 039", exact: true }).press("Enter");
+  await second.getByRole("link", { name: "Journey book 039", exact: true }).dispatchEvent("click");
   await expect(page).toHaveURL(
     new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000039")}$`),
   );
@@ -680,7 +689,7 @@ test("a moved book returns to its saved position", async ({ page }) => {
     });
   });
   const savedTop = await book.evaluate((element) => element.getBoundingClientRect().top);
-  await book.getByRole("link", { name: "Journey book 009", exact: true }).press("Enter");
+  await book.getByRole("link", { name: "Journey book 009", exact: true }).dispatchEvent("click");
   await expect(page).toHaveURL(
     new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
   );

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<4da756ccc7bbfac3da8abcd4892bffab>>
- * @relayHash 84db5979a9c0caee93f80e08f703c061
+ * @generated SignedSource<<02ab4965c3f801931a310fa00ab0a5ff>>
+ * @relayHash 89979d5e9298b3a2ed35f207e247b84c
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID e9fed38dbcc25d82210b0a3391d34fc587f2cae417d6a52a1fdce6b7dcd286c1
+// @relayRequestID c918acdd314dcab32dc58fe8569d46ff9222d9ca028d5e6df7b242589659a3bc
 
 import { ConcreteRequest } from "relay-runtime";
 export type ContentRatingInput =
@@ -55,6 +55,7 @@ export type mutationsSaveTitleMutation$data = {
   readonly updateMetadata: {
     readonly metadata: {
       readonly etag: string;
+      readonly id: string;
       readonly manifestationId: string;
       readonly title: string;
       readonly workId: string;
@@ -173,11 +174,18 @@ const node: ConcreteRequest = (function () {
           {
             alias: null,
             args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "id",
+                storageKey: null,
+              },
               {
                 alias: null,
                 args: null,
@@ -231,7 +239,7 @@ const node: ConcreteRequest = (function () {
       selections: v4 /*:: as any*/,
     },
     params: {
-      id: "e9fed38dbcc25d82210b0a3391d34fc587f2cae417d6a52a1fdce6b7dcd286c1",
+      id: "c918acdd314dcab32dc58fe8569d46ff9222d9ca028d5e6df7b242589659a3bc",
       metadata: {},
       name: "mutationsSaveTitleMutation",
       operationKind: "mutation",

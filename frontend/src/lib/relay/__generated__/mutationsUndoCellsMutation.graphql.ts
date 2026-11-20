@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<5afbb1f0fa13c70d6f7e8e75241a610d>>
- * @relayHash ba08a34e2a579bd2db173abf946a2689
+ * @generated SignedSource<<43d1effab9dc1ff4108deb52edcdd2aa>>
+ * @relayHash 55df8c7f644d6118999d3a4a05ab7502
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 25d31403b016f1b6e1b08b368bc5164683b2d1e0152845283e871fb6fafde4f1
+// @relayRequestID 94db810a6dc0528703287abf2233ffce41cf0edb3cc9acadbdb805f9388e2ac7
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsUndoCellsMutation$variables = {
@@ -20,6 +20,7 @@ export type mutationsUndoCellsMutation$data = {
   readonly undoMetadata: {
     readonly metadata: {
       readonly etag: string;
+      readonly id: string;
       readonly isbn13: string | null | undefined;
       readonly manifestationId: string;
       readonly pages: number | null | undefined;
@@ -131,11 +132,18 @@ const node: ConcreteRequest = (function () {
           {
             alias: null,
             args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "id",
+                storageKey: null,
+              },
               {
                 alias: null,
                 args: null,
@@ -210,7 +218,7 @@ const node: ConcreteRequest = (function () {
       selections: v3 /*:: as any*/,
     },
     params: {
-      id: "25d31403b016f1b6e1b08b368bc5164683b2d1e0152845283e871fb6fafde4f1",
+      id: "94db810a6dc0528703287abf2233ffce41cf0edb3cc9acadbdb805f9388e2ac7",
       metadata: {},
       name: "mutationsUndoCellsMutation",
       operationKind: "mutation",

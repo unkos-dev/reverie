@@ -55,8 +55,10 @@ GraphQL Work, Series and relation requires at least one manifestation visible to
 lookups. Shelf reads retain explicit owner predicates.
 
 Work holds shared metadata, contributors and the selected series. Manifestation holds file metadata and caller-owned
-reading state. Contributor role and series position belong to edges. Metadata editing snapshots carry their matching
-values, domain IDs and entity-tag from one database snapshot. They do not depend on later relation publication.
+reading state. Contributor role and series position belong to edges. `Manifestation.metadata` returns the current
+`MetadataRevision`, which carries matching values, domain IDs, entity-tag and selected relation pages from one database
+snapshot. Its relation entries, `RevisionContributor`, `RevisionGenre`, `RevisionMood` and `RevisionTag`, have no ID, so
+Relay stores them under their revision; each links to its live record for display and navigation.
 
 ## Interfaces and dependencies
 
@@ -82,6 +84,9 @@ use `relay-test-utils` 21.0.1.
 IDs are TypeIDs: a lowercase type prefix, `_`, then the record UUID in 26 lowercase characters of the TypeID base32
 alphabet. The prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`, `tag`, `genre`, `mood`,
 `metadata_version` and `user`. `publisher` is reserved and never sent, because publisher suggestions carry no entity ID.
+`metadata_rev` (MetadataRevision) carries a name-based UUIDv8 (RFC 9562 §5.5 and Appendix B.2): SHA-256 over a fixed
+Reverie namespace ID and the revision's owner identities and aggregate revisions. Each revision has its own ID, so a new
+revision is a new Relay record. `MetadataRevision` does not implement `Node`, and no field fetches a past revision.
 `backend/src/graphql/id.rs` binds each prefix to its type at compile time through `type-safe-id` 0.3.4 and refuses an ID
 longer than 80 characters before parsing. The `Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed
 lookup roots return null for malformed, wrong-type, overlong, hidden and missing records. The User variant resolves only
@@ -182,7 +187,7 @@ a `NotFound` member. Forbidden, internal and malformed-header failures remain ex
 execution-error codes. Exact Undo and resolution require the real live issuing browser session and retain expiry,
 budgets and non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
 
-A selected metadata snapshot pairs scalar values and bounded editable relation pages with one aggregate revision. Read
+A selected metadata revision pairs scalar values and bounded editable relation pages with one aggregate revision. Read
 loaders batch core rows and selected pages in one caller-scoped REPEATABLE READ transaction. Write operations
 materialise selected acknowledgements under their parent locks before commit. Scalar-only paths skip unrelated relation
 projection loads. HTTP asks for its complete result. Whole-list editing needs every page of that field at one revision;
@@ -215,13 +220,13 @@ no result.
 
 `frontend/src/lib/relay/mutations.ts` contains selected title, form, author and reading reads and acknowledgements, plus
 the other protected actions. `readerAuthorEditing` refetches through `fetch__Manifestation`. The network checks each
-editing document's selected snapshot, domain IDs, UUID handles, strong validators, timestamps and PageInfo before
-`sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment reads, `fetchQuery`,
-store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor chain with one pair
-of domain IDs and one revision. Library cells, the metadata dialog, Versions actions and batch Set status use these
-selected raw executions. Preferences read and sparse update share the canonical service with HTTP; defaults hide
-Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata refresh schedules the
-canonical claim-preserving enrichment operation with write scope and non-child authorisation.
+editing document's selected revision with its `metadata_rev` ID, domain IDs, UUID handles, strong validators, timestamps
+and PageInfo before `sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment
+reads, `fetchQuery`, store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor
+chain with one pair of domain IDs and one revision. Library cells, the metadata dialog, Versions actions and batch Set
+status use these selected raw executions. Preferences read and sparse update share the canonical service with HTTP;
+defaults hide Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata refresh
+schedules the canonical claim-preserving enrichment operation with write scope and non-child authorisation.
 
 ## Failure and recovery
 

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<42da8eddf0fd4c0d2a141595bcb5995e>>
- * @relayHash dafe7c54c48f9ebd89b200e6489d9fbf
+ * @generated SignedSource<<472462e15a3d5f9c3b970e09f979418e>>
+ * @relayHash 35914ade193ab43987c6c983cf162daf
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 7b9ad7b7566df37bf3b05f7a8a4e5004dcd8d8fb50b57fe5c40dd9e585ed49ee
+// @relayRequestID 3b3c91b7b9041b5f555854dfeaedf66ba5b7e5c0ed0edafb61e56bccd6a1d65e
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsResolveTitleQuery$variables = {
@@ -20,6 +20,7 @@ export type mutationsResolveTitleQuery$data = {
   readonly metadataOperation: {
     readonly metadata: {
       readonly etag: string;
+      readonly id: string;
       readonly manifestationId: string;
       readonly title: string;
       readonly workId: string;
@@ -128,11 +129,18 @@ const node: ConcreteRequest = (function () {
           {
             alias: null,
             args: null,
-            concreteType: "MetadataSnapshot",
+            concreteType: "MetadataRevision",
             kind: "LinkedField",
             name: "metadata",
             plural: false,
             selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "id",
+                storageKey: null,
+              },
               {
                 alias: null,
                 args: null,
@@ -186,7 +194,7 @@ const node: ConcreteRequest = (function () {
       selections: v3 /*:: as any*/,
     },
     params: {
-      id: "7b9ad7b7566df37bf3b05f7a8a4e5004dcd8d8fb50b57fe5c40dd9e585ed49ee",
+      id: "3b3c91b7b9041b5f555854dfeaedf66ba5b7e5c0ed0edafb61e56bccd6a1d65e",
       metadata: {},
       name: "mutationsResolveTitleQuery",
       operationKind: "query",

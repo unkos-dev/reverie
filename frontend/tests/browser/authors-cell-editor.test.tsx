@@ -8,6 +8,16 @@ import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
 import type { BookListItem } from "@/api";
 import { AuthorsCell } from "@/pages/library/table/cells";
 
+const revisionIds = new Map<string, string>();
+function revisionId(bookId: string, etag: string): string {
+  const key = `${bookId} ${etag}`;
+  const known = revisionIds.get(key);
+  if (known !== undefined) return known;
+  const created = encodeGraphQLId("MetadataRevision", crypto.randomUUID());
+  revisionIds.set(key, created);
+  return created;
+}
+
 const book: BookListItem = {
   metadata_etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
   reading_etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
@@ -48,6 +58,7 @@ test("saving stores the displayed authors in displayed order, including a typed 
           manifestation: {
             id: book.id,
             metadata: {
+              id: revisionId(book.id, book.metadata_etag),
               manifestationId: book.id,
               workId: book.work_id,
               etag: book.metadata_etag,
@@ -55,11 +66,13 @@ test("saving stores the displayed authors in displayed order, including a typed 
                 edges: book.authors.map((name, index) => ({
                   cursor: String(index),
                   node: {
-                    id: encodeGraphQLId(
-                      "Author",
-                      `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-                    ),
                     name,
+                    author: {
+                      id: encodeGraphQLId(
+                        "Author",
+                        `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+                      ),
+                    },
                   },
                 })),
                 pageInfo: {
