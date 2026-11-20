@@ -170,16 +170,21 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
   Details content type; they do not infer every business error an endpoint can return.
 - On the client, `apiFetch` (`frontend/src/api/fetch.ts`) is the sole interface between the SPA and `fetch()`, and
   `ApiError` represents retained HTTP failures. GraphQL execution refusals use `GraphQLExecutionError` in
-  `frontend/src/api/graphql.ts`. Reader consumers classify these safe execution codes in their owning flow. Temporary or
-  uncertain failures offer explicit retained-input Retry. Conflicts use authoritative resolution and matched Reload,
-  validation stays with the existing native form, and permanent refusals do not expose an unchanged resend.
+  `frontend/src/api/graphql.ts`, and the Library cells and edit sheet carry a metadata refusal member as
+  `MetadataRefusal`. Reader consumers classify these in their owning flow. Temporary or uncertain failures offer
+  explicit retained-input Retry. Conflicts use authoritative resolution and matched Reload, validation stays with the
+  existing native form, and permanent refusals do not expose an unchanged resend.
 
-Shelf mutations return union results: their expected outcomes are union members, and only forbidden and internal
-failures arrive as execution errors. Other GraphQL execution errors preserve safe domain slugs for validation, forbidden
-and missing targets, missing or stale preconditions, malformed baselines, field locks, and unavailable or conflicting
-Undo. `safe_error` carries field-validation messages and `lockedFields`. A stale conditional result adds `currentEtag`
-only after caller-visible target resolution. Internal failures retain the fixed message and no private diagnostics. The
-network validates these extensions and refuses partial data without replaying the operation.
+Shelf and metadata editing mutations return union results: their expected outcomes are union members, and forbidden,
+internal and malformed-baseline failures arrive as execution errors. The metadata refusals are `StaleBaseline`,
+`MetadataInvalid` with `fieldErrors` keyed by the service field name, `FieldsLocked` with the refused `fields`,
+`EditTooLarge`, `UndoUnavailable`, `UndoConflict` and `NotFound`. Each carries a caller-safe `message`. Other GraphQL
+execution errors, including `metadataOperation` and the reading and preference mutations, preserve safe domain slugs for
+validation, forbidden and missing targets, missing or stale preconditions, malformed baselines, field locks, oversized
+Undo capture (`edit-too-large`), and unavailable or conflicting Undo. `safe_error` carries field-validation messages and
+`lockedFields`. A stale reading-state result adds `currentEtag` only after caller-visible target resolution. Internal
+failures retain the fixed message and no private diagnostics. The network validates these extensions and refuses partial
+data without replaying the operation.
 
 ## Data and state
 
@@ -282,7 +287,9 @@ without attempting to parse the body, and `problemToApiError` falls back entirel
 Exact metadata restoration registers `undo-unavailable` at 422 for expired, consumed, invalidated or otherwise
 unavailable session operations, and `undo-conflict` at 409 for a recorded after-state mismatch despite equal field
 identity. Neither reveals another session's operation. A locked selected field retains the `field-locked` response and
-its operation. Stale aggregate preconditions retain 412 and the current ETag.
+its operation. Stale aggregate preconditions retain 412 and the current ETag. A save or restoration whose exact Undo
+capture exceeds its size limit returns 422 with the validation type and a fixed detail. Exceeding the capture time limit
+is an internal failure, so the caller may retry it.
 
 - Every `AppError` variant serialises as `application/problem+json` with a stable `type` slug drawn from `problems.rs`:
   the exhaustive, wildcard-free match in `AppError::into_response` guarantees this for the enum itself

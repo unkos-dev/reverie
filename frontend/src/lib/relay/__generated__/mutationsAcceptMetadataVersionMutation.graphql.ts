@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<abf5ed9ac2f3633a27814559cd823acb>>
- * @relayHash 3239afe4c89f44a1e8b5f528848582bf
+ * @generated SignedSource<<50b77100e06f4ea1fe32c5276dab5906>>
+ * @relayHash 8ff8faf19b114becc259cae3fddc2f12
  * @lightSyntaxTransform
  */
 
@@ -8,37 +8,51 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 9ff7b6755eec26908541476ffd1bb817d0787d4c0ef0c60118bc28680967ada9
+// @relayRequestID 730240e821b530abf2d9e3a77f7e7402e868d327585a53b8b090d04e4ae594ed
 
 import { ConcreteRequest } from "relay-runtime";
-export type mutationsAcceptMetadataVersionMutation$variables = {
+import { FragmentRefs } from "relay-runtime";
+export type AcceptMetadataVersionInput = {
   id: string;
   versionId: string;
 };
+export type mutationsAcceptMetadataVersionMutation$variables = {
+  input: AcceptMetadataVersionInput;
+};
 export type mutationsAcceptMetadataVersionMutation$data = {
-  readonly acceptMetadataVersion: {
-    readonly manifestationId: string;
-    readonly metadata:
-      | {
-          readonly contentRating: string | null | undefined;
-          readonly description: string | null | undefined;
-          readonly etag: string;
+  readonly acceptMetadataVersion:
+    | {
+        readonly __typename: "FieldsLocked";
+        readonly fields: ReadonlyArray<string>;
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "MetadataInvalid";
+        readonly fieldErrors: ReadonlyArray<{
+          readonly field: string;
+          readonly message: string;
+        }>;
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "MetadataVersionAccepted";
+        readonly manifestation: {
           readonly id: string;
-          readonly isbn10: string | null | undefined;
-          readonly isbn13: string | null | undefined;
-          readonly isbnMismatch: boolean;
-          readonly language: string | null | undefined;
-          readonly manifestationId: string;
-          readonly pages: number | null | undefined;
-          readonly publicationDate: string | null | undefined;
-          readonly publisher: string | null | undefined;
-          readonly subtitle: string | null | undefined;
-          readonly title: string;
-          readonly workId: string;
-        }
-      | null
-      | undefined;
-  };
+          readonly metadata: {
+            readonly " $fragmentSpreads": FragmentRefs<"mutationsFormSnapshot">;
+          };
+          readonly " $fragmentSpreads": FragmentRefs<"readerDetailBook" | "readerVersions">;
+        };
+      }
+    | {
+        readonly __typename: "NotFound";
+        readonly message: string;
+      }
+    | {
+        // This will never be '%other', but we need some
+        // value in case none of the concrete values match.
+        readonly __typename: "%other";
+      };
 };
 export type mutationsAcceptMetadataVersionMutation = {
   response: mutationsAcceptMetadataVersionMutation$data;
@@ -50,163 +64,256 @@ const node: ConcreteRequest = (function () {
       {
         defaultValue: null,
         kind: "LocalArgument",
-        name: "id",
-      },
-      {
-        defaultValue: null,
-        kind: "LocalArgument",
-        name: "versionId",
+        name: "input",
       },
     ],
-    v1 = {
+    v1 = [
+      {
+        kind: "Variable",
+        name: "input",
+        variableName: "input",
+      },
+    ],
+    v2 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "manifestationId",
+      name: "__typename",
       storageKey: null,
     },
-    v2 = [
+    v3 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
+    v4 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "message",
+      storageKey: null,
+    },
+    v5 = {
+      kind: "InlineFragment",
+      selections: [
+        v4 /*:: as any*/,
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "fields",
+          storageKey: null,
+        },
+      ],
+      type: "FieldsLocked",
+      abstractKey: null,
+    },
+    v6 = {
+      kind: "InlineFragment",
+      selections: [
+        v4 /*:: as any*/,
+        {
+          alias: null,
+          args: null,
+          concreteType: "FieldError",
+          kind: "LinkedField",
+          name: "fieldErrors",
+          plural: true,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "field",
+              storageKey: null,
+            },
+            v4 /*:: as any*/,
+          ],
+          storageKey: null,
+        },
+      ],
+      type: "MetadataInvalid",
+      abstractKey: null,
+    },
+    v7 = {
+      kind: "InlineFragment",
+      selections: [v4 /*:: as any*/],
+      type: "NotFound",
+      abstractKey: null,
+    },
+    v8 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "title",
+      storageKey: null,
+    },
+    v9 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "description",
+      storageKey: null,
+    },
+    v10 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "language",
+      storageKey: null,
+    },
+    v11 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "publisher",
+      storageKey: null,
+    },
+    v12 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "publicationDate",
+      storageKey: null,
+    },
+    v13 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isbn10",
+      storageKey: null,
+    },
+    v14 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isbn13",
+      storageKey: null,
+    },
+    v15 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isbnMismatch",
+      storageKey: null,
+    },
+    v16 = [
       {
-        alias: null,
-        args: [
-          {
-            kind: "Variable",
-            name: "id",
-            variableName: "id",
-          },
-          {
-            kind: "Variable",
-            name: "versionId",
-            variableName: "versionId",
-          },
-        ],
-        concreteType: "MetadataReview",
-        kind: "LinkedField",
-        name: "acceptMetadataVersion",
-        plural: false,
-        selections: [
-          v1 /*:: as any*/,
-          {
-            alias: null,
-            args: null,
-            concreteType: "MetadataRevision",
-            kind: "LinkedField",
-            name: "metadata",
-            plural: false,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "id",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "workId",
-                storageKey: null,
-              },
-              v1 /*:: as any*/,
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "etag",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "title",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "subtitle",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "description",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "language",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "publisher",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "publicationDate",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "isbn10",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "isbn13",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "isbnMismatch",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "pages",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "contentRating",
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-        ],
-        storageKey: null,
+        kind: "Literal",
+        name: "first",
+        value: 20,
       },
-    ];
+    ],
+    v17 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "name",
+      storageKey: null,
+    },
+    v18 = [v3 /*:: as any*/, v17 /*:: as any*/, v2 /*:: as any*/],
+    v19 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "cursor",
+      storageKey: null,
+    },
+    v20 = {
+      alias: null,
+      args: null,
+      concreteType: "PageInfo",
+      kind: "LinkedField",
+      name: "pageInfo",
+      plural: false,
+      selections: [
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "endCursor",
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "hasNextPage",
+          storageKey: null,
+        },
+      ],
+      storageKey: null,
+    };
   return {
     fragment: {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
       metadata: null,
       name: "mutationsAcceptMetadataVersionMutation",
-      selections: v2 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v1 /*:: as any*/,
+          concreteType: null,
+          kind: "LinkedField",
+          name: "acceptMetadataVersion",
+          plural: false,
+          selections: [
+            v2 /*:: as any*/,
+            {
+              kind: "InlineFragment",
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "Manifestation",
+                  kind: "LinkedField",
+                  name: "manifestation",
+                  plural: false,
+                  selections: [
+                    v3 /*:: as any*/,
+                    {
+                      alias: null,
+                      args: null,
+                      concreteType: "MetadataRevision",
+                      kind: "LinkedField",
+                      name: "metadata",
+                      plural: false,
+                      selections: [
+                        {
+                          args: null,
+                          kind: "FragmentSpread",
+                          name: "mutationsFormSnapshot",
+                        },
+                      ],
+                      storageKey: null,
+                    },
+                    {
+                      args: null,
+                      kind: "FragmentSpread",
+                      name: "readerDetailBook",
+                    },
+                    {
+                      args: null,
+                      kind: "FragmentSpread",
+                      name: "readerVersions",
+                    },
+                  ],
+                  storageKey: null,
+                },
+              ],
+              type: "MetadataVersionAccepted",
+              abstractKey: null,
+            },
+            v5 /*:: as any*/,
+            v6 /*:: as any*/,
+            v7 /*:: as any*/,
+          ],
+          storageKey: null,
+        },
+      ],
       type: "Mutation",
       abstractKey: null,
     },
@@ -215,10 +322,389 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
       name: "mutationsAcceptMetadataVersionMutation",
-      selections: v2 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v1 /*:: as any*/,
+          concreteType: null,
+          kind: "LinkedField",
+          name: "acceptMetadataVersion",
+          plural: false,
+          selections: [
+            v2 /*:: as any*/,
+            {
+              kind: "InlineFragment",
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "Manifestation",
+                  kind: "LinkedField",
+                  name: "manifestation",
+                  plural: false,
+                  selections: [
+                    v3 /*:: as any*/,
+                    {
+                      alias: null,
+                      args: null,
+                      concreteType: "MetadataRevision",
+                      kind: "LinkedField",
+                      name: "metadata",
+                      plural: false,
+                      selections: [
+                        v3 /*:: as any*/,
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "workId",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "manifestationId",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "etag",
+                          storageKey: null,
+                        },
+                        v8 /*:: as any*/,
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "subtitle",
+                          storageKey: null,
+                        },
+                        v9 /*:: as any*/,
+                        v10 /*:: as any*/,
+                        v11 /*:: as any*/,
+                        v12 /*:: as any*/,
+                        v13 /*:: as any*/,
+                        v14 /*:: as any*/,
+                        v15 /*:: as any*/,
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "pages",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "contentRating",
+                          storageKey: null,
+                        },
+                      ],
+                      storageKey: null,
+                    },
+                    v14 /*:: as any*/,
+                    v13 /*:: as any*/,
+                    v15 /*:: as any*/,
+                    v11 /*:: as any*/,
+                    v12 /*:: as any*/,
+                    {
+                      alias: null,
+                      args: null,
+                      concreteType: "Work",
+                      kind: "LinkedField",
+                      name: "work",
+                      plural: false,
+                      selections: [
+                        v3 /*:: as any*/,
+                        v8 /*:: as any*/,
+                        v9 /*:: as any*/,
+                        v10 /*:: as any*/,
+                        {
+                          alias: null,
+                          args: v16 /*:: as any*/,
+                          concreteType: "AuthorConnection",
+                          kind: "LinkedField",
+                          name: "authors",
+                          plural: false,
+                          selections: [
+                            {
+                              alias: null,
+                              args: null,
+                              concreteType: "AuthorEdge",
+                              kind: "LinkedField",
+                              name: "edges",
+                              plural: true,
+                              selections: [
+                                {
+                                  alias: null,
+                                  args: null,
+                                  concreteType: "Author",
+                                  kind: "LinkedField",
+                                  name: "node",
+                                  plural: false,
+                                  selections: v18 /*:: as any*/,
+                                  storageKey: null,
+                                },
+                                v19 /*:: as any*/,
+                              ],
+                              storageKey: null,
+                            },
+                            v20 /*:: as any*/,
+                          ],
+                          storageKey: "authors(first:20)",
+                        },
+                        {
+                          alias: null,
+                          args: v16 /*:: as any*/,
+                          filters: null,
+                          handle: "connection",
+                          key: "readerWorkAuthors_authors",
+                          kind: "LinkedHandle",
+                          name: "authors",
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          concreteType: "SelectedSeries",
+                          kind: "LinkedField",
+                          name: "selectedSeries",
+                          plural: false,
+                          selections: [
+                            {
+                              alias: null,
+                              args: null,
+                              concreteType: "Series",
+                              kind: "LinkedField",
+                              name: "node",
+                              plural: false,
+                              selections: [v3 /*:: as any*/, v17 /*:: as any*/],
+                              storageKey: null,
+                            },
+                            {
+                              alias: null,
+                              args: null,
+                              kind: "ScalarField",
+                              name: "position",
+                              storageKey: null,
+                            },
+                          ],
+                          storageKey: null,
+                        },
+                      ],
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "coverUrl",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "ingestionStatus",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "validationStatus",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "enrichmentStatus",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "createdAt",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      concreteType: "MetadataVersions",
+                      kind: "LinkedField",
+                      name: "versions",
+                      plural: false,
+                      selections: [
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "pendingCount",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: v16 /*:: as any*/,
+                          concreteType: "MetadataVersionConnection",
+                          kind: "LinkedField",
+                          name: "pending",
+                          plural: false,
+                          selections: [
+                            {
+                              alias: null,
+                              args: null,
+                              concreteType: "MetadataVersionEdge",
+                              kind: "LinkedField",
+                              name: "edges",
+                              plural: true,
+                              selections: [
+                                {
+                                  alias: null,
+                                  args: null,
+                                  concreteType: "MetadataVersion",
+                                  kind: "LinkedField",
+                                  name: "node",
+                                  plural: false,
+                                  selections: [
+                                    v3 /*:: as any*/,
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "fieldName",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "source",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "newValue",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "confidenceScore",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "matchType",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "status",
+                                      storageKey: null,
+                                    },
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "observationCount",
+                                      storageKey: null,
+                                    },
+                                    v2 /*:: as any*/,
+                                  ],
+                                  storageKey: null,
+                                },
+                                v19 /*:: as any*/,
+                              ],
+                              storageKey: null,
+                            },
+                            v20 /*:: as any*/,
+                          ],
+                          storageKey: "pending(first:20)",
+                        },
+                        {
+                          alias: null,
+                          args: v16 /*:: as any*/,
+                          filters: null,
+                          handle: "connection",
+                          key: "readerVersions_pending",
+                          kind: "LinkedHandle",
+                          name: "pending",
+                        },
+                      ],
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: v16 /*:: as any*/,
+                      concreteType: "TagConnection",
+                      kind: "LinkedField",
+                      name: "tags",
+                      plural: false,
+                      selections: [
+                        {
+                          alias: null,
+                          args: null,
+                          concreteType: "TagEdge",
+                          kind: "LinkedField",
+                          name: "edges",
+                          plural: true,
+                          selections: [
+                            {
+                              alias: null,
+                              args: null,
+                              concreteType: "Tag",
+                              kind: "LinkedField",
+                              name: "node",
+                              plural: false,
+                              selections: v18 /*:: as any*/,
+                              storageKey: null,
+                            },
+                            v19 /*:: as any*/,
+                          ],
+                          storageKey: null,
+                        },
+                        v20 /*:: as any*/,
+                      ],
+                      storageKey: "tags(first:20)",
+                    },
+                    {
+                      alias: null,
+                      args: v16 /*:: as any*/,
+                      filters: null,
+                      handle: "connection",
+                      key: "readerDetailTags_tags",
+                      kind: "LinkedHandle",
+                      name: "tags",
+                    },
+                  ],
+                  storageKey: null,
+                },
+              ],
+              type: "MetadataVersionAccepted",
+              abstractKey: null,
+            },
+            v5 /*:: as any*/,
+            v6 /*:: as any*/,
+            v7 /*:: as any*/,
+          ],
+          storageKey: null,
+        },
+      ],
     },
     params: {
-      id: "9ff7b6755eec26908541476ffd1bb817d0787d4c0ef0c60118bc28680967ada9",
+      id: "730240e821b530abf2d9e3a77f7e7402e868d327585a53b8b090d04e4ae594ed",
       metadata: {},
       name: "mutationsAcceptMetadataVersionMutation",
       operationKind: "mutation",
@@ -227,6 +713,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "0d47245e89bb9b4d96c85e0b3b03432e";
+(node as any).hash = "2168aa966e720b1baa582dac6bbfeff5";
 
 export default node;

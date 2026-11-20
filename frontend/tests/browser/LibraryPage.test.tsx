@@ -127,6 +127,28 @@ function refusal(code: string, errors?: Record<string, string>): Response {
     { headers: { "Content-Type": "application/json" } },
   );
 }
+function refused(root: string, typename: string, message: string, extra: object = {}): Response {
+  return response({ [root]: { __typename: typename, message, ...extra } });
+}
+function savedCells(requestId: string | null, book: BookListItem, operations: unknown[]): Response {
+  return response({
+    updateMetadata: {
+      __typename: "MetadataSaved",
+      requestId,
+      operations,
+      manifestation: { id: encodeGraphQLId("Manifestation", book.id), metadata: metadata(book) },
+    },
+  });
+}
+function restoredCells(book: BookListItem, operation: unknown): Response {
+  return response({
+    undoMetadata: {
+      __typename: "MetadataRestored",
+      operation,
+      manifestation: { id: encodeGraphQLId("Manifestation", book.id), metadata: metadata(book) },
+    },
+  });
+}
 const pageInfo = { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null };
 function metadata(book: BookListItem) {
   return {
@@ -234,8 +256,10 @@ async function renderLibrary({
     const request = wireRequest.parse(JSON.parse(z.string().parse(init?.body)));
     const name = documents[request.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
     if (name === undefined) throw new Error("Unknown trusted operation");
-    fixture.calls.push({ name, variables: request.variables });
-    const overridden = handler?.(name, request.variables, fixture);
+    const input = z.record(z.string(), z.unknown()).safeParse(request.variables.input);
+    const variables = input.success ? input.data : request.variables;
+    fixture.calls.push({ name, variables });
+    const overridden = handler?.(name, variables, fixture);
     if (overridden !== undefined) return Promise.resolve(overridden);
     if (name === "readerLibraryQuery") {
       const variables = listVariables.parse(request.variables);
@@ -638,13 +662,7 @@ test("metadata Undo survives table refreshes", async () => {
           metadata_etag: '"dddddddddddddddddddddd"',
         };
         owner.books = [current];
-        return response({
-          updateMetadata: {
-            requestId: write.requestId,
-            metadata: metadata(current),
-            operations: [pagesOperation],
-          },
-        });
+        return savedCells(write.requestId, current, [pagesOperation]);
       }
       if (name === "mutationsResolveCellsQuery") {
         if (variables.requestId != null) expect(variables.requestId).toBe(titleRequest);
@@ -661,12 +679,11 @@ test("metadata Undo survives table refreshes", async () => {
         if (variables.operationId === pagesOperation.operationId) {
           current = { ...current, pages: 100, metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
           owner.books = [current];
-          return response({
-            undoMetadata: { outcome: "restored", metadata: metadata(current), operations: [] },
-          });
+          return restoredCells(current, { ...pagesOperation, status: "consumed" });
         }
         titleUndoCalls += 1;
-        if (titleUndoCalls === 1) return refusal("if-match-mismatch");
+        if (titleUndoCalls === 1)
+          return refused("undoMetadata", "StaleBaseline", "if-match-mismatch");
         expect(variables.baseline).toBe(current.metadata_etag);
         return pendingUndo;
       }
@@ -709,15 +726,7 @@ test("metadata Undo survives table refreshes", async () => {
     metadata_etag: '"ffffffffffffffffffffff"',
   };
   fixture.books = [current];
-  finishUndo?.(
-    response({
-      undoMetadata: {
-        outcome: "restored",
-        metadata: metadata(current),
-        operations: [{ ...titleOperation, status: "consumed" }],
-      },
-    }),
-  );
+  finishUndo?.(restoredCells(current, { ...titleOperation, status: "consumed" }));
   await expect
     .element(page.getByText(/Title for “The Brothers Karamazov” restored/))
     .toBeInTheDocument();
@@ -792,9 +801,14 @@ it("Library Retry sends the retained edit again", async () => {
           owner.books = [current];
           return delayed;
         }
-        if (mode === "conflict") return refusal("if-match-mismatch");
-        if (mode === "validation") return refusal("validation", { isbn_13: "Invalid ISBN" });
-        if (mode === "locked") return refusal("field-locked");
+        if (mode === "conflict")
+          return refused("updateMetadata", "StaleBaseline", "if-match-mismatch");
+        if (mode === "validation")
+          return refused("updateMetadata", "MetadataInvalid", "validation", {
+            fieldErrors: [{ field: "isbn_13", message: "Invalid ISBN" }],
+          });
+        if (mode === "locked")
+          return refused("updateMetadata", "FieldsLocked", "field-locked", { fields: ["isbn_13"] });
         current = {
           ...current,
           title: z.string().optional().parse(write.patch.title) ?? current.title,
@@ -802,13 +816,7 @@ it("Library Retry sends the retained edit again", async () => {
           metadata_etag: '"dddddddddddddddddddddd"',
         };
         owner.books = [current];
-        return response({
-          updateMetadata: {
-            requestId: write.requestId,
-            metadata: metadata(current),
-            operations: [],
-          },
-        });
+        return savedCells(write.requestId, current, []);
       }
       if (name === "mutationsResolveCellsQuery")
         return response({
@@ -821,13 +829,7 @@ it("Library Retry sends the retained edit again", async () => {
       if (name === "mutationsCellsQuery")
         return response({ manifestation: { id: variables.id, metadata: metadata(current) } });
       if (name === "mutationsUndoCellsMutation")
-        return response({
-          undoMetadata: {
-            outcome: "restored",
-            metadata: metadata(original),
-            operations: [{ ...operation, status: "consumed" }],
-          },
-        });
+        return restoredCells(original, { ...operation, status: "consumed" });
       if (name === "mutationsReadingMutation") {
         const write = readingVariables.parse(variables);
         readingWrites.push(write);

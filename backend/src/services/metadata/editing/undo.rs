@@ -79,15 +79,15 @@ impl ResourceBudget {
         }
     }
 
-    fn refused() -> AppError {
-        AppError::Validation(
-            "This change is too large or took too long to prepare for Undo.".into(),
-        )
+    const fn refused() -> AppError {
+        AppError::EditTooLarge
     }
 
     fn check(&self) -> Result<(), AppError> {
         if self.started.elapsed() >= OPERATION_TIME {
-            return Err(Self::refused());
+            return Err(AppError::Internal(anyhow::anyhow!(
+                "metadata Undo preparation exceeded its time budget"
+            )));
         }
         Ok(())
     }

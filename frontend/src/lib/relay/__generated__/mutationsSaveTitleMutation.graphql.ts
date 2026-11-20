@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<02ab4965c3f801931a310fa00ab0a5ff>>
- * @relayHash 89979d5e9298b3a2ed35f207e247b84c
+ * @generated SignedSource<<8e53b3254d6afef80ac7acb307ad6333>>
+ * @relayHash 789b2b574e35bcbf96d15120a801039c
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID c918acdd314dcab32dc58fe8569d46ff9222d9ca028d5e6df7b242589659a3bc
+// @relayRequestID db903e2553843102950b07958a7a9820630098d9302e5c775514513360b591a1
 
 import { ConcreteRequest } from "relay-runtime";
 export type ContentRatingInput =
@@ -18,6 +18,12 @@ export type ContentRatingInput =
   | "MATURE"
   | "TEEN"
   | "%future added value";
+export type UpdateMetadataInput = {
+  baseline: string;
+  id: string;
+  patch: MetadataPatch;
+  requestId?: string | null | undefined;
+};
 export type MetadataPatch = {
   contentRating?: ContentRatingInput | null | undefined;
   contributors?: ContributorPatch | null | undefined;
@@ -46,28 +52,60 @@ export type IdentifierPatch = {
   value?: string | null | undefined;
 };
 export type mutationsSaveTitleMutation$variables = {
-  baseline?: string | null | undefined;
-  id: string;
-  patch: MetadataPatch;
-  requestId?: string | null | undefined;
+  input: UpdateMetadataInput;
 };
 export type mutationsSaveTitleMutation$data = {
-  readonly updateMetadata: {
-    readonly metadata: {
-      readonly etag: string;
-      readonly id: string;
-      readonly manifestationId: string;
-      readonly title: string;
-      readonly workId: string;
-    };
-    readonly operations: ReadonlyArray<{
-      readonly expiresAt: string;
-      readonly fieldName: string;
-      readonly operationId: string;
-      readonly status: string;
-    }>;
-    readonly requestId: string | null | undefined;
-  };
+  readonly updateMetadata:
+    | {
+        readonly __typename: "EditTooLarge";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "FieldsLocked";
+        readonly fields: ReadonlyArray<string>;
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "MetadataInvalid";
+        readonly fieldErrors: ReadonlyArray<{
+          readonly field: string;
+          readonly message: string;
+        }>;
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "MetadataSaved";
+        readonly manifestation: {
+          readonly id: string;
+          readonly metadata: {
+            readonly etag: string;
+            readonly id: string;
+            readonly manifestationId: string;
+            readonly title: string;
+            readonly workId: string;
+          };
+        };
+        readonly operations: ReadonlyArray<{
+          readonly expiresAt: string;
+          readonly fieldName: string;
+          readonly operationId: string;
+          readonly status: string;
+        }>;
+        readonly requestId: string | null | undefined;
+      }
+    | {
+        readonly __typename: "NotFound";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "StaleBaseline";
+        readonly message: string;
+      }
+    | {
+        // This will never be '%other', but we need some
+        // value in case none of the concrete values match.
+        readonly __typename: "%other";
+      };
 };
 export type mutationsSaveTitleMutation = {
   response: mutationsSaveTitleMutation$data;
@@ -75,171 +113,268 @@ export type mutationsSaveTitleMutation = {
 };
 
 const node: ConcreteRequest = (function () {
-  var v0 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "baseline",
-    },
-    v1 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "id",
-    },
+  var v0 = [
+      {
+        defaultValue: null,
+        kind: "LocalArgument",
+        name: "input",
+      },
+    ],
+    v1 = [
+      {
+        kind: "Variable",
+        name: "input",
+        variableName: "input",
+      },
+    ],
     v2 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "patch",
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "__typename",
+      storageKey: null,
     },
     v3 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "requestId",
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
     },
-    v4 = [
-      {
-        alias: null,
-        args: [
-          {
-            kind: "Variable",
-            name: "baseline",
-            variableName: "baseline",
-          },
-          {
-            kind: "Variable",
-            name: "id",
-            variableName: "id",
-          },
-          {
-            kind: "Variable",
-            name: "patch",
-            variableName: "patch",
-          },
-          {
-            kind: "Variable",
-            name: "requestId",
-            variableName: "requestId",
-          },
-        ],
-        concreteType: "MetadataSave",
-        kind: "LinkedField",
-        name: "updateMetadata",
-        plural: false,
-        selections: [
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "requestId",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "FieldOperation",
-            kind: "LinkedField",
-            name: "operations",
-            plural: true,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "operationId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "fieldName",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "expiresAt",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "status",
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "MetadataRevision",
-            kind: "LinkedField",
-            name: "metadata",
-            plural: false,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "id",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "workId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "manifestationId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "etag",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "title",
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-        ],
-        storageKey: null,
-      },
-    ];
+    v4 = {
+      kind: "InlineFragment",
+      selections: [
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "requestId",
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          concreteType: "FieldOperation",
+          kind: "LinkedField",
+          name: "operations",
+          plural: true,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "operationId",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "fieldName",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "expiresAt",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "status",
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          concreteType: "Manifestation",
+          kind: "LinkedField",
+          name: "manifestation",
+          plural: false,
+          selections: [
+            v3 /*:: as any*/,
+            {
+              alias: null,
+              args: null,
+              concreteType: "MetadataRevision",
+              kind: "LinkedField",
+              name: "metadata",
+              plural: false,
+              selections: [
+                v3 /*:: as any*/,
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "workId",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "manifestationId",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "etag",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "title",
+                  storageKey: null,
+                },
+              ],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
+      type: "MetadataSaved",
+      abstractKey: null,
+    },
+    v5 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "message",
+      storageKey: null,
+    },
+    v6 = [v5 /*:: as any*/],
+    v7 = {
+      kind: "InlineFragment",
+      selections: v6 /*:: as any*/,
+      type: "StaleBaseline",
+      abstractKey: null,
+    },
+    v8 = {
+      kind: "InlineFragment",
+      selections: [
+        v5 /*:: as any*/,
+        {
+          alias: null,
+          args: null,
+          concreteType: "FieldError",
+          kind: "LinkedField",
+          name: "fieldErrors",
+          plural: true,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "field",
+              storageKey: null,
+            },
+            v5 /*:: as any*/,
+          ],
+          storageKey: null,
+        },
+      ],
+      type: "MetadataInvalid",
+      abstractKey: null,
+    },
+    v9 = {
+      kind: "InlineFragment",
+      selections: [
+        v5 /*:: as any*/,
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "fields",
+          storageKey: null,
+        },
+      ],
+      type: "FieldsLocked",
+      abstractKey: null,
+    },
+    v10 = {
+      kind: "InlineFragment",
+      selections: v6 /*:: as any*/,
+      type: "EditTooLarge",
+      abstractKey: null,
+    },
+    v11 = {
+      kind: "InlineFragment",
+      selections: v6 /*:: as any*/,
+      type: "NotFound",
+      abstractKey: null,
+    };
   return {
     fragment: {
-      argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/, v2 /*:: as any*/, v3 /*:: as any*/],
+      argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
       metadata: null,
       name: "mutationsSaveTitleMutation",
-      selections: v4 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v1 /*:: as any*/,
+          concreteType: null,
+          kind: "LinkedField",
+          name: "updateMetadata",
+          plural: false,
+          selections: [
+            v2 /*:: as any*/,
+            v4 /*:: as any*/,
+            v7 /*:: as any*/,
+            v8 /*:: as any*/,
+            v9 /*:: as any*/,
+            v10 /*:: as any*/,
+            v11 /*:: as any*/,
+          ],
+          storageKey: null,
+        },
+      ],
       type: "Mutation",
       abstractKey: null,
     },
     kind: "Request",
     operation: {
-      argumentDefinitions: [v1 /*:: as any*/, v0 /*:: as any*/, v3 /*:: as any*/, v2 /*:: as any*/],
+      argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
       name: "mutationsSaveTitleMutation",
-      selections: v4 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v1 /*:: as any*/,
+          concreteType: null,
+          kind: "LinkedField",
+          name: "updateMetadata",
+          plural: false,
+          selections: [
+            v2 /*:: as any*/,
+            v4 /*:: as any*/,
+            {
+              kind: "TypeDiscriminator",
+              abstractKey: "__isUpdateMetadataResult",
+            },
+            v7 /*:: as any*/,
+            v8 /*:: as any*/,
+            v9 /*:: as any*/,
+            v10 /*:: as any*/,
+            v11 /*:: as any*/,
+          ],
+          storageKey: null,
+        },
+      ],
     },
     params: {
-      id: "c918acdd314dcab32dc58fe8569d46ff9222d9ca028d5e6df7b242589659a3bc",
+      id: "db903e2553843102950b07958a7a9820630098d9302e5c775514513360b591a1",
       metadata: {},
       name: "mutationsSaveTitleMutation",
       operationKind: "mutation",
@@ -248,6 +383,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "c2f9aebbada174f534f2e66a9300cfce";
+(node as any).hash = "13d67a54fb07927f52cf7eefcec77cc2";
 
 export default node;

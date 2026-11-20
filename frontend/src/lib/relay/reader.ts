@@ -84,24 +84,34 @@ export const readerDetailTags = graphql`
   }
 `;
 
-export const readerDetailBook = graphql`
-  fragment readerDetailBook on Manifestation @throwOnFieldError {
+export const readerDetailEditable = graphql`
+  fragment readerDetailEditable on Manifestation @throwOnFieldError {
     id
-    coverUrl
     isbn13
     isbn10
     isbnMismatch
     publisher
     publicationDate
+    work {
+      id
+      title
+      description
+      language
+    }
+  }
+`;
+
+export const readerDetailBook = graphql`
+  fragment readerDetailBook on Manifestation @throwOnFieldError {
+    id
+    ...readerDetailEditable
+    coverUrl
     ingestionStatus
     validationStatus
     enrichmentStatus
     createdAt
     work {
       id
-      title
-      description
-      language
       ...readerWorkAuthors
       selectedSeries {
         node {

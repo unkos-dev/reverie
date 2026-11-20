@@ -11,7 +11,7 @@ export const mutationsTitleSnapshot = graphql`
 `;
 
 export const mutationsFormSnapshot = graphql`
-  fragment mutationsFormSnapshot on MetadataRevision {
+  fragment mutationsFormSnapshot on MetadataRevision @throwOnFieldError {
     id
     workId
     manifestationId
@@ -43,6 +43,55 @@ export const mutationsReadingSnapshot = graphql`
   }
 `;
 
+export const mutationsSaveRefusal = graphql`
+  fragment mutationsSaveRefusal on UpdateMetadataResult {
+    ... on StaleBaseline {
+      message
+    }
+    ... on MetadataInvalid {
+      message
+      fieldErrors {
+        field
+        message
+      }
+    }
+    ... on FieldsLocked {
+      message
+      fields
+    }
+    ... on EditTooLarge {
+      message
+    }
+    ... on NotFound {
+      message
+    }
+  }
+`;
+
+export const mutationsUndoRefusal = graphql`
+  fragment mutationsUndoRefusal on UndoMetadataResult {
+    ... on StaleBaseline {
+      message
+    }
+    ... on UndoUnavailable {
+      message
+    }
+    ... on UndoConflict {
+      message
+    }
+    ... on FieldsLocked {
+      message
+      fields
+    }
+    ... on EditTooLarge {
+      message
+    }
+    ... on NotFound {
+      message
+    }
+  }
+`;
+
 export const mutationsTitleQuery = graphql`
   query mutationsTitleQuery($id: ID!) {
     manifestation(id: $id) {
@@ -55,40 +104,48 @@ export const mutationsTitleQuery = graphql`
 `;
 
 export const mutationsSaveTitleMutation = graphql`
-  mutation mutationsSaveTitleMutation(
-    $id: ID!
-    $baseline: String
-    $requestId: String
-    $patch: MetadataPatch!
-  ) {
-    updateMetadata(id: $id, baseline: $baseline, requestId: $requestId, patch: $patch) {
-      requestId
-      operations {
-        operationId
-        fieldName
-        expiresAt
-        status
+  mutation mutationsSaveTitleMutation($input: UpdateMetadataInput!) {
+    updateMetadata(input: $input) {
+      __typename
+      ... on MetadataSaved {
+        requestId
+        operations {
+          operationId
+          fieldName
+          expiresAt
+          status
+        }
+        manifestation {
+          id
+          metadata {
+            ...mutationsTitleSnapshot @relay(mask: false)
+          }
+        }
       }
-      metadata {
-        ...mutationsTitleSnapshot @relay(mask: false)
-      }
+      ...mutationsSaveRefusal @relay(mask: false)
     }
   }
 `;
 
 export const mutationsUndoTitleMutation = graphql`
-  mutation mutationsUndoTitleMutation($id: ID!, $baseline: String, $operationId: String!) {
-    undoMetadata(id: $id, baseline: $baseline, operationId: $operationId) {
-      outcome
-      operations {
-        operationId
-        fieldName
-        expiresAt
-        status
+  mutation mutationsUndoTitleMutation($input: UndoMetadataInput!) {
+    undoMetadata(input: $input) {
+      __typename
+      ... on MetadataRestored {
+        operation {
+          operationId
+          fieldName
+          expiresAt
+          status
+        }
+        manifestation {
+          id
+          metadata {
+            ...mutationsTitleSnapshot @relay(mask: false)
+          }
+        }
       }
-      metadata {
-        ...mutationsTitleSnapshot @relay(mask: false)
-      }
+      ...mutationsUndoRefusal @relay(mask: false)
     }
   }
 `;
@@ -111,67 +168,65 @@ export const mutationsResolveTitleQuery = graphql`
 `;
 
 export const mutationsFormQuery = graphql`
-  query mutationsFormQuery($id: ID!) {
+  query mutationsFormQuery($id: ID!) @throwOnFieldError {
     manifestation(id: $id) {
       id
       metadata {
-        ...mutationsFormSnapshot @relay(mask: false)
+        ...mutationsFormSnapshot
       }
     }
   }
 `;
 
 export const mutationsSaveFormMutation = graphql`
-  mutation mutationsSaveFormMutation(
-    $id: ID!
-    $baseline: String
-    $requestId: String
-    $patch: MetadataPatch!
-  ) {
-    updateMetadata(id: $id, baseline: $baseline, requestId: $requestId, patch: $patch) {
-      requestId
-      operations {
-        operationId
-        fieldName
-        expiresAt
-        status
+  mutation mutationsSaveFormMutation($input: UpdateMetadataInput!) {
+    updateMetadata(input: $input) {
+      __typename
+      ... on MetadataSaved {
+        manifestation {
+          id
+          metadata {
+            ...mutationsFormSnapshot
+          }
+          ...readerDetailEditable
+          ...readerVersions
+        }
       }
-      metadata {
-        ...mutationsFormSnapshot @relay(mask: false)
-      }
+      ...mutationsSaveRefusal @relay(mask: false)
     }
   }
 `;
 
 export const mutationsUndoFormMutation = graphql`
-  mutation mutationsUndoFormMutation($id: ID!, $baseline: String, $operationId: String!) {
-    undoMetadata(id: $id, baseline: $baseline, operationId: $operationId) {
-      outcome
-      operations {
-        operationId
-        fieldName
-        expiresAt
-        status
+  mutation mutationsUndoFormMutation($input: UndoMetadataInput!) {
+    undoMetadata(input: $input) {
+      __typename
+      ... on MetadataRestored {
+        operation {
+          operationId
+          fieldName
+          expiresAt
+          status
+        }
+        manifestation {
+          id
+          metadata {
+            ...mutationsFormSnapshot
+          }
+        }
       }
-      metadata {
-        ...mutationsFormSnapshot @relay(mask: false)
-      }
+      ...mutationsUndoRefusal @relay(mask: false)
     }
   }
 `;
 
 export const mutationsResolveFormQuery = graphql`
-  query mutationsResolveFormQuery($id: ID!, $requestId: String, $operationId: String) {
+  query mutationsResolveFormQuery($id: ID!, $requestId: String, $operationId: String)
+  @throwOnFieldError {
     metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
       outcome
-      operations {
-        operationId
-        fieldName
-        expiresAt
-        status
-      }
       metadata {
-        ...mutationsFormSnapshot @relay(mask: false)
+        ...mutationsFormSnapshot
       }
     }
   }
@@ -240,78 +295,86 @@ export const mutationsAuthorPageQuery = graphql`
 `;
 
 export const mutationsSaveAuthorsMutation = graphql`
-  mutation mutationsSaveAuthorsMutation(
-    $id: ID!
-    $baseline: String
-    $requestId: String
-    $patch: MetadataPatch!
-  ) {
-    updateMetadata(id: $id, baseline: $baseline, requestId: $requestId, patch: $patch) {
-      requestId
-      operations {
-        operationId
-        fieldName
-        expiresAt
-        status
-      }
-      metadata {
-        workId
-        manifestationId
-        etag
-        authors(first: 20) {
-          edges {
-            cursor
-            node {
-              name
-              author {
-                id
+  mutation mutationsSaveAuthorsMutation($input: UpdateMetadataInput!) {
+    updateMetadata(input: $input) {
+      __typename
+      ... on MetadataSaved {
+        requestId
+        operations {
+          operationId
+          fieldName
+          expiresAt
+          status
+        }
+        manifestation {
+          id
+          metadata {
+            workId
+            manifestationId
+            etag
+            authors(first: 20) {
+              edges {
+                cursor
+                node {
+                  name
+                  author {
+                    id
+                  }
+                }
+              }
+              pageInfo {
+                hasNextPage
+                hasPreviousPage
+                startCursor
+                endCursor
               }
             }
           }
-          pageInfo {
-            hasNextPage
-            hasPreviousPage
-            startCursor
-            endCursor
-          }
         }
       }
+      ...mutationsSaveRefusal @relay(mask: false)
     }
   }
 `;
 
 export const mutationsUndoAuthorsMutation = graphql`
-  mutation mutationsUndoAuthorsMutation($id: ID!, $baseline: String, $operationId: String!) {
-    undoMetadata(id: $id, baseline: $baseline, operationId: $operationId) {
-      outcome
-      operations {
-        operationId
-        fieldName
-        expiresAt
-        status
-      }
-      metadata {
-        workId
-        manifestationId
-        etag
-        authors(first: 20) {
-          edges {
-            cursor
-            node {
-              name
-              author {
-                id
+  mutation mutationsUndoAuthorsMutation($input: UndoMetadataInput!) {
+    undoMetadata(input: $input) {
+      __typename
+      ... on MetadataRestored {
+        operation {
+          operationId
+          fieldName
+          expiresAt
+          status
+        }
+        manifestation {
+          id
+          metadata {
+            workId
+            manifestationId
+            etag
+            authors(first: 20) {
+              edges {
+                cursor
+                node {
+                  name
+                  author {
+                    id
+                  }
+                }
+              }
+              pageInfo {
+                hasNextPage
+                hasPreviousPage
+                startCursor
+                endCursor
               }
             }
           }
-          pageInfo {
-            hasNextPage
-            hasPreviousPage
-            startCursor
-            endCursor
-          }
         }
       }
+      ...mutationsUndoRefusal @relay(mask: false)
     }
   }
 `;
@@ -442,51 +505,115 @@ export const mutationsAddShelfItemMutation = graphql`
 `;
 
 export const mutationsAcceptMetadataVersionMutation = graphql`
-  mutation mutationsAcceptMetadataVersionMutation($id: ID!, $versionId: ID!) {
-    acceptMetadataVersion(id: $id, versionId: $versionId) {
-      manifestationId
-      metadata {
-        ...mutationsFormSnapshot @relay(mask: false)
+  mutation mutationsAcceptMetadataVersionMutation($input: AcceptMetadataVersionInput!) {
+    acceptMetadataVersion(input: $input) {
+      __typename
+      ... on MetadataVersionAccepted {
+        manifestation {
+          id
+          metadata {
+            ...mutationsFormSnapshot
+          }
+          ...readerDetailBook
+          ...readerVersions
+        }
+      }
+      ... on FieldsLocked {
+        message
+        fields
+      }
+      ... on MetadataInvalid {
+        message
+        fieldErrors {
+          field
+          message
+        }
+      }
+      ... on NotFound {
+        message
       }
     }
   }
 `;
 
 export const mutationsRejectMetadataVersionMutation = graphql`
-  mutation mutationsRejectMetadataVersionMutation($id: ID!, $versionId: ID!) {
-    rejectMetadataVersion(id: $id, versionId: $versionId) {
-      manifestationId
+  mutation mutationsRejectMetadataVersionMutation($input: RejectMetadataVersionInput!) {
+    rejectMetadataVersion(input: $input) {
+      __typename
+      ... on MetadataVersionRejected {
+        manifestation {
+          id
+          ...readerDetailBook
+          ...readerVersions
+        }
+      }
+      ... on NotFound {
+        message
+      }
     }
   }
 `;
 
 export const mutationsRevertMetadataFieldMutation = graphql`
-  mutation mutationsRevertMetadataFieldMutation($id: ID!, $fieldName: String!, $versionId: ID) {
-    revertMetadataField(id: $id, fieldName: $fieldName, versionId: $versionId) {
-      manifestationId
-      metadata {
-        ...mutationsFormSnapshot @relay(mask: false)
+  mutation mutationsRevertMetadataFieldMutation($input: RevertMetadataFieldInput!) {
+    revertMetadataField(input: $input) {
+      __typename
+      ... on MetadataFieldReverted {
+        manifestation {
+          id
+          metadata {
+            ...mutationsFormSnapshot
+          }
+          ...readerDetailBook
+          ...readerVersions
+        }
+      }
+      ... on FieldsLocked {
+        message
+        fields
+      }
+      ... on MetadataInvalid {
+        message
+        fieldErrors {
+          field
+          message
+        }
+      }
+      ... on NotFound {
+        message
       }
     }
   }
 `;
 
 export const mutationsLockMetadataFieldMutation = graphql`
-  mutation mutationsLockMetadataFieldMutation($id: ID!, $fieldName: String!, $entityType: String!) {
-    lockMetadataField(id: $id, fieldName: $fieldName, entityType: $entityType) {
-      manifestationId
+  mutation mutationsLockMetadataFieldMutation($input: LockMetadataFieldInput!) {
+    lockMetadataField(input: $input) {
+      __typename
+      ... on MetadataFieldLockAdded {
+        manifestation {
+          id
+        }
+      }
+      ... on NotFound {
+        message
+      }
     }
   }
 `;
 
 export const mutationsUnlockMetadataFieldMutation = graphql`
-  mutation mutationsUnlockMetadataFieldMutation(
-    $id: ID!
-    $fieldName: String!
-    $entityType: String!
-  ) {
-    unlockMetadataField(id: $id, fieldName: $fieldName, entityType: $entityType) {
-      manifestationId
+  mutation mutationsUnlockMetadataFieldMutation($input: UnlockMetadataFieldInput!) {
+    unlockMetadataField(input: $input) {
+      __typename
+      ... on MetadataFieldLockRemoved {
+        manifestation {
+          id
+        }
+      }
+      ... on NotFound {
+        message
+      }
     }
   }
 `;
@@ -532,40 +659,48 @@ export const mutationsCellsQuery = graphql`
 `;
 
 export const mutationsSaveCellsMutation = graphql`
-  mutation mutationsSaveCellsMutation(
-    $id: ID!
-    $baseline: String
-    $requestId: String
-    $patch: MetadataPatch!
-  ) {
-    updateMetadata(id: $id, baseline: $baseline, requestId: $requestId, patch: $patch) {
-      requestId
-      operations {
-        operationId
-        fieldName
-        expiresAt
-        status
+  mutation mutationsSaveCellsMutation($input: UpdateMetadataInput!) {
+    updateMetadata(input: $input) {
+      __typename
+      ... on MetadataSaved {
+        requestId
+        operations {
+          operationId
+          fieldName
+          expiresAt
+          status
+        }
+        manifestation {
+          id
+          metadata {
+            ...mutationsCellsSnapshot @relay(mask: false)
+          }
+        }
       }
-      metadata {
-        ...mutationsCellsSnapshot @relay(mask: false)
-      }
+      ...mutationsSaveRefusal @relay(mask: false)
     }
   }
 `;
 
 export const mutationsUndoCellsMutation = graphql`
-  mutation mutationsUndoCellsMutation($id: ID!, $baseline: String, $operationId: String!) {
-    undoMetadata(id: $id, baseline: $baseline, operationId: $operationId) {
-      outcome
-      operations {
-        operationId
-        fieldName
-        expiresAt
-        status
+  mutation mutationsUndoCellsMutation($input: UndoMetadataInput!) {
+    undoMetadata(input: $input) {
+      __typename
+      ... on MetadataRestored {
+        operation {
+          operationId
+          fieldName
+          expiresAt
+          status
+        }
+        manifestation {
+          id
+          metadata {
+            ...mutationsCellsSnapshot @relay(mask: false)
+          }
+        }
       }
-      metadata {
-        ...mutationsCellsSnapshot @relay(mask: false)
-      }
+      ...mutationsUndoRefusal @relay(mask: false)
     }
   }
 `;

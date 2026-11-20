@@ -166,6 +166,8 @@ pub(super) struct Manifestation {
     id: ID,
     #[graphql(skip)]
     pub(super) record: BookRecord,
+    #[graphql(skip)]
+    committed: Option<Arc<MetadataRevision>>,
 }
 
 impl Manifestation {
@@ -173,7 +175,15 @@ impl Manifestation {
         Self {
             id: id::Manifestation::encode(record.detail.id),
             record,
+            committed: None,
         }
+    }
+
+    /// Answers `metadata` with the revision a write projected inside its own transaction, so a mutation
+    /// acknowledgement pairs its values with the validator that write produced.
+    pub(super) fn with_metadata(mut self, revision: MetadataRevision) -> Self {
+        self.committed = Some(Arc::new(revision));
+        self
     }
 }
 
@@ -248,7 +258,10 @@ impl Manifestation {
             last_read_at: row.last_read_at.map(|value| timestamp(value.to_jiff())),
         }
     }
-    async fn metadata(&self, ctx: &Context<'_>) -> async_graphql::Result<MetadataRevision> {
+    async fn metadata(&self, ctx: &Context<'_>) -> async_graphql::Result<Arc<MetadataRevision>> {
+        if let Some(committed) = &self.committed {
+            return Ok(Arc::clone(committed));
+        }
         let pages = snapshot_pages(&ctx.look_ahead())?;
         if !pages.is_empty() {
             let snapshot = required(
@@ -260,7 +273,7 @@ impl Manifestation {
                     .await
                     .map_err(|error| batch_error(&error))?,
             )?;
-            return MetadataRevision::from_domain(&snapshot);
+            return MetadataRevision::from_domain(&snapshot).map(Arc::new);
         }
         let row = &self.record.detail;
         let revision = Revision {
@@ -269,7 +282,7 @@ impl Manifestation {
             work_revision: row.work_revision,
             manifestation_revision: row.manifestation_revision,
         };
-        Ok(MetadataRevision {
+        Ok(Arc::new(MetadataRevision {
             id: id::metadata_revision(&revision).map_err(safe_error)?,
             revision,
             relation_pages: HashMap::new(),
@@ -287,7 +300,7 @@ impl Manifestation {
             publisher: row.publisher.clone(),
             publication_date: row.pub_date.clone(),
             content_rating: row.content_rating.map(|value| value.as_str().to_owned()),
-        })
+        }))
     }
     #[graphql(
         complexity = "super::complexity::nested(RelationKind::Genres, first, child_complexity)?"

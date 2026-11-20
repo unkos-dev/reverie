@@ -175,17 +175,24 @@ Selecting the count and pending page uses two batched operations, each with cano
 independent of parent count.
 
 `mutations.rs` calls the shared metadata editing and Undo, reading and shelf operations. Typed patches preserve absent
-and null values. Metadata save, reading and Undo take explicit nullable baselines. Review and shelves keep their
-existing preconditions. Scope, adult status, caller visibility, shelf ownership and credential ceilings remain separate
-checks.
+and null values. Metadata save and Undo take a non-null baseline in their input; the reading patch takes an explicit
+nullable baseline. Review and shelves keep their existing preconditions. Scope, adult status, caller visibility, shelf
+ownership and credential ceilings remain separate checks.
 
-Shelf mutations take one `input` object named `<Mutation>Input` and return a `<Mutation>Result` union of one success
-member, named for the event (`ShelfCreated`), and their expected outcomes. Outcome types are shared across mutations and
-carry a `message`: `NotFound`, `SystemShelfImmutable` and `ShelfNameInvalid`. A malformed or caller-invisible target is
-a `NotFound` member. Forbidden, internal and malformed-header failures remain execution errors. Clients branch on
-`__typename` in `onCompleted` and treat `onError` as the unexpected class. The other mutations keep classified
-execution-error codes. Exact Undo and resolution require the real live issuing browser session and retain expiry,
-budgets and non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
+Shelf and metadata editing mutations take one `input` object named `<Mutation>Input` and return a `<Mutation>Result`
+union of one success member, named for the event (`ShelfCreated`, `MetadataSaved`, `MetadataRestored`,
+`MetadataVersionAccepted`), and their expected outcomes. Outcome types are shared across mutations and carry a
+`message`: `NotFound`, `SystemShelfImmutable`, `ShelfNameInvalid`, `StaleBaseline`, `MetadataInvalid`, `FieldsLocked`,
+`EditTooLarge`, `UndoUnavailable` and `UndoConflict`. A malformed or caller-invisible target is a `NotFound` member.
+Forbidden, internal and malformed-header failures remain execution errors, as does a committed metadata write whose
+manifestation cannot be read back, so the client resolves the request. Metadata success members return the
+`manifestation`. Its `metadata` field answers with the revision the write projected inside its transaction, selected
+through look-ahead on `manifestation.metadata`. Relay normalisation then points the manifestation at the new revision
+without an updater. Clients branch on `__typename` in `onCompleted` and treat `onError` as the unexpected class. The
+Library cell adapters carry a refusal member as `MetadataRefusal` through their existing recovery flow.
+`refreshMetadata`, the reading patch and preferences keep classified execution-error codes. Exact Undo and resolution
+require the real live issuing browser session and retain expiry, budgets and non-consuming refusals. Basic and device
+tokens may save metadata but receive no Undo capability.
 
 A selected metadata revision pairs scalar values and bounded editable relation pages with one aggregate revision. Read
 loaders batch core rows and selected pages in one caller-scoped REPEATABLE READ transaction. Write operations
@@ -208,25 +215,32 @@ Execution faults are errors and do not publish partial data or trigger a resend.
 
 The book, series, shelf and shelves route queries, the fragments those pages read, and `CommandPaletteQuery` carry
 `@throwOnFieldError`. A field error or data missing after a graph relationship change throws to the nearest error
-boundary: the route `errorElement`, or the command palette's own boundary. The schema marks a field non-null when null
-is not a valid domain value.
+boundary: the route `errorElement`, or the command palette's own boundary. The edit sheet's `mutationsFormQuery` and the
+`mutationsFormSnapshot` fragment it reads carry the directive too. Refusal selections shared through
+`@relay(mask: false)` spreads in mutation payloads (`mutationsSaveRefusal`, `mutationsUndoRefusal`) carry none, because
+Relay accepts the directive only on queries and fragments read as their own unit. The schema marks a field non-null when
+null is not a valid domain value.
 
 Each reader route loader starts its query with `loadQuery`, which retains the operation from load start. The loader
 awaits the same in-flight request for its not-found check and breadcrumb title. Abort, failure, a not-found result or an
 account change during the load releases the reference. Otherwise the page's `useQueryLoader` takes the reference and
 releases it on unmount or replacement. The command palette loads its query from the input handler through
 `useQueryLoader`. A newer query or a closed palette releases the previous reference, so an obsolete search contributes
-no result.
+no result. The Versions tab loads the edit sheet's `mutationsFormQuery` through `useQueryLoader` from its Edit metadata
+button, with the default `store-or-network` policy. The sheet reads it with `usePreloadedQuery` under Suspense and its
+own error boundary. Its explicit Reload calls `fetchQuery` with `network-only` from the event handler, so the open form
+stays mounted until the fresh revision arrives.
 
 `frontend/src/lib/relay/mutations.ts` contains selected title, form, author and reading reads and acknowledgements, plus
 the other protected actions. `readerAuthorEditing` refetches through `fetch__Manifestation`. The network checks each
 editing document's selected revision with its `metadata_rev` ID, domain IDs, UUID handles, strong validators, timestamps
 and PageInfo before `sink.next`. `executeEditing` captures a detached raw execution payload, without using fragment
 reads, `fetchQuery`, store lookups or `commitMutation.onCompleted`. `captureAuthorPages` accepts only a complete cursor
-chain with one pair of domain IDs and one revision. Library cells, the metadata dialog, Versions actions and batch Set
-status use these selected raw executions. Preferences read and sparse update share the canonical service with HTTP;
-defaults hide Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata refresh
-schedules the canonical claim-preserving enrichment operation with write scope and non-child authorisation.
+chain with one pair of domain IDs and one revision. Library cells and batch Set status use these selected raw
+executions. The metadata dialog and Versions actions use `useMutation`, and the network validates their payloads by
+operation name in the same way. Preferences read and sparse update share the canonical service with HTTP; defaults hide
+Subtitle while explicit arrays, including an empty override, retain their meaning. Metadata refresh schedules the
+canonical claim-preserving enrichment operation with write scope and non-child authorisation.
 
 ## Failure and recovery
 

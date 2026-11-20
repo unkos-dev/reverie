@@ -160,8 +160,10 @@ existing bounds and continuation cursors, with no universal snapshot ceiling.
   and its post-write read all share. It pairs complete values with owner identities and revisions;
   `MetadataRevision::etag` produces the same validator for GET, PATCH comparison and the confirmed PATCH response.
 - Browser consumers use generated GraphQL operations in `mutations.ts` and `reader.ts`. `VersionsTab.tsx` groups the
-  lazy pending connection by field, retains each field's action outcome and supplies Accept, Reject and Clear. The
-  manual edit sheet tracks touched fields and submits only those keys with its opening matched baseline.
+  lazy pending connection by field, retains each field's action outcome and supplies Accept, Reject and Clear through
+  `useMutation`. Its Edit metadata button starts the edit sheet's form read with `useQueryLoader`, and the sheet reads
+  it with `usePreloadedQuery` under Suspense and an error boundary. The manual edit sheet tracks touched fields and
+  submits only those keys with the baseline of the revision it opened with.
 
 ### Three distinct review-queue reads
 
@@ -273,9 +275,11 @@ relations, locks and provenance in batches and never replays a write.
 Stale aggregate tags return 412 with the current ETag. Invalidated, expired, consumed or foreign-session restoration
 requests return non-enumerating 422 `undo-unavailable`. Missing required targets also return 422 without recreating
 identities. A field lock returns non-consuming 409 `field-locked`; equal identity with divergent recorded after-state
-returns non-consuming 409 `undo-conflict`. Current confidence remains mutable and outside restoration, but a change to a
-currently referenced observation still advances field identity and can invalidate Undo. Observation counts, timestamps
-and review activity are never rewound. Capability-bearing success responses are `Cache-Control: no-store`.
+returns non-consuming 409 `undo-conflict`. GraphQL returns the same refusals as the `StaleBaseline`, `UndoUnavailable`,
+`FieldsLocked` and `UndoConflict` members of `UndoMetadataResult`. Current confidence remains mutable and outside
+restoration, but a change to a currently referenced observation still advances field identity and can invalidate Undo.
+Observation counts, timestamps and review activity are never rewound. Capability-bearing success responses are
+`Cache-Control: no-store`.
 
 The client exposes saved Undo only in Library table editing. The owner retains server operations above conditional
 results. Known newer same-field table saves replace older entries, including shared work fields. Dialog operations
@@ -293,13 +297,15 @@ the mounted form for correction. Publication guidance recommends YYYY-MM-DD or Y
 Accepted formats button opens the native popover with the full supported list and a format-reference link. General
 failures appear inline; structured field refusals use native field feedback. Ordinary failures and successful saves use
 the changed content and local feedback. ETag conflicts remain beside the refused inputs. Discard edits and reload
-explicitly replaces them with a fresh metadata read; a failed reload retains the draft. Review failures stay in their
-field section outside removable draft rows. Pending, clear-confirmation and successful closure retain their owners.
-Metadata fields remain read-only while Save is pending or its outcome remains unresolved. Their values can still be
-selected. After the request settles, Save can resend the unchanged draft with its original request ID and baseline.
-Confirmed saves await a matched selected raw refresh and close the dialog. Validation refusals retain submitted values
-for correction. Temporary or uncertain failures expose explicit Retry of the retained request. A conflict not confirmed
-as saved exposes the existing matched Reload path. Offline recovery keeps one local failure message. Confirmation closes
+explicitly replaces them with a fresh metadata read; a failed reload retains the draft. A reload that finds the book no
+longer visible shows Book detail's not-found state. Review failures stay in their field section outside removable draft
+rows. Pending, clear-confirmation and successful closure retain their owners. Metadata fields remain read-only while
+Save is pending or its outcome remains unresolved. Their values can still be selected. After the request settles, Save
+can resend the unchanged draft with its original request ID and baseline. A confirmed save closes the dialog without a
+further read. Its acknowledgement updates Book detail and links the new revision. A save confirmed only through request
+resolution invalidates the manifestation, so Book detail refetches. Validation refusals retain submitted values for
+correction. Temporary or uncertain failures expose explicit Retry of the retained request. A conflict not confirmed as
+saved exposes the existing matched Reload path. Offline recovery keeps one local failure message. Confirmation closes
 only its originating mounted form. Cache reconciliation continues after dismissal.
 
 **An operator edits publisher and clears publication date in the metadata form.**
@@ -329,10 +335,14 @@ only its originating mounted form. Cache reconciliation continues after dismissa
 7. The operation materialises the selected matched acknowledgement inside the transaction. The response contains its
    aggregate baseline, selected canonical fields, request ID and exact field operations. HTTP retains its complete
    canonical response.
-8. The edit sheet publishes confirmed selected fields to canonical Relay records and invalidates affected Work and
-   Manifestation records. It awaits a matched selected metadata refresh before closing its originating mounted form.
-   Versions reads are lazy and complete their native pending connection. Field-owned review outcomes survive proposal
-   removal, and review actions refresh the affected native records and pending count.
+8. The edit sheet's mutation payload spreads the form snapshot, `readerDetailEditable` and `readerVersions` under the
+   returned manifestation. Relay normalisation updates Book detail and links the new revision. The replaced pending
+   connection shows a previous canonical value that the save returned to the review queue, and the sheet closes its
+   originating mounted form. Versions reads are lazy and complete their native pending connection. Field-owned review
+   outcomes survive proposal removal. A successful review action returns the manifestation with `readerDetailBook` and
+   `readerVersions`, which replaces the pending connection's first page and updates the pending count. Accept and Clear
+   also return the form snapshot, so the next edit sheet opens on the revision they produced. A refused or failed review
+   action invalidates the manifestation, so Book detail and Versions refetch.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 
@@ -344,16 +354,17 @@ only its originating mounted form. Cache reconciliation continues after dismissa
    visible manifestation and its work before updating the journal, as manual PATCH does. Submission attribution and
    current confidence participate in field identity; review actor and status changes do not.
 2. `accept_manifestation` selects only a `pending` version for the requested manifestation and locks the manifestation
-   and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or already-rejected version returns `404`:
-   none identifies an eligible draft for this operation. The Versions tab refreshes book details after failed acceptance
-   to reconcile stale drafts. Acceptance leaves review status `pending`; canonical pointers record promotion. Repeated
-   acceptance remains allowed and enqueues another writeback job for file-backed fields.
+   and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or already-rejected version returns `404`,
+   or `NotFound` over GraphQL: none identifies an eligible draft for this operation. The Versions tab refreshes book
+   details after failed acceptance to reconcile stale drafts. Acceptance leaves review status `pending`; canonical
+   pointers record promotion. Repeated acceptance remains allowed and enqueues another writeback job for file-backed
+   fields.
 3. The target edition's field lock is checked before promotion, including for a field owned by the shared work. A
-   matching lock refuses the action with `409` `field-locked`. `apply_version` rejects the row outright if its
-   `new_value` is JSON `null` (a manual-clear audit row, never a draft eligible for promotion), `422`. ISBN promotion
-   parses the supplied format through the `isbn` crate, requires a `978` or `979` prefix for ISBN-13, and normalises the
-   value before the `UPDATE ... RETURNING` swaps the pointer. Invalid values return field-keyed `FieldValidation`;
-   accepting or reverting a raw provider observation uses the same gate.
+   matching lock refuses the action with `409` `field-locked`, or `FieldsLocked` over GraphQL. `apply_version` rejects
+   the row outright if its `new_value` is JSON `null` (a manual-clear audit row, never a draft eligible for promotion),
+   `422`. ISBN promotion parses the supplied format through the `isbn` crate, requires a `978` or `979` prefix for
+   ISBN-13, and normalises the value before the `UPDATE ... RETURNING` swaps the pointer. Invalid values return
+   field-keyed `FieldValidation`; accepting or reverting a raw provider observation uses the same gate.
 4. Because the field is an ISBN, `work::rematch_on_isbn_change` runs before commit to refresh the possible-duplicate
    pointer while preserving work membership.
 5. `enqueue_writeback` inserts a `writeback_jobs` row in the same transaction the pointer moved in.
@@ -384,10 +395,10 @@ leaves its counterpart intact. Individually valid, non-equivalent pairs can be s
 responses derive `isbn_mismatch` from their returned canonical pair, with false for either value absent.
 
 BookPage and Edit metadata display the saved ISBN mismatch beside the ISBN pair. Both client read schemas require
-`isbn_mismatch`; each surface reads its existing query rather than computing a warning from drafts. Successful saves
-refresh the detail and editable-metadata queries, so correction or clearing removes the warning from the refreshed Book
-view and subsequent edit-sheet read. Native named FieldErrors display ISBN refusals through the existing
-`Form.validationErrors` map and retain submitted values for correction. A valid mismatch remains savable.
+`isbn_mismatch`; each surface reads its existing query rather than computing a warning from drafts. A successful save
+acknowledges `isbnMismatch` with the Book detail fields and the new revision, so correction or clearing removes the
+warning from Book detail and the next edit-sheet read. Native named FieldErrors display ISBN refusals through the
+existing `Form.validationErrors` map and retain submitted values for correction. A valid mismatch remains savable.
 
 The table resolves a stale metadata request before conflict feedback. Validation keeps the entered ISBN and native field
 feedback for correction. Temporary or uncertain failures expose retained-attempt Retry; permanent refusals expose their

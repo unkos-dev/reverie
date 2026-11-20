@@ -7,6 +7,7 @@ import { ReadingStatusSchema, type ReadingStatus } from "@/api/books";
 import { ApiError } from "@/api/errors";
 import {
   GraphQLExecutionError,
+  MetadataRefusal,
   editingFailureAction,
   executeEditingOnce,
   loadAuthorField,
@@ -51,12 +52,31 @@ const COLUMN_LABELS: Record<EditableColumnKey, string> = {
   rating: "Rating",
 };
 const UNDO_STACK_CAP = 10;
-type CellsSnapshot = SaveCells["response"]["updateMetadata"]["metadata"];
-type AuthorSnapshot = SaveAuthors["response"]["updateMetadata"]["metadata"];
+type SavedCells = Extract<SaveCells["response"]["updateMetadata"], { __typename: "MetadataSaved" }>;
+type SavedAuthors = Extract<
+  SaveAuthors["response"]["updateMetadata"],
+  { __typename: "MetadataSaved" }
+>;
 type MetadataResult = {
-  metadata: CellsSnapshot | AuthorSnapshot;
-  operations: SaveCells["response"]["updateMetadata"]["operations"];
+  metadata: SavedCells["manifestation"]["metadata"] | SavedAuthors["manifestation"]["metadata"];
+  operations: SavedCells["operations"];
 };
+
+function saved(
+  result: SaveCells["response"]["updateMetadata"] | SaveAuthors["response"]["updateMetadata"],
+): MetadataResult {
+  if (result.__typename === "MetadataSaved")
+    return { metadata: result.manifestation.metadata, operations: result.operations };
+  throw new MetadataRefusal(result);
+}
+
+function restored(
+  result: UndoCells["response"]["undoMetadata"] | UndoAuthors["response"]["undoMetadata"],
+): MetadataResult {
+  if (result.__typename === "MetadataRestored")
+    return { metadata: result.manifestation.metadata, operations: [result.operation] };
+  throw new MetadataRefusal(result);
+}
 type ReadingSnapshot = ReadingMutation["response"]["updateReadingState"];
 type RecoveryAction = "retry" | "reload" | "correct" | "none";
 type Attempt = {
@@ -100,6 +120,7 @@ function formatError(error: unknown): string {
 }
 
 function errorCode(error: unknown): string | undefined {
+  if (error instanceof MetadataRefusal) return error.typename;
   if (error instanceof GraphQLExecutionError) return error.errors.at(0)?.extensions?.code;
   if (error instanceof ApiError) return error.problemSlug ?? undefined;
   return undefined;
@@ -331,12 +352,13 @@ export function useCellEdit({
   }
 
   async function sendMetadata(attempt: Attempt & { pipeline: "metadata" }) {
-    const id = attempt.row.id;
     const variables = {
-      id,
-      baseline: attempt.baseline,
-      patch: attempt.patch,
-      requestId: attempt.id,
+      input: {
+        id: attempt.row.id,
+        baseline: attempt.baseline,
+        patch: attempt.patch,
+        requestId: attempt.id,
+      },
     };
     if (attempt.columnKey === "authors") {
       const response = await executeEditingOnce<SaveAuthors>(
@@ -345,7 +367,7 @@ export function useCellEdit({
         variables,
         controller.current?.signal,
       );
-      return response?.updateMetadata;
+      return response === undefined ? undefined : saved(response.updateMetadata);
     } else {
       const response = await executeEditingOnce<SaveCells>(
         environment,
@@ -353,7 +375,7 @@ export function useCellEdit({
         variables,
         controller.current?.signal,
       );
-      return response?.updateMetadata;
+      return response === undefined ? undefined : saved(response.updateMetadata);
     }
   }
 
@@ -673,23 +695,25 @@ export function useCellEdit({
   const undoAvailable =
     enabled && latest !== undefined && !undoPending && !records.some((record) => record.pending);
   async function sendUndo(attempt: Attempt, variables: UndoCells["variables"]) {
-    if (attempt.columnKey === "authors")
-      return (
-        await executeEditingOnce<UndoAuthors>(
-          environment,
-          mutationsUndoAuthorsMutation,
-          variables,
-          controller.current?.signal,
-        )
-      )?.undoMetadata;
-    return (
-      await executeEditingOnce<UndoCells>(
-        environment,
-        mutationsUndoCellsMutation,
-        variables,
-        controller.current?.signal,
-      )
-    )?.undoMetadata;
+    const response =
+      attempt.columnKey === "authors"
+        ? (
+            await executeEditingOnce<UndoAuthors>(
+              environment,
+              mutationsUndoAuthorsMutation,
+              variables,
+              controller.current?.signal,
+            )
+          )?.undoMetadata
+        : (
+            await executeEditingOnce<UndoCells>(
+              environment,
+              mutationsUndoCellsMutation,
+              variables,
+              controller.current?.signal,
+            )
+          )?.undoMetadata;
+    return response === undefined ? undefined : restored(response);
   }
 
   async function recoverUndo(
@@ -720,7 +744,7 @@ export function useCellEdit({
           "This saved edit can no longer be undone.",
         );
       else if (resolution !== undefined && operation?.status === "eligible") {
-        const retry = { ...variables, baseline: resolution.metadata.etag };
+        const retry = { input: { ...variables.input, baseline: resolution.metadata.etag } };
         response = await sendUndo(attempt, retry);
       }
     }
@@ -730,9 +754,11 @@ export function useCellEdit({
   async function undoEntry(entry: UndoEntry): Promise<void> {
     const attempt = entry.attempt;
     const variables = {
-      id: attempt.row.id,
-      operationId: entry.operation.operationId,
-      baseline: entry.baseline,
+      input: {
+        id: attempt.row.id,
+        operationId: entry.operation.operationId,
+        baseline: entry.baseline,
+      },
     };
     setUndoPending(true);
     let response: MetadataResult | undefined;
@@ -763,7 +789,11 @@ export function useCellEdit({
         }));
         setUndoOutcome(`${COLUMN_LABELS[attempt.columnKey]} for “${attempt.row.title}” restored.`);
       } else if (failure !== undefined) {
-        if (errorCode(failure) === "undo-unavailable" || errorCode(failure) === "undo-conflict")
+        if (
+          ["UndoUnavailable", "UndoConflict", "undo-unavailable", "undo-conflict"].includes(
+            errorCode(failure) ?? "",
+          )
+        )
           setOwner((current) => ({
             ...current,
             entries: current.entries.filter(

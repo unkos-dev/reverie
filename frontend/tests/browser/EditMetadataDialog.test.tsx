@@ -1,18 +1,21 @@
 import { cleanup, render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import { RelayEnvironmentProvider } from "react-relay";
+import { RelayEnvironmentProvider, loadQuery } from "react-relay";
 import { ViewTransition } from "react";
 import { z } from "zod";
 import trustedDocuments from "../../../backend/graphql-documents.json";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import { encodeGraphQLId } from "@/api/graphql";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
+import { mutationsFormQuery } from "@/lib/relay/mutations";
+import type { mutationsFormQuery as FormQuery } from "@/lib/relay/__generated__/mutationsFormQuery.graphql";
 import { EditMetadataDialog, type EditableField } from "@/pages/book/EditMetadataDialog";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const WORK = "22222222-2222-4222-8222-222222222222";
 const FIELDS: readonly EditableField[] = [{ name: "subtitle", label: "Subtitle" }];
+const GRAPH_ID = encodeGraphQLId("Manifestation", ID);
 const documents: Record<string, string> = trustedDocuments;
 const requestSchema = z.object({ id: z.string(), variables: z.record(z.string(), z.unknown()) });
 const saveSchema = z.object({
@@ -56,13 +59,32 @@ function response(data: unknown): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
-function failure(code: string, errors?: Record<string, string>): Response {
-  return new Response(
-    JSON.stringify({
-      errors: [{ message: "Invalid publication date.", extensions: { code, errors } }],
-    }),
-    { headers: { "Content-Type": "application/json" } },
-  );
+function saved(
+  metadata: Omit<ReturnType<typeof snapshot>, "subtitle"> & { subtitle: string | null },
+): Response {
+  return response({
+    updateMetadata: {
+      __typename: "MetadataSaved",
+      manifestation: {
+        id: GRAPH_ID,
+        metadata,
+        isbn13: metadata.isbn13,
+        isbn10: metadata.isbn10,
+        isbnMismatch: metadata.isbnMismatch,
+        publisher: metadata.publisher,
+        publicationDate: metadata.publicationDate,
+        work: {
+          id: metadata.workId,
+          title: metadata.title,
+          description: metadata.description,
+          language: metadata.language,
+        },
+      },
+    },
+  });
+}
+function refused(refusal: Record<string, unknown>): Response {
+  return response({ updateMetadata: refusal });
 }
 function intercept(handlers: {
   read: () => Response | Promise<Response>;
@@ -74,7 +96,7 @@ function intercept(handlers: {
     const name = documents[request.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
     if (name === "mutationsFormQuery") return Promise.resolve(handlers.read());
     if (name === "mutationsSaveFormMutation" && handlers.save !== undefined)
-      return Promise.resolve(handlers.save(saveSchema.parse(request.variables)));
+      return Promise.resolve(handlers.save(saveSchema.parse(request.variables.input)));
     if (name === "mutationsResolveFormQuery" && handlers.resolve !== undefined)
       return Promise.resolve(handlers.resolve());
     throw new Error(`Unexpected operation ${name ?? request.id}`);
@@ -82,10 +104,18 @@ function intercept(handlers: {
 }
 async function renderDialog(fields: readonly EditableField[] = FIELDS) {
   const onOpenChange = vi.fn();
+  const environment = relayEnvironment();
+  const queryRef = loadQuery<FormQuery>(environment, mutationsFormQuery, { id: GRAPH_ID });
   const result = await render(
-    <RelayEnvironmentProvider environment={relayEnvironment()}>
+    <RelayEnvironmentProvider environment={environment}>
       <ViewTransition>
-        <EditMetadataDialog manifestationId={ID} open onOpenChange={onOpenChange} fields={fields} />
+        <EditMetadataDialog
+          queryRef={queryRef}
+          load={vi.fn()}
+          open
+          onOpenChange={onOpenChange}
+          fields={fields}
+        />
       </ViewTransition>
     </RelayEnvironmentProvider>,
   );
@@ -101,51 +131,6 @@ afterEach(async () => {
   setRelayAccount(null);
 });
 
-// REV-REQ-0019: a form opens from a fresh matched snapshot, including when the previous read is cached.
-test("seeds from a fresh metadata snapshot and reopens with saved values", async () => {
-  let current = snapshot("Fetched Subtitle");
-  let reads = 0;
-  let finishConfirmation: ((value: Response) => void) | undefined;
-  const confirmation = new Promise<Response>((resolve) => {
-    finishConfirmation = resolve;
-  });
-  intercept({
-    read: () => {
-      reads += 1;
-      if (reads === 2) return confirmation;
-      return response({ manifestation: { id: current.manifestationId, metadata: current } });
-    },
-    save: ({ patch }) => {
-      current = {
-        ...current,
-        id: revisionId('"bbbbbbbbbbbbbbbbbbbbbb"'),
-        subtitle: patch.subtitle ?? "",
-        etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
-      };
-      return response({ updateMetadata: { metadata: current, operations: [], requestId: null } });
-    },
-  });
-  const first = await renderDialog();
-  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Fetched Subtitle");
-  await page.getByLabelText("Subtitle").fill("Updated Subtitle");
-  await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
-  await vi.waitFor(() => {
-    expect(reads).toBe(2);
-  });
-  expect(first.onOpenChange).not.toHaveBeenCalled();
-  await expect.element(page.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
-  finishConfirmation?.(
-    response({ manifestation: { id: current.manifestationId, metadata: current } }),
-  );
-  await vi.waitFor(() => {
-    expect(first.onOpenChange).toHaveBeenCalledWith(false);
-  });
-  await first.unmount();
-  await renderDialog();
-  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
-  expect(reads).toBe(3);
-});
-
 // Data loss boundary: failed and uncertain writes retain values, the opening baseline and unchanged-attempt identity.
 test("awaits save, retains publication-date errors and other edits, and closes after correction", async () => {
   const opening = snapshot();
@@ -154,7 +139,7 @@ test("awaits save, retains publication-date errors and other edits, and closes a
   let saves = 0;
   let resolutions = 0;
   intercept({
-    read: () => response({ manifestation: { id: opening.manifestationId, metadata: opening } }),
+    read: () => response({ manifestation: { id: GRAPH_ID, metadata: opening } }),
     save: (variables) => {
       writes.push(variables);
       saves += 1;
@@ -163,7 +148,7 @@ test("awaits save, retains publication-date errors and other edits, and closes a
           finish = resolve;
         });
       if (saves === 2) return Promise.reject(new TypeError("Connection lost"));
-      return failure("if-match-mismatch");
+      return refused({ __typename: "StaleBaseline", message: "The baseline is stale." });
     },
     resolve: () => {
       resolutions += 1;
@@ -171,7 +156,6 @@ test("awaits save, retains publication-date errors and other edits, and closes a
         metadataOperation: {
           metadata: snapshot("Updated Subtitle", '"bbbbbbbbbbbbbbbbbbbbbb"'),
           outcome: resolutions === 1 ? "unknown" : "saved",
-          operations: [],
         },
       });
     },
@@ -185,7 +169,15 @@ test("awaits save, retains publication-date errors and other edits, and closes a
     .toHaveAttribute("data-pending");
   await expect.element(page.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
   await expect.element(page.getByLabelText("Subtitle")).toHaveAttribute("readonly");
-  finish?.(failure("validation", { pub_date: "Use YYYY-MM-DD or YYYY. Leave empty if unknown." }));
+  finish?.(
+    refused({
+      __typename: "MetadataInvalid",
+      message: "Invalid publication date.",
+      fieldErrors: [
+        { field: "pub_date", message: "Use YYYY-MM-DD or YYYY. Leave empty if unknown." },
+      ],
+    }),
+  );
   await expect
     .element(page.getByLabelText("Publication date"))
     .toHaveAttribute("aria-invalid", "true");
@@ -209,7 +201,7 @@ test("awaits save, retains publication-date errors and other edits, and closes a
   let acknowledge: ((value: Response) => void) | undefined;
   vi.restoreAllMocks();
   intercept({
-    read: () => response({ manifestation: { id: opening.manifestationId, metadata: opening } }),
+    read: () => response({ manifestation: { id: GRAPH_ID, metadata: opening } }),
     save: () =>
       new Promise<Response>((resolve) => {
         acknowledge = resolve;
@@ -224,11 +216,7 @@ test("awaits save, retains publication-date errors and other edits, and closes a
   await dismissed.unmount();
   await renderDialog();
   await page.getByLabelText("Subtitle").fill("Draft from reopened dialog");
-  acknowledge?.(
-    response({
-      updateMetadata: { metadata: snapshot("Dismissed edit"), requestId: null, operations: [] },
-    }),
-  );
+  acknowledge?.(saved(snapshot("Dismissed edit")));
   expect(dismissed.onOpenChange).not.toHaveBeenCalled();
   await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Draft from reopened dialog");
 });
@@ -238,16 +226,10 @@ test("cancelling a populated-field clear keeps the edit and sends nothing; confi
   const writes: z.infer<typeof saveSchema>[] = [];
   const current = snapshot();
   intercept({
-    read: () => response({ manifestation: { id: current.manifestationId, metadata: current } }),
+    read: () => response({ manifestation: { id: GRAPH_ID, metadata: current } }),
     save: (variables) => {
       writes.push(variables);
-      return response({
-        updateMetadata: {
-          metadata: { ...current, subtitle: null },
-          requestId: variables.requestId,
-          operations: [],
-        },
-      });
+      return saved({ ...current, subtitle: null });
     },
   });
   const rendered = await renderDialog();

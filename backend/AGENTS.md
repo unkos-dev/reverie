@@ -43,7 +43,8 @@ capability is deficient for Reverie, with approval governed by the root rules.
 - **Mutation outcomes:** A mutation on union results takes one `input` object and returns a union of its success member
   and expected outcomes ([ADR-0082](../docs/adr/0082-expected-graphql-mutation-outcomes-as-union-results.md)). Reuse the
   shared outcome types in `src/graphql/mutations.rs`. Forbidden, internal and malformed-header failures stay execution
-  errors.
+  errors. A metadata success member returns `manifestation` through `Manifestation::with_metadata`, carrying the
+  revision the write projected inside its transaction, so the acknowledgement never mixes revisions.
 - **GraphQL IDs:** Encode and decode global IDs only through the `Kind` types in `src/graphql/id.rs`, which bind each
   TypeID prefix at compile time. A new prefix is a maintainer decision.
 - **Extractor order:** The request body extractor (e.g., `Json<T>`, `String`, `Bytes`) is the last argument in the

@@ -13,12 +13,8 @@ governed-by:
 
 WHEN a `PATCH` request to a book's metadata resource, a `PATCH` request to a book's reading-state resource, or a `PUT`
 request to the settings resource carries no `If-Match` header, the server MUST answer `428 Precondition Required` and
-MUST NOT begin a database write for that request.
-
-GraphQL metadata, reading-state and exact metadata Undo mutations MUST require explicit baseline mutation arguments. An
-omitted or null baseline MUST refuse the operation with `if-match-required` before a database write can begin. A
-malformed baseline MUST be refused distinctly with `malformed-header` before database work, rather than treated as
-missing or stale.
+MUST NOT begin a database write for that request. WHEN a GraphQL metadata, reading-state or exact metadata Undo mutation
+carries an omitted, null or malformed baseline, the server MUST refuse it before a database write can begin.
 
 ## Rationale
 
@@ -37,9 +33,9 @@ silently overwrites the first's changes with neither client aware a conflict occ
 - A `PUT` to the settings resource with no `If-Match` header answers `428` and leaves the stored settings unchanged.
   Checked by `put_settings_without_if_match_returns_428_and_leaves_settings_unchanged` in
   `backend/src/routes/settings/tests.rs`.
-- GraphQL metadata and reading mutations refuse omitted, null and malformed baselines with their distinct execution
-  classifications and leave stored state unchanged. Checked by `graphql_edit_baselines`.
-- GraphQL exact Undo refuses omitted, null and malformed baselines without consuming the operation. Checked by
+- GraphQL metadata and reading-state saves with an omitted, null or malformed baseline are refused, and stored state is
+  unchanged afterwards. Checked by `graphql_edit_baselines`.
+- GraphQL exact Undo with an omitted, null or malformed baseline is refused without consuming the operation. Checked by
   `graphql_undo_boundary`.
 
 ## More information

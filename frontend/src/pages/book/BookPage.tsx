@@ -9,12 +9,14 @@ import {
 } from "react-relay";
 import {
   readerDetailBook,
+  readerDetailEditable,
   readerDetailQuery,
   readerWorkAuthors,
   readerDetailTags,
 } from "@/lib/relay/reader";
 import type { readerDetailQuery as DetailQuery } from "@/lib/relay/__generated__/readerDetailQuery.graphql";
 import type { readerDetailBook$key } from "@/lib/relay/__generated__/readerDetailBook.graphql";
+import type { readerDetailEditable$key } from "@/lib/relay/__generated__/readerDetailEditable.graphql";
 import type { readerWorkAuthors$key } from "@/lib/relay/__generated__/readerWorkAuthors.graphql";
 import type { readerWorkAuthorsPaginationQuery as AuthorsPagination } from "@/lib/relay/__generated__/readerWorkAuthorsPaginationQuery.graphql";
 import type { readerDetailTags$key } from "@/lib/relay/__generated__/readerDetailTags.graphql";
@@ -75,6 +77,7 @@ function BookContent({
   const [current, load] = useQueryLoader<DetailQuery>(readerDetailQuery, reference);
   const query = usePreloadedQuery<DetailQuery>(readerDetailQuery, current ?? reference);
   const data = useFragment<readerDetailBook$key>(readerDetailBook, query.manifestation);
+  const editable = useFragment<readerDetailEditable$key>(readerDetailEditable, data);
   const {
     data: authorData,
     hasNext: hasAuthors,
@@ -110,11 +113,11 @@ function BookContent({
     if (hasTags && !loadingTags) loadTags(20, { onComplete: setPageError });
   }, [hasTags, loadingTags, loadTags]);
   if (pageError !== null) throw pageError;
-  if (data?.work == null) throw new Error("Book not found.");
+  if (data?.work == null || editable?.work == null) throw new Error("Book not found.");
   const series = data.work.selectedSeries;
   const book: DisplayBook = {
     id: data.id,
-    title: data.work.title,
+    title: editable.work.title,
     authors: authorData?.authors.edges.map(({ node }) => node.name) ?? [],
     series:
       series == null
@@ -125,13 +128,13 @@ function BookContent({
             position: series.position ?? null,
           },
     cover_url: data.coverUrl,
-    description: data.work.description ?? null,
-    language: data.work.language ?? null,
-    isbn_13: data.isbn13 ?? null,
-    isbn_10: data.isbn10 ?? null,
-    isbn_mismatch: data.isbnMismatch,
-    publisher: data.publisher ?? null,
-    pub_date: data.publicationDate ?? null,
+    description: editable.work.description ?? null,
+    language: editable.work.language ?? null,
+    isbn_13: editable.isbn13 ?? null,
+    isbn_10: editable.isbn10 ?? null,
+    isbn_mismatch: editable.isbnMismatch,
+    publisher: editable.publisher ?? null,
+    pub_date: editable.publicationDate ?? null,
     ingestion_status: data.ingestionStatus,
     enrichment_status: data.enrichmentStatus,
     validation_status: data.validationStatus,

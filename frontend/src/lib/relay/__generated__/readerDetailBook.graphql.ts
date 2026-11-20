@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<2bde9de604d75df052f5e5498f120857>>
+ * @generated SignedSource<<1c97138a3e8a64c48e11b943b262bcbb>>
  * @lightSyntaxTransform
  */
 
@@ -15,20 +15,13 @@ export type readerDetailBook$data = {
   readonly enrichmentStatus: string;
   readonly id: string;
   readonly ingestionStatus: string;
-  readonly isbn10: string | null | undefined;
-  readonly isbn13: string | null | undefined;
-  readonly isbnMismatch: boolean;
-  readonly publicationDate: string | null | undefined;
-  readonly publisher: string | null | undefined;
   readonly validationStatus: string;
   readonly versions: {
     readonly pendingCount: number;
   };
   readonly work:
     | {
-        readonly description: string | null | undefined;
         readonly id: string;
-        readonly language: string | null | undefined;
         readonly selectedSeries:
           | {
               readonly node: {
@@ -39,12 +32,11 @@ export type readerDetailBook$data = {
             }
           | null
           | undefined;
-        readonly title: string;
         readonly " $fragmentSpreads": FragmentRefs<"readerWorkAuthors">;
       }
     | null
     | undefined;
-  readonly " $fragmentSpreads": FragmentRefs<"readerDetailTags">;
+  readonly " $fragmentSpreads": FragmentRefs<"readerDetailEditable" | "readerDetailTags">;
   readonly " $fragmentType": "readerDetailBook";
 };
 export type readerDetailBook$key = {
@@ -70,45 +62,15 @@ const node: ReaderFragment = (function () {
     selections: [
       v0 /*:: as any*/,
       {
+        args: null,
+        kind: "FragmentSpread",
+        name: "readerDetailEditable",
+      },
+      {
         alias: null,
         args: null,
         kind: "ScalarField",
         name: "coverUrl",
-        storageKey: null,
-      },
-      {
-        alias: null,
-        args: null,
-        kind: "ScalarField",
-        name: "isbn13",
-        storageKey: null,
-      },
-      {
-        alias: null,
-        args: null,
-        kind: "ScalarField",
-        name: "isbn10",
-        storageKey: null,
-      },
-      {
-        alias: null,
-        args: null,
-        kind: "ScalarField",
-        name: "isbnMismatch",
-        storageKey: null,
-      },
-      {
-        alias: null,
-        args: null,
-        kind: "ScalarField",
-        name: "publisher",
-        storageKey: null,
-      },
-      {
-        alias: null,
-        args: null,
-        kind: "ScalarField",
-        name: "publicationDate",
         storageKey: null,
       },
       {
@@ -148,27 +110,6 @@ const node: ReaderFragment = (function () {
         plural: false,
         selections: [
           v0 /*:: as any*/,
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "title",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "description",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "language",
-            storageKey: null,
-          },
           {
             args: null,
             kind: "FragmentSpread",
@@ -243,6 +184,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "fb92b34bd41d8fe9c969544bb7413828";
+(node as any).hash = "7db2591d8e4833d85478fcb2d3126a6a";
 
 export default node;

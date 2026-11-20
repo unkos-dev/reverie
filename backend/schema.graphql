@@ -1,3 +1,10 @@
+input AcceptMetadataVersionInput {
+  id: ID!
+  versionId: ID!
+}
+
+union AcceptMetadataVersionResult = MetadataVersionAccepted | FieldsLocked | MetadataInvalid | NotFound
+
 input AddShelfItemInput {
   shelfId: ID!
   manifestationId: ID!
@@ -115,6 +122,10 @@ enum Direction {
   DESC
 }
 
+type EditTooLarge {
+  message: String!
+}
+
 type ExternalIdentifier {
   level: String!
   scheme: String!
@@ -187,11 +198,26 @@ type ExternalRatingEdge {
   cursor: String!
 }
 
+type FieldError {
+  field: String!
+  message: String!
+}
+
+enum FieldLockScope {
+  WORK
+  MANIFESTATION
+}
+
 type FieldOperation {
   operationId: String!
   fieldName: String!
   expiresAt: String!
   status: String!
+}
+
+type FieldsLocked {
+  message: String!
+  fields: [String!]!
 }
 
 type Genre {
@@ -275,6 +301,14 @@ enum LibraryViewInput {
   TABLE
 }
 
+input LockMetadataFieldInput {
+  id: ID!
+  fieldName: String!
+  entityType: FieldLockScope!
+}
+
+union LockMetadataFieldResult = MetadataFieldLockAdded | NotFound
+
 type Manifestation implements Node @fetchable(field_name: "id") {
   id: ID!
   versions: MetadataVersions!
@@ -330,6 +364,23 @@ type ManifestationEdge {
   cursor: String!
 }
 
+type MetadataFieldLockAdded {
+  manifestation: Manifestation!
+}
+
+type MetadataFieldLockRemoved {
+  manifestation: Manifestation!
+}
+
+type MetadataFieldReverted {
+  manifestation: Manifestation!
+}
+
+type MetadataInvalid {
+  message: String!
+  fieldErrors: [FieldError!]!
+}
+
 type MetadataOperation {
   outcome: String!
   operations: [FieldOperation!]!
@@ -359,9 +410,9 @@ type MetadataRefresh {
   manifestationId: ID!
 }
 
-type MetadataReview {
-  manifestationId: ID!
-  metadata: MetadataRevision
+type MetadataRestored {
+  operation: FieldOperation!
+  manifestation: Manifestation!
 }
 
 type MetadataRevision {
@@ -389,10 +440,10 @@ type MetadataRevision {
   manifestationIdentifiers(first: Int!, after: String): ExternalIdentifierConnection!
 }
 
-type MetadataSave {
+type MetadataSaved {
   requestId: String
   operations: [FieldOperation!]!
-  metadata: MetadataRevision!
+  manifestation: Manifestation!
 }
 
 type MetadataVersion {
@@ -404,6 +455,10 @@ type MetadataVersion {
   confidenceScore: Float!
   matchType: String!
   observationCount: Int!
+}
+
+type MetadataVersionAccepted {
+  manifestation: Manifestation!
 }
 
 type MetadataVersionConnection {
@@ -433,6 +488,10 @@ type MetadataVersionEdge {
   A cursor for use in pagination
   """
   cursor: String!
+}
+
+type MetadataVersionRejected {
+  manifestation: Manifestation!
 }
 
 type MetadataVersions {
@@ -483,19 +542,19 @@ type MoodSuggestion {
 type Mutation {
   updateLibraryPreferences(patch: LibraryPreferencesPatch!): LibraryPreferences!
   refreshMetadata(id: ID!): MetadataRefresh!
-  updateMetadata(id: ID!, baseline: String, requestId: String, patch: MetadataPatch!): MetadataSave!
+  updateMetadata(input: UpdateMetadataInput!): UpdateMetadataResult!
   updateReadingState(id: ID!, baseline: String, patch: ReadingPatch!): ReadingState!
   createShelf(input: CreateShelfInput!): CreateShelfResult!
   renameShelf(input: RenameShelfInput!): RenameShelfResult!
   deleteShelf(input: DeleteShelfInput!): DeleteShelfResult!
   addShelfItem(input: AddShelfItemInput!): AddShelfItemResult!
   removeShelfItem(input: RemoveShelfItemInput!): RemoveShelfItemResult!
-  acceptMetadataVersion(id: ID!, versionId: ID!): MetadataReview!
-  rejectMetadataVersion(id: ID!, versionId: ID!): MetadataReview!
-  revertMetadataField(id: ID!, fieldName: String!, versionId: ID): MetadataReview!
-  lockMetadataField(id: ID!, fieldName: String!, entityType: String!): MetadataReview!
-  unlockMetadataField(id: ID!, fieldName: String!, entityType: String!): MetadataReview!
-  undoMetadata(id: ID!, baseline: String, operationId: String!): MetadataOperation!
+  acceptMetadataVersion(input: AcceptMetadataVersionInput!): AcceptMetadataVersionResult!
+  rejectMetadataVersion(input: RejectMetadataVersionInput!): RejectMetadataVersionResult!
+  revertMetadataField(input: RevertMetadataFieldInput!): RevertMetadataFieldResult!
+  lockMetadataField(input: LockMetadataFieldInput!): LockMetadataFieldResult!
+  unlockMetadataField(input: UnlockMetadataFieldInput!): UnlockMetadataFieldResult!
+  undoMetadata(input: UndoMetadataInput!): UndoMetadataResult!
 }
 
 interface Node {
@@ -589,6 +648,13 @@ enum ReadingStatusInput {
   ABANDONED
 }
 
+input RejectMetadataVersionInput {
+  id: ID!
+  versionId: ID!
+}
+
+union RejectMetadataVersionResult = MetadataVersionRejected | NotFound
+
 input RemoveShelfItemInput {
   shelfId: ID!
   manifestationId: ID!
@@ -602,6 +668,14 @@ input RenameShelfInput {
 }
 
 union RenameShelfResult = ShelfRenamed | ShelfNameInvalid | SystemShelfImmutable | NotFound
+
+input RevertMetadataFieldInput {
+  id: ID!
+  fieldName: String!
+  versionId: ID
+}
+
+union RevertMetadataFieldResult = MetadataFieldReverted | FieldsLocked | MetadataInvalid | NotFound
 
 type RevisionContributor {
   name: String!
@@ -841,6 +915,10 @@ input SortLevel {
   direction: Direction!
 }
 
+type StaleBaseline {
+  message: String!
+}
+
 type SystemShelfImmutable {
   message: String!
 }
@@ -883,6 +961,39 @@ type TagSuggestion {
   entityId: ID
   value: String!
 }
+
+type UndoConflict {
+  message: String!
+}
+
+input UndoMetadataInput {
+  id: ID!
+  baseline: String!
+  operationId: String!
+}
+
+union UndoMetadataResult = MetadataRestored | StaleBaseline | UndoUnavailable | UndoConflict | FieldsLocked | EditTooLarge | NotFound
+
+type UndoUnavailable {
+  message: String!
+}
+
+input UnlockMetadataFieldInput {
+  id: ID!
+  fieldName: String!
+  entityType: FieldLockScope!
+}
+
+union UnlockMetadataFieldResult = MetadataFieldLockRemoved | NotFound
+
+input UpdateMetadataInput {
+  id: ID!
+  baseline: String!
+  requestId: String
+  patch: MetadataPatch!
+}
+
+union UpdateMetadataResult = MetadataSaved | StaleBaseline | MetadataInvalid | FieldsLocked | EditTooLarge | NotFound
 
 """
 Caller-owned identity, independent of existing browser account projections.

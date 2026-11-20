@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<e96d12a55924993e4676afda7a8060c6>>
- * @relayHash b6aaa33cdb9ca57316c50b9e7ac09803
+ * @generated SignedSource<<7b7902cca62d9b60d5adedb226aa9932>>
+ * @relayHash 8222559dbfa9824672908b69f74e7ba3
  * @lightSyntaxTransform
  */
 
@@ -8,18 +8,35 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID f80c617cdac6d2f154fae96f761ba7c8dbcf1e9e4e59b9196738a45e7fbedc76
+// @relayRequestID 10db4782bf106b40245e92bdfa5b0c1eec3ac123a8b56cdc7f00f1a9df10ca5f
 
 import { ConcreteRequest } from "relay-runtime";
-export type mutationsUnlockMetadataFieldMutation$variables = {
-  entityType: string;
+export type FieldLockScope = "MANIFESTATION" | "WORK" | "%future added value";
+export type UnlockMetadataFieldInput = {
+  entityType: FieldLockScope;
   fieldName: string;
   id: string;
 };
+export type mutationsUnlockMetadataFieldMutation$variables = {
+  input: UnlockMetadataFieldInput;
+};
 export type mutationsUnlockMetadataFieldMutation$data = {
-  readonly unlockMetadataField: {
-    readonly manifestationId: string;
-  };
+  readonly unlockMetadataField:
+    | {
+        readonly __typename: "MetadataFieldLockRemoved";
+        readonly manifestation: {
+          readonly id: string;
+        };
+      }
+    | {
+        readonly __typename: "NotFound";
+        readonly message: string;
+      }
+    | {
+        // This will never be '%other', but we need some
+        // value in case none of the concrete values match.
+        readonly __typename: "%other";
+      };
 };
 export type mutationsUnlockMetadataFieldMutation = {
   response: mutationsUnlockMetadataFieldMutation$data;
@@ -27,42 +44,24 @@ export type mutationsUnlockMetadataFieldMutation = {
 };
 
 const node: ConcreteRequest = (function () {
-  var v0 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "entityType",
-    },
-    v1 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "fieldName",
-    },
-    v2 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "id",
-    },
-    v3 = [
+  var v0 = [
+      {
+        defaultValue: null,
+        kind: "LocalArgument",
+        name: "input",
+      },
+    ],
+    v1 = [
       {
         alias: null,
         args: [
           {
             kind: "Variable",
-            name: "entityType",
-            variableName: "entityType",
-          },
-          {
-            kind: "Variable",
-            name: "fieldName",
-            variableName: "fieldName",
-          },
-          {
-            kind: "Variable",
-            name: "id",
-            variableName: "id",
+            name: "input",
+            variableName: "input",
           },
         ],
-        concreteType: "MetadataReview",
+        concreteType: null,
         kind: "LinkedField",
         name: "unlockMetadataField",
         plural: false,
@@ -71,8 +70,47 @@ const node: ConcreteRequest = (function () {
             alias: null,
             args: null,
             kind: "ScalarField",
-            name: "manifestationId",
+            name: "__typename",
             storageKey: null,
+          },
+          {
+            kind: "InlineFragment",
+            selections: [
+              {
+                alias: null,
+                args: null,
+                concreteType: "Manifestation",
+                kind: "LinkedField",
+                name: "manifestation",
+                plural: false,
+                selections: [
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "id",
+                    storageKey: null,
+                  },
+                ],
+                storageKey: null,
+              },
+            ],
+            type: "MetadataFieldLockRemoved",
+            abstractKey: null,
+          },
+          {
+            kind: "InlineFragment",
+            selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "message",
+                storageKey: null,
+              },
+            ],
+            type: "NotFound",
+            abstractKey: null,
           },
         ],
         storageKey: null,
@@ -80,23 +118,23 @@ const node: ConcreteRequest = (function () {
     ];
   return {
     fragment: {
-      argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/, v2 /*:: as any*/],
+      argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
       metadata: null,
       name: "mutationsUnlockMetadataFieldMutation",
-      selections: v3 /*:: as any*/,
+      selections: v1 /*:: as any*/,
       type: "Mutation",
       abstractKey: null,
     },
     kind: "Request",
     operation: {
-      argumentDefinitions: [v2 /*:: as any*/, v1 /*:: as any*/, v0 /*:: as any*/],
+      argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
       name: "mutationsUnlockMetadataFieldMutation",
-      selections: v3 /*:: as any*/,
+      selections: v1 /*:: as any*/,
     },
     params: {
-      id: "f80c617cdac6d2f154fae96f761ba7c8dbcf1e9e4e59b9196738a45e7fbedc76",
+      id: "10db4782bf106b40245e92bdfa5b0c1eec3ac123a8b56cdc7f00f1a9df10ca5f",
       metadata: {},
       name: "mutationsUnlockMetadataFieldMutation",
       operationKind: "mutation",
@@ -105,6 +143,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "6c07296fcf9fe506b79a94cd380fc988";
+(node as any).hash = "2b58fb6cc990f7dc7738b6bcb806004b";
 
 export default node;

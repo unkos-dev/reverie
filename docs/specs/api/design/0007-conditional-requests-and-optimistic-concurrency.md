@@ -96,11 +96,13 @@ the resource's current `ETag` into it, so a caller can recover in one round trip
 ### The precondition contract's evaluation order
 
 Metadata save, reading patch, exact metadata Undo and settings writes apply this contract. HTTP reads the baseline from
-`If-Match`; GraphQL metadata, reading and Undo accept a nullable `baseline` string argument and reuse the same
-strong-tag parser. Omission or null produces `if-match-required`, malformed input produces `malformed-header`, and a
-locked mismatch produces `if-match-mismatch` with `currentEtag`. Both transports call the same operations. Their
-relative order is: `CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header
-and rejecting it as absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
+`If-Match`. GraphQL metadata saves and exact Undo take a non-null `baseline` in their `input` object, so omission or
+null is a request error before execution. The GraphQL reading patch takes a nullable `baseline` argument whose omission
+or null produces `if-match-required`. Both GraphQL forms reuse the same strong-tag parser: malformed input produces
+`malformed-header`. A locked mismatch returns the `StaleBaseline` union member for metadata saves and Undo, and
+`if-match-mismatch` with `currentEtag` for the reading patch. Both transports call the same operations. Their relative
+order is: `CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header and
+rejecting it as absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
 
 For metadata and reading, the request then resolves whether the target manifestation exists and is visible to the
 caller, returning `404` when it does not. `update_book_metadata` uses a `SELECT ... FOR UPDATE` whose locked row the
@@ -197,14 +199,17 @@ filtering, sorting, loading and empty results preserve them.
 
 ## Runtime behaviour
 
-A metadata save carries a client request UUID and its editing baseline. A stale aggregate precondition returns 412
-before request-reuse checking. After a lost acknowledgement, unchanged dialog input reuses its original request UUID,
-patch and baseline. A committed resend therefore receives 412, then resolves the original request before conflict
-feedback. Changed input starts a fresh UUID against the retained baseline. The table resolves uncertain saves through
-selected raw Relay executions. Temporary or uncertain failures offer explicit Retry of the same tuple. Conflicts not
-confirmed as saved offer matched Reload, validation failures retain input for correction, and permanent refusals retain
-specific feedback. Neither flow automatically replays a save or infers metadata success from equal values. A saved
-resolution adopts its selected values and matching ETag; table resolutions retain eligible operations once.
+A metadata save carries a client request UUID and its editing baseline. A stale aggregate precondition returns 412, or
+the `StaleBaseline` member over GraphQL, before request-reuse checking. After a lost acknowledgement, unchanged dialog
+input reuses its original request UUID, patch and baseline. A committed resend therefore receives the stale-baseline
+refusal, then resolves the original request before conflict feedback. A matched GraphQL acknowledgement returns the
+manifestation whose `metadata` is the revision the save projected inside its own transaction, so its values and ETag
+come from one revision. Changed input starts a fresh UUID against the retained baseline. The table resolves uncertain
+saves through selected raw Relay executions. Temporary or uncertain failures offer explicit Retry of the same tuple.
+Conflicts not confirmed as saved offer matched Reload, validation failures retain input for correction, and permanent
+refusals retain specific feedback. Neither flow automatically replays a save or infers metadata success from equal
+values. A saved resolution adopts its selected values and matching ETag; table resolutions retain eligible operations
+once.
 
 Undo sends one operation and its retained aggregate validator. After uncertainty or a stale baseline, a selected raw
 execution resolves that same operation and retries once only when the server confirms it eligible and unlocked. The
@@ -228,8 +233,9 @@ handler body executes at all). The response is `400`, problem type `.../malforme
 - Missing or malformed acknowledgement values or tags leave the edit uncertain. Metadata resolution uses committed
   request evidence through selected raw resolution reads. Reading recovery uses a matched read. A failed read retains
   input.
-- Undo refuses locked fields with 409 and retains the entry until its original expiry. A 422 `undo-unavailable` or 409
-  `undo-conflict` removes it. Expiry removes entries quietly, without extending their deadlines.
+- Undo refuses locked fields with 409, or `FieldsLocked` over GraphQL, and retains the entry until its original expiry.
+  A 422 `undo-unavailable` or 409 `undo-conflict`, or the `UndoUnavailable` or `UndoConflict` member over GraphQL,
+  removes it. Expiry removes entries quietly, without extending their deadlines.
 
 ## Security and operations
 

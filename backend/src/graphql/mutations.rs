@@ -175,12 +175,9 @@ struct MetadataPatch {
     manifestation_identifiers: Option<Vec<IdentifierPatch>>,
 }
 impl MetadataPatch {
-    fn domain(
-        self,
-        request_id: Option<String>,
-    ) -> async_graphql::Result<editing::UpdateMetadataFields> {
-        Ok(editing::UpdateMetadataFields {
-            request_id: request_id.map(|value| uuid(&value)).transpose()?,
+    fn domain(self, request_id: Option<Uuid>) -> editing::UpdateMetadataFields {
+        editing::UpdateMetadataFields {
+            request_id,
             title: self.title.into(),
             subtitle: self.subtitle.into(),
             description: self.description.into(),
@@ -197,7 +194,7 @@ impl MetadataPatch {
             contributors: self.contributors.map_value(Into::into).into(),
             work_identifiers: self.work_identifiers.map(identifiers),
             manifestation_identifiers: self.manifestation_identifiers.map(identifiers),
-        })
+        }
     }
 }
 #[derive(InputObject)]
@@ -231,11 +228,335 @@ impl From<undo::UndoOperation> for FieldOperation {
     }
 }
 #[derive(SimpleObject)]
-struct MetadataSave {
+pub(super) struct MetadataSaved {
     request_id: Option<String>,
     #[graphql(complexity = "super::complexity::weighted(144, child_complexity)?")]
     operations: Vec<FieldOperation>,
-    metadata: library::MetadataRevision,
+    manifestation: library::Manifestation,
+}
+#[derive(SimpleObject)]
+pub(super) struct MetadataRestored {
+    operation: FieldOperation,
+    manifestation: library::Manifestation,
+}
+#[derive(SimpleObject)]
+pub(super) struct MetadataVersionAccepted {
+    manifestation: library::Manifestation,
+}
+#[derive(SimpleObject)]
+pub(super) struct MetadataVersionRejected {
+    manifestation: library::Manifestation,
+}
+#[derive(SimpleObject)]
+pub(super) struct MetadataFieldReverted {
+    manifestation: library::Manifestation,
+}
+#[derive(SimpleObject)]
+pub(super) struct MetadataFieldLockAdded {
+    manifestation: library::Manifestation,
+}
+#[derive(SimpleObject)]
+pub(super) struct MetadataFieldLockRemoved {
+    manifestation: library::Manifestation,
+}
+
+#[derive(SimpleObject)]
+pub(super) struct StaleBaseline {
+    message: String,
+}
+#[derive(SimpleObject)]
+pub(super) struct FieldError {
+    field: String,
+    message: String,
+}
+#[derive(SimpleObject)]
+pub(super) struct MetadataInvalid {
+    message: String,
+    field_errors: Vec<FieldError>,
+}
+#[derive(SimpleObject)]
+pub(super) struct FieldsLocked {
+    message: String,
+    fields: Vec<String>,
+}
+#[derive(SimpleObject)]
+pub(super) struct EditTooLarge {
+    message: String,
+}
+#[derive(SimpleObject)]
+pub(super) struct UndoUnavailable {
+    message: String,
+}
+#[derive(SimpleObject)]
+pub(super) struct UndoConflict {
+    message: String,
+}
+
+enum Refusal {
+    Stale(StaleBaseline),
+    Invalid(MetadataInvalid),
+    Locked(FieldsLocked),
+    TooLarge(EditTooLarge),
+    Unavailable(UndoUnavailable),
+    Conflict(UndoConflict),
+    NotFound(NotFound),
+}
+impl Refusal {
+    fn stale() -> Self {
+        Self::Stale(StaleBaseline {
+            message: "The baseline is stale.".to_owned(),
+        })
+    }
+    fn not_found() -> Self {
+        Self::NotFound(NotFound::new())
+    }
+    fn invalid(message: &str) -> Self {
+        Self::Invalid(MetadataInvalid {
+            message: message.to_owned(),
+            field_errors: Vec::new(),
+        })
+    }
+    fn classify(error: AppError) -> async_graphql::Result<Self> {
+        Ok(match error {
+            AppError::Validation(message) => Self::Invalid(MetadataInvalid {
+                message,
+                field_errors: Vec::new(),
+            }),
+            AppError::FieldValidation { detail, errors } => Self::Invalid(MetadataInvalid {
+                message: detail,
+                field_errors: errors
+                    .into_iter()
+                    .map(|(field, message)| FieldError { field, message })
+                    .collect(),
+            }),
+            AppError::FieldLocked(fields) => Self::Locked(FieldsLocked {
+                message: "Metadata fields are locked.".to_owned(),
+                fields,
+            }),
+            AppError::EditTooLarge => Self::TooLarge(EditTooLarge {
+                message: crate::error::EDIT_TOO_LARGE.to_owned(),
+            }),
+            AppError::UndoUnavailable => Self::Unavailable(UndoUnavailable {
+                message: "Metadata Undo is unavailable.".to_owned(),
+            }),
+            AppError::UndoConflict => Self::Conflict(UndoConflict {
+                message: "Metadata Undo state conflicts.".to_owned(),
+            }),
+            AppError::NotFound => Self::not_found(),
+            error => return Err(safe_error(error)),
+        })
+    }
+    fn unexpected() -> async_graphql::Error {
+        safe_error(AppError::Internal(anyhow::anyhow!(
+            "metadata service returned a refusal its mutation does not declare"
+        )))
+    }
+}
+
+#[derive(Union)]
+pub(super) enum UpdateMetadataResult {
+    MetadataSaved(MetadataSaved),
+    StaleBaseline(StaleBaseline),
+    MetadataInvalid(MetadataInvalid),
+    FieldsLocked(FieldsLocked),
+    EditTooLarge(EditTooLarge),
+    NotFound(NotFound),
+}
+impl From<Refusal> for async_graphql::Result<UpdateMetadataResult> {
+    fn from(refusal: Refusal) -> Self {
+        Ok(match refusal {
+            Refusal::Stale(value) => value.into(),
+            Refusal::Invalid(value) => value.into(),
+            Refusal::Locked(value) => value.into(),
+            Refusal::TooLarge(value) => value.into(),
+            Refusal::NotFound(value) => value.into(),
+            _ => return Err(Refusal::unexpected()),
+        })
+    }
+}
+#[derive(Union)]
+pub(super) enum UndoMetadataResult {
+    MetadataRestored(MetadataRestored),
+    StaleBaseline(StaleBaseline),
+    UndoUnavailable(UndoUnavailable),
+    UndoConflict(UndoConflict),
+    FieldsLocked(FieldsLocked),
+    EditTooLarge(EditTooLarge),
+    NotFound(NotFound),
+}
+impl From<Refusal> for async_graphql::Result<UndoMetadataResult> {
+    fn from(refusal: Refusal) -> Self {
+        Ok(match refusal {
+            Refusal::Stale(value) => value.into(),
+            Refusal::Unavailable(value) => value.into(),
+            Refusal::Conflict(value) => value.into(),
+            Refusal::Locked(value) => value.into(),
+            Refusal::TooLarge(value) => value.into(),
+            Refusal::NotFound(value) => value.into(),
+            Refusal::Invalid(_) => return Err(Refusal::unexpected()),
+        })
+    }
+}
+#[derive(Union)]
+pub(super) enum AcceptMetadataVersionResult {
+    MetadataVersionAccepted(MetadataVersionAccepted),
+    FieldsLocked(FieldsLocked),
+    MetadataInvalid(MetadataInvalid),
+    NotFound(NotFound),
+}
+impl From<Refusal> for async_graphql::Result<AcceptMetadataVersionResult> {
+    fn from(refusal: Refusal) -> Self {
+        Ok(match refusal {
+            Refusal::Locked(value) => value.into(),
+            Refusal::Invalid(value) => value.into(),
+            Refusal::NotFound(value) => value.into(),
+            _ => return Err(Refusal::unexpected()),
+        })
+    }
+}
+#[derive(Union)]
+pub(super) enum RejectMetadataVersionResult {
+    MetadataVersionRejected(MetadataVersionRejected),
+    NotFound(NotFound),
+}
+impl From<Refusal> for async_graphql::Result<RejectMetadataVersionResult> {
+    fn from(refusal: Refusal) -> Self {
+        match refusal {
+            Refusal::NotFound(value) => Ok(value.into()),
+            _ => Err(Refusal::unexpected()),
+        }
+    }
+}
+#[derive(Union)]
+pub(super) enum RevertMetadataFieldResult {
+    MetadataFieldReverted(MetadataFieldReverted),
+    FieldsLocked(FieldsLocked),
+    MetadataInvalid(MetadataInvalid),
+    NotFound(NotFound),
+}
+impl From<Refusal> for async_graphql::Result<RevertMetadataFieldResult> {
+    fn from(refusal: Refusal) -> Self {
+        Ok(match refusal {
+            Refusal::Locked(value) => value.into(),
+            Refusal::Invalid(value) => value.into(),
+            Refusal::NotFound(value) => value.into(),
+            _ => return Err(Refusal::unexpected()),
+        })
+    }
+}
+#[derive(Union)]
+pub(super) enum LockMetadataFieldResult {
+    MetadataFieldLockAdded(MetadataFieldLockAdded),
+    NotFound(NotFound),
+}
+impl From<Refusal> for async_graphql::Result<LockMetadataFieldResult> {
+    fn from(refusal: Refusal) -> Self {
+        match refusal {
+            Refusal::NotFound(value) => Ok(value.into()),
+            _ => Err(Refusal::unexpected()),
+        }
+    }
+}
+#[derive(Union)]
+pub(super) enum UnlockMetadataFieldResult {
+    MetadataFieldLockRemoved(MetadataFieldLockRemoved),
+    NotFound(NotFound),
+}
+impl From<Refusal> for async_graphql::Result<UnlockMetadataFieldResult> {
+    fn from(refusal: Refusal) -> Self {
+        match refusal {
+            Refusal::NotFound(value) => Ok(value.into()),
+            _ => Err(Refusal::unexpected()),
+        }
+    }
+}
+
+fn refused<T>(error: AppError) -> async_graphql::Result<T>
+where
+    async_graphql::Result<T>: From<Refusal>,
+{
+    Refusal::classify(error)?.into()
+}
+
+input_enum!(FieldLockScope { Work => "WORK", Manifestation => "MANIFESTATION" });
+impl FieldLockScope {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Work => "work",
+            Self::Manifestation => "manifestation",
+        }
+    }
+}
+
+#[derive(InputObject)]
+pub(super) struct UpdateMetadataInput {
+    id: ID,
+    baseline: String,
+    request_id: Option<String>,
+    patch: MetadataPatch,
+}
+#[derive(InputObject)]
+pub(super) struct UndoMetadataInput {
+    id: ID,
+    baseline: String,
+    operation_id: String,
+}
+#[derive(InputObject)]
+pub(super) struct AcceptMetadataVersionInput {
+    id: ID,
+    version_id: ID,
+}
+#[derive(InputObject)]
+pub(super) struct RejectMetadataVersionInput {
+    id: ID,
+    version_id: ID,
+}
+#[derive(InputObject)]
+pub(super) struct RevertMetadataFieldInput {
+    id: ID,
+    field_name: String,
+    version_id: Option<ID>,
+}
+#[derive(InputObject)]
+pub(super) struct LockMetadataFieldInput {
+    id: ID,
+    field_name: String,
+    entity_type: FieldLockScope,
+}
+#[derive(InputObject)]
+pub(super) struct UnlockMetadataFieldInput {
+    id: ID,
+    field_name: String,
+    entity_type: FieldLockScope,
+}
+
+fn acknowledgement_selection(
+    ctx: &Context<'_>,
+) -> async_graphql::Result<Option<editing::SnapshotSelection>> {
+    let look = ctx.look_ahead().field("manifestation").field("metadata");
+    if look.exists() {
+        library::snapshot_selection(&look).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+async fn acknowledged(
+    ctx: &Context<'_>,
+    id: &ID,
+    snapshot: Option<&editing::MetadataSnapshot>,
+) -> async_graphql::Result<library::Manifestation> {
+    // A committed write is not a refusal, so a missing read-back goes to request resolution.
+    let manifestation = library::manifestation(ctx, id).await?.ok_or_else(|| {
+        safe_error(AppError::Internal(anyhow::anyhow!(
+            "committed metadata write has no visible manifestation"
+        )))
+    })?;
+    Ok(match snapshot {
+        Some(snapshot) => {
+            manifestation.with_metadata(library::MetadataRevision::from_domain(snapshot)?)
+        }
+        None => manifestation,
+    })
 }
 #[derive(SimpleObject)]
 pub(super) struct MetadataOperation {
@@ -255,24 +576,6 @@ impl MetadataOperation {
             .to_owned(),
             operations: result.operations.into_iter().map(Into::into).collect(),
             metadata: library::MetadataRevision::from_domain(&result.snapshot)?,
-        })
-    }
-}
-#[derive(SimpleObject)]
-struct MetadataReview {
-    manifestation_id: ID,
-    metadata: Option<library::MetadataRevision>,
-}
-impl MetadataReview {
-    fn new(
-        edition: Uuid,
-        snapshot: Option<&editing::MetadataSnapshot>,
-    ) -> async_graphql::Result<Self> {
-        Ok(Self {
-            manifestation_id: id::Manifestation::encode(edition),
-            metadata: snapshot
-                .map(library::MetadataRevision::from_domain)
-                .transpose()?,
         })
     }
 }
@@ -391,6 +694,9 @@ fn uuid(value: &str) -> async_graphql::Result<Uuid> {
         ))
     })
 }
+fn strong_baseline(value: &str) -> async_graphql::Result<StrongEntityTag> {
+    parse_strong_entity_tag(value.as_bytes()).map_err(safe_error)
+}
 fn baseline(value: Option<String>) -> async_graphql::Result<Option<StrongEntityTag>> {
     value
         .map(|value| parse_strong_entity_tag(value.as_bytes()).map_err(safe_error))
@@ -467,32 +773,42 @@ impl Mutation {
     async fn update_metadata(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-        baseline: Option<String>,
-        request_id: Option<String>,
-        patch: MetadataPatch,
-    ) -> async_graphql::Result<MetadataSave> {
+        input: UpdateMetadataInput,
+    ) -> async_graphql::Result<UpdateMetadataResult> {
         adult(ctx)?;
-        let supplied = self::baseline(baseline)?;
-        let selection = library::snapshot_selection(&ctx.look_ahead().field("metadata"))?;
-        let result = matched(
-            editing::update_book_metadata(
-                ctx.data()?,
-                ctx.data()?,
-                ctx.data()?,
-                target::<id::Manifestation>(&id)?,
-                supplied,
-                patch.domain(request_id)?,
-                &selection,
-            )
-            .await
-            .map_err(safe_error)?,
+        let supplied = strong_baseline(&input.baseline)?;
+        let Some(edition) = id::Manifestation::decode(&input.id) else {
+            return Refusal::not_found().into();
+        };
+        let request_id = match input.request_id.as_deref().map(str::parse::<Uuid>) {
+            None => None,
+            Some(Ok(value)) => Some(value),
+            Some(Err(_)) => return Refusal::invalid("Invalid request UUID.").into(),
+        };
+        let selection = library::snapshot_selection(
+            &ctx.look_ahead().field("manifestation").field("metadata"),
         )?;
-        Ok(MetadataSave {
+        let result = match editing::update_book_metadata(
+            ctx.data()?,
+            ctx.data()?,
+            ctx.data()?,
+            edition,
+            Some(supplied),
+            input.patch.domain(request_id),
+            &selection,
+        )
+        .await
+        {
+            Ok(Conditional::Matched(result)) => result,
+            Ok(Conditional::Mismatch(_)) => return Refusal::stale().into(),
+            Err(error) => return refused(error),
+        };
+        let manifestation = acknowledged(ctx, &input.id, Some(&result.snapshot)).await?;
+        Ok(UpdateMetadataResult::MetadataSaved(MetadataSaved {
             request_id: result.request_id.map(|id| id.to_string()),
             operations: result.operations.into_iter().map(Into::into).collect(),
-            metadata: library::MetadataRevision::from_domain(&result.snapshot)?,
-        })
+            manifestation,
+        }))
     }
     #[graphql(guard = "WriteScope")]
     async fn update_reading_state(
@@ -645,177 +961,207 @@ impl Mutation {
     async fn accept_metadata_version(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-        version_id: ID,
-    ) -> async_graphql::Result<MetadataReview> {
+        input: AcceptMetadataVersionInput,
+    ) -> async_graphql::Result<AcceptMetadataVersionResult> {
         adult(ctx)?;
-        let edition = target::<id::Manifestation>(&id)?;
-        let look = ctx.look_ahead().field("metadata");
-        let selection = if look.exists() {
-            Some(library::snapshot_selection(&look)?)
-        } else {
-            None
+        let (Some(edition), Some(version_id)) = (
+            id::Manifestation::decode(&input.id),
+            id::MetadataVersion::decode(&input.version_id),
+        ) else {
+            return Refusal::not_found().into();
         };
-        let snapshot = editing::accept_manifestation(
+        let selection = acknowledgement_selection(ctx)?;
+        let snapshot = match editing::accept_manifestation(
             ctx.data()?,
             ctx.data()?,
             edition,
-            editing::VersionPayload {
-                version_id: target::<id::MetadataVersion>(&version_id)?,
-            },
+            editing::VersionPayload { version_id },
             selection.as_ref(),
         )
         .await
-        .map_err(safe_error)?;
-        MetadataReview::new(edition, snapshot.as_ref())
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => return refused(error),
+        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
+        Ok(AcceptMetadataVersionResult::MetadataVersionAccepted(
+            MetadataVersionAccepted { manifestation },
+        ))
     }
     #[graphql(guard = "WriteScope")]
     async fn reject_metadata_version(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-        version_id: ID,
-    ) -> async_graphql::Result<MetadataReview> {
+        input: RejectMetadataVersionInput,
+    ) -> async_graphql::Result<RejectMetadataVersionResult> {
         adult(ctx)?;
-        let edition = target::<id::Manifestation>(&id)?;
-        let look = ctx.look_ahead().field("metadata");
-        let selection = if look.exists() {
-            Some(library::snapshot_selection(&look)?)
-        } else {
-            None
+        let (Some(edition), Some(version_id)) = (
+            id::Manifestation::decode(&input.id),
+            id::MetadataVersion::decode(&input.version_id),
+        ) else {
+            return Refusal::not_found().into();
         };
-        let snapshot = editing::reject_manifestation(
+        let selection = acknowledgement_selection(ctx)?;
+        let snapshot = match editing::reject_manifestation(
             ctx.data()?,
             ctx.data()?,
             edition,
-            editing::VersionPayload {
-                version_id: target::<id::MetadataVersion>(&version_id)?,
-            },
+            editing::VersionPayload { version_id },
             selection.as_ref(),
         )
         .await
-        .map_err(safe_error)?;
-        MetadataReview::new(edition, snapshot.as_ref())
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => return refused(error),
+        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
+        Ok(RejectMetadataVersionResult::MetadataVersionRejected(
+            MetadataVersionRejected { manifestation },
+        ))
     }
     #[graphql(guard = "WriteScope")]
     async fn revert_metadata_field(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-        field_name: String,
-        version_id: Option<ID>,
-    ) -> async_graphql::Result<MetadataReview> {
+        input: RevertMetadataFieldInput,
+    ) -> async_graphql::Result<RevertMetadataFieldResult> {
         adult(ctx)?;
-        let edition = target::<id::Manifestation>(&id)?;
-        let look = ctx.look_ahead().field("metadata");
-        let selection = if look.exists() {
-            Some(library::snapshot_selection(&look)?)
-        } else {
-            None
+        let Some(edition) = id::Manifestation::decode(&input.id) else {
+            return Refusal::not_found().into();
         };
-        let snapshot = editing::revert_manifestation(
+        let version_id = match input.version_id.as_ref().map(id::MetadataVersion::decode) {
+            None => None,
+            Some(Some(version_id)) => Some(version_id),
+            Some(None) => return Refusal::not_found().into(),
+        };
+        let selection = acknowledgement_selection(ctx)?;
+        let snapshot = match editing::revert_manifestation(
             ctx.data()?,
             ctx.data()?,
             edition,
             editing::RevertPayload {
-                field_name,
-                version_id: version_id
-                    .map(|value| target::<id::MetadataVersion>(&value))
-                    .transpose()?,
+                field_name: input.field_name,
+                version_id,
             },
             selection.as_ref(),
         )
         .await
-        .map_err(safe_error)?;
-        MetadataReview::new(edition, snapshot.as_ref())
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => return refused(error),
+        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
+        Ok(RevertMetadataFieldResult::MetadataFieldReverted(
+            MetadataFieldReverted { manifestation },
+        ))
     }
     #[graphql(guard = "WriteScope")]
     async fn lock_metadata_field(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-        field_name: String,
-        entity_type: String,
-    ) -> async_graphql::Result<MetadataReview> {
+        input: LockMetadataFieldInput,
+    ) -> async_graphql::Result<LockMetadataFieldResult> {
         adult(ctx)?;
-        let edition = target::<id::Manifestation>(&id)?;
-        let look = ctx.look_ahead().field("metadata");
-        let selection = if look.exists() {
-            Some(library::snapshot_selection(&look)?)
-        } else {
-            None
+        let Some(edition) = id::Manifestation::decode(&input.id) else {
+            return Refusal::not_found().into();
         };
-        let snapshot = editing::lock_field(
+        let selection = acknowledgement_selection(ctx)?;
+        let snapshot = match editing::lock_field(
             ctx.data()?,
             ctx.data()?,
             edition,
             editing::LockPayload {
-                field_name,
-                entity_type,
+                field_name: input.field_name,
+                entity_type: input.entity_type.as_str().to_owned(),
             },
             selection.as_ref(),
         )
         .await
-        .map_err(safe_error)?;
-        MetadataReview::new(edition, snapshot.as_ref())
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => return refused(error),
+        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
+        Ok(LockMetadataFieldResult::MetadataFieldLockAdded(
+            MetadataFieldLockAdded { manifestation },
+        ))
     }
     #[graphql(guard = "WriteScope")]
     async fn unlock_metadata_field(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-        field_name: String,
-        entity_type: String,
-    ) -> async_graphql::Result<MetadataReview> {
+        input: UnlockMetadataFieldInput,
+    ) -> async_graphql::Result<UnlockMetadataFieldResult> {
         adult(ctx)?;
-        let edition = target::<id::Manifestation>(&id)?;
-        let look = ctx.look_ahead().field("metadata");
-        let selection = if look.exists() {
-            Some(library::snapshot_selection(&look)?)
-        } else {
-            None
+        let Some(edition) = id::Manifestation::decode(&input.id) else {
+            return Refusal::not_found().into();
         };
-        let snapshot = editing::unlock_field(
+        let selection = acknowledgement_selection(ctx)?;
+        let snapshot = match editing::unlock_field(
             ctx.data()?,
             ctx.data()?,
             edition,
             editing::LockPayload {
-                field_name,
-                entity_type,
+                field_name: input.field_name,
+                entity_type: input.entity_type.as_str().to_owned(),
             },
             selection.as_ref(),
         )
         .await
-        .map_err(safe_error)?;
-        MetadataReview::new(edition, snapshot.as_ref())
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => return refused(error),
+        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
+        Ok(UnlockMetadataFieldResult::MetadataFieldLockRemoved(
+            MetadataFieldLockRemoved { manifestation },
+        ))
     }
     #[graphql(guard = "WriteScope")]
     async fn undo_metadata(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-        baseline: Option<String>,
-        operation_id: String,
-    ) -> async_graphql::Result<MetadataOperation> {
+        input: UndoMetadataInput,
+    ) -> async_graphql::Result<UndoMetadataResult> {
         adult(ctx)?;
-        undo::session_id(ctx.data()?, ctx.data()?).map_err(safe_error)?;
-        let supplied = self::baseline(baseline)?;
-        let selection = library::snapshot_selection(&ctx.look_ahead().field("metadata"))?;
-        MetadataOperation::new(matched(
-            undo::undo_metadata(
-                ctx.data()?,
-                ctx.data()?,
-                ctx.data()?,
-                target::<id::Manifestation>(&id)?,
-                supplied,
-                undo::UndoRequest {
-                    operation_id: uuid(&operation_id)?,
-                },
-                &selection,
-            )
-            .await
-            .map_err(safe_error)?,
-        )?)
+        if let Err(error) = undo::session_id(ctx.data()?, ctx.data()?) {
+            return refused(error);
+        }
+        let supplied = strong_baseline(&input.baseline)?;
+        let (Some(edition), Ok(operation_id)) = (
+            id::Manifestation::decode(&input.id),
+            input.operation_id.parse::<Uuid>(),
+        ) else {
+            return Refusal::not_found().into();
+        };
+        let selection = library::snapshot_selection(
+            &ctx.look_ahead().field("manifestation").field("metadata"),
+        )?;
+        let result = match undo::undo_metadata(
+            ctx.data()?,
+            ctx.data()?,
+            ctx.data()?,
+            edition,
+            Some(supplied),
+            undo::UndoRequest { operation_id },
+            &selection,
+        )
+        .await
+        {
+            Ok(Conditional::Matched(result)) => result,
+            Ok(Conditional::Mismatch(_)) => return Refusal::stale().into(),
+            Err(error) => return refused(error),
+        };
+        let Some(operation) = result.operations.into_iter().next() else {
+            return Err(safe_error(AppError::Internal(anyhow::anyhow!(
+                "metadata Undo restored without its operation"
+            ))));
+        };
+        let manifestation = acknowledged(ctx, &input.id, Some(&result.snapshot)).await?;
+        Ok(UndoMetadataResult::MetadataRestored(MetadataRestored {
+            operation: operation.into(),
+            manifestation,
+        }))
     }
 }
 pub(super) async fn metadata_operation(
