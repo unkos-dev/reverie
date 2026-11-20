@@ -251,8 +251,6 @@ export function useCellEdit({
         work?.setValue(snapshot.subtitle, "subtitle");
         edition?.setValue(snapshot.isbn13, "isbn13");
         edition?.setValue(snapshot.pages, "pages");
-        const revision = store.get(snapshot.id);
-        if (revision != null) edition?.setLinkedRecord(revision, "metadata");
       }
       work?.invalidateRecord();
       edition?.invalidateRecord();
