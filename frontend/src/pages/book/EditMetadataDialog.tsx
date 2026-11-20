@@ -206,20 +206,26 @@ function EditMetadataForm({
   const [reloading, setReloading] = useState(false);
   const [reloadError, setReloadError] = useState(false);
   const manifestation = data.manifestation;
-  if (manifestation == null) throw new Error("Book not found.");
+  const [openedWithBook] = useState(manifestation != null);
+  if (manifestation == null && !openedWithBook) throw new Error("Book not found.");
+  const id = queryRef.variables.id;
   const reload = (): void => {
     if (reloading) return;
     setReloading(true);
+    let found = false;
     fetchQuery<FormQuery>(
       environment,
       mutationsFormQuery,
-      { id: manifestation.id },
+      { id },
       { fetchPolicy: "network-only" },
     ).subscribe({
+      next: (response) => {
+        found = response.manifestation != null;
+      },
       complete: () => {
         setReloading(false);
-        setReloadError(false);
-        setOpening((value) => value + 1);
+        setReloadError(!found);
+        if (found) setOpening((value) => value + 1);
       },
       error: () => {
         setReloading(false);
@@ -233,9 +239,9 @@ function EditMetadataForm({
       onReload={reload}
       reloading={reloading}
       reloadError={reloadError}
-      manifestationId={manifestation.id}
+      manifestationId={id}
       fields={fields}
-      metadata={manifestation.metadata}
+      metadata={manifestation?.metadata ?? null}
       onDone={onDone}
     />
   );
@@ -247,7 +253,7 @@ type EditMetadataFieldsProps = {
   reloadError: boolean;
   manifestationId: string;
   fields: readonly EditableField[];
-  metadata: mutationsFormSnapshot$key;
+  metadata: mutationsFormSnapshot$key | null;
   onDone: () => void;
 };
 
@@ -274,7 +280,10 @@ function EditMetadataFields({
   };
   const current = useFragment(mutationsFormSnapshot, metadataKey);
   // A later store merge must not advance this edit's write precondition.
-  const [metadata] = useState(current);
+  const [metadata] = useState(() => {
+    if (current == null) throw new Error("Book not found.");
+    return current;
+  });
   const [commitSave] = useMutation<SaveForm>(mutationsSaveFormMutation);
   const attempt = useRef<{ body: MetadataPatch; requestId: string } | null>(null);
   const touched = useRef(new Set<keyof UpdateBookMetadataFields>());

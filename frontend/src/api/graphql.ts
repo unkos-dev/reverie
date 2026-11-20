@@ -501,7 +501,10 @@ for (const [action, root, success, refusals] of [
       [root]: z.discriminatedUnion("__typename", [
         z.object({
           __typename: z.literal(success),
-          manifestation: z.object({ id: domainId("Manifestation") }),
+          manifestation:
+            success === "MetadataVersionAccepted" || success === "MetadataFieldReverted"
+              ? acknowledgement(formSnapshot)
+              : z.object({ id: domainId("Manifestation") }),
         }),
         ...refusals,
       ]),

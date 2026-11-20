@@ -544,16 +544,19 @@ async fn acknowledged(
     ctx: &Context<'_>,
     id: &ID,
     snapshot: Option<&editing::MetadataSnapshot>,
-) -> async_graphql::Result<Option<library::Manifestation>> {
-    let Some(manifestation) = library::manifestation(ctx, id).await? else {
-        return Ok(None);
-    };
-    Ok(Some(match snapshot {
+) -> async_graphql::Result<library::Manifestation> {
+    // A committed write is not a refusal, so a missing read-back goes to request resolution.
+    let manifestation = library::manifestation(ctx, id).await?.ok_or_else(|| {
+        safe_error(AppError::Internal(anyhow::anyhow!(
+            "committed metadata write has no visible manifestation"
+        )))
+    })?;
+    Ok(match snapshot {
         Some(snapshot) => {
             manifestation.with_metadata(library::MetadataRevision::from_domain(snapshot)?)
         }
         None => manifestation,
-    }))
+    })
 }
 #[derive(SimpleObject)]
 pub(super) struct MetadataOperation {
@@ -800,10 +803,7 @@ impl Mutation {
             Ok(Conditional::Mismatch(_)) => return Refusal::stale().into(),
             Err(error) => return refused(error),
         };
-        let Some(manifestation) = acknowledged(ctx, &input.id, Some(&result.snapshot)).await?
-        else {
-            return Refusal::not_found().into();
-        };
+        let manifestation = acknowledged(ctx, &input.id, Some(&result.snapshot)).await?;
         Ok(UpdateMetadataResult::MetadataSaved(MetadataSaved {
             request_id: result.request_id.map(|id| id.to_string()),
             operations: result.operations.into_iter().map(Into::into).collect(),
@@ -983,9 +983,7 @@ impl Mutation {
             Ok(snapshot) => snapshot,
             Err(error) => return refused(error),
         };
-        let Some(manifestation) = acknowledged(ctx, &input.id, snapshot.as_ref()).await? else {
-            return Refusal::not_found().into();
-        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
         Ok(AcceptMetadataVersionResult::MetadataVersionAccepted(
             MetadataVersionAccepted { manifestation },
         ))
@@ -1016,9 +1014,7 @@ impl Mutation {
             Ok(snapshot) => snapshot,
             Err(error) => return refused(error),
         };
-        let Some(manifestation) = acknowledged(ctx, &input.id, snapshot.as_ref()).await? else {
-            return Refusal::not_found().into();
-        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
         Ok(RejectMetadataVersionResult::MetadataVersionRejected(
             MetadataVersionRejected { manifestation },
         ))
@@ -1054,9 +1050,7 @@ impl Mutation {
             Ok(snapshot) => snapshot,
             Err(error) => return refused(error),
         };
-        let Some(manifestation) = acknowledged(ctx, &input.id, snapshot.as_ref()).await? else {
-            return Refusal::not_found().into();
-        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
         Ok(RevertMetadataFieldResult::MetadataFieldReverted(
             MetadataFieldReverted { manifestation },
         ))
@@ -1087,9 +1081,7 @@ impl Mutation {
             Ok(snapshot) => snapshot,
             Err(error) => return refused(error),
         };
-        let Some(manifestation) = acknowledged(ctx, &input.id, snapshot.as_ref()).await? else {
-            return Refusal::not_found().into();
-        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
         Ok(LockMetadataFieldResult::MetadataFieldLockAdded(
             MetadataFieldLockAdded { manifestation },
         ))
@@ -1120,9 +1112,7 @@ impl Mutation {
             Ok(snapshot) => snapshot,
             Err(error) => return refused(error),
         };
-        let Some(manifestation) = acknowledged(ctx, &input.id, snapshot.as_ref()).await? else {
-            return Refusal::not_found().into();
-        };
+        let manifestation = acknowledged(ctx, &input.id, snapshot.as_ref()).await?;
         Ok(UnlockMetadataFieldResult::MetadataFieldLockRemoved(
             MetadataFieldLockRemoved { manifestation },
         ))
@@ -1167,10 +1157,7 @@ impl Mutation {
                 "metadata Undo restored without its operation"
             ))));
         };
-        let Some(manifestation) = acknowledged(ctx, &input.id, Some(&result.snapshot)).await?
-        else {
-            return Refusal::not_found().into();
-        };
+        let manifestation = acknowledged(ctx, &input.id, Some(&result.snapshot)).await?;
         Ok(UndoMetadataResult::MetadataRestored(MetadataRestored {
             operation: operation.into(),
             manifestation,

@@ -702,6 +702,16 @@ mod tests {
         );
     }
 
+    fn assert_admitted(name: &str, admitted: &serde_json::Value) {
+        let code = &admitted["errors"][0]["extensions"]["code"];
+        assert_ne!(code, "forbidden", "{name}: {admitted}");
+        assert_ne!(code, "validation", "{name}: {admitted}");
+        assert_ne!(
+            admitted["data"][name]["__typename"], "MetadataInvalid",
+            "{name}: {admitted}"
+        );
+    }
+
     async fn mutation_scope_boundary(pool: &PgPool) {
         let fixture = reader_fixture(pool).await;
         let app = db::app_pool_for(pool).await;
@@ -756,13 +766,7 @@ mod tests {
                 .filter(|_| *name != "undoMetadata")
             {
                 let admitted = reader_query(&fixture, auth, &query, json!({})).await;
-                let code = &admitted["errors"][0]["extensions"]["code"];
-                assert_ne!(code, "forbidden", "{name}: {admitted}");
-                assert_ne!(code, "validation", "{name}: {admitted}");
-                assert_ne!(
-                    admitted["data"][name]["__typename"], "MetadataInvalid",
-                    "{name}: {admitted}"
-                );
+                assert_admitted(name, &admitted);
                 if *name == "createShelf" {
                     assert_graph_ok(&admitted);
                     assert_eq!(admitted["data"][name]["shelf"]["name"], "Scoped shelf");

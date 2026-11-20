@@ -339,8 +339,9 @@ dismissal.
    manifestation. Relay normalisation updates Book detail and links the new revision, and the sheet closes its
    originating mounted form. Versions reads are lazy and complete their native pending connection. Field-owned review
    outcomes survive proposal removal. A successful review action returns the manifestation with `readerDetailBook` and
-   `readerVersions`, which replaces the pending connection's first page and updates the pending count. A refused or
-   failed review action invalidates the manifestation, so Book detail and Versions refetch.
+   `readerVersions`, which replaces the pending connection's first page and updates the pending count. Accept and Clear
+   also return the form snapshot, so the next edit sheet opens on the revision they produced. A refused or failed review
+   action invalidates the manifestation, so Book detail and Versions refetch.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 

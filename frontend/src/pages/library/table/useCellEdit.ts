@@ -789,7 +789,11 @@ export function useCellEdit({
         }));
         setUndoOutcome(`${COLUMN_LABELS[attempt.columnKey]} for “${attempt.row.title}” restored.`);
       } else if (failure !== undefined) {
-        if (["UndoUnavailable", "UndoConflict"].includes(errorCode(failure) ?? ""))
+        if (
+          ["UndoUnavailable", "UndoConflict", "undo-unavailable", "undo-conflict"].includes(
+            errorCode(failure) ?? "",
+          )
+        )
           setOwner((current) => ({
             ...current,
             entries: current.entries.filter(

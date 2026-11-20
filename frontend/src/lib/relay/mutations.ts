@@ -510,6 +510,9 @@ export const mutationsAcceptMetadataVersionMutation = graphql`
       ... on MetadataVersionAccepted {
         manifestation {
           id
+          metadata {
+            ...mutationsFormSnapshot
+          }
           ...readerDetailBook
           ...readerVersions
         }
@@ -557,6 +560,9 @@ export const mutationsRevertMetadataFieldMutation = graphql`
       ... on MetadataFieldReverted {
         manifestation {
           id
+          metadata {
+            ...mutationsFormSnapshot
+          }
           ...readerDetailBook
           ...readerVersions
         }

@@ -184,7 +184,8 @@ union of one success member, named for the event (`ShelfCreated`, `MetadataSaved
 `MetadataVersionAccepted`), and their expected outcomes. Outcome types are shared across mutations and carry a
 `message`: `NotFound`, `SystemShelfImmutable`, `ShelfNameInvalid`, `StaleBaseline`, `MetadataInvalid`, `FieldsLocked`,
 `EditTooLarge`, `UndoUnavailable` and `UndoConflict`. A malformed or caller-invisible target is a `NotFound` member.
-Forbidden, internal and malformed-header failures remain execution errors. Metadata success members return the
+Forbidden, internal and malformed-header failures remain execution errors, as does a committed metadata write whose
+manifestation cannot be read back, so the client resolves the request. Metadata success members return the
 `manifestation`. Its `metadata` field answers with the revision the write projected inside its transaction, selected
 through look-ahead on `manifestation.metadata`. Relay normalisation then points the manifestation at the new revision
 without an updater. Clients branch on `__typename` in `onCompleted` and treat `onError` as the unexpected class. The

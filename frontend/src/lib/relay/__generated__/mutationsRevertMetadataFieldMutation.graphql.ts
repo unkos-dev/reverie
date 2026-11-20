@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<fceae88a2cfcc12c2ecfafe152ee04da>>
- * @relayHash 8c4d89c20c2efde90fc09bf017b13dd6
+ * @generated SignedSource<<a0bae8543d44002088343d0a2acd660b>>
+ * @relayHash 75c1bb257012308a69a0dfe2dee9b449
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID c932e91fdd08d884e296e8afde9eca858d8052b4e266ad0a4004dcdb50e53c3f
+// @relayRequestID 5160b3098871c7e86a0a314c9ec08070a4fa219b3d97a372375ed32420998fe1
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -31,6 +31,9 @@ export type mutationsRevertMetadataFieldMutation$data = {
         readonly __typename: "MetadataFieldReverted";
         readonly manifestation: {
           readonly id: string;
+          readonly metadata: {
+            readonly " $fragmentSpreads": FragmentRefs<"mutationsFormSnapshot">;
+          };
           readonly " $fragmentSpreads": FragmentRefs<"readerDetailBook" | "readerVersions">;
         };
       }
@@ -141,29 +144,85 @@ const node: ConcreteRequest = (function () {
       type: "NotFound",
       abstractKey: null,
     },
-    v8 = [
+    v8 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "title",
+      storageKey: null,
+    },
+    v9 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "description",
+      storageKey: null,
+    },
+    v10 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "language",
+      storageKey: null,
+    },
+    v11 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "publisher",
+      storageKey: null,
+    },
+    v12 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "publicationDate",
+      storageKey: null,
+    },
+    v13 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isbn10",
+      storageKey: null,
+    },
+    v14 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isbn13",
+      storageKey: null,
+    },
+    v15 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isbnMismatch",
+      storageKey: null,
+    },
+    v16 = [
       {
         kind: "Literal",
         name: "first",
         value: 20,
       },
     ],
-    v9 = {
+    v17 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "name",
       storageKey: null,
     },
-    v10 = [v3 /*:: as any*/, v9 /*:: as any*/, v2 /*:: as any*/],
-    v11 = {
+    v18 = [v3 /*:: as any*/, v17 /*:: as any*/, v2 /*:: as any*/],
+    v19 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "cursor",
       storageKey: null,
     },
-    v12 = {
+    v20 = {
       alias: null,
       args: null,
       concreteType: "PageInfo",
@@ -216,6 +275,22 @@ const node: ConcreteRequest = (function () {
                   plural: false,
                   selections: [
                     v3 /*:: as any*/,
+                    {
+                      alias: null,
+                      args: null,
+                      concreteType: "MetadataRevision",
+                      kind: "LinkedField",
+                      name: "metadata",
+                      plural: false,
+                      selections: [
+                        {
+                          args: null,
+                          kind: "FragmentSpread",
+                          name: "mutationsFormSnapshot",
+                        },
+                      ],
+                      storageKey: null,
+                    },
                     {
                       args: null,
                       kind: "FragmentSpread",
@@ -273,38 +348,70 @@ const node: ConcreteRequest = (function () {
                     {
                       alias: null,
                       args: null,
-                      kind: "ScalarField",
-                      name: "isbn13",
+                      concreteType: "MetadataRevision",
+                      kind: "LinkedField",
+                      name: "metadata",
+                      plural: false,
+                      selections: [
+                        v3 /*:: as any*/,
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "workId",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "manifestationId",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "etag",
+                          storageKey: null,
+                        },
+                        v8 /*:: as any*/,
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "subtitle",
+                          storageKey: null,
+                        },
+                        v9 /*:: as any*/,
+                        v10 /*:: as any*/,
+                        v11 /*:: as any*/,
+                        v12 /*:: as any*/,
+                        v13 /*:: as any*/,
+                        v14 /*:: as any*/,
+                        v15 /*:: as any*/,
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "pages",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "contentRating",
+                          storageKey: null,
+                        },
+                      ],
                       storageKey: null,
                     },
-                    {
-                      alias: null,
-                      args: null,
-                      kind: "ScalarField",
-                      name: "isbn10",
-                      storageKey: null,
-                    },
-                    {
-                      alias: null,
-                      args: null,
-                      kind: "ScalarField",
-                      name: "isbnMismatch",
-                      storageKey: null,
-                    },
-                    {
-                      alias: null,
-                      args: null,
-                      kind: "ScalarField",
-                      name: "publisher",
-                      storageKey: null,
-                    },
-                    {
-                      alias: null,
-                      args: null,
-                      kind: "ScalarField",
-                      name: "publicationDate",
-                      storageKey: null,
-                    },
+                    v14 /*:: as any*/,
+                    v13 /*:: as any*/,
+                    v15 /*:: as any*/,
+                    v11 /*:: as any*/,
+                    v12 /*:: as any*/,
                     {
                       alias: null,
                       args: null,
@@ -314,30 +421,12 @@ const node: ConcreteRequest = (function () {
                       plural: false,
                       selections: [
                         v3 /*:: as any*/,
+                        v8 /*:: as any*/,
+                        v9 /*:: as any*/,
+                        v10 /*:: as any*/,
                         {
                           alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "title",
-                          storageKey: null,
-                        },
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "description",
-                          storageKey: null,
-                        },
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "language",
-                          storageKey: null,
-                        },
-                        {
-                          alias: null,
-                          args: v8 /*:: as any*/,
+                          args: v16 /*:: as any*/,
                           concreteType: "AuthorConnection",
                           kind: "LinkedField",
                           name: "authors",
@@ -358,20 +447,20 @@ const node: ConcreteRequest = (function () {
                                   kind: "LinkedField",
                                   name: "node",
                                   plural: false,
-                                  selections: v10 /*:: as any*/,
+                                  selections: v18 /*:: as any*/,
                                   storageKey: null,
                                 },
-                                v11 /*:: as any*/,
+                                v19 /*:: as any*/,
                               ],
                               storageKey: null,
                             },
-                            v12 /*:: as any*/,
+                            v20 /*:: as any*/,
                           ],
                           storageKey: "authors(first:20)",
                         },
                         {
                           alias: null,
-                          args: v8 /*:: as any*/,
+                          args: v16 /*:: as any*/,
                           filters: null,
                           handle: "connection",
                           key: "readerWorkAuthors_authors",
@@ -393,7 +482,7 @@ const node: ConcreteRequest = (function () {
                               kind: "LinkedField",
                               name: "node",
                               plural: false,
-                              selections: [v3 /*:: as any*/, v9 /*:: as any*/],
+                              selections: [v3 /*:: as any*/, v17 /*:: as any*/],
                               storageKey: null,
                             },
                             {
@@ -461,7 +550,7 @@ const node: ConcreteRequest = (function () {
                         },
                         {
                           alias: null,
-                          args: v8 /*:: as any*/,
+                          args: v16 /*:: as any*/,
                           concreteType: "MetadataVersionConnection",
                           kind: "LinkedField",
                           name: "pending",
@@ -537,17 +626,17 @@ const node: ConcreteRequest = (function () {
                                   ],
                                   storageKey: null,
                                 },
-                                v11 /*:: as any*/,
+                                v19 /*:: as any*/,
                               ],
                               storageKey: null,
                             },
-                            v12 /*:: as any*/,
+                            v20 /*:: as any*/,
                           ],
                           storageKey: "pending(first:20)",
                         },
                         {
                           alias: null,
-                          args: v8 /*:: as any*/,
+                          args: v16 /*:: as any*/,
                           filters: null,
                           handle: "connection",
                           key: "readerVersions_pending",
@@ -559,7 +648,7 @@ const node: ConcreteRequest = (function () {
                     },
                     {
                       alias: null,
-                      args: v8 /*:: as any*/,
+                      args: v16 /*:: as any*/,
                       concreteType: "TagConnection",
                       kind: "LinkedField",
                       name: "tags",
@@ -580,20 +669,20 @@ const node: ConcreteRequest = (function () {
                               kind: "LinkedField",
                               name: "node",
                               plural: false,
-                              selections: v10 /*:: as any*/,
+                              selections: v18 /*:: as any*/,
                               storageKey: null,
                             },
-                            v11 /*:: as any*/,
+                            v19 /*:: as any*/,
                           ],
                           storageKey: null,
                         },
-                        v12 /*:: as any*/,
+                        v20 /*:: as any*/,
                       ],
                       storageKey: "tags(first:20)",
                     },
                     {
                       alias: null,
-                      args: v8 /*:: as any*/,
+                      args: v16 /*:: as any*/,
                       filters: null,
                       handle: "connection",
                       key: "readerDetailTags_tags",
@@ -616,7 +705,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "c932e91fdd08d884e296e8afde9eca858d8052b4e266ad0a4004dcdb50e53c3f",
+      id: "5160b3098871c7e86a0a314c9ec08070a4fa219b3d97a372375ed32420998fe1",
       metadata: {},
       name: "mutationsRevertMetadataFieldMutation",
       operationKind: "mutation",
@@ -625,6 +714,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "0ed10220edc555666e2c30a045376ee1";
+(node as any).hash = "ced266effa095e3fa256867813d8b0ae";
 
 export default node;
