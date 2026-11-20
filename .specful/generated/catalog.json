@@ -666,7 +666,7 @@
       "id": "REV-ADR-0083",
       "kind": "adr",
       "path": "docs/adr/0083-server-typed-scalars-and-enums-for-graphql-data-formats.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Server-typed scalars and enums for GraphQL data formats"
     },
     {
@@ -1145,7 +1145,8 @@
         "REV-ADR-0079",
         "REV-ADR-0080",
         "REV-ADR-0081",
-        "REV-ADR-0082"
+        "REV-ADR-0082",
+        "REV-ADR-0083"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",

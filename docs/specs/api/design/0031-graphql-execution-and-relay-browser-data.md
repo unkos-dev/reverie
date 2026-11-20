@@ -26,6 +26,7 @@ governed-by:
   - "REV-ADR-0080"
   - "REV-ADR-0081"
   - "REV-ADR-0082"
+  - "REV-ADR-0083"
 ---
 
 # GraphQL execution and Relay browser data

@@ -3,7 +3,7 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0083"
 title: "Server-typed scalars and enums for GraphQL data formats"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-11-20"
 decision-makers:
   - "John Unkovich"
