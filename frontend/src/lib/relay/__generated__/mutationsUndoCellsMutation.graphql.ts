@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<43d1effab9dc1ff4108deb52edcdd2aa>>
- * @relayHash 55df8c7f644d6118999d3a4a05ab7502
+ * @generated SignedSource<<6e74ecf715ab5079ec6b4ce1f96b654d>>
+ * @relayHash 3788f8c7aa2b81cded686b14acf35653
  * @lightSyntaxTransform
  */
 
@@ -8,34 +8,71 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 94db810a6dc0528703287abf2233ffce41cf0edb3cc9acadbdb805f9388e2ac7
+// @relayRequestID 5175053582bd7cedee2ebff253342f594b291f135b2a0c288aa120eb7297086b
 
 import { ConcreteRequest } from "relay-runtime";
-export type mutationsUndoCellsMutation$variables = {
-  baseline?: string | null | undefined;
+export type UndoMetadataInput = {
+  baseline: string;
   id: string;
   operationId: string;
 };
+export type mutationsUndoCellsMutation$variables = {
+  input: UndoMetadataInput;
+};
 export type mutationsUndoCellsMutation$data = {
-  readonly undoMetadata: {
-    readonly metadata: {
-      readonly etag: string;
-      readonly id: string;
-      readonly isbn13: string | null | undefined;
-      readonly manifestationId: string;
-      readonly pages: number | null | undefined;
-      readonly subtitle: string | null | undefined;
-      readonly title: string;
-      readonly workId: string;
-    };
-    readonly operations: ReadonlyArray<{
-      readonly expiresAt: string;
-      readonly fieldName: string;
-      readonly operationId: string;
-      readonly status: string;
-    }>;
-    readonly outcome: string;
-  };
+  readonly undoMetadata:
+    | {
+        readonly __typename: "EditTooLarge";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "FieldsLocked";
+        readonly fields: ReadonlyArray<string>;
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "MetadataRestored";
+        readonly manifestation: {
+          readonly id: string;
+          readonly metadata: {
+            readonly etag: string;
+            readonly id: string;
+            readonly isbn13: string | null | undefined;
+            readonly manifestationId: string;
+            readonly pages: number | null | undefined;
+            readonly subtitle: string | null | undefined;
+            readonly title: string;
+            readonly workId: string;
+          };
+        };
+        readonly operation: {
+          readonly expiresAt: string;
+          readonly fieldName: string;
+          readonly operationId: string;
+          readonly status: string;
+        };
+      }
+    | {
+        readonly __typename: "NotFound";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "StaleBaseline";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "UndoConflict";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "UndoUnavailable";
+        readonly message: string;
+      }
+    | {
+        // This will never be '%other', but we need some
+        // value in case none of the concrete values match.
+        readonly __typename: "%other";
+      };
 };
 export type mutationsUndoCellsMutation = {
   response: mutationsUndoCellsMutation$data;
@@ -43,182 +80,269 @@ export type mutationsUndoCellsMutation = {
 };
 
 const node: ConcreteRequest = (function () {
-  var v0 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "baseline",
-    },
-    v1 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "id",
-    },
-    v2 = {
-      defaultValue: null,
-      kind: "LocalArgument",
-      name: "operationId",
-    },
-    v3 = [
+  var v0 = [
       {
-        alias: null,
-        args: [
-          {
-            kind: "Variable",
-            name: "baseline",
-            variableName: "baseline",
-          },
-          {
-            kind: "Variable",
-            name: "id",
-            variableName: "id",
-          },
-          {
-            kind: "Variable",
-            name: "operationId",
-            variableName: "operationId",
-          },
-        ],
-        concreteType: "MetadataOperation",
-        kind: "LinkedField",
-        name: "undoMetadata",
-        plural: false,
-        selections: [
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "outcome",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "FieldOperation",
-            kind: "LinkedField",
-            name: "operations",
-            plural: true,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "operationId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "fieldName",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "expiresAt",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "status",
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "MetadataRevision",
-            kind: "LinkedField",
-            name: "metadata",
-            plural: false,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "id",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "workId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "manifestationId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "etag",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "title",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "subtitle",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "isbn13",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "pages",
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-        ],
-        storageKey: null,
+        defaultValue: null,
+        kind: "LocalArgument",
+        name: "input",
       },
-    ];
+    ],
+    v1 = [
+      {
+        kind: "Variable",
+        name: "input",
+        variableName: "input",
+      },
+    ],
+    v2 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "__typename",
+      storageKey: null,
+    },
+    v3 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
+    v4 = {
+      kind: "InlineFragment",
+      selections: [
+        {
+          alias: null,
+          args: null,
+          concreteType: "FieldOperation",
+          kind: "LinkedField",
+          name: "operation",
+          plural: false,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "operationId",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "fieldName",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "expiresAt",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "status",
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          concreteType: "Manifestation",
+          kind: "LinkedField",
+          name: "manifestation",
+          plural: false,
+          selections: [
+            v3 /*:: as any*/,
+            {
+              alias: null,
+              args: null,
+              concreteType: "MetadataRevision",
+              kind: "LinkedField",
+              name: "metadata",
+              plural: false,
+              selections: [
+                v3 /*:: as any*/,
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "workId",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "manifestationId",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "etag",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "title",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "subtitle",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "isbn13",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "pages",
+                  storageKey: null,
+                },
+              ],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
+      type: "MetadataRestored",
+      abstractKey: null,
+    },
+    v5 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "message",
+      storageKey: null,
+    },
+    v6 = [v5 /*:: as any*/],
+    v7 = {
+      kind: "InlineFragment",
+      selections: v6 /*:: as any*/,
+      type: "StaleBaseline",
+      abstractKey: null,
+    },
+    v8 = {
+      kind: "InlineFragment",
+      selections: v6 /*:: as any*/,
+      type: "UndoUnavailable",
+      abstractKey: null,
+    },
+    v9 = {
+      kind: "InlineFragment",
+      selections: v6 /*:: as any*/,
+      type: "UndoConflict",
+      abstractKey: null,
+    },
+    v10 = {
+      kind: "InlineFragment",
+      selections: [
+        v5 /*:: as any*/,
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "fields",
+          storageKey: null,
+        },
+      ],
+      type: "FieldsLocked",
+      abstractKey: null,
+    },
+    v11 = {
+      kind: "InlineFragment",
+      selections: v6 /*:: as any*/,
+      type: "EditTooLarge",
+      abstractKey: null,
+    },
+    v12 = {
+      kind: "InlineFragment",
+      selections: v6 /*:: as any*/,
+      type: "NotFound",
+      abstractKey: null,
+    };
   return {
     fragment: {
-      argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/, v2 /*:: as any*/],
+      argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
       metadata: null,
       name: "mutationsUndoCellsMutation",
-      selections: v3 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v1 /*:: as any*/,
+          concreteType: null,
+          kind: "LinkedField",
+          name: "undoMetadata",
+          plural: false,
+          selections: [
+            v2 /*:: as any*/,
+            v4 /*:: as any*/,
+            v7 /*:: as any*/,
+            v8 /*:: as any*/,
+            v9 /*:: as any*/,
+            v10 /*:: as any*/,
+            v11 /*:: as any*/,
+            v12 /*:: as any*/,
+          ],
+          storageKey: null,
+        },
+      ],
       type: "Mutation",
       abstractKey: null,
     },
     kind: "Request",
     operation: {
-      argumentDefinitions: [v1 /*:: as any*/, v0 /*:: as any*/, v2 /*:: as any*/],
+      argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
       name: "mutationsUndoCellsMutation",
-      selections: v3 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v1 /*:: as any*/,
+          concreteType: null,
+          kind: "LinkedField",
+          name: "undoMetadata",
+          plural: false,
+          selections: [
+            v2 /*:: as any*/,
+            v4 /*:: as any*/,
+            {
+              kind: "TypeDiscriminator",
+              abstractKey: "__isUndoMetadataResult",
+            },
+            v7 /*:: as any*/,
+            v8 /*:: as any*/,
+            v9 /*:: as any*/,
+            v10 /*:: as any*/,
+            v11 /*:: as any*/,
+            v12 /*:: as any*/,
+          ],
+          storageKey: null,
+        },
+      ],
     },
     params: {
-      id: "94db810a6dc0528703287abf2233ffce41cf0edb3cc9acadbdb805f9388e2ac7",
+      id: "5175053582bd7cedee2ebff253342f594b291f135b2a0c288aa120eb7297086b",
       metadata: {},
       name: "mutationsUndoCellsMutation",
       operationKind: "mutation",
@@ -227,6 +351,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "7082f4a6cec713703bb6456bc4c620b2";
+(node as any).hash = "8dfa882b587b3b622356cd277d76343b";
 
 export default node;

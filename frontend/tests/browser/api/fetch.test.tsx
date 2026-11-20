@@ -451,7 +451,9 @@ async function graphqlBaselines(): Promise<void> {
   });
   expect(baseline).toEqual(snapshot);
   const requestId = crypto.randomUUID();
-  const variables = { id, baseline: baseline.etag, requestId, patch: { title: "Saved" } };
+  const variables = {
+    input: { id, baseline: baseline.etag, requestId, patch: { title: "Saved" } },
+  };
   fetch.mockClear();
   fetch.mockResolvedValueOnce(
     problemResponse({
@@ -465,9 +467,13 @@ async function graphqlBaselines(): Promise<void> {
     jsonResponse({
       data: {
         updateMetadata: {
+          __typename: "MetadataSaved",
           requestId,
           operations: [],
-          metadata: { ...snapshot, id: revision(latest), title: "Saved", etag: latest },
+          manifestation: {
+            id,
+            metadata: { ...snapshot, id: revision(latest), title: "Saved", etag: latest },
+          },
         },
       },
     }),
@@ -477,7 +483,10 @@ async function graphqlBaselines(): Promise<void> {
     mutationsSaveTitleMutation,
     variables,
   ).toPromise();
-  expect(saved?.updateMetadata.metadata).toMatchObject({ title: "Saved", etag: latest });
+  expect(saved?.updateMetadata).toMatchObject({
+    __typename: "MetadataSaved",
+    manifestation: { metadata: { title: "Saved", etag: latest } },
+  });
   const writes = fetch.mock.calls.filter(([, init]) => init?.method === "POST");
   expect(writes).toHaveLength(2);
   expect(writes[0][1]?.body).toBe(writes[1][1]?.body);
@@ -486,15 +495,14 @@ async function graphqlBaselines(): Promise<void> {
   ).toMatchObject({ variables });
   fetch.mockResolvedValueOnce(
     jsonResponse({
-      errors: [
-        { message: "Stale", extensions: { code: "if-match-mismatch", currentEtag: latest } },
-      ],
+      data: { updateMetadata: { __typename: "StaleBaseline", message: "The baseline is stale." } },
     }),
   );
   await expect(
     executeEditing<SaveTitle>(environment, mutationsSaveTitleMutation, variables).toPromise(),
-  ).rejects.toMatchObject({
-    errors: [{ extensions: { code: "if-match-mismatch", currentEtag: latest } }],
+  ).resolves.toMatchObject({ updateMetadata: { __typename: "StaleBaseline" } });
+  expect(environment.lookup(operation.fragment).data).toMatchObject({
+    manifestation: { metadata: { title: "Saved", etag: latest } },
   });
   for (const metadata of [
     { id: revision(newer), workId, manifestationId: id, etag: newer },

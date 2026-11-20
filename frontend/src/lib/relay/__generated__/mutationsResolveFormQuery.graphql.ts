@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<f8a3c07804921407d3ffdc5662fed35f>>
- * @relayHash e0c3655509a7746c71a773fe5b9dc6f0
+ * @generated SignedSource<<7cd1465a3b3428ad2164d078a48a51b0>>
+ * @relayHash eb5d011bef07bebc847de9a99022bd1f
  * @lightSyntaxTransform
  */
 
@@ -8,9 +8,10 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID edbb636abc0dc5755fdfa3c9e7de5bfa211444a3df7b4f5cc7578918ae83d202
+// @relayRequestID e27db75e86521a41a304dea91984d0ed4f7028434a5a7ef4089a12abc1d4a105
 
 import { ConcreteRequest } from "relay-runtime";
+import { FragmentRefs } from "relay-runtime";
 export type mutationsResolveFormQuery$variables = {
   id: string;
   operationId?: string | null | undefined;
@@ -19,28 +20,8 @@ export type mutationsResolveFormQuery$variables = {
 export type mutationsResolveFormQuery$data = {
   readonly metadataOperation: {
     readonly metadata: {
-      readonly contentRating: string | null | undefined;
-      readonly description: string | null | undefined;
-      readonly etag: string;
-      readonly id: string;
-      readonly isbn10: string | null | undefined;
-      readonly isbn13: string | null | undefined;
-      readonly isbnMismatch: boolean;
-      readonly language: string | null | undefined;
-      readonly manifestationId: string;
-      readonly pages: number | null | undefined;
-      readonly publicationDate: string | null | undefined;
-      readonly publisher: string | null | undefined;
-      readonly subtitle: string | null | undefined;
-      readonly title: string;
-      readonly workId: string;
+      readonly " $fragmentSpreads": FragmentRefs<"mutationsFormSnapshot">;
     };
-    readonly operations: ReadonlyArray<{
-      readonly expiresAt: string;
-      readonly fieldName: string;
-      readonly operationId: string;
-      readonly status: string;
-    }>;
     readonly outcome: string;
   };
 };
@@ -67,202 +48,66 @@ const node: ConcreteRequest = (function () {
     },
     v3 = [
       {
-        alias: null,
-        args: [
-          {
-            kind: "Variable",
-            name: "id",
-            variableName: "id",
-          },
-          {
-            kind: "Variable",
-            name: "operationId",
-            variableName: "operationId",
-          },
-          {
-            kind: "Variable",
-            name: "requestId",
-            variableName: "requestId",
-          },
-        ],
-        concreteType: "MetadataOperation",
-        kind: "LinkedField",
-        name: "metadataOperation",
-        plural: false,
-        selections: [
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "outcome",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "FieldOperation",
-            kind: "LinkedField",
-            name: "operations",
-            plural: true,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "operationId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "fieldName",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "expiresAt",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "status",
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            concreteType: "MetadataRevision",
-            kind: "LinkedField",
-            name: "metadata",
-            plural: false,
-            selections: [
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "id",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "workId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "manifestationId",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "etag",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "title",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "subtitle",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "description",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "language",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "publisher",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "publicationDate",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "isbn10",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "isbn13",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "isbnMismatch",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "pages",
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                kind: "ScalarField",
-                name: "contentRating",
-                storageKey: null,
-              },
-            ],
-            storageKey: null,
-          },
-        ],
-        storageKey: null,
+        kind: "Variable",
+        name: "id",
+        variableName: "id",
       },
-    ];
+      {
+        kind: "Variable",
+        name: "operationId",
+        variableName: "operationId",
+      },
+      {
+        kind: "Variable",
+        name: "requestId",
+        variableName: "requestId",
+      },
+    ],
+    v4 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "outcome",
+      storageKey: null,
+    };
   return {
     fragment: {
       argumentDefinitions: [v0 /*:: as any*/, v1 /*:: as any*/, v2 /*:: as any*/],
       kind: "Fragment",
-      metadata: null,
+      metadata: {
+        throwOnFieldError: true,
+      },
       name: "mutationsResolveFormQuery",
-      selections: v3 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v3 /*:: as any*/,
+          concreteType: "MetadataOperation",
+          kind: "LinkedField",
+          name: "metadataOperation",
+          plural: false,
+          selections: [
+            v4 /*:: as any*/,
+            {
+              alias: null,
+              args: null,
+              concreteType: "MetadataRevision",
+              kind: "LinkedField",
+              name: "metadata",
+              plural: false,
+              selections: [
+                {
+                  args: null,
+                  kind: "FragmentSpread",
+                  name: "mutationsFormSnapshot",
+                },
+              ],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
       type: "Query",
       abstractKey: null,
     },
@@ -271,10 +116,139 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: [v0 /*:: as any*/, v2 /*:: as any*/, v1 /*:: as any*/],
       kind: "Operation",
       name: "mutationsResolveFormQuery",
-      selections: v3 /*:: as any*/,
+      selections: [
+        {
+          alias: null,
+          args: v3 /*:: as any*/,
+          concreteType: "MetadataOperation",
+          kind: "LinkedField",
+          name: "metadataOperation",
+          plural: false,
+          selections: [
+            v4 /*:: as any*/,
+            {
+              alias: null,
+              args: null,
+              concreteType: "MetadataRevision",
+              kind: "LinkedField",
+              name: "metadata",
+              plural: false,
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "id",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "workId",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "manifestationId",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "etag",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "title",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "subtitle",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "description",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "language",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "publisher",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "publicationDate",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "isbn10",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "isbn13",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "isbnMismatch",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "pages",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "contentRating",
+                  storageKey: null,
+                },
+              ],
+              storageKey: null,
+            },
+          ],
+          storageKey: null,
+        },
+      ],
     },
     params: {
-      id: "edbb636abc0dc5755fdfa3c9e7de5bfa211444a3df7b4f5cc7578918ae83d202",
+      id: "e27db75e86521a41a304dea91984d0ed4f7028434a5a7ef4089a12abc1d4a105",
       metadata: {},
       name: "mutationsResolveFormQuery",
       operationKind: "query",
@@ -283,6 +257,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "f588b80fca779d68b574df1a2ee1484d";
+(node as any).hash = "4d4adee88d7350d4efbaa821e8a1d4d8";
 
 export default node;

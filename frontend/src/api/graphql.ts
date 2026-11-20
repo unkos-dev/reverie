@@ -248,6 +248,36 @@ const shelf = z.object({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
+const refusal = <T extends string>(typename: T) =>
+  z.object({ __typename: z.literal(typename), message: z.string() });
+const metadataInvalid = z.object({
+  __typename: z.literal("MetadataInvalid"),
+  message: z.string(),
+  fieldErrors: z.array(z.object({ field: z.string(), message: z.string() })),
+});
+const fieldsLocked = z.object({
+  __typename: z.literal("FieldsLocked"),
+  message: z.string(),
+  fields: z.array(z.string()),
+});
+const saveRefusals = [
+  refusal("StaleBaseline"),
+  metadataInvalid,
+  fieldsLocked,
+  refusal("EditTooLarge"),
+  refusal("NotFound"),
+] as const;
+const undoRefusals = [
+  refusal("StaleBaseline"),
+  refusal("UndoUnavailable"),
+  refusal("UndoConflict"),
+  fieldsLocked,
+  refusal("EditTooLarge"),
+  refusal("NotFound"),
+] as const;
+function acknowledgement(snapshot: z.ZodType) {
+  return z.object({ id: domainId("Manifestation"), metadata: snapshot });
+}
 const editingProjections = new Map<string, z.ZodType>();
 for (const [name, snapshot] of [
   ["Title", titleSnapshot],
@@ -255,27 +285,45 @@ for (const [name, snapshot] of [
   ["Form", formSnapshot],
   ["Authors", authorSnapshot],
 ] as const) {
+  const saved =
+    name === "Form"
+      ? z.object({
+          __typename: z.literal("MetadataSaved"),
+          manifestation: acknowledgement(snapshot),
+        })
+      : z.object({
+          __typename: z.literal("MetadataSaved"),
+          requestId: uuid.nullable(),
+          operations,
+          manifestation: acknowledgement(snapshot),
+        });
   editingProjections.set(
     `mutationsSave${name}Mutation`,
+    z.object({ updateMetadata: z.discriminatedUnion("__typename", [saved, ...saveRefusals]) }),
+  );
+  editingProjections.set(
+    `mutationsUndo${name}Mutation`,
     z.object({
-      updateMetadata: z.object({ requestId: uuid.nullable(), operations, metadata: snapshot }),
+      undoMetadata: z.discriminatedUnion("__typename", [
+        z.object({
+          __typename: z.literal("MetadataRestored"),
+          operation: operations.element,
+          manifestation: acknowledgement(snapshot),
+        }),
+        ...undoRefusals,
+      ]),
     }),
   );
-  for (const [action, root, kind] of [
-    ["Undo", "undoMetadata", "Mutation"],
-    ["Resolve", "metadataOperation", "Query"],
-  ] as const) {
-    editingProjections.set(
-      `mutations${action}${name}${kind}`,
-      z.object({
-        [root]: z.object({
-          outcome: z.enum(["saved", "restored", "unknown"]),
-          operations,
-          metadata: snapshot,
-        }),
-      }),
-    );
-  }
+  const outcome = z.enum(["saved", "restored", "unknown"]);
+  editingProjections.set(
+    `mutationsResolve${name}Query`,
+    z.object({
+      metadataOperation:
+        name === "Form"
+          ? z.object({ outcome, metadata: snapshot })
+          : z.object({ outcome, operations, metadata: snapshot }),
+    }),
+  );
 }
 for (const [name, snapshot] of [
   ["Title", titleSnapshot],
@@ -372,8 +420,6 @@ editingProjections.set(
   "mutationsReadingMutation",
   z.object({ updateReadingState: readingSnapshot }),
 );
-const refusal = <T extends string>(typename: T) =>
-  z.object({ __typename: z.literal(typename), message: z.string() });
 editingProjections.set(
   "mutationsCreateShelfMutation",
   z.object({
@@ -427,27 +473,39 @@ editingProjections.set(
     ]),
   }),
 );
-for (const [action, root] of [
-  ["AcceptMetadataVersion", "acceptMetadataVersion"],
-  ["RevertMetadataField", "revertMetadataField"],
+for (const [action, root, success, refusals] of [
+  [
+    "AcceptMetadataVersion",
+    "acceptMetadataVersion",
+    "MetadataVersionAccepted",
+    [fieldsLocked, metadataInvalid, refusal("NotFound")],
+  ],
+  [
+    "RevertMetadataField",
+    "revertMetadataField",
+    "MetadataFieldReverted",
+    [fieldsLocked, metadataInvalid, refusal("NotFound")],
+  ],
+  [
+    "RejectMetadataVersion",
+    "rejectMetadataVersion",
+    "MetadataVersionRejected",
+    [refusal("NotFound")],
+  ],
+  ["LockMetadataField", "lockMetadataField", "MetadataFieldLockAdded", [refusal("NotFound")]],
+  ["UnlockMetadataField", "unlockMetadataField", "MetadataFieldLockRemoved", [refusal("NotFound")]],
 ] as const)
   editingProjections.set(
     `mutations${action}Mutation`,
     z.object({
-      [root]: z.object({
-        manifestationId: domainId("Manifestation"),
-        metadata: formSnapshot.nullable(),
-      }),
+      [root]: z.discriminatedUnion("__typename", [
+        z.object({
+          __typename: z.literal(success),
+          manifestation: z.object({ id: domainId("Manifestation") }),
+        }),
+        ...refusals,
+      ]),
     }),
-  );
-for (const [action, root] of [
-  ["RejectMetadataVersion", "rejectMetadataVersion"],
-  ["LockMetadataField", "lockMetadataField"],
-  ["UnlockMetadataField", "unlockMetadataField"],
-] as const)
-  editingProjections.set(
-    `mutations${action}Mutation`,
-    z.object({ [root]: z.object({ manifestationId: domainId("Manifestation") }) }),
   );
 
 /** Execute an editing document and capture its validated raw projection. */
@@ -581,7 +639,34 @@ export class GraphQLExecutionError extends Error {
   }
 }
 
+const REFUSAL_ACTIONS: Readonly<Record<string, "reload" | "correct" | "none">> = {
+  StaleBaseline: "reload",
+  MetadataInvalid: "correct",
+};
+
+type MetadataRefusalResult = {
+  readonly __typename: string;
+  readonly message?: string;
+  readonly fieldErrors?: readonly { readonly field: string; readonly message: string }[];
+};
+
+/** An expected metadata mutation outcome other than success, kept as data for its owning flow. */
+export class MetadataRefusal extends Error {
+  readonly typename: string;
+  readonly fieldErrors: Readonly<Record<string, string>>;
+
+  constructor(result: MetadataRefusalResult) {
+    super(result.message ?? "Request failed.");
+    this.name = "MetadataRefusal";
+    this.typename = result.__typename;
+    this.fieldErrors = Object.fromEntries(
+      (result.fieldErrors ?? []).map(({ field, message }) => [field, message]),
+    );
+  }
+}
+
 export function editingFailureAction(error: unknown): "retry" | "reload" | "correct" | "none" {
+  if (error instanceof MetadataRefusal) return REFUSAL_ACTIONS[error.typename] ?? "none";
   const code =
     error instanceof GraphQLExecutionError ? error.errors.at(0)?.extensions?.code : undefined;
   if (code === "if-match-mismatch" || code === "if-match-required") return "reload";

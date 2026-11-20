@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<2f416af96261bf35014a68a0ccedc42d>>
- * @relayHash cc591caf1381ce6763072414ebdbd6f8
+ * @generated SignedSource<<1f684b68593011292cac25cdb003b5ee>>
+ * @relayHash 1c540c74e7646e643ff67d1b8053fe96
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 87ae9059e747deb44e0ae493e45efcc80a8f6c66b41082c5f22a7bd1b644f2ae
+// @relayRequestID 9138f6ad1cbd25389d9da5807e74130d2c5191bcd9d303d3f0b1b396102466d9
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -278,13 +278,6 @@ const node: ConcreteRequest = (function () {
               alias: null,
               args: null,
               kind: "ScalarField",
-              name: "coverUrl",
-              storageKey: null,
-            },
-            {
-              alias: null,
-              args: null,
-              kind: "ScalarField",
               name: "isbn13",
               storageKey: null,
             },
@@ -314,6 +307,13 @@ const node: ConcreteRequest = (function () {
               args: null,
               kind: "ScalarField",
               name: "publicationDate",
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: null,
+              kind: "ScalarField",
+              name: "coverUrl",
               storageKey: null,
             },
             {
@@ -411,7 +411,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "87ae9059e747deb44e0ae493e45efcc80a8f6c66b41082c5f22a7bd1b644f2ae",
+      id: "9138f6ad1cbd25389d9da5807e74130d2c5191bcd9d303d3f0b1b396102466d9",
       metadata: {},
       name: "readerDetailQuery",
       operationKind: "query",
