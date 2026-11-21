@@ -381,11 +381,28 @@ if [ "${codex_missing_rc}" -eq 0 ]; then
 else
   bad "missing-policy worktree creation exits zero" "exit ${codex_missing_rc}" "${codex_missing_out}"
 fi
-if [ -e "${dest_codex_missing}/.codex/config.toml" ] || [ -e "${dest_codex_missing}/.codex/rules" ] || [ -e "${dest_codex_missing}/.agents/hooks.json" ]; then
-  bad "missing Codex and agent policy creates no destination policy" \
-    "unexpected policy under ${dest_codex_missing}/.codex or ${dest_codex_missing}/.agents"
+if [ -e "${dest_codex_missing}/.codex/config.toml" ] || [ -e "${dest_codex_missing}/.codex/rules" ]; then
+  bad "missing Codex policy creates no destination policy" \
+    "unexpected policy under ${dest_codex_missing}/.codex"
 else
-  ok "missing Codex and agent policy creates no destination policy"
+  ok "missing Codex policy creates no destination policy"
+fi
+IFS= read -r -d '' main_worktree_entry < <(git -C "${repo_root}" worktree list --porcelain -z)
+main_agent_hooks="${main_worktree_entry#worktree }/.agents/hooks.json"
+if [ -f "${main_agent_hooks}" ]; then
+  if cmp -s "${main_agent_hooks}" "${dest_codex_missing}/.agents/hooks.json"; then
+    ok "linked checkout without .agents/hooks.json falls back to main checkout"
+  else
+    bad "linked checkout without .agents/hooks.json falls back to main checkout" \
+      "missing or differing: ${dest_codex_missing}/.agents/hooks.json"
+  fi
+else
+  if [ -e "${dest_codex_missing}/.agents/hooks.json" ]; then
+    bad "missing agent hooks creates no destination hooks.json" \
+      "unexpected file: ${dest_codex_missing}/.agents/hooks.json"
+  else
+    ok "missing agent hooks creates no destination hooks.json"
+  fi
 fi
 if grep -qF "[projects.\"${dest_codex_missing}\"]" "${CODEX_HOME}/config.toml"; then
   bad "missing Codex policy creates no destination trust entry" \

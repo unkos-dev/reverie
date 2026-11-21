@@ -304,7 +304,8 @@ worktree-provision path:
         exit 1
     fi
     IFS= read -r -d '' main_worktree < <(git worktree list --porcelain -z)
-    shared_plans="${main_worktree#worktree }/plans"
+    main_root="${main_worktree#worktree }"
+    shared_plans="${main_root}/plans"
     exclude_file="$(git -C "$dest" rev-parse --path-format=absolute --git-path info/exclude)"
     if ! grep -qxF '/plans' "$exclude_file"; then
         mkdir -p "$(dirname "$exclude_file")"
@@ -400,9 +401,15 @@ worktree-provision path:
         cp .claude/settings.local.json "$dest/.claude/settings.local.json"
         echo "copied .claude/settings.local.json into the worktree"
     fi
+    agent_hooks_src=""
     if [ -f .agents/hooks.json ]; then
+        agent_hooks_src=".agents/hooks.json"
+    elif [ -f "$main_root/.agents/hooks.json" ]; then
+        agent_hooks_src="$main_root/.agents/hooks.json"
+    fi
+    if [ -n "$agent_hooks_src" ]; then
         mkdir -p "$dest/.agents"
-        cp .agents/hooks.json "$dest/.agents/hooks.json"
+        cp "$agent_hooks_src" "$dest/.agents/hooks.json"
         echo "copied .agents/hooks.json into the worktree"
     fi
     # Codex project policy is operator-owned and ignored for the same reason,
