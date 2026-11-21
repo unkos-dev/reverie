@@ -1201,7 +1201,7 @@ mod tests {
         );
     }
 
-    // REV-REQ-0018/0020/0082 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
+    // REV-REQ-0082/0089/0090 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_edit_baselines(pool: PgPool) {
         let (_, server, csrf) = editing_browser(&pool, "graph-edits").await;
@@ -1388,6 +1388,11 @@ mod tests {
             .await,
             "if-match-required",
         );
+        let unchanged_reading = browser_graph(&server, &csrf, READING_READ, vars.clone()).await;
+        assert_eq!(
+            unchanged_reading["data"]["manifestation"]["readingState"],
+            read["data"]["manifestation"]["readingState"]
+        );
         let reading_attempt = json!({"id":id,"baseline":read["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Notes","rating":3,"status":"READING"}});
         let read_saved = browser_graph(&server, &csrf, READING_SAVE, reading_attempt.clone()).await;
         assert_graph_ok(&read_saved);
@@ -1406,7 +1411,7 @@ mod tests {
         assert_eq!(notes_clear["data"]["updateReadingState"]["rating"], 3);
     }
 
-    // Authentication, private-data and corruption boundaries for session-bound, non-consuming exact Undo.
+    // REV-REQ-0082/0089/0090; authentication, private-data and corruption boundaries for session-bound, non-consuming exact Undo.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_undo_boundary(pool: PgPool) {
         let (user, server, csrf) = editing_browser(&pool, "graph-undo").await;
@@ -1443,6 +1448,11 @@ mod tests {
             &browser_graph(&server, &csrf, UNDO, stale).await,
             "undoMetadata",
             "StaleBaseline",
+        );
+        let unchanged = browser_graph(&server, &csrf, TITLE_READ, json!({"id":id})).await;
+        assert_eq!(
+            unchanged["data"]["manifestation"]["metadata"],
+            result["manifestation"]["metadata"]
         );
         let foreign_result = browser_graph(&foreign, &foreign_csrf, UNDO, input.clone()).await;
         assert_graph_result(&foreign_result, "undoMetadata", "UndoUnavailable");
