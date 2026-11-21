@@ -8,7 +8,7 @@ import type { TypeaheadMultiSelect_suggestions$key } from "@/lib/relay/__generat
 import TypeaheadMultiSelectRefetchQuery, {
   type TypeaheadMultiSelectRefetchQuery as RefetchQuery,
 } from "@/lib/relay/__generated__/TypeaheadMultiSelectRefetchQuery.graphql";
-import { useEffect, useRef, useState, useTransition, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import {
   Button,
   ComboBox,
@@ -97,7 +97,6 @@ export function TypeaheadMultiSelect({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState<{ term: string; done: boolean; error?: Error }>();
-  const [, startTransition] = useTransition();
   const subscription = useRef<Subscription | null>(null);
   useEffect(
     () => () => {
@@ -132,10 +131,8 @@ export function TypeaheadMultiSelect({
     ).subscribe({
       complete: () => {
         subscription.current = null;
-        startTransition(() => {
-          refetch(variables, { fetchPolicy: "store-only" });
-          setSearch({ term, done: true });
-        });
+        refetch(variables, { fetchPolicy: "store-only" });
+        setSearch({ term, done: true });
       },
       error: (error: Error) => {
         subscription.current = null;

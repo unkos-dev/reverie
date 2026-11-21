@@ -56,7 +56,6 @@ import {
   useRef,
   useMemo,
   useState,
-  useTransition,
   type ReactNode,
   type ReactElement,
 } from "react";
@@ -504,14 +503,13 @@ function sameIds(left: readonly { id: string }[], right: readonly string[]): boo
 
 /**
  * Read the selected authors, series and shelves. An edit that changes those selections refetches
- * the read in the same transition as the edit, so a new chip renders with its name.
+ * the read with the edit, so a new chip renders with its name.
  */
 function useLibraryLabels(query: LibraryPage_labels$key) {
   const [labels, refetch] = useRefetchableFragment<LabelsRefetch, LibraryPage_labels$key>(
     labelsFragment,
     query,
   );
-  const [, startTransition] = useTransition();
   function follow(next: LibraryVisit["filters"], write: () => void): void {
     const lookups = libraryLookups(next);
     if (
@@ -522,10 +520,8 @@ function useLibraryLabels(query: LibraryPage_labels$key) {
       write();
       return;
     }
-    startTransition(() => {
-      write();
-      refetch(lookups, { fetchPolicy: "store-or-network" });
-    });
+    write();
+    refetch(lookups, { fetchPolicy: "store-or-network" });
   }
   return { labels, follow };
 }

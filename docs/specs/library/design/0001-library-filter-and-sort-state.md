@@ -50,9 +50,9 @@ Vocabulary filters compose multiple-selection ComboBoxes with a limit of 20 valu
 Associated description text explains how to make room; oversized selections use controlled invalidity and FieldError
 feedback. Each typeahead reads the `TypeaheadMultiSelect_suggestions` fragment on the screen query. A search runs while
 the popover is open, the control is enabled and the trimmed term has from 2 to 100 Unicode scalar values. It fetches
-that vocabulary's suggestions with `fetchQuery`, then refetches the fragment with `store-only` in a transition. Starting
-a search, closing the popover or leaving the term ineligible unsubscribes the previous search, so only the latest term
-can update the list or its error. Suggestions return up to ten ranked choices.
+that vocabulary's suggestions with `fetchQuery`, then refetches the fragment with `store-only`, which reads the fetched
+records without suspending. Starting a search, closing the popover or leaving the term ineligible unsubscribes the
+previous search, so only the latest term can update the list or its error. Suggestions return up to ten ranked choices.
 
 Shelf and series selections are GraphQL ID arrays, matching ANY within a facet and AND between facets. A native multiple
 ListBox lists the owned shelves from the screen query's shelf list, which the page loads to completion. Toggle selection
@@ -125,8 +125,9 @@ default hides Subtitle; an override that hides nothing shows every column.
 
 A native edit dispatches to the visit owner, which applies each functional patch to its current visit, so same-turn
 patches compose, and persists the result through `updateCurrentEntry`. An edit adds no history entry. An edit that
-changes the author, series or shelf selections refetches the label read with `store-or-network` in the same transition.
-Browser query parameters carry no filter or view state.
+changes the author, series or shelf selections refetches the label read with `store-or-network` in the same update. The
+selected records are already in the store, so the refetch does not suspend. Browser query parameters carry no filter or
+view state.
 
 Each Library route load resolves its destination before the page renders. A traversal whose destination is the current
 entry, or the document's first load of its activation entry, settles on that entry when the entry's path and query match
