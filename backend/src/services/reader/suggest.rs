@@ -533,11 +533,7 @@ pub async fn author_labels(
     state: &AppState,
     ids: &[Uuid],
 ) -> Result<Vec<Suggestion>, AppError> {
-    validate_label_count(ids.len())?;
-    let mut ids = ids.to_vec();
-    ids.sort_unstable();
-    ids.dedup();
-
+    let ids = first_occurrences(ids);
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -551,7 +547,7 @@ pub async fn author_labels(
                       JOIN manifestations m ON m.work_id = wa.work_id
                      WHERE wa.author_id = a.id AND wa.role = 'author'
                   )
-            ORDER BY a.name ASC"#,
+            ORDER BY array_position($1, a.id)"#,
         &ids,
     )
     .fetch_all(&mut *tx)
@@ -570,10 +566,7 @@ pub async fn series_labels(
     state: &AppState,
     ids: &[Uuid],
 ) -> Result<Vec<SeriesLabel>, AppError> {
-    validate_label_count(ids.len())?;
-    let mut ids = ids.to_vec();
-    ids.sort_unstable();
-    ids.dedup();
+    let ids = first_occurrences(ids);
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -587,7 +580,7 @@ pub async fn series_labels(
                       JOIN manifestations m ON m.work_id = sw.work_id
                      WHERE sw.series_id = s.id
                   )
-            ORDER BY s.name ASC"#,
+            ORDER BY array_position($1, s.id)"#,
         &ids,
     )
     .fetch_all(&mut *tx)
@@ -610,6 +603,11 @@ pub async fn series_labels(
 pub struct SeriesLabel {
     pub id: Uuid,
     pub value: String,
+}
+
+fn first_occurrences(ids: &[Uuid]) -> Vec<Uuid> {
+    let mut seen = std::collections::HashSet::with_capacity(ids.len());
+    ids.iter().copied().filter(|id| seen.insert(*id)).collect()
 }
 
 pub fn validate_label_count(size: usize) -> Result<(), AppError> {

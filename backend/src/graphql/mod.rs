@@ -333,25 +333,36 @@ impl Query {
     }
     #[graphql(
         guard = "ReadScope",
-        complexity = "complexity::labels(ids.len(), child_complexity)?"
+        complexity = "complexity::weighted(ids.len(), child_complexity)?"
     )]
     async fn author_labels(
         &self,
         ctx: &Context<'_>,
         ids: Vec<async_graphql::ID>,
-    ) -> async_graphql::Result<Vec<library::AuthorSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Author>> {
         library::author_labels(ctx, &ids).await
     }
     #[graphql(
         guard = "ReadScope",
-        complexity = "complexity::labels(ids.len(), child_complexity)?"
+        complexity = "complexity::weighted(ids.len(), child_complexity)?"
     )]
     async fn series_labels(
         &self,
         ctx: &Context<'_>,
         ids: Vec<async_graphql::ID>,
-    ) -> async_graphql::Result<Vec<library::SeriesSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Series>> {
         library::series_labels(ctx, &ids).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::weighted(ids.len(), child_complexity)?"
+    )]
+    async fn shelf_labels(
+        &self,
+        ctx: &Context<'_>,
+        ids: Vec<async_graphql::ID>,
+    ) -> async_graphql::Result<Vec<library::Shelf>> {
+        library::shelf_labels(ctx, &ids).await
     }
     #[graphql(
         guard = "ReadScope",
@@ -362,7 +373,7 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::AuthorSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Author>> {
         library::author_suggestions(ctx, &q, limit).await
     }
     #[graphql(
@@ -374,7 +385,7 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::SeriesSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Series>> {
         library::series_suggestions(ctx, &q, limit).await
     }
     #[graphql(
@@ -386,7 +397,7 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::GenreSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Genre>> {
         library::genre_suggestions(ctx, &q, limit).await
     }
     #[graphql(
@@ -398,7 +409,7 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::MoodSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Mood>> {
         library::mood_suggestions(ctx, &q, limit).await
     }
     #[graphql(
@@ -410,20 +421,8 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::TagSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Tag>> {
         library::tag_suggestions(ctx, &q, limit).await
-    }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::suggestions(limit, child_complexity)?"
-    )]
-    async fn publisher_suggestions(
-        &self,
-        ctx: &Context<'_>,
-        q: String,
-        limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::PublisherSuggestion>> {
-        library::publisher_suggestions(ctx, &q, limit).await
     }
 }
 
@@ -1811,7 +1810,9 @@ mod tests {
             "id": id.as_str(), "q": "Graph",
             "ids": [if document.contains("authorLabels(") { id::Author::encode(fixture.author) } else { id::Series::encode(fixture.series) }],
             "authorIds": [id::Author::encode(fixture.author).as_str()],
-            "seriesIds": [id::Series::encode(fixture.series).as_str()]
+            "seriesIds": [id::Series::encode(fixture.series).as_str()],
+            "shelfIds": [id::Shelf::encode(fixture.shelf_a).as_str()],
+            "authors": true, "series": true, "genres": true, "moods": true, "tags": true
         })
     }
 
@@ -1832,6 +1833,7 @@ mod tests {
         shelf_a: uuid::Uuid,
         shelf_b: uuid::Uuid,
         series: uuid::Uuid,
+        hidden_series: uuid::Uuid,
         author: uuid::Uuid,
         hidden_author: uuid::Uuid,
     }
@@ -1947,6 +1949,15 @@ mod tests {
         for (work, position) in [(visible_work, 2.0), (hidden_work, 1.0)] {
             sqlx::query!("INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)", series, work, position).execute(pool).await.unwrap();
         }
+        let hidden_series = sqlx::query_scalar!("INSERT INTO series (name, sort_name) VALUES ('Hidden Graph Series', 'hidden graph series') RETURNING id").fetch_one(pool).await.unwrap();
+        sqlx::query!(
+            "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, 1.0)",
+            hidden_series,
+            hidden_work
+        )
+        .execute(pool)
+        .await
+        .unwrap();
         reader_notes(pool, &ingestion, visible, admin_id, child_id, other_id).await;
         ReaderFixture {
             server,
@@ -1965,6 +1976,7 @@ mod tests {
             shelf_a,
             shelf_b,
             series,
+            hidden_series,
             author,
             hidden_author,
         }
@@ -2126,11 +2138,19 @@ mod tests {
         ] {
             assert!(!response.to_string().contains(hidden.as_str()));
         }
-        let response = reader_query(&fixture, &fixture.child, "query($ids: [ID!]!) { authorLabels(ids: $ids) { entityId value } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { value } shelves(first: 50) { edges { node { id name } } } }", json!({"ids": [id::Author::encode(fixture.author).as_str(), id::Author::encode(fixture.hidden_author).as_str()]})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($authors: [ID!]!, $series: [ID!]!, $shelves: [ID!]!) { authorLabels(ids: $authors) { id name } seriesLabels(ids: $series) { id } shelfLabels(ids: $shelves) { id } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { name } shelves(first: 50) { edges { node { id name } } } }", json!({"authors": [id::Author::encode(fixture.author).as_str(), id::Author::encode(fixture.hidden_author).as_str()], "series": [id::Series::encode(fixture.series).as_str(), id::Series::encode(fixture.hidden_series).as_str()], "shelves": [id::Shelf::encode(fixture.child_shelf).as_str(), id::Shelf::encode(fixture.other_shelf).as_str()]})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert_eq!(
-            response["data"]["authorLabels"].as_array().unwrap().len(),
-            1
+            response["data"]["authorLabels"],
+            json!([{"id": id::Author::encode(fixture.author).as_str(), "name": "Visible Author"}])
+        );
+        assert_eq!(
+            response["data"]["seriesLabels"],
+            json!([{"id": id::Series::encode(fixture.series).as_str()}])
+        );
+        assert_eq!(
+            response["data"]["shelfLabels"],
+            json!([{"id": id::Shelf::encode(fixture.child_shelf).as_str()}])
         );
         assert_eq!(response["data"]["search"].as_array().unwrap().len(), 1);
         assert_eq!(response["data"]["authorSuggestions"], json!([]));

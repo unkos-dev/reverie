@@ -48,11 +48,6 @@ type AuthorEdge {
   cursor: String!
 }
 
-type AuthorSuggestion {
-  entityId: ID
-  value: String!
-}
-
 input BooksFilter {
   author: [ID!]! = []
   authorAny: [ID!]! = []
@@ -263,11 +258,6 @@ type GenreEdge {
   A cursor for use in pagination
   """
   cursor: String!
-}
-
-type GenreSuggestion {
-  entityId: ID
-  value: String!
 }
 
 input IdentifierPatch {
@@ -545,11 +535,6 @@ type MoodEdge {
   cursor: String!
 }
 
-type MoodSuggestion {
-  entityId: ID
-  value: String!
-}
-
 type Mutation {
   updateLibraryPreferences(patch: LibraryPreferencesPatch!): LibraryPreferences!
   refreshMetadata(id: ID!): MetadataRefresh!
@@ -604,11 +589,6 @@ type PageInfo {
   endCursor: String
 }
 
-type PublisherSuggestion {
-  entityId: ID
-  value: String!
-}
-
 type Query {
   libraryPreferences: LibraryPreferences!
   metadataOperation(id: ID!, requestId: UUID, operationId: UUID): MetadataOperation!
@@ -630,14 +610,14 @@ type Query {
   ): ManifestationConnection!
   shelves(first: Int!, after: String): ShelfConnection!
   search(q: String!): [SearchHit!]!
-  authorLabels(ids: [ID!]!): [AuthorSuggestion!]!
-  seriesLabels(ids: [ID!]!): [SeriesSuggestion!]!
-  authorSuggestions(q: String!, limit: Int): [AuthorSuggestion!]!
-  seriesSuggestions(q: String!, limit: Int): [SeriesSuggestion!]!
-  genreSuggestions(q: String!, limit: Int): [GenreSuggestion!]!
-  moodSuggestions(q: String!, limit: Int): [MoodSuggestion!]!
-  tagSuggestions(q: String!, limit: Int): [TagSuggestion!]!
-  publisherSuggestions(q: String!, limit: Int): [PublisherSuggestion!]!
+  authorLabels(ids: [ID!]!): [Author!]!
+  seriesLabels(ids: [ID!]!): [Series!]!
+  shelfLabels(ids: [ID!]!): [Shelf!]!
+  authorSuggestions(q: String!, limit: Int): [Author!]!
+  seriesSuggestions(q: String!, limit: Int): [Series!]!
+  genreSuggestions(q: String!, limit: Int): [Genre!]!
+  moodSuggestions(q: String!, limit: Int): [Mood!]!
+  tagSuggestions(q: String!, limit: Int): [Tag!]!
 }
 
 input ReadingPatch {
@@ -849,11 +829,6 @@ type Series implements Node @fetchable(field_name: "id") {
   works(first: Int!, after: String): WorkConnection!
 }
 
-type SeriesSuggestion {
-  entityId: ID
-  value: String!
-}
-
 type Shelf implements Node @fetchable(field_name: "id") {
   id: ID!
   itemCount: Int!
@@ -972,11 +947,6 @@ type TagEdge {
   A cursor for use in pagination
   """
   cursor: String!
-}
-
-type TagSuggestion {
-  entityId: ID
-  value: String!
 }
 
 scalar UUID @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")

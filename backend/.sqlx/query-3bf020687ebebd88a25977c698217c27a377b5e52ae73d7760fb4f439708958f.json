@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.name\n             FROM series s\n            WHERE s.id = ANY($1)\n              AND EXISTS (\n                      SELECT 1 FROM series_works sw\n                      JOIN manifestations m ON m.work_id = sw.work_id\n                     WHERE sw.series_id = s.id\n                  )\n            ORDER BY s.name ASC",
+  "query": "SELECT s.id, s.name\n             FROM series s\n            WHERE s.id = ANY($1)\n              AND EXISTS (\n                      SELECT 1 FROM series_works sw\n                      JOIN manifestations m ON m.work_id = sw.work_id\n                     WHERE sw.series_id = s.id\n                  )\n            ORDER BY array_position($1, s.id)",
   "describe": {
     "columns": [
       {
@@ -36,5 +36,5 @@
       false
     ]
   },
-  "hash": "5dccf16883dd915e8057a472ed66fcfe8db1f193bd70749fdf7f7b4fa424afa8"
+  "hash": "3bf020687ebebd88a25977c698217c27a377b5e52ae73d7760fb4f439708958f"
 }

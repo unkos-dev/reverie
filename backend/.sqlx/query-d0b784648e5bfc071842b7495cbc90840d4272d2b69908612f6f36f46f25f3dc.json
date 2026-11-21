@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.id, a.name\n             FROM authors a\n            WHERE a.id = ANY($1)\n              AND EXISTS (\n                      SELECT 1 FROM work_authors wa\n                      JOIN manifestations m ON m.work_id = wa.work_id\n                     WHERE wa.author_id = a.id AND wa.role = 'author'\n                  )\n            ORDER BY a.name ASC",
+  "query": "SELECT a.id, a.name\n             FROM authors a\n            WHERE a.id = ANY($1)\n              AND EXISTS (\n                      SELECT 1 FROM work_authors wa\n                      JOIN manifestations m ON m.work_id = wa.work_id\n                     WHERE wa.author_id = a.id AND wa.role = 'author'\n                  )\n            ORDER BY array_position($1, a.id)",
   "describe": {
     "columns": [
       {
@@ -36,5 +36,5 @@
       false
     ]
   },
-  "hash": "6b58a0b76f3456fa150e6b6b81bc4ea83777c81696dcf1b5439bfa1c85a33130"
+  "hash": "d0b784648e5bfc071842b7495cbc90840d4272d2b69908612f6f36f46f25f3dc"
 }
