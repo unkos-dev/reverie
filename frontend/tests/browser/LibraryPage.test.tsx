@@ -14,11 +14,12 @@ import { RouterProvider, createMemoryRouter, useLocation } from "react-router";
 import { StrictMode, useSyncExternalStore, type ReactElement } from "react";
 import { RelayEnvironmentProvider } from "react-relay";
 import { z } from "zod";
-import type { BookListItem, Preferences } from "@/api";
+import { parseSortParam, serializeSortParam, type BookListItem, type Preferences } from "@/api";
 import { encodeGraphQLId } from "@/api/graphql";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
-import { libraryVisit } from "@/lib/relay/library-visit";
+import { queryClient as appQueryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
+import { loader, type PreparedLibrary } from "@/routes/library";
 import trustedDocuments from "../../../backend/graphql-documents.json";
 import { LibraryPage } from "@/pages/library/LibraryPage";
 
@@ -65,6 +66,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await cleanup();
+  appQueryClient.clear();
   setRelayAccount(null);
   vi.restoreAllMocks();
   localStorage.clear();
@@ -206,32 +208,116 @@ function graphBook(book: BookListItem) {
     readingState: reading(book),
   };
 }
+const VIEWER_ID = encodeGraphQLId("User", "77777777-7777-4777-8777-777777777777");
+const ME = {
+  id: "77777777-7777-4777-8777-777777777777",
+  display_name: "Reader",
+  email: null,
+  role: "adult",
+  is_child: false,
+  has_local_password: true,
+  theme_preference: "dark",
+};
+function graphSort(raw: string | null) {
+  return raw === null
+    ? null
+    : parseSortParam(raw).map((level) => ({
+        column: level.field.toUpperCase(),
+        direction: level.desc ? "DESC" : "ASC",
+      }));
+}
 function graphPreferences(preferences: Preferences) {
   return {
-    hiddenColumns: preferences.hidden_columns,
-    density: preferences.density,
-    view: preferences.view,
-    sortStack: preferences.sort_stack,
+    hiddenColumns: preferences.hidden_columns?.map((key) => key.toUpperCase()) ?? null,
+    density: preferences.density?.toUpperCase() ?? null,
+    view: preferences.view?.toUpperCase() ?? null,
+    sort: graphSort(preferences.sort_stack),
     defaults: {
-      hiddenColumns: preferences.defaults.hidden_columns,
-      density: preferences.defaults.density,
-      view: preferences.defaults.view,
-      sortStack: preferences.defaults.sort_stack,
+      hiddenColumns: preferences.defaults.hidden_columns.map((key) => key.toUpperCase()),
+      density: preferences.defaults.density.toUpperCase(),
+      view: preferences.defaults.view.toUpperCase(),
+      sort: graphSort(preferences.defaults.sort_stack),
     },
   };
 }
+const preferenceInput = z.object({
+  density: z.enum(["COMPACT", "COMFORTABLE"]).nullable().optional(),
+  view: z.enum(["TABLE", "GRID"]).nullable().optional(),
+  sort: z
+    .array(z.object({ column: z.string(), direction: z.enum(["ASC", "DESC"]) }))
+    .nullable()
+    .optional(),
+  columns: z.array(z.object({ column: z.string(), hidden: z.boolean() })).optional(),
+  resetHiddenColumns: z.boolean().optional(),
+});
+function applyPreferences(preferences: Preferences, variables: unknown): Preferences {
+  const input = preferenceInput.parse(variables);
+  let hidden = preferences.hidden_columns;
+  if (input.resetHiddenColumns === true) hidden = null;
+  for (const change of input.columns ?? []) {
+    const key = change.column.toLowerCase();
+    const current = (hidden ?? preferences.defaults.hidden_columns).filter((item) => item !== key);
+    hidden = change.hidden ? [...current, key] : current;
+  }
+  const densities = { COMPACT: "compact", COMFORTABLE: "comfortable" } as const;
+  const views = { TABLE: "table", GRID: "grid" } as const;
+  return {
+    ...preferences,
+    hidden_columns: hidden,
+    ...(input.density === undefined
+      ? {}
+      : { density: input.density === null ? null : densities[input.density] }),
+    ...(input.view === undefined ? {} : { view: input.view === null ? null : views[input.view] }),
+    ...(input.sort === undefined
+      ? {}
+      : {
+          sort_stack:
+            input.sort === null
+              ? null
+              : serializeSortParam(
+                  input.sort.map((level) => ({
+                    field: z
+                      .enum(["title", "author", "created_at", "pages"])
+                      .parse(level.column.toLowerCase()),
+                    desc: level.direction === "DESC",
+                  })),
+                ),
+        }),
+  };
+}
+const ids = z.array(z.string()).catch([]);
 type Fixture = {
   books: BookListItem[];
   preferences: Preferences;
   calls: { name: string; variables: Record<string, unknown> }[];
   environment: ReturnType<typeof relayEnvironment>;
+  prepared: PreparedLibrary | null | undefined;
 };
+function visitOf(fixture: Fixture): PreparedLibrary["owner"] {
+  if (fixture.prepared == null) throw new Error("The Library loader has not prepared a visit.");
+  return fixture.prepared.owner;
+}
+async function traverseToCurrentEntry(): Promise<void> {
+  history.pushState(null, "", window.location.href);
+  const arrived = new Promise<void>((resolve) => {
+    navigation.addEventListener(
+      "currententrychange",
+      () => {
+        resolve();
+      },
+      { once: true },
+    );
+  });
+  history.back();
+  await arrived;
+}
 type RenderOptions = {
   items?: BookListItem[];
   visit?: { filters?: Partial<FilterState>; view?: LibraryVisit["view"] };
   preferences?: Preferences;
   url?: string;
   seriesLabels?: { id: string; value: string }[];
+  shelfLabels?: { id: string; value: string }[];
   handler?: (
     name: string,
     variables: Record<string, unknown>,
@@ -244,6 +330,7 @@ async function renderLibrary({
   preferences = preferencesFixture(),
   url = "/library",
   seriesLabels = [],
+  shelfLabels = [],
   handler,
 }: RenderOptions = {}) {
   const fixture: Fixture = {
@@ -251,7 +338,25 @@ async function renderLibrary({
     preferences,
     calls: [],
     environment: relayEnvironment(),
+    prepared: undefined,
   };
+  const names = new Map([...seriesLabels, ...shelfLabels].map((label) => [label.id, label.value]));
+  function labels(variables: Record<string, unknown>) {
+    return {
+      authorLabels: ids
+        .parse(variables.authorIds)
+        .map((id) => ({ id, name: names.get(id) ?? "Author" })),
+      seriesLabels: ids
+        .parse(variables.seriesIds)
+        .map((id) => ({ id, name: names.get(id) ?? "Series" })),
+      shelfLabels: ids
+        .parse(variables.shelfIds)
+        .map((id) => ({ id, name: names.get(id) ?? "Shelf", itemCount: 0 })),
+    };
+  }
+  function viewer() {
+    return { id: VIEWER_ID, libraryPreferences: graphPreferences(fixture.preferences) };
+  }
   vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
     const request = wireRequest.parse(JSON.parse(z.string().parse(init?.body)));
     const name = documents[request.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
@@ -264,9 +369,19 @@ async function renderLibrary({
     if (name === "readerLibraryQuery") {
       const variables = listVariables.parse(request.variables);
       const q = z.string().optional().parse(variables.filter?.q) ?? "";
-      const rows = fixture.books.filter((book) =>
-        book.title.toLowerCase().includes(q.toLowerCase()),
-      );
+      const [level = { column: "CREATED_AT", direction: "DESC" }] = variables.sort ?? [];
+      const key = (book: BookListItem): string | number => {
+        if (level.column === "PAGES") return book.pages ?? -1;
+        return level.column === "TITLE" ? book.title : book.created_at;
+      };
+      const rows = fixture.books
+        .filter((book) => book.title.toLowerCase().includes(q.toLowerCase()))
+        .toSorted((left, right) => {
+          const order = String(key(left)).localeCompare(String(key(right)), undefined, {
+            numeric: true,
+          });
+          return level.direction === "DESC" ? -order : order;
+        });
       return Promise.resolve(
         response({
           books: {
@@ -276,42 +391,29 @@ async function renderLibrary({
         }),
       );
     }
-    if (name === "readerShelvesQuery")
-      return Promise.resolve(response({ shelves: { edges: [], pageInfo } }));
-    if (name === "readerSeriesLabelsQuery")
+    if (name === "libraryBootstrapQuery") {
+      const found = labels(variables);
       return Promise.resolve(
         response({
-          seriesLabels: seriesLabels.map((label) => ({
-            entityId: label.id,
-            value: label.value,
-          })),
+          viewer: viewer(),
+          authorLabels: found.authorLabels.map(({ id }) => ({ id })),
+          seriesLabels: found.seriesLabels.map(({ id }) => ({ id })),
+          shelfLabels: found.shelfLabels.map(({ id }) => ({ id })),
         }),
       );
-    if (name === "readerAuthorLabelsQuery") return Promise.resolve(response({ authorLabels: [] }));
-    if (name === "readerLibraryPreferencesQuery")
+    }
+    if (name === "LibraryPageQuery")
       return Promise.resolve(
-        response({ libraryPreferences: graphPreferences(fixture.preferences) }),
+        response({ viewer: viewer(), ...labels(variables), shelves: { edges: [], pageInfo } }),
       );
+    if (name === "LibraryPageLabelsRefetchQuery")
+      return Promise.resolve(response(labels(variables)));
     if (name === "mutationsUpdateLibraryPreferencesMutation") {
-      const patch = z
-        .object({
-          hiddenColumns: z.array(z.string()).nullable().optional(),
-          density: z.enum(["COMPACT", "COMFORTABLE"]).nullable().optional(),
-          view: z.enum(["TABLE", "GRID"]).nullable().optional(),
-          sortStack: z.string().nullable().optional(),
-        })
-        .parse(request.variables.patch);
-      fixture.preferences = {
-        ...fixture.preferences,
-        ...("sortStack" in patch ? { sort_stack: patch.sortStack ?? null } : {}),
-        ...("hiddenColumns" in patch ? { hidden_columns: patch.hiddenColumns ?? null } : {}),
-        ...("density" in patch
-          ? { density: patch.density === "COMPACT" ? "compact" : "comfortable" }
-          : {}),
-        ...("view" in patch ? { view: patch.view === "TABLE" ? "table" : "grid" } : {}),
-      };
+      fixture.preferences = applyPreferences(fixture.preferences, variables);
       return Promise.resolve(
-        response({ updateLibraryPreferences: graphPreferences(fixture.preferences) }),
+        response({
+          updateLibraryPreferences: { __typename: "LibraryPreferencesUpdated", viewer: viewer() },
+        }),
       );
     }
     throw new Error(`Unprovided operation ${name}`);
@@ -319,21 +421,15 @@ async function renderLibrary({
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  client.setQueryData(queryKeys.auth.me(), {
-    id: "77777777-7777-4777-8777-777777777777",
-    display_name: "Reader",
-    email: null,
-    role: "adult",
-    is_child: false,
-    has_local_password: true,
-    theme_preference: "dark",
-  });
+  client.setQueryData(queryKeys.auth.me(), ME);
+  appQueryClient.setQueryData(queryKeys.auth.me(), ME);
   history.replaceState(navigation.currentEntry?.getState() ?? null, "", url);
   navigation.updateCurrentEntry({
     state: {
       reverieLibrary: { filters: { ...emptyFilterState(), ...visit?.filters }, view: visit?.view },
     },
   });
+  await traverseToCurrentEntry();
   function Probe(): ReactElement {
     const location = useLocation();
     const raw = useSyncExternalStore(
@@ -363,6 +459,10 @@ async function renderLibrary({
     [
       {
         path: "/library",
+        loader: async (args) => {
+          fixture.prepared = await loader(args);
+          return fixture.prepared;
+        },
         element: (
           <>
             <LibraryPage />
@@ -387,7 +487,7 @@ async function renderLibrary({
 function preferenceWrites(fixture: Fixture) {
   return fixture.calls
     .filter((call) => call.name === "mutationsUpdateLibraryPreferencesMutation")
-    .map((call) => call.variables.patch);
+    .map((call) => call.variables);
 }
 function findLibraryTable() {
   return page.getByTestId("library-table");
@@ -400,6 +500,7 @@ async function editTitle(title: string, value: string): Promise<void> {
 }
 describe("LibraryPage", () => {
   test("table header click persists the sort to the account and never touches the URL", async () => {
+    // REV-REQ-0001: a table header click stores the sort as the override and adds no `sort` parameter.
     const fixture = await renderLibrary({
       items: [bookFixture()],
       visit: { view: "table" },
@@ -408,7 +509,9 @@ describe("LibraryPage", () => {
     const user = userEvent;
     await user.click(page.getByRole("columnheader", { name: /^Title(?:\s|$)/ }));
     await vi.waitFor(() => {
-      expect(preferenceWrites(fixture)).toEqual([{ sortStack: "title" }]);
+      expect(preferenceWrites(fixture)).toEqual([
+        { sort: [{ column: "TITLE", direction: "ASC" }] },
+      ]);
     });
     expect(page.getByTestId("router-search").element().textContent).not.toContain("sort=");
     expect(window.location.search).not.toContain("sort=");
@@ -443,12 +546,13 @@ describe("LibraryPage", () => {
 
   describe("filter chips", () => {
     test("a chip's remove control drops exactly that filter param", async () => {
-      // REV-REQ-0002: a condition edit and section Clear preserve sibling sections.
+      // REV-REQ-0002: a condition edit and section Clear preserve sibling sections, and the books
+      // request filters by exactly the conditions that restrict results.
       const first = encodeGraphQLId("Series", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
       const second = encodeGraphQLId("Series", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
       const shelfId = encodeGraphQLId("Shelf", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
       const shelf = [shelfId];
-      await renderLibrary({
+      const fixture = await renderLibrary({
         items: [bookFixture()],
 
         visit: {
@@ -456,6 +560,7 @@ describe("LibraryPage", () => {
             series: [first, second],
             shelf,
             status: { any: ["unread"], none: [] },
+            title: { op: "contains", text: "   " },
           },
         },
         seriesLabels: [
@@ -472,6 +577,12 @@ describe("LibraryPage", () => {
         expect(search).toContain(`series_any=${second}`);
         expect(search).toContain("status_any=unread");
         expect(search).toContain(`shelf_any=${shelfId}`);
+        const request = fixture.calls.filter((call) => call.name === "readerLibraryQuery").at(-1);
+        expect(request?.variables.filter).toEqual({
+          seriesAny: [second],
+          shelfAny: [shelfId],
+          statusAny: ["unread"],
+        });
       });
       await user.click(page.getByRole("button", { name: /^Filters/ }));
       await user.click(page.getByRole("button", { name: "Clear Series filters" }));
@@ -501,90 +612,113 @@ describe("LibraryPage", () => {
   });
 
   describe("per-user sort", () => {
-    test.each([
-      {
-        resolved: "the stored sort",
-        preferences: preferencesFixture({ sort_stack: "-pages" }),
-
-        announced: "Sorted by Pages descending",
-      },
-      {
-        resolved: "the installation order",
-        preferences: preferencesFixture(),
-
-        announced: "Sorted by Added descending",
-      },
-    ])(
-      "a stale URL ?sort= is inert: $resolved still applies",
-      async ({ preferences, announced }) => {
+    const SORTED_BOOKS = [
+      bookFixture({
+        id: "41111111-1111-4111-8111-111111111111",
+        title: "Short",
+        pages: 90,
+        created_at: "2026-01-03T00:00:00Z",
+      }),
+      bookFixture({
+        id: "42222222-2222-4222-8222-222222222222",
+        title: "Long",
+        pages: 900,
+        created_at: "2026-01-01T00:00:00Z",
+      }),
+      bookFixture({
+        id: "43333333-3333-4333-8333-333333333333",
+        title: "Middle",
+        pages: 300,
+        created_at: "2026-01-02T00:00:00Z",
+      }),
+    ];
+    test.each(
+      [
+        {
+          resolved: "the stored sort",
+          preferences: preferencesFixture({ sort_stack: "-pages" }),
+          announced: "Sorted by Pages descending",
+          sort: [{ column: "PAGES", direction: "DESC" }],
+          order: ["Long", "Middle", "Short"],
+        },
+        {
+          resolved: "the installation order",
+          preferences: preferencesFixture(),
+          announced: "Sorted by Added descending",
+          sort: null,
+          order: ["Short", "Middle", "Long"],
+        },
+      ].flatMap((sorted) => (["grid", "table"] as const).map((view) => ({ ...sorted, view }))),
+    )(
+      "a stale URL ?sort= is inert: $resolved still applies in $view",
+      async ({ preferences, announced, sort, order, view }) => {
+        // REV-REQ-0001: a URL `sort` value leaves the stored or installation order, and Covers and
+        // Table order the same books by the same sort stack.
         const fixture = await renderLibrary({
-          items: [bookFixture()],
-
+          items: SORTED_BOOKS,
           preferences,
+          visit: { view },
           url: "/library?sort=title",
         });
         await expect.element(page.getByText(announced)).toBeInTheDocument();
-        await expect.element(page.getByText("The Brothers Karamazov").first()).toBeInTheDocument();
         await vi.waitFor(() => {
-          const request = fixture.calls.filter((call) => call.name === "readerLibraryQuery").at(-1);
-          expect(request).toBeDefined();
-          expect(request?.variables.sort ?? null).toEqual(
-            preferences.sort_stack === null ? null : [{ column: "PAGES", direction: "DESC" }],
+          const shown = [...document.querySelectorAll<HTMLElement>("[data-book-id]")].map(
+            (row) =>
+              SORTED_BOOKS.find(
+                (book) => encodeGraphQLId("Manifestation", book.id) === row.dataset.bookId,
+              )?.title,
           );
+          expect(shown).toEqual(order);
         });
+        const requests = fixture.calls.filter((call) => call.name === "readerLibraryQuery");
+        expect(requests.at(0)?.variables.sort ?? null).toEqual(sort);
       },
     );
 
     test("the rail's reset drops the override and returns to the installation order", async () => {
+      // REV-REQ-0001: the Covers sort control and each sort stack editor action store their result
+      // as the override, the reset clears it, and none of them adds a `sort` parameter to the URL.
       const fixture = await renderLibrary({
         items: [bookFixture()],
         preferences: preferencesFixture({ sort_stack: "-pages" }),
       });
       await expect.element(page.getByRole("heading", { name: "Library" })).toBeInTheDocument();
       const user = userEvent;
+      const writes: unknown[] = [];
+      async function expectWrite(sort: unknown): Promise<void> {
+        writes.push({ sort });
+        await vi.waitFor(() => {
+          expect(preferenceWrites(fixture)).toEqual(writes);
+        });
+        expect(page.getByTestId("router-search").element().textContent).not.toContain("sort=");
+        expect(window.location.search).not.toContain("sort=");
+      }
+      await user.click(page.getByRole("button", { name: /Sort books$/ }));
+      await user.click(page.getByRole("option", { name: "Title, ascending" }));
+      await expectWrite([{ column: "TITLE", direction: "ASC" }]);
       await user.click(page.getByRole("button", { name: /^Filters/ }));
       await expect.element(page.getByRole("dialog")).toBeInTheDocument();
+      await user.click(page.getByRole("button", { name: /Add sort field/ }));
+      await user.click(page.getByRole("option", { name: "Pages" }));
+      await expectWrite([
+        { column: "TITLE", direction: "ASC" },
+        { column: "PAGES", direction: "ASC" },
+      ]);
+      await user.click(page.getByRole("button", { name: "Move Pages earlier in sort priority" }));
+      await expectWrite([
+        { column: "PAGES", direction: "ASC" },
+        { column: "TITLE", direction: "ASC" },
+      ]);
+      await user.click(page.getByRole("button", { name: /Change Pages sort direction/ }));
+      await expectWrite([
+        { column: "PAGES", direction: "DESC" },
+        { column: "TITLE", direction: "ASC" },
+      ]);
+      await user.click(page.getByRole("button", { name: "Remove Title from sort" }));
+      await expectWrite([{ column: "PAGES", direction: "DESC" }]);
       await user.click(page.getByRole("button", { name: "Reset sort to the installation order" }));
-      await vi.waitFor(() => {
-        expect(preferenceWrites(fixture)).toEqual([{ sortStack: null }]);
-      });
-
+      await expectWrite(null);
       await expect.element(page.getByText("Sorted by Added descending")).toBeInTheDocument();
-    });
-
-    test("a late preferences response re-sorts the initial list once", async () => {
-      let finish: ((value: Response) => void) | undefined;
-      const pending = new Promise<Response>((resolve) => {
-        finish = resolve;
-      });
-      const fixture = await renderLibrary({
-        items: [bookFixture({ title: "The Seeded Row" })],
-        handler: (name, variables) => {
-          if (name === "readerLibraryPreferencesQuery")
-            return pending.then((value) => value.clone());
-          if (name === "readerLibraryQuery" && variables.sort != null)
-            return response({
-              books: {
-                edges: [
-                  { cursor: "sorted", node: graphBook(bookFixture({ title: "A Sorted Row" })) },
-                ],
-                pageInfo,
-              },
-            });
-        },
-      });
-      await expect.element(page.getByText("The Seeded Row")).toBeInTheDocument();
-      finish?.(
-        response({
-          libraryPreferences: graphPreferences(preferencesFixture({ sort_stack: "-pages" })),
-        }),
-      );
-      await expect.element(page.getByText("A Sorted Row")).toBeInTheDocument();
-      const requests = fixture.calls.filter((call) => call.name === "readerLibraryQuery");
-      expect(requests).toHaveLength(3);
-      expect(requests.at(0)?.variables.sort ?? null).toBeNull();
-      expect(requests.at(1)?.variables.sort ?? null).toBeNull();
-      expect(requests.at(2)?.variables.sort).toEqual([{ column: "PAGES", direction: "DESC" }]);
     });
   });
 });
@@ -700,7 +834,7 @@ test("a table edit keeps the validator its editor opened with", async () => {
   fixture.books = [
     { ...opened, subtitle: "Edited elsewhere", metadata_etag: '"cccccccccccccccccccccc"' },
   ];
-  await libraryVisit(fixture.environment).refresh();
+  await visitOf(fixture).refresh();
   await expect.element(page.getByText("Edited elsewhere")).toBeInTheDocument();
   await userEvent.keyboard("{Enter}");
   await vi.waitFor(() => {
@@ -802,7 +936,7 @@ it("Library Retry sends the retained edit again", async () => {
   rejectDelayed?.(new TypeError("Lost acknowledgement"));
   await expect.element(outcomes.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
   mode = "conflict";
-  await libraryVisit(fixture.environment).refresh();
+  await visitOf(fixture).refresh();
   await userEvent.click(outcomes.getByRole("button", { name: "Retry", exact: true }));
   await expect.element(page.getByRole("button", { name: /^Undo Title/ })).toBeEnabled();
   expect(writes).toHaveLength(3);
@@ -815,7 +949,7 @@ it("Library Retry sends the retained edit again", async () => {
   saved = false;
   current = { ...current, title: "Fresh canonical", metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
   fixture.books = [current];
-  await libraryVisit(fixture.environment).refresh();
+  await visitOf(fixture).refresh();
   await expect.element(page.getByText("Fresh canonical").first()).toBeInTheDocument();
   await editTitle(current.title, "Refused title");
   await expect

@@ -1,5 +1,3 @@
-import { decodeGraphQLId } from "@/api/graphql";
-import { useShelves } from "@/api/shelves";
 /**
  * Active-filter chips row: one removable chip per filter condition, plus
  * a clear-all affordance. Replaces the read-only filter summary; the
@@ -9,20 +7,19 @@ import { useShelves } from "@/api/shelves";
  * clear-path writer, not the commit-path one.
  */
 import { X } from "lucide-react";
-import { useEffect, type ReactElement } from "react";
+import type { ReactElement } from "react";
 import { Button, Tag, TagGroup, TagList } from "react-aria-components";
 
 import {
   buildFilterSummary,
-  shortId,
+  type SummaryResolvers,
   type SummarySegment,
 } from "@/components/library/filter-summary";
-import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
-import { useSeriesLabels } from "@/lib/hooks/use-series-labels";
 import type { FilterState } from "@/routes/library-params";
 
 type FilterChipsProps = {
   filters: FilterState;
+  labels: SummaryResolvers;
   /** Clearing write: applies a segment's removal patch. */
   onRemove: (patch: SummarySegment["remove"]) => void;
   onClearAll: () => void;
@@ -30,30 +27,11 @@ type FilterChipsProps = {
 
 export function FilterChips({
   filters,
+  labels,
   onRemove,
   onClearAll,
 }: Readonly<FilterChipsProps>): ReactElement {
-  const authorIds = [
-    ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
-  ];
-  const authorNames = useAuthorLabels(authorIds);
-  const seriesNames = useSeriesLabels(filters.series);
-  const hasShelfFilter = filters.shelf.length > 0;
-  const {
-    data: shelves,
-    isError: shelvesError,
-    error: shelvesQueryError,
-  } = useShelves(undefined, hasShelfFilter);
-  useEffect(() => {
-    if (shelvesError) console.error("[FilterChips] shelves fetch failed", shelvesQueryError);
-  }, [shelvesError, shelvesQueryError]);
-
-  const segments = buildFilterSummary(filters, {
-    authorLabel: authorNames.labelFor,
-    shelfName: (id) =>
-      shelves.find((shelf) => shelf.id === id)?.name ?? shortId(decodeGraphQLId("Shelf", id)),
-    seriesName: seriesNames.labelFor,
-  });
+  const segments = buildFilterSummary(filters, labels);
 
   return (
     <div data-testid="filter-chips" className="flex flex-wrap items-center gap-1.5">

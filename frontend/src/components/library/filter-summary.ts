@@ -30,12 +30,7 @@ export type SummarySegment = {
   remove: (current: FilterState) => FilterState;
 };
 
-/** Render a UUID compactly (first 8 chars) for fallback labels. */
-export function shortId(value: string): string {
-  return value.length > 10 ? `${value.slice(0, 8)}…` : value;
-}
-
-type SummaryResolvers = {
+export type SummaryResolvers = {
   authorLabel: (id: string) => string;
   shelfName: (id: string) => string;
   seriesName: (id: string) => string;

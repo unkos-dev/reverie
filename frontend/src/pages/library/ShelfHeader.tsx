@@ -1,5 +1,4 @@
 import type { ReactElement } from "react";
-import type { Shelf } from "@/api";
 
 type ReadingCounts = {
   wantToRead: number;
@@ -66,7 +65,7 @@ export function NeedsAttentionCounts({
 }
 
 type Props = {
-  shelves: readonly Shelf[];
+  shelves: readonly { id: string; name: string; itemCount: number }[];
   selected: readonly string[];
   readingCounts?: ReadingCounts;
   attentionCounts?: AttentionCounts;
@@ -89,7 +88,7 @@ export function ShelfHeader({
         </h1>
         {shelf === undefined ? null : (
           <span className="shrink-0 text-sm text-fg-muted tabular-nums">
-            {shelf.item_count} books
+            {shelf.itemCount} books
           </span>
         )}
       </div>
