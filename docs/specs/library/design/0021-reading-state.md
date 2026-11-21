@@ -6,6 +6,8 @@ title: "Reading state"
 satisfies:
   - "REV-REQ-0018"
   - "REV-REQ-0020"
+  - "REV-REQ-0089"
+  - "REV-REQ-0090"
   - "REV-REQ-0081"
   - "REV-REQ-0084"
   - "REV-REQ-0086"

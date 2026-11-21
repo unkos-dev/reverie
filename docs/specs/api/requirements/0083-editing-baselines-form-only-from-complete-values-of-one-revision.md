@@ -9,27 +9,26 @@ title: "Editing baselines form only from complete values of one revision"
 
 ## Statement
 
-WHEN the browser client adopts an editing baseline for book metadata or reading state, it MUST take the values and the
-validator from one revision and from a complete response, so that values and a validator from different revisions, a
-response that carries errors or lacks data, and a replacement list with a missing page or with pages from different
-revisions never become one. An editing baseline is the set of values an edit starts from together with the validator its
-save sends. A validator is the strong entity-tag that identifies one revision, a revision is the resource state a
-validator identifies, and a null value is a value.
+WHEN the browser client starts an edit of book metadata or reading state, it MUST start it only from an
+[editing baseline](0082-graphql-edit-acknowledgements-carry-the-validator-of-their-values.md#statement) whose values all
+belong to the [revision](0082-graphql-edit-acknowledgements-carry-the-validator-of-their-values.md#statement) that its
+validator identifies, with each list value holding every entry that revision has.
 
 ## Rationale
 
-A baseline whose validator belongs to other values authorises an overwrite of changes the reader never saw. A
-replacement list adopted with a missing page, or with pages from different revisions, deletes entries the reader never
-saw when it is saved.
+A baseline whose validator belongs to other values authorises an overwrite of changes the reader never saw. A list value
+saved from a partial list deletes the entries the reader was never shown. Starting every edit from complete values of
+one revision means a save changes only what the reader saw and chose to change.
 
 ## Acceptance criteria
 
-- Values from one metadata revision never pair with another revision's validator, and a validator published apart from
-  its values cannot give earlier stored values a replacement baseline. Checked by
-  `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.
-- A response that carries errors or lacks data forms no baseline. Checked by
+- A response that carries an error, or lacks the data its operation selected, supplies no values to an edit. Checked by
   `GraphQL network preserves failures, CSRF recovery and account isolation` in
   `frontend/tests/browser/api/graphql.test.tsx`.
-- A complete selected list at one revision can supply a replacement-list baseline. A missing page or pages from
-  different revisions cannot supply one. Checked by `metadata and reading edits keep their baseline` in
-  `frontend/tests/browser/api/fetch.test.tsx`.
+- After a read that returns only a newer revision's validator, the client holds no values for that revision, so no edit
+  starts from the earlier values with the newer validator. Checked by `metadata and reading edits keep their baseline`
+  in `frontend/tests/browser/api/fetch.test.tsx`.
+- Every page of a list, all read at one revision, supplies a list edit's starting values. Checked by
+  `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.
+- A list with a missing page, or with pages read at different revisions, supplies no starting values to a list edit.
+  Checked by `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.

@@ -10,9 +10,7 @@ satisfies:
   - "REV-REQ-0015"
   - "REV-REQ-0016"
   - "REV-REQ-0017"
-  - "REV-REQ-0018"
   - "REV-REQ-0019"
-  - "REV-REQ-0020"
   - "REV-REQ-0021"
   - "REV-REQ-0023"
   - "REV-REQ-0035"
@@ -20,6 +18,8 @@ satisfies:
   - "REV-REQ-0079"
   - "REV-REQ-0082"
   - "REV-REQ-0083"
+  - "REV-REQ-0089"
+  - "REV-REQ-0090"
 governed-by:
   - "REV-ADR-0077"
   - "REV-ADR-0079"
@@ -195,8 +195,11 @@ parent count.
 
 `mutations.rs` calls the shared metadata editing and Undo, reading and shelf operations. Typed patches preserve absent
 and null values. Metadata save and Undo take a non-null baseline in their input; the reading patch takes an explicit
-nullable baseline. Review and shelf mutations take no baseline. Scope, adult status, caller visibility, shelf ownership
-and credential ceilings are separate checks.
+nullable baseline. The Design "Conditional requests and optimistic concurrency" describes how each form refuses a
+missing, malformed or stale baseline
+([The precondition contract's evaluation order](0007-conditional-requests-and-optimistic-concurrency.md#the-precondition-contracts-evaluation-order)).
+Review and shelf mutations take no baseline. Scope, adult status, caller visibility, shelf ownership and credential
+ceilings are separate checks.
 
 ### Mutation results
 
