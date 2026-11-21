@@ -260,10 +260,12 @@ the item handlers run against the id alone, and inherit ownership from the owner
 precedes them in the same transaction. This differs from the row-level-security pattern the Design "Row-level security
 and database context" covers for most other per-user tables. There is no database-level fallback if one of these
 predicates is dropped: the `reverie_app` role's grant on both tables is unconditional, so a query missing its ownership
-clause would compile, run, and return rows across every account. The `add_shelf_item` row-level-security probe is the
-one place this subject touches that mechanism, and only to prevent an existence-probing attack against manifestation
-visibility, never to scope the shelf itself. This subject enforces ownership on every route, whatever additional role
-gate three of them apply.
+clause would compile, run, and return rows across every account. This subject uses row-level security only for
+manifestation visibility, never to scope the shelf itself. The `add_shelf_item` row-level-security probe prevents an
+existence-probing attack against manifestation visibility. The GraphQL `Shelf.items` read runs inside a caller-scoped
+row-level-security transaction (`relation_pages` in `backend/src/services/reader.rs`), so its join to `manifestations`
+returns only manifestations the caller can see, while its owner predicate scopes the shelf. This subject enforces
+ownership on every route, whatever additional role gate three of them apply.
 
 Read access to a shelf and its items requires no more than the operation's declared `read` scope and no role check
 beyond ownership: a child account can view its own shelves and items. Adding and removing items likewise carry no

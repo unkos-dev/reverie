@@ -336,11 +336,11 @@ originating mounted form. Cache reconciliation continues after dismissal.
    then dispatches each touched family in turn: scalars through `apply_scalar_patch_field` (ISBN fields normalise and
    checksum-validate first), vocabularies through `apply_vocabulary_patch`, contributors through
    `apply_contributors_patch`, and identifiers through `apply_identifier_patches`. Every family journals via
-   `insert_manual_version` before it applies or clears, so the journal row exists even if a subsequent family in the
-   same request fails and rolls the whole transaction back. Writeback enqueue granularity differs by family: each scalar
-   and each vocabulary field enqueues its own job as it applies, `apply_contributors_patch` journals one
-   `contributors.<role>` version per role touched but calls `enqueue_writeback` once for `contributors` after its role
-   loop, and the identifier family never enqueues.
+   `insert_manual_version` before it applies or clears. The journal rows, canonical changes and writeback enqueues share
+   one transaction, so a later family's failure rolls all of them back together. Writeback enqueue granularity differs
+   by family: each scalar and each vocabulary field enqueues its own job as it applies, `apply_contributors_patch`
+   journals one `contributors.<role>` version per role touched but calls `enqueue_writeback` once for `contributors`
+   after its role loop, and the identifier family never enqueues.
 6. If an ISBN field was touched, `work::rematch_on_isbn_change` runs before the response is assembled.
 7. The operation materialises the selected matched acknowledgement inside the transaction. The response contains its
    aggregate baseline, selected canonical fields, request ID and exact field operations. HTTP returns its complete

@@ -159,12 +159,13 @@ Production refuses submitted text and unknown IDs before execution, with no runt
 text for tooling. Both modes validate variables and enforce root-field scope. Production disables schema introspection;
 development enables it. `__typename` is available in both.
 
-Fields with explicit weighting, which are every connection and the search, label and suggestion lists, cost one plus
-their effective bound times child complexity. Other fields use async-graphql's default complexity, including output
-lists such as `FieldsLocked.fields` and the preference `hiddenColumns`. A capped relation is always a connection with
-`pageInfo`, so nothing is silently truncated. Continuation cursors keep the remainder reachable. Requests above a
-maximum fail validation. Validation and execution share the same bounds and size validators. Every connection requires
-an explicit non-null `first`. GraphQL ignores `REVERIE_OPDS_PAGE_SIZE`.
+Fields with explicit weighting, which are every connection, the search, label and suggestion lists, and the Undo
+operation lists `MetadataSaved.operations` and `MetadataOperation.operations` (bound 144), cost one plus their effective
+bound times child complexity. Other fields use async-graphql's default complexity, including output lists such as
+`FieldsLocked.fields` and the preference `hiddenColumns`. A capped relation is always a connection with `pageInfo`, so
+nothing is silently truncated. Continuation cursors keep the remainder reachable. Requests above a maximum fail
+validation. Validation and execution share the same bounds and size validators. Every connection requires an explicit
+non-null `first`. GraphQL ignores `REVERIE_OPDS_PAGE_SIZE`.
 
 | Connection                                           | Maximum `first` |
 | ---------------------------------------------------- | --------------: |
@@ -223,14 +224,17 @@ shelf name, and `SystemShelfImmutable` refuses renaming or deleting a system she
 names no field. `FieldsLocked` carries `fields`, the canonical keys of the refused locked fields. A malformed, foreign,
 missing or caller-invisible target is a `NotFound` member. A service refusal that a mutation's union does not declare
 becomes an internal execution error. Forbidden and internal failures are execution errors, as are an input that fails
-scalar coercion and a committed metadata write whose manifestation cannot be read back, so the client resolves the
-request. Metadata success members return the `manifestation`. Its `metadata` field answers with the revision the write
-projected inside its transaction, selected through look-ahead on `manifestation.metadata`. Relay normalisation then
-points the manifestation at the new revision without an updater. Clients branch on `__typename` in `onCompleted` and
-treat `onError` as the unexpected class. The Library cell adapters carry a refusal member as `MetadataRefusal` through
-their recovery flow. `refreshMetadata`, the reading patch and preferences report failures as classified execution
-errors. Exact Undo and resolution require the live browser session that issued the operation, and apply its expiry,
-budgets and non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
+scalar coercion and a committed metadata write whose manifestation cannot be read back. How each surface recovers from
+an execution error is described in
+[Conditional requests and optimistic concurrency](0007-conditional-requests-and-optimistic-concurrency.md#failure-and-recovery)
+for saves and Undo, and in [Metadata review and editing](../../metadata/design/0018-metadata-review-and-editing.md) for
+review actions. Metadata success members return the `manifestation`. Its `metadata` field answers with the revision the
+write projected inside its transaction, selected through look-ahead on `manifestation.metadata`. Relay normalisation
+then points the manifestation at the new revision without an updater. Clients branch on `__typename` in `onCompleted`
+and treat `onError` as the unexpected class. The Library cell adapters carry a refusal member as `MetadataRefusal`
+through their recovery flow. `refreshMetadata`, the reading patch and preferences report failures as classified
+execution errors. Exact Undo and resolution require the live browser session that issued the operation, and apply its
+expiry, budgets and non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
 
 ### Selected revisions
 
