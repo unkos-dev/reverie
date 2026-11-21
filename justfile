@@ -400,6 +400,11 @@ worktree-provision path:
         cp .claude/settings.local.json "$dest/.claude/settings.local.json"
         echo "copied .claude/settings.local.json into the worktree"
     fi
+    if [ -f .agents/hooks.json ]; then
+        mkdir -p "$dest/.agents"
+        cp .agents/hooks.json "$dest/.agents/hooks.json"
+        echo "copied .agents/hooks.json into the worktree"
+    fi
     # Codex project policy is operator-owned and ignored for the same reason,
     # but `.codex` can also contain runtime and account data that must not
     # spread across checkouts.
