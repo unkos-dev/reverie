@@ -489,6 +489,13 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
 
 export function LibraryPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
+  useLayoutEffect(() => {
+    if (prepared === null) return;
+    bindLibraryVisit(prepared.owner);
+    return prepared.preparation.attach(() => {
+      prepared.owner.discard(prepared.preparation);
+    });
+  }, [prepared]);
   if (prepared === null) return null;
   return (
     <Suspense fallback={<LibrarySkeleton />}>
@@ -529,10 +536,10 @@ function useLibraryLabels(query: LibraryPage_labels$key) {
 function LibraryContent({
   prepared,
 }: Readonly<{ prepared: NonNullable<Awaited<ReturnType<typeof loader>>> }>): ReactElement {
-  const { owner: visitOwner, visit: restored, reference } = prepared;
+  const { owner: visitOwner, preparation, visit: restored, reference } = prepared;
   useLayoutEffect(() => {
-    bindLibraryVisit(visitOwner);
-  }, [visitOwner]);
+    preparation.adopt();
+  }, [preparation]);
   const [currentReference] = useQueryLoader<PageQuery>(LibraryPageQuery, reference);
   const query = usePreloadedQuery<PageQuery>(LibraryPageQuery, currentReference ?? reference);
   const { labels, follow } = useLibraryLabels(query);
