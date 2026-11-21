@@ -12,9 +12,11 @@ title: "Browser edits retain the validator of their editing baseline"
 WHEN the browser client sends a save of book metadata or reading state, the save MUST carry the
 [validator](0082-graphql-edit-acknowledgements-carry-the-validator-of-their-values.md#statement) of the
 [editing baseline](0082-graphql-edit-acknowledgements-carry-the-validator-of-their-values.md#statement) the edit started
-from, whatever responses the client has received since, until a new editing decision replaces that baseline. A new
-editing decision is the reader opening an editor on the values the client displays, or the reader activating Reload,
-which reads the current revision.
+from, whatever responses the client has received since, until a new editing decision or a successful matched reload or
+reset replaces the baseline's values and validator together. A new editing decision is the reader opening an editor on
+the values the client displays. A matched reload or reset is a read that the reader requests, through Reload or a reset
+control, and that returns current values with the validator of their own revision. A reload or reset that fails, or that
+returns values without their validator, replaces nothing.
 
 ## Rationale
 
@@ -33,3 +35,7 @@ draft's write precondition.
   `frontend/tests/browser/LibraryPage.test.tsx`.
 - After a new editing decision, the next save sends the validator of the values that decision started from. Checked by
   `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.
+- After a successful matched reload or reset, the edit shows the reloaded values and its next save sends their
+  validator.
+- After a reload or reset that fails, or that returns values without their validator, the edit keeps its values and its
+  next save sends the validator it held before.

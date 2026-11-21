@@ -22,9 +22,10 @@ one revision means a save changes only what the reader saw and chose to change.
 
 ## Acceptance criteria
 
-- A response that carries an error, or lacks the data its operation selected, supplies no values to an edit. Checked by
+- A response that carries an error, even beside data, or that carries no data, supplies no values to an edit. Checked by
   `GraphQL network preserves failures, CSRF recovery and account isolation` in
   `frontend/tests/browser/api/graphql.test.tsx`.
+- A response whose data omits a field the edit selected supplies no values to that edit.
 - After a read that returns only a newer revision's validator, the client holds no values for that revision, so no edit
   starts from the earlier values with the newer validator. Checked by `metadata and reading edits keep their baseline`
   in `frontend/tests/browser/api/fetch.test.tsx`.
