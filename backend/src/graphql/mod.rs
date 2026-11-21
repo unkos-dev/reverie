@@ -223,6 +223,11 @@ impl Query {
         mutations::metadata_operation(ctx, id, request_id, operation_id).await
     }
 
+    #[expect(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "async-graphql accepts a guarded resolver only as an async fn"
+    )]
     #[graphql(guard = "ReadScope")]
     async fn viewer(&self, ctx: &Context<'_>) -> async_graphql::Result<Viewer> {
         Ok(Viewer::new(ctx.data::<CurrentUser>()?, None))
