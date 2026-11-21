@@ -26,10 +26,11 @@ system-managed shelf; shelf items and their stable presentation order (`added_at
 handler-level `WHERE user_id = caller` ownership predicate that every mutating and shelf-scoped read handler applies in
 place of row-level security; the row-level-security-scoped manifestation-visibility probe `add_shelf_item` runs before
 it will add an item; the GraphQL `shelf` and `shelves` roots, the `Shelf` type with its `items` connection, and the
-`createShelf`, `renameShelf`, `deleteShelf`, `addShelfItem` and `removeShelfItem` mutations; and the client's two shelf
-pages (`frontend/src/pages/shelves/ShelvesListPage.tsx`, `frontend/src/pages/shelves/ShelfDetailPage.tsx`) and the
-`useShelves` shelf-list read in `frontend/src/api/shelves.ts`. The GraphQL execution policy, global object IDs and the
-mutation result convention belong to the Design "GraphQL execution and Relay browser data".
+`createShelf`, `renameShelf`, `deleteShelf`, `addShelfItem` and `removeShelfItem` mutations; the `shelfLabels` lookup;
+and the client's two shelf pages (`frontend/src/pages/shelves/ShelvesListPage.tsx`,
+`frontend/src/pages/shelves/ShelfDetailPage.tsx`) and the `readerShelves` shelf-list fragment they and the Library page
+read. The GraphQL execution policy, global object IDs and the mutation result convention belong to the Design "GraphQL
+execution and Relay browser data".
 
 It does not own row-level security itself: the `app.current_user_id` mechanism, the pools, and the policy census belong
 to the Design "Row-level security and database context". This subject is one of several call sites where
@@ -84,14 +85,19 @@ selection to shelf" action — all described below only as consumers, since none
 - Browser shelves share one account-scoped Relay environment. The route loaders prepare native query references for
   `ShelvesListPage` and `ShelfDetailPage`; their primary read failures reach the owning route. The shelf list and item
   connections page to completion through native pagination fragments without another Load more control.
-- `useShelves` in `frontend/src/api/shelves.ts` reads the complete shelf list through the `readerShelves` pagination
-  fragment for `ShelvesListPage`, `FilterRail`, `FilterChips` and `LibraryPage`. When that read fails, the auxiliary
-  consumers stay mounted with their degraded state, and the read logs the failure.
+- `readerShelves` in `frontend/src/lib/relay/reader.ts` is the one shelf-list connection. `readerShelvesQuery` spreads
+  it for `ShelvesListPage`, and `LibraryPageQuery` spreads it for the Library page. Each page reads it with
+  `usePaginationFragment` and loads every page in 50-shelf steps. A failed first page fails the owning query, which
+  reaches its route error page. On the Library page a failed continuation page stops the loop, keeps the loaded shelves,
+  logs the failure and gives `FilterRail` and `BatchBar` their degraded shelf state; on `ShelvesListPage` it reaches the
+  route error page. `FilterChips` and the Library shelf header name selected shelves through the Library label read, not
+  through the shelf list.
 - Shelf create appends the returned edge to the shelf list connection, so a new shelf shows last until the list next
-  loads in server order. Rename updates the shelf record in place. Deletion removes the edge through `@deleteEdge`. A
-  failed create, rename or delete acknowledgement triggers a recovery read, never an automatic replay. Library
-  membership writes run serially and retain per-target outcomes. Each publishes the shelf's count and, when that shelf's
-  items are in the store, appends the item edge; the active filtered Library connection then refreshes.
+  loads in server order. Rename updates the shelf record in place. Deletion removes the edge through `@deleteEdge`, and
+  its updater invalidates the deleted shelf's record. A failed create, rename or delete acknowledgement refetches the
+  shelf list with `network-only`, never replaying the write. Library membership writes run serially and retain
+  per-target outcomes. Each publishes the shelf's count and, when that shelf's items are in the store, appends the item
+  edge; the active filtered Library connection then refreshes.
 
 ### State-writer census
 
@@ -100,9 +106,10 @@ selection to shelf" action — all described below only as consumers, since none
 | `shelves.updated_at` | `shelves` row | The `shelves_set_updated_at` trigger, fired by any `UPDATE` |
 | `shelves.is_system` | `shelves` row | The column default (`false`); no handler ever sets it |
 | `shelf_items` row existence | `shelf_items` table | `add_shelf_item` (insert), `remove_shelf_item` (delete), `delete_shelf` through the `shelves` cascade, and a manifestation delete through the `manifestations` cascade |
+| Browser shelf list | `readerShelves` connection in the Relay store | Its page loads, `createShelf` through `@appendEdge`, `deleteShelf` through `@deleteEdge`, and a recovery refetch |
 
-No state item above has competing owners: the handlers named are its only application writers, and a cascade is the
-database acting on its own.
+No state item above has competing owners: the handlers named are its only application writers, a cascade is the database
+acting on its own, and Relay applies each browser write to the one connection both pages read.
 
 `shelves.updated_at` is written by the `shelves_set_updated_at` trigger (`BEFORE UPDATE`, running `set_updated_at()`),
 which fires on any `UPDATE` to the row regardless of which column changed. `rename_shelf` relies on the trigger alone:
@@ -154,9 +161,11 @@ and exposes scalar shelf metadata plus a bounded `items(first:, after:)` connect
 shelves first, then by name and ID. Items order by addition time, then manifestation ID, with the shelf ID bound into
 the graph cursor. Every edge has its own cursor and PageInfo flags come from bounded SQL probes.
 
-Typed and Node lookups return null for foreign, hidden, missing or invalid shelf identities. Item hydration rechecks
-manifestation visibility through the caller's transaction. Relay is the browser owner of these records; read execution
-adds no shelf writer.
+Typed and Node lookups return null for foreign, hidden, missing or invalid shelf identities. `shelfLabels(ids:)` decodes
+each ID as a shelf ID, refusing a malformed one with `validation`, loads the shelves through the owner-scoped request
+loader and returns the caller's own shelves in first-requested order; a foreign or missing shelf is omitted. Item
+hydration rechecks manifestation visibility through the caller's transaction. Relay is the browser owner of these
+records; read execution adds no shelf writer.
 
 The Design "GraphQL execution and Relay browser data" lists the results of `createShelf`, `renameShelf`, `deleteShelf`,
 `addShelfItem` and `removeShelfItem`
@@ -183,7 +192,7 @@ subject declares a page size of its own.
 
 `GET /api/v1/shelves/{id}` reads the shelf row on every request, so each items page reports the shelf's `updated_at` at
 the time of that request. The browser shelf detail page pages its items through `ShelfDetailPage`'s `readerShelfItems`
-pagination fragment, and `useShelves` in `frontend/src/api/shelves.ts` reads the shelf list.
+pagination fragment. The shelf list selects each shelf's ID, name, system flag and item count, and no timestamps.
 
 ## Runtime behaviour
 
@@ -247,9 +256,11 @@ pagination fragment, and `useShelves` in `frontend/src/api/shelves.ts` reads the
 - **A child probing shelf existence via manifestation ids.** Covered in Runtime behaviour: the RLS-scoped probe in
   `add_shelf_item` and the ownership check both resolve to the same `AppError::NotFound`, so a child cannot distinguish
   "no such shelf" from "shelf is yours but that manifestation isn't visible to you".
-- **A malformed timestamp in a reader response.** The GraphQL network validates selected shelf timestamps before
-  publication. Primary pages surface failure through their route; auxiliary consumers keep degraded feedback and log the
-  failure.
+- **A malformed timestamp in a reader response.** The GraphQL network validates the shelf detail query's selected
+  timestamps before publication, and the failure reaches the shelf detail route.
+- **A deleted shelf in a retained Library visit.** Deleting a shelf invalidates its record. A return to a Library visit
+  that selected it finds the visit's lookup stale, fetches it, and drops the shelf from the visit before the first books
+  request.
 - **A failed acknowledgement after a committed create.** The owning page refetches its native shelf list without
   replaying the create. Entered form input and local error feedback remain available.
 
