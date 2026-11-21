@@ -162,9 +162,8 @@ because there is no null bucket whose position could disagree between the two sc
 `SortColumn::from_wire` (case-sensitive; an unmatched name, including an empty one from a stray comma or a lone `-`, is
 `SortSpecError::UnknownField`), and rejects a column named twice (`SortSpecError::Duplicate`). `SortSpec::default()` is
 a single descending `CreatedAt` level, matching the endpoint's behaviour when `?sort=` is absent. `SortSpec::canonical`
-renders the parsed stack back to the same wire syntax it was parsed from, and is what both the `Link`/`next_cursor` echo
-and the cursor's embedded spec string reuse, so a stack that parsed successfully always round-trips to the same string
-it was parsed from.
+renders the parsed stack back to the same wire syntax it was parsed from, so a stack that parsed successfully always
+round-trips to the same string. The cursor embeds that string and compares it on decode.
 
 ### Cursor families (`cursor.rs`)
 
@@ -219,8 +218,8 @@ it reads each level's boundary value back off the row via its `select_alias` and
 wrapper, because this dynamic-`QueryBuilder` path has no compile-time schema check and a decode failure must become a
 clean `AppError::Internal` rather than a panic), builds the matching `CursorValue`, and calls `SortCursor::for_spec`
 with the same filter fingerprint the request was validated against. `build_next_url` rewrites the request's own query
-string for both the `Link: rel="next"` header and the body's `next_cursor` echo, replacing or appending `cursor` and
-leaving every other parameter, including `sort`, untouched.
+string for the `Link: rel="next"` header, replacing or appending `cursor` and leaving every other parameter, including
+`sort`, untouched. The response body carries the raw cursor as `next_cursor`.
 
 ## Interfaces and dependencies
 
@@ -238,9 +237,9 @@ activates belong to the Design "Row-level security and database context".
 external-identifier and -rating lookups that follow the page query, is part of the response contract this subject hands
 off rather than owns.
 
-`SortSpec::canonical` and `SortCursor`/`CursorValue` are consumed on the client side only as opaque strings: the Design
-"Library filter and sort state" builds the `sort` query parameter from its own resolved sort stack and treats `cursor`
-and `next_cursor` as values to store and replay, never to parse.
+The browser Library sends typed GraphQL sort levels and an opaque `after` cursor; the Design "Library filter and sort
+state" describes its requests
+([Interfaces and dependencies](0001-library-filter-and-sort-state.md#interfaces-and-dependencies)).
 
 Timestamp bounds are canonical UTC instants in the fingerprint, so equivalent RFC 3339 offsets do not change a cursor's
 filter identity. A different instant changes the fingerprint even if the local calendar date is unchanged.
@@ -271,7 +270,7 @@ full-state hash without adding them to the response. A missing reading row uses 
 GET.
 
 The Design "Library filter and sort state" describes how the browser builds these requests from a Library visit
-([Runtime behaviour](0001-library-filter-and-sort-state.md#runtime-behaviour)).
+([Interfaces and dependencies](0001-library-filter-and-sort-state.md#interfaces-and-dependencies)).
 
 Nothing here is durable. `ListParams`, the parsed `SortSpec`, the filter fingerprint and the decoded `SortCursor` are
 all built fresh from one request's query string and discarded once that request's response is written; the server holds
