@@ -19,7 +19,9 @@ restore the filter state last applied in that visit before it issues its first b
 filters when that visit's saved state is absent or malformed. A visit's saved state holds its filter conditions, its
 view and its saved position. It is malformed when any part of it fails to decode, including a view or position, or when
 it holds a field the Library does not define; a malformed saved state restores none of its filters, even those that
-decode.
+decode. Restoration excepts a restored author, series or shelf selection that a successful server lookup shows the
+viewer can no longer see. A failed lookup drops nothing. The first books request and the restored controls omit each
+dropped selection and keep every other restored filter.
 
 ## Rationale
 
@@ -49,3 +51,8 @@ Restoring part of a malformed saved state would show the reader a combination of
 - A resumed visit whose saved state holds valid filters and an invalid saved position starts with no filters. Checked by
   `REV-REQ-0075 AC5: unusable saved state restores no filters: %j` in
   `frontend/tests/browser/use-library-filters.test.tsx`.
+- A selection the lookup reports invisible is absent from the first books request and the restored controls. Every other
+  restored filter, including other selections in the same facet, is present in both. After a failed lookup, the visit's
+  saved state keeps every restored selection. Checked by
+  `rapid edits reload with their first request and no URL grammar` in
+  `frontend/tests/journeys/library-navigation.spec.ts`.
