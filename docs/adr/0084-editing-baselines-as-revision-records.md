@@ -54,3 +54,24 @@ own, so a new revision is a new record and no selection, however sparse, can pai
   no baseline.
 - Negative: an optimistic updater must never write a revision record, because an optimistic value beside an unchanged
   validator recreates the mixed pair.
+
+## Pros and cons of the options
+
+### A validator field on the live metadata record, which has no `id`
+
+- Positive: no new schema types, and the validator sits beside the values it describes.
+- Negative: every selection of the field writes into one store record, so a sparse read pairs a newer validator with
+  older values.
+
+### One complete fragment for every selection of editing values
+
+- Positive: no schema change.
+- Negative: the Relay compiler cannot enforce that every selection uses the complete fragment, so one partial selection
+  brings back the mixed pair.
+- Negative: Library rows would carry every editable field.
+
+### A client `getDataID` keyed on the manifestation and the validator
+
+- Positive: no schema change, and record identity stays in one client function.
+- Negative: the Relay compiler cannot add the manifestation ID and validator that such a `getDataID` needs to each
+  selection, so a selection without them merges into the shared record without any error.
