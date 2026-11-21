@@ -33,12 +33,11 @@ This subject owns the schema and its own structural guarantees for: `works` and 
 `work_authors`; `manifestations`, including its file-identity columns (`file_path`, `ingestion_file_hash`,
 `current_file_hash`) and its three lifecycle status enums (`validation_status`, `ingestion_status`,
 `enrichment_status`); `series` and `series_works`; `omnibus_contents`; the vocabulary tables `genres`, `moods` and
-`tags` and their junctions `manifestation_genres`, `manifestation_moods` and `manifestation_tags`; the `set_updated_at`
-and `works_search_vector_update` triggers; and the foreign-key graph, unique constraints and CHECK constraints that
-bound all of the above. All of it lives in `backend/migrations/20260810000000_initial_schema.up.sql`, with the three
-vocabulary junctions' row-level-security policies added by `backend/migrations/20260903000000_junction_table_rls.up.sql`
-and library ownership defined by `backend/migrations/20260930000000_library_relative_file_locations.up.sql` and
-`backend/migrations/20261003000000_library_path_claims.up.sql`.
+`tags` and their junctions `manifestation_genres`, `manifestation_moods` and `manifestation_tags`; the library ownership
+tables `libraries` and `library_path_claims`; the metadata revision columns and the triggers that advance them; the
+`set_updated_at` and `works_search_vector_update` triggers; and the foreign-key graph, unique constraints and CHECK
+constraints that bound all of the above. Migrations under `backend/migrations/` build this model, and
+`backend/schema.sql` (see Data and state) records its current shape.
 
 It does not own row-level security or the grants that decide who may query these tables at all; that mechanism, and the
 full policy grid for the tables in this model that carry it, is the Design "Row-level security and database context". It
@@ -46,18 +45,18 @@ does not own the role and scope checks a handler applies before it reaches this 
 axes". It does not own the Design "Ingestion pipeline" (`backend/src/services/ingestion/`), the Design "EPUB validation
 and repair" (`backend/src/services/epub/`), the Design "Enrichment pipeline" (`backend/src/services/enrichment/`), the
 Design "Writeback pipeline" (`backend/src/services/writeback/`), the Design "Metadata review and editing"
-(`backend/src/routes/metadata.rs`), or the Design "Books list query contract" (`backend/src/routes/library/mod.rs`,
-`filters.rs`, and the shared `sort_spec.rs`/`cursor.rs` modules it imports from `backend/src/routes/`), each of which
-reads or writes this model without being part of it. It does not own the Identifier and rating registry subject's
-external identifiers and ratings (`manifestation_external_identifiers`, `manifestation_external_ratings`,
-`work_external_identifiers`, `identifier_schemes`, `rating_sources`). It does not own covers (`manifestations.cover_*`,
-`has_embedded_cover`, the Design "Covers") or accessibility metadata (`manifestations.accessibility_metadata`) beyond
-carrying them as columns.
+(`backend/src/services/metadata/editing.rs`), or the Design "Books list query contract"
+(`backend/src/services/reader.rs`, `backend/src/routes/library/filters.rs`, and the shared `sort_spec.rs`/`cursor.rs`
+modules in `backend/src/routes/`), each of which reads or writes this model without being part of it. It does not own
+the Identifier and rating registry subject's external identifiers and ratings (`manifestation_external_identifiers`,
+`manifestation_external_ratings`, `work_external_identifiers`, `identifier_schemes`, `rating_sources`). It does not own
+covers (`manifestations.cover_*`, `has_embedded_cover`, the Design "Covers") or accessibility metadata
+(`manifestations.accessibility_metadata`) beyond carrying them as columns.
 
 Depends on: `metadata_versions`, owned by the Design "Metadata review and editing", as the target of every
 `*_version_id` and `source_version_id` pointer column in this model; Postgres's native `uuidv7()` for the default on
-every entity table's surrogate `id` column; the `pg_trgm` and `unaccent` extensions the migration installs, whose
-trigram operators and folding function back the indexes the Search and vocabulary suggest subject queries.
+every entity table's surrogate `id` column; the `pg_trgm` and `unaccent` extensions the schema installs, whose trigram
+operators and folding function back the indexes the Search and vocabulary suggest subject queries.
 
 Depended on by: the Design "Ingestion pipeline" and the Design "EPUB validation and repair", which create
 `manifestations` rows and the `works` row each attaches to; the Design "Enrichment pipeline" and the Design "Metadata
@@ -93,12 +92,12 @@ same deduplication to `series`. The vocabulary tables below apply case-insensiti
 copy of the lowest-`position` `author`-role contributor's `sort_name`, kept directly on `works` and backing the two
 `idx_works_first_author_sort_*` indexes so the books list can sort by author without a join; `refresh_first_author_sort`
 (`backend/src/models/work.rs`) is its only writer. `upgrade_stub` in that same file calls it whenever the extracted
-metadata carries any contributor row; `insert_role_rows`/`delete_role_rows` behind `apply_contributors_patch` in
-`backend/src/routes/metadata.rs`, and the same two helpers called directly from `apply_version`'s contributors arm in
-that file (the accept/revert path for an enrichment-suggested contributor value), each call it only when the write
-touched the `author` role's rows. A third `work_authors` delete site, `clear_field`'s contributor arm in `metadata.rs`,
-never calls it: that path is restricted to the `editor` and `translator` roles, since clearing the `author` role is
-rejected outright, so the sort key never needs refreshing there.
+metadata carries any contributor row; `apply_contributors_patch` in `backend/src/services/metadata/editing.rs`, and
+`apply_version`'s contributors arm in that file (the accept/revert path for an enrichment-suggested contributor value),
+each call it after `insert_role_rows`/`delete_role_rows` only when the write touched the `author` role's rows; exact
+Undo restoration in `backend/src/services/metadata/editing/undo.rs` also calls it. A third `work_authors` delete site,
+`clear_field`'s contributor arm in `editing.rs`, never calls it: that path is restricted to the `editor` and
+`translator` roles, since clearing the `author` role is rejected outright, so the sort key never needs refreshing there.
 
 **Sort columns.** `works.sort_title` is `title` converted to lower case; `authors.sort_name` is the comma-inverted form
 `generate_sort_name` in `backend/src/services/metadata/extractor.rs` produces (`"Tolkien, J. R. R."` from
@@ -111,23 +110,23 @@ written by `find_or_create_series`'s caller in `backend/src/models/work.rs`. Non
 default to `pending`; this model carries them as manifestation columns, but their transition rules belong to the
 pipelines that drive them. `manifestations.ingestion_status` is the lifecycle of the manifestation row itself, once one
 exists. The Design "Ingestion pipeline" owns `ingestion_inputs`, the byte-preserving current source identity,
-fingerprint, generation, status, reason, work link and removal bookkeeping. New `ingestion_jobs` link their captured
-input and generation and carry typed outcomes separately from `job_status`; existing unlinked history remains readable.
-Suppressed and not-accepted inputs create no attempt. Terminal attempt and current-generation input updates share one
-transaction, and imported outcomes share the manifestation, work, draft and claim transaction. Removed input records
-retain history while a later arrival at the same name receives a new identity. Linked jobs carry nullable publication
-library, relative path, unsigned device/`inode` identity, accepted hash and non-negative size together. Paired deferred
-failure fields require that evidence. A partial index supports bounded unresolved-job recovery. An acknowledged intent
-precedes filesystem visibility; the imported transaction clears it with the claim and outcome. `content_rating`, the
-cover columns (`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`, `has_embedded_cover`), and
-`accessibility_metadata` are likewise columns this table carries for a neighbouring subject's semantics.
-`suspected_duplicate_work_id` (`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a candidate
-duplicate rather than the owning work. `isbn_candidate` compares both supplied formats and their crate-derived
-equivalents in one bounded, parameterised query. Ingestion creates a separate work when a candidate exists instead of
-falling through to title/author grouping. `rematch_on_isbn_change` refreshes the candidate pointer inside the caller's
-transaction, clearing it when no candidate remains; it neither moves manifestations nor deletes works. The pointer
-records one candidate even when several works match. Duplicate-review interaction and confirmed grouping are outside
-this model's delivered interfaces.
+fingerprint, generation, status, reason, work link and removal bookkeeping. `ingestion_jobs` carry a nullable link to
+their captured input and generation, set together, and typed outcomes separately from `job_status`. Suppressed and
+not-accepted inputs create no attempt. Terminal attempt and current-generation input updates share one transaction, and
+imported outcomes share the manifestation, work, draft and claim transaction. Removed input records retain history while
+a later arrival at the same name receives a new identity. Linked jobs carry nullable publication library, relative path,
+unsigned device/`inode` identity, accepted hash and non-negative size together. Paired deferred failure fields require
+that evidence. A partial index supports bounded unresolved-job recovery. An acknowledged intent precedes filesystem
+visibility; the imported transaction clears it with the claim and outcome. `content_rating`, the cover columns
+(`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`, `has_embedded_cover`), and `accessibility_metadata`
+are likewise columns this table carries for a neighbouring subject's semantics. `suspected_duplicate_work_id`
+(`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a candidate duplicate rather than the
+owning work. `isbn_candidate` compares both supplied formats and their crate-derived equivalents in one bounded,
+parameterised query. Ingestion creates a separate work when a candidate exists instead of falling through to
+title/author grouping. `rematch_on_isbn_change` refreshes the candidate pointer inside the caller's transaction,
+clearing it when no candidate remains; it neither moves manifestations nor deletes works. The pointer records one
+candidate even when several works match. Duplicate-review interaction and confirmed grouping are outside this model's
+delivered interfaces.
 
 `isbn_10` and `isbn_13` hold independently supplied compact values. Conversion supports comparison and cache keys, never
 counterpart storage. Canonical promotion validates each supplied value through the `isbn` crate and requires ISBN-13 to
@@ -136,7 +135,7 @@ begin with `978` or `979`. Individually valid mismatches can be saved. Book-deta
 pairs, including an ISBN-13 without an ISBN-10 equivalent. No stored mismatch flag exists.
 
 **Library ownership.** `libraries.id` defaults to `uuidv7()`. Its unique, non-empty `configuration_key` binds an
-identity to deployment configuration; the migration seeds `default`. The row stores no root path or naming policy.
+identity to deployment configuration; the schema seeds `default`. The row stores no root path or naming policy.
 `manifestations.library_id` is required and references it with `ON DELETE RESTRICT`. The path CHECK rejects empty paths,
 leading or trailing slashes, repeated slashes, backslashes, ASCII drive prefixes and dot or parent components. A path
 names the actual file beneath its owning root. Different libraries can use the same relative name, while the ingestion
@@ -150,10 +149,9 @@ owner/library foreign key references the manifestation's unique `(id, library_id
 circular references are initially deferred, so one transaction can insert or remove both sides. Direct deletion of a
 required claim fails at commit. The owner index supports cascades, including work deletion.
 
-Backfill inserts the distinct union of recorded, source and destination names. Repeated names for one owner collapse;
-different owners sharing a key abort the transactional migration. Ingestion inserts claims with manifestations;
-writeback reserves intent destinations and releases obsolete claims with finalisation. Test fixtures and the operator
-seed script create matching claims in their existing transactions. Owner deletion is the remaining claim writer.
+Ingestion inserts claims with manifestations; writeback reserves intent destinations and releases obsolete claims with
+finalisation. Test fixtures and the operator seed script create matching claims in their own transactions. Owner
+deletion is the remaining claim writer.
 
 **Series.** `series.parent_id` self-references `series.id` with `ON DELETE SET NULL`: deleting a parent orphans its
 children instead of cascading the delete through the tree. `series_works`'s primary key is `(series_id, work_id)`, so a
@@ -197,34 +195,37 @@ This subject has no HTTP surface of its own; every read and write reaches it thr
 service. The production writers are: `backend/src/models/work.rs` (`match_existing`, `create_stub`, `upgrade_stub`), the
 entry point of the Design "Ingestion pipeline" into this model, called from
 `backend/src/services/ingestion/orchestrator.rs`; the same file's `rematch_on_isbn_change`, consumed by the enrichment
-orchestrator's ISBN re-check and, in `metadata.rs`, by `accept_manifestation`'s accepted-ISBN-version path and
-`update_book_metadata`'s touched-ISBN path and `revert_manifestation`'s ISBN revert/clear path;
-`backend/src/routes/metadata.rs`, the manual review and edit surface, which also writes `work_authors` and the
-vocabulary junctions through `apply_contributors_patch` and `apply_vocabulary_patch`; `backend/src/services/enrichment/`
-(`orchestrator.rs`, `queue.rs`, `field_lock.rs`), which applies accepted canonical values;
-`backend/src/services/writeback/` (`orchestrator.rs`, `queue.rs`), which updates `file_path` and `current_file_hash`
-after a successful on-disk rewrite; and `backend/src/services/metadata/draft.rs`, which writes the `metadata_versions`
-rows the pointer columns name. The shared production reads live in `backend/src/services/reader.rs`, called by the HTTP
-adapters and `backend/src/graphql/library.rs`. Other readers include `backend/src/routes/library/filters.rs`, and the
-shared `backend/src/routes/sort_spec.rs` and `cursor.rs` modules they import (also used by
-`backend/src/routes/shelves/mod.rs`), `backend/src/routes/series/mod.rs`, `backend/src/routes/opds/` (the OPDS catalogue
-subject), and `backend/src/routes/suggest.rs` and `backend/src/routes/library/search.rs` (vocabulary and text search).
+orchestrator's ISBN re-check and, in `backend/src/services/metadata/editing.rs`, by `accept_manifestation`'s
+accepted-ISBN-version path, `update_book_metadata`'s touched-ISBN path and `revert_manifestation`'s ISBN revert/clear
+path, and by the ISBN restoration in exact Undo (`editing/undo.rs`); `backend/src/services/metadata/editing.rs` and
+`editing/undo.rs`, the manual review, edit and Undo operations behind the HTTP adapters in
+`backend/src/routes/metadata.rs` and the GraphQL mutations, which also write `work_authors` and the vocabulary junctions
+through `apply_contributors_patch` and `apply_vocabulary_patch`; `backend/src/services/enrichment/` (`orchestrator.rs`,
+`queue.rs`, `field_lock.rs`), which applies accepted canonical values; `backend/src/services/writeback/`
+(`orchestrator.rs`, `queue.rs`), which updates `file_path` and `current_file_hash` after a successful on-disk rewrite;
+and `backend/src/services/metadata/draft.rs`, which writes the `metadata_versions` rows the pointer columns name. The
+shared production reads live in `backend/src/services/reader.rs`, called by the HTTP adapters and
+`backend/src/graphql/library.rs`. Other readers include `backend/src/routes/library/filters.rs` and the shared
+`backend/src/routes/sort_spec.rs` and `cursor.rs` modules it uses, `backend/src/services/reader/suggest.rs` (vocabulary
+suggestions and labels), and `backend/src/routes/opds/` (the OPDS catalogue subject). The series, search and suggestion
+routes read through `services::reader`.
 
-The migration grants `SELECT` and `DELETE` on works and manifestations to both runtime writer roles, with `INSERT` and
-`UPDATE` limited to columns other than revision state. Other model tables retain table-level write grants and
-`reverie_readonly` retains SELECT, except that path claims have no readonly grant; the Design "Row-level security and
+The schema grants `SELECT` and `DELETE` on works and manifestations to both runtime writer roles, with `INSERT` and
+`UPDATE` limited to columns other than revision state. Other model tables have table-level write grants and
+`reverie_readonly` has SELECT, except that path claims have no readonly grant; the Design "Row-level security and
 database context" is the authority on that grant boundary and on the policies that further narrow `manifestations` and
 its three vocabulary junctions.
 
-Graph Work and Manifestation records have distinct TypeID domain identities. Shared metadata, contributors and the
-selected series belong to Work. File metadata and caller reading state belong to Manifestation. Growing relations use
-bounded keyset connections. Contributor role and membership position live on edges, without surrogate membership IDs.
-The selected series orders position ascending with nulls last, then series ID. Work manifestations order creation time
-then ID. Series works order membership position with nulls last, then work ID.
+Graph Work and Manifestation records have distinct TypeID domain identities
+([Global object IDs](../../api/design/0031-graphql-execution-and-relay-browser-data.md#global-object-ids)). Shared
+metadata, contributors and the selected series belong to Work. File metadata and caller reading state belong to
+Manifestation. Growing relations use bounded keyset connections. Contributor role and membership position live on edges,
+without surrogate membership IDs. The selected series orders position ascending with nulls last, then series ID. Work
+manifestations order creation time then ID. Series works order membership position with nulls last, then work ID.
 
 `reader.rs` constructs matched metadata values and revisions in one caller-scoped database snapshot. Lazy versions never
-replace that editing baseline. Graph request caches retain one canonical projection per domain ID for the request.
-Direct and nested catalogue lookups enforce permitted manifestation visibility, with explicit shelf ownership checks.
+replace that editing baseline. Graph request caches hold one canonical projection per domain ID for the request. Direct
+and nested catalogue lookups enforce permitted manifestation visibility, with explicit shelf ownership checks.
 
 ## Data and state
 
@@ -261,11 +262,11 @@ within a transaction; field stamps reuse these revisions and have no independent
 | Work or edition identifier upsert, delete or source pointer | Identifier relation triggers, keyed by owning level and scheme |
 | Enrichment canonical batches | The same scalar and relation triggers inside the fenced catalogue transaction |
 | Referenced journal meaning change | Source, origin edition, field, value, confidence, match type or submission author changes stamp every current reference |
-| Version deletion | Existing SET NULL actions run scalar or relation triggers without clearing canonical values |
+| Version deletion | The SET NULL actions run scalar or relation triggers without clearing canonical values |
 | Shared author names and sort names | Author reference trigger stamps every linked contributor role |
 | Shared genre, mood or tag names | Name reference triggers stamp linked editions only when stored names differ |
 | Identifier scheme display names | Scheme reference trigger stamps every linked identifier slot |
-| Author or vocabulary deletion | Existing link cascades run relation DELETE triggers on surviving parents |
+| Author or vocabulary deletion | Link cascades run relation DELETE triggers on surviving parents |
 | Changing the parent work | Manifestation scalar trigger and owner identities in the aggregate tag |
 | Unattached proposals, observation counts, last-seen times and review activity | Excluded unless a currently referenced meaning column also changes |
 | Edition field lock and unlock | Excluded; manual routes check locks separately |
@@ -280,16 +281,13 @@ loads these projection-only values in the same snapshot without treating them as
 
 Runtime roles cannot insert or update revision columns directly. Trigger helpers have fixed search paths and no PUBLIC
 or runtime EXECUTE grant. Only the installed triggers elevate to update the exact referencing owners, including siblings
-outside the original writer's row visibility. Original canonical writes retain their existing grants and RLS checks.
+outside the original writer's row visibility. The canonical writes that fire them run under their own grants and RLS
+checks.
 
 ### Bibliographic state
 
-`manifestations.pub_date` stores nullable bibliographic text at the supplied precision. Its canonical attribution stays
-in `pub_date_version_id`, referencing the existing metadata journal. The text migration renders existing date values as
-`YYYY-MM-DD` without reconstructing missing source precision or adding historical observations. Its down migration
-refuses richer-than-complete-date values and pending/in-progress `pub_date` jobs before changing either schema or data.
-Complete dates and nulls round-trip when publication work is drained. A retained library needs a snapshot before
-migration.
+`manifestations.pub_date` stores nullable bibliographic text at the supplied precision. Its canonical attribution is
+`pub_date_version_id`, referencing the `metadata_versions` journal.
 
 [`backend/schema.sql`](../../../../backend/schema.sql), the `pg_dump --schema-only` of a freshly migrated database that
 CI rebuilds and diffs, is the authoritative column-by-column reference for this model; this section states only what
@@ -304,7 +302,7 @@ for entity tables, not particular to this model. The dump installs only three ex
 carry no `id` column at all and use a composite natural key instead, the same split the schema applies elsewhere
 (`shelf_items`, `reading_state`, `field_locks`, and the external-identifier and external-rating tables follow the
 identical pattern). Every first-party `TIMESTAMPTZ` column in this model carries a decode-range `CHECK` constraint
-(`>= 0001-01-01`, `< 10000-01-01`), the same convention the migration applies throughout the schema.
+(`>= 0001-01-01`, `< 10000-01-01`), the same convention the schema applies throughout.
 
 `manifestations_pages_positive` rejects a non-positive `pages` value at the database, independent of any
 application-level check upstream. `manifestation_external_identifiers_external_id_check` and its `work_`-prefixed
@@ -313,8 +311,7 @@ subject, not this one; they are named here only because their FK targets (`manif
 tables.
 
 `ingestion_file_hash` is set once, on the row's initial `INSERT`, and no code path in `backend/src` updates it
-afterwards; that holds only because no writer exists, not because any schema constraint or runtime guard enforces it. A
-test in the writeback orchestrator, `bounded_writeback_ingestion_file_hash_immutable_across_writeback_chain`, checks it.
+afterwards. No schema constraint or runtime guard enforces this; it holds because no other writer exists.
 `current_file_hash` equals `ingestion_file_hash` on insert unless validation repaired the file during ingestion, in
 which case the initial `INSERT` already carries the hash of the rewritten file; after insert, the Design "Writeback
 pipeline" is the column's only updater, on each successful rewrite.
@@ -350,14 +347,14 @@ lost, only its attribution.
 exact `name`, `EXCLUDED.name` is always identical to the stored value on a repeat observation; the `DO UPDATE` exists
 only to make `RETURNING` return the existing row's `id` on a conflict, not to change anything; `sort_name`, absent from
 the `SET` list entirely, stays at whatever the first insert supplied even if a later observation would compute it
-differently. The vocabulary tables' upsert, `insert_vocabulary_rows` in `metadata.rs`, conflicts on `lower(name)`
+differently. The vocabulary tables' upsert, `insert_vocabulary_rows` in `editing.rs`, conflicts on `lower(name)`
 instead: an incoming name that differs only in casing from an existing term still matches. Its conflict update assigns
 the stored name to itself and returns the existing ID, preserving the spelling displayed by every linked manifestation.
 The set-based source removes duplicate terms and orders them by `lower(name)` before insertion, so PostgreSQL case
 folding cannot produce repeated updates to one row and overlapping requests acquire term locks in the same order. The
-`work_authors` insert in `work.rs`, and the `insert_role_rows` helper behind `apply_contributors_patch` in
-`metadata.rs`, use a third pattern, `ON CONFLICT (work_id, author_id, role) DO NOTHING`: a duplicate role-author pairing
-on a work is silently skipped rather than erroring or updating.
+`work_authors` insert in `work.rs`, and the `insert_role_rows` helper behind `apply_contributors_patch` in `editing.rs`,
+use a third pattern, `ON CONFLICT (work_id, author_id, role) DO NOTHING`: a duplicate role-author pairing on a work is
+silently skipped rather than erroring or updating.
 
 **The unique constraints on `manifestations` are a database-level backstop**, independent of whatever dedup check an
 upstream caller already ran: a second `INSERT` naming an existing library/path pair or global ingestion hash is rejected
@@ -395,18 +392,19 @@ global and shared across every account once at least one visible manifestation l
 account can see is per-user or per-role, through the mechanism the Design "Row-level security and database context"
 owns. Shared storage does not authorise returning every linked work to children: series detail excludes works with no
 visible manifestation for child callers. This filtering leaves returned books' recorded titles, author order and series
-positions unchanged. Adult HTTP callers retain the linked catalogue work set. GraphQL requires a visible manifestation
-for every returned Work or Series, including direct lookup, Node lookup and series traversal. The three vocabulary
-junctions are the one place vocabulary data becomes visibility-scoped: their `SELECT` policies inherit the linked
-`manifestations` row's own visibility with no further predicate, while their `INSERT`, `UPDATE` and `DELETE` policies
-add an independent check that the caller holds the `admin` or `adult` role, regardless of the manifestation's
+positions unchanged. Adult HTTP callers receive the full linked catalogue work set. GraphQL requires a visible
+manifestation for every returned Work or Series, including direct lookup, Node lookup and series traversal. The three
+vocabulary junctions are the one place vocabulary data becomes visibility-scoped: their `SELECT` policies inherit the
+linked `manifestations` row's own visibility with no further predicate, while their `INSERT`, `UPDATE` and `DELETE`
+policies add an independent check that the caller holds the `admin` or `adult` role, regardless of the manifestation's
 visibility.
 
 Because the shared catalogue tables carry no row-level security, the only defence against an under-privileged write is
-the handler that reaches them. Every route handler in `backend/src/routes/metadata.rs` that writes to this model
-(`accept_manifestation`, `reject_manifestation`, `revert_manifestation`, `lock_field`, `unlock_field`, and
-`update_book_metadata`, which reaches `work_authors` via `apply_contributors_patch` and the vocabulary junctions via
-`apply_vocabulary_patch`) calls `CurrentUser::require_not_child` before any write; the mechanism that check draws on is
+the operation that reaches them. Every metadata operation in `backend/src/services/metadata/editing.rs` and
+`editing/undo.rs` that writes to this model (`accept_manifestation`, `reject_manifestation`, `revert_manifestation`,
+`lock_field`, `unlock_field`, exact Undo, and `update_book_metadata`, which reaches `work_authors` via
+`apply_contributors_patch` and the vocabulary junctions via `apply_vocabulary_patch`) calls
+`CurrentUser::require_not_child` before any write, whichever transport calls it; the mechanism that check draws on is
 the Design "Authorization axes", not restated here. The writers the Designs "Ingestion pipeline", "Enrichment pipeline"
 and "Writeback pipeline" own, named in "Interfaces and dependencies", reach this model over their own dedicated
 connection pools rather than a per-request credential, so no caller-supplied role or scope gates them; the pool and
