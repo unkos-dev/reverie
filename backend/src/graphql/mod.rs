@@ -2398,18 +2398,28 @@ mod tests {
         )
         .await;
         assert_cursor_refused(&refused, &["books"]);
+        let shelf_ids = |body: serde_json::Value| -> Vec<serde_json::Value> {
+            body["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item["id"].clone())
+                .collect()
+        };
+        let http_all = fixture
+            .server
+            .get("/api/v1/shelves")
+            .add_header("authorization", fixture.admin.clone())
+            .await;
+        http_all.assert_status_ok();
+        let all = shelf_ids(http_all.json());
+        assert!(all.len() > 1, "{all:?}");
         let http_shelves = fixture
             .server
             .get(&format!("/api/v1/shelves?cursor={shelf_cursor}"))
             .add_header("authorization", fixture.admin.clone())
             .await;
         http_shelves.assert_status_ok();
-        assert_ne!(
-            http_shelves.json::<serde_json::Value>()["items"]
-                .as_array()
-                .unwrap()
-                .as_slice(),
-            [] as [serde_json::Value; 0]
-        );
+        assert_eq!(shelf_ids(http_shelves.json()), all[1..]);
     }
 }
