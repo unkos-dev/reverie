@@ -99,6 +99,13 @@
       "automerge": true
     },
     {
+      "description": "Automerge routine patch updates to the SHA-pinned mise-action after required checks and the release-age hold.",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["jdx/mise-action"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
+    {
       "description": "Automerge mise tool patch and minor updates after required checks pass and the release-age hold has elapsed.",
       "matchManagers": ["mise"],
       "matchUpdateTypes": ["patch", "minor"],
@@ -122,6 +129,14 @@
       "matchManagers": ["cargo", "npm"],
       "matchUpdateTypes": ["minor"],
       "matchCurrentVersion": "!/^0\\./",
+      "automerge": true
+    },
+    {
+      "description": "Automerge isbn 0.8 patch updates for routine ISBN range refreshes.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["isbn"],
+      "matchCurrentVersion": "/^0\\.8(?:\\.|$)/",
+      "matchUpdateTypes": ["patch"],
       "automerge": true
     },
     {
