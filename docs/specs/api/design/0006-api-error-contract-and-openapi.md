@@ -174,10 +174,13 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
 - On the client, `apiFetch` (`frontend/src/api/fetch.ts`) is the sole interface between the SPA and `fetch()`, and
   `ApiError` represents HTTP failures. GraphQL execution errors become `GraphQLExecutionError` in
   `frontend/src/api/graphql.ts`, and the Library cells and edit sheet carry a metadata refusal member as
-  `MetadataRefusal`. `editingFailureAction` classifies a failure for its editing flow. It returns `reload` for
-  `StaleBaseline` and for the `if-match-mismatch` and `if-match-required` codes. It returns `correct` for
-  `MetadataInvalid`, the `validation` code and an HTTP 422, and `retry` for an HTTP 5xx, 408 or 429, the `internal` code
-  and a failure with no code. Every other refusal returns `none`. The Design "Conditional requests and optimistic
+  `MetadataRefusal`. `editingFailureAction` classifies a failure for its editing flow, in this order. A
+  `MetadataRefusal` returns `reload` for `StaleBaseline`, `correct` for `MetadataInvalid` and `none` for every other
+  member. For a `GraphQLExecutionError` it reads the first error's `code`: `if-match-mismatch` and `if-match-required`
+  return `reload`, and `validation` returns `correct`. An `ApiError` with status 422 returns `correct`; status 408, 429
+  or 500 and above returns `retry`; every other `ApiError` returns `none`. A remaining `GraphQLExecutionError` returns
+  `none` when its first error has a code other than `internal`. Every other failure, including an `internal` code, an
+  execution error with no code and a network failure, returns `retry`. The Design "Conditional requests and optimistic
   concurrency" describes the recovery each flow then offers.
 
 Shelf and metadata editing mutations return union results, listed in the Design "GraphQL execution and Relay browser
@@ -284,8 +287,9 @@ test `unmatched_api_route_returns_problem_with_instance` in `backend/src/lib.rs`
 **A response whose body is not JSON-shaped at all**, for example a reverse proxy's HTML error page on an apparent
 non-2xx: `peekProblem`'s content-type gate fails immediately (`ct` matches neither content type), so it returns `null`
 without attempting to parse the body, and `problemToApiError` falls back entirely to `response.statusText` and an empty
-`detail`, with `type: null`. The thrown `ApiError` still carries the real HTTP `status`, so status-based branches (the
-`401` redirect funnel, the `412` conflict check) keep working; only slug-based branches see `null`.
+`detail`, with `type: null`. The thrown `ApiError` still carries the real HTTP `status`, so status-based branches such
+as the `401` redirect funnel keep working. Slug-based checks see `null` and fail, so `isIfMatchMismatch` and
+`isIfMatchRequired` return false for such a response.
 
 ## Failure and recovery
 
