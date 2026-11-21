@@ -23,12 +23,19 @@ may not notice which condition moved. View and sort are standing choices, so cle
 
 ## Acceptance criteria
 
-- Two edits to different filter conditions made in one reader action both take effect.
+- Two edits to different filter conditions made in one reader action both take effect. Checked by
+  `same-turn sibling edits compose and preserve unrelated native entry data` in
+  `frontend/tests/browser/use-library-filters.test.tsx`.
 - An edit that a field publishes when it loses focus, followed by Clear in the same reader action, does not bring back
-  the cleared condition.
-- Clear removes every filter condition and leaves view and sort unchanged.
-- Clearing one filter section, or removing one filter chip, leaves every other section unchanged.
+  the cleared condition. Checked by `blur, Clear and subsequent typing use the current intent without resurrection` in
+  `frontend/tests/browser/use-library-filters.test.tsx`.
+- Clear removes every filter condition and leaves view and sort unchanged. Checked by
+  `clearing all filters preserves the visit view and the stored sort` in `frontend/tests/browser/LibraryPage.test.tsx`.
+- Clearing one filter section, or removing one filter chip, leaves every other section unchanged. Checked by
+  `a chip's remove control drops exactly that filter param` in `frontend/tests/browser/LibraryPage.test.tsx`.
 - Entered text and its selected operator are kept, and remain editable, while they restrict no results. Text restricts
-  no results when it is blank, or when its operator is "is empty", which ignores the text.
+  no results when it is blank, or when its operator is "is empty", which ignores the text. Checked by
+  `raw text and its operator stay editable while they contribute no predicate` in
+  `frontend/tests/browser/FilterRail.test.tsx`.
 - After an edit, the books request filters by exactly the conditions that restrict results, including the conditions the
   edit did not touch, and by no text that restricts no results.
