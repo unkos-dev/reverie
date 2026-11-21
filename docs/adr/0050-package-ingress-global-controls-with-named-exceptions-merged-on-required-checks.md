@@ -45,10 +45,10 @@ routine human merge did.
 
 The controls are pinned and enforced managers, frozen installs, downloads verified against a committed lockfile, no
 install-time code execution by default, a release-age hold, and audits of every ingested tree. An exception names its
-package and records its reason. Updates merge automatically when required checks pass and the hold has elapsed. A human
-reviews major versions, a released action tag that has been rewritten, pre-1.0 libraries linked into the product,
-updates that need a manual step, and every update to a third-party action, because each such action runs in at least one
-job that holds a write scope or a credential and an update PR spans every workflow that uses it.
+package and records its reason. Updates merge automatically when required checks pass and the hold has elapsed. Unless a
+named exception applies, a human reviews major versions, rewritten action tags, pre-1.0 libraries linked into the
+product, and updates that need a manual step. Third-party action updates also require review by default because an
+update reaches every workflow that uses the action, including jobs with write permissions or credentials.
 
 ### Consequences
 
@@ -57,7 +57,8 @@ job that holds a write scope or a credential and an update PR spans every workfl
 - Positive: review attention concentrates on rewritten tags, majors, and third-party actions, rather than spreading
   across every routine update.
 - Negative: an automerged tool update reaches developer machines without a look.
-- Negative: the release-age hold on action tags ages by commit date, which a publisher can backdate.
+- Negative: when GitHub release metadata is unavailable, tag-based action lookups can use timestamps the publisher
+  controls.
 - Negative: a tool checksum is recorded on first download and trusted from then on.
 - Negative: a transitive advisory absent from the relevant advisory database gets no automated fix pull request.
 - Negative: cargo has no install-script control, so that control remains ecosystem-specific rather than spanning both
@@ -81,3 +82,12 @@ prevent install-time build execution; local and CI lint use the same recipe.
 Specful is a named developer-tool exception to the release-age hold and major-version dashboard approval. This
 repository's maintainer publishes its releases, so those holds add no independent review of the publisher. Its version
 pin, committed `mise.lock` checksum and required checks still apply; updates merge automatically when those checks pass.
+
+Patch releases of the `isbn` crate in the 0.8 series are a named exception to pre-1.0 library review. Recent patches
+refresh the bundled ISBN range file, often changing only its publication metadata. The release-age hold and backend
+checks cover these routine updates.
+
+Patch releases of `jdx/mise-action` are a named exception to third-party action review. Manual merges of these frequent
+updates add no upstream code review. The action remains SHA-pinned. Renovate measures the release-age hold from GitHub
+release publication and waits for required checks. A patch can still change code that runs with image publishing and
+signing privileges.
