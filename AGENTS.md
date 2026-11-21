@@ -129,9 +129,11 @@ These are absolute invariants for the Reverie repository.
 - **State-Writer Census:** Any plan touching shared mutable state (URL params, stores, caches) must enumerate every
   writer, including debounced and async ones. More than one writer forces an explicit ownership-model decision in the
   plan before implementation starts.
-- **ADRs:** Write an ADR for any new cross-stack pattern, major dependency, or architectural choice. Create it with
-  `specful new adr --title <title>` under `docs/adr/`; never hand-allocate an identifier. Start at
-  `.specful/generated/catalog.json` or `specful show <id>` to find the records already on file.
+- **ADRs:** Record an ADR only for a durable choice with credible alternatives and real downsides, as the Specful ADR
+  profile sets out, and check that bar before a plan proposes one. How a subject works, including conventions and one
+  screen's behaviour, belongs in its Design; an obligation belongs in a Requirement. Correct a wrong ADR in place rather
+  than recording a new one. Create one with `specful new adr --title <title>` under `docs/adr/`; never hand-allocate an
+  identifier. Start at `.specful/generated/catalog.json` or `specful show <id>` to find the records already on file.
 - **Specifications:** Requirements (what the system must do) and Designs (how a subject currently works) live under
   `docs/specs/`, one directory per architectural scope. Start at `docs/specs/index.md`. Create an artifact with
   `specful new requirement|design --title <title> --scope <scope>`; never hand-allocate an identifier. Write current
