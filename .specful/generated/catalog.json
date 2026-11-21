@@ -994,7 +994,8 @@
         "REV-REQ-0003",
         "REV-REQ-0057",
         "REV-REQ-0058",
-        "REV-REQ-0059"
+        "REV-REQ-0059",
+        "REV-REQ-0091"
       ],
       "title": "Books list query contract"
     },
@@ -1909,6 +1910,15 @@
       "kind": "req",
       "path": "docs/specs/api/requirements/0090-a-graphql-edit-without-a-well-formed-baseline-is-refused-and-changes-nothing.md",
       "title": "A GraphQL edit without a well-formed baseline is refused and changes nothing"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0037"
+      ],
+      "id": "REV-REQ-0091",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0091-the-books-list-orders-by-its-sort-parameter-or-the-installation-default.md",
+      "title": "The books list orders by its sort parameter or the installation default"
     }
   ]
 }

@@ -82,13 +82,13 @@ calendar dates become local-midnight `created_at_gte` and next-local-midnight `c
 month/year rollovers and daylight-saving changes.
 
 `libraryPreferences` and `updateLibraryPreferences` provide the account overrides and installation defaults through
-`services::preferences`. The HTTP preference endpoints share that service. Sort gestures write `sortStack`. A books
-request carries the reader's non-empty override explicitly: as ordered typed `sort` levels in GraphQL, and as the `sort`
-query parameter when `listBooks` (`frontend/src/api/books.ts`) builds the HTTP request. With no override, the GraphQL
-request omits `sort` or supplies `null`, `listBooks` omits the parameter, and the server applies the installation
-default. Neither request serialises the installation-default levels, so an inheriting reader's list-query key depends
-only on the absent override, never on server defaults the client cannot see. Native query references retain connection
-membership. Each source keeps its operation, variables and detached editing pairs for row actions.
+`services::preferences`. The HTTP preference endpoints share that service. Sort gestures write `sortStack`. The Library
+sends its books requests through GraphQL. A request carries the reader's non-empty override as ordered typed `sort`
+levels, and with no override it omits `sort` or supplies `null`, so the server applies the installation default. It
+never serialises the installation-default levels, so an inheriting reader's list-query key depends only on the absent
+override, never on server defaults the client cannot see. `listBooks` (`frontend/src/api/books.ts`) is an HTTP adapter
+that serialises the parameters it is given and omits any that are absent, including `sort`. Native query references
+retain connection membership. Each source keeps its operation, variables and detached editing pairs for row actions.
 
 ## Data and state
 

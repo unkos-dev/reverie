@@ -25,6 +25,7 @@
 - [REV-REQ-0086](requirements/0086-a-stale-library-save-offers-reload-which-writes-nothing.md): A stale Library save offers Reload, which writes nothing
 - [REV-REQ-0087](requirements/0087-each-refused-library-save-gives-feedback-for-its-reason.md): Each refused Library save gives feedback for its reason
 - [REV-REQ-0088](requirements/0088-a-library-batch-retry-repeats-only-the-writes-that-failed.md): A Library batch Retry repeats only the writes that failed
+- [REV-REQ-0091](requirements/0091-the-books-list-orders-by-its-sort-parameter-or-the-installation-default.md): The books list orders by its sort parameter or the installation default
 
 ## Designs
 
