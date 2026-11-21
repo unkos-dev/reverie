@@ -60,7 +60,7 @@ or repeating rows within it.
   Checked by `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.
 - A GraphQL books request refused for an invalid sort or page size, rather than for its cursor, carries the code
   `validation`, not `invalid-cursor`. Checked by `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.
-- The Library restarts a walk from the first page once when a continuation is refused with `invalid-cursor`, whatever
-  the error message, and does not restart for a `validation` refusal. Checked by
+- The Library restarts a walk from the first page when a continuation is refused with `invalid-cursor`, whatever the
+  error message, and does not restart for a `validation` refusal. Checked by
   `unchanged returns preserve each visit's books and known-book position` in
   `frontend/tests/journeys/library-navigation.spec.ts`.

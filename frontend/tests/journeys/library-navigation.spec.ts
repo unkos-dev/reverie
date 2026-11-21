@@ -523,7 +523,7 @@ test("Refine Escape retains live text and range edits and returns focus", async 
 
 test("unchanged returns preserve each visit's books and known-book position", async ({ page }) => {
   // REV-REQ-0080 R1a, R1b: identical visits retain independent extents and known-book positions.
-  // REV-REQ-0057: only the invalid-cursor code restarts a refused continuation, and only once.
+  // REV-REQ-0057: only the invalid-cursor code restarts a refused continuation.
   const fixture = await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
   let refusal: { code: string; message: string } | undefined;
   let refused = 0;
