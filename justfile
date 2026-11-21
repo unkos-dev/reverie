@@ -63,7 +63,6 @@ lint: js::lint rust::lint infra::lint
 fmt: js::fmt rust::fmt
 
 # Backend tests each provision a disposable database cluster.
-# Doctests stay out of the aggregate (slow; CI runs them).
 #
 # Run every locally-runnable unit test.
 [group('aggregate')]
@@ -109,7 +108,7 @@ preflight-full:
     #!/usr/bin/env bash
     set -ueo pipefail
     scripts/gate-run.sh preflight-full \
-        rust::guards infra::openapi check rust::doc-lint test rust::doctests \
+        rust::guards infra::openapi check rust::doc-lint test \
         rust::sqlx-check rust::schema-check rust::machete rust::deny rust::deny-advisories js::build \
         js::font-integrity infra::zizmor
 

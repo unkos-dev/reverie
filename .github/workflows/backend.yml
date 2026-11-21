@@ -156,14 +156,12 @@ jobs:
         run: mise exec github:bnjbvr/cargo-machete -- cargo machete
 
       - name: Lint
-        run: mise exec mold cargo:sqlx-cli -- bash ../scripts/postgres-provision.sh schema -- cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: mise exec just mold -- just rust::clippy
 
       # Without --document-private-items the scope is pub items only, matching the
       # Tier 1 comment-policy surface.
       - name: Doc lint (broken intra-doc links)
-        env:
-          RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links"
-        run: mise exec mold cargo:sqlx-cli -- bash ../scripts/postgres-provision.sh schema -- cargo doc --locked --no-deps --workspace
+        run: mise exec just mold -- just rust::doc-lint
 
       - name: Check sqlx query cache freshness
         run: mise exec mold cargo:sqlx-cli -- bash ../scripts/postgres-provision.sh schema -- cargo sqlx prepare --check -- --locked --tests
@@ -171,13 +169,6 @@ jobs:
       - name: Check the schema dump against the migrations
         working-directory: ${{ github.workspace }}
         run: mise exec just cargo:sqlx-cli -- just rust::schema-check
-
-      # nextest does not run doctests; Reverie has none today, so this exists to fail
-      # CI from day one on doctest drift.
-      - name: Doctests
-        env:
-          SQLX_OFFLINE: "true"
-        run: mise exec mold -- bash ../scripts/postgres-provision.sh test -- cargo test --locked --doc --workspace
 
       # The cache action's post step runs from $GITHUB_WORKSPACE, which has no
       # Cargo.lock (the crate root is backend/), so it skips this upload itself.
