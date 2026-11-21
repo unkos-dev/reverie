@@ -379,23 +379,20 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-    // Mint a cursor under the default (-created_at) stack, then try to
-    // replay it under sort=title.
-    let default_spec = crate::routes::sort_spec::SortSpec::default();
-    let recent = crate::routes::cursor::SortCursor {
-        spec: default_spec.canonical(),
-        keys: vec![crate::routes::cursor::CursorValue::Ts(
-            jiff::Timestamp::now(),
-        )],
+    let minted_spec = crate::routes::sort_spec::SortSpec::parse("title").expect("valid spec");
+    let cursor = crate::routes::cursor::SortCursor {
+        spec: minted_spec.canonical(),
+        keys: vec![crate::routes::cursor::CursorValue::Text(Some(
+            "neuromancer".to_owned(),
+        ))],
         id: Uuid::new_v4(),
-        // Inert here: the sort mismatch is detected before the fingerprint.
-        filter_fp: String::new(),
+        filter_fp: super::filters::filter_fingerprint(&super::ListParams::default()),
     }
     .encode()
     .expect("encode");
 
     let response = server
-        .get(&format!("/api/v1/books?sort=title&cursor={recent}"))
+        .get(&format!("/api/v1/books?sort=author&cursor={cursor}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     let body = test_support::assert_problem(
@@ -403,12 +400,7 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
         problems::VALIDATION,
         StatusCode::UNPROCESSABLE_ENTITY,
     );
-    assert!(
-        body["detail"]
-            .as_str()
-            .unwrap()
-            .contains("cursor sort mismatch")
-    );
+    assert_eq!(body["detail"], "Invalid cursor.");
 }
 
 // ─── multi-column sort stack: boundary walks + error paths ──────────────
@@ -470,10 +462,7 @@ async fn list_endpoint_cursor_direction_mismatch_returns_422(pool: PgPool) {
             "neuromancer".to_owned(),
         ))],
         id: Uuid::new_v4(),
-        // Sort mismatch is checked before the filter fingerprint, so this
-        // value is inert for this test; empty is the no-filter fingerprint's
-        // preimage regardless.
-        filter_fp: String::new(),
+        filter_fp: super::filters::filter_fingerprint(&super::ListParams::default()),
     }
     .encode()
     .expect("encode");
@@ -487,12 +476,7 @@ async fn list_endpoint_cursor_direction_mismatch_returns_422(pool: PgPool) {
         problems::VALIDATION,
         StatusCode::UNPROCESSABLE_ENTITY,
     );
-    assert!(
-        body["detail"]
-            .as_str()
-            .unwrap()
-            .contains("cursor sort mismatch")
-    );
+    assert_eq!(body["detail"], "Invalid cursor.");
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -519,8 +503,7 @@ async fn list_endpoint_legacy_cursor_tag_returns_422(pool: PgPool) {
         problems::VALIDATION,
         StatusCode::UNPROCESSABLE_ENTITY,
     );
-    let detail = body["detail"].as_str().unwrap();
-    assert!(detail.contains("invalid cursor"), "got detail: {detail}");
+    assert_eq!(body["detail"], "Invalid cursor.");
 }
 
 // ---------------------------------------------------------------------------
@@ -1111,13 +1094,7 @@ async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPo
         problems::VALIDATION,
         StatusCode::UNPROCESSABLE_ENTITY,
     );
-    assert!(
-        problem["detail"]
-            .as_str()
-            .unwrap()
-            .contains("cursor filter mismatch"),
-        "got {problem}"
-    );
+    assert_eq!(problem["detail"], "Invalid cursor.", "got {problem}");
 
     // Replayed under the same filter: 200, continuing the walk.
     let same = server
@@ -1173,12 +1150,7 @@ async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPo
             problems::VALIDATION,
             StatusCode::UNPROCESSABLE_ENTITY,
         );
-        assert!(
-            problem["detail"]
-                .as_str()
-                .unwrap()
-                .contains("cursor filter mismatch")
-        );
+        assert_eq!(problem["detail"], "Invalid cursor.");
         assert!(problem.get("items").is_none());
     }
 }

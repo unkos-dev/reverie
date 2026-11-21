@@ -75,8 +75,12 @@ impl Loader<RelationKey> for ReaderLoader {
 }
 
 pub(super) fn batch_error(error: &Arc<AppError>) -> async_graphql::Error {
-    if let AppError::Validation(detail) = error.as_ref() {
-        return super::safe_error(AppError::Validation(detail.clone()));
+    match error.as_ref() {
+        AppError::Validation(detail) => {
+            return super::safe_error(AppError::Validation(detail.clone()));
+        }
+        AppError::InvalidCursor => return super::safe_error(AppError::InvalidCursor),
+        _ => {}
     }
     tracing::error!(error = ?error, "Reader batch failed");
     super::safe_error(AppError::Internal(anyhow::anyhow!("Reader batch failed")))

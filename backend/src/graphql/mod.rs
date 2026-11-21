@@ -472,6 +472,7 @@ fn safe_error(error: AppError) -> async_graphql::Error {
             return async_graphql::Error::new(detail)
                 .extend_with(|_, extensions| extensions.set("code", "validation"));
         }
+        AppError::InvalidCursor => ("Invalid cursor.", "invalid-cursor"),
         AppError::Forbidden => ("Forbidden", "forbidden"),
         AppError::NotFound => ("Not found", "not-found"),
         AppError::IfMatchRequired => ("A baseline is required.", "if-match-required"),
@@ -2147,7 +2148,19 @@ mod tests {
             json!({"id":id::Manifestation::encode(fixture.sibling).as_str(),"after":cursor}),
         )
         .await;
-        assert_eq!(refused["errors"][0]["extensions"]["code"], "validation");
+        assert_cursor_refused(&refused, &["manifestation", "versions", "pending"]);
+    }
+
+    fn assert_cursor_refused(response: &serde_json::Value, path: &[&str]) {
+        assert_eq!(
+            response["errors"][0]["extensions"]["code"], "invalid-cursor",
+            "{response}"
+        );
+        assert_eq!(response["errors"][0]["path"], json!(path), "{response}");
+        let page = path
+            .iter()
+            .fold(&response["data"], |value, field| &value[*field]);
+        assert!(page.is_null(), "{response}");
     }
 
     // REV-REQ-0003, REV-REQ-0057 and REV-REQ-0058 cover ranges, cursor identity and sort refusal.
@@ -2197,11 +2210,29 @@ mod tests {
                 expected
             );
         }
+        let minted_filter =
+            json!({"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-04T00:00:00Z"});
+        let titled = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "TITLE", "direction": "ASC"}], "filter": minted_filter})).await;
+        assert!(titled.get("errors").is_none(), "{titled}");
+        let title_cursor = titled["data"]["books"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
+        let ordered = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "AUTHOR", "direction": "ASC"}]})).await;
+        assert!(ordered.get("errors").is_none(), "{ordered}");
+        let ordered_cursor = ordered["data"]["books"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
         for variables in [
-            json!({"first": 50, "after": cursor, "sort": [{"column": "TITLE", "direction": "ASC"}]}),
-            json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "DESC"}]}),
+            json!({"first": 50, "after": title_cursor, "sort": [{"column": "AUTHOR", "direction": "ASC"}], "filter": minted_filter}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "DESC"}], "filter": minted_filter}),
+            json!({"first": 50, "after": ordered_cursor, "sort": [{"column": "AUTHOR", "direction": "ASC"}, {"column": "TITLE", "direction": "ASC"}]}),
             json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:01Z", "createdAtLt": "2026-01-04T00:00:00Z"}}),
             json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-05T00:00:00Z"}}),
+        ] {
+            let response = reader_query(&fixture, &fixture.admin, query, variables).await;
+            assert_cursor_refused(&response, &["books"]);
+        }
+        for variables in [
             json!({"first": 50, "sort": [{"column": "Title", "direction": "ASC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "TITLE", "direction": "DESC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "AUTHOR", "direction": "ASC"}, {"column": "PAGES", "direction": "ASC"}, {"column": "CREATED_AT", "direction": "ASC"}]}),
@@ -2213,16 +2244,6 @@ mod tests {
             );
             assert!(response["data"]["books"].is_null());
         }
-        let ordered = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "CREATED_AT", "direction": "ASC"}]})).await;
-        assert!(ordered.get("errors").is_none(), "{ordered}");
-        let ordered_cursor = ordered["data"]["books"]["edges"][0]["cursor"]
-            .as_str()
-            .unwrap();
-        let refused = reader_query(&fixture, &fixture.admin, query, json!({"first": 50, "after": ordered_cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}, {"column": "TITLE", "direction": "ASC"}]})).await;
-        assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
-            "{refused}"
-        );
         let refused = reader_query(
             &fixture,
             &fixture.admin,
@@ -2230,10 +2251,7 @@ mod tests {
             json!({"after": cursor}),
         )
         .await;
-        assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
-            "{refused}"
-        );
+        assert_cursor_refused(&refused, &["shelves"]);
         let tagged = reader_query(
             &fixture,
             &fixture.admin,
@@ -2291,27 +2309,22 @@ mod tests {
             let nested_cursor = page["data"][field][relation]["edges"][0]["cursor"]
                 .as_str()
                 .unwrap();
-            for response in [
-                reader_query(
-                    &fixture,
-                    &fixture.admin,
-                    &nested_query,
-                    json!({"id": parent_b.as_str(), "after": nested_cursor}),
-                )
-                .await,
-                reader_query(
-                    &fixture,
-                    &fixture.admin,
-                    query,
-                    json!({"after": nested_cursor}),
-                )
-                .await,
-            ] {
-                assert_eq!(
-                    response["errors"][0]["extensions"]["code"], "validation",
-                    "{response}"
-                );
-            }
+            let other_parent = reader_query(
+                &fixture,
+                &fixture.admin,
+                &nested_query,
+                json!({"id": parent_b.as_str(), "after": nested_cursor}),
+            )
+            .await;
+            assert_cursor_refused(&other_parent, &[field, relation]);
+            let other_connection = reader_query(
+                &fixture,
+                &fixture.admin,
+                query,
+                json!({"first": 50, "after": nested_cursor}),
+            )
+            .await;
+            assert_cursor_refused(&other_connection, &["books"]);
         }
         pending_cursor_identity(&fixture).await;
         let shelf_page = reader_query(
@@ -2329,12 +2342,9 @@ mod tests {
             &fixture,
             &fixture.admin,
             query,
-            json!({"after": shelf_cursor}),
+            json!({"first": 50, "after": shelf_cursor}),
         )
         .await;
-        assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
-            "{refused}"
-        );
+        assert_cursor_refused(&refused, &["books"]);
     }
 }
