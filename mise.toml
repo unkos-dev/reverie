@@ -41,12 +41,10 @@ pnpm = "11.28.13"
 # checksums for the download. A pin here would be the second declaration that
 # arrangement exists to remove.
 
-# sqlx-cli 0.9 does not publish a Cargo.lock.
 [tools."cargo:sqlx-cli"]
 version = "0.9.1"
 default-features = false
 features = ["postgres", "rustls", "sqlx-toml"]
-locked = false
 
 # YAML linter; reads .yamllint.yaml. Run by `just infra::ryl`.
 [tools."github:owenlamont/ryl"]
