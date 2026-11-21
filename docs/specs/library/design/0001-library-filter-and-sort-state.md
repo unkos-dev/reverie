@@ -140,7 +140,8 @@ longer current, so a departing page cannot write into the destination's visit du
 The loader confirms the account, then reads `libraryBootstrapQuery`: the account's preferences and lookups of the
 restored author, series and shelf IDs, each sent once. Genre, mood and tag values are names and are not looked up. Each
 restored selection that its lookup omits is dropped from every mode, and dropping any selection also clears the saved
-position. The owner writes the pruned visit to its entry only while that entry is current. The loader then starts
+position. Only a successful bootstrap establishes that the viewer can no longer see a selection; a failed bootstrap
+drops nothing. The owner writes the pruned visit to its entry only while that entry is current. The loader then starts
 `LibraryPageQuery` with the surviving selections, and the page reads it under Suspense with LibrarySkeleton as the
 fallback. The first document load sends the bootstrap, the screen query and the books request. A push has empty lookups
 and finds stored preferences in the store, so it sends no bootstrap request. A label lookup is answered from the store
@@ -215,12 +216,13 @@ array. This decoding adds no recovery write. A malformed member rejects the owne
 projection uses `shelf_any` and `series_any`; the scalar `shelf` and `series` API parameters serve other callers. The
 bootstrap lookups and the label read send each selected ID once; displayed rows retain their owning source.
 
-A failed bootstrap or screen query reaches the route error page. The loader writes nothing, so the saved visit keeps
-every restored selection, and a later load with the server healthy restores them. A failed continuation page of the
-shelf list stops loading shelves, keeps the loaded ones and gives the Shelf section and batch bar their degraded state;
-a failed first page fails the screen query. A failed suggestion search logs the failure and shows "Couldn't load
-suggestions. Try again." in the popover while the input keeps its element, focus and text. A term longer than 100
-Unicode scalar values sends no request and shows the same text.
+A failed bootstrap reaches the route error page before the loader writes anything, so the saved visit keeps every
+restored selection, and a later load with the server healthy restores them. A failed screen query also reaches the route
+error page; by then the loader has already persisted any prune. A failed continuation page of the shelf list stops
+loading shelves, keeps the loaded ones and gives the Shelf section and batch bar their degraded state; a failed first
+page fails the screen query. A failed suggestion search logs the failure and shows "Couldn't load suggestions. Try
+again." in the popover while the input keeps its element, focus and text. A term longer than 100 Unicode scalar values
+sends no request and shows the same text.
 
 Exceeding a text or selection-count limit does not make an otherwise well-formed visit malformed. Such visits retain all
 filters and the view override for correction or clearing, while request eligibility enforces those limits.
