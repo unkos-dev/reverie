@@ -116,10 +116,7 @@ while IFS= read -r match; do
       fi
     done
     [ -n "$sub" ] || continue
-    # The ADR's one named gap: sqlx-cli's own dependency tree resolves
-    # fresh at install; the version pin is held in lockstep with the sqlx
-    # crate by the pin-match CI step. Exempted by exact content so any
-    # other `cargo install` still fails.
+    # sqlx-cli 0.9 does not publish a Cargo.lock.
     case "$seg" in
       *'cargo install sqlx-cli'*) continue ;;
       *'--locked'*) continue ;;

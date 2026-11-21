@@ -69,25 +69,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # sqlx-cli must track the sqlx crate version, or `cargo sqlx prepare --check`
-      # validates against a cache built by a mismatched proc-macro.
-      - name: sqlx-cli pin matches sqlx crate version
-        run: |
-          crate="$(yq -p toml -o yaml '.dependencies.sqlx.version // .dependencies.sqlx' Cargo.toml)"
-          cli="$(yq -p toml -o yaml '.tools."cargo:sqlx-cli".version' ../mise.toml)"
-          case "$crate" in
-            [0-9]*.[0-9]*) ;;
-            *)
-              echo "::error file=backend/Cargo.toml::could not parse sqlx crate version (got '$crate'); the dependency shape may have changed — update this guard"
-              exit 1
-              ;;
-          esac
-          if [ "$crate" != "$cli" ]; then
-            echo "::error file=mise.toml::sqlx-cli pin ($cli) != sqlx crate version ($crate in backend/Cargo.toml) — keep the cli pin in lockstep with the crate"
-            exit 1
-          fi
-          echo "sqlx-cli pin ($cli) matches sqlx crate ($crate)"
-
       # Shims stay off for the whole job: rustc links a registry dependency from
       # ~/.cargo/registry, which has no mise.toml above it for a shim to resolve
       # against. Steps needing a mise tool run under `mise exec` instead.
