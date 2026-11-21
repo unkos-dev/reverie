@@ -20,7 +20,8 @@ This Design covers how a failure anywhere on Reverie's JSON surface becomes a wi
 RFC 9457 `application/problem+json` mapping, the stable problem-type slug registry, the request-path `instance` field
 and the task-local that carries it, the `ApiPath`/`ApiJson` extractors that route framework rejections into the same
 envelope, the code-first OpenAPI 3.1 document generated from the handlers, the drift gate that keeps the committed
-artifact honest, and the client's `ApiError` class and the `apiFetch` logic that builds one from any non-2xx response.
+artifact honest, the client's `ApiError` class and the `apiFetch` logic that builds one from any non-2xx response, and
+the `code` extensions that classify GraphQL execution errors.
 
 ## Purpose and boundaries
 
@@ -31,7 +32,11 @@ pattern every query-accepting handler uses instead of a third wrapper; the `Prob
 the runtime response body and the documented OpenAPI component schema, `ApiDoc`, `SecurityAddon`, `pilot_router`,
 `router` and `spec_json` (`backend/src/openapi.rs`); the committed `backend/openapi.json` artifact and its drift test
 (`backend/tests/gen_openapi.rs`); and, on the client, `ApiError` (`frontend/src/api/errors.ts`) and the Problem Details
-parsing path inside `apiFetch` (`frontend/src/api/fetch.ts`).
+parsing path inside `apiFetch` (`frontend/src/api/fetch.ts`). On the GraphQL endpoint, it owns the execution-error
+`code` extensions that `safe_error` (`backend/src/graphql/mod.rs`) assigns, and the browser's classification of GraphQL
+failures in `frontend/src/api/graphql.ts`: `GraphQLExecutionError`, `MetadataRefusal` and `editingFailureAction`. The
+GraphQL schema, its union mutation results and its execution policy belong to the Design "GraphQL execution and Relay
+browser data".
 
 It does not own the CSRF synchronizer-token check that raises `AppError::CsrfMissing`/`CsrfMismatch`, which belongs to
 the Design "CSRF protection"; the `If-Match` grammar, comparison and precondition contract behind
@@ -59,9 +64,10 @@ route). It is also depended on by `backend/src/authz_matrix.rs` (Design "Authori
 `spec_json()` in-process to build its deny-by-default grid, and by most of the backend test suite through
 `test_support::assert_problem` (the `tokens`, `enrichment`, `ingestion`, and `suggest` route test modules assert on
 their error responses their own way instead). On the client, `ApiError` is depended on throughout the SPA: every page
-and mutation hook that branches on `err instanceof ApiError`, the library cell-editing and metadata-dialog surfaces that
-layer `isIfMatchMismatch`/`isIfMatchRequired` on top of it (owned by "Conditional requests and optimistic concurrency"),
-and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "Sessions").
+and mutation hook that branches on `err instanceof ApiError`, the admin settings editor, which layers
+`isIfMatchMismatch`/`isIfMatchRequired` on top of it (owned by "Conditional requests and optimistic concurrency"), the
+Library and Book editing flows through `editingFailureAction`, and the 401 recovery funnel in
+`frontend/src/lib/query/client.ts` (the Design "Sessions").
 
 ## Structure
 
@@ -130,9 +136,9 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
 ## Interfaces and dependencies
 
 Problem Details carries optional `errors`, an object mapping field names to string messages. `AppError::FieldValidation`
-uses the existing validation type and 422 status, alongside the existing `type`, `title` and `detail` fields. The shared
-DTO omits `errors` when absent. `ProblemDetailsSchema` decodes supplied field messages and `ApiError.errors` retains
-them unchanged; responses without the object have no field map. Publication refusals use `errors.pub_date`. Publication
+uses the validation type and 422 status, alongside the `type`, `title` and `detail` fields. The shared DTO omits
+`errors` when absent. `ProblemDetailsSchema` decodes supplied field messages and `ApiError.errors` retains them
+unchanged; responses without the object have no field map. Publication refusals use `errors.pub_date`. Publication
 values in generated API contracts are nullable strings without `date` or `date-time` coercion.
 
 `AppError::FieldLocked` returns registered type `field-locked` with status 409 and optional `locked_fields`, a list of
@@ -145,17 +151,15 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
   but are not this subject's concern beyond `instance`, which is the one field this subject computes rather than a
   handler.
 - `AppError::RateLimited` carries a retry delay. Its shared response mapping adds `Retry-After` as a positive integer
-  number of seconds while retaining the generic `429` problem body. Source denial uses governor's wait deadline; account
-  denial uses the current block deadline. Both round up. The authentication operations document the header in their
-  OpenAPI `429` responses. OIDC start keeps its fixed `303` navigation outcome.
+  number of seconds with the generic `429` problem body. Source denial uses governor's wait deadline; account denial
+  uses the current block deadline. Both round up. The authentication operations document the header in their OpenAPI
+  `429` responses. OIDC start returns its fixed `303` navigation response instead.
 - `AppError::HashBusy` maps to `503 auth-busy`, title "Service Unavailable" and detail "The server is busy. Try again in
   a moment." It carries no `Retry-After` header. Login, setup, registration, credential-link redemption and self-service
   password change document this response as `application/problem+json`. The `From<HashBusy>` conversion preserves this
   class; hash computation and blocking-task errors map to `Internal`.
-- `crate::openapi::ProblemDetails` is the single point of coupling between the error module and the OpenAPI module: the
-  module doc on `backend/src/openapi.rs` names this "intentional... the resulting openapi↔error circularity is the point
-  — one struct owns the RFC 9457 wire shape, so the spec and the bytes on the wire cannot drift." Splitting the struct
-  into a documentation-only copy and a runtime-only copy would reopen exactly the drift this design avoids.
+- `crate::openapi::ProblemDetails` is the single point of coupling between the error module and the OpenAPI module: one
+  struct supplies both the RFC 9457 wire shape and its documented component schema.
 - `spec_json()` is the single complete-document producer. The regeneration test writes its output to
   `backend/openapi.json`; `website/astro.config.mjs` reads that artifact to build the served API reference.
   `authz_matrix.rs` and the document tests call `spec_json()` directly. The backend exposes no separate HTTP endpoint
@@ -166,25 +170,30 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
   referencing `ProblemDetails`. The generic `400` description distinguishes JSON-only, path-only and combined failures.
   Operation-specific responses remain inline and take precedence without changes to descriptions, headers or schemas.
   Classification depends on accurate request-body and parameter annotations; it does not inspect Rust extractor types or
-  resolve referenced request bodies and parameters. The document tests check extractor status coverage and the Problem
-  Details content type; they do not infer every business error an endpoint can return.
+  resolve referenced request bodies and parameters.
 - On the client, `apiFetch` (`frontend/src/api/fetch.ts`) is the sole interface between the SPA and `fetch()`, and
-  `ApiError` represents retained HTTP failures. GraphQL execution refusals use `GraphQLExecutionError` in
+  `ApiError` represents HTTP failures. GraphQL execution errors become `GraphQLExecutionError` in
   `frontend/src/api/graphql.ts`, and the Library cells and edit sheet carry a metadata refusal member as
-  `MetadataRefusal`. Reader consumers classify these in their owning flow. Temporary or uncertain failures offer
-  explicit retained-input Retry. Conflicts use authoritative resolution and matched Reload, validation stays with the
-  existing native form, and permanent refusals do not expose an unchanged resend.
+  `MetadataRefusal`. `editingFailureAction` classifies a failure for its editing flow, in this order. A
+  `MetadataRefusal` returns `reload` for `StaleBaseline`, `correct` for `MetadataInvalid` and `none` for every other
+  member. For a `GraphQLExecutionError` it reads the first error's `code`: `if-match-mismatch` and `if-match-required`
+  return `reload`, and `validation` returns `correct`. An `ApiError` with status 422 returns `correct`; status 408, 429
+  or 500 and above returns `retry`; every other `ApiError` returns `none`. A remaining `GraphQLExecutionError` returns
+  `none` when its first error has a code other than `internal`. Every other failure, including an `internal` code, an
+  execution error with no code and a network failure, returns `retry`. The Design "Conditional requests and optimistic
+  concurrency" describes the recovery each flow then offers.
 
-Shelf and metadata editing mutations return union results: their expected outcomes are union members, and forbidden,
-internal and malformed-baseline failures arrive as execution errors. The metadata refusals are `StaleBaseline`,
-`MetadataInvalid` with `fieldErrors` keyed by the service field name, `FieldsLocked` with the refused `fields`,
-`EditTooLarge`, `UndoUnavailable`, `UndoConflict` and `NotFound`. Each carries a caller-safe `message`. Other GraphQL
-execution errors, including `metadataOperation` and the reading and preference mutations, preserve safe domain slugs for
-validation, forbidden and missing targets, missing or stale preconditions, malformed baselines, field locks, oversized
-Undo capture (`edit-too-large`), and unavailable or conflicting Undo. `safe_error` carries field-validation messages and
-`lockedFields`. A stale reading-state result adds `currentEtag` only after caller-visible target resolution. Internal
-failures retain the fixed message and no private diagnostics. The network validates these extensions and refuses partial
-data without replaying the operation.
+Shelf and metadata editing mutations return union results, listed in the Design "GraphQL execution and Relay browser
+data" ([Mutation results](0031-graphql-execution-and-relay-browser-data.md#mutation-results)).
+
+Other GraphQL failures, including those of `metadataOperation` and the reading and preference mutations, are execution
+errors. `safe_error` assigns each `AppError` variant a `code` extension: `validation`, `forbidden`, `not-found`,
+`if-match-required`, `if-match-mismatch`, `malformed-header`, `undo-unavailable`, `undo-conflict`, `edit-too-large`,
+`system-shelf-immutable`, `field-locked` or `internal`. A field validation error adds `errors`, keyed by field name, and
+a field lock adds `lockedFields`. A stale reading-state result adds `currentEtag` only after caller-visible target
+resolution. An execution error that carries no extensions, such as a failed input coercion, receives the `validation`
+code. Internal failures carry the fixed message "An internal error occurred." and no private diagnostics. The network
+validates these extensions and refuses partial data without replaying the operation.
 
 ## Data and state
 
@@ -199,8 +208,8 @@ data without replaying the operation.
   `REGEN=1 cargo test --test gen_openapi` (or the repository's `just rust::regen` aggregate) and is otherwise read-only
   at runtime — nothing in the request path re-reads or re-derives it; `spec_json()` always renders fresh from the
   handlers.
-- `openapi.rs::API_VERSION` is a fixed `"0.1.0"` constant surfaced as the document's `info.version`, independent of the
-  crate's own release-managed version, so a release does not by itself force a spec regeneration.
+- `openapi.rs::API_VERSION` is a fixed `"0.1.0"` constant surfaced as the document's `info.version`. It does not follow
+  the crate's release-managed version.
 - On the client, `ApiError` instances are ephemeral: each is constructed and thrown per failed request and carries no
   state beyond its status and decoded problem fields. `apiFetch` itself holds no module-level state; the CSRF token
   cache lives in its own module. Metadata and reading adapters validate complete response values and their ETag before
@@ -209,10 +218,10 @@ data without replaying the operation.
 
 ## Runtime behaviour
 
-At `/api/graphql`, `ApiJson<Envelope>` retains the HTTP decoding statuses and fixed Problem Details messages described
+At `/api/graphql`, `ApiJson<Envelope>` applies the HTTP decoding statuses and fixed Problem Details messages described
 below. Document-admission refusals also use HTTP Problem Details. The GraphQL response envelope carries execution faults
 instead: safe resolver errors use stable `code` extensions, with fixed internal-error text and private structured
-diagnostics. The browser validates that envelope before Relay publication, retains safe classifications and field
+diagnostics. The browser validates that envelope before Relay publication, keeps safe classifications and field
 messages, and never replays execution faults. The generated GraphQL schema owns application fields; OpenAPI describes
 only the endpoint's HTTP envelope and credential alternatives.
 
@@ -239,8 +248,7 @@ RLS-hidden id (`work_detail` in `backend/src/routes/library/mod.rs`):
    work is hidden from this caller — the handler returns `AppError::NotFound` immediately, before ever querying the
    `works` table itself.
 3. A caller therefore cannot distinguish "no such work" from "a work I am not allowed to see" from the response alone:
-   both collapse to the same `404` `not-found` Problem Details body, the OWASP existence-not-leaked choice this
-   subject's governing ADR records.
+   both collapse to the same `404` `not-found` Problem Details body.
 
 **A JSON body the extractor rejects**, `POST /api/v1/tokens` with a body that is not valid JSON:
 
@@ -265,7 +273,7 @@ test `unmatched_api_route_returns_problem_with_instance` in `backend/src/lib.rs`
    from `current_request_uri()`, which is still in scope because the fallback ran inside the same middleware stack as an
    ordinary matched route. The body's `instance` reads `/api/v1/__definitely_not_a_route__`.
 
-**A non-2xx response reaching the client**, for example a `412` from a metadata `PATCH` whose `If-Match` is stale:
+**A non-2xx response reaching the client**, for example a `412` from `PUT /api/v1/settings` whose `If-Match` is stale:
 
 1. `apiFetch`'s `decodeSuccess` sees `!response.ok` and calls `problemFromResponse`, which calls `peekProblem`.
 2. `peekProblem` clones the response (a `Response` body is single-shot), checks the `Content-Type` header includes
@@ -279,28 +287,26 @@ test `unmatched_api_route_returns_problem_with_instance` in `backend/src/lib.rs`
 **A response whose body is not JSON-shaped at all**, for example a reverse proxy's HTML error page on an apparent
 non-2xx: `peekProblem`'s content-type gate fails immediately (`ct` matches neither content type), so it returns `null`
 without attempting to parse the body, and `problemToApiError` falls back entirely to `response.statusText` and an empty
-`detail`, with `type: null`. The thrown `ApiError` still carries the real HTTP `status`, so status-based branches (the
-`401` redirect funnel, the `412` conflict check) keep working; only slug-based branches see `null`.
+`detail`, with `type: null`. The thrown `ApiError` still carries the real HTTP `status`, so status-based branches such
+as the `401` redirect funnel keep working. Slug-based checks see `null` and fail, so `isIfMatchMismatch` and
+`isIfMatchRequired` return false for such a response.
 
 ## Failure and recovery
 
 Exact metadata restoration registers `undo-unavailable` at 422 for expired, consumed, invalidated or otherwise
 unavailable session operations, and `undo-conflict` at 409 for a recorded after-state mismatch despite equal field
-identity. Neither reveals another session's operation. A locked selected field retains the `field-locked` response and
-its operation. Stale aggregate preconditions retain 412 and the current ETag. A save or restoration whose exact Undo
-capture exceeds its size limit returns 422 with the validation type and a fixed detail. Exceeding the capture time limit
-is an internal failure, so the caller may retry it.
+identity. Neither reveals another session's operation. A locked selected field returns the `field-locked` response and
+keeps its operation. A stale aggregate precondition returns 412 with the current ETag. A save or restoration whose exact
+Undo capture exceeds its size limit returns 422 with the validation type and a fixed detail. Exceeding the capture time
+limit is an internal failure, so the caller may retry it.
 
 - Every `AppError` variant serialises as `application/problem+json` with a stable `type` slug drawn from `problems.rs`:
-  the exhaustive, wildcard-free match in `AppError::into_response` guarantees this for the enum itself
-  (`internal_returns_500_without_leaking_details` and the sibling per-variant tests in `error/mod.rs` pin the shape for
-  every variant). The one producer of a `ProblemDetails` body outside `AppError` is `health::ready`'s `503`, which
-  deliberately uses RFC 9457 §4.2.1's `about:blank` type with no registered slug, because the semantics are fully
-  carried by the status code; this is outside the stated obligation's scope (it names `AppError` variants), not a
-  counterexample to it.
+  the exhaustive, wildcard-free match in `AppError::into_response` guarantees this for the enum itself. The one producer
+  of a `ProblemDetails` body outside `AppError` is `health::ready`'s `503`, which uses RFC 9457 §4.2.1's `about:blank`
+  type with no registered slug.
 - A query, path, or JSON-body decode failure maps to the status its rejection class implies rather than one flattened
   code: `MalformedQuery` and `MalformedPath` are always `400`; `InvalidRequestBody` follows `JsonRejection`'s own
-  subclass (`400`/`413`/`415`/`422`), verified per subclass in `tests/extractors.rs`.
+  subclass (`400`/`413`/`415`/`422`).
 - The `instance` field reflects the request path exactly when the request passed through `problem_instance_layer` (every
   request the composite router or its fallback handles) and is omitted otherwise (an `.into_response()` call outside any
   request).
@@ -320,16 +326,15 @@ is an internal failure, so the caller may retry it.
 
 `AppError::Internal` never lets the wrapped error's `Display` text reach the response body: the cause is
 `tracing::error!`-logged with full context, and the client-visible `detail` is the fixed string "An internal error
-occurred.", independent of what the wrapped `anyhow::Error` says (`internal_returns_500_without_leaking_details`
-constructs an error whose message names a database connection string and asserts neither word appears in the body). The
-same discipline applies to every other fixed-sentence variant (`InvalidRequestBody`, `MalformedPath`): the caller's own
-bytes may be echoed back (`MalformedQuery`'s detail is built from the rejection's `Display`, which is the caller's own
-query string plus the failing field name), but no server-side state ever is.
+occurred.", independent of what the wrapped `anyhow::Error` says. The same discipline applies to every other
+fixed-sentence variant (`InvalidRequestBody`, `MalformedPath`): the caller's own bytes may be echoed back
+(`MalformedQuery`'s detail is built from the rejection's `Display`, which is the caller's own query string plus the
+failing field name), but no server-side state ever is.
 
 `Unauthorized` and `InvalidCredential` share an identical body (same slug, title, detail) and differ only in the
 `WWW-Authenticate` challenge (`Bearer` versus `Bearer error="invalid_token"`), and `InvalidCredential`'s body never says
-*why* a presented credential was rejected — expired, forged, or naming an unknown identity are all the same response.
-This denies an attacker a working oracle for probing which failure mode applies. `BasicAuthRequired` carries a third,
+*why* a presented credential was rejected: expired, forged, or naming an unknown identity are all the same response, so
+the response tells an attacker nothing about which failure mode applies. `BasicAuthRequired` carries a third,
 OPDS-specific challenge (`Basic realm="...", charset="UTF-8"`) alongside the same RFC 9457 body; e-reader clients using
 OPDS act on the status and challenge header alone and are documented to ignore the JSON body entirely. Because OPDS
 success responses are unversioned Atom XML while its failures still render through this subject's envelope, a decode

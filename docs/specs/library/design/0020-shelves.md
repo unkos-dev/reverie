@@ -15,9 +15,9 @@ governed-by:
 # Shelves
 
 Shelves are the reader's own curation buckets: named sets of manifestations a caller builds by hand. A shelf defines
-membership, never row order. This Design covers the `/api/v1/shelves*` CRUD and item surface, the `shelves` and
-`shelf_items` tables it owns, the handler-level ownership predicate that stands in for row-level security on those two
-tables, and the client pages and consumer surfaces that read and write through it.
+membership, never row order. This Design covers the `/api/v1/shelves*` CRUD and item surface, the GraphQL shelf reads
+and mutations, the `shelves` and `shelf_items` tables they share, the handler-level ownership predicate that stands in
+for row-level security on those two tables, and the client pages and consumer surfaces that read and write through them.
 
 ## Purpose and boundaries
 
@@ -25,8 +25,11 @@ This subject owns shelf create, read, update and delete; the `is_system` flag an
 system-managed shelf; shelf items and their stable presentation order (`added_at ASC, manifestation_id ASC`); the
 handler-level `WHERE user_id = caller` ownership predicate that every mutating and shelf-scoped read handler applies in
 place of row-level security; the row-level-security-scoped manifestation-visibility probe `add_shelf_item` runs before
-it will add an item; and the client's two shelf pages (`frontend/src/pages/shelves/ShelvesListPage.tsx`,
-`frontend/src/pages/shelves/ShelfDetailPage.tsx`) and the `frontend/src/api/shelves.ts` client that fronts them.
+it will add an item; the GraphQL `shelf` and `shelves` roots, the `Shelf` type with its `items` connection, and the
+`createShelf`, `renameShelf`, `deleteShelf`, `addShelfItem` and `removeShelfItem` mutations; and the client's two shelf
+pages (`frontend/src/pages/shelves/ShelvesListPage.tsx`, `frontend/src/pages/shelves/ShelfDetailPage.tsx`) and the
+`useShelves` shelf-list read in `frontend/src/api/shelves.ts`. The GraphQL execution policy, global object IDs and the
+mutation result convention belong to the Design "GraphQL execution and Relay browser data".
 
 It does not own row-level security itself: the `app.current_user_id` mechanism, the pools, and the policy census belong
 to the Design "Row-level security and database context". This subject is one of several call sites where
@@ -38,16 +41,16 @@ map of which tables use row-level security and which use a handler predicate; th
 "Authorization axes", which names `shelves`/`shelf_items` as the ownership-predicate side of that map and cites this
 subject's code as its evidence. It does not own entity-tag mechanics: no shelf endpoint emits an `ETag` or accepts
 `If-Match`, and the Design "Conditional requests and optimistic concurrency" owns the mechanisms the other resources
-use. It does not own the keyset cursor framework or the `build_next_url`/`split_page` pagination helpers it borrows from
-`backend/src/routes/library/mod.rs`, owned by the Design "Books list query contract", or that Design's library filter
-grammar's `shelf` and `shelf_any` predicates, which scope a books-list query to owned shelf membership and are
-referenced as a dependent below.
+use. It does not own the keyset cursor framework, the `build_next_url` helper it borrows from
+`backend/src/routes/library/mod.rs`, or the `split_page` helper in `backend/src/services/reader.rs`, all owned by the
+Design "Books list query contract", or that Design's library filter grammar's `shelf` and `shelf_any` predicates, which
+scope a books-list query to owned shelf membership and are referenced as a dependent below.
 
 Depends on: `CurrentUser` (`backend/src/auth/middleware.rs`) for identity and its `require_scope`/`require_not_child`
 assertions; `crate::db::acquire_with_rls` for the `add_shelf_item` visibility probe only; `ShelfCursor` and
-`ShelfItemCursor` plus `build_next_url` and `split_page` (`backend/src/routes/cursor.rs`,
-`backend/src/routes/library/mod.rs`) for keyset pagination; the `manifestations` table, read-only, for the visibility
-probe and the item foreign key.
+`ShelfItemCursor` (`backend/src/routes/cursor.rs`), `build_next_url` (`backend/src/routes/library/mod.rs`) and
+`split_page` (`backend/src/services/reader.rs`) for keyset pagination; the `manifestations` table, read-only, for the
+visibility probe and the item foreign key.
 
 Depended on by: the OPDS shelf-scoped feed routes (`backend/src/routes/opds/shelves.rs` and neighbours), which read the
 same two tables directly by SQL rather than through this module's Rust functions, and are described by the OPDS
@@ -61,17 +64,18 @@ selection to shelf" action — all described below only as consumers, since none
 
 - `backend/src/routes/shelves/mod.rs` holds the seven HTTP adapters: `list_shelves`, `create_shelf`, `rename_shelf`,
   `delete_shelf`, `get_shelf_with_items`, `add_shelf_item`, and `remove_shelf_item`. Its write operations delegate to
-  `backend/src/services/shelves.rs`, which retains the boundary this Design names: no row-level security on `shelves` or
+  `backend/src/services/shelves.rs`, which applies the boundary this Design names: no row-level security on `shelves` or
   `shelf_items`, ownership enforced by an explicit `WHERE user_id = $current_user` predicate in every operation that
   touches an existing row, and a mismatched predicate resolving to `AppError::NotFound` so a foreign shelf's existence
   is never distinguishable from its absence.
 - `backend/src/models/shelf.rs` holds the two response types, `Shelf` and `ShelfItem`. Both are `#[non_exhaustive]` and
-  carry no pagination fields. The shared reads and paged response envelopes (`ShelfListResponse`, `ShelfDetailResponse`)
-  live in `backend/src/services/reader.rs`. HTTP adapters retain the request and header contract.
+  carry no pagination fields. The shared reads (`shelves`, `shelf_items`) and the `ShelfDetailResponse` envelope live in
+  `backend/src/services/reader.rs`. The HTTP adapters own `ShelfListResponse`, the request parameters and the `Link`
+  header.
 - `backend/src/routes/cursor.rs` declares `ShelfCursor` and `ShelfItemCursor` alongside the books list engine's
   `SortCursor`, in the same module and the same opaque, tagged wire format (`sh|…` and `si|…`, base64url-unpadded).
-  `ShelfCursor` carries `(is_system, name, id)`, matching `list_shelves`'s `ORDER BY is_system DESC, name ASC, id ASC`;
-  because that sort is mixed-direction, the keyset predicate the handler builds is a two-arm `OR`
+  `ShelfCursor` carries `(is_system, name, id)`, matching the shelf list's `ORDER BY is_system DESC, name ASC, id ASC`;
+  because that sort is mixed-direction, the keyset predicate `services::reader::shelves` builds is a two-arm `OR`
   (`is_system < $1 OR (is_system = $1 AND (name, id) > ($2, $3))`), not a single row-tuple comparison. `ShelfItemCursor`
   carries `(added_at, manifestation_id)`, matching the items query's all-ascending sort; the `manifestation_id`
   tiebreaker is load-bearing because `added_at` is not unique per shelf. The `idx_shelf_items_shelf_keyset` index over
@@ -80,14 +84,14 @@ selection to shelf" action — all described below only as consumers, since none
 - Browser shelves share one account-scoped Relay environment. The route loaders prepare native query references for
   `ShelvesListPage` and `ShelfDetailPage`; their primary read failures reach the owning route. The shelf list and item
   connections page to completion through native pagination fragments without another Load more control.
-- `frontend/src/api/shelves.ts` supplies the shared complete shelf-list read for `FilterRail`, `FilterChips` and
-  `LibraryPage`. These auxiliary consumers keep their existing degraded state and log read failures. The module's
-  consumer list records the primary, loader and auxiliary error tiers.
+- `useShelves` in `frontend/src/api/shelves.ts` reads the complete shelf list through the `readerShelves` pagination
+  fragment for `ShelvesListPage`, `FilterRail`, `FilterChips` and `LibraryPage`. When that read fails, the auxiliary
+  consumers stay mounted with their degraded state, and the read logs the failure.
 - Shelf create appends the returned edge to the shelf list connection, so a new shelf shows last until the list next
   loads in server order. Rename updates the shelf record in place. Deletion removes the edge through `@deleteEdge`. A
-  failed create or rename acknowledgement triggers a recovery read, never an automatic replay. Library membership writes
-  run serially and retain per-target outcomes. Each publishes the shelf's count and, when that shelf's items are in the
-  store, appends the item edge; the active filtered Library connection then refreshes.
+  failed create, rename or delete acknowledgement triggers a recovery read, never an automatic replay. Library
+  membership writes run serially and retain per-target outcomes. Each publishes the shelf's count and, when that shelf's
+  items are in the store, appends the item edge; the active filtered Library connection then refreshes.
 
 ### State-writer census
 
@@ -98,25 +102,22 @@ selection to shelf" action — all described below only as consumers, since none
 | `shelf_items` row existence | `shelf_items` table | `add_shelf_item` (insert), `remove_shelf_item` (delete), `delete_shelf` through the `shelves` cascade, and a manifestation delete through the `manifestations` cascade |
 
 No state item above has competing owners: the handlers named are its only application writers, and a cascade is the
-database acting on its own. What a reader needs is which call reaches which write.
+database acting on its own.
 
 `shelves.updated_at` is written by the `shelves_set_updated_at` trigger (`BEFORE UPDATE`, running `set_updated_at()`),
 which fires on any `UPDATE` to the row regardless of which column changed. `rename_shelf` relies on the trigger alone:
 its own `UPDATE` sets only `name`, and the trigger supplies `updated_at`. `add_shelf_item` and `remove_shelf_item` each
-issue an explicit `UPDATE shelves SET updated_at = now() WHERE id = $1` purely to fire the trigger, since those two
-handlers would otherwise never touch the `shelves` row at all and `updated_at` would not move with membership.
+issue `UPDATE shelves SET updated_at = now() WHERE id = $1`, so a membership change moves the shelf's `updated_at`.
 
 `shelf_items` row existence changes only through `add_shelf_item`'s
 `INSERT … ON CONFLICT (shelf_id, manifestation_id) DO NOTHING` (so a duplicate add is a no-op for membership) and
 `remove_shelf_item`'s `DELETE`; no other handler inserts into or deletes from this table directly, though a shelf or
 manifestation delete removes its rows through the cascading foreign keys.
 
-`shelves.is_system` deserves a direct statement: the flag, the `AppError::SystemShelfImmutable` (409) it can trigger on
-`rename_shelf` and `delete_shelf`, the `ORDER BY is_system DESC` on `list_shelves`, and the client's disabled
-rename/delete affordance for a system shelf are all present and exercised by tests that insert a shelf with
-`is_system = TRUE` directly by SQL. Nothing in the running application sets that flag: `create_shelf`'s `INSERT` never
-sets the column, and no seeding, first-login, or migration step does either. The mechanism is real and tested; the state
-it guards against does not arise from any caller-reachable action.
+`shelves.is_system` defaults to `false`. `create_shelf`'s `INSERT` never sets the column, and no seeding, first-login or
+migration step sets it either, so only a direct SQL write creates a system shelf. A system shelf sorts first in
+`list_shelves` (`ORDER BY is_system DESC`), refuses `rename_shelf` and `delete_shelf` with
+`AppError::SystemShelfImmutable` (409), and shows a System badge in place of the client's rename and delete controls.
 
 ## Interfaces and dependencies
 
@@ -145,26 +146,24 @@ use.
 
 Browser readers use the generated shelf operations in `reader.ts` and mutations in `mutations.ts`, committed through
 `useMutation` and `commitMutation`. Relay owns normalised records and connection membership. Mutation results publish
-changed names, counts and edges. Public HTTP adapters retain their response and ownership contracts.
+changed names, counts and edges.
 
 Graph shelf roots and request-local loaders call the owner-scoped reads in `reader.rs`. `Shelf` has a TypeID domain ID
 and exposes scalar shelf metadata plus a bounded `items(first:, after:)` connection. GraphQL shelves and items require
-`first` from 0 through 100, independently of `REVERIE_OPDS_PAGE_SIZE`. The root `shelves` connection retains
-system-first, name, then ID ordering. Items retain addition time, then manifestation ID ordering, with the shelf ID
-bound into the graph cursor. Every edge has its own cursor and PageInfo flags come from bounded SQL probes.
+`first` from 0 through 100, independently of `REVERIE_OPDS_PAGE_SIZE`. The root `shelves` connection orders system
+shelves first, then by name and ID. Items order by addition time, then manifestation ID, with the shelf ID bound into
+the graph cursor. Every edge has its own cursor and PageInfo flags come from bounded SQL probes.
 
 Typed and Node lookups return null for foreign, hidden, missing or invalid shelf identities. Item hydration rechecks
 manifestation visibility through the caller's transaction. Relay is the browser owner of these records; read execution
 adds no shelf writer.
 
-`createShelf`, `renameShelf`, `deleteShelf`, `addShelfItem` and `removeShelfItem` each take one `input` object and
-return a union result. The success members are `ShelfCreated` (the shelf and its list edge), `ShelfRenamed` (the shelf),
-`ShelfDeleted` (the deleted shelf ID), `ShelfItemAdded` (the shelf and the item edge, with an `items` cursor) and
-`ShelfItemRemoved` (the shelf and the removed manifestation ID). The expected outcomes are `ShelfNameInvalid` for an
-empty name, `SystemShelfImmutable` for renaming or deleting a system shelf, and `NotFound` for a malformed, foreign,
-missing or invisible target. Forbidden and internal failures remain execution errors. The mutations call
-`services::shelves` with write scope and preserve adult CRUD, owner predicates and child membership permissions. They
-introduce no shelf precondition. Browser workflows use them through their existing page and Library action owners.
+The Design "GraphQL execution and Relay browser data" lists the results of `createShelf`, `renameShelf`, `deleteShelf`,
+`addShelfItem` and `removeShelfItem`
+([Mutation results](../../api/design/0031-graphql-execution-and-relay-browser-data.md#mutation-results)). The mutations
+call `services::shelves` with write scope and apply the same adult-only CRUD, owner predicates and child membership
+permissions as HTTP. They take no shelf precondition. Browser workflows use them through their page and Library action
+owners.
 
 ## Data and state
 
@@ -182,10 +181,9 @@ books-list endpoint (`GET /api/v1/books`, `backend/src/routes/library/mod.rs`): 
 operator-configurable through `REVERIE_OPDS_PAGE_SIZE` (default 50, see `backend/src/config/opds.rs`). Nothing in this
 subject declares a page size of its own.
 
-Item paging never changes which `updated_at` is reported: `get_shelf_with_items` reads the shelf identity once per
-request regardless of which items page is requested, so a caller walking multiple item pages sees one stable value
-across the walk unless a concurrent write lands mid-walk, in which case `api/shelves.ts` keeps the first page's
-identity.
+`GET /api/v1/shelves/{id}` reads the shelf row on every request, so each items page reports the shelf's `updated_at` at
+the time of that request. The browser shelf detail page pages its items through `ShelfDetailPage`'s `readerShelfItems`
+pagination fragment, and `useShelves` in `frontend/src/api/shelves.ts` reads the shelf list.
 
 ## Runtime behaviour
 
@@ -223,8 +221,8 @@ identity.
 
 **Reading a shelf's items**, `GET /api/v1/shelves/{id}`:
 
-1. `get_shelf_with_items` reads the shelf row under the `WHERE id = $1 AND user_id = $2` predicate; a missing or foreign
-   shelf returns `AppError::NotFound`.
+1. `get_shelf_with_items` calls `services::reader::shelf_items`, which reads the shelf row under the
+   `WHERE id = $1 AND user_id = $2` predicate; a missing or foreign shelf returns `AppError::NotFound`.
 2. It selects `manifestation_id, added_at` from `shelf_items` for that shelf,
    `ORDER BY added_at ASC, manifestation_id ASC`, with one more row than the page size so the last row signals whether
    another page exists. A cursor adds the row-tuple predicate `(added_at, manifestation_id) > ($1, $2)`.
@@ -240,14 +238,16 @@ identity.
   ownership has already been confirmed; a caller learns "this shelf is mine but immutable" only after the ownership
   check, never before it. GraphQL reports the same order of checks as `NotFound` and `SystemShelfImmutable` results.
 - **Cursor from another list.** `ShelfCursor::parse` and `ShelfItemCursor::parse` accept only their own tag (`sh`, `si`)
-  and refuse a cursor minted by the books list or by the other shelf list with `AppError::Validation` (422), so a cursor
-  never positions a walk in a list it was not cut from.
+  and refuse a cursor minted by the books list or by the other shelf list with `AppError::Validation` (422). An HTTP
+  item cursor carries no shelf identity, so `GET /api/v1/shelves/{id}` accepts an item cursor cut from another shelf and
+  applies its boundary within the requested owned shelf. The GraphQL `items` cursor binds its shelf ID and relation
+  kind, and a cursor from another parent or relation is refused with the `validation` code.
 - **A child probing shelf existence via manifestation ids.** Covered in Runtime behaviour: the RLS-scoped probe in
   `add_shelf_item` and the ownership check both resolve to the same `AppError::NotFound`, so a child cannot distinguish
   "no such shelf" from "shelf is yours but that manifestation isn't visible to you".
 - **A malformed timestamp in a reader response.** The GraphQL network validates selected shelf timestamps before
-  publication. Primary pages surface failure through their route; auxiliary consumers retain degraded feedback and log
-  the failure.
+  publication. Primary pages surface failure through their route; auxiliary consumers keep degraded feedback and log the
+  failure.
 - **A failed acknowledgement after a committed create.** The owning page refetches its native shelf list without
   replaying the create. Entered form input and local error feedback remain available.
 
@@ -257,13 +257,15 @@ Ownership of a `shelves` or `shelf_items` row is enforced entirely by the `WHERE
 equivalent join through `shelves`) predicate each handler writes into its own query, because neither table carries a
 row-level-security policy. Not every statement repeats the predicate: the shelf `DELETE` and the `updated_at` bump in
 the item handlers run against the id alone, and inherit ownership from the ownership-bound `SELECT ... FOR UPDATE` that
-precedes them in the same transaction. This is a documented, deliberate divergence from the pattern the Design
-"Row-level security and database context" covers for most other per-user tables. There is no database-level fallback if
-one of these predicates is dropped: the `reverie_app` role's grant on both tables is unconditional, so a query missing
-its ownership clause would compile, run, and return rows across every account. The `add_shelf_item` row-level-security
-probe is the one place this subject touches that mechanism, and only to prevent an existence-probing attack against
-manifestation visibility, never to scope the shelf itself. This is the ownership axis REV-ADR-0056 assigns to the data
-layer, enforced by this subject on every route regardless of the additional role gate three of them apply.
+precedes them in the same transaction. This differs from the row-level-security pattern the Design "Row-level security
+and database context" covers for most other per-user tables. There is no database-level fallback if one of these
+predicates is dropped: the `reverie_app` role's grant on both tables is unconditional, so a query missing its ownership
+clause would compile, run, and return rows across every account. This subject uses row-level security only for
+manifestation visibility, never to scope the shelf itself. The `add_shelf_item` row-level-security probe prevents an
+existence-probing attack against manifestation visibility. The GraphQL `Shelf.items` read runs inside a caller-scoped
+row-level-security transaction (`relation_pages` in `backend/src/services/reader.rs`), so its join to `manifestations`
+returns only manifestations the caller can see, while its owner predicate scopes the shelf. This subject enforces
+ownership on every route, whatever additional role gate three of them apply.
 
 Read access to a shelf and its items requires no more than the operation's declared `read` scope and no role check
 beyond ownership: a child account can view its own shelves and items. Adding and removing items likewise carry no
