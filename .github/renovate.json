@@ -189,7 +189,7 @@
       "automerge": false
     },
     {
-      "description": "Keep SQLx library and migration CLI updates together for manual compatibility review; sqlx-cli installs without a dependency lockfile.",
+      "description": "Group SQLx library and migration CLI updates for manual compatibility review.",
       "matchDepNames": ["sqlx", "sqlx-cli", "cargo:sqlx-cli"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "sqlx",
