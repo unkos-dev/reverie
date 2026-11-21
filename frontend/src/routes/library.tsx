@@ -12,6 +12,7 @@ import {
   libraryLookups,
   pruneVisit,
   type LibraryLookups,
+  type LibraryPreparation,
   type LibraryVisitOwner,
 } from "@/lib/relay/library-visit";
 import LibraryPageQuery, {
@@ -46,6 +47,7 @@ const libraryBootstrapQuery = graphql`
 
 export type PreparedLibrary = {
   owner: LibraryVisitOwner;
+  preparation: LibraryPreparation;
   visit: LibraryVisit;
   reference: PreloadedQuery<PageQuery>;
 };
@@ -95,6 +97,9 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<PreparedL
   const owner = libraryDestination(environment, request.url, restoreVisit);
   const restored = owner.intent.current();
   const preparation = owner.begin();
+  preparation.watch(request.signal, () => {
+    owner.discard(preparation);
+  });
   const lookups = libraryLookups(restored.filters);
   preparation.hold(
     environment.retain(createOperationDescriptor(getRequest(libraryBootstrapQuery), lookups)),
@@ -124,7 +129,7 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<PreparedL
     }),
   );
   owner.settle(preparation);
-  return { owner, visit, reference };
+  return { owner, preparation, visit, reference };
 }
 
 export { LibraryPage as Component } from "@/pages/library/LibraryPage";

@@ -134,6 +134,9 @@ type Disposable = { dispose: () => void };
 export class LibraryPreparation {
   private readonly held: Disposable[] = [];
   private dropped = false;
+  private adopted = false;
+  private pages = 0;
+  private unwatch: (() => void) | undefined;
 
   hold<T extends Disposable>(reference: T): T {
     if (this.dropped) reference.dispose();
@@ -141,8 +144,42 @@ export class LibraryPreparation {
     return reference;
   }
 
+  /** Abandon the preparation if its navigation aborts before a page takes it. */
+  watch(signal: AbortSignal, abandon: () => void): void {
+    if (signal.aborted) {
+      abandon();
+      return;
+    }
+    signal.addEventListener("abort", abandon, { once: true });
+    this.unwatch = () => {
+      signal.removeEventListener("abort", abandon);
+    };
+  }
+
+  /**
+   * Hand the preparation to a mounted page. It is abandoned once every page has left before its
+   * content rendered, which a failed screen query or a superseding navigation causes.
+   */
+  attach(abandon: () => void): () => void {
+    this.unwatch?.();
+    this.unwatch = undefined;
+    this.pages += 1;
+    return () => {
+      this.pages -= 1;
+      queueMicrotask(() => {
+        if (this.pages === 0 && !this.adopted) abandon();
+      });
+    };
+  }
+
+  adopt(): void {
+    this.adopted = true;
+  }
+
   drop(): void {
     this.dropped = true;
+    this.unwatch?.();
+    this.unwatch = undefined;
     for (const reference of this.held.splice(0)) reference.dispose();
   }
 }
