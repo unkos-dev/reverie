@@ -22,10 +22,10 @@ governed-by:
 
 ## Purpose and boundaries
 
-The Library surface owns the reader's current filter intent, visit view override and resolved account sort. It projects
-those values onto the books-list request and shares one Relay connection with Covers and Table. The server's predicate,
-cursor and ownership contracts belong to the Books list query contract Design. Display preferences retain their account
-lifetime independently of the visit.
+The Library surface owns the reader's current filter intent, visit view override and resolved account sort, and the
+persistence and restoration of that visit on its Navigation entry. It projects those values onto the books-list request
+and shares one Relay connection with Covers and Table. The server's predicate, cursor and ownership contracts belong to
+the Design "Books list query contract". Display preferences have an account lifetime, independent of the visit.
 
 ## Structure
 
@@ -101,11 +101,11 @@ keeps immediate dispatch composition aligned with the persisted snapshot; query 
 never write filter intent.
 
 Callers include quick search, every rail section, section clear, chip removal, global and empty-state clear, view
-gestures and the table-chunk fallback. View gestures also write the existing preference; chunk failure changes only the
+gestures and the table-chunk fallback. View gestures also write the account preference; chunk failure changes only the
 visit override. Filter clear preserves both view and sort. The preference owner's 400 ms patch queue and local mirror
-retain their account lifetime; no filter value enters that queue or mirror. Queued preference writes flush on unmount
-only while their initiating account epoch remains current. Cold hidden columns contain Subtitle; an explicit empty
-override shows every column.
+have an account lifetime; no filter value enters that queue or mirror. Queued preference writes flush on unmount only
+while their initiating account epoch remains current. Cold hidden columns contain Subtitle; an explicit empty override
+shows every column.
 
 ## Runtime behaviour
 
@@ -113,7 +113,7 @@ A native edit dispatches to the current React visit snapshot. Same-turn function
 snapshot is persisted through `updateCurrentEntry`. An edit adds no history entry. Reload and traversal restore the
 destination visit; a fresh push or replacement starts clean, including same-route navigation that reuses the mounted
 page. Library has no prefetch loader, so the restored owner supplies the first list request. Browser query parameters
-carry no filter or view state and have no compatibility decoder.
+carry no filter or view state.
 
 The requested source follows published filter intent immediately. A request is eligible only when each multi-value
 predicate contains at most 20 values and every active text predicate contains at most 200 Unicode scalar values after
@@ -121,7 +121,7 @@ trimming surrounding whitespace. Blank optional text has no predicate; text reta
 dormant. SearchField and TextField use controlled `isInvalid` and associated FieldError feedback immediately, without
 native `maxLength` truncation. Raw overlong text and oversized selections remain published and persisted, including
 across reload and traversal. An ineligible visit prevents the whole list request, pagination and source refetches. The
-results region explains that results are paused; correction or Clear restores request eligibility. Sort retains
+results region explains that results are paused; correction or Clear restores request eligibility. Sort uses
 `useDeferredValue` so its controls resolve at gesture time while the request catches up. Initial uncached loading uses
 LibrarySkeleton. Later changes retain the controls with visible “Updating results…” and busy treatment during fetching.
 Pending recovery without previous pages uses a skeleton inside the results region; neither empty state appears until the
@@ -174,20 +174,20 @@ An absent or malformed owned payload starts a clean visit as a unit. Restoration
 no recovery write or UI; the next ordinary owner write replaces the owned payload. Intrinsic numeric domains and
 calendar values are checked before restored data drives controls or requests.
 
-Legacy scalar shelf and series values decode to singleton arrays; absent values become empty arrays. This decoding adds
-no recovery write. A malformed member still rejects the owned payload atomically. Wire projection uses `shelf_any` and
-`series_any`; scalar API parameters remain available to other callers. Label requests de-duplicate IDs and stay bounded;
-displayed rows retain their owning source.
+A scalar shelf or series value in the owned payload decodes to a singleton array; an absent value becomes an empty
+array. This decoding adds no recovery write. A malformed member rejects the owned payload atomically. The wire
+projection uses `shelf_any` and `series_any`; the scalar `shelf` and `series` API parameters serve other callers. Label
+requests de-duplicate IDs and stay bounded; displayed rows retain their owning source.
 
 Exceeding a text or selection-count limit does not make an otherwise well-formed visit malformed. Such visits retain all
 filters and the view override for correction or clearing, while request eligibility enforces those limits.
 
-Malformed API timestamps, numbers, `UUID` and boolean values retain `400` decode errors. Domain, cap, status and cursor
-errors retain `422`; contradictory complete intervals return successful empty data. Network and server errors remain
+Malformed API timestamps, numbers, `UUID` and boolean values return `400` decode errors. Domain, cap, status and cursor
+errors return `422`; contradictory complete intervals return successful empty data. Network and server errors are
 errors. A books-list `validation` execution refusal stays in the results region with recoverable feedback and no
 automatic retry. Search, Filters and Clear remain usable; correction or Clear can request results again. List validation
 feedback stays with the owning results region. Other initial or changed-query failures reach the route error boundary.
-Other failed load-more requests retain loaded pages and provide the existing Retry action.
+Other failed load-more requests keep loaded pages and offer Retry.
 
 A table-load failure stays inside the results region. Reload page starts a fresh application load and restores the
 Library visit. Switch to grid view selects the visit's grid override without rewriting the account preference. A failed
@@ -198,11 +198,9 @@ arrive.
 ## Security and operations
 
 Visit state is plain schema-validated data and contains no credentials. The server validates API inputs independently,
-uses bound SQL parameters and scopes results through row-level security. Shelf ownership and sort whitelisting remain
-server responsibilities. Preference requests identify the caller through the authenticated account and retain their
-existing row-level policies.
+uses bound SQL parameters and scopes results through row-level security. Shelf ownership and sort whitelisting are
+server responsibilities. Preference requests identify the caller through the authenticated account, and the
+`user_preferences_owner` row-level policy scopes them to that account's row.
 
-Native year editing can publish intermediate calendar-valid prefixes and therefore intermediate requests/results.
-Browser component tests cover editor mapping; standalone Chromium and patched Firefox journeys cover bootstrap,
-restoration, fresh entries, dismissal and request/result integration. Intercepted synthetic APIs do not establish real
-authentication or database behaviour. This subject adds no service or operational setting.
+Native year editing can publish intermediate calendar-valid prefixes and therefore intermediate requests and results.
+This subject adds no service or operational setting.
