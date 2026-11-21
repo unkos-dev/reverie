@@ -109,24 +109,17 @@ written by `find_or_create_series`'s caller in `backend/src/models/work.rs`. Non
 (`NOT NULL`, no uniqueness). The three status enums (`validation_status`, `ingestion_status`, `enrichment_status`) each
 default to `pending`; this model carries them as manifestation columns, but their transition rules belong to the
 pipelines that drive them. `manifestations.ingestion_status` is the lifecycle of the manifestation row itself, once one
-exists. The Design "Ingestion pipeline" owns `ingestion_inputs`, the byte-preserving current source identity,
-fingerprint, generation, status, reason, work link and removal bookkeeping. `ingestion_jobs` carry a nullable link to
-their captured input and generation, set together, and typed outcomes separately from `job_status`. Suppressed and
-not-accepted inputs create no attempt. Terminal attempt and current-generation input updates share one transaction, and
-imported outcomes share the manifestation, work, draft and claim transaction. Removed input records retain history while
-a later arrival at the same name receives a new identity. Linked jobs carry nullable publication library, relative path,
-unsigned device/`inode` identity, accepted hash and non-negative size together. Paired deferred failure fields require
-that evidence. A partial index supports bounded unresolved-job recovery. An acknowledged intent precedes filesystem
-visibility; the imported transaction clears it with the claim and outcome. `content_rating`, the cover columns
-(`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`, `has_embedded_cover`), and `accessibility_metadata`
-are likewise columns this table carries for a neighbouring subject's semantics. `suspected_duplicate_work_id`
-(`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a candidate duplicate rather than the
-owning work. `isbn_candidate` compares both supplied formats and their crate-derived equivalents in one bounded,
-parameterised query. Ingestion creates a separate work when a candidate exists instead of falling through to
-title/author grouping. `rematch_on_isbn_change` refreshes the candidate pointer inside the caller's transaction,
-clearing it when no candidate remains; it neither moves manifestations nor deletes works. The pointer records one
-candidate even when several works match. Duplicate-review interaction and confirmed grouping are outside this model's
-delivered interfaces.
+exists. The Design "Ingestion pipeline" owns `ingestion_inputs`, `ingestion_jobs`, their publication intent and the
+recovery of unresolved jobs ([Data and state](../../ingestion/design/0013-ingestion-pipeline.md#data-and-state)).
+`content_rating`, the cover columns (`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`,
+`has_embedded_cover`), and `accessibility_metadata` are likewise columns this table carries for a neighbouring subject's
+semantics. `suspected_duplicate_work_id` (`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a
+candidate duplicate rather than the owning work. `isbn_candidate` compares both supplied formats and their crate-derived
+equivalents in one bounded, parameterised query. Ingestion creates a separate work when a candidate exists instead of
+falling through to title/author grouping. `rematch_on_isbn_change` refreshes the candidate pointer inside the caller's
+transaction, clearing it when no candidate remains; it neither moves manifestations nor deletes works. The pointer
+records one candidate even when several works match. Duplicate-review interaction and confirmed grouping are outside
+this model's delivered interfaces.
 
 `isbn_10` and `isbn_13` hold independently supplied compact values. Conversion supports comparison and cache keys, never
 counterpart storage. Canonical promotion validates each supplied value through the `isbn` crate and requires ISBN-13 to
@@ -186,8 +179,8 @@ versioned `works` column but is not part of the vector.
 `content_rating`, the cover fields on `manifestations`), and a paired nullable `<field>_version_id` column, set to null
 on delete of its `metadata_versions` target, names which journal row is currently attributed as that value.
 `work_authors.source_version_id` and the three vocabulary junctions' `source_version_id` follow the same pattern for
-their own rows. The pointer can be null even when the value it would attribute is not: a stub work created before any
-draft exists, or a value set from a source that predates per-field versioning, carries a value with no attribution.
+their own rows. The pointer can be null even when the value it would attribute is not: a canonical value may lack
+attribution, as on a stub work created before any draft exists.
 
 ## Interfaces and dependencies
 
@@ -211,10 +204,10 @@ suggestions and labels), and `backend/src/routes/opds/` (the OPDS catalogue subj
 routes read through `services::reader`.
 
 The schema grants `SELECT` and `DELETE` on works and manifestations to both runtime writer roles, with `INSERT` and
-`UPDATE` limited to columns other than revision state. Other model tables have table-level write grants and
-`reverie_readonly` has SELECT, except that path claims have no readonly grant; the Design "Row-level security and
-database context" is the authority on that grant boundary and on the policies that further narrow `manifestations` and
-its three vocabulary junctions.
+`UPDATE` limited to columns other than revision state. Other model tables have table-level write grants, except
+`libraries`, which runtime roles can only read, and `reverie_readonly` has SELECT, except that path claims have no
+readonly grant; the Design "Row-level security and database context" is the authority on that grant boundary and on the
+policies that further narrow `manifestations` and its three vocabulary junctions.
 
 Graph Work and Manifestation records have distinct TypeID domain identities
 ([Global object IDs](../../api/design/0031-graphql-execution-and-relay-browser-data.md#global-object-ids)). Shared
@@ -382,22 +375,25 @@ reaches this model having skipped that handler-level validation is still refused
 
 ## Security and operations
 
-Of the tables this model owns, only `manifestations` and its three vocabulary junctions carry row-level security;
-`works`, `authors`, `work_authors`, `series`, `series_works` and `omnibus_contents` carry none and are granted for full
-DML to both `reverie_app` and `reverie_ingestion`. (`work_external_identifiers`, a `works`-adjacent table belonging to
-the Identifier and rating registry subject rather than this one, does carry row-level security; it is not a
-counterexample to the statement above, which is scoped to this model's own tables.) Practically, that means the
-catalogue data proper (a work's title, its authors, its series membership, the vocabulary terms that exist as rows) is
-global and shared across every account once at least one visible manifestation links to it; only which manifestations an
-account can see is per-user or per-role, through the mechanism the Design "Row-level security and database context"
-owns. Shared storage does not authorise returning every linked work to children: series detail excludes works with no
-visible manifestation for child callers. This filtering leaves returned books' recorded titles, author order and series
-positions unchanged. Adult HTTP callers receive the full linked catalogue work set. GraphQL requires a visible
-manifestation for every returned Work or Series, including direct lookup, Node lookup and series traversal. The three
-vocabulary junctions are the one place vocabulary data becomes visibility-scoped: their `SELECT` policies inherit the
-linked `manifestations` row's own visibility with no further predicate, while their `INSERT`, `UPDATE` and `DELETE`
-policies add an independent check that the caller holds the `admin` or `adult` role, regardless of the manifestation's
-visibility.
+Of the tables this model owns, `manifestations`, its three vocabulary junctions and `library_path_claims` carry
+row-level security. `works`, `authors`, `work_authors`, `series`, `series_works`, `omnibus_contents`, `libraries` and
+the vocabulary tables carry none. Both `reverie_app` and `reverie_ingestion` hold full DML on `authors`, `work_authors`,
+`series`, `series_works`, `omnibus_contents` and the vocabulary tables. On `works` they hold `SELECT` and `DELETE`, with
+`INSERT` and `UPDATE` limited to named columns, and on `libraries` they hold `SELECT` only. The `library_path_claims`
+policies admit `reverie_ingestion` and admit `reverie_app` only in the writeback system context.
+(`work_external_identifiers`, a `works`-adjacent table belonging to the Identifier and rating registry subject rather
+than this one, does carry row-level security; it is not a counterexample to the statement above, which is scoped to this
+model's own tables.) Practically, that means the catalogue data proper (a work's title, its authors, its series
+membership, the vocabulary terms that exist as rows) is global and shared across every account once at least one visible
+manifestation links to it; only which manifestations an account can see is per-user or per-role, through the mechanism
+the Design "Row-level security and database context" owns. Shared storage does not authorise returning every linked work
+to children: series detail excludes works with no visible manifestation for child callers. This filtering leaves
+returned books' recorded titles, author order and series positions unchanged. Adult HTTP callers receive the full linked
+catalogue work set. GraphQL requires a visible manifestation for every returned Work or Series, including direct lookup,
+Node lookup and series traversal. The three vocabulary junctions are the one place vocabulary data becomes
+visibility-scoped: their `SELECT` policies inherit the linked `manifestations` row's own visibility with no further
+predicate, while their `INSERT`, `UPDATE` and `DELETE` policies add an independent check that the caller holds the
+`admin` or `adult` role, regardless of the manifestation's visibility.
 
 Because the shared catalogue tables carry no row-level security, the only defence against an under-privileged write is
 the operation that reaches them. Every metadata operation in `backend/src/services/metadata/editing.rs` and
