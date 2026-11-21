@@ -74,9 +74,8 @@ presents an unsorted state.
 - Negative: a link can no longer carry a sort and the back button no longer steps through sort states. Link sharing is
   an explicit non-goal of this deployment shape, and stepping history through orderings has no meaning for a durable
   personal preference.
-- Negative: a reader with a sort override pays one visible correction on a device whose local mirror is missing or
-  stale: the first page renders in the seeded order, then re-sorts when the preference arrives. The first-paint contract
-  already accepts this for every preference group.
+- Negative: the route loader reads the account's preferences before the first books request, so the first page uses the
+  stored order, and a cold load waits for that read.
 - Negative: every exploratory sort becomes the durable preference, matching how the view toggle already behaves: the
   last choice is the standing choice.
 
@@ -94,10 +93,10 @@ presents an unsorted state.
 
 - Positive: one resolution feeds every consumer and the query key is deterministic from client state the loader can also
   read.
-- Positive: the sort gesture and the persistence write are independent: a failed preference write costs durability,
-  never the visible re-sort.
-- Negative: the loader needs the local mirror to seed the right key, and a missing or stale mirror costs one visible
-  correction.
+- Positive: the list request names the sort explicitly, so a sort gesture re-sorts the list without waiting for the
+  preference write.
+- Negative: the loader must read the account's preferences before the first books request, so a cold load waits for that
+  read.
 
 ### One layer, server-resolved
 
