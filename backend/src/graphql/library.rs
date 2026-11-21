@@ -1309,7 +1309,7 @@ fn filter_timestamp(value: &str) -> async_graphql::Result<Timestamp> {
         .map_err(|_| safe_error(AppError::Validation("Invalid timestamp bound.".into())))
 }
 
-input_enum!(SortField { Title => "TITLE", Author => "AUTHOR", CreatedAt => "CREATED_AT", Pages => "PAGES" });
+input_output_enum!(SortField { Title => "TITLE", Author => "AUTHOR", CreatedAt => "CREATED_AT", Pages => "PAGES" });
 impl SortField {
     const fn wire(self) -> &'static str {
         match self {
@@ -1319,12 +1319,40 @@ impl SortField {
             Self::Pages => "pages",
         }
     }
+    pub(super) const fn from_column(column: crate::routes::sort_spec::SortColumn) -> Self {
+        use crate::routes::sort_spec::SortColumn;
+        match column {
+            SortColumn::Title => Self::Title,
+            SortColumn::Author => Self::Author,
+            SortColumn::CreatedAt => Self::CreatedAt,
+            SortColumn::Pages => Self::Pages,
+        }
+    }
 }
-input_enum!(Direction { Asc => "ASC", Desc => "DESC" });
+input_output_enum!(Direction { Asc => "ASC", Desc => "DESC" });
 #[derive(InputObject)]
 pub(super) struct SortLevel {
     column: SortField,
     direction: Direction,
+}
+
+/// Render sort levels in the `?sort=` grammar the reader services parse.
+pub(super) fn sort_wire(levels: &[SortLevel]) -> String {
+    levels
+        .iter()
+        .map(|level| {
+            format!(
+                "{}{}",
+                if level.direction == Direction::Desc {
+                    "-"
+                } else {
+                    ""
+                },
+                level.column.wire()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub(super) async fn books(
@@ -1337,23 +1365,7 @@ pub(super) async fn books(
     let first = page_size(first)?;
     let mut params = filter.unwrap_or_default().params()?;
     params.cursor = after;
-    params.sort = sort.map(|levels| {
-        levels
-            .into_iter()
-            .map(|level| {
-                format!(
-                    "{}{}",
-                    if level.direction == Direction::Desc {
-                        "-"
-                    } else {
-                        ""
-                    },
-                    level.column.wire()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(",")
-    });
+    params.sort = sort.as_deref().map(sort_wire);
     let page = reader::books_connection(
         ctx.data::<CurrentUser>()?,
         ctx.data::<AppState>()?,

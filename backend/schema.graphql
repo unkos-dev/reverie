@@ -270,34 +270,52 @@ A scalar that can represent any JSON value.
 """
 scalar JSON
 
-enum LibraryDensityInput {
+enum LibraryColumn {
+  SUBTITLE
+  AUTHORS
+  SERIES
+  ISBN_13
+  PAGES
+  STATUS
+  RATING
+  ADDED
+}
+
+input LibraryColumnVisibility {
+  column: LibraryColumn!
+  hidden: Boolean!
+}
+
+enum LibraryDensity {
   COMFORTABLE
   COMPACT
 }
 
 type LibraryPreferenceDefaults {
-  hiddenColumns: [String!]!
-  density: String!
-  view: String!
-  sortStack: String!
+  hiddenColumns: [LibraryColumn!]!
+  density: LibraryDensity!
+  view: LibraryView!
+  sort: [LibrarySortLevel!]!
 }
 
 type LibraryPreferences {
-  hiddenColumns: [String!]
-  density: String
-  view: String
-  sortStack: String
+  hiddenColumns: [LibraryColumn!]
+  density: LibraryDensity
+  view: LibraryView
+  sort: [LibrarySortLevel!]
   defaults: LibraryPreferenceDefaults!
 }
 
-input LibraryPreferencesPatch {
-  hiddenColumns: [String!]
-  density: LibraryDensityInput
-  view: LibraryViewInput
-  sortStack: String
+type LibraryPreferencesUpdated {
+  viewer: Viewer!
 }
 
-enum LibraryViewInput {
+type LibrarySortLevel {
+  column: SortField!
+  direction: Direction!
+}
+
+enum LibraryView {
   GRID
   TABLE
 }
@@ -536,7 +554,7 @@ type MoodEdge {
 }
 
 type Mutation {
-  updateLibraryPreferences(patch: LibraryPreferencesPatch!): LibraryPreferences!
+  updateLibraryPreferences(input: UpdateLibraryPreferencesInput!): UpdateLibraryPreferencesResult!
   refreshMetadata(id: ID!): MetadataRefresh!
   updateMetadata(input: UpdateMetadataInput!): UpdateMetadataResult!
   updateReadingState(id: ID!, baseline: String, patch: ReadingPatch!): ReadingState!
@@ -590,7 +608,6 @@ type PageInfo {
 }
 
 type Query {
-  libraryPreferences: LibraryPreferences!
   metadataOperation(id: ID!, requestId: UUID, operationId: UUID): MetadataOperation!
   viewer: Viewer!
   node(id: ID!): Node
@@ -975,6 +992,16 @@ input UnlockMetadataFieldInput {
 
 union UnlockMetadataFieldResult = MetadataFieldLockRemoved | NotFound
 
+input UpdateLibraryPreferencesInput {
+  density: LibraryDensity
+  view: LibraryView
+  sort: [SortLevel!]
+  columns: [LibraryColumnVisibility!]
+  resetHiddenColumns: Boolean
+}
+
+union UpdateLibraryPreferencesResult = LibraryPreferencesUpdated | MetadataInvalid
+
 input UpdateMetadataInput {
   id: ID!
   baseline: ETag!
@@ -991,6 +1018,7 @@ type Viewer implements Node {
   id: ID!
   isChild: Boolean!
   displayName: String!
+  libraryPreferences: LibraryPreferences!
 }
 
 type Work implements Node @fetchable(field_name: "id") {

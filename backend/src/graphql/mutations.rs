@@ -20,84 +20,171 @@ use uuid::Uuid;
 
 pub struct Mutation;
 
+input_output_enum!(LibraryDensity { Comfortable => "COMFORTABLE", Compact => "COMPACT" });
+impl From<LibraryDensity> for crate::models::user_preferences::LibraryDensity {
+    fn from(value: LibraryDensity) -> Self {
+        match value {
+            LibraryDensity::Comfortable => Self::Comfortable,
+            LibraryDensity::Compact => Self::Compact,
+        }
+    }
+}
+impl From<crate::models::user_preferences::LibraryDensity> for LibraryDensity {
+    fn from(value: crate::models::user_preferences::LibraryDensity) -> Self {
+        match value {
+            crate::models::user_preferences::LibraryDensity::Comfortable => Self::Comfortable,
+            crate::models::user_preferences::LibraryDensity::Compact => Self::Compact,
+        }
+    }
+}
+input_output_enum!(LibraryView { Grid => "GRID", Table => "TABLE" });
+impl From<LibraryView> for crate::models::user_preferences::LibraryView {
+    fn from(value: LibraryView) -> Self {
+        match value {
+            LibraryView::Grid => Self::Grid,
+            LibraryView::Table => Self::Table,
+        }
+    }
+}
+impl From<crate::models::user_preferences::LibraryView> for LibraryView {
+    fn from(value: crate::models::user_preferences::LibraryView) -> Self {
+        match value {
+            crate::models::user_preferences::LibraryView::Grid => Self::Grid,
+            crate::models::user_preferences::LibraryView::Table => Self::Table,
+        }
+    }
+}
+input_output_enum!(LibraryColumn {
+    Subtitle => "SUBTITLE",
+    Authors => "AUTHORS",
+    Series => "SERIES",
+    Isbn13 => "ISBN_13",
+    Pages => "PAGES",
+    Status => "STATUS",
+    Rating => "RATING",
+    Added => "ADDED",
+});
+impl LibraryColumn {
+    const ALL: [Self; 8] = [
+        Self::Subtitle,
+        Self::Authors,
+        Self::Series,
+        Self::Isbn13,
+        Self::Pages,
+        Self::Status,
+        Self::Rating,
+        Self::Added,
+    ];
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Subtitle => "subtitle",
+            Self::Authors => "authors",
+            Self::Series => "series",
+            Self::Isbn13 => "isbn_13",
+            Self::Pages => "pages",
+            Self::Status => "status",
+            Self::Rating => "rating",
+            Self::Added => "added",
+        }
+    }
+    fn known<'a>(keys: impl IntoIterator<Item = &'a str>) -> Vec<Self> {
+        keys.into_iter()
+            .filter_map(|key| Self::ALL.into_iter().find(|column| column.key() == key))
+            .collect()
+    }
+}
+
+#[derive(SimpleObject)]
+pub(super) struct LibrarySortLevel {
+    column: library::SortField,
+    direction: library::Direction,
+}
+
+fn library_sort(raw: &str) -> async_graphql::Result<Vec<LibrarySortLevel>> {
+    let spec = crate::routes::sort_spec::SortSpec::parse(raw)
+        .map_err(|error| safe_error(AppError::Internal(error.into())))?;
+    Ok(spec
+        .levels()
+        .iter()
+        .map(|level| LibrarySortLevel {
+            column: library::SortField::from_column(level.column),
+            direction: match level.direction {
+                crate::routes::sort_spec::SortDirection::Asc => library::Direction::Asc,
+                crate::routes::sort_spec::SortDirection::Desc => library::Direction::Desc,
+            },
+        })
+        .collect())
+}
+
 #[derive(SimpleObject)]
 pub(super) struct LibraryPreferenceDefaults {
-    hidden_columns: Vec<String>,
-    density: String,
-    view: String,
-    sort_stack: String,
+    hidden_columns: Vec<LibraryColumn>,
+    density: LibraryDensity,
+    view: LibraryView,
+    sort: Vec<LibrarySortLevel>,
 }
 
 #[derive(SimpleObject)]
 pub(super) struct LibraryPreferences {
-    hidden_columns: Option<Vec<String>>,
-    density: Option<String>,
-    view: Option<String>,
-    sort_stack: Option<String>,
+    hidden_columns: Option<Vec<LibraryColumn>>,
+    density: Option<LibraryDensity>,
+    view: Option<LibraryView>,
+    sort: Option<Vec<LibrarySortLevel>>,
     defaults: LibraryPreferenceDefaults,
 }
 
-impl From<crate::services::preferences::PreferencesResponse> for LibraryPreferences {
-    fn from(value: crate::services::preferences::PreferencesResponse) -> Self {
-        Self {
-            hidden_columns: value.overrides.hidden_columns,
-            density: value.overrides.density.map(density_name),
-            view: value.overrides.view.map(view_name),
-            sort_stack: value.overrides.sort_stack,
+impl LibraryPreferences {
+    pub(super) fn new(
+        value: &crate::services::preferences::PreferencesResponse,
+    ) -> async_graphql::Result<Self> {
+        Ok(Self {
+            hidden_columns: value
+                .overrides
+                .hidden_columns
+                .as_ref()
+                .map(|keys| LibraryColumn::known(keys.iter().map(String::as_str))),
+            density: value.overrides.density.map(Into::into),
+            view: value.overrides.view.map(Into::into),
+            sort: value
+                .overrides
+                .sort_stack
+                .as_deref()
+                .map(library_sort)
+                .transpose()?,
             defaults: LibraryPreferenceDefaults {
-                hidden_columns: value
-                    .defaults
-                    .hidden_columns
-                    .iter()
-                    .map(|key| (*key).to_owned())
-                    .collect(),
-                density: density_name(value.defaults.density),
-                view: view_name(value.defaults.view),
-                sort_stack: value.defaults.sort_stack.to_owned(),
+                hidden_columns: LibraryColumn::known(value.defaults.hidden_columns.iter().copied()),
+                density: value.defaults.density.into(),
+                view: value.defaults.view.into(),
+                sort: library_sort(value.defaults.sort_stack)?,
             },
-        }
+        })
     }
-}
-
-input_enum!(LibraryDensityInput { Comfortable => "COMFORTABLE", Compact => "COMPACT" });
-impl From<LibraryDensityInput> for crate::models::user_preferences::LibraryDensity {
-    fn from(value: LibraryDensityInput) -> Self {
-        match value {
-            LibraryDensityInput::Comfortable => Self::Comfortable,
-            LibraryDensityInput::Compact => Self::Compact,
-        }
-    }
-}
-input_enum!(LibraryViewInput { Grid => "GRID", Table => "TABLE" });
-impl From<LibraryViewInput> for crate::models::user_preferences::LibraryView {
-    fn from(value: LibraryViewInput) -> Self {
-        match value {
-            LibraryViewInput::Grid => Self::Grid,
-            LibraryViewInput::Table => Self::Table,
-        }
-    }
-}
-fn density_name(value: crate::models::user_preferences::LibraryDensity) -> String {
-    match value {
-        crate::models::user_preferences::LibraryDensity::Comfortable => "comfortable",
-        crate::models::user_preferences::LibraryDensity::Compact => "compact",
-    }
-    .to_owned()
-}
-fn view_name(value: crate::models::user_preferences::LibraryView) -> String {
-    match value {
-        crate::models::user_preferences::LibraryView::Grid => "grid",
-        crate::models::user_preferences::LibraryView::Table => "table",
-    }
-    .to_owned()
 }
 
 #[derive(InputObject)]
-struct LibraryPreferencesPatch {
-    hidden_columns: MaybeUndefined<Vec<String>>,
-    density: MaybeUndefined<LibraryDensityInput>,
-    view: MaybeUndefined<LibraryViewInput>,
-    sort_stack: MaybeUndefined<String>,
+struct LibraryColumnVisibility {
+    column: LibraryColumn,
+    hidden: bool,
+}
+
+#[derive(InputObject)]
+struct UpdateLibraryPreferencesInput {
+    density: MaybeUndefined<LibraryDensity>,
+    view: MaybeUndefined<LibraryView>,
+    sort: MaybeUndefined<Vec<library::SortLevel>>,
+    columns: Option<Vec<LibraryColumnVisibility>>,
+    reset_hidden_columns: Option<bool>,
+}
+
+#[derive(SimpleObject)]
+struct LibraryPreferencesUpdated {
+    viewer: super::Viewer,
+}
+
+#[derive(Union)]
+enum UpdateLibraryPreferencesResult {
+    LibraryPreferencesUpdated(LibraryPreferencesUpdated),
+    MetadataInvalid(MetadataInvalid),
 }
 
 #[derive(SimpleObject)]
@@ -710,18 +797,41 @@ impl Mutation {
     async fn update_library_preferences(
         &self,
         ctx: &Context<'_>,
-        patch: LibraryPreferencesPatch,
-    ) -> async_graphql::Result<LibraryPreferences> {
-        let patch = crate::services::preferences::UpdatePreferencesRequest {
-            hidden_columns: patch.hidden_columns.into(),
-            density: patch.density.map_value(Into::into).into(),
-            view: patch.view.map_value(Into::into).into(),
-            sort_stack: patch.sort_stack.into(),
+        input: UpdateLibraryPreferencesInput,
+    ) -> async_graphql::Result<UpdateLibraryPreferencesResult> {
+        let user = ctx.data::<CurrentUser>()?;
+        let request = crate::services::preferences::UpdatePreferencesRequest {
+            hidden_columns: (input.reset_hidden_columns == Some(true)).then_some(None),
+            density: input.density.map_value(Into::into).into(),
+            view: input.view.map_value(Into::into).into(),
+            sort_stack: input
+                .sort
+                .map_value(|levels| library::sort_wire(&levels))
+                .into(),
+            column_changes: input
+                .columns
+                .unwrap_or_default()
+                .into_iter()
+                .map(|change| crate::services::preferences::ColumnChange {
+                    key: change.column.key(),
+                    hidden: change.hidden,
+                })
+                .collect(),
         };
-        crate::services::preferences::update_preferences(ctx.data()?, ctx.data()?, patch)
-            .await
-            .map(Into::into)
-            .map_err(safe_error)
+        match crate::services::preferences::update_preferences(ctx.data()?, user, request).await {
+            Ok(preferences) => Ok(UpdateLibraryPreferencesResult::LibraryPreferencesUpdated(
+                LibraryPreferencesUpdated {
+                    viewer: super::Viewer::new(user, Some(preferences)),
+                },
+            )),
+            Err(AppError::Validation(message)) => Ok(
+                UpdateLibraryPreferencesResult::MetadataInvalid(MetadataInvalid {
+                    message,
+                    field_errors: Vec::new(),
+                }),
+            ),
+            Err(error) => Err(safe_error(error)),
+        }
     }
 
     #[graphql(guard = "WriteScope")]
