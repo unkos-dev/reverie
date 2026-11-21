@@ -2227,8 +2227,18 @@ mod tests {
         let title_cursor = titled["data"]["books"]["edges"][0]["cursor"]
             .as_str()
             .unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        for work in [fixture.visible_work, fixture.hidden_work] {
+            crate::models::work::refresh_first_author_sort(&mut conn, work)
+                .await
+                .unwrap();
+        }
         let ordered = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "AUTHOR", "direction": "ASC"}]})).await;
         assert!(ordered.get("errors").is_none(), "{ordered}");
+        assert_eq!(
+            ordered["data"]["books"]["edges"][0]["node"]["id"],
+            id::Manifestation::encode(fixture.hidden).as_str()
+        );
         let ordered_cursor = ordered["data"]["books"]["edges"][0]["cursor"]
             .as_str()
             .unwrap();
@@ -2243,6 +2253,7 @@ mod tests {
             assert_cursor_refused(&response, &["books"]);
         }
         for variables in [
+            json!({"first": 101}),
             json!({"first": 50, "sort": [{"column": "Title", "direction": "ASC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "TITLE", "direction": "DESC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "AUTHOR", "direction": "ASC"}, {"column": "PAGES", "direction": "ASC"}, {"column": "CREATED_AT", "direction": "ASC"}]}),
@@ -2336,6 +2347,27 @@ mod tests {
             .await;
             assert_cursor_refused(&other_connection, &["books"]);
         }
+        let snapshot_query = "query($id: ID!, $after: String) { manifestation(id: $id) { metadata { authors(first: 1, after: $after) { edges { cursor node { name } } } } } }";
+        let snapshot = reader_query(
+            &fixture,
+            &fixture.admin,
+            snapshot_query,
+            json!({"id": id::Manifestation::encode(fixture.visible).as_str()}),
+        )
+        .await;
+        assert!(snapshot.get("errors").is_none(), "{snapshot}");
+        let snapshot_cursor = snapshot["data"]["manifestation"]["metadata"]["authors"]["edges"][0]
+            ["cursor"]
+            .as_str()
+            .unwrap();
+        let other_parent = reader_query(
+            &fixture,
+            &fixture.admin,
+            snapshot_query,
+            json!({"id": id::Manifestation::encode(fixture.hidden).as_str(), "after": snapshot_cursor}),
+        )
+        .await;
+        assert_cursor_refused(&other_parent, &["manifestation", "metadata"]);
         pending_cursor_identity(&fixture).await;
         let shelf_page = reader_query(
             &fixture,

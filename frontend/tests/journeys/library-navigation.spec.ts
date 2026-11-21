@@ -523,7 +523,32 @@ test("Refine Escape retains live text and range edits and returns focus", async 
 
 test("unchanged returns preserve each visit's books and known-book position", async ({ page }) => {
   // REV-REQ-0080 R1a, R1b: identical visits retain independent extents and known-book positions.
-  await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+  // REV-REQ-0057: only the invalid-cursor code restarts a refused continuation, and only once.
+  const fixture = await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+  let refusal: { code: string; message: string } | undefined;
+  let refused = 0;
+  await page.route("**/api/graphql", async (route) => {
+    const body = z
+      .object({ id: z.string(), variables: z.record(z.string(), z.unknown()) })
+      .parse(route.request().postDataJSON());
+    const current = refusal;
+    if (
+      current !== undefined &&
+      documents[body.id]?.includes("query readerLibraryQuery(") &&
+      body.variables.cursor === "50"
+    ) {
+      refusal = undefined;
+      refused += 1;
+      await route.fulfill({
+        json: {
+          data: null,
+          errors: [{ message: current.message, extensions: { code: current.code } }],
+        },
+      });
+      return;
+    }
+    await route.fallback();
+  });
   await page.goto("/library");
   await ready(page);
   const table = page.getByRole("grid", { name: "Library books", exact: true });
@@ -621,10 +646,16 @@ test("unchanged returns preserve each visit's books and known-book position", as
     new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000039")}$`),
   );
   await expect(page.getByRole("heading", { name: "Journey book 039", exact: true })).toBeVisible();
+  refusal = { code: "invalid-cursor", message: "The cursor no longer matches." };
+  const beforeRestart = fixture.requests.length;
   await page.goBack();
   await ready(page);
+  await expect.poll(() => refused).toBe(1);
   await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
   await expect(page.getByText("100 books loaded", { exact: true }).first()).toBeVisible();
+  expect(
+    fixture.requests.slice(beforeRestart).filter((request) => request.cursor == null),
+  ).toHaveLength(2);
   await expect
     .poll(async () =>
       Math.abs(
@@ -633,6 +664,22 @@ test("unchanged returns preserve each visit's books and known-book position", as
     )
     .toBeLessThanOrEqual(1);
   await expect(table).toHaveJSProperty("scrollTop", secondScroll);
+
+  refusal = { code: "validation", message: "Invalid cursor." };
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: "Journey book 039", exact: true })).toBeVisible();
+  const beforeRefusal = fixture.requests.length;
+  await page.goBack();
+  await ready(page);
+  await expect.poll(() => refused).toBe(2);
+  await expect(
+    page.getByText("These filters could not be used. Change or clear them to try again.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(
+    fixture.requests.slice(beforeRefusal).filter((request) => request.cursor == null),
+  ).toHaveLength(1);
 
   await page.goBack();
   await expect(page).toHaveURL(

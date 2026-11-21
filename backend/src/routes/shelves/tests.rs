@@ -336,7 +336,7 @@ async fn child_can_view_own_shelves(pool: PgPool) {
 // ── Keyset pagination on the shelves list + items page ─────────
 
 #[sqlx::test(migrations = "./migrations")]
-async fn shelf_items_rejects_cross_endpoint_cursor_replay(pool: PgPool) {
+async fn shelf_lists_reject_foreign_list_cursors(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (a_id, a_basic) =
@@ -344,18 +344,43 @@ async fn shelf_items_rejects_cross_endpoint_cursor_replay(pool: PgPool) {
     let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Replay shelf").await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-    // A structurally valid shelves-LIST cursor fed to the items
-    // endpoint must surface the codec's UnknownTag as a 422, not a 500
-    // or a silently wrong page.
-    let foreign = crate::routes::cursor::ShelfCursor {
+    let shelf = crate::routes::cursor::ShelfCursor {
         is_system: false,
         name: "Replay shelf".into(),
         id: shelf_id,
     }
     .encode();
-    let r = server
-        .get(&format!("/api/v1/shelves/{shelf_id}?cursor={foreign}"))
-        .add_header(auth(&a_basic).0, auth(&a_basic).1)
-        .await;
-    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    let item = crate::routes::cursor::ShelfItemCursor {
+        added_at: jiff::Timestamp::now(),
+        manifestation_id: Uuid::new_v4(),
+    }
+    .encode();
+    let books = crate::routes::cursor::SortCursor {
+        spec: crate::routes::sort_spec::SortSpec::default().canonical(),
+        keys: vec![crate::routes::cursor::CursorValue::Ts(
+            jiff::Timestamp::now(),
+        )],
+        id: Uuid::new_v4(),
+        filter_fp: String::new(),
+    }
+    .encode()
+    .expect("encode");
+    for (path, foreign) in [
+        (format!("/api/v1/shelves/{shelf_id}"), shelf),
+        (format!("/api/v1/shelves/{shelf_id}"), books.clone()),
+        ("/api/v1/shelves".to_owned(), item),
+        ("/api/v1/shelves".to_owned(), books),
+    ] {
+        let r = server
+            .get(&format!("{path}?cursor={foreign}"))
+            .add_header(auth(&a_basic).0, auth(&a_basic).1)
+            .await;
+        let body = test_support::assert_problem(
+            &r,
+            problems::VALIDATION,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+        assert_eq!(body["detail"], "Invalid cursor.");
+        assert!(body.get("items").is_none(), "{body}");
+    }
 }

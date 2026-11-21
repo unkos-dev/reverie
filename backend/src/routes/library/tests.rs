@@ -6,7 +6,6 @@
 
 use axum::http::{StatusCode, header::AUTHORIZATION};
 use axum_test::TestServer;
-use base64ct::{Base64UrlUnpadded, Encoding};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -379,28 +378,33 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-    let minted_spec = crate::routes::sort_spec::SortSpec::parse("title").expect("valid spec");
-    let cursor = crate::routes::cursor::SortCursor {
-        spec: minted_spec.canonical(),
-        keys: vec![crate::routes::cursor::CursorValue::Text(Some(
-            "neuromancer".to_owned(),
-        ))],
-        id: Uuid::new_v4(),
-        filter_fp: super::filters::filter_fingerprint(&super::ListParams::default()),
-    }
-    .encode()
-    .expect("encode");
+    for (minted, replayed) in [("title", "author"), ("title,author", "author,title")] {
+        let minted_spec = crate::routes::sort_spec::SortSpec::parse(minted).expect("valid spec");
+        let keys = minted
+            .split(',')
+            .map(|_| crate::routes::cursor::CursorValue::Text(Some("neuromancer".to_owned())))
+            .collect();
+        let cursor = crate::routes::cursor::SortCursor {
+            spec: minted_spec.canonical(),
+            keys,
+            id: Uuid::new_v4(),
+            filter_fp: super::filters::filter_fingerprint(&super::ListParams::default()),
+        }
+        .encode()
+        .expect("encode");
 
-    let response = server
-        .get(&format!("/api/v1/books?sort=author&cursor={cursor}"))
-        .add_header(AUTHORIZATION, basic)
-        .await;
-    let body = test_support::assert_problem(
-        &response,
-        problems::VALIDATION,
-        StatusCode::UNPROCESSABLE_ENTITY,
-    );
-    assert_eq!(body["detail"], "Invalid cursor.");
+        let response = server
+            .get(&format!("/api/v1/books?sort={replayed}&cursor={cursor}"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let body = test_support::assert_problem(
+            &response,
+            problems::VALIDATION,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+        assert_eq!(body["detail"], "Invalid cursor.");
+        assert!(body.get("items").is_none(), "{body}");
+    }
 }
 
 // ─── multi-column sort stack: boundary walks + error paths ──────────────
@@ -477,33 +481,40 @@ async fn list_endpoint_cursor_direction_mismatch_returns_422(pool: PgPool) {
         StatusCode::UNPROCESSABLE_ENTITY,
     );
     assert_eq!(body["detail"], "Invalid cursor.");
+    assert!(body.get("items").is_none(), "{body}");
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_endpoint_legacy_cursor_tag_returns_422(pool: PgPool) {
+async fn list_endpoint_foreign_list_cursor_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-    // Hand-encode a pre-v2 `r`-tagged (pipe-delimited Recent) payload.
-    // `SortCursor::parse_for` only recognizes tag `m`, so a stale
-    // bookmark carrying the old cursor shape must reject as an unknown
-    // tag rather than attempt to decode it.
-    let legacy = Base64UrlUnpadded::encode_string(
-        format!("r|2026-05-22T09:30:00Z|{}", Uuid::new_v4().as_hyphenated()).as_bytes(),
-    );
-
-    let response = server
-        .get(&format!("/api/v1/books?cursor={legacy}"))
-        .add_header(AUTHORIZATION, basic)
-        .await;
-    let body = test_support::assert_problem(
-        &response,
-        problems::VALIDATION,
-        StatusCode::UNPROCESSABLE_ENTITY,
-    );
-    assert_eq!(body["detail"], "Invalid cursor.");
+    let shelf = crate::routes::cursor::ShelfCursor {
+        is_system: false,
+        name: "Favourites".into(),
+        id: Uuid::new_v4(),
+    }
+    .encode();
+    let item = crate::routes::cursor::ShelfItemCursor {
+        added_at: jiff::Timestamp::now(),
+        manifestation_id: Uuid::new_v4(),
+    }
+    .encode();
+    for foreign in [shelf, item] {
+        let response = server
+            .get(&format!("/api/v1/books?cursor={foreign}"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let body = test_support::assert_problem(
+            &response,
+            problems::VALIDATION,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+        assert_eq!(body["detail"], "Invalid cursor.");
+        assert!(body.get("items").is_none(), "{body}");
+    }
 }
 
 // ---------------------------------------------------------------------------
