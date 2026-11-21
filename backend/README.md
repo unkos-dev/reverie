@@ -59,14 +59,16 @@ permissions, request and response formats, limits and failure behaviour.
 
 ### Verification ownership and transports
 
-Database verification requires access to a running Docker daemon.
+`just rust::clippy` and `just rust::doc-lint` run offline in CI and locally. Both use the committed SQLx query cache in
+`backend/.sqlx`.
 
-Each `just rust::test`, `doctests`, `sqlx-check`, `sqlx-prepare`, `schema-check` and `schema-dump` invocation owns a
-disposable cluster with independent credentials, a dynamic loopback TCP port and a unique socket directory. Tests and
-doctests compile against the committed SQLx cache. Test mode leaves the bootstrap database without migrations; SQLx
-creates and migrates each test database. Schema mode prepares its bootstrap database for online compilation and SQLx
-cache checks. Schema dumping uses a migrator-owned scratch database within its disposable cluster. CI uses the same
-owner; its online Clippy and documentation commands receive prepared clusters.
+Database verification requires access to a running Docker daemon. The `rust::test`, `rust::sqlx-check`,
+`rust::sqlx-prepare`, `rust::schema-check`, and `rust::schema-dump` recipes each own a disposable PostgreSQL cluster
+with independent credentials, a dynamic loopback TCP port, and a unique socket directory. Tests compile against the
+committed SQLx query cache. Test mode leaves the bootstrap database without migrations. SQLx creates and migrates each
+test database. Schema mode prepares the bootstrap database for checking or regenerating the query cache. Schema dumping
+uses a migrator-owned scratch database within its disposable cluster. In CI, the backend tests, query cache check, and
+schema check use `scripts/postgres-provision.sh`.
 
 Both TCP and Unix sockets require SCRAM authentication. Verification uses its owned socket when available and its owned
 TCP endpoint across a Docker host boundary. Local migration recipes default to the Unix socket so they also work in
