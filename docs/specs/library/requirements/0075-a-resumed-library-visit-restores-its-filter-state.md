@@ -16,7 +16,8 @@ A Library visit belongs to one
 that entry, or reaching it again through any history traversal, resumes the same visit. Other navigations to Library
 start a fresh visit, including replacement navigation to the same URL. WHEN a Library visit resumes, the Library MUST
 restore the filter state last applied in that visit before it issues its first books list request, and MUST restore no
-filters when that visit's saved filter state is absent or malformed.
+filters when that visit's saved filter state is absent or malformed. A saved filter state is malformed when any part of
+it fails to decode as a Library filter condition.
 
 ## Rationale
 
@@ -29,6 +30,7 @@ Restoring part of a malformed saved state would show the reader a combination of
 - Reload after rapid edits restores their final state before the first books list request.
 - Library to book to Back restores filters, chips and results.
 - Forward restores its destination visit.
-- Traversing to an earlier entry restores that entry's visit, including when the Library page component is reused.
+- Traversing to an earlier entry restores that entry's visit, including a traversal between two Library entries with no
+  other page between them.
 - A resumed visit whose saved filter state is absent or malformed starts with no filters, restoring none of its saved
   conditions rather than part of them.

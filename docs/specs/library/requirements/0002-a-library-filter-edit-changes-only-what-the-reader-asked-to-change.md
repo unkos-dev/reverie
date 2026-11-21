@@ -23,10 +23,12 @@ may not notice which condition moved. View and sort are standing choices, so cle
 
 ## Acceptance criteria
 
-- Sibling edits made in the same turn both take effect.
-- Blur followed by Clear does not bring back the cleared condition.
+- Two edits to different filter conditions made in one reader action both take effect.
+- An edit that a field publishes when it loses focus, followed by Clear in the same reader action, does not bring back
+  the cleared condition.
 - Clear removes every filter condition and leaves view and sort unchanged.
-- Clearing one section leaves sibling sections unchanged.
-- Entered text and its selected operator are kept, and remain editable, while they contribute no effective predicate.
-- The GraphQL books request's effective filter arguments represent exactly the published edit and preserve sibling
-  conditions. Dormant entered text and operators remain available without contributing an effective predicate.
+- Clearing one filter section, or removing one filter chip, leaves every other section unchanged.
+- Entered text and its selected operator are kept, and remain editable, while they restrict no results. Text restricts
+  no results when it is blank, or when its operator is "is empty", which ignores the text.
+- After an edit, the books request filters by exactly the conditions that restrict results, including the conditions the
+  edit did not touch, and by no text that restricts no results.
