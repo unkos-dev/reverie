@@ -1465,7 +1465,15 @@ pub(super) async fn search(ctx: &Context<'_>, q: &str) -> async_graphql::Result<
 }
 
 fn label_ids<K: id::Kind>(ids: &[ID]) -> async_graphql::Result<Vec<Uuid>> {
-    ids.iter().map(filter_id::<K>).collect()
+    let mut seen = std::collections::HashSet::new();
+    let mut decoded = Vec::with_capacity(ids.len());
+    for id in ids {
+        let id = filter_id::<K>(id)?;
+        if seen.insert(id) {
+            decoded.push(id);
+        }
+    }
+    Ok(decoded)
 }
 
 async fn series_records(ctx: &Context<'_>, ids: &[Uuid]) -> async_graphql::Result<Vec<Series>> {
@@ -1537,12 +1545,16 @@ pub(super) async fn author_labels(
     let rows = reader::author_labels(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &ids)
         .await
         .map_err(safe_error)?;
-    Ok(rows
+    let mut names: HashMap<Uuid, String> = rows
         .into_iter()
-        .filter_map(|row| {
-            row.id.map(|row_id| Author {
-                id: id::Author::encode(row_id),
-                name: row.value,
+        .filter_map(|row| row.id.map(|row_id| (row_id, row.value)))
+        .collect();
+    Ok(ids
+        .iter()
+        .filter_map(|id| {
+            names.remove(id).map(|name| Author {
+                id: id::Author::encode(*id),
+                name,
             })
         })
         .collect())
@@ -1556,7 +1568,8 @@ pub(super) async fn series_labels(
     let rows = reader::series_labels(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &ids)
         .await
         .map_err(safe_error)?;
-    let ids: Vec<_> = rows.iter().map(|row| row.id).collect();
+    let visible: std::collections::HashSet<Uuid> = rows.iter().map(|row| row.id).collect();
+    let ids: Vec<_> = ids.into_iter().filter(|id| visible.contains(id)).collect();
     series_records(ctx, &ids).await
 }
 
@@ -1564,11 +1577,7 @@ pub(super) async fn shelf_labels(
     ctx: &Context<'_>,
     ids: &[ID],
 ) -> async_graphql::Result<Vec<Shelf>> {
-    let mut seen = std::collections::HashSet::new();
-    let ids: Vec<_> = label_ids::<id::Shelf>(ids)?
-        .into_iter()
-        .filter(|id| seen.insert(*id))
-        .collect();
+    let ids = label_ids::<id::Shelf>(ids)?;
     // THREAT: the shelf loader filters on the caller's user ID, so another account's shelf is omitted like a missing one.
     let records = ctx
         .data::<RequestLoader>()?
