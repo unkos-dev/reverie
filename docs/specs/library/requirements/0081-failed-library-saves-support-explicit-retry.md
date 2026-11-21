@@ -9,32 +9,23 @@ title: "Failed Library saves support explicit Retry"
 
 ## Statement
 
-WHEN a Library metadata or reading save fails temporarily or has an uncertain outcome, the Library MUST offer explicit
-Retry of the retained attempt under its original editing baseline. It MUST preserve submitted input through refusal or
-uncertainty and use authoritative recovery to recognise a committed save. Ordinary recovery MUST NOT replay a save.
+WHEN a Library save fails temporarily, the Library MUST offer Retry of that save. A Library save is a book metadata or
+reading-state edit that the reader commits in the Library table. A save fails temporarily when it receives no response,
+an HTTP status of `408`, `429` or `500` and above, or a GraphQL error with the code `internal`. A save that the server
+refuses for any other reason has not failed temporarily.
 
 ## Rationale
 
-A reader must be able to recover a failed save without reconstructing their input or overwriting changes they never saw.
-An uncertain acknowledgement does not establish whether the write committed. Keeping the original attempt and
-recognising authoritative success avoids both lost input and duplicate Undo entries.
+A reader whose save fails because of the network or the server must be able to recover it without typing the value
+again. The outcome of such a save is unknown, and sending it again may succeed. A save the server refused would fail
+again unchanged, so Retry belongs only to temporary failures.
 
 ## Acceptance criteria
 
-- E1: Temporary or uncertain failures offer "Not saved. Retry" and resend the retained attempt on activation, showing
-  "Retrying…" while pending. Metadata conflicts resolve the original request first. A conflict not confirmed as saved
-  uses the existing matched "Not saved. Reload" or new-edit path. Validation failures retain input and field feedback
-  for correction in the editor. Permission and locked-field refusals keep specific feedback without an unchanged resend.
-  Batch actions classify each target independently, offer Retry only for temporary or uncertain failures, and never
-  resend successful or conflicted targets. No bulk Reload control is offered.
-- E2: Explicit Retry sends the original submitted payload and starting baseline for the failed metadata or reading edit.
-  Background reads, live record merges and precondition refusals do not advance that baseline or reconstruct the input.
-- E3: An unchanged metadata attempt reuses its request UUID, patch and baseline. A stale repeat resolves that UUID
-  before conflict feedback. Authoritative saved resolution adopts its matching acknowledgement; unknown resolution
-  remains uncertain. Reading recovery uses a matched read. Ordinary recovery sends no write, and a request UUID alone
-  does not prove idempotency or success.
-- E4: Successful Retry publishes its matched acknowledgement and eligible exact Undo once. Refused or unresolved Retry
-  retains submitted input and conflict or recovery feedback. Reload sends no write and adopts fresh selected values with
-  their matching baseline while keeping the failed submitted value available. Only an explicit matched reset or a new
-  editing decision can adopt that new pair. Corrected input starts a new request identity against the retained baseline
-  unless an explicit matched reset replaced it.
+- After a temporary failure of a metadata save or a reading-state save, the Edit outcomes region offers a Retry control
+  for that save. Checked by `Library Retry sends the retained edit again` in
+  `frontend/tests/browser/LibraryPage.test.tsx`.
+- While a Retry is pending, its control reads "Retrying…". Checked by `Library Retry sends the retained edit again` in
+  `frontend/tests/browser/LibraryPage.test.tsx`.
+- A save that the server refuses for a stale baseline or a locked field offers no Retry control. Checked by
+  `Library Retry sends the retained edit again` in `frontend/tests/browser/LibraryPage.test.tsx`.

@@ -12,6 +12,11 @@ satisfies:
   - "REV-REQ-0077"
   - "REV-REQ-0080"
   - "REV-REQ-0081"
+  - "REV-REQ-0084"
+  - "REV-REQ-0085"
+  - "REV-REQ-0086"
+  - "REV-REQ-0087"
+  - "REV-REQ-0088"
 governed-by:
   - "REV-ADR-0066"
   - "REV-ADR-0075"
