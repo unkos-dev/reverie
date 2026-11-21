@@ -23,13 +23,6 @@ pub(super) fn suggestions(limit: Option<i32>, child: usize) -> ServerResult<usiz
     weighted(usize::try_from(size).map_err(|_| excessive())?, child)
 }
 
-pub(super) fn labels(size: usize, child: usize) -> ServerResult<usize> {
-    reader::validate_label_count(size).map_err(|error| {
-        super::safe_error(error).into_server_error(async_graphql::Pos::default())
-    })?;
-    weighted(size, child)
-}
-
 pub(super) fn weighted(size: usize, child: usize) -> ServerResult<usize> {
     let cost = size
         .checked_mul(child)

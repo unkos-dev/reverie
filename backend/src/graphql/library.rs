@@ -1452,18 +1452,29 @@ pub(super) async fn search(ctx: &Context<'_>, q: &str) -> async_graphql::Result<
         .collect())
 }
 
-macro_rules! suggestion {
-    ($name:ident, $function:ident, $operation:ident, $kind:ident) => {
-        #[derive(SimpleObject)]
-        pub(super) struct $name {
-            entity_id: Option<ID>,
-            value: String,
-        }
+fn label_ids<K: id::Kind>(ids: &[ID]) -> async_graphql::Result<Vec<Uuid>> {
+    ids.iter().map(filter_id::<K>).collect()
+}
+
+async fn series_records(ctx: &Context<'_>, ids: &[Uuid]) -> async_graphql::Result<Vec<Series>> {
+    let records = ctx
+        .data::<RequestLoader>()?
+        .load_many(ids.iter().copied().map(SeriesKey))
+        .await
+        .map_err(|error| batch_error(&error))?;
+    Ok(ids
+        .iter()
+        .filter_map(|id| records.get(&SeriesKey(*id)).cloned().map(Series::new))
+        .collect())
+}
+
+macro_rules! vocabulary_suggestions {
+    ($function:ident, $operation:ident, $record:ident, $kind:ident) => {
         pub(super) async fn $function(
             ctx: &Context<'_>,
             q: &str,
             limit: Option<i32>,
-        ) -> async_graphql::Result<Vec<$name>> {
+        ) -> async_graphql::Result<Vec<$record>> {
             let rows = reader::$operation(
                 ctx.data::<CurrentUser>()?,
                 ctx.data::<AppState>()?,
@@ -1474,66 +1485,85 @@ macro_rules! suggestion {
             .map_err(safe_error)?;
             Ok(rows
                 .into_iter()
-                .map(|row| $name {
-                    entity_id: row.id.map(id::$kind::encode),
-                    value: row.value,
+                .filter_map(|row| {
+                    row.id.map(|row_id| $record {
+                        id: id::$kind::encode(row_id),
+                        name: row.value,
+                    })
                 })
                 .collect())
         }
     };
 }
-suggestion!(
-    AuthorSuggestion,
-    author_suggestions,
-    suggest_authors,
-    Author
-);
-suggestion!(SeriesSuggestion, series_suggestions, suggest_series, Series);
-suggestion!(GenreSuggestion, genre_suggestions, suggest_genres, Genre);
-suggestion!(MoodSuggestion, mood_suggestions, suggest_moods, Mood);
-suggestion!(TagSuggestion, tag_suggestions, suggest_tags, Tag);
-suggestion!(
-    PublisherSuggestion,
-    publisher_suggestions,
-    suggest_publishers,
-    Publisher
-);
+vocabulary_suggestions!(author_suggestions, suggest_authors, Author, Author);
+vocabulary_suggestions!(genre_suggestions, suggest_genres, Genre, Genre);
+vocabulary_suggestions!(mood_suggestions, suggest_moods, Mood, Mood);
+vocabulary_suggestions!(tag_suggestions, suggest_tags, Tag, Tag);
+
+pub(super) async fn series_suggestions(
+    ctx: &Context<'_>,
+    q: &str,
+    limit: Option<i32>,
+) -> async_graphql::Result<Vec<Series>> {
+    let rows = reader::suggest_series(
+        ctx.data::<CurrentUser>()?,
+        ctx.data::<AppState>()?,
+        q,
+        limit.map(i64::from),
+    )
+    .await
+    .map_err(safe_error)?;
+    let ids: Vec<_> = rows.iter().filter_map(|row| row.id).collect();
+    series_records(ctx, &ids).await
+}
 
 pub(super) async fn author_labels(
     ctx: &Context<'_>,
     ids: &[ID],
-) -> async_graphql::Result<Vec<AuthorSuggestion>> {
-    let ids = ids
-        .iter()
-        .map(filter_id::<id::Author>)
-        .collect::<async_graphql::Result<Vec<_>>>()?;
+) -> async_graphql::Result<Vec<Author>> {
+    let ids = label_ids::<id::Author>(ids)?;
     let rows = reader::author_labels(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &ids)
         .await
         .map_err(safe_error)?;
     Ok(rows
         .into_iter()
-        .map(|row| AuthorSuggestion {
-            entity_id: row.id.map(id::Author::encode),
-            value: row.value,
+        .filter_map(|row| {
+            row.id.map(|row_id| Author {
+                id: id::Author::encode(row_id),
+                name: row.value,
+            })
         })
         .collect())
 }
+
 pub(super) async fn series_labels(
     ctx: &Context<'_>,
     ids: &[ID],
-) -> async_graphql::Result<Vec<SeriesSuggestion>> {
-    let ids = ids
-        .iter()
-        .map(filter_id::<id::Series>)
-        .collect::<async_graphql::Result<Vec<_>>>()?;
+) -> async_graphql::Result<Vec<Series>> {
+    let ids = label_ids::<id::Series>(ids)?;
     let rows = reader::series_labels(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &ids)
         .await
         .map_err(safe_error)?;
-    Ok(rows
+    let ids: Vec<_> = rows.iter().map(|row| row.id).collect();
+    series_records(ctx, &ids).await
+}
+
+pub(super) async fn shelf_labels(
+    ctx: &Context<'_>,
+    ids: &[ID],
+) -> async_graphql::Result<Vec<Shelf>> {
+    let mut seen = std::collections::HashSet::new();
+    let ids: Vec<_> = label_ids::<id::Shelf>(ids)?
         .into_iter()
-        .map(|row| SeriesSuggestion {
-            entity_id: Some(id::Series::encode(row.id)),
-            value: row.value,
-        })
-        .collect())
+        .filter(|id| seen.insert(*id))
+        .collect();
+    // THREAT: the shelf loader filters on the caller's user ID, so another account's shelf is omitted like a missing one.
+    let records = ctx
+        .data::<RequestLoader>()?
+        .load_many(ids.iter().copied().map(ShelfKey))
+        .await
+        .map_err(|error| batch_error(&error))?;
+    ids.iter()
+        .filter_map(|id| records.get(&ShelfKey(*id)).cloned().map(Shelf::new))
+        .collect()
 }

@@ -297,6 +297,7 @@ async fn authors_by_id(
     params: Result<Query<AuthorsByIdParams>, QueryRejection>,
 ) -> Result<Json<AuthorsResponse>, AppError> {
     let Query(params) = params?;
+    crate::services::reader::validate_label_count(params.id.len())?;
     let items = crate::services::reader::author_labels(&current_user, &state, &params.id).await?;
     Ok(Json(AuthorsResponse { items }))
 }
@@ -322,6 +323,7 @@ async fn series_by_id(
     params: Result<Query<SeriesByIdParams>, QueryRejection>,
 ) -> Result<Json<SeriesResponse>, AppError> {
     let Query(params) = params?;
+    crate::services::reader::validate_label_count(params.id.len())?;
     let items = crate::services::reader::series_labels(&current_user, &state, &params.id).await?;
     Ok(Json(SeriesResponse { items }))
 }

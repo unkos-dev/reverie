@@ -64,7 +64,6 @@ kinds! {
     MetadataRevision => "metadata_rev",
     MetadataVersion => "metadata_version",
     Mood => "mood",
-    Publisher => "publisher",
     Series => "series",
     Shelf => "shelf",
     Tag => "tag",
