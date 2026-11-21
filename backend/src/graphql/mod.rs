@@ -972,6 +972,7 @@ mod tests {
             json!({}),
             json!({"density":"COMPACT","sort":[]}),
             json!({"columns":[{"column":"AUTHORS","hidden":true},{"column":"AUTHORS","hidden":false}]}),
+            json!({"resetHiddenColumns":true,"columns":[]}),
         ] {
             assert_graph_result(
                 &reader_query(fixture, &fixture.child, write, json!({"input":input})).await,
