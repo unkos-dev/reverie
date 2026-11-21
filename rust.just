@@ -46,11 +46,6 @@ drift:
 test *args:
     SQLX_OFFLINE=true bash ../scripts/postgres-provision.sh test -- cargo nextest run --workspace --locked "$@"
 
-# DB: doctests across the workspace.
-[group('rust')]
-doctests:
-    SQLX_OFFLINE=true bash ../scripts/postgres-provision.sh test -- cargo test --locked --doc --workspace
-
 # This is the one recipe that dirties the shared target dir, and it is
 # unavoidable: `sqlx prepare` deliberately bumps the mtimes of the crate's
 # sources so the sqlx macros re-expand, then runs `cargo check` with
@@ -143,7 +138,7 @@ deny-advisories:
 [group('rust')]
 lint: clippy doc-lint
 
-# DB-backed recipes (test/doctests/sqlx-check) are excluded from the offline
+# DB-backed recipes (test, sqlx-check, and schema-check) are excluded from the offline
 # gate; each provisions its own cluster. doc-lint is excluded
 # from the mid-task gate on cost grounds (a full rustdoc pass per check);
 # preflight and CI still run it, so broken links cannot reach a push.

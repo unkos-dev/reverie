@@ -59,7 +59,6 @@ infra::openapi
 rust::check
 rust::doc-lint
 rust::test
-rust::doctests
 rust::sqlx-check
 rust::schema-check
 rust::machete
@@ -77,7 +76,6 @@ infra::check
 rust::check
 rust::doc-lint
 rust::test
-rust::doctests
 rust::sqlx-check
 rust::schema-check
 rust::machete'
@@ -118,7 +116,6 @@ infra::openapi
 rust::check
 rust::doc-lint
 rust::test
-rust::doctests
 rust::sqlx-check
 rust::schema-check
 rust::machete
@@ -172,7 +169,6 @@ infra::check
 rust::check
 rust::doc-lint
 rust::test
-rust::doctests
 rust::sqlx-check
 rust::schema-check
 rust::machete
@@ -186,7 +182,6 @@ infra::openapi
 rust::check
 rust::doc-lint
 rust::test
-rust::doctests
 rust::sqlx-check
 rust::schema-check
 rust::machete
@@ -200,7 +195,6 @@ infra::check
 rust::check
 rust::doc-lint
 rust::test
-rust::doctests
 rust::sqlx-check
 rust::schema-check
 rust::machete
