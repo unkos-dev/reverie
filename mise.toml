@@ -45,7 +45,7 @@ pnpm = "11.28.13"
 # backend/Cargo.toml. sqlx-cli 0.9 does not publish a Cargo.lock, so its own
 # dependency tree remains the named package-ingress exception in REV-ADR-0050.
 [tools."cargo:sqlx-cli"]
-version = "0.9.0"
+version = "0.9.1"
 default-features = false
 features = ["postgres", "rustls", "sqlx-toml"]
 locked = false
