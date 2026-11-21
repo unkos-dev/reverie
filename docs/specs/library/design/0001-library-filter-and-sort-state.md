@@ -182,12 +182,13 @@ requests de-duplicate IDs and stay bounded; displayed rows retain their owning s
 Exceeding a text or selection-count limit does not make an otherwise well-formed visit malformed. Such visits retain all
 filters and the view override for correction or clearing, while request eligibility enforces those limits.
 
-Malformed API timestamps, numbers, `UUID` and boolean values return `400` decode errors. Domain, cap, status and cursor
-errors return `422`; contradictory complete intervals return successful empty data. Network and server errors are
-errors. A books-list `validation` execution refusal stays in the results region with recoverable feedback and no
-automatic retry. Search, Filters and Clear remain usable; correction or Clear can request results again. List validation
-feedback stays with the owning results region. Other initial or changed-query failures reach the route error boundary.
-Other failed load-more requests keep loaded pages and offer Retry.
+The Design "Books list query contract" describes how the server refuses a list request
+([Failure and recovery](0019-books-list-query-contract.md#failure-and-recovery)); contradictory complete intervals
+return successful empty data. `useLibraryBooks` treats a books-list execution error whose code is `validation` as a
+refused request: it stays in the results region with recoverable feedback and no automatic retry. Search, Filters and
+Clear remain usable; correction or Clear can request results again. List validation feedback stays with the owning
+results region. Other initial or changed-query failures reach the route error boundary. Other failed load-more requests
+keep loaded pages and offer Retry.
 
 A table-load failure stays inside the results region. Reload page starts a fresh application load and restores the
 Library visit. Switch to grid view selects the visit's grid override without rewriting the account preference. A failed
