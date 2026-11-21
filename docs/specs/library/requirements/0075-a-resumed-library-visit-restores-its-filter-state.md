@@ -46,4 +46,6 @@ Restoring part of a malformed saved state would show the reader a combination of
   starts with no filters, restoring none of its saved conditions. Checked by
   `REV-REQ-0075 AC5: unusable saved state restores no filters: %j` in
   `frontend/tests/browser/use-library-filters.test.tsx`.
-- A resumed visit whose saved state holds valid filters and an invalid saved position starts with no filters.
+- A resumed visit whose saved state holds valid filters and an invalid saved position starts with no filters. Checked by
+  `REV-REQ-0075 AC5: unusable saved state restores no filters: %j` in
+  `frontend/tests/browser/use-library-filters.test.tsx`.
