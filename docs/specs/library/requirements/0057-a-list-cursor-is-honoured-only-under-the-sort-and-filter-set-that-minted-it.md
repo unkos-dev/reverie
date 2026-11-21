@@ -11,12 +11,15 @@ governed-by:
 
 ## Statement
 
-WHEN a request to a paginated JSON list endpoint under `/api/v1/` presents a cursor, the server MUST resume the page
-walk only if the cursor was minted by that same endpoint under the same sort stack and the same filter set as the
-request presents; a cursor minted by a different list endpoint, or under a different sort stack or filter set, MUST be
-refused with `422 Unprocessable Content` and MUST NOT be reinterpreted against the request's own sort or filter. GraphQL
-connections MUST likewise refuse a cursor unless its connection, parent, complete sort stack and complete filter set
-match, returning a classified validation fault without a page. The OPDS catalogue feeds are outside this obligation.
+WHEN a request to a paginated JSON list endpoint under `/api/v1/`, or to a GraphQL connection, presents an incompatible
+cursor, the server MUST refuse the request without returning a page and MUST NOT reinterpret the cursor against the
+request's own sort or filters. A JSON list endpoint answers the refusal with `422 Unprocessable Content`. A GraphQL
+connection answers it with an error whose code is `invalid-cursor`, a code the server gives no other refusal. For a JSON
+list endpoint, a cursor is incompatible unless that endpoint minted it under the request's sort stack and filter set.
+For a GraphQL connection, a cursor is incompatible unless that connection minted it under the request's parent, sort
+stack and filter set. Two sort stacks are the same only when they name the same columns in the same order with the same
+directions. Two filter sets that differ only in the order of a multi-valued filter's values are the same filter set. The
+OPDS catalogue feeds are outside this obligation.
 
 ## Rationale
 
@@ -24,11 +27,10 @@ A client that walks pages holds an opaque token whose meaning is fixed by the or
 If the server accepted such a token under a different ordering or filter, the resumed page would skip or repeat rows
 with nothing to tell the client it had happened, and a token from one list would silently position a walk in another.
 The client depends on a refused cursor being loud, so it can restart the walk from the first page rather than render a
-page that looks complete and is not. The
-[keyset pagination decision](../../../adr/0019-keyset-pagination-as-the-default-list-contract.md) fixes the opaque
-cursor as the list contract this obligation protects. The OPDS acquisition feeds sit outside the obligation because
-every one of them walks the same ordering and bound, so a cursor replayed across feeds starts the walk mid-list rather
-than skipping or repeating rows within it.
+page that looks complete and is not. A code reserved for cursor refusals lets the client restart only for this refusal,
+and leave other invalid input to the reader. The OPDS acquisition feeds sit outside the obligation because every one of
+them walks the same ordering and bound, so a cursor replayed across feeds starts the walk mid-list rather than skipping
+or repeating rows within it.
 
 ## Acceptance criteria
 
@@ -45,6 +47,12 @@ than skipping or repeating rows within it.
   `backend/src/routes/shelves/tests.rs`, and `shelf_rejects_foreign_tags` in `backend/src/routes/cursor.rs`.
 - A refused cursor never produces a page: the response carries no items. Checked by the same tests, each of which
   asserts the `422` status.
-- A GraphQL cursor with a different connection, parent, sort column, level order, direction or filter set produces a
-  validation fault and no page. Reordering values within a multi-valued filter preserves its identity. Checked by
+- A GraphQL cursor presented to another connection, under another parent, or with a different sort column, level order,
+  direction or filter set produces an error with code `invalid-cursor` at the refused connection's path, and that
+  connection returns no page. This holds for a shelves cursor sent to books and a books cursor sent to shelves, for
+  nested work, shelf and pending-version connections, and for a cursor whose key type the new sort accepts. Checked by
   `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.
+- A GraphQL books cursor presented with the values of a multi-valued filter in another order returns the next page.
+  Checked by `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.
+- A GraphQL books request refused for an invalid sort, rather than for its cursor, carries the code `validation`, not
+  `invalid-cursor`. Checked by `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.

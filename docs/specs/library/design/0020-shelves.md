@@ -238,10 +238,12 @@ pagination fragment, and `useShelves` in `frontend/src/api/shelves.ts` reads the
   ownership has already been confirmed; a caller learns "this shelf is mine but immutable" only after the ownership
   check, never before it. GraphQL reports the same order of checks as `NotFound` and `SystemShelfImmutable` results.
 - **Cursor from another list.** `ShelfCursor::parse` and `ShelfItemCursor::parse` accept only their own tag (`sh`, `si`)
-  and refuse a cursor minted by the books list or by the other shelf list with `AppError::Validation` (422). An HTTP
-  item cursor carries no shelf identity, so `GET /api/v1/shelves/{id}` accepts an item cursor cut from another shelf and
-  applies its boundary within the requested owned shelf. The GraphQL `items` cursor binds its shelf ID and relation
-  kind, and a cursor from another parent or relation is refused with the `validation` code.
+  and refuse a cursor minted by the books list or by the other shelf list with `AppError::InvalidCursor`, the 422
+  validation problem with the fixed detail "Invalid cursor.". An HTTP item cursor carries no shelf identity, so
+  `GET /api/v1/shelves/{id}` accepts an item cursor cut from another shelf and applies its boundary within the requested
+  owned shelf. The GraphQL `shelves` and `items` connections refuse the same cursors with the `invalid-cursor` code. The
+  `items` cursor binds its shelf ID and relation kind, and a cursor from another parent or relation is refused with that
+  code.
 - **A child probing shelf existence via manifestation ids.** Covered in Runtime behaviour: the RLS-scoped probe in
   `add_shelf_item` and the ownership check both resolve to the same `AppError::NotFound`, so a child cannot distinguish
   "no such shelf" from "shelf is yours but that manifestation isn't visible to you".

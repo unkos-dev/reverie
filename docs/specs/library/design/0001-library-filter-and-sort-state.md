@@ -77,10 +77,13 @@ calendar dates become local-midnight `created_at_gte` and next-local-midnight `c
 month/year rollovers and daylight-saving changes.
 
 `libraryPreferences` and `updateLibraryPreferences` provide the account overrides and installation defaults through
-`services::preferences`. The HTTP preference endpoints share that service. Sort gestures write `sortStack`; a non-empty
-override becomes ordered typed sort levels. With no override, `sort` is omitted or null and the server uses the
-installation default. Native query references retain connection membership. Each source keeps its operation, variables
-and detached editing pairs for row actions.
+`services::preferences`. The HTTP preference endpoints share that service. Sort gestures write `sortStack`. A books
+request carries the reader's non-empty override explicitly: as ordered typed `sort` levels in GraphQL, and as the `sort`
+query parameter when `listBooks` (`frontend/src/api/books.ts`) builds the HTTP request. With no override, the GraphQL
+request omits `sort` or supplies `null`, `listBooks` omits the parameter, and the server applies the installation
+default. Neither request serialises the installation-default levels, so an inheriting reader's list-query key depends
+only on the absent override, never on server defaults the client cannot see. Native query references retain connection
+membership. Each source keeps its operation, variables and detached editing pairs for row actions.
 
 ## Data and state
 
@@ -184,11 +187,12 @@ filters and the view override for correction or clearing, while request eligibil
 
 The Design "Books list query contract" describes how the server refuses a list request
 ([Failure and recovery](0019-books-list-query-contract.md#failure-and-recovery)); contradictory complete intervals
-return successful empty data. `useLibraryBooks` treats a books-list execution error whose code is `validation` as a
-refused request: it stays in the results region with recoverable feedback and no automatic retry. Search, Filters and
-Clear remain usable; correction or Clear can request results again. List validation feedback stays with the owning
-results region. Other initial or changed-query failures reach the route error boundary. Other failed load-more requests
-keep loaded pages and offer Retry.
+return successful empty data. When the server refuses a replacement's continuation cursor with the `invalid-cursor`
+code, the visit owner discards that candidate and rebuilds it once from the first page. `useLibraryBooks` treats a
+books-list execution error whose code is `validation` as a refused request: it stays in the results region with
+recoverable feedback and no automatic retry. Search, Filters and Clear remain usable; correction or Clear can request
+results again. List validation feedback stays with the owning results region. Other initial or changed-query failures
+reach the route error boundary. Other failed load-more requests keep loaded pages and offer Retry.
 
 A table-load failure stays inside the results region. Reload page starts a fresh application load and restores the
 Library visit. Switch to grid view selects the visit's grid override without rewriting the account preference. A failed
