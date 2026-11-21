@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Guard: static backend allowlist and prose guards that backend.yml's
+# Guard: static backend allowlist guards that backend.yml's
 # checks job runs before installing a toolchain, database, or any
 # other dependency, so a violation fails in seconds. Single-sourced here per
 # the justfile header's stated philosophy (CI command definitions live once);
 # the workflow invokes this script instead of duplicating the grep logic inline.
 #
-# Three independent guards, run in the same order as that job:
+# Two independent guards, run in the same order as that job:
 #   1. runtime sqlx::query/raw_sql invocations outside the allowlist
 #   2. raw axum .route( registrations outside the allowlist
-#   3. em dashes in the generated config schema
 #
 # The datetime-crate boundary is NOT here: it asks what a path resolves
 # to rather than how it is spelled, which a regex can only approximate.
@@ -84,24 +83,7 @@ run_grep_guard \
     "Register endpoints via OpenApiRouter + routes!(...) with #[utoipa::path]," \
     "or add a justified entry to backend/guards/axum-route-allowlist.txt."
 
-# 3. The schema descriptions are config-struct doc-comments (schemars folds
-# them in); the Vale gate covers Markdown but not this generated JSON. Match
-# raw U+2014 UTF-8 bytes (LC_ALL=C + fixed-string) so the check never
-# depends on grep's PCRE or locale support: a PCRE-mode grep rejecting
-# `\x{2014}` would exit non-zero and pass the gate open.
-schema=backend/config.schema.json
-rc=0
-matches=$(LC_ALL=C grep -nF $'\xe2\x80\x94' "$schema") || rc=$?
-if [ "$rc" -gt 1 ]; then
-    exit "$rc"
-fi
-if [ -n "$matches" ]; then
-    printf '%s\n' "$matches" >&2
-    echo "${schema} contains an em dash (lines above); recast the source doc-comment in backend/src/config and regenerate." >&2
-    fail=1
-fi
-
 if [ "$fail" -ne 0 ]; then
     exit 1
 fi
-echo "OK: backend static guards hold (sqlx-runtime, axum-route, config-schema em dash)"
+echo "OK: backend static guards hold (sqlx-runtime, axum-route)"

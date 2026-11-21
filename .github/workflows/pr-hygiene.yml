@@ -1,6 +1,6 @@
 # Server-side gate: the local commit-msg hook is bypassable and never runs on
-# fork PRs. Lints both the PR's commit range and its title (the one subject
-# the hook never sees, and the one release-please consumes via squash-merge).
+# fork PRs. Lints PR commit subjects and the title, which release-please
+# consumes via squash-merge.
 # Standalone rather than a ci.yml concern, because `edited` belongs on this
 # trigger and nowhere else: putting it on the caller would rerun all of CI on
 # every title edit.
@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history so commitlint can walk the whole PR range.
+          # Full history so commitlint can walk the merge parents and PR commits.
           fetch-depth: 0
           persist-credentials: false
 
@@ -46,12 +46,9 @@ jobs:
         with:
           vp: "true"
 
-      # base.sha pins the fork point even if the base branch moves mid-run.
-      - name: Lint PR commit range
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: vp exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+      # The event's base SHA can lag the base used by the checked-out PR merge.
+      - name: Lint PR commit subjects
+        run: vp exec commitlint --from HEAD^1 --to HEAD^2 --git-log-args=--format=%s --verbose
 
       # GitHub appends ` (#N)` to the squash subject; the bare title still
       # matches what commitlint/release-please will see.

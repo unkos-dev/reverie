@@ -47,8 +47,8 @@ Branch names use the same type as their prefix (`feat/`, `fix/`, `refactor/`, an
 changes append `!` after the type or scope and explain the break in a `BREAKING CHANGE:` footer. Reverts use the
 `revert` type with a footer naming the commit being reverted (`Refs: <sha>`).
 
-Pull request titles follow the same format: squash merging makes the title the commit subject on `main`, and a CI check
-lints it with the same commitlint config.
+The local `commit-msg` hook lints the full commit message. CI lints the subjects of the commits in the pull request and
+the pull request title. Squash merging makes the title the commit subject on `main`.
 
 ## Development setup
 
