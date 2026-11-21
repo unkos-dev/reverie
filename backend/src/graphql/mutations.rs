@@ -800,6 +800,14 @@ impl Mutation {
         input: UpdateLibraryPreferencesInput,
     ) -> async_graphql::Result<UpdateLibraryPreferencesResult> {
         let user = ctx.data::<CurrentUser>()?;
+        if input.reset_hidden_columns == Some(true) && input.columns.is_some() {
+            return Ok(UpdateLibraryPreferencesResult::MetadataInvalid(
+                MetadataInvalid {
+                    message: "resetHiddenColumns cannot be combined with columns".into(),
+                    field_errors: Vec::new(),
+                },
+            ));
+        }
         let request = crate::services::preferences::UpdatePreferencesRequest {
             hidden_columns: (input.reset_hidden_columns == Some(true)).then_some(None),
             density: input.density.map_value(Into::into).into(),
