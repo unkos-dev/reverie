@@ -5,11 +5,8 @@
 # the frozen-installs control).
 #
 # Polarity: any `cargo <subcommand>` is a violation unless it carries
-# --locked, its subcommand is one of the named non-resolving few, or it is
-# the one documented exemption. The non-resolving set is the closed,
-# knowable one; the resolving set is unbounded (cargo grows subcommands), so
-# an unknown subcommand fails loudly and gets a deliberate ruling instead of
-# passing silently.
+# --locked or its subcommand is one of the named non-resolving few.
+# Cargo can add subcommands, so an unknown subcommand fails until reviewed.
 #
 # Granularity: decisions are per command segment, not per line. A line is
 # split on &&, ||, ; and | and each segment is judged alone, so `--locked`
@@ -116,11 +113,7 @@ while IFS= read -r match; do
       fi
     done
     [ -n "$sub" ] || continue
-    # sqlx-cli 0.9 does not publish a Cargo.lock.
-    case "$seg" in
-      *'cargo install sqlx-cli'*) continue ;;
-      *'--locked'*) continue ;;
-    esac
+    [[ "$seg" == *'--locked'* ]] && continue
     if is_exempt_sub "$sub" "$nxt"; then
       continue
     fi
