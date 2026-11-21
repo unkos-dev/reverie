@@ -112,10 +112,7 @@
       "id": "REV-ADR-0016",
       "kind": "adr",
       "path": "docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md",
-      "status": "superseded",
-      "superseded-by": [
-        "REV-ADR-0077"
-      ],
+      "status": "accepted",
       "title": "API versioning by URL path with OpenAPI as the contract"
     },
     {
@@ -616,8 +613,7 @@
       "path": "docs/adr/0077-graphql-and-relay-for-browser-application-data.md",
       "status": "accepted",
       "supersedes": [
-        "REV-ADR-0010",
-        "REV-ADR-0016"
+        "REV-ADR-0010"
       ],
       "title": "GraphQL and Relay for browser application data"
     },
@@ -668,6 +664,13 @@
       "path": "docs/adr/0083-server-typed-scalars-and-enums-for-graphql-data-formats.md",
       "status": "accepted",
       "title": "Server-typed scalars and enums for GraphQL data formats"
+    },
+    {
+      "id": "REV-ADR-0084",
+      "kind": "adr",
+      "path": "docs/adr/0084-editing-baselines-as-revision-records.md",
+      "status": "accepted",
+      "title": "Editing baselines as revision records"
     },
     {
       "governed-by": [
@@ -772,7 +775,8 @@
     {
       "governed-by": [
         "REV-ADR-0011",
-        "REV-ADR-0069"
+        "REV-ADR-0069",
+        "REV-ADR-0084"
       ],
       "id": "REV-DESIGN-0007",
       "kind": "design",
@@ -1158,7 +1162,8 @@
         "REV-ADR-0080",
         "REV-ADR-0081",
         "REV-ADR-0082",
-        "REV-ADR-0083"
+        "REV-ADR-0083",
+        "REV-ADR-0084"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",

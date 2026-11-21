@@ -16,8 +16,7 @@ supersedes:
 
 ## Context and problem statement
 
-Reverie lints JavaScript and TypeScript with oxlint. The decision this record supersedes chose oxlint with native rules
-only, and rejected the JS-plugin bridge because it keeps the ESLint ecosystem installed.
+Reverie lints JavaScript and TypeScript with oxlint, using its native rules.
 
 Relay is the browser's GraphQL client, and its conventions now reach both the frontend sources and the exported schema
 in `backend/schema.graphql`. Nothing mechanical checks either side today. Relay documents `eslint-plugin-relay` as its
@@ -45,9 +44,7 @@ Chosen option: **oxlint with the `eslint-plugin-relay` bridge, plus ESLint limit
 only option that checks Relay conventions on both the client and the schema with the documented tools.
 
 oxlint remains the engine for all JavaScript and TypeScript. Its JS-plugin bridge loads `eslint-plugin-relay` for
-frontend sources. ESLint runs only GraphQL-ESLint, and only over `backend/schema.graphql`. ESLint stays until the oxlint
-that Vite+ bundles lets JS plugins lint non-JavaScript files; the schema lint then moves under oxlint and ESLint is
-removed.
+frontend sources. ESLint runs only GraphQL-ESLint, and only over `backend/schema.graphql`.
 
 ### Consequences
 
@@ -66,7 +63,7 @@ removed.
 - Negative: the compiler checks names and generated types, but not connection shapes, required hook arguments or schema
   conventions.
 
-### Deferring schema lint until oxlint supports other file formats
+### oxlint with the `eslint-plugin-relay` bridge, deferring schema lint until oxlint supports other file formats
 
 - Positive: no second engine.
 - Negative: the schema stays unchecked for an unknown period while the native Relay migration reshapes it.

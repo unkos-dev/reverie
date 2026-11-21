@@ -53,15 +53,9 @@ Chosen option: **oxlint, native rules only, with config-driven type-aware via `o
 the full removal of ESLint while preserving every enforcement that is a genuine industry standard. The JS-plugin bridge
 option is rejected because it fails the full-removal driver; staying on ESLint is rejected by the toolchain direction.
 
-The native rules retain the object-literal `as`-cast ban, type-aware safety checks, fetch centralisation, and React
-correctness baseline. Docstring-presence enforcement and the opinionated React plugin layer are dropped; the enum
-restriction remains with the type checker. These are deliberate changes to the lint policy, not replacements hidden
-behind a compatibility bridge.
-
-Requiring a docblock on every export encouraged boilerplate that restated the type signature, so docstrings remain a
-reviewed convention. The `@eslint-react` class-component rules added no coverage in a function-component-only codebase;
-the remaining concerns rely on the retained native React rules, runtime checks and reviewed cleanup conventions. Those
-conventions do not provide the same enforcement as a lint rule.
+Docstring-presence linting and the opinionated React plugin layer are dropped as deliberate changes to the lint policy,
+because a docblock on every export restated the type signature and the `@eslint-react` class-component rules covered
+nothing in a function-component codebase.
 
 ### Consequences
 
@@ -71,21 +65,12 @@ conventions do not provide the same enforcement as a lint rule.
 - Negative: the `strictTypeChecked` class runs through `oxlint-tsgolint` and must be version-paired with TypeScript when
   the native compiler lands.
 - Negative: docstring presence and the inline-style ban become review-level, not machine-gated. The inline-style ban
-  also has no Content-Security-Policy backstop, since `style-src` permits `unsafe-inline` for Tailwind. A separate
-  frontend-standards review revisits both.
+  also has no Content-Security-Policy backstop, since `style-src` permits `unsafe-inline` for Tailwind.
 
 ## More information
 
-This decision superseded two earlier decisions, both retired: a decision to replace eslint-plugin-react with
-@eslint-react (retired; history holds the record), and a decision to lint frontend docstrings via eslint-plugin-jsdoc,
-whose docstring-presence rule this decision drops (see Decision outcome above).
-
-This decision amends [strict lint policy](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md), whose
-frontend engine is now oxlint, and [tiered comment policy](./0004-tiered-comment-policy-for-an-open-source-codebase.md),
-whose frontend docstring floor is now review-level rather than lint-enforced.
-
-Formatting moved to oxfmt in a paired decision, [adopt oxfmt](./0032-adopt-oxfmt-replacing-prettier.md). The React
-Compiler transform is enabled under
-[Compile the frontend with the React Compiler through oxc](./0072-compile-the-frontend-with-the-react-compiler-through-oxc.md).
-Further follow-ups: the migration to the native TypeScript compiler with `oxlint-tsgolint` version-pairing, and a
-rule-by-rule review of the frontend authoring standards against current practice.
+- [Strict lint policy](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md): this decision changes its
+  frontend lint engine.
+- [Tiered comment policy](./0004-tiered-comment-policy-for-an-open-source-codebase.md): this decision makes its frontend
+  docstring floor a review convention.
+- [Adopt oxfmt](./0032-adopt-oxfmt-replacing-prettier.md): the paired formatting decision.

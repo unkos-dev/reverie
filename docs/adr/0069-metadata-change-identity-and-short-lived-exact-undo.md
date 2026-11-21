@@ -27,7 +27,6 @@ evidence for exact restoration without creating a permanent history feature.
 - Detect intervening changes across every canonical writer, including automation and relational changes.
 - Preserve unrelated changes when restoring one field, including its attribution and ordered contributors.
 - Keep normal editing immediate while preventing writes from an unrelated baseline.
-- Resolve lost acknowledgements from committed evidence rather than apparent value equality.
 - Bound retained evidence and reuse PostgreSQL's transaction and session ownership.
 
 ## Considered options
@@ -49,7 +48,7 @@ history browser or general event replay.
 
 - Positive: returning to an earlier value cannot revive an old editing baseline or Undo operation.
 - Positive: unrelated fields can change without invalidating the selected field's restoration evidence.
-- Positive: canonical changes and their evidence can share one database commit, including acknowledgement recovery.
+- Positive: canonical changes and their Undo evidence can share one database commit.
 - Negative: relational and attribution changes need trigger coverage, which adds database coupling and lock contention.
 - Negative: exact restoration retains more state than a historical pointer, including sensitive draft values until
   expiry.

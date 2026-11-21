@@ -14,6 +14,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0011"
   - "REV-ADR-0069"
+  - "REV-ADR-0084"
 ---
 
 # Conditional requests and optimistic concurrency
