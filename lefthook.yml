@@ -104,16 +104,15 @@ pre-commit:
             glob: "frontend/src/**/*.css"
             run: just js::stylelint {staged_files}
 
-# Backend gate, scoped to pushes that touch backend/: the glob gates WHETHER
-# each job runs (same pattern as the impeccable pre-commit job); the commands
-# themselves still cd into backend and validate the whole crate. CI's backend
-# job is path-filtered the same way, so local and CI agree that a docs- or
-# frontend-only push owes no cargo build.
+# Backend pushes validate the whole crate. Exclude the backend README here
+# and in .github/path-filters.yml.
 # piped: true gives stop-on-first-failure; in the jobs array form, array order is
 # the execution order, so fmt -> clippy -> drift means the cheap check fails
 # before the heavy clippy and cargo-test builds run on a constrained host.
 pre-push:
   piped: true
+  exclude:
+    - "backend/README.md"
   jobs:
     - name: backend-fmt
       glob: "backend/**"

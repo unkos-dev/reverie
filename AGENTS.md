@@ -200,12 +200,9 @@ Two aggregates anchor the local loop and should be the default reflex:
   offline cache, a CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR override of a worktree's isolated target dir, git sync
   state and disk space. Every warning and failure names the exact fixing command. Run it first whenever the environment
   might have changed or a failure looks environmental rather than caused by the change.
-- `just preflight` runs only the preflight lanes this branch's changed paths require, deciding from
-  `.github/path-filters.yml` (the file CI's `changes` job feeds to dorny/paths-filter, so the two cannot drift). A
-  docs-only or frontend-only branch skips the database, the Rust rebuild, and the dependency audit. Changes to the
-  verification machinery itself (the justfiles, `scripts/`, `mise.toml`, that filter file) escalate to the full lane
-  set, and the whole-tree repo-lint mirror always runs. This is the default gate for both iteration and pre-push
-  verification.
+- Use `just preflight` for iteration and pre-push verification. It selects lanes from `.github/path-filters.yml` and
+  runs the repo-lint mirror for any changed path. Changes to shared verification machinery select the full lane set. Run
+  `scripts/preflight-scope.sh --explain` to see which lanes the branch selects and why.
 - `just preflight-full` runs everything the CI gate runs that is locally runnable, unconditionally: the DB-backed
   backend test suite, the sqlx cache check, the backend static guards, cargo-machete, cargo-deny, the frontend build,
   and the zizmor workflow-security audit (online audits included when a GitHub token is in the environment,

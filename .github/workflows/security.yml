@@ -29,6 +29,7 @@ jobs:
           ref: ${{ github.event.merge_group.head_sha || github.ref }}
           # scripts/preflight-scope.sh reads the same file, so the two cannot drift.
           filters: .github/path-filters.yml
+          predicate-quantifier: some-with-excludes
 
   sast:
     needs: changes

@@ -15,10 +15,10 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 failures=0
 
-# Assert the lane list produced for a newline-separated set of changed paths.
-expect_lanes() {
-  local name="$1" paths="$2" want="$3" got rc=0
-  got="$(printf '%s' "$paths" | "$scope" --files-from - 2> /dev/null)" || rc=$?
+expect_lanes_from() {
+  local name="$1" want="$2" got rc=0
+  shift 2
+  got="$("$@" 2> /dev/null)" || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf 'FAIL %s: exited %d, expected success\n' "$name" "$rc"
     failures=$((failures + 1))
@@ -30,6 +30,10 @@ expect_lanes() {
     return
   fi
   printf 'ok   %s\n' "$name"
+}
+
+expect_lanes() {
+  expect_lanes_from "$1" "$3" "$scope" --files-from - <<< "$2"
 }
 
 # Assert a nonzero exit whose diagnostics mention a given substring, so a
@@ -153,6 +157,16 @@ fi
 expect_lanes 'an unfiltered file still runs the repo-lint mirror' \
   'README.md' 'infra::check'
 
+expect_lanes 'the backend README only runs repo lint' \
+  'backend/README.md' 'infra::check'
+
+expect_lanes 'the README exclusion leaves other backend paths eligible' \
+  'backend/README.md
+backend/.sqlx/query.json' "$BACKEND"
+
+expect_lanes 'the Cargo lock guard only runs repo lint' \
+  'scripts/cargo-locked-guard.sh' 'infra::check'
+
 expect_lanes 'no changed paths select nothing at all' '' ''
 
 # A blank entry must be discarded, not treated as a path: the empty string is
@@ -175,8 +189,7 @@ rust::machete
 rust::deny
 rust::deny-advisories'
 
-expect_lanes 'a tool pin edit runs the policy audit but not advisories' \
-  'mise.lock' 'rust::guards
+TOOL_PINS='rust::guards
 infra::check
 infra::openapi
 rust::check
@@ -187,6 +200,8 @@ rust::schema-check
 rust::machete
 rust::deny
 infra::zizmor'
+
+expect_lanes 'a tool lock edit runs the policy audit' 'mise.lock' "$TOOL_PINS"
 
 expect_lanes 'unrelated planes union rather than override' \
   'backend/src/lib.rs
@@ -256,10 +271,8 @@ expect_failure 'a missing filters file aborts' 'missing' \
 # --- changed-path collection -------------------------------------------------
 
 # Everything above feeds paths in through --files-from, which exercises the
-# mapping but not the git query that produces those paths in real use. These
-# two cases need a repository, so they build a throwaway one and run a copy of
-# the scoper from inside it: the script derives its own root from $0, so a
-# copy under <fixture>/scripts/ treats the fixture as the repo.
+# mapping. Git-based cases run a copy of the scoper from a throwaway repository because
+# the script derives its repository root from its own path.
 fixture="$tmpdir/fixture"
 mkdir -p "$fixture/scripts" "$fixture/.github" "$fixture/backend" "$fixture/website"
 cp "$scope" "$fixture/scripts/preflight-scope.sh"
@@ -268,25 +281,50 @@ git -C "$fixture" init -q -b main
 git -C "$fixture" config user.email selftest@example.invalid
 git -C "$fixture" config user.name 'Preflight Selftest'
 echo 'fn main() {}' > "$fixture/backend/moved.rs"
+cat > "$fixture/mise.toml" <<'EOF'
+[tools]
+just = "1.59.0"
+
+# Migration and query-cache CLI.
+[tools."cargo:sqlx-cli"]
+version = "0.9.0"
+default-features = false
+locked = false
+EOF
 git -C "$fixture" add -A
 git -C "$fixture" commit -qm 'base'
 git -C "$fixture" checkout -q -b topic
+
+fixture_scope() (
+  cd "$fixture"
+  ./scripts/preflight-scope.sh --base main
+)
+
+cat > "$fixture/mise.toml" <<'EOF'
+[tools]
+just = "1.59.0"
+
+[tools."cargo:sqlx-cli"]
+version = "0.9.1"
+default-features = false
+EOF
+touch "$fixture/scripts/cargo-locked-guard.sh"
+expect_lanes_from 'SQLx CLI version and locking changes use the shared filters' "$TOOL_PINS" fixture_scope
+
+sed 's/1\.59\.0/1.60.0/' "$fixture/mise.toml" > "$tmpdir/mise.toml"
+mv "$tmpdir/mise.toml" "$fixture/mise.toml"
+expect_lanes_from 'changing a shared tool alongside SQLx still escalates' "$FULL" fixture_scope
+git -C "$fixture" restore mise.toml
+rm "$fixture/scripts/cargo-locked-guard.sh"
+
 git -C "$fixture" mv backend/moved.rs website/moved.mdx
 git -C "$fixture" commit -qm 'move across filter scopes'
 
 # git's rename detection reports only the destination of a move, which would
 # select the website lane and silently drop every Rust lane the vacated backend
 # path required. Both sides of the move have to be named.
-rename_got="$(cd "$fixture" && ./scripts/preflight-scope.sh --base main 2> /dev/null)"
-rename_want="$BACKEND
-website::check"
-if [ "$rename_got" = "$rename_want" ]; then
-  printf 'ok   %s\n' 'a rename across filter scopes keeps the source lane'
-else
-  printf 'FAIL %s\n  want: %s\n  got:  %s\n' 'a rename across filter scopes keeps the source lane' \
-    "$(echo "$rename_want" | tr '\n' ' ')" "$(echo "$rename_got" | tr '\n' ' ')"
-  failures=$((failures + 1))
-fi
+expect_lanes_from 'a rename across filter scopes keeps the source lane' "$BACKEND
+website::check" fixture_scope
 
 # A git failure during path discovery must abort. Swallowed, it looks like a
 # short changed-path list, which is exactly the confidently-narrowed gate this

@@ -2,12 +2,13 @@
 # scripts/preflight-scope.sh; a filter edit changes both gates, which is why a
 # detector reads this file rather than inlining its own patterns. Every filter
 # includes this file and every workflow or composite action that defines a job
-# it gates, so editing the definition re-runs the job. Patterns
-# are literal paths and trailing `/**` only: the local scoper has no glob engine.
+# it gates, so editing the definition re-runs the job. Patterns are literal
+# paths, trailing `/**` patterns, or exact exclusions prefixed with `!`.
 backend:
   - "frontend/src/lib/relay/**"
   - "frontend/relay.config.json"
   - "backend/**"
+  - "!backend/README.md"
   - "docker/init-roles.sql"
   - "docker/compose.dev.yml"
   - "rust.just"
