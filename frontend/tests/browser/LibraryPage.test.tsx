@@ -679,7 +679,7 @@ describe("LibraryPage", () => {
       // REV-REQ-0001: the Covers sort control and each sort stack editor action store their result
       // as the override, the reset clears it, and none of them adds a `sort` parameter to the URL.
       const fixture = await renderLibrary({
-        items: [bookFixture()],
+        items: SORTED_BOOKS,
         preferences: preferencesFixture({ sort_stack: "-pages" }),
       });
       await expect.element(page.getByRole("heading", { name: "Library" })).toBeInTheDocument();
@@ -719,6 +719,17 @@ describe("LibraryPage", () => {
       await user.click(page.getByRole("button", { name: "Reset sort to the installation order" }));
       await expectWrite(null);
       await expect.element(page.getByText("Sorted by Added descending")).toBeInTheDocument();
+      await vi.waitFor(() => {
+        const request = fixture.calls.filter((call) => call.name === "readerLibraryQuery").at(-1);
+        expect(request?.variables.sort ?? null).toBeNull();
+        const shown = [...document.querySelectorAll<HTMLElement>("[data-book-id]")].map(
+          (row) =>
+            SORTED_BOOKS.find(
+              (book) => encodeGraphQLId("Manifestation", book.id) === row.dataset.bookId,
+            )?.title,
+        );
+        expect(shown).toEqual(["Short", "Middle", "Long"]);
+      });
     });
   });
 });
