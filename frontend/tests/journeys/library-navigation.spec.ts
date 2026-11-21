@@ -467,10 +467,14 @@ test("rapid edits reload with their first request and no URL grammar", async ({ 
   );
   expect(fixture.requests[before]?.filter?.seriesAny).toEqual([graphId("Series", SERIES[0].id)]);
   const chips = page.getByTestId("filter-chips");
+  await expect(chips.getByRole("row", { name: /^Series: / })).toHaveCount(1);
   await expect(
     chips.getByRole("row", { name: "Series: Sea adventures", exact: true }),
   ).toBeVisible();
-  await expect(chips.getByRole("row", { name: "Series: Sea stories", exact: true })).toHaveCount(0);
+  for (const shelf of SHELVES)
+    await expect(
+      chips.getByRole("row", { name: `Shelf: ${shelf.name}`, exact: true }),
+    ).toBeVisible();
   await expect(page.getByRole("heading", { name: "The Sea", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/library$/);
 });
