@@ -2192,6 +2192,16 @@ mod tests {
             id::Manifestation::encode(fixture.sibling).as_str()
         );
         assert_eq!(next["data"]["books"]["pageInfo"]["hasPreviousPage"], true);
+        let http = fixture
+            .server
+            .get(&format!("/api/v1/books?sort=created_at&created_at_gte=2026-01-01T00:00:00Z&created_at_lt=2026-01-04T00:00:00Z&cursor={cursor}"))
+            .add_header("authorization", fixture.admin.clone())
+            .await;
+        http.assert_status_ok();
+        assert_eq!(
+            http.json::<serde_json::Value>()["items"][0]["id"],
+            fixture.sibling.to_string()
+        );
         for filter in [
             json!({"pagesGte": 20, "pagesLte": 20}),
             json!({"pagesGte": 30, "pagesLte": 10}),
@@ -2388,5 +2398,17 @@ mod tests {
         )
         .await;
         assert_cursor_refused(&refused, &["books"]);
+        let http_shelves = fixture
+            .server
+            .get(&format!("/api/v1/shelves?cursor={shelf_cursor}"))
+            .add_header("authorization", fixture.admin.clone())
+            .await;
+        http_shelves.assert_status_ok();
+        assert!(
+            !http_shelves.json::<serde_json::Value>()["items"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 }
