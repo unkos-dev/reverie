@@ -1,6 +1,6 @@
 [package]
 name = "reverie-api"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 # The declared floor tracks the pinned toolchain so dependency resolution can
 # prefer compatible releases and cargo rejects older non-rustup builders clearly.
