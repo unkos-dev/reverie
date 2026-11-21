@@ -2404,11 +2404,12 @@ mod tests {
             .add_header("authorization", fixture.admin.clone())
             .await;
         http_shelves.assert_status_ok();
-        assert!(
-            !http_shelves.json::<serde_json::Value>()["items"]
+        assert_ne!(
+            http_shelves.json::<serde_json::Value>()["items"]
                 .as_array()
                 .unwrap()
-                .is_empty()
+                .as_slice(),
+            [] as [serde_json::Value; 0]
         );
     }
 }
