@@ -10,16 +10,16 @@ title: "Each refused Library save gives feedback for its reason"
 ## Statement
 
 WHEN the server refuses a [Library save](0081-failed-library-saves-support-explicit-retry.md#statement) for a reason
-other than a stale baseline, the Library MUST show feedback for that reason and MUST NOT offer to send the save again
-unchanged. A refusal for validation keeps the reader's submitted input available in the editor for correction. A refusal
-because a field is locked, or because the reader lacks permission, names that reason.
+other than a stale baseline, the Library MUST keep the reader's submitted input, show feedback for that reason and not
+offer to send the save again unchanged. After a refusal for validation, the submitted input is available in the editor
+for correction. A refusal because a field is locked, or because the reader lacks permission, names that reason.
 
 ## Rationale
 
 Each refusal needs a different response from the reader: a validation refusal needs a corrected value, a locked field
 needs unlocking, and a permission refusal cannot be resolved from the Library. Generic feedback, or an offer to send the
-same save again, gives the reader a control that cannot succeed. Keeping the input after a validation refusal lets the
-reader correct it rather than enter it again.
+same save again, gives the reader a control that cannot succeed. Keeping the input after any refusal lets the reader
+correct it or act on the reason rather than enter it again.
 
 ## Acceptance criteria
 
@@ -31,3 +31,5 @@ reader correct it rather than enter it again.
   `frontend/tests/browser/LibraryPage.test.tsx`.
 - After a refusal because the reader lacks permission, the Edit outcomes region names the permission refusal and offers
   neither Retry nor Reload.
+- After a refusal because a field is locked, or because the reader lacks permission, the Edit outcomes region shows the
+  submitted value.
