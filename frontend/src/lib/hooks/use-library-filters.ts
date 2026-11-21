@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router";
+import { useState } from "react";
 
 import {
   emptyFilterState,
@@ -19,15 +18,45 @@ function entryData(): Record<string, unknown> {
     : {};
 }
 
-function restoreVisit(): LibraryVisit {
+/** Decode the current Navigation entry's saved visit, or an empty visit when it is unusable. */
+export function restoreVisit(): LibraryVisit {
   const parsed = LibraryVisitSchema.safeParse(entryData()[VISIT_KEY]);
   return parsed.success ? parsed.data : { filters: emptyFilterState() };
 }
 
-type VisitSnapshot = { entryKey: string | undefined; visit: LibraryVisit };
+/** The one writer of a Library visit's intent on its own Navigation entry. */
+export class LibraryIntent {
+  private entry: string | undefined;
+  private visit: LibraryVisit;
 
-function restoreSnapshot(): VisitSnapshot {
-  return { entryKey: navigation.currentEntry?.key, visit: restoreVisit() };
+  constructor(entry: string | undefined, visit: LibraryVisit) {
+    this.entry = entry;
+    this.visit = visit;
+  }
+
+  get entryId(): string | undefined {
+    return this.entry;
+  }
+
+  bind(entry: string): void {
+    this.entry = entry;
+  }
+
+  current(): LibraryVisit {
+    return this.visit;
+  }
+
+  restore(visit: LibraryVisit): void {
+    this.visit = visit;
+  }
+
+  update(patch: (visit: LibraryVisit) => LibraryVisit): LibraryVisit | undefined {
+    if (this.entry === undefined || navigation.currentEntry?.id !== this.entry) return undefined;
+    const next = patch(this.visit);
+    navigation.updateCurrentEntry({ state: { ...entryData(), [VISIT_KEY]: next } });
+    this.visit = next;
+    return next;
+  }
 }
 
 export type LibraryFilters = {
@@ -40,38 +69,25 @@ export type LibraryFilters = {
   setView: (view: LibraryView) => void;
 };
 
-export function useLibraryFilters(): LibraryFilters {
-  useLocation();
-  const [snapshot, setSnapshot] = useState(restoreSnapshot);
-  const current = useRef(snapshot);
+/**
+ * Render the visit a route load restored for `intent`, and dispatch edits through it. `follow`
+ * receives each filter edit's result before the edit is written.
+ */
+export function useLibraryFilters(
+  intent: LibraryIntent,
+  restored: LibraryVisit,
+  follow: (next: FilterState, write: () => void) => void,
+): LibraryFilters {
+  const [snapshot, setSnapshot] = useState({ restored, visit: restored });
   let rendered = snapshot;
-  if (snapshot.entryKey !== navigation.currentEntry?.key) {
-    rendered = restoreSnapshot();
+  if (snapshot.restored !== restored) {
+    rendered = { restored, visit: restored };
     setSnapshot(rendered);
   }
 
-  useEffect(() => {
-    function restore(event: NavigationCurrentEntryChangeEvent): void {
-      if (event.navigationType === null) return;
-      const next = restoreSnapshot();
-      current.current = next;
-      setSnapshot(next);
-    }
-    navigation.addEventListener("currententrychange", restore);
-    return () => {
-      navigation.removeEventListener("currententrychange", restore);
-    };
-  }, []);
-
   function update(patch: (visit: LibraryVisit) => LibraryVisit): void {
-    const prior =
-      current.current.entryKey === navigation.currentEntry?.key
-        ? current.current
-        : restoreSnapshot();
-    const next = { entryKey: prior.entryKey, visit: patch(prior.visit) };
-    navigation.updateCurrentEntry({ state: { ...entryData(), [VISIT_KEY]: next.visit } });
-    current.current = next;
-    setSnapshot(next);
+    const next = intent.update(patch);
+    if (next !== undefined) setSnapshot({ restored, visit: next });
   }
 
   return {
@@ -82,10 +98,14 @@ export function useLibraryFilters(): LibraryFilters {
       update((visit) => ({ ...visit, position }));
     },
     commitAll: (patch) => {
-      update((visit) => ({ ...visit, filters: patch(visit.filters), position: undefined }));
+      follow(patch(intent.current().filters), () => {
+        update((visit) => ({ ...visit, filters: patch(visit.filters), position: undefined }));
+      });
     },
     clearAll: () => {
-      update((visit) => ({ ...visit, filters: emptyFilterState(), position: undefined }));
+      follow(emptyFilterState(), () => {
+        update((visit) => ({ ...visit, filters: emptyFilterState(), position: undefined }));
+      });
     },
     setView: (view) => {
       update((visit) => ({ ...visit, view, position: undefined }));

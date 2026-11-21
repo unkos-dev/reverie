@@ -39,24 +39,29 @@ async function intercept(page: Page): Promise<{
       const page = { edges: [], pageInfo: { endCursor: null, hasNextPage: false } };
       if (operation === "readerLibraryQuery") {
         await route.fulfill({ json: { data: { books: page } } });
-      } else if (operation === "readerShelvesQuery") {
-        await route.fulfill({ json: { data: { shelves: page } } });
-      } else if (operation === "readerLibraryPreferencesQuery") {
+      } else if (operation === "libraryBootstrapQuery" || operation === "LibraryPageQuery") {
         await route.fulfill({
           json: {
             data: {
-              libraryPreferences: {
-                hiddenColumns: null,
-                density: null,
-                view: null,
-                sortStack: null,
-                defaults: {
-                  hiddenColumns: ["subtitle"],
-                  density: "comfortable",
-                  view: "grid",
-                  sortStack: "-created_at",
+              viewer: {
+                id: "user_01h455vb4pex5vsknk084sn02q",
+                libraryPreferences: {
+                  hiddenColumns: null,
+                  density: null,
+                  view: null,
+                  sort: null,
+                  defaults: {
+                    hiddenColumns: ["SUBTITLE"],
+                    density: "COMFORTABLE",
+                    view: "GRID",
+                    sort: [{ column: "CREATED_AT", direction: "DESC" }],
+                  },
                 },
               },
+              authorLabels: [],
+              seriesLabels: [],
+              shelfLabels: [],
+              ...(operation === "LibraryPageQuery" ? { shelves: page } : {}),
             },
           },
         });

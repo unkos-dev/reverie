@@ -1,6 +1,10 @@
 import {
+  graphql,
   useFragment,
+  usePaginationFragment,
   usePreloadedQuery,
+  useQueryLoader,
+  useRefetchableFragment,
   useRelayEnvironment,
   type PreloadedQuery,
 } from "react-relay";
@@ -12,18 +16,27 @@ import {
   type ReaderBook as BookListItem,
 } from "@/api/graphql";
 import {
-  libraryVisit,
+  bindLibraryVisit,
+  libraryLookups,
   type LibrarySource,
   type LibraryVisitOwner,
 } from "@/lib/relay/library-visit";
-import { readerLibrary, readerLibraryBook, readerLibraryQuery } from "@/lib/relay/reader";
+import {
+  readerLibrary,
+  readerLibraryBook,
+  readerLibraryQuery,
+  readerShelves,
+} from "@/lib/relay/reader";
+import type { LibraryPageQuery as PageQuery } from "@/lib/relay/__generated__/LibraryPageQuery.graphql";
+import type { LibraryPage_labels$key } from "@/lib/relay/__generated__/LibraryPage_labels.graphql";
+import type { LibraryPageLabelsRefetchQuery as LabelsRefetch } from "@/lib/relay/__generated__/LibraryPageLabelsRefetchQuery.graphql";
+import type { readerShelves$key } from "@/lib/relay/__generated__/readerShelves.graphql";
+import type { readerShelvesPaginationQuery as ShelvesPagination } from "@/lib/relay/__generated__/readerShelvesPaginationQuery.graphql";
 import type { readerLibraryQuery as LibraryQuery } from "@/lib/relay/__generated__/readerLibraryQuery.graphql";
 import type { readerLibrary$key } from "@/lib/relay/__generated__/readerLibrary.graphql";
 import type { readerLibraryBook$key } from "@/lib/relay/__generated__/readerLibraryBook.graphql";
-import type { LibraryFilters } from "@/lib/hooks/use-library-filters";
 import { ConnectionHandler, commitMutation } from "relay-runtime";
 import { useAuthMe } from "@/hooks/useAuthMe";
-import { useShelves } from "@/api/shelves";
 import {
   mutationsAddShelfItemMutation,
   mutationsRefreshMetadataMutation,
@@ -43,10 +56,11 @@ import {
   useRef,
   useMemo,
   useState,
+  useTransition,
   type ReactNode,
   type ReactElement,
 } from "react";
-import { matchPath, useNavigate } from "react-router";
+import { matchPath, useLoaderData, useNavigate } from "react-router";
 
 import { type ListBooksParams, type SortLevelParam } from "@/api";
 import { z } from "zod";
@@ -64,7 +78,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLibraryFilters } from "@/lib/hooks/use-library-filters";
+import { useLibraryFilters, type LibraryFilters } from "@/lib/hooks/use-library-filters";
+import type { loader } from "@/routes/library";
 
 import {
   countActiveFilters,
@@ -74,6 +89,7 @@ import {
   hasOverLimitSelection,
   type LibraryView,
   type LibraryPosition,
+  type LibraryVisit,
 } from "@/routes/library-params";
 
 import { useCellEdit, type UseCellEditResult, type StatusTarget } from "./table/useCellEdit";
@@ -96,6 +112,47 @@ const LibraryTable = lazy(() =>
   import("./table/LibraryTable").then((m) => ({ default: m.LibraryTable })),
 );
 
+const LibraryPageQuery = graphql`
+  query LibraryPageQuery($authorIds: [ID!]!, $seriesIds: [ID!]!, $shelfIds: [ID!]!)
+  @throwOnFieldError {
+    viewer {
+      id
+      libraryPreferences {
+        ...useLibraryPreferences_preferences
+      }
+    }
+    ...LibraryPage_labels
+      @arguments(authorIds: $authorIds, seriesIds: $seriesIds, shelfIds: $shelfIds)
+    ...readerShelves
+    ...TypeaheadMultiSelect_suggestions
+  }
+`;
+
+const labelsFragment = graphql`
+  fragment LibraryPage_labels on Query
+  @refetchable(queryName: "LibraryPageLabelsRefetchQuery")
+  @argumentDefinitions(
+    authorIds: { type: "[ID!]!" }
+    seriesIds: { type: "[ID!]!" }
+    shelfIds: { type: "[ID!]!" }
+  )
+  @throwOnFieldError {
+    authorLabels(ids: $authorIds) {
+      id
+      name
+    }
+    seriesLabels(ids: $seriesIds) {
+      id
+      name
+    }
+    shelfLabels(ids: $shelfIds) {
+      id
+      name
+      itemCount
+    }
+  }
+`;
+
 const COVER_WIDTH_KEY = "reverie:cover-width";
 const CoverWidthSchema = z.coerce.number().int().min(120).max(300);
 
@@ -108,14 +165,13 @@ function saveCoverWidth(width: number): void {
 }
 
 function useLibraryBooks(
+  visit: LibraryVisitOwner,
   params: ListBooksParams,
   eligible: boolean,
   sortPending: boolean,
   owner: LibraryFilters,
   intent: string,
 ) {
-  const environment = useRelayEnvironment();
-  const visit = libraryVisit(environment);
   const state = useSyncExternalStore(visit.subscribe, visit.snapshot);
   const paramsToken = JSON.stringify(params);
   const enter = useEffectEvent(() => {
@@ -270,7 +326,7 @@ function useLibraryPosition(
       position === undefined ||
       position.view !== view ||
       source === undefined ||
-      navigation.currentEntry?.key !== visit.entryKey
+      navigation.currentEntry?.id !== visit.entryId
     )
       return;
     let element: Element | null = table.current;
@@ -293,7 +349,7 @@ function useLibraryPosition(
       if (
         visit.snapshot().source !== source ||
         visit.snapshot().restoreGeneration !== generation ||
-        navigation.currentEntry?.key !== visit.entryKey
+        navigation.currentEntry?.id !== visit.entryId
       )
         return;
       if (index < 0) {
@@ -330,7 +386,7 @@ function useLibraryPosition(
   useEffect(() => {
     const unregister = visit.registerCapture(capture);
     const leaving = (): void => {
-      if (navigation.currentEntry?.key !== visit.entryKey) return;
+      if (navigation.currentEntry?.id !== visit.entryId) return;
       const next = capture();
       if (next !== undefined) {
         visit.capture(next);
@@ -432,9 +488,92 @@ function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElemen
   );
 }
 
-export function LibraryPage(): ReactElement {
-  const owner = useLibraryFilters();
+export function LibraryPage(): ReactElement | null {
+  const prepared = useLoaderData<typeof loader>();
+  if (prepared === null) return null;
+  return (
+    <Suspense fallback={<LibrarySkeleton />}>
+      <LibraryContent prepared={prepared} />
+    </Suspense>
+  );
+}
+
+function sameIds(left: readonly { id: string }[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((item, index) => item.id === right[index]);
+}
+
+/**
+ * Read the selected authors, series and shelves. An edit that changes those selections refetches
+ * the read in the same transition as the edit, so a new chip renders with its name.
+ */
+function useLibraryLabels(query: LibraryPage_labels$key) {
+  const [labels, refetch] = useRefetchableFragment<LabelsRefetch, LibraryPage_labels$key>(
+    labelsFragment,
+    query,
+  );
+  const [, startTransition] = useTransition();
+  function follow(next: LibraryVisit["filters"], write: () => void): void {
+    const lookups = libraryLookups(next);
+    if (
+      sameIds(labels.authorLabels, lookups.authorIds) &&
+      sameIds(labels.seriesLabels, lookups.seriesIds) &&
+      sameIds(labels.shelfLabels, lookups.shelfIds)
+    ) {
+      write();
+      return;
+    }
+    startTransition(() => {
+      write();
+      refetch(lookups, { fetchPolicy: "store-or-network" });
+    });
+  }
+  return { labels, follow };
+}
+
+function LibraryContent({
+  prepared,
+}: Readonly<{ prepared: NonNullable<Awaited<ReturnType<typeof loader>>> }>): ReactElement {
+  const { owner: visitOwner, visit: restored, reference } = prepared;
+  useLayoutEffect(() => {
+    bindLibraryVisit(visitOwner);
+  }, [visitOwner]);
+  const [currentReference] = useQueryLoader<PageQuery>(LibraryPageQuery, reference);
+  const query = usePreloadedQuery<PageQuery>(LibraryPageQuery, currentReference ?? reference);
+  const { labels, follow } = useLibraryLabels(query);
+  const owner = useLibraryFilters(visitOwner.intent, restored, follow);
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
+  const authorNames = new Map(labels.authorLabels.map((author) => [author.id, author.name]));
+  const seriesNames = new Map(labels.seriesLabels.map((series) => [series.id, series.name]));
+  const shelfNames = new Map(labels.shelfLabels.map((shelf) => [shelf.id, shelf.name]));
+  const labelFor = {
+    authorLabel: (id: string) => authorNames.get(id) ?? "",
+    seriesName: (id: string) => seriesNames.get(id) ?? "",
+    shelfName: (id: string) => shelfNames.get(id) ?? "",
+  };
+  const {
+    data: shelfData,
+    hasNext: moreShelves,
+    isLoadingNext: loadingShelves,
+    loadNext: loadShelves,
+  } = usePaginationFragment<ShelvesPagination, readerShelves$key>(readerShelves, query);
+  const [shelvesFailure, setShelvesFailure] = useState<Error | null>(null);
+  useEffect(() => {
+    if (shelvesFailure === null && moreShelves && !loadingShelves)
+      loadShelves(50, {
+        onComplete: (failure) => {
+          if (failure === null) return;
+          console.error("[LibraryPage] shelf page failed", failure);
+          setShelvesFailure(failure);
+        },
+      });
+  }, [shelvesFailure, moreShelves, loadingShelves, loadShelves]);
+  const shelves = shelfData.shelves.edges.map((edge) => edge.node);
+  const shelvesError = shelvesFailure !== null;
+  const railShelves = {
+    items: shelves,
+    loading: !shelvesError && (moreShelves || loadingShelves),
+    failed: shelvesError,
+  };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersBeside = useMediaQuery("(min-width: 1600px)");
   const filterButtonRef = useRef<HTMLButtonElement>(null);
@@ -453,8 +592,6 @@ export function LibraryPage(): ReactElement {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const environment = useRelayEnvironment();
   const { data: account } = useAuthMe();
-  const shelvesQuery = useShelves();
-  const { data: shelves, isError: shelvesError } = shelvesQuery;
   const batchController = useRef<AbortController | null>(null);
   useEffect(() => {
     const lifetime = new AbortController();
@@ -470,7 +607,7 @@ export function LibraryPage(): ReactElement {
     statusTargets: readonly StatusTarget[];
   }>();
   const [hasRenderedControls, setHasRenderedControls] = useState(false);
-  const preferences = useLibraryPreferences();
+  const preferences = useLibraryPreferences(query.viewer.id, query.viewer.libraryPreferences);
   const { density, hiddenColumns, sortOverride, sortLevels, defaultSortLevels, setSortLevels } =
     preferences;
 
@@ -500,7 +637,7 @@ export function LibraryPage(): ReactElement {
     fetchNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
-  } = useLibraryBooks(params, eligible, sortPending, owner, queryToken);
+  } = useLibraryBooks(visitOwner, params, eligible, sortPending, owner, queryToken);
   const geometry = useLibraryPosition(
     visit,
     owner,
@@ -665,10 +802,7 @@ export function LibraryPage(): ReactElement {
   }
 
   function toggleColumn(key: string, hidden: boolean): void {
-    const next = new Set(hiddenColumns);
-    if (hidden) next.add(key);
-    else next.delete(key);
-    preferences.setHiddenColumns(next);
+    preferences.setColumnHidden(key, hidden);
   }
 
   const activeFilterCount = countActiveFilters(filterState);
@@ -682,14 +816,19 @@ export function LibraryPage(): ReactElement {
         <>
           <div className="lg:h-[calc(100dvh-86px)]">
             <div className="flex h-full min-h-0 flex-col px-3 pb-3 sm:px-5">
-              <ShelfHeader shelves={shelves} selected={filterState.shelf} />
+              <ShelfHeader shelves={labels.shelfLabels} selected={filterState.shelf} />
               {/* Sort announcements stay outside the filter editor so hidden controls do not silence them. */}
               <p className="sr-only" aria-live="polite">
                 {sortStackSummary(sortLevels)}
               </p>
               <LibraryToolbar
                 filters={
-                  <FilterChips filters={filterState} onRemove={commitAll} onClearAll={clearAll} />
+                  <FilterChips
+                    filters={filterState}
+                    labels={labelFor}
+                    onRemove={commitAll}
+                    onClearAll={clearAll}
+                  />
                 }
                 editControls={viewMode === "table" ? <TableEditControls edits={edits} /> : null}
                 loadedCount={items.length}
@@ -786,6 +925,9 @@ export function LibraryPage(): ReactElement {
                   <div className="library-filter-slot" inert={!filtersOpen}>
                     <FilterRail
                       owner={owner}
+                      suggestions={query}
+                      labels={labelFor}
+                      shelves={railShelves}
                       showContradiction={showContradiction}
                       sortLevels={sortLevels}
                       sortInherited={preferences.sortInherited}
@@ -858,6 +1000,9 @@ export function LibraryPage(): ReactElement {
               </SheetHeader>
               <FilterRail
                 owner={owner}
+                suggestions={query}
+                labels={labelFor}
+                shelves={railShelves}
                 showContradiction={showContradiction}
                 sortLevels={sortLevels}
                 sortInherited={preferences.sortInherited}
