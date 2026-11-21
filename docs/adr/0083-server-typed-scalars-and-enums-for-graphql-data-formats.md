@@ -39,16 +39,16 @@ defined once, in the Rust type that produces or accepts the value, and GraphQL r
 execution error on that field, so no operation can skip the check.
 
 A format-bearing value in browser GraphQL data is a custom scalar backed by a Rust type, and a closed set of values is
-an enum. The browser checks the transport response and the execution-error envelope, not value formats. A user-entered
-value whose refusal must return field feedback stays a string and is validated by its domain service.
+an enum. Format validation belongs to those server types, and browser validation covers the transport response and the
+execution-error envelope. A user-entered value whose refusal must return field feedback stays a string and is validated
+by its domain service.
 
 ### Consequences
 
 - Positive: a format is stated once, and the schema and generated types carry it to every client.
 - Positive: a coercion failure reaches the client as an execution error on the field, so a malformed value is never
   published as data.
-- Positive: browser code sheds its hand-written projections.
-- Negative: hand-written projections and server-typed formats coexist until the last operation moves.
+- Positive: the browser needs no hand-written format projection per operation.
 - Negative: until a released server honours `onError`, the browser refuses a whole response with any error, so one
   field's coercion failure fails the operation.
 - Negative: user-entered formats such as ISBNs and publication dates stay strings, so the schema does not express them.

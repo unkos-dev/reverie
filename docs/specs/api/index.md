@@ -8,12 +8,14 @@
 - [REV-REQ-0015](requirements/0015-a-request-that-fails-to-decode-answers-the-status-its-failure-im.md): A request that fails to decode answers the status its failure implies
 - [REV-REQ-0016](requirements/0016-the-browser-client-surfaces-every-non-2xx-response-as-an-error-w.md): The browser client surfaces every non-2xx response as an error with its status
 - [REV-REQ-0017](requirements/0017-a-500-response-carries-no-internal-error-text.md): A 500 response carries no internal error text
-- [REV-REQ-0018](requirements/0018-metadata-and-reading-state-patch-compare-if-match-byte-for-byte.md): Precondition-protected writes compare their validator byte for byte
-- [REV-REQ-0019](requirements/0019-the-browser-client-echoes-a-resource-s-last-etag-as-if-match-on.md): Browser edits retain the validator belonging to their values
-- [REV-REQ-0020](requirements/0020-a-precondition-protected-write-answers-428-without-if-match.md): A precondition-protected write without its validator is refused before it begins
+- [REV-REQ-0018](requirements/0018-a-precondition-protected-http-write-compares-if-match-byte-for-byte.md): A precondition-protected HTTP write compares If-Match byte for byte
+- [REV-REQ-0019](requirements/0019-browser-edits-retain-the-validator-of-their-editing-baseline.md): Browser edits retain the validator of their editing baseline
+- [REV-REQ-0020](requirements/0020-a-precondition-protected-http-write-without-if-match-answers-428-and-changes-nothing.md): A precondition-protected HTTP write without If-Match answers 428 and changes nothing
 - [REV-REQ-0079](requirements/0079-production-graphql-document-admission.md): Production GraphQL document admission
 - [REV-REQ-0082](requirements/0082-graphql-edit-acknowledgements-carry-the-validator-of-their-values.md): GraphQL edit acknowledgements carry the validator of their values
 - [REV-REQ-0083](requirements/0083-editing-baselines-form-only-from-complete-values-of-one-revision.md): Editing baselines form only from complete values of one revision
+- [REV-REQ-0089](requirements/0089-a-graphql-edit-with-a-stale-baseline-is-refused-as-stale.md): A GraphQL edit with a stale baseline is refused as stale
+- [REV-REQ-0090](requirements/0090-a-graphql-edit-without-a-well-formed-baseline-is-refused-and-changes-nothing.md): A GraphQL edit without a well-formed baseline is refused and changes nothing
 
 ## Designs
 

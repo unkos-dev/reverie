@@ -3,13 +3,11 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0016"
 title: "API versioning by URL path with OpenAPI as the contract"
-status: "superseded"
+status: "accepted"
 recorded-on: "2026-09-05"
 decided-on: "2026-06-08"
 decision-makers:
   - "John Unkovich"
-superseded-by:
-  - "REV-ADR-0077"
 ---
 
 # API versioning by URL path with OpenAPI as the contract
@@ -64,7 +62,7 @@ Chosen option: **V1 + S1**, because path versioning is the most discoverable and
 clients, and a code-first generated OpenAPI 3.1 document is the single source of truth that keeps the reference
 zero-drift and gives third-party clients something to codegen against.
 
-The browser-facing data API uses a major version in its URL path, with incompatible generations mounted alongside the
+Reverie's HTTP JSON APIs use a major version in their URL path, with incompatible generations mounted alongside the
 earlier version. Before 1.0, the contract may still tighten within `v1` under the project's `0.x` instability allowance;
 the path version is the unit in which breaking generations are expressed. Operational and authentication paths remain
 outside that versioned surface, and so does OPDS, whose versioning its own specification governs. OpenAPI 3.1 is
@@ -123,5 +121,7 @@ generated from the implementation as the contract and reference source; a hand-w
   document describes; this ADR adds the version prefix and the contract format without restating those shapes.
 - [Single-image distribution ADR](./0003-single-image-distribution-with-central-csp-enforcement.md): why the bundled
   frontend is lockstep and the version mainly serves external clients.
+- [GraphQL and Relay for browser application data](./0077-graphql-and-relay-for-browser-application-data.md): browser
+  application data travels over GraphQL, outside the versioned HTTP surface this decision covers.
 - Revisit triggers: adopt OpenAPI 3.2 if Reverie gains a surface that needs it (streaming / Server-Sent Events) _and_ a
   code-first generator emits 3.2; and cut `/api/v2` when the first incompatible generation forces it.

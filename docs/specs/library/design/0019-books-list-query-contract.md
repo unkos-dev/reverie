@@ -8,6 +8,7 @@ satisfies:
   - "REV-REQ-0057"
   - "REV-REQ-0058"
   - "REV-REQ-0059"
+  - "REV-REQ-0091"
 governed-by:
   - "REV-ADR-0069"
   - "REV-ADR-0066"
@@ -245,12 +246,14 @@ Timestamp bounds are canonical UTC instants in the fingerprint, so equivalent RF
 filter identity. A different instant changes the fingerprint even if the local calendar date is unchanged.
 
 The GraphQL `books(first:, after:, filter:, sort:)` root resolves typed input objects to the same `ListParams`,
-validators, `SortSpec` and filter fingerprint in `backend/src/services/reader.rs`. Omitted or null `sort` uses the
-installation default through `SortSpec::default()`, independently of the reader's stored preference. Numeric endpoints
-are inclusive and timestamps use inclusive lower and exclusive upper instants. Equivalent offsets share a fingerprint.
-Invalid columns, duplicate levels and stacks over three levels fail before SQL. Graph execution refusals carry the
-`validation` classification. The `author`, `series` and `shelf` filters take GraphQL IDs, and a malformed or wrong-type
-filter ID refuses the request with the same classification.
+validators, `SortSpec` and filter fingerprint in `backend/src/services/reader.rs`. An omitted or null GraphQL `sort`,
+like an absent HTTP `sort` parameter, uses the installation default through `SortSpec::default()`, independently of the
+reader's stored preference. A caller with no sort override therefore sends no sort levels rather than the installation
+default's. Numeric endpoints are inclusive and timestamps use inclusive lower and exclusive upper instants. Equivalent
+offsets share a fingerprint. Invalid columns, duplicate levels and stacks over three levels fail before SQL. Graph
+execution refusals of invalid input carry the `validation` classification, and cursor refusals carry `invalid-cursor`
+(Failure and recovery). The `author`, `series` and `shelf` filters take GraphQL IDs, and a malformed or wrong-type
+filter ID refuses the request with the `validation` classification.
 
 Books expose native connection edges and PageInfo. Every edge carries its own keyset cursor. One extra row derives
 `hasNextPage`, and a bounded existence query derives `hasPreviousPage`. The non-null `first` argument is required and
@@ -317,7 +320,8 @@ of them is a code change, not a runtime setting. The HTTP page size is runtime-c
 5. If the client instead requests `?sort=title,-created_at,pages` and replays the same cursor string unchanged,
    `cursor.spec` (`"-created_at,title,pages"`) no longer equals the new `spec.canonical()`
    (`"title,-created_at,pages"`). `parse_for` returns `CursorError::SortMismatch`, `list_books` maps it to
-   `AppError::Validation` (a `422`), and the request never reaches `acquire_with_rls_snapshot` or touches the database.
+   `AppError::InvalidCursor` (a `422`), and the request never reaches `acquire_with_rls_snapshot` or touches the
+   database.
 
 ## Failure and recovery
 
@@ -337,11 +341,13 @@ of them is a code change, not a runtime setting. The HTTP page size is runtime-c
   base64, non-UTF-8 bytes, a missing tag delimiter, a tag other than `m`, a JSON payload that will not parse or whose
   key count, kinds or null-handling disagree with the freshly parsed `SortSpec`, an embedded spec string that does not
   match the current `?sort=`, or an embedded filter fingerprint that does not match the current filter set — all map to
-  `AppError::Validation` where `list_books` (`backend/src/services/reader.rs`) parses the cursor, a `422` whose detail
-  names the cursor error. `books_connection` raises the same refusal with the fixed message "Invalid cursor.", which
-  GraphQL reports with the `validation` code. Unlike the query-parameter split above, every shape of cursor failure
-  lands on the same status and error variant; a malformed cursor and a stale-but-well-formed one are indistinguishable
-  to the caller by status code alone.
+  `AppError::InvalidCursor` where `list_books` and `books_connection` (`backend/src/services/reader.rs`) parse the
+  cursor. Over HTTP it renders as the `422` validation problem with the fixed detail "Invalid cursor."; GraphQL reports
+  it with the message "Invalid cursor." and the `invalid-cursor` code. The nested relation and pending-version
+  connections raise the same variant for a cursor from another parent, relation kind or connection, and the request
+  loaders pass it through with its code. Unlike the query-parameter split above, every shape of cursor failure lands on
+  the same status, error variant and detail, so a malformed cursor and a stale-but-well-formed one are indistinguishable
+  to the caller.
 - **A decode failure on `content_rating`, `validation_status`, or the `series_id`/`series_name`/`series_position`
   triple.** Each is read via the fallible `try_get` rather than the panicking `Row::get`, so a decode failure surfaces
   as `AppError::Internal` (`500`) rather than a panic. Every other column the row-to-response mapping reads (`title`,

@@ -10,9 +10,7 @@ satisfies:
   - "REV-REQ-0015"
   - "REV-REQ-0016"
   - "REV-REQ-0017"
-  - "REV-REQ-0018"
   - "REV-REQ-0019"
-  - "REV-REQ-0020"
   - "REV-REQ-0021"
   - "REV-REQ-0023"
   - "REV-REQ-0035"
@@ -20,6 +18,8 @@ satisfies:
   - "REV-REQ-0079"
   - "REV-REQ-0082"
   - "REV-REQ-0083"
+  - "REV-REQ-0089"
+  - "REV-REQ-0090"
 governed-by:
   - "REV-ADR-0077"
   - "REV-ADR-0079"
@@ -27,6 +27,7 @@ governed-by:
   - "REV-ADR-0081"
   - "REV-ADR-0082"
   - "REV-ADR-0083"
+  - "REV-ADR-0084"
 ---
 
 # GraphQL execution and Relay browser data
@@ -116,21 +117,22 @@ timestamps and status as `String`.
 
 ### Global object IDs
 
-IDs are TypeIDs: a lowercase type prefix, `_`, then the record UUID in 26 lowercase characters of the TypeID base32
-alphabet. The prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`, `tag`, `genre`, `mood`,
-`metadata_version` and `user`. `publisher` is reserved: publisher suggestions carry no entity ID, so no response
-contains it. `metadata_rev` (MetadataRevision) carries a name-based UUIDv8 (RFC 9562 §5.5 and Appendix B.2): SHA-256
-over a fixed Reverie namespace ID and the revision's owner identities and aggregate revisions. Each revision has its own
-ID, so a new revision is a new Relay record. `MetadataRevision` does not implement `Node`, and no field fetches a past
-revision. `backend/src/graphql/id.rs` binds each prefix to its type at compile time through `type-safe-id` 0.3.4 and
-refuses an ID longer than 80 characters before parsing. The `Node` interface has exactly `id: ID!`. Nullable `node(id:)`
-and typed lookup roots return null for malformed, wrong-type, overlong, hidden and missing records. The User variant
-resolves only the caller. Reading state has no global ID.
+IDs are TypeIDs (TypeID specification 0.3.0): a lowercase type prefix, `_`, then the record UUID in 26 lowercase
+characters of the TypeID base32 alphabet. The prefixes are `book` (Manifestation), `work`, `series`, `shelf`, `author`,
+`tag`, `genre`, `mood`, `metadata_version` and `user`. `publisher` is reserved: publisher suggestions carry no entity
+ID, so no response contains it. `metadata_rev` (MetadataRevision) carries a name-based UUIDv8 (RFC 9562 §5.5 and
+Appendix B.2): SHA-256 over a fixed Reverie namespace ID and the revision's owner identities and aggregate revisions.
+Each revision has its own ID, so a new revision is a new Relay record. `MetadataRevision` does not implement `Node`, and
+no field fetches a past revision. `backend/src/graphql/id.rs` binds each prefix to its type at compile time through
+`type-safe-id` 0.3.4. That crate's parser copies a mismatched prefix of any length, so `id.rs` refuses an ID longer than
+80 characters before parsing. The `Node` interface has exactly `id: ID!`. Nullable `node(id:)` and typed lookup roots
+return null for malformed, wrong-type, overlong, hidden and missing records. The User variant resolves only the caller.
+Reading state has no global ID.
 
 Browser routes carry these IDs: `/b/:id`, `/series/:id` and `/shelves/:id` loaders pass the path parameter unaltered to
 their query, and a null result is a not-found route. Links, Library rows, visit filters and the restoration anchor use
 the IDs that queries return. The client converts an ID to a UUID only to show a short UUID, and converts a UUID to an ID
-only for Book links built from HTTP responses.
+only for Book links built from HTTP responses. Retained HTTP responses, downloads, covers and OPDS carry UUID values.
 
 Work, Series, Shelf and Manifestation declare `@fetchable(field_name: "id")`. Their nullable concrete lookup roots are
 `fetch__Work(id: ID!)`, `fetch__Series(id: ID!)`, `fetch__Shelf(id: ID!)` and `fetch__Manifestation(id: ID!)`. They
@@ -195,8 +197,11 @@ parent count.
 
 `mutations.rs` calls the shared metadata editing and Undo, reading and shelf operations. Typed patches preserve absent
 and null values. Metadata save and Undo take a non-null baseline in their input; the reading patch takes an explicit
-nullable baseline. Review and shelf mutations take no baseline. Scope, adult status, caller visibility, shelf ownership
-and credential ceilings are separate checks.
+nullable baseline. The Design "Conditional requests and optimistic concurrency" describes how each form refuses a
+missing, malformed or stale baseline
+([The precondition contract's evaluation order](0007-conditional-requests-and-optimistic-concurrency.md#the-precondition-contracts-evaluation-order)).
+Review and shelf mutations take no baseline. Scope, adult status, caller visibility, shelf ownership and credential
+ceilings are separate checks.
 
 ### Mutation results
 
@@ -270,7 +275,7 @@ The fragments that the route pages and the edit sheet read carry the directive: 
 `readerShelf`, `readerShelfItems`, `readerShelves` and `mutationsFormSnapshot`. `readerLibrary`, `readerLibraryBook`,
 `readerLibraryPreferences`, `readerAuthorEditing`, and the title, reading and cell snapshot fragments carry none.
 Neither do the refusal selections that mutation payloads spread with `@relay(mask: false)` (`mutationsSaveRefusal`,
-`mutationsUndoRefusal`).
+`mutationsUndoRefusal`): Relay does not accept the directive on a mutation or on a selection spread unmasked into one.
 
 The compiler generates eight pagination queries, which carry no directive of their own. Six of them run through
 `usePaginationFragment` on a `@refetchable` fragment that carries the directive: `readerDetailTags`,

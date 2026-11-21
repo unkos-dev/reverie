@@ -111,6 +111,10 @@ pub enum AppError {
         /// Messages keyed by the submitted field name.
         errors: std::collections::BTreeMap<String, String>,
     },
+    /// A pagination cursor does not belong to the request's connection, parent, sort or filters.
+    /// HTTP 422 with the [`problems::VALIDATION`] type; GraphQL code `invalid-cursor`.
+    #[error("invalid cursor")]
+    InvalidCursor,
     /// `X-CSRF-Token` header missing on a mutating-verb request
     /// under `/api/v1/*`. RFC 9457 `type` [`problems::CSRF_MISSING`].
     /// HTTP 428 Precondition Required.
@@ -315,6 +319,12 @@ impl IntoResponse for AppError {
                 problems::VALIDATION,
                 "Unprocessable Entity",
                 msg,
+            ),
+            Self::InvalidCursor => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                problems::VALIDATION,
+                "Unprocessable Entity",
+                "Invalid cursor.".to_owned(),
             ),
             Self::CsrfMissing => (
                 StatusCode::PRECONDITION_REQUIRED,

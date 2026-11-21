@@ -10,7 +10,6 @@ decision-makers:
   - "John Unkovich"
 supersedes:
   - "REV-ADR-0010"
-  - "REV-ADR-0016"
 ---
 
 # GraphQL and Relay for browser application data
@@ -42,30 +41,22 @@ manifestation records consistent identities across every browser workflow, and a
 replaces manual duplication between the service and its TypeScript consumers.
 
 The code-first schema is implemented in Rust with async-graphql and async-graphql-axum, and the Relay compiler produces
-operation artefacts and TypeScript types. Relay owns fetching, normalised server data and mutations for each migrated
-browser workflow, and the target covers all browser application data. Authentication protocols, redirects, OPDS and
-binary delivery keep their HTTP contracts. Production executes only build-generated trusted documents.
+operation artefacts and TypeScript types. Relay owns fetching, normalised server data and mutations for all browser
+application data. Authentication protocols, redirects, OPDS and binary delivery keep their HTTP contracts.
 
 ### Consequences
 
 - Positive: Relay provides one normalised owner for related records and generated browser operations.
-- Positive: retained HTTP APIs keep their URL-path major version and code-first OpenAPI 3.1 contract. REST conventions
-  in REV-ADR-0011 still govern those APIs.
-- Positive: migrating a browser workflow to GraphQL removes no REST operation. The versioned `/api/v1` data surface
-  remains the contract for device-token and other non-browser clients under REV-ADR-0011 and REV-ADR-0056, and retiring
-  any of it requires a separate compatibility decision.
 - Negative: schema and operation generation add build integration and matching release artefacts.
 - Negative: each workflow migrates as a whole, with explicit connection and aggregate updates.
-- Negative: TanStack Query and Relay coexist until the last browser workflow migrates. TanStack Query is then removed;
-  coexistence is not a permanent alternative architecture.
-- Negative: trusted documents require matching frontend and server releases without raw-query fallback.
 
 ## Pros and cons of the options
 
 ### Full browser GraphQL and Relay
 
 - Positive: shared identities and compiled operations support related data across the complete browser application.
-- Negative: compatibility with the existing Vite+ and oxc React Compiler configuration remains unproved.
+- Negative: every browser screen moves to GraphQL, including the account and settings screens that share no records with
+  the Library.
 
 ### Retain REST and TanStack Query for browser application data
 

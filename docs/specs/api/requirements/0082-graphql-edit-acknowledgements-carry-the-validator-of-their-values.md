@@ -10,18 +10,20 @@ title: "GraphQL edit acknowledgements carry the validator of their values"
 ## Statement
 
 WHEN a GraphQL metadata save, reading-state save or exact metadata Undo succeeds, the server MUST return the values the
-operation selected together with the validator of the revision those values belong to. A validator is the strong
-entity-tag that identifies one revision, and a revision is the resource state a validator identifies.
+operation selected together with the validator of the revision those values belong to. A revision is the stored state of
+one book's metadata, or of one reader's reading state for one book, as it stands between two committed writes to it. A
+validator is the strong entity-tag that the server issues to identify a revision. An editing baseline is the set of
+values an edit starts from, together with the validator of the revision those values belong to.
 
 ## Rationale
 
-The browser adopts an acknowledgement's values and validator as the starting point of the next edit. A validator from
+The browser adopts an acknowledgement's values and validator as the editing baseline of the next edit. A validator from
 another revision would either let the next save overwrite changes the reader never saw or refuse a save the reader made
 against current values.
 
 ## Acceptance criteria
 
 - A successful GraphQL metadata save or reading-state save returns selected values with the same validator that a fresh
-  read of the resource then returns. Checked by `graphql_edit_baselines`.
+  read of the resource then returns. Checked by `graphql_edit_baselines` in `backend/src/graphql/mod.rs`.
 - A successful exact Undo returns the restored values with the same validator that a fresh read of the resource then
-  returns. Checked by `graphql_undo_boundary`.
+  returns. Checked by `graphql_undo_boundary` in `backend/src/graphql/mod.rs`.

@@ -20,6 +20,12 @@
 - [REV-REQ-0077](requirements/0077-library-filter-edits-add-no-history-entries.md): Library filter edits add no history entries
 - [REV-REQ-0080](requirements/0080-library-return-restores-browsing-context.md): Library return restores browsing context
 - [REV-REQ-0081](requirements/0081-failed-library-saves-support-explicit-retry.md): Failed Library saves support explicit Retry
+- [REV-REQ-0084](requirements/0084-a-library-retry-sends-the-original-save-again.md): A Library Retry sends the original save again
+- [REV-REQ-0085](requirements/0085-the-library-never-sends-a-save-again-on-its-own.md): The Library never sends a save again on its own
+- [REV-REQ-0086](requirements/0086-a-stale-library-save-offers-reload-which-writes-nothing.md): A stale Library save offers Reload, which writes nothing
+- [REV-REQ-0087](requirements/0087-each-refused-library-save-gives-feedback-for-its-reason.md): Each refused Library save gives feedback for its reason
+- [REV-REQ-0088](requirements/0088-a-library-batch-retry-repeats-only-the-writes-that-failed.md): A Library batch Retry repeats only the writes that failed
+- [REV-REQ-0091](requirements/0091-the-books-list-orders-by-its-sort-parameter-or-the-installation-default.md): The books list orders by its sort parameter or the installation default
 
 ## Designs
 

@@ -893,8 +893,7 @@ pub async fn list_books(
 
     let cursor = match params.cursor.as_deref() {
         Some(raw) => Some(
-            SortCursor::parse_for(raw, &spec, &filter_fp)
-                .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?,
+            SortCursor::parse_for(raw, &spec, &filter_fp).map_err(|_| AppError::InvalidCursor)?,
         ),
         None => None,
     };
@@ -1567,7 +1566,7 @@ pub async fn shelves(
     let cursor = after
         .map(ShelfCursor::parse)
         .transpose()
-        .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
+        .map_err(|_| AppError::InvalidCursor)?;
 
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT s.id, s.name, s.is_system, s.created_at, s.updated_at, \
@@ -1647,7 +1646,7 @@ pub async fn shelf_items(
     let cursor = after
         .map(ShelfItemCursor::parse)
         .transpose()
-        .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
+        .map_err(|_| AppError::InvalidCursor)?;
 
     let shelf = sqlx::query!(
         r#"
@@ -1890,7 +1889,7 @@ pub async fn books_connection(
         .as_deref()
         .map(|raw| SortCursor::parse_for(raw, &spec, &fingerprint))
         .transpose()
-        .map_err(|_| AppError::Validation("Invalid cursor.".into()))?;
+        .map_err(|_| AppError::InvalidCursor)?;
     let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -2134,8 +2133,8 @@ pub struct RelationPage {
     pub has_previous: bool,
 }
 
-fn invalid_cursor() -> AppError {
-    AppError::Validation("Invalid cursor.".into())
+const fn invalid_cursor() -> AppError {
+    AppError::InvalidCursor
 }
 
 fn relation_input(key: &RelationKey, request: i32) -> Result<RelationInput, AppError> {

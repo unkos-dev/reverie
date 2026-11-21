@@ -112,10 +112,7 @@
       "id": "REV-ADR-0016",
       "kind": "adr",
       "path": "docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md",
-      "status": "superseded",
-      "superseded-by": [
-        "REV-ADR-0077"
-      ],
+      "status": "accepted",
       "title": "API versioning by URL path with OpenAPI as the contract"
     },
     {
@@ -616,8 +613,7 @@
       "path": "docs/adr/0077-graphql-and-relay-for-browser-application-data.md",
       "status": "accepted",
       "supersedes": [
-        "REV-ADR-0010",
-        "REV-ADR-0016"
+        "REV-ADR-0010"
       ],
       "title": "GraphQL and Relay for browser application data"
     },
@@ -670,6 +666,13 @@
       "title": "Server-typed scalars and enums for GraphQL data formats"
     },
     {
+      "id": "REV-ADR-0084",
+      "kind": "adr",
+      "path": "docs/adr/0084-editing-baselines-as-revision-records.md",
+      "status": "accepted",
+      "title": "Editing baselines as revision records"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0075",
@@ -686,7 +689,12 @@
         "REV-REQ-0076",
         "REV-REQ-0077",
         "REV-REQ-0080",
-        "REV-REQ-0081"
+        "REV-REQ-0081",
+        "REV-REQ-0084",
+        "REV-REQ-0085",
+        "REV-REQ-0086",
+        "REV-REQ-0087",
+        "REV-REQ-0088"
       ],
       "title": "Library filter and sort state"
     },
@@ -767,7 +775,8 @@
     {
       "governed-by": [
         "REV-ADR-0011",
-        "REV-ADR-0069"
+        "REV-ADR-0069",
+        "REV-ADR-0084"
       ],
       "id": "REV-DESIGN-0007",
       "kind": "design",
@@ -776,6 +785,8 @@
         "REV-REQ-0018",
         "REV-REQ-0019",
         "REV-REQ-0020",
+        "REV-REQ-0089",
+        "REV-REQ-0090",
         "REV-REQ-0082",
         "REV-REQ-0083"
       ],
@@ -983,7 +994,8 @@
         "REV-REQ-0003",
         "REV-REQ-0057",
         "REV-REQ-0058",
-        "REV-REQ-0059"
+        "REV-REQ-0059",
+        "REV-REQ-0091"
       ],
       "title": "Books list query contract"
     },
@@ -1013,7 +1025,12 @@
       "satisfies": [
         "REV-REQ-0018",
         "REV-REQ-0020",
-        "REV-REQ-0081"
+        "REV-REQ-0089",
+        "REV-REQ-0090",
+        "REV-REQ-0081",
+        "REV-REQ-0084",
+        "REV-REQ-0086",
+        "REV-REQ-0088"
       ],
       "title": "Reading state"
     },
@@ -1146,7 +1163,8 @@
         "REV-ADR-0080",
         "REV-ADR-0081",
         "REV-ADR-0082",
-        "REV-ADR-0083"
+        "REV-ADR-0083",
+        "REV-ADR-0084"
       ],
       "id": "REV-DESIGN-0031",
       "kind": "design",
@@ -1158,16 +1176,16 @@
         "REV-REQ-0015",
         "REV-REQ-0016",
         "REV-REQ-0017",
-        "REV-REQ-0018",
         "REV-REQ-0019",
-        "REV-REQ-0020",
         "REV-REQ-0021",
         "REV-REQ-0023",
         "REV-REQ-0035",
         "REV-REQ-0036",
         "REV-REQ-0079",
         "REV-REQ-0082",
-        "REV-REQ-0083"
+        "REV-REQ-0083",
+        "REV-REQ-0089",
+        "REV-REQ-0090"
       ],
       "title": "GraphQL execution and Relay browser data"
     },
@@ -1319,14 +1337,14 @@
       ],
       "id": "REV-REQ-0018",
       "kind": "req",
-      "path": "docs/specs/api/requirements/0018-metadata-and-reading-state-patch-compare-if-match-byte-for-byte.md",
-      "title": "Precondition-protected writes compare their validator byte for byte"
+      "path": "docs/specs/api/requirements/0018-a-precondition-protected-http-write-compares-if-match-byte-for-byte.md",
+      "title": "A precondition-protected HTTP write compares If-Match byte for byte"
     },
     {
       "id": "REV-REQ-0019",
       "kind": "req",
-      "path": "docs/specs/api/requirements/0019-the-browser-client-echoes-a-resource-s-last-etag-as-if-match-on.md",
-      "title": "Browser edits retain the validator belonging to their values"
+      "path": "docs/specs/api/requirements/0019-browser-edits-retain-the-validator-of-their-editing-baseline.md",
+      "title": "Browser edits retain the validator of their editing baseline"
     },
     {
       "governed-by": [
@@ -1334,8 +1352,8 @@
       ],
       "id": "REV-REQ-0020",
       "kind": "req",
-      "path": "docs/specs/api/requirements/0020-a-precondition-protected-write-answers-428-without-if-match.md",
-      "title": "A precondition-protected write without its validator is refused before it begins"
+      "path": "docs/specs/api/requirements/0020-a-precondition-protected-http-write-without-if-match-answers-428-and-changes-nothing.md",
+      "title": "A precondition-protected HTTP write without If-Match answers 428 and changes nothing"
     },
     {
       "governed-by": [
@@ -1850,6 +1868,57 @@
       "kind": "req",
       "path": "docs/specs/api/requirements/0083-editing-baselines-form-only-from-complete-values-of-one-revision.md",
       "title": "Editing baselines form only from complete values of one revision"
+    },
+    {
+      "id": "REV-REQ-0084",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0084-a-library-retry-sends-the-original-save-again.md",
+      "title": "A Library Retry sends the original save again"
+    },
+    {
+      "id": "REV-REQ-0085",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0085-the-library-never-sends-a-save-again-on-its-own.md",
+      "title": "The Library never sends a save again on its own"
+    },
+    {
+      "id": "REV-REQ-0086",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0086-a-stale-library-save-offers-reload-which-writes-nothing.md",
+      "title": "A stale Library save offers Reload, which writes nothing"
+    },
+    {
+      "id": "REV-REQ-0087",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0087-each-refused-library-save-gives-feedback-for-its-reason.md",
+      "title": "Each refused Library save gives feedback for its reason"
+    },
+    {
+      "id": "REV-REQ-0088",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0088-a-library-batch-retry-repeats-only-the-writes-that-failed.md",
+      "title": "A Library batch Retry repeats only the writes that failed"
+    },
+    {
+      "id": "REV-REQ-0089",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0089-a-graphql-edit-with-a-stale-baseline-is-refused-as-stale.md",
+      "title": "A GraphQL edit with a stale baseline is refused as stale"
+    },
+    {
+      "id": "REV-REQ-0090",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0090-a-graphql-edit-without-a-well-formed-baseline-is-refused-and-changes-nothing.md",
+      "title": "A GraphQL edit without a well-formed baseline is refused and changes nothing"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0037"
+      ],
+      "id": "REV-REQ-0091",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0091-the-books-list-orders-by-its-sort-parameter-or-the-installation-default.md",
+      "title": "The books list orders by its sort parameter or the installation default"
     }
   ]
 }

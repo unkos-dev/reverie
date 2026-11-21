@@ -21,8 +21,7 @@ or mark them non-null and accept that one failure can blank everything up to the
 
 The GraphQL specification's working direction removes that compromise. The error behaviours RFC (`onError`, RFC 1) lets
 a client ask the server not to propagate errors (`onError: "NULL"`). The server then returns `null` at the failed
-position with an entry in `errors`, and the client handles it. The `@semanticNonNull` RFC (RFC 0) took another route and
-has been marked stale. Neither async-graphql 7.2.1 nor Relay 21.0.1 implements `onError`.
+position with an entry in `errors`, and the client handles it. The `@semanticNonNull` RFC (RFC 0) takes another route.
 
 The browser's Relay network refuses any response that carries execution errors, so no partial data reaches the store.
 How should the schema mark which fields can be null, and how should the client handle field errors, while that refusal
@@ -49,22 +48,20 @@ Chosen option: **Honest non-null with client-handled field errors**, because it 
 schema truthful and follows the working group's `onError` direction, which Relay's field-error directives already
 anticipate.
 
-The schema marks a field non-null (`!`) when null is not a valid value in the domain. Every Relay query, and every
-fragment read as its own unit, carries `@throwOnFieldError`. Relay does not accept the directive on a mutation or on a
-selection spread unmasked into one. A component that handles a failure itself uses `@catch` on that field. The Relay
-network keeps refusing responses with errors until a released async-graphql honours `onError`. The client then sends
-`onError: "NULL"` and publishes partial data, and the same directives decide where each error lands.
+The schema marks a field non-null (`!`) when null is not a valid value in the domain. The convention for Relay reads is
+`@throwOnFieldError` on each query and on each fragment read as its own unit, with `@catch` on a field whose failure a
+component handles itself.
 
 ### Consequences
 
 - Positive: generated types match the domain, so components need no defensive checks on non-null fields.
 - Positive: `@throwOnFieldError` already throws on data that is missing after a graph relationship change. A gap reaches
   the nearest error boundary instead of rendering blank.
-- Positive: partial publication arrives as a network change. The directives and error boundaries are already in place.
-- Negative: until a released server honours `onError`, one failed field fails the whole response, so the client cannot
-  publish partial data. That change stays blocked on a release outside Reverie's control.
-- Negative: under the server's current propagation, a failure in a non-null field nulls more of the response than a
-  nullable schema would. The whole-response refusal hides this only while it remains in place.
+- Positive: components written to the directives need no rewrite when partial data arrives; only the network changes.
+- Negative: partial data needs `onError` support in a released server, which is outside Reverie's control. Without it,
+  one failed field fails the whole response.
+- Negative: with error propagation, a failure in a non-null field nulls more of the response than a nullable schema
+  would.
 - Negative: no lint rule checks for `@throwOnFieldError`. Code review enforces the convention.
 
 ## Pros and cons of the options
@@ -89,5 +86,7 @@ network keeps refusing responses with errors until a released async-graphql hono
   RFC, which adds `onError: "NULL"`.
 - [GraphQL specification pull request 1065](https://github.com/graphql/graphql-spec/pull/1065): the `@semanticNonNull`
   RFC.
+- At the decision date, neither async-graphql 7.2.1 nor Relay 21.0.1 implemented `onError`, and the `@semanticNonNull`
+  RFC was marked stale.
 - Reconsider this decision if the working group abandons `onError`, or if Relay drops `@throwOnFieldError`.
 - Each async-graphql release bump checks for `onError` support, which unblocks partial publication.

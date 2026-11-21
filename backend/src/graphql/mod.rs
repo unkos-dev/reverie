@@ -472,6 +472,7 @@ fn safe_error(error: AppError) -> async_graphql::Error {
             return async_graphql::Error::new(detail)
                 .extend_with(|_, extensions| extensions.set("code", "validation"));
         }
+        AppError::InvalidCursor => ("Invalid cursor.", "invalid-cursor"),
         AppError::Forbidden => ("Forbidden", "forbidden"),
         AppError::NotFound => ("Not found", "not-found"),
         AppError::IfMatchRequired => ("A baseline is required.", "if-match-required"),
@@ -1200,7 +1201,7 @@ mod tests {
         );
     }
 
-    // REV-REQ-0018/0020/0082 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
+    // REV-REQ-0082/0089/0090 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_edit_baselines(pool: PgPool) {
         let (_, server, csrf) = editing_browser(&pool, "graph-edits").await;
@@ -1387,6 +1388,11 @@ mod tests {
             .await,
             "if-match-required",
         );
+        let unchanged_reading = browser_graph(&server, &csrf, READING_READ, vars.clone()).await;
+        assert_eq!(
+            unchanged_reading["data"]["manifestation"]["readingState"],
+            read["data"]["manifestation"]["readingState"]
+        );
         let reading_attempt = json!({"id":id,"baseline":read["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Notes","rating":3,"status":"READING"}});
         let read_saved = browser_graph(&server, &csrf, READING_SAVE, reading_attempt.clone()).await;
         assert_graph_ok(&read_saved);
@@ -1405,7 +1411,7 @@ mod tests {
         assert_eq!(notes_clear["data"]["updateReadingState"]["rating"], 3);
     }
 
-    // Authentication, private-data and corruption boundaries for session-bound, non-consuming exact Undo.
+    // REV-REQ-0082/0089/0090; authentication, private-data and corruption boundaries for session-bound, non-consuming exact Undo.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_undo_boundary(pool: PgPool) {
         let (user, server, csrf) = editing_browser(&pool, "graph-undo").await;
@@ -1442,6 +1448,11 @@ mod tests {
             &browser_graph(&server, &csrf, UNDO, stale).await,
             "undoMetadata",
             "StaleBaseline",
+        );
+        let unchanged = browser_graph(&server, &csrf, TITLE_READ, json!({"id":id})).await;
+        assert_eq!(
+            unchanged["data"]["manifestation"]["metadata"],
+            result["manifestation"]["metadata"]
         );
         let foreign_result = browser_graph(&foreign, &foreign_csrf, UNDO, input.clone()).await;
         assert_graph_result(&foreign_result, "undoMetadata", "UndoUnavailable");
@@ -2147,7 +2158,19 @@ mod tests {
             json!({"id":id::Manifestation::encode(fixture.sibling).as_str(),"after":cursor}),
         )
         .await;
-        assert_eq!(refused["errors"][0]["extensions"]["code"], "validation");
+        assert_cursor_refused(&refused, &["manifestation", "versions", "pending"]);
+    }
+
+    fn assert_cursor_refused(response: &serde_json::Value, path: &[&str]) {
+        assert_eq!(
+            response["errors"][0]["extensions"]["code"], "invalid-cursor",
+            "{response}"
+        );
+        assert_eq!(response["errors"][0]["path"], json!(path), "{response}");
+        let page = path
+            .iter()
+            .fold(&response["data"], |value, field| &value[*field]);
+        assert!(page.is_null(), "{response}");
     }
 
     // REV-REQ-0003, REV-REQ-0057 and REV-REQ-0058 cover ranges, cursor identity and sort refusal.
@@ -2169,6 +2192,16 @@ mod tests {
             id::Manifestation::encode(fixture.sibling).as_str()
         );
         assert_eq!(next["data"]["books"]["pageInfo"]["hasPreviousPage"], true);
+        let http = fixture
+            .server
+            .get(&format!("/api/v1/books?sort=created_at&created_at_gte=2026-01-01T00:00:00Z&created_at_lt=2026-01-04T00:00:00Z&cursor={cursor}"))
+            .add_header("authorization", fixture.admin.clone())
+            .await;
+        http.assert_status_ok();
+        assert_eq!(
+            http.json::<serde_json::Value>()["items"][0]["id"],
+            fixture.sibling.to_string()
+        );
         for filter in [
             json!({"pagesGte": 20, "pagesLte": 20}),
             json!({"pagesGte": 30, "pagesLte": 10}),
@@ -2197,11 +2230,40 @@ mod tests {
                 expected
             );
         }
+        let minted_filter =
+            json!({"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-04T00:00:00Z"});
+        let titled = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "TITLE", "direction": "ASC"}], "filter": minted_filter})).await;
+        assert!(titled.get("errors").is_none(), "{titled}");
+        let title_cursor = titled["data"]["books"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        for work in [fixture.visible_work, fixture.hidden_work] {
+            crate::models::work::refresh_first_author_sort(&mut conn, work)
+                .await
+                .unwrap();
+        }
+        let ordered = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "AUTHOR", "direction": "ASC"}]})).await;
+        assert!(ordered.get("errors").is_none(), "{ordered}");
+        assert_eq!(
+            ordered["data"]["books"]["edges"][0]["node"]["id"],
+            id::Manifestation::encode(fixture.hidden).as_str()
+        );
+        let ordered_cursor = ordered["data"]["books"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
         for variables in [
-            json!({"first": 50, "after": cursor, "sort": [{"column": "TITLE", "direction": "ASC"}]}),
-            json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "DESC"}]}),
+            json!({"first": 50, "after": title_cursor, "sort": [{"column": "AUTHOR", "direction": "ASC"}], "filter": minted_filter}),
+            json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "DESC"}], "filter": minted_filter}),
+            json!({"first": 50, "after": ordered_cursor, "sort": [{"column": "AUTHOR", "direction": "ASC"}, {"column": "TITLE", "direction": "ASC"}]}),
             json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:01Z", "createdAtLt": "2026-01-04T00:00:00Z"}}),
             json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-05T00:00:00Z"}}),
+        ] {
+            let response = reader_query(&fixture, &fixture.admin, query, variables).await;
+            assert_cursor_refused(&response, &["books"]);
+        }
+        for variables in [
+            json!({"first": 101}),
             json!({"first": 50, "sort": [{"column": "Title", "direction": "ASC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "TITLE", "direction": "DESC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "AUTHOR", "direction": "ASC"}, {"column": "PAGES", "direction": "ASC"}, {"column": "CREATED_AT", "direction": "ASC"}]}),
@@ -2213,16 +2275,6 @@ mod tests {
             );
             assert!(response["data"]["books"].is_null());
         }
-        let ordered = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "CREATED_AT", "direction": "ASC"}]})).await;
-        assert!(ordered.get("errors").is_none(), "{ordered}");
-        let ordered_cursor = ordered["data"]["books"]["edges"][0]["cursor"]
-            .as_str()
-            .unwrap();
-        let refused = reader_query(&fixture, &fixture.admin, query, json!({"first": 50, "after": ordered_cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}, {"column": "TITLE", "direction": "ASC"}]})).await;
-        assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
-            "{refused}"
-        );
         let refused = reader_query(
             &fixture,
             &fixture.admin,
@@ -2230,10 +2282,7 @@ mod tests {
             json!({"after": cursor}),
         )
         .await;
-        assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
-            "{refused}"
-        );
+        assert_cursor_refused(&refused, &["shelves"]);
         let tagged = reader_query(
             &fixture,
             &fixture.admin,
@@ -2291,28 +2340,44 @@ mod tests {
             let nested_cursor = page["data"][field][relation]["edges"][0]["cursor"]
                 .as_str()
                 .unwrap();
-            for response in [
-                reader_query(
-                    &fixture,
-                    &fixture.admin,
-                    &nested_query,
-                    json!({"id": parent_b.as_str(), "after": nested_cursor}),
-                )
-                .await,
-                reader_query(
-                    &fixture,
-                    &fixture.admin,
-                    query,
-                    json!({"after": nested_cursor}),
-                )
-                .await,
-            ] {
-                assert_eq!(
-                    response["errors"][0]["extensions"]["code"], "validation",
-                    "{response}"
-                );
-            }
+            let other_parent = reader_query(
+                &fixture,
+                &fixture.admin,
+                &nested_query,
+                json!({"id": parent_b.as_str(), "after": nested_cursor}),
+            )
+            .await;
+            assert_cursor_refused(&other_parent, &[field, relation]);
+            let other_connection = reader_query(
+                &fixture,
+                &fixture.admin,
+                query,
+                json!({"first": 50, "after": nested_cursor}),
+            )
+            .await;
+            assert_cursor_refused(&other_connection, &["books"]);
         }
+        let snapshot_query = "query($id: ID!, $after: String) { manifestation(id: $id) { metadata { authors(first: 1, after: $after) { edges { cursor node { name } } } } } }";
+        let snapshot = reader_query(
+            &fixture,
+            &fixture.admin,
+            snapshot_query,
+            json!({"id": id::Manifestation::encode(fixture.visible).as_str()}),
+        )
+        .await;
+        assert!(snapshot.get("errors").is_none(), "{snapshot}");
+        let snapshot_cursor = snapshot["data"]["manifestation"]["metadata"]["authors"]["edges"][0]
+            ["cursor"]
+            .as_str()
+            .unwrap();
+        let other_parent = reader_query(
+            &fixture,
+            &fixture.admin,
+            snapshot_query,
+            json!({"id": id::Manifestation::encode(fixture.hidden).as_str(), "after": snapshot_cursor}),
+        )
+        .await;
+        assert_cursor_refused(&other_parent, &["manifestation", "metadata"]);
         pending_cursor_identity(&fixture).await;
         let shelf_page = reader_query(
             &fixture,
@@ -2329,12 +2394,32 @@ mod tests {
             &fixture,
             &fixture.admin,
             query,
-            json!({"after": shelf_cursor}),
+            json!({"first": 50, "after": shelf_cursor}),
         )
         .await;
-        assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
-            "{refused}"
-        );
+        assert_cursor_refused(&refused, &["books"]);
+        let shelf_ids = |body: serde_json::Value| -> Vec<serde_json::Value> {
+            body["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item["id"].clone())
+                .collect()
+        };
+        let http_all = fixture
+            .server
+            .get("/api/v1/shelves")
+            .add_header("authorization", fixture.admin.clone())
+            .await;
+        http_all.assert_status_ok();
+        let all = shelf_ids(http_all.json());
+        assert!(all.len() > 1, "{all:?}");
+        let http_shelves = fixture
+            .server
+            .get(&format!("/api/v1/shelves?cursor={shelf_cursor}"))
+            .add_header("authorization", fixture.admin.clone())
+            .await;
+        http_shelves.assert_status_ok();
+        assert_eq!(shelf_ids(http_shelves.json()), all[1..]);
     }
 }

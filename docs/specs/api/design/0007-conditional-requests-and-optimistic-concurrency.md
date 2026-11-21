@@ -7,11 +7,14 @@ satisfies:
   - "REV-REQ-0018"
   - "REV-REQ-0019"
   - "REV-REQ-0020"
+  - "REV-REQ-0089"
+  - "REV-REQ-0090"
   - "REV-REQ-0082"
   - "REV-REQ-0083"
 governed-by:
   - "REV-ADR-0011"
   - "REV-ADR-0069"
+  - "REV-ADR-0084"
 ---
 
 # Conditional requests and optimistic concurrency
@@ -126,7 +129,10 @@ provider-key registry check.
 ### Client editing baselines
 
 GraphQL editing responses publish only with a valid envelope. Server-typed scalars and enums guarantee the formats of
-metadata values and validators.
+metadata values and validators. A response that carries errors or lacks selected data forms no baseline. A selected
+field whose value is `null` is present, and it forms part of a baseline like any other value. Values and a validator
+from different revisions never form one baseline, and a replacement list forms one only from every page of that list at
+one revision.
 
 The Library captures its baselines from raw executions. `LibrarySource` (`frontend/src/lib/relay/library-visit.ts`) runs
 each `readerLibraryQuery` page through `executeEditingOnce` and keeps a detached copy of every row's raw `metadata` and
