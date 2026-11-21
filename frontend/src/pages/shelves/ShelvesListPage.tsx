@@ -5,26 +5,42 @@
  * shelves render with disabled rename/delete affordances; the backend
  * refuses changes to them with a `SystemShelfImmutable` result.
  */
-import { useMutation, usePreloadedQuery, useQueryLoader, type PreloadedQuery } from "react-relay";
+import {
+  useMutation,
+  usePaginationFragment,
+  usePreloadedQuery,
+  useQueryLoader,
+  type PreloadedQuery,
+} from "react-relay";
 import { ConnectionHandler, ROOT_ID } from "relay-runtime";
-import { useShelves } from "@/api/shelves";
-import { readerShelvesQuery } from "@/lib/relay/reader";
+import { readerShelves, readerShelvesQuery } from "@/lib/relay/reader";
 import {
   mutationsCreateShelfMutation,
   mutationsRenameShelfMutation,
   mutationsDeleteShelfMutation,
 } from "@/lib/relay/mutations";
 import type { readerShelvesQuery as ShelvesQuery } from "@/lib/relay/__generated__/readerShelvesQuery.graphql";
+import type {
+  readerShelves$data,
+  readerShelves$key,
+} from "@/lib/relay/__generated__/readerShelves.graphql";
+import type { readerShelvesPaginationQuery as ShelvesPagination } from "@/lib/relay/__generated__/readerShelvesPaginationQuery.graphql";
 import type { mutationsCreateShelfMutation as CreateShelf } from "@/lib/relay/__generated__/mutationsCreateShelfMutation.graphql";
 import type { mutationsRenameShelfMutation as RenameShelf } from "@/lib/relay/__generated__/mutationsRenameShelfMutation.graphql";
 import type { mutationsDeleteShelfMutation as DeleteShelf } from "@/lib/relay/__generated__/mutationsDeleteShelfMutation.graphql";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { Suspense, useActionState, useState, type ReactElement } from "react";
+import {
+  Suspense,
+  useActionState,
+  useEffect,
+  useState,
+  useTransition,
+  type ReactElement,
+} from "react";
 import { Form, TextField, Input as AriaInput, Label as AriaLabel } from "react-aria-components";
 import { z } from "zod";
 import { Link, useLoaderData } from "react-router";
 
-import { type Shelf } from "@/api";
 import { Button } from "@/components/ui/button";
 import { DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FieldError } from "@/components/ui/field";
@@ -35,6 +51,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { loader } from "@/routes/shelves";
 
 const SHELVES_CONNECTION = ConnectionHandler.getConnectionID(ROOT_ID, "readerShelves_shelves");
+
+type ShelfRow = readerShelves$data["shelves"]["edges"][number]["node"];
 
 /** Top-level page component (Suspense boundary + content). */
 export function ShelvesListPage(): ReactElement | null {
@@ -52,14 +70,27 @@ function ShelvesContent({
 }: Readonly<{ reference: PreloadedQuery<ShelvesQuery> }>): ReactElement {
   const [current] = useQueryLoader<ShelvesQuery>(readerShelvesQuery, reference);
   const query = usePreloadedQuery<ShelvesQuery>(readerShelvesQuery, current ?? reference);
-  const shelvesQuery = useShelves(query);
-  const { data: shelves, error } = shelvesQuery;
+  const { data, hasNext, isLoadingNext, loadNext, refetch } = usePaginationFragment<
+    ShelvesPagination,
+    readerShelves$key
+  >(readerShelves, query);
+  const [error, setError] = useState<Error | null>(null);
+  const [, startTransition] = useTransition();
+  useEffect(() => {
+    if (hasNext && !isLoadingNext) loadNext(50, { onComplete: setError });
+  }, [hasNext, isLoadingNext, loadNext]);
+  const shelves = data.shelves.edges.map((edge) => edge.node);
+  function reload(): void {
+    startTransition(() => {
+      refetch({}, { fetchPolicy: "network-only", onComplete: setError });
+    });
+  }
   const [commitCreate, createPending] = useMutation<CreateShelf>(mutationsCreateShelfMutation);
   const [commitRename, renamePending] = useMutation<RenameShelf>(mutationsRenameShelfMutation);
   const [commitDelete, deletePending] = useMutation<DeleteShelf>(mutationsDeleteShelfMutation);
   const [createOpen, setCreateOpen] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<Shelf | null>(null);
-  const [deletion, setDeletion] = useState<{ shelf: Shelf; error: string | null }>();
+  const [renameTarget, setRenameTarget] = useState<ShelfRow | null>(null);
+  const [deletion, setDeletion] = useState<{ shelf: ShelfRow; error: string | null }>();
   if (error !== null) throw error;
   function create(name: string): Promise<string | null> {
     return new Promise((resolve, reject) => {
@@ -76,7 +107,7 @@ function ShelvesContent({
           }
         },
         onError: (failure) => {
-          shelvesQuery.refetch();
+          reload();
           reject(failure);
         },
       });
@@ -103,16 +134,20 @@ function ShelvesContent({
           }
         },
         onError: (failure) => {
-          shelvesQuery.refetch();
+          reload();
           reject(failure);
         },
       });
     });
   }
-  function remove(shelf: Shelf): void {
+  function remove(shelf: ShelfRow): void {
     setDeletion({ shelf, error: null });
     commitDelete({
       variables: { input: { id: shelf.id }, connections: [SHELVES_CONNECTION] },
+      updater: (store, response) => {
+        if (response?.deleteShelf.__typename === "ShelfDeleted")
+          store.get(response.deleteShelf.deletedShelfId)?.invalidateRecord();
+      },
       onCompleted: ({ deleteShelf }) => {
         if (deleteShelf.__typename === "ShelfDeleted") setDeletion(undefined);
         else
@@ -127,7 +162,7 @@ function ShelvesContent({
       },
       onError: (failure) => {
         setDeletion({ shelf, error: failure.message });
-        shelvesQuery.refetch();
+        reload();
       },
     });
   }
@@ -169,9 +204,9 @@ function ShelvesContent({
               {shelf.name}
             </Link>
             <span className="text-fg-muted text-xs">
-              {shelf.item_count} {shelf.item_count === 1 ? "item" : "items"}
+              {shelf.itemCount} {shelf.itemCount === 1 ? "item" : "items"}
             </span>
-            {shelf.is_system ? (
+            {shelf.isSystem ? (
               <span className="text-fg-muted border-border rounded-full border px-2 py-0.5 text-xs">
                 System
               </span>

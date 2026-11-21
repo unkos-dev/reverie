@@ -1815,7 +1815,6 @@ mod tests {
         };
         json!({
             "id": id.as_str(), "q": "Graph",
-            "ids": [if document.contains("authorLabels(") { id::Author::encode(fixture.author) } else { id::Series::encode(fixture.series) }],
             "authorIds": [id::Author::encode(fixture.author).as_str()],
             "seriesIds": [id::Series::encode(fixture.series).as_str()],
             "shelfIds": [id::Shelf::encode(fixture.shelf_a).as_str()],

@@ -1,6 +1,5 @@
-import { useShelves } from "@/api/shelves";
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, X } from "lucide-react";
-import { useEffect, useId, type ReactElement, type ReactNode } from "react";
+import { useId, type ReactElement, type ReactNode } from "react";
 
 import { MAX_SORT_LEVELS, SORT_FIELDS, type SortLevelParam } from "@/api";
 import { TypeaheadMultiSelect } from "@/components/library/TypeaheadMultiSelect";
@@ -16,9 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
-import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
-import { useSeriesLabels } from "@/lib/hooks/use-series-labels";
 import type { LibraryFilters } from "@/lib/hooks/use-library-filters";
+import type { TypeaheadMultiSelect_suggestions$key } from "@/lib/relay/__generated__/TypeaheadMultiSelect_suggestions.graphql";
 import {
   isIsbn13FilterActive,
   MAX_FILTER_VALUES,
@@ -37,8 +35,17 @@ import {
   type VocabFamily,
 } from "../library/editors";
 
+export type RailShelves = {
+  items: readonly { readonly id: string; readonly name: string }[];
+  loading: boolean;
+  failed: boolean;
+};
+
 type FilterRailProps = {
   owner: LibraryFilters;
+  suggestions: TypeaheadMultiSelect_suggestions$key;
+  labels: { authorLabel: (id: string) => string; seriesName: (id: string) => string };
+  shelves: RailShelves;
   onClose?: () => void;
   showContradiction: boolean;
   /** The resolved effective sort stack; see the module docstring. */
@@ -53,6 +60,9 @@ type FilterRailProps = {
 /** The library's filter and sort editing surface; see the module docstring. */
 export function FilterRail({
   owner,
+  suggestions,
+  labels,
+  shelves,
   onClose,
   showContradiction,
   sortLevels,
@@ -60,12 +70,6 @@ export function FilterRail({
   onSortChange,
 }: Readonly<FilterRailProps>): ReactElement {
   const { filters, commitAll } = owner;
-
-  const authorIds = [
-    ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
-  ];
-  const authorNames = useAuthorLabels(authorIds);
-  const seriesNames = useSeriesLabels(filters.series);
 
   const setCount = (set: { all: string[]; any: string[]; none: string[] }): number =>
     set.all.length + set.any.length + set.none.length;
@@ -86,6 +90,7 @@ export function FilterRail({
       }}
     >
       <VocabEditor
+        suggestions={suggestions}
         family={family}
         draft={filters}
         setDraft={(next) => {
@@ -94,7 +99,7 @@ export function FilterRail({
           // commit that landed since.
           commitAll((current) => ({ ...current, [family]: next[family] }));
         }}
-        resolveAuthorLabel={authorNames.labelFor}
+        resolveAuthorLabel={labels.authorLabel}
       />
     </RailSection>
   );
@@ -171,9 +176,10 @@ export function FilterRail({
           }}
         >
           <TypeaheadMultiSelect
+            suggestions={suggestions}
             kind="series"
             label="Series"
-            selected={filters.series.map((id) => ({ id, value: seriesNames.labelFor(id) }))}
+            selected={filters.series.map((id) => ({ id, value: labels.seriesName(id) }))}
             maxSelectedItems={MAX_FILTER_VALUES}
             onChange={(selected) => {
               commitAll((current) => ({
@@ -213,6 +219,7 @@ export function FilterRail({
           }}
         />
         <ShelfSection
+          shelves={shelves}
           activeShelf={filters.shelf}
           onPick={(shelf) => {
             commitAll((current) => ({ ...current, shelf }));
@@ -498,25 +505,24 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
 }
 
 type ShelfSectionProps = {
+  shelves: RailShelves;
   activeShelf: readonly string[];
   onPick: (shelf: string[]) => void;
   /** Clear-affordance path, distinct from `onPick` so it resets drafts. */
   onClear: () => void;
 };
 
-function ShelfSection({ activeShelf, onPick, onClear }: Readonly<ShelfSectionProps>): ReactElement {
+function ShelfSection({
+  shelves,
+  activeShelf,
+  onPick,
+  onClear,
+}: Readonly<ShelfSectionProps>): ReactElement {
   const descriptionId = useId();
-  const { data: shelves, isLoading, isError, error } = useShelves();
-  // The degraded copy below is acceptable UI; the failure behind it must
-  // still reach the console (QueryCache.onError only routes 401s).
-  useEffect(() => {
-    if (isError) console.error("[FilterRail] shelves fetch failed", error);
-  }, [isError, error]);
-
-  const options = shelves.map((shelf) => ({ id: shelf.id, name: shelf.name }));
+  const options = shelves.items.map((shelf) => ({ id: shelf.id, name: shelf.name }));
   let emptyText = "No shelves yet.";
-  if (isLoading) emptyText = "Loading shelves…";
-  else if (isError) emptyText = "Couldn't load shelves.";
+  if (shelves.loading) emptyText = "Loading shelves…";
+  else if (shelves.failed) emptyText = "Couldn't load shelves.";
 
   return (
     <RailSection title="Shelf" activeCount={activeShelf.length} onClear={onClear}>

@@ -2,21 +2,13 @@
  * Controlled vocabulary selection over server-ranked suggestions without local text filtering.
  * Callers own persisted selections; author and series identity use GraphQL IDs while other vocabularies use labels.
  */
-import { fetchQuery, useRelayEnvironment } from "react-relay";
-import type { Observable } from "relay-runtime";
-import {
-  readerAuthorSuggestionsQuery,
-  readerSeriesSuggestionsQuery,
-  readerGenreSuggestionsQuery,
-  readerMoodSuggestionsQuery,
-  readerTagSuggestionsQuery,
-} from "@/lib/relay/reader";
-import type { readerAuthorSuggestionsQuery as AuthorQuery } from "@/lib/relay/__generated__/readerAuthorSuggestionsQuery.graphql";
-import type { readerSeriesSuggestionsQuery as SeriesQuery } from "@/lib/relay/__generated__/readerSeriesSuggestionsQuery.graphql";
-import type { readerGenreSuggestionsQuery as GenreQuery } from "@/lib/relay/__generated__/readerGenreSuggestionsQuery.graphql";
-import type { readerMoodSuggestionsQuery as MoodQuery } from "@/lib/relay/__generated__/readerMoodSuggestionsQuery.graphql";
-import type { readerTagSuggestionsQuery as TagQuery } from "@/lib/relay/__generated__/readerTagSuggestionsQuery.graphql";
-import { useEffect, useState, type ReactElement } from "react";
+import { fetchQuery, graphql, useRefetchableFragment, useRelayEnvironment } from "react-relay";
+import type { Subscription } from "relay-runtime";
+import type { TypeaheadMultiSelect_suggestions$key } from "@/lib/relay/__generated__/TypeaheadMultiSelect_suggestions.graphql";
+import TypeaheadMultiSelectRefetchQuery, {
+  type TypeaheadMultiSelectRefetchQuery as RefetchQuery,
+} from "@/lib/relay/__generated__/TypeaheadMultiSelectRefetchQuery.graphql";
+import { useEffect, useRef, useState, useTransition, type ReactElement } from "react";
 import {
   Button,
   ComboBox,
@@ -37,10 +29,48 @@ import { X } from "lucide-react";
 
 import { type SuggestKind } from "@/api";
 
+const suggestionsFragment = graphql`
+  fragment TypeaheadMultiSelect_suggestions on Query
+  @refetchable(queryName: "TypeaheadMultiSelectRefetchQuery")
+  @argumentDefinitions(
+    q: { type: "String", defaultValue: "" }
+    authors: { type: "Boolean", defaultValue: false }
+    series: { type: "Boolean", defaultValue: false }
+    genres: { type: "Boolean", defaultValue: false }
+    moods: { type: "Boolean", defaultValue: false }
+    tags: { type: "Boolean", defaultValue: false }
+  )
+  @throwOnFieldError {
+    authorSuggestions(q: $q) @include(if: $authors) {
+      id
+      name
+    }
+    seriesSuggestions(q: $q) @include(if: $series) {
+      id
+      name
+    }
+    genreSuggestions(q: $q) @include(if: $genres) {
+      id
+      name
+    }
+    moodSuggestions(q: $q) @include(if: $moods) {
+      id
+      name
+    }
+    tagSuggestions(q: $q) @include(if: $tags) {
+      id
+      name
+    }
+  }
+`;
+
+const MAX_TERM_CODE_POINTS = 100;
+
 /** A display label with an author or series GraphQL ID; other vocabularies use the label as identity. */
 export type TypeaheadOption = { id?: string; value: string };
 
 type Props = {
+  suggestions: TypeaheadMultiSelect_suggestions$key;
   kind: SuggestKind;
   label: string;
   selected: readonly TypeaheadOption[];
@@ -51,6 +81,7 @@ type Props = {
 
 /** Emits the complete native selection on add/remove. */
 export function TypeaheadMultiSelect({
+  suggestions: suggestionsKey,
   kind,
   label,
   selected,
@@ -58,70 +89,80 @@ export function TypeaheadMultiSelect({
   disabled = false,
   maxSelectedItems,
 }: Readonly<Props>): ReactElement {
+  const environment = useRelayEnvironment();
+  const [data, refetch] = useRefetchableFragment<
+    RefetchQuery,
+    TypeaheadMultiSelect_suggestions$key
+  >(suggestionsFragment, suggestionsKey);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState<{ term: string; done: boolean; error?: Error }>();
+  const [, startTransition] = useTransition();
+  const subscription = useRef<Subscription | null>(null);
+  useEffect(
+    () => () => {
+      subscription.current?.unsubscribe();
+    },
+    [],
+  );
   const trimmed = query.trim();
-  const environment = useRelayEnvironment();
-  const enabled = open && !disabled && trimmed.length >= 2;
-  const token = JSON.stringify([kind, trimmed]);
-  const [result, setResult] = useState<{
-    token: string;
-    data?: readonly { entityId: string | null | undefined; value: string }[];
-    error?: Error;
-  }>();
-  useEffect(() => {
-    if (!enabled) return;
-    const variables = { q: trimmed };
-    let request: Observable<readonly { entityId: string | null | undefined; value: string }[]>;
-    if (kind === "authors")
-      request = fetchQuery<AuthorQuery>(environment, readerAuthorSuggestionsQuery, variables).map(
-        (data) => data.authorSuggestions,
-      );
-    else if (kind === "series")
-      request = fetchQuery<SeriesQuery>(environment, readerSeriesSuggestionsQuery, variables).map(
-        (data) => data.seriesSuggestions,
-      );
-    else if (kind === "genres")
-      request = fetchQuery<GenreQuery>(environment, readerGenreSuggestionsQuery, variables).map(
-        (data) => data.genreSuggestions,
-      );
-    else if (kind === "moods")
-      request = fetchQuery<MoodQuery>(environment, readerMoodSuggestionsQuery, variables).map(
-        (data) => data.moodSuggestions,
-      );
-    else
-      request = fetchQuery<TagQuery>(environment, readerTagSuggestionsQuery, variables).map(
-        (data) => data.tagSuggestions,
-      );
+  const termTooLong = Array.from(trimmed).length > MAX_TERM_CODE_POINTS;
 
-    const subscription = request.subscribe({
-      next: (data) => {
-        setResult({ token, data });
+  function searchFor(text: string, isOpen: boolean): void {
+    subscription.current?.unsubscribe();
+    subscription.current = null;
+    const term = text.trim();
+    if (!isOpen || disabled || term.length < 2 || Array.from(term).length > MAX_TERM_CODE_POINTS) {
+      setSearch(undefined);
+      return;
+    }
+    const variables = {
+      q: term,
+      authors: kind === "authors",
+      series: kind === "series",
+      genres: kind === "genres",
+      moods: kind === "moods",
+      tags: kind === "tags",
+    };
+    setSearch({ term, done: false });
+    subscription.current = fetchQuery<RefetchQuery>(
+      environment,
+      TypeaheadMultiSelectRefetchQuery,
+      variables,
+    ).subscribe({
+      complete: () => {
+        subscription.current = null;
+        startTransition(() => {
+          refetch(variables, { fetchPolicy: "store-only" });
+          setSearch({ term, done: true });
+        });
       },
       error: (error: Error) => {
+        subscription.current = null;
         console.error("[TypeaheadMultiSelect] suggestions failed", error);
-        setResult({ token, error });
+        setSearch({ term, done: true, error });
       },
     });
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [environment, enabled, kind, trimmed, token]);
-  const data = result?.token === token ? result.data : undefined;
-  const isError = result?.token === token && result.error !== undefined;
-  const isFetching = enabled && data === undefined && !isError;
+  }
+
+  const current = search?.term === trimmed ? search : undefined;
+  const isError = termTooLong || current?.error !== undefined;
+  const isFetching = current !== undefined && !current.done;
+  let rows: readonly { id: string; name: string }[] | undefined;
+  if (kind === "authors") rows = data.authorSuggestions;
+  else if (kind === "series") rows = data.seriesSuggestions;
+  else if (kind === "genres") rows = data.genreSuggestions;
+  else if (kind === "moods") rows = data.moodSuggestions;
+  else rows = data.tagSuggestions;
   function keyFor(option: TypeaheadOption): string {
     return kind === "authors" || kind === "series" ? (option.id ?? option.value) : option.value;
   }
   const suggestions =
-    trimmed.length >= 2
-      ? (data ?? []).map((row) => {
-          const id =
-            row.entityId != null && (kind === "authors" || kind === "series")
-              ? row.entityId
-              : undefined;
-          return { id, value: row.value };
-        })
+    trimmed.length >= 2 && current?.done === true && current.error === undefined
+      ? (rows ?? []).map((row) => ({
+          id: kind === "authors" || kind === "series" ? row.id : undefined,
+          value: row.name,
+        }))
       : [];
   const optionsByKey = new Map<Key, TypeaheadOption>(
     [...suggestions, ...selected].map((item) => [keyFor(item), item]),
@@ -142,7 +183,10 @@ export function TypeaheadMultiSelect({
         return item ? [item] : [];
       }),
     );
-    if (kind !== "series") setQuery("");
+    if (kind !== "series") {
+      setQuery("");
+      searchFor("", open);
+    }
   }
   let status: string | null = null;
   if (trimmed.length < 2) status = "Type at least 2 characters to search.";
@@ -155,11 +199,17 @@ export function TypeaheadMultiSelect({
       selectionMode="multiple"
       items={suggestions}
       inputValue={query}
-      onInputChange={setQuery}
+      onInputChange={(text) => {
+        setQuery(text);
+        searchFor(text, open);
+      }}
       value={selectedKeys}
       disabledKeys={disabledKeys}
       onChange={changeSelection}
-      onOpenChange={setOpen}
+      onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        searchFor(query, isOpen);
+      }}
       allowsEmptyCollection
       allowsCustomValue={kind === "series"}
       isDisabled={disabled}

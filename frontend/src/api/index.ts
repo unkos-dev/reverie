@@ -56,7 +56,6 @@ export { MAX_RESOLVE_IDS } from "./suggest";
 export type { Suggestion, SuggestKind } from "./suggest";
 export { acceptVersion, rejectVersion, revertField } from "./metadata";
 export type { SeriesDetail, SeriesWork, SeriesWorkManifestation } from "./series";
-export type { Shelf } from "./shelves";
 export { bookPath } from "./graphql";
 export {
   listUsers,

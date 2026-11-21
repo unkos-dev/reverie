@@ -46,6 +46,7 @@ import {
   type StatusFilter,
 } from "@/routes/library-params";
 
+import type { TypeaheadMultiSelect_suggestions$key } from "@/lib/relay/__generated__/TypeaheadMultiSelect_suggestions.graphql";
 import { TypeaheadMultiSelect, type TypeaheadOption } from "./TypeaheadMultiSelect";
 
 export type { TextOp } from "@/routes/library-params";
@@ -399,6 +400,7 @@ function isSetMode(value: string): value is SetMode {
 }
 
 type VocabEditorProps = {
+  suggestions: TypeaheadMultiSelect_suggestions$key;
   family: VocabFamily;
   draft: FilterState;
   setDraft: (next: FilterState) => void;
@@ -406,6 +408,7 @@ type VocabEditorProps = {
 };
 
 export function VocabEditor({
+  suggestions,
   family,
   draft,
   setDraft,
@@ -454,6 +457,7 @@ export function VocabEditor({
         </SelectContent>
       </Select>
       <TypeaheadMultiSelect
+        suggestions={suggestions}
         kind={VOCAB_KIND[family]}
         label={`${family} (${MODE_WORD[mode]})`}
         selected={selected}

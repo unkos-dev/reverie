@@ -57,7 +57,6 @@ const ID_PREFIXES = {
   MetadataRevision: "metadata_rev",
   MetadataVersion: "metadata_version",
   Mood: "mood",
-  Publisher: "publisher",
   Series: "series",
   Shelf: "shelf",
   Tag: "tag",
@@ -154,8 +153,6 @@ const readerProjections = new Map<string, z.ZodType>([
         .nullable(),
     }),
   ],
-  ["readerShelvesQuery", z.object({ shelves: connection(shelfProjection) })],
-  ["readerShelvesPaginationQuery", z.object({ shelves: connection(shelfProjection) })],
   ["readerShelfQuery", z.object({ shelf: shelfProjection.extend(shelfItems.shape).nullable() })],
   ["readerShelfItemsPaginationQuery", z.object({ fetch__Shelf: shelfItems.nullable() })],
   ["readerSeriesQuery", z.object({ series: seriesWorks.nullable() })],
@@ -181,20 +178,6 @@ const readerProjections = new Map<string, z.ZodType>([
     z.object({ fetch__Manifestation: versionProjection.nullable() }),
   ],
 ]);
-for (const kind of ["Author", "Series", "Genre", "Mood", "Tag", "Publisher"] as const) {
-  for (const action of kind === "Author" || kind === "Series"
-    ? ["Suggestions", "Labels"]
-    : ["Suggestions"]) {
-    readerProjections.set(
-      `reader${kind}${action}Query`,
-      z.object({
-        [`${kind.toLowerCase()}${action}`]: z.array(
-          z.object({ entityId: domainId(kind).nullable() }),
-        ),
-      }),
-    );
-  }
-}
 const authorSnapshot = revision.extend({
   authors: z.object({
     edges: z.array(
