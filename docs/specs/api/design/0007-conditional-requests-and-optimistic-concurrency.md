@@ -27,8 +27,10 @@ them; the shared hash-based tag constructor and `If-Match` parser in `backend/sr
 `StrongEntityTag`, `parse_if_match`, `if_match_mismatch`); the precondition contract common to every protected endpoint
 (missing header returns `428`, a mismatched tag returns `412`, a malformed or policy-refused header is rejected before
 either) and the point in each handler where that contract is evaluated relative to the existence check and the request
-body's own semantic validation; and the explicit client baselines in `frontend/src/api/books.ts`, `reading.ts`,
-`fetch.ts` and `graphql.ts`.
+body's own semantic validation; and the client's editing baselines: the HTTP adapters in `frontend/src/api/books.ts`,
+`reading.ts`, `settings.ts` and `fetch.ts`, the Library's raw-execution capture in `frontend/src/api/graphql.ts` and
+`frontend/src/lib/relay/library-visit.ts`, and the Book edit dialog's opening snapshot in
+`frontend/src/pages/book/EditMetadataDialog.tsx`.
 
 It does not own the business logic of any endpoint that uses this contract: what fields
 `PATCH /api/v1/books/{id}/reading` may change and its transition-stamp rules (the Design "Reading state"), the per-field
@@ -45,9 +47,10 @@ Depends on: RFC 9110 §8.8.3 (`entity-tag` grammar), §13.1.1 (`If-Match`), and 
 race-free against a concurrent writer (owned by that endpoint's own subject, not restated here).
 
 Depended on by: `PATCH /api/v1/books/{id}/reading` (the Design "Reading state"), `PATCH /api/v1/books/{id}/metadata`
-(the Design "Metadata review and editing"), and `PUT /api/v1/settings` (`backend/src/routes/settings/mod.rs`) on the
-server side; the metadata edit dialog and the library table's cell-editing surface (the Library table cell editing and
-undo subject) on the client side, both of which read a captured tag through `apiFetch`.
+(the Design "Metadata review and editing"), `PUT /api/v1/settings` (`backend/src/routes/settings/mod.rs`), and the
+GraphQL `updateMetadata`, `undoMetadata` and `updateReadingState` mutations on the server side. On the client side, the
+Book edit dialog takes its baseline from its opening Relay fragment snapshot, and the Library table's cell editing takes
+its baselines from raw executions; Client editing baselines below describes both.
 
 ## Structure
 
@@ -117,26 +120,33 @@ same lock.
 
 The entity-tag comparison against the locked row runs next, returning `412` on a mismatch. Semantic body validation runs
 only once the precondition holds: an empty patch, an out-of-range rating, or settings field validation and the
-provider-key registry check. This order follows RFC 9110 §13.2.1, which places precondition evaluation after the normal
-request checks and before the request content is processed.
+provider-key registry check.
 
 ### Client editing baselines
 
 GraphQL editing responses publish only with a valid envelope. Server-typed scalars and enums guarantee the formats of
-metadata values and validators, and the author-list documents keep a selected projection. `executeEditing` captures
-values and their matching validator together from the raw `environment.execute` or `executeMutation` payload, in a
-detached copy. It never derives a baseline from a merged store read or `commitMutation.onCompleted`. A whole-list author
-replacement requires all pages of that field at one revision, with a complete cursor chain. `captureAuthorPages`
-enforces that pairing. A newer token without the selected values cannot replace a captured baseline.
+metadata values and validators.
 
-`apiFetchWithHeaders` returns a decoded body and response headers without retaining entity-tags. Metadata and reading
-adapters validate the complete body and require the matching strong response ETag before publishing one snapshot. List
-rows carry `metadata_etag` and `reading_etag` from the same database snapshot as their values.
+The Library captures its baselines from raw executions. `LibrarySource` (`frontend/src/lib/relay/library-visit.ts`) runs
+each `readerLibraryQuery` page through `executeEditingOnce` and keeps a detached copy of every row's raw `metadata` and
+`readingState` selections, so each row's values and validators come from one response. Cell saves, Undo and their
+resolution reads run through `executeEditing` (`frontend/src/api/graphql.ts`), which clones the raw
+`environment.execute` or `executeMutation` payload. No Library baseline comes from a merged store read or
+`commitMutation.onCompleted`. A whole-list author replacement reads every page of that field through `loadAuthorField`,
+and `captureAuthorPages` accepts only a complete cursor chain at one revision with one pair of domain IDs. A cell commit
+sends the captured row's tag with its input and holds the source generation that supplied it. A confirmed
+acknowledgement replaces that row's captured snapshot in its source.
 
-Table commits capture the displayed row's tag, input and retained Relay source. Dialog drafts retain the snapshot from
-which their fields were seeded, including through background refresh and field errors. Every write sends that explicit
-baseline. The transport's CSRF retry retains the same body and precondition. A 412 header alone never replaces a draft
-baseline or permits another save. Only a matched reset or new editing decision adopts fresh values and their tag.
+The Book edit dialog captures its opening Relay fragment snapshot instead. `EditMetadataForm` reads the
+`mutationsFormQuery` reference that the Versions tab loads, through `usePreloadedQuery`. `EditMetadataFields` reads the
+`mutationsFormSnapshot` fragment and holds the values and `etag` of its first read in component state, so later store
+merges, background refreshes and field errors leave that opening's baseline unchanged. Its Reload fetches
+`mutationsFormQuery` with `network-only` and then remounts the fields, which capture the fresh snapshot.
+
+The HTTP metadata and reading adapters in `frontend/src/api/books.ts` and `reading.ts` call `apiFetchWithHeaders`, which
+returns a decoded body and response headers without caching entity-tags. They validate the complete body and require the
+matching strong response `ETag` before returning one snapshot. Every write sends its baseline explicitly, and the
+transport's CSRF retry sends the same body and precondition again.
 
 Settings retain each tag with its validated values. `apiFetchWithHeaders` exposes the decoded body and response headers
 without caching settings tags. `getSettings` and `updateSettings` validate the body and require a non-empty response
@@ -186,11 +196,11 @@ No shelf endpoint emits an `ETag` or reads an `If-Match` header.
 concurrency validator, not an integrity guarantee: the server always recomputes the tag from its own row and never
 trusts a client-supplied hash as data.
 
-Reader editing snapshots live in their retained raw execution owner and owning draft. Relay owns normalised display
-records. Each metadata revision is its own Relay record, so a store merge cannot pair one revision's values with another
-revision's entity-tag. A retained dialog draft owns its initial snapshot until an explicit matched reset. The Library
-table-editing owner holds at most ten field operations in memory. Leaving Library or table editing clears them;
-filtering, sorting, loading and empty results preserve them.
+Library editing snapshots live in their `LibrarySource` and the table's attempts. The edit dialog's opening snapshot
+lives in `EditMetadataFields` state until Reload remounts the fields. Relay owns normalised display records. Each
+metadata revision is its own Relay record, so a store merge cannot pair one revision's values with another revision's
+entity-tag. The Library table-editing owner holds at most ten field operations in memory. Leaving Library or table
+editing clears them; filtering, sorting, loading and empty results preserve them.
 
 ## Runtime behaviour
 
@@ -231,8 +241,7 @@ handler body executes at all). The response is `400`, problem type `.../malforme
 - Missing `If-Match` returns 428 before database work. A stale supplied precondition returns 412 with the current tag.
   Ordinary saves retain input and require a matched read before a new editing decision; they never automatically retry.
 - Missing or malformed acknowledgement values or tags leave the edit uncertain. Metadata resolution uses committed
-  request evidence through selected raw resolution reads. Reading recovery uses a matched read. A failed read retains
-  input.
+  request evidence through selected resolution reads. Reading recovery uses a matched read. A failed read retains input.
 - Undo refuses locked fields with 409, or `FieldsLocked` over GraphQL, and retains the entry until its original expiry.
   A 422 `undo-unavailable` or 409 `undo-conflict`, or the `UndoUnavailable` or `UndoConflict` member over GraphQL,
   removes it. Expiry removes entries quietly, without extending their deadlines.
@@ -246,11 +255,9 @@ Structure's evaluation-order description) — a caller who lacks read access to 
 `401`/`403`/`404` before the entity-tag comparison ever executes, so the `412` response's echoed current tag never
 reaches a caller who could not already read the resource through its own `GET`. The shared parser refuses the `*`
 wildcard, weak validators and entity-tag lists on top of the RFC 9110 grammar, so no `If-Match` form satisfies the
-precondition without a strong comparison. Its byte-level grammar parsing is not a defence against a crafted header:
-`http`'s header-value construction already refuses C0 control characters and DEL.
+precondition without a strong comparison. `http`'s header-value construction refuses C0 control characters and DEL
+before the parser reads a value.
 
-The shared module's `400` conforms to the status REV-ADR-0011's own status-code-selection rule assigns to a
-syntactically refused header form. Every malformed or policy-refused form is refused as satisfying nothing on all three
-endpoints, so no caller can turn a malformed `If-Match` into a successful write it should not have been able to make.
-Reverie has no operational surface specific to this subject: it has no service to run, restart, or scale, and no
-credential of its own.
+Every malformed or policy-refused form is refused as satisfying nothing on all three endpoints, so no caller can turn a
+malformed `If-Match` into a successful write it should not have been able to make. Reverie has no operational surface
+specific to this subject: it has no service to run, restart, or scale, and no credential of its own.
