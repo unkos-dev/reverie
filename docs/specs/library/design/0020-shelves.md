@@ -158,15 +158,12 @@ Typed and Node lookups return null for foreign, hidden, missing or invalid shelf
 manifestation visibility through the caller's transaction. Relay is the browser owner of these records; read execution
 adds no shelf writer.
 
-`createShelf`, `renameShelf`, `deleteShelf`, `addShelfItem` and `removeShelfItem` follow the GraphQL mutation result
-convention ([Mutation results](../../api/design/0031-graphql-execution-and-relay-browser-data.md#mutation-results)). The
-success members are `ShelfCreated` (the shelf and its list edge), `ShelfRenamed` (the shelf), `ShelfDeleted` (the
-deleted shelf ID), `ShelfItemAdded` (the shelf and the item edge, with an `items` cursor) and `ShelfItemRemoved` (the
-shelf and the removed manifestation ID). The expected outcomes are `ShelfNameInvalid` for an empty name,
-`SystemShelfImmutable` for renaming or deleting a system shelf, and `NotFound` for a malformed, foreign, missing or
-invisible target. The mutations call `services::shelves` with write scope and apply the same adult-only CRUD, owner
-predicates and child membership permissions as HTTP. They take no shelf precondition. Browser workflows use them through
-their page and Library action owners.
+The Design "GraphQL execution and Relay browser data" lists the results of `createShelf`, `renameShelf`, `deleteShelf`,
+`addShelfItem` and `removeShelfItem`
+([Mutation results](../../api/design/0031-graphql-execution-and-relay-browser-data.md#mutation-results)). The mutations
+call `services::shelves` with write scope and apply the same adult-only CRUD, owner predicates and child membership
+permissions as HTTP. They take no shelf precondition. Browser workflows use them through their page and Library action
+owners.
 
 ## Data and state
 
@@ -241,8 +238,10 @@ pagination fragment, and `useShelves` in `frontend/src/api/shelves.ts` reads the
   ownership has already been confirmed; a caller learns "this shelf is mine but immutable" only after the ownership
   check, never before it. GraphQL reports the same order of checks as `NotFound` and `SystemShelfImmutable` results.
 - **Cursor from another list.** `ShelfCursor::parse` and `ShelfItemCursor::parse` accept only their own tag (`sh`, `si`)
-  and refuse a cursor minted by the books list or by the other shelf list with `AppError::Validation` (422), so a cursor
-  never positions a walk in a list it was not cut from.
+  and refuse a cursor minted by the books list or by the other shelf list with `AppError::Validation` (422). An HTTP
+  item cursor carries no shelf identity, so `GET /api/v1/shelves/{id}` accepts an item cursor cut from another shelf and
+  applies its boundary within the requested owned shelf. The GraphQL `items` cursor binds its shelf ID and relation
+  kind, and a cursor from another parent or relation is refused with the `validation` code.
 - **A child probing shelf existence via manifestation ids.** Covered in Runtime behaviour: the RLS-scoped probe in
   `add_shelf_item` and the ownership check both resolve to the same `AppError::NotFound`, so a child cannot distinguish
   "no such shelf" from "shelf is yours but that manifestation isn't visible to you".
