@@ -387,6 +387,23 @@ if [ -e "${dest_codex_missing}/.codex/config.toml" ] || [ -e "${dest_codex_missi
 else
   ok "missing Codex policy creates no destination policy"
 fi
+IFS= read -r -d '' main_worktree_entry < <(git -C "${repo_root}" worktree list --porcelain -z)
+main_agent_hooks="${main_worktree_entry#worktree }/.agents/hooks.json"
+if [ -f "${main_agent_hooks}" ]; then
+  if cmp -s "${main_agent_hooks}" "${dest_codex_missing}/.agents/hooks.json"; then
+    ok "linked checkout without .agents/hooks.json falls back to main checkout"
+  else
+    bad "linked checkout without .agents/hooks.json falls back to main checkout" \
+      "missing or differing: ${dest_codex_missing}/.agents/hooks.json"
+  fi
+else
+  if [ -e "${dest_codex_missing}/.agents/hooks.json" ]; then
+    bad "missing agent hooks creates no destination hooks.json" \
+      "unexpected file: ${dest_codex_missing}/.agents/hooks.json"
+  else
+    ok "missing agent hooks creates no destination hooks.json"
+  fi
+fi
 if grep -qF "[projects.\"${dest_codex_missing}\"]" "${CODEX_HOME}/config.toml"; then
   bad "missing Codex policy creates no destination trust entry" \
     "unexpected trust entry for ${dest_codex_missing}"
@@ -394,10 +411,13 @@ else
   ok "missing Codex policy creates no destination trust entry"
 fi
 
-mkdir -p "${dest_codex_source}/.codex/rules/nested" \
+mkdir -p "${dest_codex_source}/.agents" \
+  "${dest_codex_source}/.codex/rules/nested" \
   "${dest_codex_source}/.codex/cache" \
   "${dest_codex_source}/.codex/sessions" \
   "${dest_codex_source}/.codex/state"
+printf '{"sentinel":"%s"}\n' "${pids}" >"${dest_codex_source}/.agents/hooks.json"
+printf 'unrelated-%s\n' "${pids}" >"${dest_codex_source}/.agents/unrelated.txt"
 printf 'model = "sentinel-%s"\n' "${pids}" >"${dest_codex_source}/.codex/config.toml"
 printf 'allow_command(prefix=["just", "check"])\n# sentinel %s\n' "${pids}" \
   >"${dest_codex_source}/.codex/rules/nested/workflow.rules"
@@ -476,6 +496,25 @@ if git -C "${dest_codex_overlay}" check-ignore -q .codex/config.toml \
 else
   bad "copied Codex policy files remain ignored" \
     "git check-ignore did not match both copied files"
+fi
+
+if cmp -s "${dest_codex_source}/.agents/hooks.json" "${dest_codex_overlay}/.agents/hooks.json"; then
+  ok "agent hooks.json is copied byte-for-byte"
+else
+  bad "agent hooks.json is copied byte-for-byte" \
+    "missing or differing: ${dest_codex_overlay}/.agents/hooks.json"
+fi
+if git -C "${dest_codex_overlay}" check-ignore -q .agents/hooks.json; then
+  ok "copied agent hooks.json remains ignored"
+else
+  bad "copied agent hooks.json remains ignored" \
+    "git check-ignore did not match .agents/hooks.json"
+fi
+if [ -e "${dest_codex_overlay}/.agents/unrelated.txt" ]; then
+  bad "unrelated .agents content is not copied" \
+    "unexpected file: ${dest_codex_overlay}/.agents/unrelated.txt"
+else
+  ok "unrelated .agents content is not copied"
 fi
 
 if [ -e "${dest_codex_overlay}/.codex/cache" ] \
