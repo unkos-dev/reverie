@@ -30,9 +30,11 @@ the Design "Books list query contract". Display preferences have an account life
 ## Structure
 
 `frontend/src/routes/library-params.ts` defines the serialisable visit schema, grouped filter model and effective API
-projection. `useLibraryFilters()` in `frontend/src/lib/hooks/use-library-filters.ts` is mounted once by the page after
-Router setup. The toolbar, filter panel, chips and empty-state actions receive state and dispatch functions from that
-owner. They do not instantiate another filter owner.
+projection. The route loader in `frontend/src/routes/library.tsx` prepares each Library destination's
+`LibraryVisitOwner` (`frontend/src/lib/relay/library-visit.ts`), its restored visit and its screen query reference. The
+page calls `useLibraryFilters` (`frontend/src/lib/hooks/use-library-filters.ts`) once with that owner's `LibraryIntent`
+and the loader's visit. The toolbar, filter panel, chips and empty-state actions receive state and dispatch functions
+from that owner. They do not instantiate another filter owner.
 
 Native NumberFields publish numeric values with snapping, steppers and intrinsic domains. Independently optional
 DatePickers provide keyboard segments and calendars. SearchField and TextField publish raw text immediately. Native
@@ -46,74 +48,107 @@ active independently of retained text.
 Vocabulary filters compose multiple-selection ComboBoxes with a limit of 20 values per mode. At the limit,
 `disabledKeys` disables suggestions outside the current selection while selected options and removal tags remain usable.
 Associated description text explains how to make room; oversized selections use controlled invalidity and FieldError
-feedback.
+feedback. Each typeahead reads the `TypeaheadMultiSelect_suggestions` fragment on the screen query. A search runs while
+the popover is open, the control is enabled and the trimmed term has from 2 to 100 Unicode scalar values. It fetches
+that vocabulary's suggestions with `fetchQuery`, then refetches the fragment with `store-only` in a transition. Starting
+a search, closing the popover or leaving the term ineligible unsubscribes the previous search, so only the latest term
+can update the list or its error. Suggestions return up to ten ranked choices.
 
 Shelf and series selections are GraphQL ID arrays, matching ANY within a facet and AND between facets. A native multiple
-ListBox keeps the independently fetched owned shelf options visible. Toggle selection and select-all publish actual IDs;
-empty selection is unrestricted, including unassigned books. Oversized selection remains editable with associated
-feedback while list requests stay blocked. Section Clear and per-ID chip removal use the same visit owner.
+ListBox lists the owned shelves from the screen query's shelf list, which the page loads to completion. Toggle selection
+and select-all publish actual IDs; empty selection is unrestricted, including unassigned books. Oversized selection
+remains editable with associated feedback while list requests stay blocked. Section Clear and per-ID chip removal use
+the same visit owner.
 
 Series uses the multiple ComboBox and TagGroup composition with GraphQL ID identity. Native `allowsCustomValue` retains
-free search text on commit and dismissal; only selected identified items publish predicates. Its independent server
-suggestions require two query characters and return up to twenty ranked choices. Controlled query text remains after
-selection and does not depend on narrowed Library results. `useSeriesLabels` reads the independent bounded
-`readerSeriesLabelsQuery` for restored chips and selections; missing or failed labels retain the selected ID with a
-fallback showing the first eight characters of its UUID. No response writes filter intent.
+free search text on commit and dismissal; only selected identified items publish predicates. Controlled query text
+remains after selection and does not depend on narrowed Library results. One label read, the `LibraryPage_labels`
+fragment on the screen query, names the chips, the rail's Series and Authors selections and the shelf header. It selects
+each selected author's and series' ID and name, and each selected shelf's ID, name and item count. No response writes
+filter intent.
 
-`useLibraryPreferences()` resolves sort and display preferences. The page supplies its one sort intent handler to the
-filter panel, Covers sort control and table headers. `useLibraryBooks` owns one displayed Relay source and a candidate
-replacement through the account-scoped `LibraryVisitOwner`. Native fragments render the displayed connection. Detached
-raw list projections retain the metadata and reading values with their matching editing baselines.
+`useLibraryPreferences` reads the preferences fragment on `Viewer.libraryPreferences` and resolves each group as the
+reader's override, else the installation default. It resolves the sort override separately from the effective stack. The
+page supplies its one sort intent handler to the filter panel, Covers sort control and table headers. `useLibraryBooks`
+owns one displayed Relay source and a candidate replacement through the account-scoped `LibraryVisitOwner`. Native
+fragments render the displayed connection. Detached raw list projections retain the metadata and reading values with
+their matching editing baselines.
 
 ## Interfaces and dependencies
 
-The visit schema validates owned entry data at restoration. The Navigation API provides `currentEntry.getState()`,
-`updateCurrentEntry` and `currententrychange`; React Router owns route navigation. The browser baseline requires recent
-Navigation-capable browsers. The owner starts after Router initialisation and does not patch classic history.
+The visit schema validates owned entry data at restoration. The Navigation API provides `currentEntry`, its `id` and
+`getState()`, `updateCurrentEntry`, `activation`, the `navigate` event and entry disposal; React Router owns route
+navigation and runs the Library loader. The browser baseline requires recent Navigation-capable browsers. The owner does
+not patch classic history.
 
 The visit projects to `ListBooksParams`, then `libraryVariables` builds typed GraphQL filters and sort levels. Plain
 calendar dates become local-midnight `created_at_gte` and next-local-midnight `created_at_lt` RFC 3339 instants through
 `@internationalized/date`. The upper bound adds one calendar day before timezone conversion, including ordinary
 month/year rollovers and daylight-saving changes.
 
-`libraryPreferences` and `updateLibraryPreferences` provide the account overrides and installation defaults through
-`services::preferences`. The HTTP preference endpoints share that service. Sort gestures write `sortStack`; a non-empty
-override becomes ordered typed sort levels. With no override, `sort` is omitted or null and the server uses the
-installation default. Native query references retain connection membership. Each source keeps its operation, variables
-and detached editing pairs for row actions.
+`Viewer.libraryPreferences` and `updateLibraryPreferences` provide the account overrides and installation defaults
+through `services::preferences`. The HTTP preference endpoints share that service. Each gesture commits one
+`updateLibraryPreferences` mutation with an optimistic response built from the stored preferences and the gesture. Sort
+gestures write the structured `sort`, or `null` to reset it; a column toggle writes `columns` with that one column; the
+Columns reset writes `resetHiddenColumns`. The Library sends its books requests through GraphQL. A request carries the
+reader's non-empty override as ordered typed `sort` levels, and with no override it omits `sort` or supplies `null`, so
+the server applies the installation default. It never serialises the installation-default levels, so an inheriting
+reader's list-query key depends only on the absent override, never on server defaults the client cannot see. `listBooks`
+(`frontend/src/api/books.ts`) is an HTTP adapter that serialises the parameters it is given and omits any that are
+absent, including `sort`. Native query references retain connection membership. Each source keeps its operation,
+variables and detached editing pairs for row actions.
 
 ## Data and state
 
-| State                               | Owner                          | Lifetime                      |
-| ----------------------------------- | ------------------------------ | ----------------------------- |
-| Published filters and optional view | Page-level `useLibraryFilters` | Navigation entry              |
-| Unfinished native input             | Edited React Aria control      | Mounted control               |
-| Sort and display overrides          | `useLibraryPreferences`        | Account preference            |
-| First-paint display mirror          | Preference owner               | Per-user localStorage         |
-| Loaded connection and editing pairs | Relay and displayed source     | Account and Navigation entry  |
-| Selected rows                       | Library page                   | Current intent and projection |
+| State                               | Owner                                       | Lifetime                      |
+| ----------------------------------- | ------------------------------------------- | ----------------------------- |
+| Published filters and optional view | The entry's `LibraryVisitOwner`             | Navigation entry              |
+| Unfinished native input             | Edited React Aria control                   | Mounted control               |
+| Sort and display overrides          | Relay record `Viewer.libraryPreferences`    | Account preference            |
+| Labels and the owned shelf list     | Relay, retained by the bootstrap and screen | Account and Navigation entry  |
+| Loaded connection and editing pairs | Relay and displayed source                  | Account and Navigation entry  |
+| Selected rows                       | Library page                                | Current intent and projection |
 
 The `reverieLibrary` entry field holds the owned visit; writes preserve unrelated entry data. Filter state keeps raw
 text and its selected operator even when the text is blank. Chips and counts describe effective predicates. Requests
 retain raw ISBN-13 contains text, so the server applies its raw length cap before separator removal; the client uses the
-same raw request value for eligibility and source identity. Complete inverted bounds remain entered. The native owner
-keeps immediate dispatch composition aligned with the persisted snapshot; query completion and suggestion responses
-never write filter intent.
+same raw request value for eligibility and source identity. Complete inverted bounds remain entered. Only the entry's
+visit owner writes its entry state: dispatched edits, captured positions and the route load's prune. Query completion
+and suggestion responses never write filter intent.
 
 Callers include quick search, every rail section, section clear, chip removal, global and empty-state clear, view
 gestures and the table-chunk fallback. View gestures also write the account preference; chunk failure changes only the
-visit override. Filter clear preserves both view and sort. The preference owner's 400 ms patch queue and local mirror
-have an account lifetime; no filter value enters that queue or mirror. Queued preference writes flush on unmount only
-while their initiating account epoch remains current. Cold hidden columns contain Subtitle; an explicit empty override
-shows every column.
+visit override. Filter clear preserves both view and sort. No filter value enters a preference write. The installation
+default hides Subtitle; an override that hides nothing shows every column.
 
 ## Runtime behaviour
 
-A native edit dispatches to the current React visit snapshot. Same-turn functional patches compose before the matching
-snapshot is persisted through `updateCurrentEntry`. An edit adds no history entry. Reload and traversal restore the
-destination visit; a fresh push or replacement starts clean, including same-route navigation that reuses the mounted
-page. Library has no prefetch loader, so the restored owner supplies the first list request. Browser query parameters
-carry no filter or view state.
+A native edit dispatches to the visit owner, which applies each functional patch to its current visit, so same-turn
+patches compose, and persists the result through `updateCurrentEntry`. An edit adds no history entry. An edit that
+changes the author, series or shelf selections refetches the label read with `store-or-network` in the same transition.
+Browser query parameters carry no filter or view state.
+
+Each Library route load resolves its destination before the page renders. A traversal whose destination is the current
+entry, or the document's first load of its activation entry, settles on that entry when the entry's path and query match
+the load: it reuses or creates the entry's owner and restores the entry's saved visit. Any other load, including a
+same-route push or replacement, gets a provisional owner with an empty visit, which the page binds to the current entry
+when it mounts. A push runs its loader before the browser records the new entry, so a traversal settles only the one
+load it reached. The owner rejects an intent write, a position write and a books-list activation once its entry is no
+longer current, so a departing page cannot write into the destination's visit during a pending traversal.
+
+The loader confirms the account, then reads `libraryBootstrapQuery`: the account's preferences and lookups of the
+restored author, series and shelf IDs, each sent once. Genre, mood and tag values are names and are not looked up. Each
+restored selection that its lookup omits is dropped from every mode, and dropping any selection also clears the saved
+position. The owner writes the pruned visit to its entry only while that entry is current. The loader then starts
+`LibraryPageQuery` with the surviving selections, and the page reads it under Suspense with LibrarySkeleton as the
+fallback. The first document load sends the bootstrap, the screen query and the books request. A push has empty lookups
+and finds stored preferences in the store, so it sends no bootstrap request. A label lookup is answered from the store
+when every requested record is already there, as it is for a pick from suggestions or the shelf list.
+
+A bootstrap answered from the store keeps its selections until a deletion invalidates a selected record or a fetch
+occurs. Deleting a shelf invalidates that shelf's record, so a return to a visit that selected it fetches the bootstrap
+and drops the shelf. Authors and series leave the visible set only through edits and enrichment, which invalidate no
+record, so a retained visit keeps such a selection until its bootstrap is next fetched.
 
 The requested source follows published filter intent immediately. A request is eligible only when each multi-value
 predicate contains at most 20 values and every active text predicate contains at most 200 Unicode scalar values after
@@ -176,8 +211,15 @@ calendar values are checked before restored data drives controls or requests.
 
 A scalar shelf or series value in the owned payload decodes to a singleton array; an absent value becomes an empty
 array. This decoding adds no recovery write. A malformed member rejects the owned payload atomically. The wire
-projection uses `shelf_any` and `series_any`; the scalar `shelf` and `series` API parameters serve other callers. Label
-requests de-duplicate IDs and stay bounded; displayed rows retain their owning source.
+projection uses `shelf_any` and `series_any`; the scalar `shelf` and `series` API parameters serve other callers. The
+bootstrap lookups and the label read send each selected ID once; displayed rows retain their owning source.
+
+A failed bootstrap or screen query reaches the route error page. The loader writes nothing, so the saved visit keeps
+every restored selection, and a later load with the server healthy restores them. A failed continuation page of the
+shelf list stops loading shelves, keeps the loaded ones and gives the Shelf section and batch bar their degraded state;
+a failed first page fails the screen query. A failed suggestion search logs the failure and shows "Couldn't load
+suggestions. Try again." in the popover while the input keeps its element, focus and text. A term longer than 100
+Unicode scalar values sends no request and shows the same text.
 
 Exceeding a text or selection-count limit does not make an otherwise well-formed visit malformed. Such visits retain all
 filters and the view override for correction or clearing, while request eligibility enforces those limits.
@@ -191,10 +233,9 @@ results region. Other initial or changed-query failures reach the route error bo
 keep loaded pages and offer Retry.
 
 A table-load failure stays inside the results region. Reload page starts a fresh application load and restores the
-Library visit. Switch to grid view selects the visit's grid override without rewriting the account preference. A failed
-preference write keeps the local choice for the current session and logs the failure; a late preference response cannot
-overwrite a local choice. A missing or stale first-paint mirror can cause one correction when account preferences
-arrive.
+Library visit. Switch to grid view selects the visit's grid override without rewriting the account preference. A
+preference gesture shows its optimistic value at once. A refused or failed write logs the failure, and Relay rolls the
+value back to the stored one.
 
 ## Security and operations
 

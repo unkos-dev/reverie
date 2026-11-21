@@ -189,11 +189,11 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
   execution error with no code and a network failure, returns `retry`. The Design "Conditional requests and optimistic
   concurrency" describes the recovery each flow then offers.
 
-Shelf and metadata editing mutations return union results, listed in the Design "GraphQL execution and Relay browser
-data" ([Mutation results](0031-graphql-execution-and-relay-browser-data.md#mutation-results)).
+Shelf, metadata editing and library preference mutations return union results, listed in the Design "GraphQL execution
+and Relay browser data" ([Mutation results](0031-graphql-execution-and-relay-browser-data.md#mutation-results)).
 
-Other GraphQL failures, including those of `metadataOperation` and the reading and preference mutations, are execution
-errors. `safe_error` assigns each `AppError` variant a `code` extension: `validation`, `forbidden`, `not-found`,
+Other GraphQL failures, including those of `metadataOperation` and the reading mutation, are execution errors.
+`safe_error` assigns each `AppError` variant a `code` extension: `validation`, `forbidden`, `not-found`,
 `if-match-required`, `if-match-mismatch`, `malformed-header`, `undo-unavailable`, `undo-conflict`, `edit-too-large`,
 `system-shelf-immutable`, `field-locked` or `internal`. A field validation error adds `errors`, keyed by field name, and
 a field lock adds `lockedFields`. A stale reading-state result adds `currentEtag` only after caller-visible target
