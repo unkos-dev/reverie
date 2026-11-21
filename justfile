@@ -119,9 +119,9 @@ preflight-full:
 #
 # The skip decisions come from .github/path-filters.yml, the same file CI's
 # `changes` job feeds to dorny/paths-filter, so widening a filter for CI
-# widens this gate with it. Changes to the verification machinery itself
-# (justfiles, scripts/, tool pins, that filter file) escalate to the full lane
-# set, because a scoped run cannot reason about a change to its own rules.
+# widens this gate with it. Changes to shared verification machinery escalate
+# to the full lane set. SQLx CLI pin changes follow the shared path filters.
+# The Cargo lock guard runs in the repo-lint mirror.
 #
 # A scoped run escalates automatically when required. Running
 # `just preflight-full` directly requires prior maintainer approval. Args pass

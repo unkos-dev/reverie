@@ -4,10 +4,8 @@
 # dorny/paths-filter. Prints one `just` recipe name per line, in run order, on
 # stdout; `--explain` narrates the decision on stderr.
 #
-# The point is scope, not leniency: a lane is skipped only when CI would also
-# skip it, plus an escalation list for the inputs that change how verification
-# itself runs (justfiles, scripts, tool pins) which no CI filter covers because
-# CI's repo-lint job is unconditional.
+# Shared verification changes select the full local gate. Other changes select
+# the lanes that mirror CI, including the unconditional repo-lint job.
 #
 # Fails closed everywhere it cannot be certain: an unresolvable base ref, a
 # filter with no lane mapping, or a glob shape this matcher cannot translate
@@ -149,16 +147,38 @@ LANE_ORDER=(
 # whose subject is committed configuration), so any change at all can break it.
 ALWAYS_LANES=(infra::check)
 
-# Changes to these reshape verification itself, so a scoped run cannot reason
-# about them: the recipe definitions, the scripts those recipes call, the tool
-# pins they resolve against, the filter file driving this decision, and the
-# hook config. CI has no equivalent filter because its repo-lint job always
-# runs; locally the honest answer is to fall back to the full gate.
+# Compare the two manifests after removing the SQLx CLI pin and install-lock
+# setting. Multiline strings can contain heading-like text, so both manifests
+# must use the recognised, single-line form before this can narrow the gate.
+without_sqlx_cli_pins() {
+  awk '
+    /"""|\047\047\047/ { multiline = 1 }
+    /^[[:space:]]*\[/ {
+      sqlx = ($0 == "[tools.\"cargo:sqlx-cli\"]")
+      sections += sqlx
+    }
+    /^[[:space:]]*#/ { next }
+    sqlx && /^version = "[0-9]+\.[0-9]+\.[0-9]+"$/ { next }
+    sqlx && /^locked = (true|false)$/ { next }
+    { print }
+    END { if (multiline || sections != 1) exit 1 }
+  '
+}
+
+sqlx_cli_pin_only() {
+  [ -z "$files_from" ] && [ -f mise.toml ] && [ ! -L mise.toml ] || return 1
+  local before after
+  before=$(git show "${merge_base}:mise.toml" | without_sqlx_cli_pins) || return 1
+  after=$(without_sqlx_cli_pins < mise.toml) || return 1
+  [ "$before" = "$after" ] || return 1
+  note 'mise.toml changes only the SQLx CLI pin or install-lock setting'
+}
+
 escalates() {
   case "$1" in
-    justfile | mise.toml | lefthook.yml | .github/path-filters.yml) return 0 ;;
-    *.just) return 0 ;;
-    scripts/*) return 0 ;;
+    mise.toml) ! sqlx_cli_pin_only ;;
+    scripts/cargo-locked-guard.sh) return 1 ;;
+    justfile | lefthook.yml | .github/path-filters.yml | *.just | scripts/*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -191,16 +211,15 @@ while IFS= read -r line || [ -n "$line" ]; do
   if [[ "$line" =~ ^\ \ -\ \'([^\']+)\'$ || "$line" =~ ^\ \ -\ \"([^\"]+)\"$ ]]; then
     [ -n "$current" ] || die "${filters_file}:${lineno}: pattern outside any filter"
     pattern="${BASH_REMATCH[1]}"
-    # Translate to the two shapes this matcher implements exactly: a literal
-    # path, or a trailing `/**` recursive suffix. Bash pattern matching would
-    # happily accept the rest, but its `*` crosses `/` while picomatch's does
-    # not, so a pattern like `docs/*.md` would match strictly more here than
-    # in CI. Refuse instead of over-matching or under-matching.
+    literal="$pattern"
     case "$pattern" in
-      */'**') : ;;
-      *[\*\?\[\]\!]*)
+      '!'*) literal="${pattern#!}" ;;
+      */'**') literal="${pattern%'/**'}" ;;
+    esac
+    case "$literal" in
+      '' | *[\*\?\[\]\!\{\}\(\)\\]*)
         die "${filters_file}:${lineno}: unsupported glob '${pattern}'" \
-          "use a literal path or a trailing '/**', or teach scripts/preflight-scope.sh the new shape"
+          "use a literal path, a trailing '/**', or an exact '!' exclusion"
         ;;
     esac
     filter_patterns+=("${current}${sep}${pattern}")
@@ -295,26 +314,36 @@ for f in "${changed[@]}"; do
   fi
 done
 
+matches_filter_path() {
+  local path="$1" pattern prefix matched=1
+  shift
+  for pattern; do
+    case "$pattern" in
+      '!'*) [ "$path" = "${pattern#!}" ] && return 1 ;;
+      */'**')
+        prefix="${pattern%'**'}"
+        [ "${path##"$prefix"}" != "$path" ] && matched=0
+        ;;
+      *) [ "$path" = "$pattern" ] && matched=0 ;;
+    esac
+  done
+  return "$matched"
+}
+
 selected=("${ALWAYS_LANES[@]}")
 matched_ci_only=()
 for name in "${filter_names[@]}"; do
-  hit=''
+  patterns=()
   for entry in "${filter_patterns[@]}"; do
     [ "${entry%%"$sep"*}" = "$name" ] || continue
-    pattern="${entry#*"$sep"}"
-    for f in "${changed[@]}"; do
-      case "$pattern" in
-        */'**')
-          prefix="${pattern%'**'}"
-          [ "${f##"$prefix"}" != "$f" ] && hit="$f"
-          ;;
-        *)
-          [ "$f" = "$pattern" ] && hit="$f"
-          ;;
-      esac
-      [ -n "$hit" ] && break
-    done
-    [ -n "$hit" ] && break
+    patterns+=("${entry#*"$sep"}")
+  done
+  hit=''
+  for f in "${changed[@]}"; do
+    if matches_filter_path "$f" "${patterns[@]}"; then
+      hit="$f"
+      break
+    fi
   done
   [ -n "$hit" ] || continue
   mapfile -t lanes < <(lanes_for "$name")

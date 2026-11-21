@@ -57,8 +57,8 @@ that never report again.
 Concern files use a `changes` job running `dorny/paths-filter` and expose the filters they need as outputs. Most use
 `.github/path-filters.yml`; CodeQL keeps its own filter in `codeql.yml`.
 
-The filter file is shared with `scripts/preflight-scope.sh`, which decides which lanes a local gate runs. One file, so a
-local gate and CI cannot disagree about what a change touches.
+The filter file is shared with `scripts/preflight-scope.sh`, which decides which lanes a local gate runs. A workflow
+that uses a filter with exclusions sets `predicate-quantifier: some-with-excludes`.
 
 Merge-group filters pass the event's `base_sha` and `head_sha` explicitly to compare the whole group against its base. A
 filter that feeds a guard a file list passes it through the environment rather than inline `${{ }}` interpolation, so a
