@@ -15,8 +15,8 @@ WHEN a request to a paginated JSON list endpoint under `/api/v1/`, or to a Graph
 cursor, the server MUST refuse the request without returning a page and MUST NOT reinterpret the cursor against the
 request's own sort or filters. A cursor is compatible only when the server minted it for the same logical list under the
 request's sort stack and filter set. A logical list is the sequence a cursor walks: the books list, the shelf list, one
-shelf's items, or one GraphQL connection under one parent, such as a work's manifestations or a revision's authors. The
-HTTP books list and the GraphQL `books` connection are one logical list with one cursor format, and so are the HTTP
+shelf's items, or one GraphQL connection under one parent, such as a work's manifestations or a manifestation's tags.
+The HTTP books list and the GraphQL `books` connection are one logical list with one cursor format, and so are the HTTP
 shelf list and the GraphQL `shelves` connection, so a cursor minted through either root continues the other. The HTTP
 shelf item cursor carries no shelf, so over HTTP the items of every shelf form one logical list. Two sort stacks are the
 same only when they name the same columns in the same order with the same directions. Two filter sets that differ only
@@ -52,15 +52,15 @@ or repeating rows within it.
   cursor minted by the GraphQL `shelves` connection continues `GET /api/v1/shelves`. Checked by
   `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.
 - A GraphQL cursor presented to another connection, under another parent, or with a different sort column, level order,
-  direction or filter set produces an error with code `invalid-cursor` at the refused connection's path, and that
-  connection returns no page. This holds for a shelves cursor sent to books and a books cursor sent to shelves, for
-  nested work, shelf, metadata revision and pending-version connections, and for a cursor whose key type the new sort
-  accepts. Checked by `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.
+  direction or filter set produces an error with code `invalid-cursor`, and the refused connection returns no page. This
+  holds for a shelves cursor sent to books and a books cursor sent to shelves, for nested work, shelf, metadata revision
+  and pending-version connections, and for a cursor whose key type the new sort accepts. Checked by
+  `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.
 - A GraphQL books cursor presented with the values of a multi-valued filter in another order returns the next page.
   Checked by `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.
 - A GraphQL books request refused for an invalid sort or page size, rather than for its cursor, carries the code
   `validation`, not `invalid-cursor`. Checked by `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.
-- The Library restarts a walk from the first page when a continuation is refused with `invalid-cursor`, whatever the
-  error message, and does not restart for a `validation` refusal. Checked by
+- When a continuation of a visit rebuild is refused with `invalid-cursor`, the Library restarts that rebuild from the
+  first page, whatever the error message, and does not restart for a `validation` refusal. Checked by
   `unchanged returns preserve each visit's books and known-book position` in
   `frontend/tests/journeys/library-navigation.spec.ts`.
