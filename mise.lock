@@ -139,15 +139,9 @@ url = "https://github.com/rui314/mold/releases/download/v3.0.0/mold-3.0.0-x86_64
 url_api = "https://api.github.com/repos/rui314/mold/releases/assets/612122001"
 
 [[tools.opengrep]]
-version = "1.33.1"
+version = "2.0.0"
 backend = "aqua:opengrep/opengrep"
-specifiers = ["1.33.1"]
-
-[tools.opengrep."platforms.linux-x64"]
-checksum = "sha256:46e8133cc490f9f50518061590ce2f6be5a08afaeda034471c0ceda4b3899808"
-checksum_source = "mise-versions"
-url = "https://github.com/opengrep/opengrep/releases/download/v1.33.1/opengrep_manylinux_x86"
-url_api = "https://api.github.com/repos/opengrep/opengrep/releases/assets/688084224"
+specifiers = ["2.0.0"]
 
 [[tools.pnpm]]
 version = "11.28.13"
