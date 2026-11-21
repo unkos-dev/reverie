@@ -57,7 +57,8 @@ update reaches every workflow that uses the action, including jobs with write pe
 - Positive: review attention concentrates on rewritten tags, majors, and third-party actions, rather than spreading
   across every routine update.
 - Negative: an automerged tool update reaches developer machines without a look.
-- Negative: the release-age hold on action tags ages by commit date, which a publisher can backdate.
+- Negative: when GitHub release metadata is unavailable, tag-based action lookups can use timestamps the publisher
+  controls.
 - Negative: a tool checksum is recorded on first download and trusted from then on.
 - Negative: a transitive advisory absent from the relevant advisory database gets no automated fix pull request.
 - Negative: cargo has no install-script control, so that control remains ecosystem-specific rather than spanning both
@@ -87,5 +88,6 @@ refresh the bundled ISBN range file, often changing only its publication metadat
 checks cover these routine updates.
 
 Patch releases of `jdx/mise-action` are a named exception to third-party action review. Manual merges of these frequent
-updates add no upstream code review. The action remains SHA-pinned, and updates wait for the release-age hold and
-required checks. A patch can still change code that runs with image publishing and signing privileges.
+updates add no upstream code review. The action remains SHA-pinned. Renovate measures the release-age hold from GitHub
+release publication and waits for required checks. A patch can still change code that runs with image publishing and
+signing privileges.

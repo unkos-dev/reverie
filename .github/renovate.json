@@ -99,6 +99,12 @@
       "automerge": true
     },
     {
+      "description": "Age mise-action updates from GitHub release publication rather than the tag timestamp.",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["jdx/mise-action"],
+      "overrideDatasource": "github-releases"
+    },
+    {
       "description": "Automerge routine patch updates to the SHA-pinned mise-action after required checks and the release-age hold.",
       "matchManagers": ["github-actions"],
       "matchDepNames": ["jdx/mise-action"],
