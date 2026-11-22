@@ -861,7 +861,7 @@ mod tests {
             .enumerate()
             .filter_map(|(at, window)| (window == CENTRAL_HEADER_SIG).then_some(at))
             .collect();
-        assert!(!headers.is_empty());
+        assert_ne!(headers, Vec::<usize>::new());
         for at in headers {
             bytes[at + 24..at + 28].copy_from_slice(&size.to_le_bytes());
         }

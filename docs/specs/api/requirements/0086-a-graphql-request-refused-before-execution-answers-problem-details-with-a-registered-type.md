@@ -32,5 +32,6 @@ The checks below are made by `graphql_request_boundary` in `backend/src/graphql/
 | A browser session request without a CSRF token          | 428    | `csrf-missing`         |
 | A browser session request with the wrong CSRF token     | 403    | `csrf-mismatch`        |
 | A request body that fails to decode, as in REV-REQ-0087 | 4xx    | `invalid-request-body` |
+| A document ID absent from the trusted-document manifest | 422    | `validation`           |
 
 - Each refusal in the table carries its media type and `type`.

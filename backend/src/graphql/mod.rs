@@ -640,7 +640,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_request_boundary(pool: PgPool) {
         use crate::error::problems::{
-            CSRF_MISMATCH, CSRF_MISSING, INVALID_REQUEST_BODY, UNAUTHORIZED,
+            CSRF_MISMATCH, CSRF_MISSING, INVALID_REQUEST_BODY, UNAUTHORIZED, VALIDATION,
         };
         let (server, auth, user_id) = server(&pool).await;
         let query = json!({"query":"{ viewer { id displayName isChild } }"});
@@ -696,6 +696,15 @@ mod tests {
                 .await;
             assert_problem(&response, status, INVALID_REQUEST_BODY);
         }
+        assert_problem(
+            &server
+                .post("/api/graphql")
+                .add_header("authorization", auth.clone())
+                .json(&json!({"id": "unknown-document"}))
+                .await,
+            422,
+            VALIDATION,
+        );
         let store = MemoryStore::default();
         let session = Session::new(None, std::sync::Arc::new(store.clone()), None);
         session.insert("user_id", user_id).await.unwrap();
