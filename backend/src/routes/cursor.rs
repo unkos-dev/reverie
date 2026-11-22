@@ -38,11 +38,11 @@
 //! - [`crate::routes::cursor::ShelfCursor`] (`sh` tag): `(is_system,
 //!   name, id)` boundary for `GET /api/v1/shelves`.
 //! - [`crate::routes::cursor::ShelfItemCursor`] (`si` tag):
-//!   `(added_at, manifestation_id)` boundary for
+//!   `(shelf_id, added_at, manifestation_id)` boundary for
 //!   `GET /api/v1/shelves/{id}` items.
 //!
 //! The GraphQL `books` and `shelves` connections walk the same rows
-//! through the same codecs, so [`CursorApi`] gives their cursors their
+//! through the same codecs, so [`crate::routes::cursor::CursorApi`] gives their cursors their
 //! own tags (`gm`, `gsh`): a cursor is honoured only by the API that
 //! minted it.
 //!
@@ -190,6 +190,10 @@ pub enum CursorError {
     /// repeat rows.
     #[error("cursor filter mismatch")]
     FilterMismatch,
+    /// A [`ShelfItemCursor`] minted for one shelf was presented for
+    /// another, whose items its boundary does not describe.
+    #[error("cursor shelf mismatch")]
+    ShelfMismatch,
     /// A [`SortCursor`] payload failed JSON serialization during encode.
     #[error("cursor payload not serializable")]
     SerializePayload(#[from] serde_json::Error),
@@ -394,12 +398,15 @@ impl ShelfCursor {
 /// only unique key is the `(shelf_id, manifestation_id)` PK), so the
 /// `manifestation_id` final tiebreaker is what keeps the walk total —
 /// without it a page boundary between two same-instant rows would
-/// drop one.
+/// drop one. The cursor also carries the shelf it was minted for, so
+/// [`Self::parse`] refuses it on any other shelf.
 ///
 /// Wire encoding: base64url(unpadded) over
-/// `si|<rfc3339>|<uuid>` — no free-text field, plain splits.
+/// `si|<shelf uuid>|<rfc3339>|<uuid>` — no free-text field, plain splits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShelfItemCursor {
+    /// Shelf whose items the cursor walks.
+    pub shelf_id: Uuid,
     /// Boundary item's `shelf_items.added_at`.
     pub added_at: Timestamp,
     /// Tiebreaker `shelf_items.manifestation_id`.
@@ -415,18 +422,23 @@ impl ShelfItemCursor {
     #[must_use]
     pub fn encode(&self) -> String {
         let ts = self.added_at.to_string();
-        let payload = format!("si|{ts}|{}", self.manifestation_id.as_hyphenated());
+        let payload = format!(
+            "si|{}|{ts}|{}",
+            self.shelf_id.as_hyphenated(),
+            self.manifestation_id.as_hyphenated()
+        );
         Base64UrlUnpadded::encode_string(payload.as_bytes())
     }
 
-    /// Parse a base64url cursor produced by [`Self::encode`].
+    /// Parse a base64url cursor produced by [`Self::encode`] for `shelf_id`.
     ///
     /// # Errors
     ///
     /// Returns the matching [`CursorError`] variant for bad base64,
-    /// non-UTF-8 bytes, a missing delimiter, a foreign tag byte, or a
-    /// malformed timestamp / uuid.
-    pub fn parse(s: &str) -> Result<Self, CursorError> {
+    /// non-UTF-8 bytes, a missing delimiter, a foreign tag byte, a
+    /// malformed timestamp / uuid, or a cursor minted for another shelf
+    /// ([`CursorError::ShelfMismatch`]).
+    pub fn parse(s: &str, shelf_id: Uuid) -> Result<Self, CursorError> {
         let mut buf = vec![0u8; s.len()];
         let decoded = Base64UrlUnpadded::decode(s.as_bytes(), &mut buf)
             .map_err(|_| CursorError::InvalidBase64)?;
@@ -437,12 +449,18 @@ impl ShelfItemCursor {
         if tag != "si" {
             return Err(CursorError::UnknownTag);
         }
+        let (shelf, rest) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
+        let shelf = Uuid::parse_str(shelf).map_err(|_| CursorError::MalformedKey)?;
+        if shelf != shelf_id {
+            return Err(CursorError::ShelfMismatch);
+        }
         let (ts, id_str) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
         let added_at = ts
             .parse::<Timestamp>()
             .map_err(|_| CursorError::MalformedKey)?;
         let manifestation_id = Uuid::parse_str(id_str).map_err(|_| CursorError::MalformedKey)?;
         Ok(Self {
+            shelf_id,
             added_at,
             manifestation_id,
         })
@@ -562,6 +580,7 @@ mod tests {
             Err(CursorError::UnknownTag)
         ));
         let item = ShelfItemCursor {
+            shelf_id: id,
             added_at: ts,
             manifestation_id: id,
         }

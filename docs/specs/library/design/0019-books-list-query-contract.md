@@ -180,7 +180,8 @@ any further field is read. The two APIs read the same rows through the same code
 keeps a cursor minted by one API from continuing a walk on the other. All three share one `CursorError` enum, but
 `SortMismatch` and `FilterMismatch` are constructed only inside `SortCursor::parse_for`: `ShelfCursor` and
 `ShelfItemCursor` carry no embedded spec or filter fingerprint to mismatch, so neither variant is reachable from their
-`parse` functions.
+`parse` functions. `ShelfMismatch` is constructed only inside `ShelfItemCursor::parse`, when the cursor's embedded shelf
+ID differs from the requested shelf.
 
 `SortCursor` carries a JSON payload — the canonical spec string, one `CursorValue` per sort level in level order, the
 `manifestations.id` tiebreaker, and the filter fingerprint (serialised as `f`) — rather than the pipe-delimited fields

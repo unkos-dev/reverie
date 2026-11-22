@@ -714,7 +714,6 @@
         "REV-REQ-0006",
         "REV-REQ-0084",
         "REV-REQ-0085",
-        "REV-REQ-0097",
         "REV-REQ-0098"
       ],
       "title": "Authorization axes"
@@ -1015,8 +1014,7 @@
       "satisfies": [
         "REV-REQ-0057",
         "REV-REQ-0059",
-        "REV-REQ-0093",
-        "REV-REQ-0097"
+        "REV-REQ-0093"
       ],
       "title": "Shelves"
     },
@@ -1965,15 +1963,6 @@
       "kind": "req",
       "path": "docs/specs/api/requirements/0096-a-graphql-edit-without-a-well-formed-baseline-is-refused-and-changes-nothing.md",
       "title": "A GraphQL edit without a well-formed baseline is refused and changes nothing"
-    },
-    {
-      "governed-by": [
-        "REV-ADR-0056"
-      ],
-      "id": "REV-REQ-0097",
-      "kind": "req",
-      "path": "docs/specs/library/requirements/0097-a-child-account-cannot-create-rename-or-delete-a-shelf.md",
-      "title": "A child account cannot create, rename or delete a shelf"
     },
     {
       "governed-by": [

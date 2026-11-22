@@ -14,11 +14,12 @@ governed-by:
 WHEN a request to a paginated JSON list endpoint under `/api/v1/` presents a cursor, the server MUST resume the page
 walk only if that same endpoint minted the cursor under the request's sort stack and filter set, and MUST otherwise
 refuse the request with `422 Unprocessable Content` without reinterpreting the cursor against the request's own sort or
-filters. A sort stack is the ordered list of `?sort=` columns with their directions, and two stacks are the same only
-when they name the same columns in the same order with the same directions. A filter set is the request's filter
-parameters with their values, and two filter sets that differ only in the order of a multi-valued parameter's values are
-the same filter set. The refusal covers a cursor minted by a different `/api/v1/` list endpoint or by a GraphQL
-connection.
+filters. An endpoint is one list together with its path parameters, so the items of one shelf and the items of another
+are different endpoints. A sort stack is the ordered list of `?sort=` columns with their directions, and two stacks are
+the same only when they name the same columns in the same order with the same directions. A filter set is the request's
+filter parameters with their values, and two filter sets that differ only in the order of a multi-valued parameter's
+values are the same filter set. The refusal covers a cursor minted by a different `/api/v1/` list endpoint or by a
+GraphQL connection.
 
 ## Rationale
 
@@ -42,6 +43,9 @@ API, so neither format becomes a contract the other API has to keep.
   shelf list and the shelf item list. Checked by `list_endpoint_legacy_cursor_tag_returns_422` in
   `backend/src/routes/library/tests.rs`, `shelf_items_rejects_cross_endpoint_cursor_replay` in
   `backend/src/routes/shelves/tests.rs`, and `shelf_rejects_foreign_tags` in `backend/src/routes/cursor.rs`.
+- A shelf item cursor minted for one shelf continues that shelf's walk, and presented for another shelf of the same
+  owner answers `422`. Checked by `shelf_items_rejects_a_cursor_minted_for_another_shelf` in
+  `backend/src/routes/shelves/tests.rs`.
 - A cursor minted by the GraphQL `books` connection and presented to `GET /api/v1/books` under the same sort and filters
   answers `422`, and so does a GraphQL `shelves` cursor presented to `GET /api/v1/shelves`. Checked by
   `graphql_cursor_contract` in `backend/src/graphql/mod.rs`.

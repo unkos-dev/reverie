@@ -1646,7 +1646,7 @@ pub async fn shelf_items(
     use crate::models::shelf::ShelfItem;
     use crate::routes::cursor::ShelfItemCursor;
     let cursor = after
-        .map(ShelfItemCursor::parse)
+        .map(|raw| ShelfItemCursor::parse(raw, id))
         .transpose()
         .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
 
@@ -1711,6 +1711,7 @@ pub async fn shelf_items(
             let manifestation_id: Uuid = last.get("manifestation_id");
             Some(
                 ShelfItemCursor {
+                    shelf_id: id,
                     added_at: last
                         .try_get::<jiff_sqlx::Timestamp, _>("added_at")
                         .map_err(|e| AppError::Internal(e.into()))?
@@ -2171,6 +2172,7 @@ fn relation_input(key: &RelationKey, request: i32) -> Result<RelationInput, AppE
             RelationKind::ShelfItems => {
                 let inner = crate::routes::cursor::ShelfItemCursor::parse(
                     cursor.inner.as_deref().ok_or_else(invalid_cursor)?,
+                    key.parent,
                 )
                 .map_err(|_| invalid_cursor())?;
                 Boundary {
@@ -2285,6 +2287,7 @@ fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppEr
         }
         RelationKind::ShelfItems => Some(
             crate::routes::cursor::ShelfItemCursor {
+                shelf_id: key.parent,
                 added_at: row
                     .created_at
                     .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Missing shelf boundary")))?

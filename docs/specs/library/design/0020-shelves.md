@@ -7,7 +7,6 @@ satisfies:
   - "REV-REQ-0057"
   - "REV-REQ-0059"
   - "REV-REQ-0093"
-  - "REV-REQ-0097"
 governed-by:
   - "REV-ADR-0056"
   - "REV-ADR-0011"
@@ -80,9 +79,9 @@ selection to shelf" action — all described below only as consumers, since none
   matching the shelf list's `ORDER BY is_system DESC, name ASC, id ASC`; because that sort is mixed-direction, the
   keyset predicate `services::reader::shelves` builds is a two-arm `OR`
   (`is_system < $1 OR (is_system = $1 AND (name, id) > ($2, $3))`), not a single row-tuple comparison. `ShelfItemCursor`
-  carries `(added_at, manifestation_id)`, matching the items query's all-ascending sort; the `manifestation_id`
-  tiebreaker is load-bearing because `added_at` is not unique per shelf. The `idx_shelf_items_shelf_keyset` index over
-  `(shelf_id, added_at, manifestation_id)` serves that sort.
+  carries the shelf ID and `(added_at, manifestation_id)`, matching the items query's all-ascending sort; the
+  `manifestation_id` tiebreaker is load-bearing because `added_at` is not unique per shelf. The
+  `idx_shelf_items_shelf_keyset` index over `(shelf_id, added_at, manifestation_id)` serves that sort.
 - Nothing in `routes/shelves/mod.rs` builds an entity-tag or parses `If-Match`; shelf responses carry no `ETag` header.
 - Browser shelves share one account-scoped Relay environment. The route loaders prepare native query references for
   `ShelvesListPage` and `ShelfDetailPage`; their primary read failures reach the owning route. The shelf list and item
@@ -242,10 +241,11 @@ pagination fragment, and `useShelves` in `frontend/src/api/shelves.ts` reads the
   check, never before it. GraphQL reports the same order of checks as `NotFound` and `SystemShelfImmutable` results.
 - **Cursor from another list.** `ShelfCursor::parse` accepts only `sh`, or `gsh` for the GraphQL `shelves` connection,
   and `ShelfItemCursor::parse` accepts only `si`. Each refuses a cursor minted by the books list or by the other shelf
-  list, and `ShelfCursor::parse` also refuses one minted by the other API, with `AppError::Validation` (422). An HTTP
-  item cursor carries no shelf identity, so `GET /api/v1/shelves/{id}` accepts an item cursor cut from another shelf and
-  applies its boundary within the requested owned shelf. The GraphQL `items` cursor binds its shelf ID and relation
-  kind, and a cursor from another parent or relation is refused with the `validation` code.
+  list, and `ShelfCursor::parse` also refuses one minted by the other API, with `AppError::Validation` (422).
+  `ShelfItemCursor::parse` also compares the cursor's shelf ID with the requested shelf and refuses a mismatch as
+  `CursorError::ShelfMismatch`, so `GET /api/v1/shelves/{id}` answers 422 to an item cursor cut from another shelf. The
+  GraphQL `items` cursor binds its shelf ID and relation kind, and a cursor from another parent or relation is refused
+  with the `validation` code.
 - **A child probing shelf existence via manifestation ids.** Covered in Runtime behaviour: the RLS-scoped probe in
   `add_shelf_item` and the ownership check both resolve to the same `AppError::NotFound`, so a child cannot distinguish
   "no such shelf" from "shelf is yours but that manifestation isn't visible to you".
