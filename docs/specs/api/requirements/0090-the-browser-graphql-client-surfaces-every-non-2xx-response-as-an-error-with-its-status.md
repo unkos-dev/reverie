@@ -11,8 +11,8 @@ title: "The browser GraphQL client surfaces every non-2xx response as an error w
 
 WHEN the browser GraphQL client receives a response to `/api/graphql` whose status is outside the 200-299 range, it MUST
 surface an error carrying that status, whether the body is a Problem Details document, some other JSON, non-JSON text,
-or absent. For a well-formed Problem Details body, the error MUST also carry the body's `title` and `detail`, and its
-`errors` object when present.
+or absent. For a well-formed Problem Details body, the error MUST also carry the body's `type`, `title` and `detail`,
+and its `errors` object when present.
 
 ## Rationale
 
@@ -27,4 +27,4 @@ body's shape, keeps transport faults separate from execution faults.
   each surface an error carrying their status. Checked by
   `"GraphQL network preserves failures, CSRF recovery and account isolation"` in
   `frontend/tests/browser/api/graphql.test.tsx`.
-- A 422 Problem Details body surfaces its `title`, `detail` and `errors` unchanged. Checked by the same test.
+- A 422 Problem Details body surfaces its `type`, `title`, `detail` and `errors` unchanged. Checked by the same test.

@@ -754,8 +754,13 @@ mod tests {
             errors: BTreeMap::from([("name".into(), "Required".into())]),
         });
         assert_eq!(fields.message, "Invalid input");
+        let extensions = fields.extensions.unwrap();
         assert_eq!(
-            fields.extensions.unwrap().get("errors"),
+            extensions.get("code"),
+            Some(&async_graphql::Value::from("validation"))
+        );
+        assert_eq!(
+            extensions.get("errors"),
             Some(&async_graphql::value!({"name": "Required"}))
         );
     }

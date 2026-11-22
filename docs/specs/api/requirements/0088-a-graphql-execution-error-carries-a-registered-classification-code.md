@@ -31,5 +31,6 @@ The registered classification codes are `validation`, `forbidden`, `not-found`, 
 - A refused field carries the `forbidden` code. Checked by `graphql_request_boundary` in `backend/src/graphql/mod.rs`.
 - A field validation failure carries the `validation` code, keeps its own message, and carries an `extensions.errors`
   object that maps each refused field name to its message. Checked by `graphql_request_boundary`.
-- An execution error raised without extensions, such as a failed input coercion, is given the `validation` code. Held by
-  review of `backend/src/graphql/mod.rs`.
+- An execution error raised without extensions, such as a failed input coercion, is given the `validation` code. Checked
+  by `graphql_edit_baselines` and `graphql_undo_boundary` in `backend/src/graphql/mod.rs`, which send a baseline that
+  fails `ETag` coercion.
