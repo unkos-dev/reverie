@@ -129,6 +129,7 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
   ineligible, so a rate-limited row waits for both the backoff window and the provider's `Retry-After`. At startup with
   enrichment enabled, `revert_in_progress` treats every `in_progress` row as orphaned under the single-instance
   deployment decision. Each tick first runs `rescue_stale_claims` before claiming.
+
 - `orchestrator.rs` is the per-manifestation flow. `load_snapshot` reads the current canonical state, the active
   identifier-registry slots and the `metadata_sources.base_priority` values, and derives the ordered `lookup_keys` list
   via `derive_lookup_keys`. `fan_out_with_fallback` tries each key in order under one shared wall-clock budget,
@@ -138,24 +139,30 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
   the work scalars when any observation is work-scoped. It computes confidence, calls `policy::decide`, and on
   `Decision::Apply` calls `apply_field`, the ISBN rematch hook and `enqueue_writeback`; `upsert_ratings` routes rating
   signals straight to the ratings cache outside the journal.
+
 - `policy.rs` is a pure decision function: `default_policy(field)` maps a field name to `AutoFill`, `Propose` or `Lock`,
   and `decide(...)` applies the lock check first, then downgrades `AutoFill` to `Propose` on disagreement with any
   pending observation (from an earlier run or from another source in the same run), then dispatches on emptiness.
+
 - `field_lock.rs` provides connection-based `lock_tx`/`unlock_tx`, called within the metadata endpoints'
   visibility-checked transactions. `is_locked`/`is_locked_tx` read locks for `dry_run::preview` and
   `apply_canonical_batch` respectively.
+
 - `confidence.rs`, `lookup_key.rs` and `value_hash.rs` are small pure helpers: a source/match-type/quorum scoring
   formula, ISBN and title/author key normalisation (so ISBN-10 and ISBN-13 of the same book, or title strings that
   differ only in case, whitespace or punctuation, converge on one cache key), and a canonical-JSON `SHA-256` hash that
   applies NFC then trims every string field and string list item, and ignores list-item order for the vocabulary and
   contributor fields without collapsing publication precision. `unicode-normalization` supplies NFC through `.nfc()`.
+
 - `cache.rs` is a thin `api_cache` read/write helper with a Rust-computed per-kind (`Hit`/`Miss`/`Error`) expiry.
+
 - `http.rs` builds two `SSRF`-guarded `reqwest::Client` factories through one shared constructor (`ssrf_client`):
   `api_client` (fixed 5-hop redirect limit, 10-second timeout; the one this subject's fan-out uses) and `cover_client`
   (the same construction with a caller-supplied redirect limit and timeout, reachable only from `cover_download.rs`'s
   own test module). Both share one process-wide custom DNS resolver that drops any resolved address in a denied range
   before `reqwest` ever dials it, and both re-validate every redirect hop against the same denied ranges via
   `validate_hop` before following it.
+
 - `sources/mod.rs` defines the `MetadataSource` trait, `LookupKey`/`LookupOutcome`/`SourceResult`/`SourceError`, and
   `RatingSignal`, the four-way signal (`Unknown`/`Absent`/`Reported`/`Unusable`) that keeps a lookup that says nothing
   about ratings from erasing a previously cached one. Each of the three adapters is a uniform translation shim:
@@ -173,8 +180,10 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
   more than one identifier is available, even though `confidence.rs` weights a Hardcover observation's
   *field confidence* higher (0.85) than either (0.80, 0.75) once a value is actually fetched. The two weightings answer
   different questions and are not meant to agree.
+
 - `dry_run.rs`'s `preview` reuses `orchestrator::fan_out_for_dry_run` (the same snapshot load and fan-out, including
   `api_cache` writes) and replays `policy::decide` per field with no journal, canonical or `writeback_jobs` write.
+
 - `routes/enrichment.rs` mounts `trigger`, `dry_run` and `status` on `AppState`.
 
 ## Interfaces and dependencies
