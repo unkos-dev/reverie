@@ -3,6 +3,7 @@ use super::loaders::{RequestLoader, SeriesKey, ShelfKey, WorkKey, batch_error};
 use super::{Viewer, id, safe_error};
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
+use crate::routes::cursor::CursorApi;
 use crate::routes::etag::MetadataRevision as Revision;
 use crate::routes::library::ListParams;
 use crate::services::metadata::editing::{self, SnapshotKey, SnapshotPage, SnapshotSelection};
@@ -1386,9 +1387,15 @@ pub(super) async fn shelves(
     let first = page_size(first)?;
     let state = ctx.data::<AppState>()?;
     let user = ctx.data::<CurrentUser>()?;
-    let (rows, _, has_next) = reader::shelves(user, state, after.as_deref(), i64::from(first))
-        .await
-        .map_err(safe_error)?;
+    let (rows, _, has_next) = reader::shelves(
+        user,
+        state,
+        after.as_deref(),
+        i64::from(first),
+        CursorApi::Graphql,
+    )
+    .await
+    .map_err(safe_error)?;
     let previous = reader::shelf_has_previous(user, state, after.as_deref())
         .await
         .map_err(safe_error)?;
@@ -1401,7 +1408,7 @@ pub(super) async fn shelves(
                 name: row.name.clone(),
                 id: row.id,
             }
-            .encode();
+            .encode(CursorApi::Graphql);
             let record = Arc::new(ShelfRecord {
                 id: row.id,
                 name: row.name,

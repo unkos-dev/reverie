@@ -829,7 +829,7 @@ impl Mutation {
                     name: row.name.clone(),
                     id: row.id,
                 }
-                .encode();
+                .encode(crate::routes::cursor::CursorApi::Graphql);
                 let created = library::Shelf::from_model(row)?;
                 Ok(CreateShelfResult::ShelfCreated(ShelfCreated {
                     edge: Edge::new(cursor, created.clone()),

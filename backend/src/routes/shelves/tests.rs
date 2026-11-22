@@ -352,7 +352,7 @@ async fn shelf_items_rejects_cross_endpoint_cursor_replay(pool: PgPool) {
         name: "Replay shelf".into(),
         id: shelf_id,
     }
-    .encode();
+    .encode(crate::routes::cursor::CursorApi::Rest);
     let r = server
         .get(&format!("/api/v1/shelves/{shelf_id}?cursor={foreign}"))
         .add_header(auth(&a_basic).0, auth(&a_basic).1)

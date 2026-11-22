@@ -41,6 +41,11 @@
 //!   `(added_at, manifestation_id)` boundary for
 //!   `GET /api/v1/shelves/{id}` items.
 //!
+//! The GraphQL `books` and `shelves` connections walk the same rows
+//! through the same codecs, so [`CursorApi`] gives their cursors their
+//! own tags (`gm`, `gsh`): a cursor is honoured only by the API that
+//! minted it.
+//!
 //! No HMAC — same trust model as the OPDS cursor.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
@@ -49,6 +54,31 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::routes::sort_spec::{SortSpec, SortValueKind};
+
+/// The API whose list minted a [`SortCursor`] or [`ShelfCursor`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorApi {
+    /// `/api/v1`.
+    Rest,
+    /// `/api/graphql`.
+    Graphql,
+}
+
+impl CursorApi {
+    const fn books_tag(self) -> &'static str {
+        match self {
+            Self::Rest => "m",
+            Self::Graphql => "gm",
+        }
+    }
+
+    const fn shelves_tag(self) -> &'static str {
+        match self {
+            Self::Rest => "sh",
+            Self::Graphql => "gsh",
+        }
+    }
+}
 
 /// One typed boundary value inside a [`SortCursor`].
 ///
@@ -92,7 +122,8 @@ impl CursorValue {
 /// Keyset boundary for `GET /api/v1/books` under a validated sort
 /// stack.
 ///
-/// Wire encoding: base64url(unpadded) over `m|<json>`, where `<json>`
+/// Wire encoding: base64url(unpadded) over `m|<json>` (`gm|<json>` for
+/// the GraphQL `books` connection), where `<json>`
 /// is the `serde_json` serialization of this struct. The embedded
 /// `spec` string binds the cursor to the exact stack (columns,
 /// directions, level order) it was minted under; [`Self::parse_for`]
@@ -137,7 +168,7 @@ pub enum CursorError {
     /// Decoded payload had no `<tag>|<key>` split.
     #[error("missing tag delimiter")]
     MissingDelimiter,
-    /// Tag byte didn't match the cursor type being parsed.
+    /// Tag didn't match the cursor type and API being parsed.
     #[error("unknown tag byte")]
     UnknownTag,
     /// Decoded key half had the wrong shape for its tag (missing `|`
@@ -176,15 +207,16 @@ impl SortCursor {
     /// outside RFC 3339's `-9999..=9999` range serializes to the signed
     /// ISO 8601 form rather than failing. The fallible signature is kept
     /// so a future key variant cannot silently introduce a panic here.
-    pub fn encode(&self) -> Result<String, CursorError> {
+    pub fn encode(&self, api: CursorApi) -> Result<String, CursorError> {
         let json = serde_json::to_string(self)?;
         Ok(Base64UrlUnpadded::encode_string(
-            format!("m|{json}").as_bytes(),
+            format!("{}|{json}", api.books_tag()).as_bytes(),
         ))
     }
 
-    /// Parse a base64url cursor and assert it was minted under `spec` and
-    /// `filter_fp` (the fingerprint of the request's active filter set).
+    /// Parse a base64url cursor and assert it was minted by `api` under
+    /// `spec` and `filter_fp` (the fingerprint of the request's active
+    /// filter set).
     ///
     /// # Errors
     ///
@@ -195,7 +227,12 @@ impl SortCursor {
     /// minted under a different stack ([`CursorError::SortMismatch`]), or
     /// an embedded filter fingerprint minted under a different filter set
     /// ([`CursorError::FilterMismatch`]).
-    pub fn parse_for(raw: &str, spec: &SortSpec, filter_fp: &str) -> Result<Self, CursorError> {
+    pub fn parse_for(
+        raw: &str,
+        api: CursorApi,
+        spec: &SortSpec,
+        filter_fp: &str,
+    ) -> Result<Self, CursorError> {
         let mut buf = vec![0u8; raw.len()];
         let decoded = Base64UrlUnpadded::decode(raw.as_bytes(), &mut buf)
             .map_err(|_| CursorError::InvalidBase64)?;
@@ -203,7 +240,7 @@ impl SortCursor {
         let (tag, rest) = decoded_str
             .split_once('|')
             .ok_or(CursorError::MissingDelimiter)?;
-        if tag != "m" {
+        if tag != api.books_tag() {
             return Err(CursorError::UnknownTag);
         }
         let cursor: Self = serde_json::from_str(rest).map_err(|_| CursorError::MalformedKey)?;
@@ -273,7 +310,8 @@ fn validate_keys(keys: &[CursorValue], spec: &SortSpec) -> Result<(), CursorErro
 /// required because `(user_id, is_system, name)` carries no uniqueness
 /// constraint — two shelves may share a name.
 ///
-/// Wire encoding: base64url(unpadded) over `sh|<t/f>|<name>|<uuid>`.
+/// Wire encoding: base64url(unpadded) over `sh|<t/f>|<name>|<uuid>`
+/// (`gsh|…` for the GraphQL `shelves` connection).
 /// `name` is user-controlled and may contain `|`; the parser peels the
 /// fixed-shape head (`sh`, the `is_system` flag) with `split_once` and
 /// the trailing uuid with `rsplit_once`, so pipes inside the name
@@ -302,21 +340,26 @@ pub struct ShelfCursor {
 impl ShelfCursor {
     /// Encode as a base64url-unpadded `?cursor=` value.
     #[must_use]
-    pub fn encode(&self) -> String {
+    pub fn encode(&self, api: CursorApi) -> String {
         let flag = if self.is_system { "t" } else { "f" };
-        let payload = format!("sh|{flag}|{}|{}", self.name, self.id.as_hyphenated());
+        let payload = format!(
+            "{}|{flag}|{}|{}",
+            api.shelves_tag(),
+            self.name,
+            self.id.as_hyphenated()
+        );
         Base64UrlUnpadded::encode_string(payload.as_bytes())
     }
 
-    /// Parse a base64url cursor produced by [`Self::encode`].
+    /// Parse a base64url cursor produced by [`Self::encode`] for `api`.
     ///
     /// # Errors
     ///
     /// Returns the matching [`CursorError`] variant for bad base64,
-    /// non-UTF-8 bytes, a missing delimiter, a foreign tag byte (e.g.
-    /// a books-list cursor replayed against the shelves endpoint), or
-    /// a malformed flag / uuid.
-    pub fn parse(s: &str) -> Result<Self, CursorError> {
+    /// non-UTF-8 bytes, a missing delimiter, a foreign tag (e.g. a
+    /// books-list cursor, or a shelves cursor minted by the other API),
+    /// or a malformed flag / uuid.
+    pub fn parse(s: &str, api: CursorApi) -> Result<Self, CursorError> {
         let mut buf = vec![0u8; s.len()];
         let decoded = Base64UrlUnpadded::decode(s.as_bytes(), &mut buf)
             .map_err(|_| CursorError::InvalidBase64)?;
@@ -324,7 +367,7 @@ impl ShelfCursor {
         let (tag, rest) = decoded_str
             .split_once('|')
             .ok_or(CursorError::MissingDelimiter)?;
-        if tag != "sh" {
+        if tag != api.shelves_tag() {
             return Err(CursorError::UnknownTag);
         }
         let (flag, rest) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
@@ -490,9 +533,14 @@ mod tests {
                 CursorValue::Text(Some("y".into())),
             ],
         );
-        let encoded = cursor.encode().expect("encode");
+        let encoded = cursor.encode(CursorApi::Rest).expect("encode");
         assert!(matches!(
-            SortCursor::parse_for(&encoded, &spec_of("author,title"), NO_FILTERS),
+            SortCursor::parse_for(
+                &encoded,
+                CursorApi::Rest,
+                &spec_of("author,title"),
+                NO_FILTERS
+            ),
             Err(CursorError::SortMismatch)
         ));
     }
@@ -507,10 +555,10 @@ mod tests {
             id,
             filter_fp: NO_FILTERS.to_owned(),
         }
-        .encode()
+        .encode(CursorApi::Rest)
         .expect("encode");
         assert!(matches!(
-            ShelfCursor::parse(&books),
+            ShelfCursor::parse(&books, CursorApi::Rest),
             Err(CursorError::UnknownTag)
         ));
         let item = ShelfItemCursor {
@@ -519,7 +567,7 @@ mod tests {
         }
         .encode();
         assert!(matches!(
-            ShelfCursor::parse(&item),
+            ShelfCursor::parse(&item, CursorApi::Rest),
             Err(CursorError::UnknownTag)
         ));
     }

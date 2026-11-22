@@ -107,6 +107,7 @@ async fn list_shelves(
         &state,
         params.cursor.as_deref(),
         i64::from(state.config.opds.page_size),
+        crate::routes::cursor::CursorApi::Rest,
     )
     .await?;
 
