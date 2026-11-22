@@ -65,7 +65,7 @@ version_prefix = "v"
 filter_bins = "cargo-machete"
 
 [tools."github:EmbarkStudios/cargo-deny"]
-version = "0.21.0"
+version = "0.22.0"
 filter_bins = "cargo-deny"
 
 # Prebuilt release asset, checksum-verified, rather than the cargo backend's
