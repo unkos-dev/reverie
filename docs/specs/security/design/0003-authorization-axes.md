@@ -6,6 +6,8 @@ title: "Authorization axes"
 satisfies:
   - "REV-REQ-0005"
   - "REV-REQ-0006"
+  - "REV-REQ-0084"
+  - "REV-REQ-0085"
 governed-by:
   - "REV-ADR-0056"
 ---

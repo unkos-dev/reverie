@@ -2,20 +2,17 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0006"
-title: "API operations with a mutating method require write scope"
+title: "REST API operations with a mutating method require write scope"
 governed-by:
   - "REV-ADR-0056"
 ---
 
-# API operations with a mutating method require write scope
+# REST API operations with a mutating method require write scope
 
 ## Statement
 
 WHEN an `/api/v1` operation uses the `POST`, `PUT`, `PATCH` or `DELETE` method, it MUST refuse any credential that does
 not carry at least `write` scope, unless the operation is `POST /api/v1/manifestations/{id}/enrichment/dry-run`.
-
-For GraphQL, queries MUST require at least `read` scope and mutations MUST require at least `write` scope, or the higher
-scope the field declares. HTTP POST alone MUST NOT make a query require write scope.
 
 ## Rationale
 
@@ -34,7 +31,3 @@ write their responses to `api_cache`; it changes no manifestation.
 - A credential carrying only `read` is refused with `403` by every operation declared at `write` or higher, using device
   tokens. Checked by `read_token_blocked_from_every_mutation`.
 - `POST /api/v1/manifestations/{id}/enrichment/dry-run` declares `read` and is reachable with a `read` credential.
-- A read-scoped credential's GraphQL query over POST is admitted, and requests with missing or invalid credentials are
-  refused with `401`. Checked by `graphql_request_boundary`.
-- Every GraphQL mutation refuses a read-only credential with the `forbidden` execution code. An eligible write-scoped
-  caller can execute it. Checked by `graphql_request_boundary`, whose schema inventory covers every mutation root.

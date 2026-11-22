@@ -711,7 +711,9 @@
       "path": "docs/specs/security/design/0003-authorization-axes.md",
       "satisfies": [
         "REV-REQ-0005",
-        "REV-REQ-0006"
+        "REV-REQ-0006",
+        "REV-REQ-0084",
+        "REV-REQ-0085"
       ],
       "title": "Authorization axes"
     },
@@ -760,7 +762,13 @@
         "REV-REQ-0014",
         "REV-REQ-0015",
         "REV-REQ-0016",
-        "REV-REQ-0017"
+        "REV-REQ-0017",
+        "REV-REQ-0086",
+        "REV-REQ-0087",
+        "REV-REQ-0088",
+        "REV-REQ-0089",
+        "REV-REQ-0090",
+        "REV-REQ-0091"
       ],
       "title": "API error contract and OpenAPI"
     },
@@ -1152,12 +1160,6 @@
       "kind": "design",
       "path": "docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md",
       "satisfies": [
-        "REV-REQ-0005",
-        "REV-REQ-0006",
-        "REV-REQ-0014",
-        "REV-REQ-0015",
-        "REV-REQ-0016",
-        "REV-REQ-0017",
         "REV-REQ-0018",
         "REV-REQ-0019",
         "REV-REQ-0020",
@@ -1167,7 +1169,15 @@
         "REV-REQ-0036",
         "REV-REQ-0079",
         "REV-REQ-0082",
-        "REV-REQ-0083"
+        "REV-REQ-0083",
+        "REV-REQ-0084",
+        "REV-REQ-0085",
+        "REV-REQ-0086",
+        "REV-REQ-0087",
+        "REV-REQ-0088",
+        "REV-REQ-0089",
+        "REV-REQ-0090",
+        "REV-REQ-0091"
       ],
       "title": "GraphQL execution and Relay browser data"
     },
@@ -1215,7 +1225,7 @@
       "id": "REV-REQ-0005",
       "kind": "req",
       "path": "docs/specs/security/requirements/0005-every-api-operation-requires-its-declared-scope.md",
-      "title": "Every API operation requires its declared scope"
+      "title": "Every REST API operation requires its declared scope"
     },
     {
       "governed-by": [
@@ -1224,7 +1234,7 @@
       "id": "REV-REQ-0006",
       "kind": "req",
       "path": "docs/specs/security/requirements/0006-api-operations-with-a-mutating-method-require-write-scope.md",
-      "title": "API operations with a mutating method require write scope"
+      "title": "REST API operations with a mutating method require write scope"
     },
     {
       "governed-by": [
@@ -1290,7 +1300,7 @@
       "id": "REV-REQ-0014",
       "kind": "req",
       "path": "docs/specs/api/requirements/0014-api-error-responses-are-problem-details-with-a-registered-type.md",
-      "title": "API error responses are Problem Details with a registered type"
+      "title": "REST API error responses are Problem Details with a registered type"
     },
     {
       "governed-by": [
@@ -1299,19 +1309,19 @@
       "id": "REV-REQ-0015",
       "kind": "req",
       "path": "docs/specs/api/requirements/0015-a-request-that-fails-to-decode-answers-the-status-its-failure-im.md",
-      "title": "A request that fails to decode answers the status its failure implies"
+      "title": "A REST API request that fails to decode answers the status its failure implies"
     },
     {
       "id": "REV-REQ-0016",
       "kind": "req",
       "path": "docs/specs/api/requirements/0016-the-browser-client-surfaces-every-non-2xx-response-as-an-error-w.md",
-      "title": "The browser client surfaces every non-2xx response as an error with its status"
+      "title": "The browser REST client surfaces every non-2xx response as an error with its status"
     },
     {
       "id": "REV-REQ-0017",
       "kind": "req",
       "path": "docs/specs/api/requirements/0017-a-500-response-carries-no-internal-error-text.md",
-      "title": "A 500 response carries no internal error text"
+      "title": "A REST API 500 response carries no internal error text"
     },
     {
       "governed-by": [
@@ -1544,7 +1554,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0049"
+        "REV-ADR-0074"
       ],
       "id": "REV-REQ-0046",
       "kind": "req",
@@ -1553,7 +1563,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0049"
+        "REV-ADR-0074"
       ],
       "id": "REV-REQ-0047",
       "kind": "req",
@@ -1850,6 +1860,60 @@
       "kind": "req",
       "path": "docs/specs/api/requirements/0083-editing-baselines-form-only-from-complete-values-of-one-revision.md",
       "title": "Editing baselines form only from complete values of one revision"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0056"
+      ],
+      "id": "REV-REQ-0084",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0084-every-graphql-root-field-requires-its-declared-scope.md",
+      "title": "Every GraphQL root field requires its declared scope"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0056"
+      ],
+      "id": "REV-REQ-0085",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0085-a-graphql-mutation-requires-write-scope.md",
+      "title": "A GraphQL mutation requires write scope"
+    },
+    {
+      "id": "REV-REQ-0086",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0086-a-graphql-request-refused-before-execution-answers-problem-details-with-a-registered-type.md",
+      "title": "A GraphQL request refused before execution answers Problem Details with a registered type"
+    },
+    {
+      "id": "REV-REQ-0087",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0087-a-graphql-request-that-fails-to-decode-answers-the-status-its-failure-implies.md",
+      "title": "A GraphQL request that fails to decode answers the status its failure implies"
+    },
+    {
+      "id": "REV-REQ-0088",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0088-a-graphql-execution-error-carries-a-registered-classification-code.md",
+      "title": "A GraphQL execution error carries a registered classification code"
+    },
+    {
+      "id": "REV-REQ-0089",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0089-a-graphql-internal-failure-carries-no-internal-error-text.md",
+      "title": "A GraphQL internal failure carries no internal error text"
+    },
+    {
+      "id": "REV-REQ-0090",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0090-the-browser-graphql-client-surfaces-every-non-2xx-response-as-an-error-with-its-status.md",
+      "title": "The browser GraphQL client surfaces every non-2xx response as an error with its status"
+    },
+    {
+      "id": "REV-REQ-0091",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0091-the-browser-graphql-client-publishes-execution-errors-only-from-a-valid-envelope.md",
+      "title": "The browser GraphQL client publishes execution errors only from a valid envelope"
     }
   ]
 }

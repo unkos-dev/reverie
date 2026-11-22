@@ -8,6 +8,12 @@ satisfies:
   - "REV-REQ-0015"
   - "REV-REQ-0016"
   - "REV-REQ-0017"
+  - "REV-REQ-0086"
+  - "REV-REQ-0087"
+  - "REV-REQ-0088"
+  - "REV-REQ-0089"
+  - "REV-REQ-0090"
+  - "REV-REQ-0091"
 governed-by:
   - "REV-ADR-0011"
   - "REV-ADR-0077"

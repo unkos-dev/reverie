@@ -854,6 +854,63 @@ mod tests {
         tail
     }
 
+    fn patch_declared_uncompressed_sizes(bytes: &mut [u8], size: u32) {
+        const CENTRAL_HEADER_SIG: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+        let headers: Vec<usize> = bytes
+            .windows(4)
+            .enumerate()
+            .filter_map(|(at, window)| (window == CENTRAL_HEADER_SIG).then_some(at))
+            .collect();
+        assert_ne!(headers, Vec::<usize>::new());
+        for at in headers {
+            bytes[at + 24..at + 28].copy_from_slice(&size.to_le_bytes());
+        }
+    }
+
+    fn assert_declared_size_refused(bytes: &[u8], size: u64, limit: u64) {
+        let (_dir, path) = write_temp(bytes);
+        let mut issues = Vec::new();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
+        assert!(issues.iter().any(|i| {
+            i.severity == Severity::Irrecoverable
+                && matches!(
+                    &i.kind,
+                    IssueKind::ZipBomb { size: s, limit: l, .. } if *s == size && *l == limit
+                )
+        }));
+        assert!(handle.archive.is_none());
+    }
+
+    #[test]
+    fn entry_declaring_more_than_the_entry_cap_is_refused_before_extraction() {
+        let mut bytes = make_zip(&[("big.xhtml", b"small")]);
+        let declared = u32::try_from(MAX_ENTRY_UNCOMPRESSED_BYTES + 1).unwrap();
+        patch_declared_uncompressed_sizes(&mut bytes, declared);
+        assert_declared_size_refused(
+            &bytes,
+            MAX_ENTRY_UNCOMPRESSED_BYTES + 1,
+            MAX_ENTRY_UNCOMPRESSED_BYTES,
+        );
+    }
+
+    #[test]
+    fn entries_declaring_more_than_the_aggregate_cap_are_refused_before_extraction() {
+        let mut bytes = make_zip(&[
+            ("a.xhtml", b"a"),
+            ("b.xhtml", b"b"),
+            ("c.xhtml", b"c"),
+            ("d.xhtml", b"d"),
+            ("e.xhtml", b"e"),
+        ]);
+        let declared = u32::try_from(MAX_ENTRY_UNCOMPRESSED_BYTES).unwrap();
+        patch_declared_uncompressed_sizes(&mut bytes, declared);
+        assert_declared_size_refused(
+            &bytes,
+            MAX_ENTRY_UNCOMPRESSED_BYTES * 5,
+            MAX_AGGREGATE_UNCOMPRESSED_BYTES,
+        );
+    }
+
     #[test]
     fn entries_hint_over_cap_is_refused_before_iteration() {
         let count = u64::try_from(MAX_ZIP_ENTRIES + 1).unwrap();

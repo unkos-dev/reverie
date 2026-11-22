@@ -83,6 +83,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   );
   await expect(request()).rejects.toMatchObject({
     status: 422,
+    type: "https://reverie.example/probs/validation",
     title: "Validation",
     detail: "Invalid",
     errors: { name: "Required" },
@@ -141,7 +142,14 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
     }),
   );
   await expect(request()).rejects.toBeInstanceOf(GraphQLExecutionError);
-  for (const malformed of [{}, { errors: [] }, { errors: [{ message: 7 }] }, { data: null }]) {
+  for (const malformed of [
+    {},
+    { errors: [] },
+    { errors: [{ message: 7 }] },
+    { errors: [{ message: "" }] },
+    { errors: [{ message: "Refused", extensions: { currentEtag: "weak" } }] },
+    { data: null },
+  ]) {
     fetch.mockResolvedValueOnce(json(malformed));
     await expect(request()).rejects.toThrow();
   }

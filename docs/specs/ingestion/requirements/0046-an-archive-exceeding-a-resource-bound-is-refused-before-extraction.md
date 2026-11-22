@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0046"
 title: "An archive exceeding a resource bound is refused before extraction"
 governed-by:
-  - "REV-ADR-0049"
+  - "REV-ADR-0074"
 ---
 
 # An archive exceeding a resource bound is refused before extraction
@@ -38,8 +38,7 @@ Each bound below is enforced against the declared value named, not against a siz
 | Declared aggregate uncompressed size across all entries | 2,147,483,648 bytes (2 GiB) |
 
 - An archive one byte over the file-size bound is refused before any of its bytes are read. Checked by
-  `oversized_archive_is_quarantined_unread` in `backend/src/services/epub/zip_layer.rs`. Not checked by any automated
-  test at the exact bound: no test confirms the positive case of a file exactly at the limit.
+  `oversized_archive_is_quarantined_unread` in `backend/src/services/epub/zip_layer.rs`.
 - A declared central-directory entry count of exactly 20,000 passes this check. Checked by `entry_count_at_cap_passes`
   in `backend/src/services/epub/zip_layer.rs`.
 - A declared entry count of 20,001 is refused before any central-directory header is parsed. Checked by
@@ -48,11 +47,9 @@ Each bound below is enforced against the declared value named, not against a siz
   directory in truth holds 20,001 entries, is refused by a second, counted check made during iteration, at the 20,001st
   entry, regardless of the declared count. Checked by `counted_iteration_cap_fires_despite_understated_hint` in
   `backend/src/services/epub/zip_layer.rs`.
-- A single entry declaring an uncompressed size of 4,095 bytes or fewer, whose actual decompressed content fills the
-  whole probe used to catch a size lie, is refused because the filled probe proves the declared size understates the
-  truth; an entry declaring 4,096 bytes or more can lie about its true size without this specific check catching it.
-  Checked by `stored_entry_larger_than_probe_cap_validates_clean_and_reads_back_whole` in
-  `backend/src/services/epub/zip_layer.rs` for the companion negative case, an 8,192-byte entry above the probe that is
-  not caught this way.
-- Not checked by any automated test: the single-entry and aggregate declared-size bounds themselves, at or over their
-  own limits. Both bound only the size an entry declares, not a size verified by reading the whole entry.
+- A single entry declaring an uncompressed size of 524,288,001 bytes is refused before any entry is extracted. Checked
+  by `entry_declaring_more_than_the_entry_cap_is_refused_before_extraction` in `backend/src/services/epub/zip_layer.rs`.
+- Five entries that each declare 524,288,000 bytes, 2,621,440,000 bytes in all, are refused on the aggregate bound
+  before any entry is extracted, although each entry passes the single-entry bound. Checked by
+  `entries_declaring_more_than_the_aggregate_cap_are_refused_before_extraction` in
+  `backend/src/services/epub/zip_layer.rs`.

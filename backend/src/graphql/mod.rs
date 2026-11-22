@@ -627,21 +627,37 @@ mod tests {
         (TestServer::new(router), auth, user_id)
     }
 
+    fn assert_problem(response: &axum_test::TestResponse, status: u16, slug: &str) {
+        use crate::error::problems::PROBLEM_BASE;
+        assert_eq!(response.status_code().as_u16(), status);
+        assert_eq!(response.content_type(), "application/problem+json");
+        assert_eq!(
+            response.json::<serde_json::Value>()["type"],
+            format!("{PROBLEM_BASE}/{slug}")
+        );
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_request_boundary(pool: PgPool) {
+        use crate::error::problems::{
+            CSRF_MISMATCH, CSRF_MISSING, INVALID_REQUEST_BODY, UNAUTHORIZED, VALIDATION,
+        };
         let (server, auth, user_id) = server(&pool).await;
         let query = json!({"query":"{ viewer { id displayName isChild } }"});
-        server
-            .post("/api/graphql")
-            .json(&query)
-            .await
-            .assert_status_unauthorized();
-        server
-            .post("/api/graphql")
-            .add_header("authorization", "Bearer invalid")
-            .json(&query)
-            .await
-            .assert_status_unauthorized();
+        assert_problem(
+            &server.post("/api/graphql").json(&query).await,
+            401,
+            UNAUTHORIZED,
+        );
+        assert_problem(
+            &server
+                .post("/api/graphql")
+                .add_header("authorization", "Bearer invalid")
+                .json(&query)
+                .await,
+            401,
+            UNAUTHORIZED,
+        );
         let app = db::app_pool_for(&pool).await;
         let (secret, hash) = token::generate_device_token();
         let token =
@@ -678,9 +694,17 @@ mod tests {
                 .text(body)
                 .content_type(content_type)
                 .await;
-            assert_eq!(response.status_code().as_u16(), status);
-            assert_eq!(response.content_type(), "application/problem+json");
+            assert_problem(&response, status, INVALID_REQUEST_BODY);
         }
+        assert_problem(
+            &server
+                .post("/api/graphql")
+                .add_header("authorization", auth.clone())
+                .json(&json!({"id": "unknown-document"}))
+                .await,
+            422,
+            VALIDATION,
+        );
         let store = MemoryStore::default();
         let session = Session::new(None, std::sync::Arc::new(store.clone()), None);
         session.insert("user_id", user_id).await.unwrap();
@@ -694,10 +718,10 @@ mod tests {
         state.pool = app;
         let session_server = TestServer::new(crate::build_router_with_session_store(state, store));
         let cookie = format!("id={}", session.id().unwrap());
-        for (csrf, status) in [
-            (None, 428),
-            (Some("wrong"), 403),
-            (Some("graphql-test-csrf"), 200),
+        for (csrf, status, slug) in [
+            (None, 428, Some(CSRF_MISSING)),
+            (Some("wrong"), 403, Some(CSRF_MISMATCH)),
+            (Some("graphql-test-csrf"), 200, None),
         ] {
             let request = session_server
                 .post("/api/graphql")
@@ -708,7 +732,11 @@ mod tests {
             } else {
                 request
             };
-            assert_eq!(request.await.status_code().as_u16(), status);
+            let response = request.await;
+            match slug {
+                Some(slug) => assert_problem(&response, status, slug),
+                None => assert_eq!(response.status_code().as_u16(), status),
+            }
         }
         mutation_scope_boundary(&pool).await;
         let error = safe_error(AppError::Internal(anyhow::anyhow!(
@@ -726,8 +754,13 @@ mod tests {
             errors: BTreeMap::from([("name".into(), "Required".into())]),
         });
         assert_eq!(fields.message, "Invalid input");
+        let extensions = fields.extensions.unwrap();
         assert_eq!(
-            fields.extensions.unwrap().get("errors"),
+            extensions.get("code"),
+            Some(&async_graphql::Value::from("validation"))
+        );
+        assert_eq!(
+            extensions.get("errors"),
             Some(&async_graphql::value!({"name": "Required"}))
         );
     }
