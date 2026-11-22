@@ -11,10 +11,12 @@ governed-by:
 
 ## Statement
 
-WHEN a request to the GraphQL `books` connection carries a range filter, which is one of the `BooksFilter` fields
-`pagesGte`, `pagesLte`, `ratingGte`, `ratingLte`, `createdAtGte` and `createdAtLt`, the server MUST include a book whose
-value equals a `Gte` or `Lte` bound, MUST exclude a book whose value equals a `Lt` bound, and MUST compare `createdAt`
-bounds as instants rather than as the text the request wrote them in.
+WHEN a request to the GraphQL `books` connection carries one or more range filters, which are the `BooksFilter` fields
+`pagesGte`, `pagesLte`, `ratingGte`, `ratingLte`, `createdAtGte` and `createdAtLt`, the server MUST treat a book as
+matching the range filters exactly when its values satisfy every supplied bound, and MUST compare `createdAt` bounds as
+instants rather than as the text the request wrote them in. The numeric `Gte` and `Lte` bounds are inclusive, and the
+`createdAt` bounds form an interval that includes its `createdAtGte` lower bound and excludes its `createdAtLt` upper
+bound, so equal `createdAt` bounds match no book.
 
 ## Rationale
 

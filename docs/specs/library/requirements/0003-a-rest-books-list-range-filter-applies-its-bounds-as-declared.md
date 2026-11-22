@@ -12,10 +12,12 @@ governed-by:
 
 ## Statement
 
-WHEN a request to `GET /api/v1/books` carries a range filter, which is one of the `pages_gte`, `pages_lte`,
-`rating_gte`, `rating_lte`, `created_at_gte` and `created_at_lt` parameters, the server MUST include a book whose value
-equals a `_gte` or `_lte` bound, MUST exclude a book whose value equals a `_lt` bound, and MUST compare `created_at`
-bounds as instants rather than as the text the request wrote them in.
+WHEN a request to `GET /api/v1/books` carries one or more range filters, which are the `pages_gte`, `pages_lte`,
+`rating_gte`, `rating_lte`, `created_at_gte` and `created_at_lt` parameters, the server MUST treat a book as matching
+the range filters exactly when its values satisfy every supplied bound, and MUST compare `created_at` bounds as instants
+rather than as the text the request wrote them in. The numeric `_gte` and `_lte` bounds are inclusive, and the
+`created_at` bounds form an interval that includes its `created_at_gte` lower bound and excludes its `created_at_lt`
+upper bound, so equal `created_at` bounds match no book.
 
 ## Rationale
 
