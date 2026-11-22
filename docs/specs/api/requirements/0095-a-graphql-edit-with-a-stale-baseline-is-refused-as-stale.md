@@ -13,7 +13,7 @@ WHEN a GraphQL `updateMetadata`, `updateReadingState` or `undoMetadata` mutation
 octet from the current [validator](0082-graphql-edit-acknowledgements-carry-the-validator-of-their-values.md#statement)
 of its target, the server MUST refuse the mutation with a response that identifies the baseline as stale and MUST leave
 stored state unchanged, even when the mutation's patch would fail validation or its save request ID has already been
-used. The baseline is the validator of the values the caller's edit was made from. A save request ID is the `request`
+used. The baseline is the validator of the values the caller's edit was made from. A save request ID is the `requestId`
 value of an `updateMetadata` input, and it has already been used when an earlier save in the same browser session
 committed with it.
 
