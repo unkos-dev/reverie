@@ -1233,7 +1233,7 @@ mod tests {
         );
     }
 
-    // REV-REQ-0018/0020/0082 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
+    // REV-REQ-0095/0096/0082 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_edit_baselines(pool: PgPool) {
         let (_, server, csrf) = editing_browser(&pool, "graph-edits").await;
@@ -2194,7 +2194,7 @@ mod tests {
         assert_eq!(refused["errors"][0]["extensions"]["code"], "validation");
     }
 
-    // REV-REQ-0003, REV-REQ-0057 and REV-REQ-0058 cover ranges, cursor identity and sort refusal.
+    // REV-REQ-0092, REV-REQ-0093 and REV-REQ-0094 cover ranges, cursor identity and sort refusal; REV-REQ-0057 cross-API refusal.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_cursor_contract(pool: PgPool) {
         let fixture = reader_fixture(&pool).await;

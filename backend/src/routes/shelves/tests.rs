@@ -364,22 +364,39 @@ async fn shelf_items_rejects_cross_endpoint_cursor_replay(pool: PgPool) {
 async fn shelf_items_rejects_a_cursor_minted_for_another_shelf(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (a_id, a_basic) =
-        test_support::db::create_adult_and_basic_auth(&app_pool, "cross-shelf").await;
-    let minted_for = test_support::db::create_shelf(&app_pool, a_id, "Minted").await;
+    let (a_id, a_basic, minted_for, books) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "cross-shelf", 2).await;
     let other = test_support::db::create_shelf(&app_pool, a_id, "Other").await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let cursor = crate::routes::cursor::ShelfItemCursor {
-        shelf_id: minted_for,
-        added_at: jiff::Timestamp::now(),
-        manifestation_id: Uuid::new_v4(),
-    }
-    .encode();
+    let mut config = test_support::test_config();
+    config.opds.page_size = 1;
+    let server = test_support::db::server_with_config(&app_pool, &ingestion_pool, config);
+    let first = server
+        .get(&format!("/api/v1/shelves/{minted_for}"))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    assert_eq!(first.status_code(), StatusCode::OK);
+    let first: serde_json::Value = first.json();
+    let cursor = first["next_cursor"].as_str().unwrap().to_owned();
     let own = server
         .get(&format!("/api/v1/shelves/{minted_for}?cursor={cursor}"))
         .add_header(auth(&a_basic).0, auth(&a_basic).1)
         .await;
     assert_eq!(own.status_code(), StatusCode::OK);
+    let own: serde_json::Value = own.json();
+    let mut walked: Vec<Uuid> = [&first, &own]
+        .iter()
+        .map(|page| {
+            page["items"][0]["manifestation_id"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap()
+        })
+        .collect();
+    walked.sort();
+    let mut expected = books.clone();
+    expected.sort();
+    assert_eq!(walked, expected);
     let r = server
         .get(&format!("/api/v1/shelves/{other}?cursor={cursor}"))
         .add_header(auth(&a_basic).0, auth(&a_basic).1)
