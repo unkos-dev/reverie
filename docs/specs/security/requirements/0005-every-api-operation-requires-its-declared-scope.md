@@ -2,20 +2,17 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0005"
-title: "Every API operation requires its declared scope"
+title: "Every REST API operation requires its declared scope"
 governed-by:
   - "REV-ADR-0056"
 ---
 
-# Every API operation requires its declared scope
+# Every REST API operation requires its declared scope
 
 ## Statement
 
 Every operation under `/api/v1` MUST refuse a request unless the request's credential carries the scope the operation
 declares, or a higher scope in the order `read` < `write` < `admin`.
-
-Every GraphQL root field MUST declare and enforce its required scope independently of the HTTP method. Scope checks MUST
-preserve independent role, child-status, ownership and credential-ceiling restrictions.
 
 ## Rationale
 
@@ -35,10 +32,3 @@ or enforced one level looser than declared, would give that credential capabilit
 - A credential carrying no scope is refused with `401` at authentication for every `/api/v1` operation, and no operation
   runs. Checked by `scopeless_token_rejected_by_every_op`, which writes an empty-scope token directly through the model
   layer so the check covers the authentication step itself.
-- Every GraphQL root field declares its scope. Checked by inspecting the resolver guards in `backend/src/graphql/mod.rs`
-  and `backend/src/graphql/mutations.rs`.
-- A read-scoped credential's GraphQL query over POST is admitted, and requests with missing or invalid credentials are
-  refused with `401`. Checked by `graphql_request_boundary`.
-- Every GraphQL field requiring write scope refuses a read-only credential with the `forbidden` execution code.
-  Credentials holding its declared scope or admin scope pass the scope check; independent role, ownership and browser
-  session restrictions still apply. Checked by `graphql_request_boundary`, including successful eligible controls.

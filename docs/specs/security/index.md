@@ -4,8 +4,8 @@
 
 ## Requirements
 
-- [REV-REQ-0005](requirements/0005-every-api-operation-requires-its-declared-scope.md): Every API operation requires its declared scope
-- [REV-REQ-0006](requirements/0006-api-operations-with-a-mutating-method-require-write-scope.md): API operations with a mutating method require write scope
+- [REV-REQ-0005](requirements/0005-every-api-operation-requires-its-declared-scope.md): Every REST API operation requires its declared scope
+- [REV-REQ-0006](requirements/0006-api-operations-with-a-mutating-method-require-write-scope.md): REST API operations with a mutating method require write scope
 - [REV-REQ-0007](requirements/0007-rls-gated-rows-are-unreadable-without-a-user-context.md): RLS-gated rows are unreadable without a user context
 - [REV-REQ-0008](requirements/0008-requests-write-manifestations-only-within-the-caller-s-rls-scope.md): Requests write manifestations only within the caller's RLS scope
 - [REV-REQ-0009](requirements/0009-a-child-account-sees-only-manifestations-on-its-own-shelves.md): A child account sees only manifestations on its own shelves
@@ -18,6 +18,8 @@
 - [REV-REQ-0023](requirements/0023-the-browser-client-retries-a-csrf-rejected-mutation-once-with-a.md): The browser client retries a CSRF-rejected mutation once with a refreshed token
 - [REV-REQ-0024](requirements/0024-a-request-authenticated-without-a-browser-session-is-not-csrf-ga.md): A request authenticated without a browser session is not CSRF-gated
 - [REV-REQ-0071](requirements/0071-the-production-build-s-csp-hash-matches-its-pre-paint-theme-script.md): The production build's CSP hash matches its pre-paint theme script
+- [REV-REQ-0084](requirements/0084-every-graphql-root-field-requires-its-declared-scope.md): Every GraphQL root field requires its declared scope
+- [REV-REQ-0085](requirements/0085-a-graphql-mutation-requires-write-scope.md): A GraphQL mutation requires write scope
 
 ## Designs
 

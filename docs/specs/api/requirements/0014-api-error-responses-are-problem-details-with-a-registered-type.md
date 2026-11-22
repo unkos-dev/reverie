@@ -2,12 +2,12 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0014"
-title: "API error responses are Problem Details with a registered type"
+title: "REST API error responses are Problem Details with a registered type"
 governed-by:
   - "REV-ADR-0011"
 ---
 
-# API error responses are Problem Details with a registered type
+# REST API error responses are Problem Details with a registered type
 
 ## Statement
 
@@ -15,9 +15,6 @@ WHEN a request to an operation under `/api/v1`, or a request under `/api/v1` mat
 answered with a status in the 4xx or 5xx range, the response MUST carry the `application/problem+json` media type and a
 JSON body whose `type` field is a URI ending in one of a fixed, closed set of registered problem-type slugs (for example
 `.../not-found`, `.../validation`, `.../internal`).
-
-For `/api/graphql`, pre-execution HTTP failures MUST retain the same Problem Details contract. GraphQL execution faults
-MUST use an execution-error envelope with a stable registered domain classification and safe field messages.
 
 ## Rationale
 
@@ -47,5 +44,3 @@ string would defeat that: every consumer, including Reverie's own browser client
 - The `type` value is always the fixed base URI followed by the slug, never a bare slug or a different host per
   occurrence. Checked for two representative slugs by `problem_type_assembles_full_uri` in
   `backend/src/error/problems.rs`.
-- GraphQL transport failures carry Problem Details. Execution faults carry a stable classification in error extensions
-  and preserve safe field messages. Checked by `graphql_request_boundary`.

@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0047"
 title: "An archive with bytes outside its structure or a miscounted directory is refused"
 governed-by:
-  - "REV-ADR-0049"
+  - "REV-ADR-0074"
 ---
 
 # An archive with bytes outside its structure or a miscounted directory is refused

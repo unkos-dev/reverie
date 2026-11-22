@@ -2,20 +2,17 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0016"
-title: "The browser client surfaces every non-2xx response as an error with its status"
+title: "The browser REST client surfaces every non-2xx response as an error with its status"
 ---
 
-# The browser client surfaces every non-2xx response as an error with its status
+# The browser REST client surfaces every non-2xx response as an error with its status
 
 ## Statement
 
-WHEN the browser client receives, for an API call it made, a response whose status is outside the 200-299 range, it MUST
-surface an error carrying that status, regardless of whether the response body is a Problem Details document, some other
-JSON, non-JSON text, or absent. For a well-formed Problem Details body, the error MUST preserve `type`, `title` and
-`detail`, together with an optional `errors` object mapping field names to strings, unchanged.
-
-For GraphQL calls, the browser MUST preserve non-2xx HTTP errors independently of execution faults. It MUST validate
-execution-error envelopes and preserve their stable domain classification and safe field messages before publication.
+WHEN the browser client receives, for a call it made to `/api/v1`, a response whose status is outside the 200-299 range,
+it MUST surface an error carrying that status, regardless of whether the response body is a Problem Details document,
+some other JSON, non-JSON text, or absent. For a well-formed Problem Details body, the error MUST preserve `type`,
+`title` and `detail`, together with an optional `errors` object mapping field names to strings, unchanged.
 
 ## Rationale
 
@@ -38,6 +35,3 @@ met. Surfacing the status unconditionally, independent of the body's shape, is w
 - A response whose body is not JSON at all still surfaces an error carrying the response's real status, falling back to
   the response's status text rather than failing to produce an error. Checked by
   `"non-JSON error body falls back to status-text title"` in the same file.
-- GraphQL network failures preserve HTTP status and safe Problem Details. Execution faults retain classification and
-  field messages, and malformed envelopes fail before publication. Checked in
-  `frontend/tests/browser/api/graphql.test.tsx`.

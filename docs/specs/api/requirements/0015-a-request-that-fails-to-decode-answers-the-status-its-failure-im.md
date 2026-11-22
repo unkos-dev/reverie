@@ -2,12 +2,12 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0015"
-title: "A request that fails to decode answers the status its failure implies"
+title: "A REST API request that fails to decode answers the status its failure implies"
 governed-by:
   - "REV-ADR-0011"
 ---
 
-# A request that fails to decode answers the status its failure implies
+# A REST API request that fails to decode answers the status its failure implies
 
 ## Statement
 
@@ -16,9 +16,6 @@ reflect the kind of failure rather than a single flattened code: a malformed que
 parameter, or a request body that is not valid JSON each answer 400; a request body over the size limit answers 413; a
 request body sent without an `application/json` content type answers 415; and a request body that is valid JSON but does
 not match the operation's expected shape answers 422.
-
-At `/api/graphql`, JSON transport decoding MUST preserve the same failure statuses. GraphQL document or variable
-validation failures MUST remain distinguishable from JSON transport failures through an execution-error envelope.
 
 ## Rationale
 
@@ -54,5 +51,3 @@ caller must change the payload's shape.
   `wrong_field_type_is_422_invalid_request_body` (`backend/tests/extractors.rs`).
 - A well-formed request is not rejected by this decode boundary at all: it reaches the operation. Checked by
   `valid_request_reaches_the_handler` (`backend/tests/extractors.rs`).
-- GraphQL JSON syntax, size, content-type and shape refusals preserve 400, 413, 415 and 422 respectively. A valid
-  envelope reaches document validation. Checked by `graphql_request_boundary`.
