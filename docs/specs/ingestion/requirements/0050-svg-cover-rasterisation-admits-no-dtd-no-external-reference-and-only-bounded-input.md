@@ -31,18 +31,23 @@ requests.
 
 - A cover SVG carrying a DOCTYPE is refused. Checked by `rejects_svg_with_doctype` in
   `backend/src/services/covers/svg.rs`.
+
 - An `<image>` reference to an absolute path, or to a path that traverses outside the archive, is refused before any
   resolver is consulted. Checked by `blocks_external_path_href` and `blocks_traversal_href` in
   `backend/src/services/covers/svg.rs`.
+
 - An `<image>` reference to a path-checked sibling entry inside the same archive, or to a data URI carried in the
   document, is admitted. Checked by `resolves_in_zip_relative_image_href` and `accepts_data_uri_image` in
   `backend/src/services/covers/svg.rs`.
+
 - A document using a filter primitive is refused, wherever in the render tree the filter is reachable, including through
   a `<pattern>` paint server, or through a clip-path or mask chain more than one level deep. Checked by
   `rejects_svg_with_filter`, `rejects_filter_hidden_in_mask`, `rejects_filter_in_pattern` and
   `rejects_filter_in_chained_mask` in `backend/src/services/covers/svg.rs`.
+
 - A rasterisation whose rendered output carries no visible (non-zero-alpha) pixel is refused. Checked by
   `blank_svg_yields_decode_error` in `backend/src/services/covers/svg.rs`.
+
 - Each bound below is enforced at exactly the stated limit:
 
   | Bound | Limit | Checked by (`backend/src/services/covers/svg.rs`) |
