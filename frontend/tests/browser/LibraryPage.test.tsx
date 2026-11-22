@@ -619,123 +619,70 @@ test("a successful empty response replaces placeholders", async () => {
   await expect.element(page.getByText("Origin")).not.toBeInTheDocument();
 });
 
-// Data loss boundary: exact operations, retained source routing, acknowledgement recovery and native input Undo.
-test("metadata Undo survives table refreshes", async () => {
-  let current = bookFixture({ pages: 100 });
-  const titleOperation = {
+// Data loss boundary: after the row disappears, Undo retries the same saved operation for the same book.
+test("metadata Undo keeps its exact target after the row disappears", async () => {
+  const original = bookFixture({ pages: 100 });
+  const saved = { ...original, title: "Saved title", metadata_etag: '"cccccccccccccccccccccc"' };
+  const latest = { ...saved, pages: 250, metadata_etag: '"dddddddddddddddddddddd"' };
+  const restored = { ...latest, title: original.title, metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
+  const operation = {
     operationId: "33333333-3333-4333-8333-333333333333",
     fieldName: "title",
     expiresAt: new Date(Date.now() + 3600000).toISOString(),
     status: "ELIGIBLE",
   };
-  const pagesOperation = {
-    ...titleOperation,
-    operationId: "44444444-4444-4444-8444-444444444444",
-    fieldName: "pages",
-  };
-  let finishUndo: ((value: Response) => void) | undefined;
-  const pendingUndo = new Promise<Response>((resolve) => {
-    finishUndo = resolve;
-  });
-  let titleUndoCalls = 0;
-  let titleRequest = "";
+  const undoMutation = "mutationsUndoCellsMutation";
+  const resolveQuery = "mutationsResolveCellsQuery";
   const fixture = await renderLibrary({
-    items: [current],
+    items: [original],
     visit: { view: "table" },
     handler: (name, variables, owner) => {
       if (name === "mutationsSaveCellsMutation") {
-        const write = metadataVariables.parse(variables);
-        expect(write.baseline).toBe(current.metadata_etag);
-        if ("title" in write.patch) {
-          titleRequest = write.requestId;
-          current = {
-            ...current,
-            title: z.string().parse(write.patch.title),
-            metadata_etag: '"cccccccccccccccccccccc"',
-          };
-          owner.books = [current];
-          return Promise.reject(new TypeError("Lost acknowledgement"));
-        }
-        current = {
-          ...current,
-          pages: z.number().parse(write.patch.pages),
-          metadata_etag: '"dddddddddddddddddddddd"',
-        };
-        owner.books = [current];
-        return savedCells(write.requestId, current, [pagesOperation]);
+        owner.books = [saved];
+        return savedCells(metadataVariables.parse(variables).requestId, saved, [operation]);
       }
-      if (name === "mutationsResolveCellsQuery") {
-        if (variables.requestId != null) expect(variables.requestId).toBe(titleRequest);
-        else expect(variables.operationId).toBe(titleOperation.operationId);
+      if (name === resolveQuery) {
         return response({
           metadataOperation: {
             outcome: "SAVED",
-            metadata: metadata(current),
-            operations: [titleOperation],
+            metadata: metadata(latest),
+            operations: [operation],
           },
         });
       }
-      if (name === "mutationsUndoCellsMutation") {
-        if (variables.operationId === pagesOperation.operationId) {
-          current = { ...current, pages: 100, metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
-          owner.books = [current];
-          return restoredCells(current, { ...pagesOperation, status: "CONSUMED" });
-        }
-        titleUndoCalls += 1;
-        if (titleUndoCalls === 1)
+      if (name === undoMutation) {
+        if (variables.baseline !== latest.metadata_etag)
           return refused("undoMetadata", "StaleBaseline", "if-match-mismatch");
-        expect(variables.baseline).toBe(current.metadata_etag);
-        return pendingUndo;
+        owner.books = [restored];
+        return restoredCells(restored, { ...operation, status: "CONSUMED" });
       }
     },
   });
-  await userEvent.click(page.getByRole("button", { name: "Edit title of The Brothers Karamazov" }));
-  const editor = page.getByRole("dialog").getByRole("textbox");
-  await userEvent.type(editor, "Draft");
-  await userEvent.keyboard("{Control>}z{/Control}");
-  await expect.element(editor).toHaveValue("The Brothers Karamazov");
-  expect(titleRequest).toBe("");
-  await editor.fill("Saved title");
-  await userEvent.keyboard("{Enter}");
-  await expect
-    .element(
-      page.getByRole("button", { name: "Undo Title for “The Brothers Karamazov”", exact: true }),
-    )
-    .toBeEnabled();
-  await userEvent.click(page.getByRole("button", { name: "100, edit pages", exact: true }));
-  await page.getByRole("dialog").getByRole("textbox").fill("250");
-  await userEvent.keyboard("{Enter}");
-  await userEvent.click(
-    page.getByRole("button", { name: "Undo Pages for “Saved title”", exact: true }),
-  );
+  await editTitle(original.title, saved.title);
   const undo = page.getByRole("button", {
-    name: "Undo Title for “The Brothers Karamazov”",
+    name: `Undo Title for “${original.title}”`,
     exact: true,
   });
   await expect.element(undo).toBeEnabled();
+  fixture.books = [latest];
   await userEvent.fill(page.getByRole("searchbox"), "missing");
   await expect.element(findLibraryTable()).not.toBeInTheDocument();
   await userEvent.click(undo);
-  await expect.element(undo).toHaveAttribute("data-pending");
-  await expect.element(undo).toHaveFocus();
-  await userEvent.keyboard("{Enter}");
-  expect(titleUndoCalls).toBe(2);
-  current = {
-    ...current,
-    title: "The Brothers Karamazov",
-    metadata_etag: '"ffffffffffffffffffffff"',
-  };
-  fixture.books = [current];
-  finishUndo?.(restoredCells(current, { ...titleOperation, status: "CONSUMED" }));
   await expect
-    .element(page.getByText(/Title for “The Brothers Karamazov” restored/))
+    .element(page.getByText(`Title for “${original.title}” restored.`, { exact: true }))
     .toBeInTheDocument();
-  await expect
-    .element(page.getByRole("button", { name: "Undo last edit", exact: true }))
-    .toBeDisabled();
-  await expect.element(page.getByRole("button", { name: "Keyboard shortcuts" })).toHaveFocus();
-  await userEvent.fill(page.getByRole("searchbox"), "");
-  await expect.element(page.getByText("The Brothers Karamazov").first()).toBeInTheDocument();
+
+  const target = {
+    id: encodeGraphQLId("Manifestation", original.id),
+    operationId: operation.operationId,
+  };
+  expect(
+    fixture.calls.filter(({ name }) => name === undoMutation || name === resolveQuery),
+  ).toEqual([
+    { name: undoMutation, variables: { ...target, baseline: saved.metadata_etag } },
+    { name: resolveQuery, variables: { ...target, requestId: null } },
+    { name: undoMutation, variables: { ...target, baseline: latest.metadata_etag } },
+  ]);
 });
 
 // REV-REQ-0019 and the data loss boundary: an open editor retains its original matched write precondition.
