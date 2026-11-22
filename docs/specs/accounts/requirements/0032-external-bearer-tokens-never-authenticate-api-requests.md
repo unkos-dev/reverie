@@ -23,9 +23,13 @@ account-creation paths.
 ## Acceptance criteria
 
 - An external bearer token for a linked identity cannot authenticate an operation requiring authentication and leaves
-  the account and identity-link counts unchanged.
+  the account and identity-link counts unchanged. Checked by `external_bearer_rejected_without_identity_writes` in
+  `backend/src/auth/middleware.rs`.
 - An external bearer token for an unlinked identity cannot authenticate an operation requiring authentication and leaves
-  the account and identity-link counts unchanged.
-- Both cases are checked by `external_bearer_rejected_without_identity_writes` in `backend/src/auth/middleware.rs`.
-  Authentication-failure status and challenges are governed by REV-REQ-0005 and REV-REQ-0033; public operations do not
-  acquire an authentication requirement from this obligation.
+  the account and identity-link counts unchanged. Checked by `external_bearer_rejected_without_identity_writes`.
+
+## More information
+
+The status and challenge of an authentication failure are separate obligations: REV-REQ-0005 and REV-REQ-0033 for
+`/api/v1`, and REV-REQ-0084 for GraphQL. An operation that requires no authentication does not acquire one from this
+Requirement.

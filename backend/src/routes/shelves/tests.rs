@@ -98,6 +98,20 @@ async fn child_cannot_create_shelf(pool: PgPool) {
         .json(&json!({"name": "Forbidden"}))
         .await;
     test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+    let shelves = child_shelves(&server, &c_basic).await;
+    assert!(!shelves.iter().any(|s| s["name"] == "Forbidden"));
+}
+
+async fn child_shelves(server: &axum_test::TestServer, basic: &str) -> Vec<serde_json::Value> {
+    let r = server
+        .get("/api/v1/shelves")
+        .add_header(auth(basic).0, auth(basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .unwrap()
+        .clone()
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -113,6 +127,8 @@ async fn child_cannot_delete_shelf(pool: PgPool) {
         .add_header(auth(&c_basic).0, auth(&c_basic).1)
         .await;
     test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+    let shelves = child_shelves(&server, &c_basic).await;
+    assert!(shelves.iter().any(|s| s["id"] == shelf_id.to_string()));
 }
 
 // ------------------------------------------------------------------
@@ -308,6 +324,12 @@ async fn child_cannot_rename_shelf(pool: PgPool) {
         .json(&json!({"name": "New"}))
         .await;
     test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+    let shelves = child_shelves(&server, &c_basic).await;
+    let shelf = shelves
+        .iter()
+        .find(|s| s["id"] == shelf_id.to_string())
+        .unwrap();
+    assert_eq!(shelf["name"], "Kid's");
 }
 
 #[sqlx::test(migrations = "./migrations")]

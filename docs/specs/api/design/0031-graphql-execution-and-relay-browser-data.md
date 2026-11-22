@@ -4,9 +4,7 @@ profile-version: 1
 id: "REV-DESIGN-0031"
 title: "GraphQL execution and Relay browser data"
 satisfies:
-  - "REV-REQ-0018"
   - "REV-REQ-0019"
-  - "REV-REQ-0020"
   - "REV-REQ-0021"
   - "REV-REQ-0023"
   - "REV-REQ-0035"
@@ -22,6 +20,8 @@ satisfies:
   - "REV-REQ-0089"
   - "REV-REQ-0090"
   - "REV-REQ-0091"
+  - "REV-REQ-0095"
+  - "REV-REQ-0096"
 governed-by:
   - "REV-ADR-0077"
   - "REV-ADR-0079"

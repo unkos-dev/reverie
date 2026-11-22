@@ -681,12 +681,12 @@
       "satisfies": [
         "REV-REQ-0001",
         "REV-REQ-0002",
-        "REV-REQ-0003",
         "REV-REQ-0075",
         "REV-REQ-0076",
         "REV-REQ-0077",
         "REV-REQ-0080",
-        "REV-REQ-0081"
+        "REV-REQ-0081",
+        "REV-REQ-0092"
       ],
       "title": "Library filter and sort state"
     },
@@ -713,7 +713,9 @@
         "REV-REQ-0005",
         "REV-REQ-0006",
         "REV-REQ-0084",
-        "REV-REQ-0085"
+        "REV-REQ-0085",
+        "REV-REQ-0097",
+        "REV-REQ-0098"
       ],
       "title": "Authorization axes"
     },
@@ -785,7 +787,9 @@
         "REV-REQ-0019",
         "REV-REQ-0020",
         "REV-REQ-0082",
-        "REV-REQ-0083"
+        "REV-REQ-0083",
+        "REV-REQ-0095",
+        "REV-REQ-0096"
       ],
       "title": "Conditional requests and optimistic concurrency"
     },
@@ -971,7 +975,8 @@
         "REV-REQ-0055",
         "REV-REQ-0056",
         "REV-REQ-0072",
-        "REV-REQ-0073"
+        "REV-REQ-0073",
+        "REV-REQ-0098"
       ],
       "title": "Metadata review and editing"
     },
@@ -991,7 +996,10 @@
         "REV-REQ-0003",
         "REV-REQ-0057",
         "REV-REQ-0058",
-        "REV-REQ-0059"
+        "REV-REQ-0059",
+        "REV-REQ-0092",
+        "REV-REQ-0093",
+        "REV-REQ-0094"
       ],
       "title": "Books list query contract"
     },
@@ -1006,7 +1014,9 @@
       "path": "docs/specs/library/design/0020-shelves.md",
       "satisfies": [
         "REV-REQ-0057",
-        "REV-REQ-0059"
+        "REV-REQ-0059",
+        "REV-REQ-0093",
+        "REV-REQ-0097"
       ],
       "title": "Shelves"
     },
@@ -1021,7 +1031,9 @@
       "satisfies": [
         "REV-REQ-0018",
         "REV-REQ-0020",
-        "REV-REQ-0081"
+        "REV-REQ-0081",
+        "REV-REQ-0095",
+        "REV-REQ-0096"
       ],
       "title": "Reading state"
     },
@@ -1160,9 +1172,7 @@
       "kind": "design",
       "path": "docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md",
       "satisfies": [
-        "REV-REQ-0018",
         "REV-REQ-0019",
-        "REV-REQ-0020",
         "REV-REQ-0021",
         "REV-REQ-0023",
         "REV-REQ-0035",
@@ -1177,7 +1187,9 @@
         "REV-REQ-0088",
         "REV-REQ-0089",
         "REV-REQ-0090",
-        "REV-REQ-0091"
+        "REV-REQ-0091",
+        "REV-REQ-0095",
+        "REV-REQ-0096"
       ],
       "title": "GraphQL execution and Relay browser data"
     },
@@ -1206,8 +1218,8 @@
       ],
       "id": "REV-REQ-0003",
       "kind": "req",
-      "path": "docs/specs/library/requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md",
-      "title": "Library list range filters apply their bounds as declared"
+      "path": "docs/specs/library/requirements/0003-a-rest-books-list-range-filter-applies-its-bounds-as-declared.md",
+      "title": "A REST books list range filter applies its bounds as declared"
     },
     {
       "governed-by": [
@@ -1329,8 +1341,8 @@
       ],
       "id": "REV-REQ-0018",
       "kind": "req",
-      "path": "docs/specs/api/requirements/0018-metadata-and-reading-state-patch-compare-if-match-byte-for-byte.md",
-      "title": "Precondition-protected writes compare their validator byte for byte"
+      "path": "docs/specs/api/requirements/0018-a-precondition-protected-rest-write-compares-if-match-byte-for-byte.md",
+      "title": "A precondition-protected REST write compares If-Match byte for byte"
     },
     {
       "id": "REV-REQ-0019",
@@ -1344,8 +1356,8 @@
       ],
       "id": "REV-REQ-0020",
       "kind": "req",
-      "path": "docs/specs/api/requirements/0020-a-precondition-protected-write-answers-428-without-if-match.md",
-      "title": "A precondition-protected write without its validator is refused before it begins"
+      "path": "docs/specs/api/requirements/0020-a-precondition-protected-rest-write-without-if-match-answers-428-and-changes-nothing.md",
+      "title": "A precondition-protected REST write without If-Match answers 428 and changes nothing"
     },
     {
       "governed-by": [
@@ -1440,7 +1452,7 @@
       ],
       "id": "REV-REQ-0032",
       "kind": "req",
-      "path": "docs/specs/accounts/requirements/0032-a-bearer-token-for-an-unlinked-identity-never-provisions-an-acco.md",
+      "path": "docs/specs/accounts/requirements/0032-external-bearer-tokens-never-authenticate-api-requests.md",
       "title": "External bearer tokens never authenticate API requests"
     },
     {
@@ -1648,8 +1660,8 @@
       ],
       "id": "REV-REQ-0057",
       "kind": "req",
-      "path": "docs/specs/library/requirements/0057-a-list-cursor-is-honoured-only-under-the-sort-and-filter-set-that-minted-it.md",
-      "title": "A list cursor is honoured only under the sort and filter set that minted it"
+      "path": "docs/specs/library/requirements/0057-a-rest-list-cursor-is-honoured-only-by-the-endpoint-sort-and-filter-set-that-minted-it.md",
+      "title": "A REST list cursor is honoured only by the endpoint, sort and filter set that minted it"
     },
     {
       "governed-by": [
@@ -1657,8 +1669,8 @@
       ],
       "id": "REV-REQ-0058",
       "kind": "req",
-      "path": "docs/specs/library/requirements/0058-a-sort-request-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md",
-      "title": "A sort request naming an unrecognised or repeated column is refused before any query runs"
+      "path": "docs/specs/library/requirements/0058-a-rest-books-sort-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md",
+      "title": "A REST books sort naming an unrecognised or repeated column is refused before any query runs"
     },
     {
       "governed-by": [
@@ -1914,6 +1926,63 @@
       "kind": "req",
       "path": "docs/specs/api/requirements/0091-the-browser-graphql-client-publishes-execution-errors-only-from-a-valid-envelope.md",
       "title": "The browser GraphQL client publishes execution errors only from a valid envelope"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0066"
+      ],
+      "id": "REV-REQ-0092",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0092-a-graphql-books-range-filter-applies-its-bounds-as-declared.md",
+      "title": "A GraphQL books range filter applies its bounds as declared"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0019"
+      ],
+      "id": "REV-REQ-0093",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0093-a-graphql-connection-honours-a-cursor-only-under-the-connection-parent-sort-and-filters-that-minted-it.md",
+      "title": "A GraphQL connection honours a cursor only under the connection, parent, sort and filters that minted it"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0037"
+      ],
+      "id": "REV-REQ-0094",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0094-a-graphql-books-sort-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md",
+      "title": "A GraphQL books sort naming an unrecognised or repeated column is refused before any query runs"
+    },
+    {
+      "id": "REV-REQ-0095",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0095-a-graphql-edit-with-a-stale-baseline-is-refused-as-stale.md",
+      "title": "A GraphQL edit with a stale baseline is refused as stale"
+    },
+    {
+      "id": "REV-REQ-0096",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0096-a-graphql-edit-without-a-well-formed-baseline-is-refused-and-changes-nothing.md",
+      "title": "A GraphQL edit without a well-formed baseline is refused and changes nothing"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0056"
+      ],
+      "id": "REV-REQ-0097",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0097-a-child-account-cannot-create-rename-or-delete-a-shelf.md",
+      "title": "A child account cannot create, rename or delete a shelf"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0069"
+      ],
+      "id": "REV-REQ-0098",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0098-only-the-browser-session-that-saved-a-metadata-change-can-undo-it-or-resolve-its-outcome.md",
+      "title": "Only the browser session that saved a metadata change can undo it or resolve its outcome"
     }
   ]
 }

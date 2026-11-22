@@ -2,20 +2,18 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0020"
-title: "A precondition-protected write without its validator is refused before it begins"
+title: "A precondition-protected REST write without If-Match answers 428 and changes nothing"
 governed-by:
   - "REV-ADR-0011"
 ---
 
-# A precondition-protected write without its validator is refused before it begins
+# A precondition-protected REST write without If-Match answers 428 and changes nothing
 
 ## Statement
 
 WHEN a `PATCH` request to a book's metadata resource, a `PATCH` request to a book's reading-state resource, or a `PUT`
-request to the settings resource carries no `If-Match` header, or a GraphQL metadata, reading-state or exact metadata
-Undo mutation carries an omitted, null or malformed baseline, which is the entity-tag the caller's values came from, the
-server MUST refuse the write and leave stored state unchanged, answering the HTTP requests with
-`428 Precondition Required`.
+request to the settings resource carries no `If-Match` header, the server MUST answer `428 Precondition Required` and
+leave the stored resource unchanged.
 
 ## Rationale
 
@@ -35,7 +33,3 @@ silently overwrites the first's changes with neither client aware a conflict occ
 - A `PUT` to the settings resource with no `If-Match` header answers `428` and leaves the stored settings unchanged.
   Checked by `put_settings_without_if_match_returns_428_and_leaves_settings_unchanged` in
   `backend/src/routes/settings/tests.rs`.
-- GraphQL metadata and reading-state saves with an omitted, null or malformed baseline are refused, and stored state is
-  unchanged afterwards. Checked by `graphql_edit_baselines`.
-- GraphQL exact Undo with an omitted, null or malformed baseline is refused without consuming the operation. Checked by
-  `graphql_undo_boundary`.

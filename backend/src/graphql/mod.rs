@@ -1478,6 +1478,17 @@ mod tests {
         );
         let foreign_result = browser_graph(&foreign, &foreign_csrf, UNDO, input.clone()).await;
         assert_graph_result(&foreign_result, "undoMetadata", "UndoUnavailable");
+        let foreign_resolve = browser_graph(
+            &foreign,
+            &foreign_csrf,
+            RESOLVE,
+            json!({"id":id,"operation":operation}),
+        )
+        .await;
+        assert_eq!(
+            foreign_resolve["data"]["metadataOperation"]["outcome"], "UNKNOWN",
+            "{foreign_resolve}"
+        );
         let mut second = db::server_with_real_pools(&app, &ing);
         second.save_cookies();
         let second_csrf = test_support::mail::login(

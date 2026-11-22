@@ -8,6 +8,9 @@ satisfies:
   - "REV-REQ-0057"
   - "REV-REQ-0058"
   - "REV-REQ-0059"
+  - "REV-REQ-0092"
+  - "REV-REQ-0093"
+  - "REV-REQ-0094"
 governed-by:
   - "REV-ADR-0069"
   - "REV-ADR-0066"
@@ -29,18 +32,20 @@ server-side contract this Design describes.
 ## Purpose and boundaries
 
 This subject owns three cooperating modules and the list handler that ties them together, and is the server side of
-REV-REQ-0003, which it satisfies jointly with the Design "Library filter and sort state": that Design converts the
-client's chosen days into instants, and this Design applies the bounds. `backend/src/routes/library/filters.rs` owns the
-flat suffix-operator filter grammar, its semantic validation, and the canonical string and fingerprint that bind a
-cursor to the active filter set. `backend/src/routes/sort_spec.rs` owns the closed `SortColumn` whitelist and the
-`?sort=` grammar that resolves a client string against it. `backend/src/routes/cursor.rs` owns the tagged, base64url
-opaque cursor family: `SortCursor` (tag `m`) for this endpoint, and the two fixed-shape cursors that share its wire
-encoding and error type, `ShelfCursor` (tag `sh`) and `ShelfItemCursor` (tag `si`). `list_books` and `books_connection`
-in `backend/src/services/reader.rs` own the query assembly that spans all three: validating the decoded request,
-building the `WHERE`/`ORDER BY`/keyset-predicate clauses of one dynamic `QueryBuilder` through `fetch_list_rows`, and
-minting cursors from the result. The HTTP `list` handler in `backend/src/routes/library/mod.rs` decodes the query
-string, calls `list_books` and writes the `Link` header and response body. The GraphQL `books` root in
-`backend/src/graphql/library.rs` converts its typed input objects to the same `ListParams` and calls `books_connection`.
+REV-REQ-0003 and REV-REQ-0092. It satisfies REV-REQ-0092 jointly with the Design "Library filter and sort state": that
+Design converts the client's chosen days into instants, and this Design applies the bounds.
+`backend/src/routes/library/filters.rs` owns the flat suffix-operator filter grammar, its semantic validation, and the
+canonical string and fingerprint that bind a cursor to the active filter set. `backend/src/routes/sort_spec.rs` owns the
+closed `SortColumn` whitelist and the `?sort=` grammar that resolves a client string against it.
+`backend/src/routes/cursor.rs` owns the tagged, base64url opaque cursor family: `SortCursor` (tag `m`, or `gm` for the
+GraphQL `books` connection) for this list, and the two fixed-shape cursors that share its wire encoding and error type,
+`ShelfCursor` (tag `sh`, or `gsh` for the GraphQL `shelves` connection) and `ShelfItemCursor` (tag `si`). `CursorApi`
+selects the `/api/v1` or GraphQL tag. `list_books` and `books_connection` in `backend/src/services/reader.rs` own the
+query assembly that spans all three: validating the decoded request, building the `WHERE`/`ORDER BY`/keyset-predicate
+clauses of one dynamic `QueryBuilder` through `fetch_list_rows`, and minting cursors from the result. The HTTP `list`
+handler in `backend/src/routes/library/mod.rs` decodes the query string, calls `list_books` and writes the `Link` header
+and response body. The GraphQL `books` root in `backend/src/graphql/library.rs` converts its typed input objects to the
+same `ListParams` and calls `books_connection`.
 
 It does not own how those decoded values become response rows. Once `list_books` has its page of `manifestations` rows,
 the batch loads that hydrate authors, contributors, tags, genres, moods, reading state, external identifiers and
@@ -168,11 +173,14 @@ round-trips to the same string. The cursor embeds that string and compares it on
 ### Cursor families (`cursor.rs`)
 
 Every cursor in this module is a base64url-unpadded (`Base64UrlUnpadded`) encoding of `<tag>|<rest>`, and every
-`parse`/`parse_for` checks its own tag first: `SortCursor::parse_for` accepts only `m`, `ShelfCursor::parse` only `sh`,
-`ShelfItemCursor::parse` only `si`; any other tag, including a well-formed cursor from one of the other two families, is
-`CursorError::UnknownTag` before any further field is read. All three share one `CursorError` enum, but `SortMismatch`
-and `FilterMismatch` are constructed only inside `SortCursor::parse_for`: `ShelfCursor` and `ShelfItemCursor` carry no
-embedded spec or filter fingerprint to mismatch, so neither variant is reachable from their `parse` functions.
+`parse`/`parse_for` checks its own tag first. `SortCursor::parse_for` accepts only `m` from `/api/v1` callers and only
+`gm` from GraphQL callers, `ShelfCursor::parse` likewise only `sh` or `gsh`, and `ShelfItemCursor::parse` only `si`. Any
+other tag, including a well-formed cursor from another family or from the other API, is `CursorError::UnknownTag` before
+any further field is read. The two APIs read the same rows through the same codecs, so the tag is the only thing that
+keeps a cursor minted by one API from continuing a walk on the other. All three share one `CursorError` enum, but
+`SortMismatch` and `FilterMismatch` are constructed only inside `SortCursor::parse_for`: `ShelfCursor` and
+`ShelfItemCursor` carry no embedded spec or filter fingerprint to mismatch, so neither variant is reachable from their
+`parse` functions.
 
 `SortCursor` carries a JSON payload — the canonical spec string, one `CursorValue` per sort level in level order, the
 `manifestations.id` tiebreaker, and the filter fingerprint (serialised as `f`) — rather than the pipe-delimited fields
@@ -338,10 +346,11 @@ of them is a code change, not a runtime setting. The HTTP page size is runtime-c
   key count, kinds or null-handling disagree with the freshly parsed `SortSpec`, an embedded spec string that does not
   match the current `?sort=`, or an embedded filter fingerprint that does not match the current filter set — all map to
   `AppError::Validation` where `list_books` (`backend/src/services/reader.rs`) parses the cursor, a `422` whose detail
-  names the cursor error. `books_connection` raises the same refusal with the fixed message "Invalid cursor.", which
-  GraphQL reports with the `validation` code. Unlike the query-parameter split above, every shape of cursor failure
-  lands on the same status and error variant; a malformed cursor and a stale-but-well-formed one are indistinguishable
-  to the caller by status code alone.
+  names the cursor error. `books_connection` accepts only the `gm` tag and raises the same refusal with the fixed
+  message "Invalid cursor.", which GraphQL reports with the `validation` code. A cursor from the other API is refused in
+  either direction. Unlike the query-parameter split above, every shape of cursor failure lands on the same status and
+  error variant; a malformed cursor and a stale-but-well-formed one are indistinguishable to the caller by status code
+  alone.
 - **A decode failure on `content_rating`, `validation_status`, or the `series_id`/`series_name`/`series_position`
   triple.** Each is read via the fallible `try_get` rather than the panicking `Row::get`, so a decode failure surfaces
   as `AppError::Internal` (`500`) rather than a panic. Every other column the row-to-response mapping reads (`title`,
