@@ -1,18 +1,11 @@
 /**
- * The browser's record of which account last confirmed a session here.
+ * In-memory record of the confirmed account in this browser realm.
  *
- * Per-user client caches (the library's first-paint mirror) need a user id
- * before any request has resolved: the route loader reads the mirror
- * synchronously to seed a query key. This hint is that id. It is written
- * wherever `/auth/me` confirms an identity, cleared on sign-out and on the
- * 401 path, and never trusted for anything but cache scoping: it grants
- * nothing, the server's session decides every request.
- *
- * Clearing on session death is what keeps one account's cached
- * presentation from seeding another's first paint on a shared device: with
- * no hint there is no active cache key, and a fresh sign-in re-establishes
- * one before the next library visit. Reads and writes degrade silently,
- * matching the storage modules this scopes.
+ * `rememberActiveUser` establishes the account-scoped Relay environment when
+ * `/auth/me` confirms an identity. `forgetActiveUser` tears it down on
+ * sign-out and on the 401 path. `activeUserEpoch` advances on every account
+ * change or loss so a delayed `/auth/me` response cannot recreate an
+ * environment for an account that has already been forgotten.
  */
 
 import { setRelayAccount } from "@/lib/relay/environment";
@@ -24,20 +17,7 @@ export function activeUserEpoch(): number {
   return identityEpoch;
 }
 
-const LAST_USER_KEY = "reverie_last_user";
-
-/** The last confirmed account id on this browser, or `null` when no session
- *  has been confirmed since the last sign-out. */
-export function activeUserId(): string | null {
-  try {
-    return localStorage.getItem(LAST_USER_KEY);
-  } catch {
-    return null;
-  }
-}
-
-/** Record the confirmed account id. Idempotent; called on every identity
- *  confirmation rather than only at login, so it self-heals. */
+/** Record the confirmed account id and select its Relay environment. */
 export function rememberActiveUser(id: string, expectedEpoch = identityEpoch): void {
   if (expectedEpoch !== identityEpoch) return;
   if (confirmedAccount !== id) {
@@ -45,22 +25,11 @@ export function rememberActiveUser(id: string, expectedEpoch = identityEpoch): v
     confirmedAccount = id;
   }
   setRelayAccount(id);
-  try {
-    localStorage.setItem(LAST_USER_KEY, id);
-  } catch {
-    // Storage unavailable: per-user caches stay cold, nothing breaks.
-  }
 }
 
-/** Forget the account id, leaving per-user caches in place for the
- *  account's return. Called on sign-out and on the 401 path. */
+/** Forget the confirmed account and tear down its Relay environment. */
 export function forgetActiveUser(): void {
   identityEpoch += 1;
   confirmedAccount = null;
   setRelayAccount(null);
-  try {
-    localStorage.removeItem(LAST_USER_KEY);
-  } catch {
-    // Storage unavailable: there was nothing to forget.
-  }
 }

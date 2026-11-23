@@ -11,7 +11,6 @@
 - [REV-REQ-0033](requirements/0033-an-authentication-failure-carries-the-challenge-for-the-route-s.md): An authentication failure carries the challenge for the route's credential type
 - [REV-REQ-0034](requirements/0034-an-expired-session-never-authenticates-a-request.md): An expired session never authenticates a request
 - [REV-REQ-0035](requirements/0035-a-lapsed-session-redirects-the-browser-to-sign-in-once.md): A lapsed session redirects the browser to sign-in once
-- [REV-REQ-0036](requirements/0036-the-browser-forgets-its-active-account-hint-when-the-session-end.md): The browser forgets its active-account hint when the session ends
 - [REV-REQ-0037](requirements/0037-sign-in-issues-a-new-session-id-before-it-attaches-an-identity.md): Sign-in issues a new session id before it attaches an identity
 - [REV-REQ-0038](requirements/0038-sign-out-destroys-the-session-server-side.md): Sign-out destroys the session server-side
 - [REV-REQ-0039](requirements/0039-a-breach-check-outage-never-blocks-setting-a-password.md): A breach-check outage never blocks setting a password

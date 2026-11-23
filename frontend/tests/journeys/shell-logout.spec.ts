@@ -39,24 +39,29 @@ async function intercept(page: Page): Promise<{
       const page = { edges: [], pageInfo: { endCursor: null, hasNextPage: false } };
       if (operation === "readerLibraryQuery") {
         await route.fulfill({ json: { data: { books: page } } });
-      } else if (operation === "readerShelvesQuery") {
-        await route.fulfill({ json: { data: { shelves: page } } });
-      } else if (operation === "readerLibraryPreferencesQuery") {
+      } else if (operation === "libraryBootstrapQuery" || operation === "LibraryPageQuery") {
         await route.fulfill({
           json: {
             data: {
-              libraryPreferences: {
-                hiddenColumns: null,
-                density: null,
-                view: null,
-                sortStack: null,
-                defaults: {
-                  hiddenColumns: ["subtitle"],
-                  density: "comfortable",
-                  view: "grid",
-                  sortStack: "-created_at",
+              viewer: {
+                id: "user_01h455vb4pex5vsknk084sn02q",
+                libraryPreferences: {
+                  hiddenColumns: null,
+                  density: null,
+                  view: null,
+                  sort: null,
+                  defaults: {
+                    hiddenColumns: ["SUBTITLE"],
+                    density: "COMFORTABLE",
+                    view: "GRID",
+                    sort: [{ column: "CREATED_AT", direction: "DESC" }],
+                  },
                 },
               },
+              authorLabels: [],
+              seriesLabels: [],
+              shelfLabels: [],
+              ...(operation === "LibraryPageQuery" ? { shelves: page } : {}),
             },
           },
         });
@@ -117,27 +122,20 @@ async function signOut(page: Page): Promise<void> {
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
 }
 
-test("sign out waits for one POST, forgets the active account and hard-navigates to login", async ({
-  page,
-}) => {
+test("sign out waits for one POST and hard-navigates to login", async ({ page }) => {
   const fixture = await intercept(page);
   await page.goto("/library");
   await expect(page.getByRole("button", { name: "Ada Lovelace" })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("reverie_last_user"))).toBe(ACCOUNT.id);
   const documentURL = await page.evaluate(() => performance.timeOrigin);
   await signOut(page);
   await expect.poll(() => fixture.logoutRequests).toEqual(["POST"]);
   await expect(page).toHaveURL(/\/library$/);
-  expect(await page.evaluate(() => localStorage.getItem("reverie_last_user"))).toBe(ACCOUNT.id);
   fixture.release(false);
   await expect(page).toHaveURL(/\/login$/);
-  expect(await page.evaluate(() => localStorage.getItem("reverie_last_user"))).toBeNull();
   expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(documentURL);
 });
 
-test("failed logout still forgets the account, logs the failure and hard-navigates to login", async ({
-  page,
-}) => {
+test("failed logout logs the failure and hard-navigates to login", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
@@ -148,6 +146,5 @@ test("failed logout still forgets the account, logs the failure and hard-navigat
   await expect.poll(() => fixture.logoutRequests).toEqual(["POST"]);
   fixture.release(true);
   await expect(page).toHaveURL(/\/login$/);
-  expect(await page.evaluate(() => localStorage.getItem("reverie_last_user"))).toBeNull();
   expect(errors.some((message) => message.includes("[UserMenu] logout request failed"))).toBe(true);
 });

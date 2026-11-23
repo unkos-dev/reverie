@@ -2,13 +2,14 @@ import { FolderPlus, Loader2, RefreshCw, X } from "lucide-react";
 import type { ReactElement } from "react";
 import { Group } from "react-aria-components";
 
-import type { Shelf } from "@/api";
 import type { ReadingStatus } from "@/api/books";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
+type ShelfChoice = { readonly id: string; readonly name: string };
+
 export type BatchAction =
-  | { kind: "shelf"; shelf: Shelf }
+  | { kind: "shelf"; shelf: ShelfChoice }
   | { kind: "status"; status: ReadingStatus | null }
   | { kind: "refresh" };
 export type BatchOutcome = {
@@ -27,7 +28,7 @@ type BatchBarProps = {
   selectedIds: ReadonlySet<string>;
   hasMorePages: boolean;
   onClearSelection: () => void;
-  shelves: readonly Shelf[] | undefined;
+  shelves: readonly ShelfChoice[] | undefined;
   shelvesError: boolean;
   canRefresh: boolean;
   result: BatchOutcome | undefined;

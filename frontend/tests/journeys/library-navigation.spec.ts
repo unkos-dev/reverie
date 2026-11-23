@@ -17,6 +17,7 @@ const ID_PREFIXES: Record<string, string> = {
   Shelf: "shelf",
   Work: "work",
   MetadataRevision: "metadata_rev",
+  User: "user",
 };
 const graphId = (kind: string, id: string) => {
   let bits = BigInt(`0x${id.replaceAll("-", "")}`);
@@ -166,14 +167,59 @@ function graphBook(book: typeof BOOK) {
 type Fixture = {
   requests: z.infer<typeof variablesSchema>[];
   books: (typeof BOOK)[];
+  bootstrap: "healthy" | "failing";
+  invisible: Set<string>;
 };
+const lookupIds = z.array(z.string()).catch([]);
 async function intercept(
   page: Page,
   withFacets = false,
   options: { books?: (typeof BOOK)[]; view?: "table" } = {},
 ): Promise<Fixture> {
-  const fixture: Fixture = { requests: [], books: [...(options.books ?? [BOOK])] };
+  const fixture: Fixture = {
+    requests: [],
+    books: [...(options.books ?? [BOOK])],
+    bootstrap: "healthy",
+    invisible: new Set(),
+  };
   let preferences = structuredClone(PREFERENCES);
+  let libraryPreferences: Record<string, unknown> = {
+    hiddenColumns: null,
+    density: null,
+    view: options.view === undefined ? null : "TABLE",
+    sort: null,
+    defaults: {
+      hiddenColumns: ["SUBTITLE"],
+      density: "COMFORTABLE",
+      view: "GRID",
+      sort: [{ column: "CREATED_AT", direction: "DESC" }],
+    },
+  };
+  const viewer = () => ({
+    id: graphId("User", "33333333-3333-4333-8333-333333333333"),
+    libraryPreferences,
+  });
+  const names = new Map([
+    ...SERIES.map((item) => [graphId("Series", item.id), item.value] as const),
+    ...SHELVES.map((item) => [graphId("Shelf", item.id), item.name] as const),
+  ]);
+  const visible = (ids: unknown) => lookupIds.parse(ids).filter((id) => !fixture.invisible.has(id));
+  const labels = (variables: Record<string, unknown>) => ({
+    authorLabels: visible(variables.authorIds).map((id) => ({ id, name: "A Reader" })),
+    seriesLabels: visible(variables.seriesIds).map((id) => ({ id, name: names.get(id) ?? "" })),
+    shelfLabels: visible(variables.shelfIds).map((id) => ({
+      id,
+      name: names.get(id) ?? "",
+      itemCount: 1,
+    })),
+  });
+  const shelves = () => ({
+    edges: (withFacets ? SHELVES : []).map((shelf) => ({
+      cursor: shelf.id,
+      node: { id: graphId("Shelf", shelf.id), name: shelf.name, isSystem: false, itemCount: 1 },
+    })),
+    pageInfo: { endCursor: null, hasNextPage: false },
+  });
   await page.route(/^https?:\/\/[^/]+\/(?:api|auth)\//, async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -217,65 +263,55 @@ async function intercept(
         operation === "readerShelvesQuery" ||
         operation === "readerShelvesPaginationQuery"
       ) {
+        data = { shelves: shelves() };
+      } else if (operation === "libraryBootstrapQuery") {
+        if (fixture.bootstrap === "failing") {
+          await route.fulfill({
+            json: { errors: [{ message: "internal", extensions: { code: "internal" } }] },
+          });
+          return;
+        }
+        const found = labels(body.variables);
         data = {
-          shelves: {
-            edges: (withFacets ? SHELVES : []).map((shelf) => ({
-              cursor: shelf.id,
-              node: {
-                id: graphId("Shelf", shelf.id),
-                name: shelf.name,
-                isSystem: false,
-                itemCount: 1,
-                createdAt: BOOK.created_at,
-                updatedAt: BOOK.created_at,
-              },
-            })),
-            pageInfo: { endCursor: null, hasNextPage: false },
-          },
+          viewer: viewer(),
+          authorLabels: found.authorLabels.map(({ id }) => ({ id })),
+          seriesLabels: found.seriesLabels.map(({ id }) => ({ id })),
+          shelfLabels: found.shelfLabels.map(({ id }) => ({ id })),
         };
-      } else if (operation === "readerLibraryPreferencesQuery") {
-        data = {
-          libraryPreferences: {
-            hiddenColumns: null,
-            density: null,
-            view: options.view ?? null,
-            sortStack: null,
-            defaults: {
-              hiddenColumns: ["subtitle"],
-              density: "comfortable",
-              view: "grid",
-              sortStack: "-created_at",
-            },
-          },
+      } else if (operation === "LibraryPageQuery") {
+        data = { viewer: viewer(), ...labels(body.variables), shelves: shelves() };
+      } else if (operation === "LibraryPageLabelsRefetchQuery") {
+        data = labels(body.variables);
+      } else if (operation === "TypeaheadMultiSelectRefetchQuery") {
+        const fields = {
+          authors: "author",
+          series: "series",
+          genres: "genre",
+          moods: "mood",
+          tags: "tag",
         };
+        data = Object.fromEntries(
+          Object.entries(fields)
+            .filter(([flag]) => body.variables[flag] === true)
+            .map(([flag, field]) => [
+              `${field}Suggestions`,
+              flag === "series" && withFacets
+                ? SERIES.map((item) => ({ id: graphId("Series", item.id), name: item.value }))
+                : [],
+            ]),
+        );
       } else if (operation === "mutationsUpdateLibraryPreferencesMutation") {
-        data = {
-          updateLibraryPreferences: {
-            hiddenColumns: null,
-            density: null,
-            view: null,
-            sortStack: null,
-            ...z.record(z.string(), z.unknown()).parse(body.variables.patch),
-            defaults: {
-              hiddenColumns: ["subtitle"],
-              density: "comfortable",
-              view: "grid",
-              sortStack: "-created_at",
-            },
-          },
+        const input = z.record(z.string(), z.unknown()).parse(body.variables.input);
+        libraryPreferences = {
+          ...libraryPreferences,
+          ...Object.fromEntries(
+            ["density", "view", "sort"]
+              .filter((key) => key in input)
+              .map((key) => [key, input[key]]),
+          ),
         };
-      } else if (operation === "readerSeriesSuggestionsQuery") {
         data = {
-          seriesSuggestions: withFacets
-            ? SERIES.map((item) => ({ entityId: graphId("Series", item.id), value: item.value }))
-            : [],
-        };
-      } else if (operation === "readerSeriesLabelsQuery") {
-        data = {
-          seriesLabels: SERIES.map((item) => ({
-            entityId: graphId("Series", item.id),
-            value: item.value,
-          })),
+          updateLibraryPreferences: { __typename: "LibraryPreferencesUpdated", viewer: viewer() },
         };
       } else {
         await route.fulfill({
@@ -398,13 +434,18 @@ async function section(page: Page, title: string) {
 }
 
 test("rapid edits reload with their first request and no URL grammar", async ({ page }) => {
-  // REV-REQ-0075: the resumed visit reaches the first list request intact.
+  // REV-REQ-0075: the resumed visit reaches the first list request intact, a failed lookup keeps
+  // every saved selection, and any invisible selection resets the visit to an unfiltered view.
   const fixture = await intercept(page, true);
   await page.goto("/library");
   await ready(page);
   await chooseFacets(page);
   await search(page).fill("The Sea");
-  const before = fixture.requests.length;
+  fixture.bootstrap = "failing";
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
+  fixture.bootstrap = "healthy";
+  let before = fixture.requests.length;
   await page.reload();
   await ready(page);
   await expect(search(page)).toHaveValue("The Sea");
@@ -415,6 +456,13 @@ test("rapid edits reload with their first request and no URL grammar", async ({ 
   expect(fixture.requests[before]?.filter?.seriesAny).toEqual(
     SERIES.map((item) => graphId("Series", item.id)),
   );
+  fixture.invisible.add(graphId("Series", SERIES[1].id));
+  before = fixture.requests.length;
+  await page.reload();
+  await ready(page);
+  await expect(search(page)).toHaveValue("");
+  expect(fixture.requests[before]?.filter).toEqual({});
+  await expect(page.getByTestId("filter-chips").getByRole("row")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "The Sea", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/library$/);
 });

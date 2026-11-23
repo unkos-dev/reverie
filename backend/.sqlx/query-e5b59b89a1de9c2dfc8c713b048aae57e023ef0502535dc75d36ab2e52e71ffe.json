@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO user_preferences (user_id, hidden_columns, density, view, sort_stack)\n                VALUES ($1, $2, $3, $4, $5)\n           ON CONFLICT (user_id) DO UPDATE SET\n                hidden_columns = CASE WHEN $6 THEN EXCLUDED.hidden_columns\n                                      ELSE user_preferences.hidden_columns END,\n                density        = CASE WHEN $7 THEN EXCLUDED.density\n                                      ELSE user_preferences.density END,\n                view           = CASE WHEN $8 THEN EXCLUDED.view\n                                      ELSE user_preferences.view END,\n                sort_stack     = CASE WHEN $9 THEN EXCLUDED.sort_stack\n                                      ELSE user_preferences.sort_stack END,\n                updated_at     = now()\n             RETURNING hidden_columns,\n                       density AS \"density?: LibraryDensity\",\n                       view AS \"view?: LibraryView\",\n                       sort_stack",
+  "query": "INSERT INTO user_preferences (user_id, hidden_columns, density, view, sort_stack)\n                VALUES ($1, $2, $3, $4, $5)\n           ON CONFLICT (user_id) DO UPDATE SET\n                hidden_columns = CASE WHEN $6 THEN EXCLUDED.hidden_columns\n                                      WHEN $10 THEN ARRAY(\n                                          SELECT stored.key\n                                            FROM unnest(COALESCE(user_preferences.hidden_columns, $11::text[]))\n                                                 WITH ORDINALITY AS stored(key, position)\n                                           WHERE stored.key <> ALL($12::text[])\n                                           ORDER BY stored.position\n                                      ) || $13::text[]\n                                      ELSE user_preferences.hidden_columns END,\n                density        = CASE WHEN $7 THEN EXCLUDED.density\n                                      ELSE user_preferences.density END,\n                view           = CASE WHEN $8 THEN EXCLUDED.view\n                                      ELSE user_preferences.view END,\n                sort_stack     = CASE WHEN $9 THEN EXCLUDED.sort_stack\n                                      ELSE user_preferences.sort_stack END,\n                updated_at     = now()\n             RETURNING hidden_columns,\n                       density AS \"density?: LibraryDensity\",\n                       view AS \"view?: LibraryView\",\n                       sort_stack",
   "describe": {
     "columns": [
       {
@@ -98,7 +98,11 @@
         "Bool",
         "Bool",
         "Bool",
-        "Bool"
+        "Bool",
+        "Bool",
+        "TextArray",
+        "TextArray",
+        "TextArray"
       ]
     },
     "nullable": [
@@ -108,5 +112,5 @@
       true
     ]
   },
-  "hash": "ce2ce0bbd942119f1acc444a164489246c81da046bd1ac8e14f2286526679830"
+  "hash": "e5b59b89a1de9c2dfc8c713b048aae57e023ef0502535dc75d36ab2e52e71ffe"
 }

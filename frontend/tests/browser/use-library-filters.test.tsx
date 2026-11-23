@@ -3,8 +3,9 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { MemoryRouter } from "react-router";
 import type { ReactElement } from "react";
 import { afterEach, expect, test } from "vite-plus/test";
+import { useState } from "react";
 import { emptyFilterState } from "@/routes/library-params";
-import { useLibraryFilters } from "@/lib/hooks/use-library-filters";
+import { LibraryIntent, restoreVisit, useLibraryFilters } from "@/lib/hooks/use-library-filters";
 
 const initialState: unknown = navigation.currentEntry?.getState();
 afterEach(() => {
@@ -12,7 +13,11 @@ afterEach(() => {
 });
 
 function Probe(): ReactElement {
-  const owner = useLibraryFilters();
+  const [restored] = useState(restoreVisit);
+  const [intent] = useState(() => new LibraryIntent(navigation.currentEntry?.id, restored));
+  const owner = useLibraryFilters(intent, restored, (_, write) => {
+    write();
+  });
   return (
     <>
       <output>{JSON.stringify({ filters: owner.filters, view: owner.view })}</output>
@@ -80,6 +85,10 @@ test.each([
   undefined,
   { filters: { ...emptyFilterState(), q: "saved search", shelf: ["not-a-uuid"] }, view: "table" },
   { filters: emptyFilterState(), view: "list" },
+  {
+    filters: { ...emptyFilterState(), q: "saved search" },
+    position: { anchorId: null, anchorOffset: 0, offset: 0, extent: -1, view: "grid" },
+  },
 ])("REV-REQ-0075 AC5: unusable saved state restores no filters: %j", async (payload) => {
   await mount({ keep: 1, reverieLibrary: payload });
   await expect

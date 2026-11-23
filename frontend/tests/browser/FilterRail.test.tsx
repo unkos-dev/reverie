@@ -1,11 +1,19 @@
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
-import { RelayEnvironmentProvider } from "react-relay";
+import {
+  RelayEnvironmentProvider,
+  loadQuery,
+  usePreloadedQuery,
+  type PreloadedQuery,
+} from "react-relay";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
 import { encodeGraphQLId } from "@/api/graphql";
+import LibraryPageQuery, {
+  type LibraryPageQuery as PageQuery,
+} from "@/lib/relay/__generated__/LibraryPageQuery.graphql";
 import { render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
 import { emptyFilterState, type FilterState } from "@/routes/library-params";
-import { useState, type ReactElement } from "react";
+import { Suspense, useState, type ReactElement } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
@@ -14,20 +22,11 @@ import type { SortLevelParam } from "@/api";
 import { FilterRail } from "@/components/shell/FilterRail";
 
 const SHELVES = [
-  {
-    id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-    name: "Wishlist",
-    is_system: false,
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
-    item_count: 3,
-  },
+  { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Wishlist", is_system: false, item_count: 3 },
   {
     id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     name: "Favourites",
     is_system: false,
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
     item_count: 1,
   },
 ];
@@ -51,8 +50,6 @@ function mockFetchByUrl(): void {
                 id: encodeGraphQLId("Shelf", shelf.id),
                 name: shelf.name,
                 isSystem: shelf.is_system,
-                createdAt: shelf.created_at,
-                updatedAt: shelf.updated_at,
                 itemCount: shelf.item_count,
               },
             })),
@@ -63,8 +60,24 @@ function mockFetchByUrl(): void {
               startCursor: null,
             },
           },
+          viewer: {
+            id: encodeGraphQLId("User", "77777777-7777-4777-8777-777777777777"),
+            libraryPreferences: {
+              hiddenColumns: null,
+              density: null,
+              view: null,
+              sort: null,
+              defaults: {
+                hiddenColumns: ["SUBTITLE"],
+                density: "COMFORTABLE",
+                view: "GRID",
+                sort: [{ column: "CREATED_AT", direction: "DESC" }],
+              },
+            },
+          },
           authorLabels: [],
           seriesLabels: [],
+          shelfLabels: [],
         },
       }),
     ),
@@ -82,12 +95,15 @@ const DEFAULT_STACK: readonly SortLevelParam[] = [{ field: "created_at", desc: t
 let sortChanges: (readonly SortLevelParam[])[] = [];
 
 function SortOwner({
+  reference,
   initialOverride,
   initialFilters,
 }: {
+  reference: PreloadedQuery<PageQuery>;
   initialOverride: readonly SortLevelParam[] | null;
   initialFilters: Partial<FilterState>;
 }) {
+  const query = usePreloadedQuery<PageQuery>(LibraryPageQuery, reference);
   const [filters, setFilters] = useState({ ...emptyFilterState(), ...initialFilters });
   const [override, setOverride] = useState<readonly SortLevelParam[] | null>(initialOverride);
   return (
@@ -103,6 +119,16 @@ function SortOwner({
             setFilters(emptyFilterState());
           },
           setView: () => {},
+        }}
+        suggestions={query}
+        labels={{ authorLabel: () => "", seriesName: () => "" }}
+        shelves={{
+          items: SHELVES.map((shelf) => ({
+            id: encodeGraphQLId("Shelf", shelf.id),
+            name: shelf.name,
+          })),
+          loading: false,
+          failed: false,
         }}
         showContradiction
         sortLevels={override ?? DEFAULT_STACK}
@@ -121,6 +147,11 @@ async function renderRail(
   initialFilters: Partial<FilterState> = {},
   sortOverride: readonly SortLevelParam[] | null = null,
 ): Promise<void> {
+  const reference = loadQuery<PageQuery>(relayEnvironment(), LibraryPageQuery, {
+    authorIds: [],
+    seriesIds: [],
+    shelfIds: [],
+  });
   const router = createMemoryRouter(
     [
       {
@@ -128,7 +159,13 @@ async function renderRail(
         element: (
           <>
             <Providers>
-              <SortOwner initialOverride={sortOverride} initialFilters={initialFilters} />
+              <Suspense fallback={null}>
+                <SortOwner
+                  reference={reference}
+                  initialOverride={sortOverride}
+                  initialFilters={initialFilters}
+                />
+              </Suspense>
             </Providers>
           </>
         ),
@@ -137,6 +174,7 @@ async function renderRail(
     { initialEntries: ["/library"] },
   );
   await render(<RouterProvider router={router} />);
+  await expect.element(page.getByRole("complementary", { name: "Filters" })).toBeInTheDocument();
 }
 
 function sectionByTitle(title: string): HTMLElement {

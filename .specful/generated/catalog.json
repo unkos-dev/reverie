@@ -856,7 +856,6 @@
       "satisfies": [
         "REV-REQ-0034",
         "REV-REQ-0035",
-        "REV-REQ-0036",
         "REV-REQ-0037",
         "REV-REQ-0038"
       ],
@@ -1179,7 +1178,6 @@
         "REV-REQ-0021",
         "REV-REQ-0023",
         "REV-REQ-0035",
-        "REV-REQ-0036",
         "REV-REQ-0079",
         "REV-REQ-0082",
         "REV-REQ-0083",
@@ -1484,15 +1482,6 @@
       "kind": "req",
       "path": "docs/specs/accounts/requirements/0035-a-lapsed-session-redirects-the-browser-to-sign-in-once.md",
       "title": "A lapsed session redirects the browser to sign-in once"
-    },
-    {
-      "governed-by": [
-        "REV-ADR-0015"
-      ],
-      "id": "REV-REQ-0036",
-      "kind": "req",
-      "path": "docs/specs/accounts/requirements/0036-the-browser-forgets-its-active-account-hint-when-the-session-end.md",
-      "title": "The browser forgets its active-account hint when the session ends"
     },
     {
       "governed-by": [

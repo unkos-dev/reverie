@@ -533,11 +533,9 @@ pub async fn author_labels(
     state: &AppState,
     ids: &[Uuid],
 ) -> Result<Vec<Suggestion>, AppError> {
-    validate_label_count(ids.len())?;
     let mut ids = ids.to_vec();
     ids.sort_unstable();
     ids.dedup();
-
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -570,7 +568,6 @@ pub async fn series_labels(
     state: &AppState,
     ids: &[Uuid],
 ) -> Result<Vec<SeriesLabel>, AppError> {
-    validate_label_count(ids.len())?;
     let mut ids = ids.to_vec();
     ids.sort_unstable();
     ids.dedup();

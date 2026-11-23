@@ -22,7 +22,7 @@ export const libraryRoute: RouteObject = {
   path: "library",
   lazy: async () => {
     const mod = await import("./library");
-    return { Component: mod.Component };
+    return { loader: mod.loader, Component: mod.Component };
   },
 };
 

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<9570ae6146b0c6f3fd98ea3dc5b132e0>>
- * @relayHash fccd739d09611cca661e1e6bcdb38d96
+ * @generated SignedSource<<43c442086c792200f9e9b2bfa8a6eb42>>
+ * @relayHash 11cf3373c8dd608c67cf893f11ceb1be
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 6376c263f71769ab20be715fd14933d18d6cb9b1d2bd39c7ac0dc471b8a5b9fc
+// @relayRequestID f62a7246413980413e46be70dc316003cdd66d5cb6561e8c9b143803a1046bd2
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -109,20 +109,6 @@ const node: ConcreteRequest = (function () {
                       alias: null,
                       args: null,
                       kind: "ScalarField",
-                      name: "createdAt",
-                      storageKey: null,
-                    },
-                    {
-                      alias: null,
-                      args: null,
-                      kind: "ScalarField",
-                      name: "updatedAt",
-                      storageKey: null,
-                    },
-                    {
-                      alias: null,
-                      args: null,
-                      kind: "ScalarField",
                       name: "__typename",
                       storageKey: null,
                     },
@@ -179,7 +165,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "6376c263f71769ab20be715fd14933d18d6cb9b1d2bd39c7ac0dc471b8a5b9fc",
+      id: "f62a7246413980413e46be70dc316003cdd66d5cb6561e8c9b143803a1046bd2",
       metadata: {},
       name: "readerShelvesQuery",
       operationKind: "query",

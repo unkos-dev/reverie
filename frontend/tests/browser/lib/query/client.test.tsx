@@ -7,13 +7,8 @@ import { render } from "vitest-browser-react";
 import { ApiError } from "@/api";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { useSessionRecovery } from "@/hooks/useSessionRecovery";
-import { activeUserId, rememberActiveUser } from "@/lib/active-user";
 
-import {
-  invokeUnauthenticatedHandler,
-  queryClient,
-  setUnauthenticatedHandler,
-} from "@/lib/query/client";
+import { queryClient, setUnauthenticatedHandler } from "@/lib/query/client";
 
 beforeEach(() => {
   queryClient.clear();
@@ -51,22 +46,6 @@ describe("invokeUnauthenticatedHandler — once-guard", () => {
     );
 
     expect(handler).toHaveBeenCalledTimes(1);
-  });
-
-  test("a dead session forgets the browser's active user", () => {
-    // The expiry path never runs the sign-out flow, so this is the only
-    // hook that stops one account's per-user caches from resolving while
-    // a different account signs in next.
-    rememberActiveUser("user-a");
-    let hintAtRedirect: string | null | undefined;
-    setUnauthenticatedHandler(() => {
-      hintAtRedirect = activeUserId();
-    });
-
-    invokeUnauthenticatedHandler();
-
-    expect(hintAtRedirect).toBeNull();
-    localStorage.clear();
   });
 });
 

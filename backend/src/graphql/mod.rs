@@ -40,9 +40,8 @@ macro_rules! enum_meta {
         }
     };
 }
-macro_rules! input_enum {
-    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
-        enum_items!($name { $($variant => $wire),+ });
+macro_rules! input_impl {
+    ($name:ident { $($wire:literal),+ }) => {
         impl async_graphql::InputType for $name {
             type RawValueType = Self;
             fn type_name() -> std::borrow::Cow<'static, str> { stringify!($name).into() }
@@ -59,9 +58,8 @@ macro_rules! input_enum {
         }
     };
 }
-macro_rules! output_enum {
-    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
-        enum_items!($name { $($variant => $wire),+ });
+macro_rules! output_impl {
+    ($name:ident { $($wire:literal),+ }) => {
         impl async_graphql::OutputType for $name {
             fn type_name() -> std::borrow::Cow<'static, str> { stringify!($name).into() }
             fn create_type_info(registry: &mut async_graphql::registry::Registry) -> String {
@@ -77,6 +75,25 @@ macro_rules! output_enum {
                 std::future::ready(Ok(async_graphql::resolver_utils::enum_value(*self)))
             }
         }
+    };
+}
+macro_rules! input_enum {
+    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
+        enum_items!($name { $($variant => $wire),+ });
+        input_impl!($name { $($wire),+ });
+    };
+}
+macro_rules! output_enum {
+    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
+        enum_items!($name { $($variant => $wire),+ });
+        output_impl!($name { $($wire),+ });
+    };
+}
+macro_rules! input_output_enum {
+    ($name:ident { $($variant:ident => $wire:literal),+ $(,)? }) => {
+        enum_items!($name { $($variant => $wire),+ });
+        input_impl!($name { $($wire),+ });
+        output_impl!($name { $($wire),+ });
     };
 }
 mod complexity;
@@ -139,25 +156,62 @@ fn fetchable(field_name: String) {}
 
 /// Caller-owned identity, independent of existing browser account projections.
 #[derive(async_graphql::SimpleObject)]
+#[graphql(complex)]
 pub struct Viewer {
     id: async_graphql::ID,
     is_child: bool,
-    display_name: String,
+    #[graphql(skip)]
+    preferences: Option<crate::services::preferences::PreferencesResponse>,
 }
 
-#[Object]
-impl Query {
+impl Viewer {
+    fn new(
+        user: &CurrentUser,
+        preferences: Option<crate::services::preferences::PreferencesResponse>,
+    ) -> Self {
+        Self {
+            id: id::User::encode(user.user_id),
+            is_child: user.is_child(),
+            preferences,
+        }
+    }
+}
+
+#[async_graphql::ComplexObject]
+impl Viewer {
+    async fn display_name(&self, ctx: &Context<'_>) -> async_graphql::Result<String> {
+        let user = ctx.data::<CurrentUser>()?;
+        let mut tx = crate::db::acquire_with_rls(ctx.data::<sqlx::PgPool>()?, user.user_id)
+            .await
+            .map_err(|error| safe_error(AppError::Internal(error.into())))?;
+        let display_name =
+            sqlx::query_scalar!("SELECT display_name FROM users WHERE id = $1", user.user_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|error| safe_error(AppError::Internal(error.into())))?;
+        tx.commit()
+            .await
+            .map_err(|error| safe_error(AppError::Internal(error.into())))?;
+        Ok(display_name)
+    }
+
     #[graphql(guard = "ReadScope")]
     async fn library_preferences(
         &self,
         ctx: &Context<'_>,
     ) -> async_graphql::Result<mutations::LibraryPreferences> {
-        crate::services::preferences::get_preferences(ctx.data()?, ctx.data()?)
+        if let Some(preferences) = &self.preferences {
+            return mutations::LibraryPreferences::new(preferences);
+        }
+        let preferences = crate::services::preferences::get_preferences(ctx.data()?, ctx.data()?)
             .await
-            .map(Into::into)
-            .map_err(safe_error)
+            .map_err(safe_error)?;
+        mutations::LibraryPreferences::new(&preferences)
     }
+}
 
+#[Object]
+impl Query {
     #[graphql(guard = "WriteScope")]
     async fn metadata_operation(
         &self,
@@ -169,26 +223,14 @@ impl Query {
         mutations::metadata_operation(ctx, id, request_id, operation_id).await
     }
 
+    #[expect(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "async-graphql accepts a guarded resolver only as an async fn"
+    )]
     #[graphql(guard = "ReadScope")]
     async fn viewer(&self, ctx: &Context<'_>) -> async_graphql::Result<Viewer> {
-        let user = ctx.data::<CurrentUser>()?;
-        let pool = ctx.data::<sqlx::PgPool>()?;
-        let mut tx = crate::db::acquire_with_rls(pool, user.user_id)
-            .await
-            .map_err(|error| safe_error(AppError::Internal(error.into())))?;
-        let display_name =
-            sqlx::query_scalar!("SELECT display_name FROM users WHERE id = $1", user.user_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|error| safe_error(AppError::Internal(error.into())))?;
-        tx.commit()
-            .await
-            .map_err(|error| safe_error(AppError::Internal(error.into())))?;
-        Ok(Viewer {
-            display_name,
-            id: id::User::encode(user.user_id),
-            is_child: user.is_child(),
-        })
+        Ok(Viewer::new(ctx.data::<CurrentUser>()?, None))
     }
     #[graphql(guard = "ReadScope")]
     async fn node(
@@ -333,25 +375,36 @@ impl Query {
     }
     #[graphql(
         guard = "ReadScope",
-        complexity = "complexity::labels(ids.len(), child_complexity)?"
+        complexity = "complexity::weighted(ids.len(), child_complexity)?"
     )]
     async fn author_labels(
         &self,
         ctx: &Context<'_>,
         ids: Vec<async_graphql::ID>,
-    ) -> async_graphql::Result<Vec<library::AuthorSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Author>> {
         library::author_labels(ctx, &ids).await
     }
     #[graphql(
         guard = "ReadScope",
-        complexity = "complexity::labels(ids.len(), child_complexity)?"
+        complexity = "complexity::weighted(ids.len(), child_complexity)?"
     )]
     async fn series_labels(
         &self,
         ctx: &Context<'_>,
         ids: Vec<async_graphql::ID>,
-    ) -> async_graphql::Result<Vec<library::SeriesSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Series>> {
         library::series_labels(ctx, &ids).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::weighted(ids.len(), child_complexity)?"
+    )]
+    async fn shelf_labels(
+        &self,
+        ctx: &Context<'_>,
+        ids: Vec<async_graphql::ID>,
+    ) -> async_graphql::Result<Vec<library::Shelf>> {
+        library::shelf_labels(ctx, &ids).await
     }
     #[graphql(
         guard = "ReadScope",
@@ -362,7 +415,7 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::AuthorSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Author>> {
         library::author_suggestions(ctx, &q, limit).await
     }
     #[graphql(
@@ -374,7 +427,7 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::SeriesSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Series>> {
         library::series_suggestions(ctx, &q, limit).await
     }
     #[graphql(
@@ -386,7 +439,7 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::GenreSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Genre>> {
         library::genre_suggestions(ctx, &q, limit).await
     }
     #[graphql(
@@ -398,7 +451,7 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::MoodSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Mood>> {
         library::mood_suggestions(ctx, &q, limit).await
     }
     #[graphql(
@@ -410,20 +463,8 @@ impl Query {
         ctx: &Context<'_>,
         q: String,
         limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::TagSuggestion>> {
+    ) -> async_graphql::Result<Vec<library::Tag>> {
         library::tag_suggestions(ctx, &q, limit).await
-    }
-    #[graphql(
-        guard = "ReadScope",
-        complexity = "complexity::suggestions(limit, child_complexity)?"
-    )]
-    async fn publisher_suggestions(
-        &self,
-        ctx: &Context<'_>,
-        q: String,
-        limit: Option<i32>,
-    ) -> async_graphql::Result<Vec<library::PublisherSuggestion>> {
-        library::publisher_suggestions(ctx, &q, limit).await
     }
 }
 
@@ -901,7 +942,7 @@ mod tests {
     }
 
     async fn preference_scope_boundary(fixture: &ReaderFixture, read_credential: &str) {
-        let preference_read = "{ libraryPreferences { hiddenColumns density view sortStack defaults { hiddenColumns density view sortStack } } }";
+        let preference_read = "{ viewer { libraryPreferences { hiddenColumns density view sort { column direction } defaults { hiddenColumns density view sort { column direction } } } } }";
         let denied = schema(ExecutionPolicy::Development)
             .execute(
                 async_graphql::Request::new(preference_read)
@@ -913,64 +954,68 @@ mod tests {
             denied.errors[0].extensions.as_ref().unwrap().get("code"),
             Some(&async_graphql::Value::from("forbidden"))
         );
+        let stored =
+            |value: &serde_json::Value| value["data"]["viewer"]["libraryPreferences"].clone();
         let read = reader_query(fixture, read_credential, preference_read, json!({})).await;
         assert_graph_ok(&read);
-        assert_eq!(read["data"]["libraryPreferences"]["density"], "compact");
+        assert_eq!(stored(&read)["density"], "COMPACT");
         assert_eq!(
-            read["data"]["libraryPreferences"]["defaults"]["hiddenColumns"],
-            json!(["subtitle"])
+            stored(&read)["defaults"]["hiddenColumns"],
+            json!(["SUBTITLE"])
         );
         let child_initial = reader_query(fixture, &fixture.child, preference_read, json!({})).await;
         assert_graph_ok(&child_initial);
-        assert!(child_initial["data"]["libraryPreferences"]["density"].is_null());
-        let patch = "mutation($patch:LibraryPreferencesPatch!) { updateLibraryPreferences(patch:$patch) { hiddenColumns density view sortStack } }";
+        assert!(stored(&child_initial)["density"].is_null());
+        let write = "mutation($input:UpdateLibraryPreferencesInput!) { updateLibraryPreferences(input:$input) { __typename ... on LibraryPreferencesUpdated { viewer { libraryPreferences { hiddenColumns density view sort { column direction } } } } } }";
+        let written = |value: &serde_json::Value| {
+            value["data"]["updateLibraryPreferences"]["viewer"]["libraryPreferences"].clone()
+        };
         let child_write = reader_query(
             fixture,
             &fixture.child,
-            patch,
-            json!({"patch":{"density":"COMFORTABLE","hiddenColumns":[]}}),
+            write,
+            json!({"input":{"density":"COMFORTABLE","columns":[{"column":"SUBTITLE","hidden":false}]}}),
         )
         .await;
-        assert_graph_ok(&child_write);
-        assert_eq!(
-            child_write["data"]["updateLibraryPreferences"]["density"],
-            "comfortable"
+        assert_graph_result(
+            &child_write,
+            "updateLibraryPreferences",
+            "LibraryPreferencesUpdated",
         );
-        assert_eq!(
-            child_write["data"]["updateLibraryPreferences"]["hiddenColumns"],
-            json!([])
-        );
+        assert_eq!(written(&child_write)["density"], "COMFORTABLE");
+        assert_eq!(written(&child_write)["hiddenColumns"], json!([]));
         let unchanged = reader_query(fixture, &fixture.admin, preference_read, json!({})).await;
-        assert_eq!(
-            unchanged["data"]["libraryPreferences"]["density"],
-            "compact"
-        );
-        assert!(unchanged["data"]["libraryPreferences"]["hiddenColumns"].is_null());
+        assert_eq!(stored(&unchanged)["density"], "COMPACT");
+        assert!(stored(&unchanged)["hiddenColumns"].is_null());
         let reset = reader_query(
             fixture,
             &fixture.child,
-            patch,
-            json!({"patch":{"density":null}}),
+            write,
+            json!({"input":{"density":null}}),
         )
         .await;
-        assert_graph_ok(&reset);
-        assert!(reset["data"]["updateLibraryPreferences"]["density"].is_null());
-        assert_eq!(
-            reset["data"]["updateLibraryPreferences"]["hiddenColumns"],
-            json!([])
+        assert_graph_result(
+            &reset,
+            "updateLibraryPreferences",
+            "LibraryPreferencesUpdated",
         );
-        for patch_value in [
+        assert!(written(&reset)["density"].is_null());
+        assert_eq!(written(&reset)["hiddenColumns"], json!([]));
+        for input in [
             json!({}),
-            json!({"density":"COMPACT","sortStack":"bad_column"}),
-            json!({"hiddenColumns":["bad column"]}),
+            json!({"density":"COMPACT","sort":[]}),
+            json!({"columns":[{"column":"AUTHORS","hidden":true},{"column":"AUTHORS","hidden":false}]}),
+            json!({"resetHiddenColumns":true,"columns":[]}),
         ] {
-            assert_graph_code(
-                &reader_query(fixture, &fixture.child, patch, json!({"patch":patch_value})).await,
-                "validation",
+            assert_graph_result(
+                &reader_query(fixture, &fixture.child, write, json!({"input":input})).await,
+                "updateLibraryPreferences",
+                "LibraryPreferencesInvalid",
             );
         }
         let after_refusal = reader_query(fixture, &fixture.child, preference_read, json!({})).await;
-        assert!(after_refusal["data"]["libraryPreferences"]["density"].is_null());
+        assert!(stored(&after_refusal)["density"].is_null());
+        assert_eq!(stored(&after_refusal)["hiddenColumns"], json!([]));
         let missing = id::Manifestation::encode(uuid::Uuid::new_v4());
         assert_graph_code(
             &reader_query(
@@ -998,7 +1043,7 @@ mod tests {
         vec![
             (
                 "updateLibraryPreferences",
-                "updateLibraryPreferences(patch: { density: COMPACT }) { density }".to_owned(),
+                "updateLibraryPreferences(input: { density: COMPACT }) { __typename }".to_owned(),
             ),
             (
                 "refreshMetadata",
@@ -1644,8 +1689,6 @@ mod tests {
             let reading = browser_graph(&server, &csrf, READING_READ, json!({"id":id})).await;
             baseline = reading["data"]["manifestation"]["readingState"]["etag"].clone();
             patch = json!({"notes":"Trusted reading","status":"READING"});
-        } else if text.contains("updateLibraryPreferences(") {
-            patch = json!({"density":"COMPACT","hiddenColumns":[]});
         } else if text.contains("mutationsSaveAuthorsMutation") {
             patch = json!({"contributors":{"author":["Trusted author"]}});
         }
@@ -1677,6 +1720,8 @@ mod tests {
             json!({"id":shelf_id})
         } else if text.contains("addShelfItem(") {
             json!({"shelfId":shelf_id,"manifestationId":id})
+        } else if text.contains("updateLibraryPreferences(") {
+            json!({"density":"COMPACT","columns":[{"column":"SUBTITLE","hidden":false}]})
         } else {
             serde_json::Value::Null
         };
@@ -1702,6 +1747,7 @@ mod tests {
                             | "ShelfNameInvalid"
                             | "StaleBaseline"
                             | "MetadataInvalid"
+                            | "LibraryPreferencesInvalid"
                             | "FieldsLocked"
                             | "EditTooLarge"
                             | "UndoUnavailable"
@@ -1810,9 +1856,10 @@ mod tests {
         };
         json!({
             "id": id.as_str(), "q": "Graph",
-            "ids": [if document.contains("authorLabels(") { id::Author::encode(fixture.author) } else { id::Series::encode(fixture.series) }],
             "authorIds": [id::Author::encode(fixture.author).as_str()],
-            "seriesIds": [id::Series::encode(fixture.series).as_str()]
+            "seriesIds": [id::Series::encode(fixture.series).as_str()],
+            "shelfIds": [id::Shelf::encode(fixture.shelf_a).as_str()],
+            "authors": true, "series": true, "genres": true, "moods": true, "tags": true
         })
     }
 
@@ -1833,6 +1880,7 @@ mod tests {
         shelf_a: uuid::Uuid,
         shelf_b: uuid::Uuid,
         series: uuid::Uuid,
+        hidden_series: uuid::Uuid,
         author: uuid::Uuid,
         hidden_author: uuid::Uuid,
     }
@@ -1948,6 +1996,15 @@ mod tests {
         for (work, position) in [(visible_work, 2.0), (hidden_work, 1.0)] {
             sqlx::query!("INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)", series, work, position).execute(pool).await.unwrap();
         }
+        let hidden_series = sqlx::query_scalar!("INSERT INTO series (name, sort_name) VALUES ('Hidden Graph Series', 'hidden graph series') RETURNING id").fetch_one(pool).await.unwrap();
+        sqlx::query!(
+            "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, 1.0)",
+            hidden_series,
+            hidden_work
+        )
+        .execute(pool)
+        .await
+        .unwrap();
         reader_notes(pool, &ingestion, visible, admin_id, child_id, other_id).await;
         ReaderFixture {
             server,
@@ -1966,6 +2023,7 @@ mod tests {
             shelf_a,
             shelf_b,
             series,
+            hidden_series,
             author,
             hidden_author,
         }
@@ -2127,11 +2185,19 @@ mod tests {
         ] {
             assert!(!response.to_string().contains(hidden.as_str()));
         }
-        let response = reader_query(&fixture, &fixture.child, "query($ids: [ID!]!) { authorLabels(ids: $ids) { entityId value } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { value } shelves(first: 50) { edges { node { id name } } } }", json!({"ids": [id::Author::encode(fixture.author).as_str(), id::Author::encode(fixture.hidden_author).as_str()]})).await;
+        let response = reader_query(&fixture, &fixture.child, "query($authors: [ID!]!, $series: [ID!]!, $shelves: [ID!]!) { authorLabels(ids: $authors) { id name } seriesLabels(ids: $series) { id } shelfLabels(ids: $shelves) { id } search(q: \"Graph\") { manifestation { id } } authorSuggestions(q: \"Hidden\") { name } shelves(first: 50) { edges { node { id name } } } }", json!({"authors": [id::Author::encode(fixture.author).as_str(), id::Author::encode(fixture.hidden_author).as_str()], "series": [id::Series::encode(fixture.series).as_str(), id::Series::encode(fixture.hidden_series).as_str()], "shelves": [id::Shelf::encode(fixture.child_shelf).as_str(), id::Shelf::encode(fixture.other_shelf).as_str()]})).await;
         assert!(response.get("errors").is_none(), "{response}");
         assert_eq!(
-            response["data"]["authorLabels"].as_array().unwrap().len(),
-            1
+            response["data"]["authorLabels"],
+            json!([{"id": id::Author::encode(fixture.author).as_str(), "name": "Visible Author"}])
+        );
+        assert_eq!(
+            response["data"]["seriesLabels"],
+            json!([{"id": id::Series::encode(fixture.series).as_str()}])
+        );
+        assert_eq!(
+            response["data"]["shelfLabels"],
+            json!([{"id": id::Shelf::encode(fixture.child_shelf).as_str()}])
         );
         assert_eq!(response["data"]["search"].as_array().unwrap().len(), 1);
         assert_eq!(response["data"]["authorSuggestions"], json!([]));

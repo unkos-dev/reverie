@@ -110,11 +110,11 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
 - **Opaque IDs:** Routes, links, loaders and Library visit state carry GraphQL IDs exactly as queries return them. Do
   not decode an ID to build a request or link. Convert a UUID only where a retained HTTP response supplies one.
 - **Library Sort Is Not URL State:** Sort is a one-layer per-user preference
-  (`docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md`): every sort gesture writes `sort_stack`
-  through the page's one intent handler, every surface reads the one resolved stack, and the list request carries the
-  override explicitly. Never add a `?sort=` reader or writer to the library surface, never send the installation default
-  sort in a request, and never resolve sort independently in a component: a second resolution is the read split that
-  made an inherited descending sort unclearable.
+  (`docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md`): every sort gesture writes the preference
+  mutation's structured `sort` through the page's one intent handler, every surface reads the one resolved stack, and
+  the list request carries the override explicitly. Never add a `?sort=` reader or writer to the library surface, never
+  send the installation default sort in a request, and never resolve sort independently in a component: a second
+  resolution is the read split that made an inherited descending sort unclearable.
 - **Retained rows keep their source:** While previous results stay on screen, row edits, Undo and conflict reload use
   the displayed Relay operation, variables and retained source, independently of the current destination. Native
   connection references retain membership; detached raw snapshots retain matched editing values and baselines.

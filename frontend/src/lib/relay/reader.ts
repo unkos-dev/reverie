@@ -261,8 +261,6 @@ export const readerShelves = graphql`
           name
           isSystem
           itemCount
-          createdAt
-          updatedAt
         }
       }
     }
@@ -323,78 +321,6 @@ export const readerSeriesQuery = graphql`
   }
 `;
 
-export const readerAuthorSuggestionsQuery = graphql`
-  query readerAuthorSuggestionsQuery($q: String!) {
-    authorSuggestions(q: $q) {
-      entityId
-      value
-    }
-  }
-`;
-
-export const readerSeriesSuggestionsQuery = graphql`
-  query readerSeriesSuggestionsQuery($q: String!) {
-    seriesSuggestions(q: $q) {
-      entityId
-      value
-    }
-  }
-`;
-
-export const readerGenreSuggestionsQuery = graphql`
-  query readerGenreSuggestionsQuery($q: String!) {
-    genreSuggestions(q: $q) {
-      entityId
-      value
-    }
-  }
-`;
-
-export const readerMoodSuggestionsQuery = graphql`
-  query readerMoodSuggestionsQuery($q: String!) {
-    moodSuggestions(q: $q) {
-      entityId
-      value
-    }
-  }
-`;
-
-export const readerTagSuggestionsQuery = graphql`
-  query readerTagSuggestionsQuery($q: String!) {
-    tagSuggestions(q: $q) {
-      entityId
-      value
-    }
-  }
-`;
-
-export const readerPublisherSuggestionsQuery = graphql`
-  query readerPublisherSuggestionsQuery($q: String!) {
-    publisherSuggestions(q: $q) {
-      entityId
-      value
-    }
-  }
-`;
-
-export const readerAuthorLabelsQuery = graphql`
-  query readerAuthorLabelsQuery($ids: [ID!]!) {
-    authorLabels(ids: $ids) {
-      entityId
-      value
-    }
-  }
-`;
-
-export const readerSeriesLabelsQuery = graphql`
-  query readerSeriesLabelsQuery($ids: [ID!]!) {
-    seriesLabels(ids: $ids) {
-      entityId
-      value
-    }
-  }
-`;
-
 export const readerNodeQuery = graphql`
   query readerNodeQuery($id: ID!) {
     node(id: $id) {
@@ -429,29 +355,6 @@ export const readerAuthorEditing = graphql`
           endCursor
         }
       }
-    }
-  }
-`;
-
-export const readerLibraryPreferences = graphql`
-  fragment readerLibraryPreferences on LibraryPreferences {
-    hiddenColumns
-    density
-    view
-    sortStack
-    defaults {
-      hiddenColumns
-      density
-      view
-      sortStack
-    }
-  }
-`;
-
-export const readerLibraryPreferencesQuery = graphql`
-  query readerLibraryPreferencesQuery {
-    libraryPreferences {
-      ...readerLibraryPreferences
     }
   }
 `;

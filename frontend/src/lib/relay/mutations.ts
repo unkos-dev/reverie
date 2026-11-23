@@ -620,9 +620,20 @@ export const mutationsUnlockMetadataFieldMutation = graphql`
 `;
 
 export const mutationsUpdateLibraryPreferencesMutation = graphql`
-  mutation mutationsUpdateLibraryPreferencesMutation($patch: LibraryPreferencesPatch!) {
-    updateLibraryPreferences(patch: $patch) {
-      ...readerLibraryPreferences
+  mutation mutationsUpdateLibraryPreferencesMutation($input: UpdateLibraryPreferencesInput!) {
+    updateLibraryPreferences(input: $input) {
+      __typename
+      ... on LibraryPreferencesUpdated {
+        viewer {
+          id
+          libraryPreferences {
+            ...useLibraryPreferences_preferences
+          }
+        }
+      }
+      ... on LibraryPreferencesInvalid {
+        message
+      }
     }
   }
 `;

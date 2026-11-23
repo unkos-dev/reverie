@@ -1,11 +1,24 @@
-import { Environment, Network, Observable, RecordSource, Store } from "relay-runtime";
+import { Environment, Network, Observable, ROOT_ID, RecordSource, Store } from "relay-runtime";
 import { fetchQuery, loadQuery, type PreloadedQuery } from "react-relay";
-import type { GraphQLTaggedNode, OperationType } from "relay-runtime";
+import type { GraphQLTaggedNode, MissingFieldHandler, OperationType } from "relay-runtime";
 
 import { graphqlNetwork } from "@/api/graphql";
 import { authMeQueryOptions } from "@/hooks/useAuthMe";
 import { queryClient } from "@/lib/query/client";
 import { clearLibraryVisits } from "./library-visit";
+
+const LABEL_FIELDS = new Set(["authorLabels", "seriesLabels", "shelfLabels"]);
+
+const missingFieldHandlers: MissingFieldHandler[] = [
+  {
+    kind: "pluralLinked",
+    handle: (field, record, args) => {
+      const ids: unknown = args.ids;
+      if (record?.getDataID() !== ROOT_ID || !LABEL_FIELDS.has(field.name)) return undefined;
+      return Array.isArray(ids) && ids.every((id) => typeof id === "string") ? ids : undefined;
+    },
+  },
+];
 
 let current: {
   account: string;
@@ -35,6 +48,7 @@ export function setRelayAccount(account: string | null): void {
           graphqlNetwork(request, variables, controller.signal),
         ),
         store: new Store(source),
+        missingFieldHandlers,
       }),
     };
   }
@@ -43,6 +57,10 @@ export function setRelayAccount(account: string | null): void {
 export function relayEnvironment(): Environment {
   if (current === null) throw new Error("Relay requires a confirmed account.");
   return current.environment;
+}
+
+export function confirmedRelayEnvironment(): Environment | null {
+  return current?.environment ?? null;
 }
 
 export type PreparedReader<T extends OperationType> = {
