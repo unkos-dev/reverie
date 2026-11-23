@@ -4,14 +4,9 @@ import { fetchQuery, getRequest } from "relay-runtime";
 import { GraphQLExecutionError, encodeGraphQLId, graphqlNetwork } from "@/api/graphql";
 import { ApiError } from "@/api/errors";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
-import {
-  activeUserEpoch,
-  activeUserId,
-  forgetActiveUser,
-  rememberActiveUser,
-} from "@/lib/active-user";
+import { activeUserEpoch, forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
 import { setUnauthenticatedHandler } from "@/lib/query/client";
-import { relayEnvironment } from "@/lib/relay/environment";
+import { confirmedRelayEnvironment, relayEnvironment } from "@/lib/relay/environment";
 import { mutationsSaveTitleMutation } from "@/lib/relay/mutations";
 import { viewerQuery } from "@/lib/relay/viewer";
 import type { viewerQuery as ViewerQuery } from "@/lib/relay/__generated__/viewerQuery.graphql";
@@ -197,14 +192,15 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   await expect(firstFailure).rejects.toBeInstanceOf(ApiError);
   await expect(secondFailure).rejects.toBeInstanceOf(ApiError);
   expect(navigate).toHaveBeenCalledTimes(1);
-  expect(activeUserId()).toBeNull();
+  expect(confirmedRelayEnvironment()).toBeNull();
   rememberActiveUser("second-account");
-  expect(relayEnvironment().getStore().getSource().get("User:first-account")).toBeUndefined();
+  const secondEnv = relayEnvironment();
+  expect(secondEnv.getStore().getSource().get("User:first-account")).toBeUndefined();
   fetch.mockResolvedValueOnce(
     json({ errors: [{ message: "Forbidden", extensions: { code: "forbidden" } }] }),
   );
   await expect(request()).rejects.toBeInstanceOf(GraphQLExecutionError);
-  expect(activeUserId()).toBe("second-account");
+  expect(confirmedRelayEnvironment()).toBe(secondEnv);
   expect(navigate).toHaveBeenCalledTimes(1);
   const previous = relayEnvironment();
   let respond: (response: Response) => void = () => {
@@ -231,6 +227,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   const init = fetch.mock.calls.at(-1)?.[1];
   const epoch = activeUserEpoch();
   rememberActiveUser("third-account");
+  const thirdEnv = relayEnvironment();
   expect(init?.signal?.aborted).toBe(true);
   await vi.waitFor(() => {
     expect(completed).toHaveBeenCalledTimes(1);
@@ -254,7 +251,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   expect(previous.getStore().getSource().get("User:second-account")).toBeUndefined();
   expect(relayEnvironment().getStore().getSource().get("User:second-account")).toBeUndefined();
   rememberActiveUser("second-account", epoch);
-  expect(activeUserId()).toBe("third-account");
+  expect(confirmedRelayEnvironment()).toBe(thirdEnv);
   subscription.unsubscribe();
 
   fetch.mockImplementationOnce(() => new Promise<Response>(() => {}));

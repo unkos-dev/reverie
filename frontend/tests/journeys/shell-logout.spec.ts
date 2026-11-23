@@ -122,27 +122,20 @@ async function signOut(page: Page): Promise<void> {
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
 }
 
-test("sign out waits for one POST, forgets the active account and hard-navigates to login", async ({
-  page,
-}) => {
+test("sign out waits for one POST and hard-navigates to login", async ({ page }) => {
   const fixture = await intercept(page);
   await page.goto("/library");
   await expect(page.getByRole("button", { name: "Ada Lovelace" })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("reverie_last_user"))).toBe(ACCOUNT.id);
   const documentURL = await page.evaluate(() => performance.timeOrigin);
   await signOut(page);
   await expect.poll(() => fixture.logoutRequests).toEqual(["POST"]);
   await expect(page).toHaveURL(/\/library$/);
-  expect(await page.evaluate(() => localStorage.getItem("reverie_last_user"))).toBe(ACCOUNT.id);
   fixture.release(false);
   await expect(page).toHaveURL(/\/login$/);
-  expect(await page.evaluate(() => localStorage.getItem("reverie_last_user"))).toBeNull();
   expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(documentURL);
 });
 
-test("failed logout still forgets the account, logs the failure and hard-navigates to login", async ({
-  page,
-}) => {
+test("failed logout logs the failure and hard-navigates to login", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
@@ -153,6 +146,5 @@ test("failed logout still forgets the account, logs the failure and hard-navigat
   await expect.poll(() => fixture.logoutRequests).toEqual(["POST"]);
   fixture.release(true);
   await expect(page).toHaveURL(/\/login$/);
-  expect(await page.evaluate(() => localStorage.getItem("reverie_last_user"))).toBeNull();
   expect(errors.some((message) => message.includes("[UserMenu] logout request failed"))).toBe(true);
 });

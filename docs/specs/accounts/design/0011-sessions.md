@@ -6,7 +6,6 @@ title: "Sessions"
 satisfies:
   - "REV-REQ-0034"
   - "REV-REQ-0035"
-  - "REV-REQ-0036"
   - "REV-REQ-0037"
   - "REV-REQ-0038"
 governed-by:
@@ -28,7 +27,7 @@ This subject owns: the `tower_sessions::SessionStore` implementation over `tower
 write or clear the identity claims a session carries (`backend/src/auth/session.rs`); the hourly expired-row sweep
 (`backend/src/services/session_sweep.rs`); the `GET /auth/me` profile endpoint and the `POST /auth/logout` handler
 (`backend/src/routes/auth.rs`); and, on the client, the shared `/auth/me` query, the once-guarded funnel that reacts to
-a lapsed session, and the per-device hint that scopes client caches to the last confirmed account
+a lapsed session, and the in-memory confirmed-account lifecycle that scopes the Relay environment
 (`frontend/src/hooks/useAuthMe.ts`, `frontend/src/hooks/useSessionRecovery.ts`, `frontend/src/lib/query/client.ts`,
 `frontend/src/lib/active-user.ts`, `frontend/src/components/AuthenticatedBoundary.tsx`).
 
@@ -55,9 +54,7 @@ Depended on by: every request whose identity resolution reaches the session-cook
 OIDC sign-in handlers, which call this subject's `login` helper once a credential is verified; the authenticated
 boundary (`frontend/src/components/AuthenticatedBoundary.tsx`), which mounts the 401-recovery funnel above every route
 that requires a session, and the app shell (`frontend/src/App.tsx`, `frontend/src/components/shell/AppShell.tsx` and
-everything it renders), which reads the shared `/auth/me` query for the signed-in identity; and the library's
-first-paint display-preference mirror, which reads the per-device active-user hint this subject writes to know whose
-cached values to seed before its own request resolves.
+everything it renders), which reads the shared `/auth/me` query for the signed-in identity.
 
 ## Structure
 
@@ -73,7 +70,7 @@ cached values to seed before its own request resolves.
 | Cohort and `won_at` | `sign_in_cohorts` | `models::sign_in`; session deletion cascade |
 | Pending OIDC attempt | `oidc_sign_in_attempts` | `models::sign_in`; cohort deletion cascade |
 | 401-funnel handler + guard | `client.ts` module state | `setUnauthenticatedHandler` / `invokeUnauthenticatedHandler` |
-| `reverie_last_user` (active-user hint) | `localStorage`, one key | `rememberActiveUser` / `forgetActiveUser` |
+| Confirmed account + identity epoch | `active-user.ts` module state | `rememberActiveUser` / `forgetActiveUser` |
 
 `auth::session::signed_in_user` reads `user_id` and `session_version` for `CurrentUser` and the three sign-in entry
 points. It flushes a disabled, deleted or stale identity, logging a failed flush at warning level. It returns
@@ -93,8 +90,9 @@ Call sites that dispatch to those owners:
   rejects with an `ApiError` whose status is 401; its `MutationCache.onError`, for any mutation that does; and
   `useSessionRecovery`'s effect, when the shared `/auth/me` query settles with `data === undefined` (a 401 or 403
   response, per `useAuthMe`).
-- `rememberActiveUser`: the one call site is inside `useAuthMe`'s `queryFn`, on every successful parse of `/auth/me`,
-  not only at login, so a boot with an already-live session records the hint the same way a fresh sign-in does.
+- `rememberActiveUser`: the one call site is inside `useAuthMe`'s `queryFn`, on every successful parse of `/auth/me`, so
+  a boot with an already-live session establishes the confirmed account and its Relay environment the same way a fresh
+  sign-in does.
 - `forgetActiveUser`: two call sites, `invokeUnauthenticatedHandler` (the 401/lapsed-session path) and the sign-out
   handler inside `UserChip` in `frontend/src/components/shell/UserMenu.tsx` (explicit sign-out).
 
@@ -156,7 +154,7 @@ all use the same session-store deletion owner.
   `data: undefined` (`data ?? undefined`) so callers treat it as the ordinary "logged out" state rather than an
   operational error. `frontend/src/lib/query/client.ts` exports `setUnauthenticatedHandler`,
   `invokeUnauthenticatedHandler`, and the shared `queryClient` singleton; `frontend/src/lib/active-user.ts` exports
-  `activeUserId`, `rememberActiveUser`, and `forgetActiveUser`.
+  `activeUserEpoch`, `rememberActiveUser`, and `forgetActiveUser`.
 - The operator-facing cookie table in `docs/security/content-security-policy.md` documents the session cookie's wire
   name (`id`), path (`/`), and observed `Max-Age` (24 hours, renewed on each request) as the canonical reference for
   self-hosters; this Design does not restate it as a second source.
@@ -168,12 +166,12 @@ requires the capability field in its Zod schema rather than assuming it when abs
 
 ## Data and state
 
-The confirmed-account lifecycle in `active-user.ts` also owns Relay environment selection. Replacing or forgetting an
-account aborts its in-flight Relay requests, clears its records and releases the old environment before another account
-adopts one. GraphQL HTTP 401 failures from Relay call the existing once-guarded recovery funnel, which forgets the hint
-before navigation. Execution-level field denial does not trigger that funnel. An identity epoch prevents a delayed
-`/auth/me` completion from recreating the Relay environment after account loss. Query continues to own existing HTTP
-workflows.
+The confirmed-account lifecycle in `active-user.ts` owns Relay environment selection. Replacing or forgetting an account
+aborts its in-flight Relay requests, clears its records and releases the old environment before another account adopts
+one. GraphQL HTTP 401 failures from Relay call the existing once-guarded recovery funnel, which forgets the confirmed
+account and clears its Relay environment before navigation. Execution-level field denial does not trigger that funnel.
+An identity epoch prevents a delayed `/auth/me` completion from recreating the Relay environment after account loss.
+Query continues to own existing HTTP workflows.
 
 - **The session row.** `tower_sessions.session` (`id text`, `data bytea`, `expiry_date timestamptz`), created by the
   initial schema migration, with a check constraint bounding `expiry_date` to the range a `timestamptz` can decode
@@ -200,15 +198,9 @@ workflows.
 - **Identity claims.** `SESSION_KEY_USER_ID` (a `Uuid`) and `SESSION_KEY_SESSION_VERSION` (an `i32`, a snapshot of
   `users.session_version` at login) are the two keys this subject writes; a session with neither key is anonymous (no
   cookie yet, or a cookie whose claims were never established, e.g. mid-OIDC-flow before `/auth/callback` completes).
-- **The active-user hint.** `localStorage["reverie_last_user"]`, one key per browser rather than per account: it names
-  whichever account last confirmed a session on this browser, not a set of accounts. It grants nothing on its own, every
-  request still goes through the session cookie, and exists only so a per-user client cache has an id to key on before
-  that request's response has arrived. The library's first-paint display-preference mirror
-  (`frontend/src/pages/library/display-storage.ts`) is the one caller that reads it synchronously before any request
-  resolves, to choose which account's mirrored presentation to seed on first paint; the hint itself is written only from
-  a validated `/auth/me` response (see Security and operations), so a stale or attacker-written value can only misdirect
-  which cached presentation a page seeds before its own request resolves, never which account a request authenticates
-  as.
+- **Confirmed-account module state.** `confirmedAccount` and `identityEpoch` in `frontend/src/lib/active-user.ts` live
+  in memory for the JS realm's lifetime, driving Relay environment selection and rejecting delayed `/auth/me`
+  confirmations after account loss.
 - **The 401 funnel's guard state.** `unauthenticatedHandler` and `redirecting` are plain module-level variables in
   `frontend/src/lib/query/client.ts`, living for the JS realm's lifetime; a full-page navigation (which every path that
   sets `redirecting` ends in) discards them along with everything else in that realm.
@@ -265,9 +257,9 @@ are siblings of it, so no handler is wired there and a 401 from a sign-in attemp
    through `queryClient`'s `QueryCache.onError`, and any mutation that does so through its `MutationCache.onError`; a
    mutation's own `onError` still runs. A lapsed session commonly trips several requests in the same tick (every
    in-flight request on the page); each one calls `invokeUnauthenticatedHandler`, but only the first to run finds
-   `redirecting` still `false`, it sets the guard, clears the active-user hint via `forgetActiveUser()`, and invokes the
-   wired handler (a `window.location.assign` to the resolved target); every other caller in the same tick or after finds
-   the guard already set and returns without effect.
+   `redirecting` still `false`, it sets the guard, clears the confirmed account and its Relay environment via
+   `forgetActiveUser()`, and invokes the wired handler (a `window.location.assign` to the resolved target); every other
+   caller in the same tick or after finds the guard already set and returns without effect.
 4. The full-page navigation the handler performs ends the funnel: the guard and the handler reference are discarded with
    the rest of the JS realm, and a fresh page load re-wires both from `AuthenticatedBoundary`'s mount effect.
 
@@ -332,15 +324,6 @@ deviation from a shorter-timeout default; it applies identically to every accoun
 with no separate, shorter, or otherwise stricter session policy for an admin-role account. Logging out, or a
 force-logout via `session_version`, invalidates a session immediately rather than waiting for it to idle out; short of
 either of those, a session with regular activity does not expire.
-
-The active-user hint is a cache-scoping convenience, not an authorization boundary: it grants no request anything, and a
-request's actual access is decided entirely by the server-side session and the credential paths `CurrentUser` resolves.
-On the write side, `rememberActiveUser` is called only from inside `useAuthMe`'s `queryFn`, after a fetched `/auth/me`
-response has been parsed against its Zod schema, so the hint always names an account the server has just confirmed. The
-library's first-paint mirror reads the hint synchronously, before any request has resolved, to choose which cached
-presentation to seed; a stale or attacker-writable `localStorage` value can therefore misdirect which cached
-presentation a page seeds on first paint, never which account a request authenticates as, because the hint is never
-consulted by the session or credential resolution itself.
 
 Operationally, this subject introduces no configuration surface of its own beyond `behind_https` (owned by the
 configuration-loading subject). The sweep cadence is fixed at one hour and is not a setting: a single-instance

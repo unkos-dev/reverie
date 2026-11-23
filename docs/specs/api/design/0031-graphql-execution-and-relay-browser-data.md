@@ -8,7 +8,6 @@ satisfies:
   - "REV-REQ-0021"
   - "REV-REQ-0023"
   - "REV-REQ-0035"
-  - "REV-REQ-0036"
   - "REV-REQ-0079"
   - "REV-REQ-0082"
   - "REV-REQ-0083"
