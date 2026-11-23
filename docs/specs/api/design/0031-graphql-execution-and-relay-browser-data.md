@@ -29,6 +29,7 @@ governed-by:
   - "REV-ADR-0081"
   - "REV-ADR-0082"
   - "REV-ADR-0083"
+  - "REV-ADR-0084"
 ---
 
 # GraphQL execution and Relay browser data
@@ -272,7 +273,8 @@ The fragments that the route pages and the edit sheet read carry the directive: 
 `readerShelf`, `readerShelfItems`, `readerShelves` and `mutationsFormSnapshot`. `readerLibrary`, `readerLibraryBook`,
 `readerLibraryPreferences`, `readerAuthorEditing`, and the title, reading and cell snapshot fragments carry none.
 Neither do the refusal selections that mutation payloads spread with `@relay(mask: false)` (`mutationsSaveRefusal`,
-`mutationsUndoRefusal`).
+`mutationsUndoRefusal`), because Relay does not accept `@throwOnFieldError` on mutations or on selections spread
+unmasked into them. A component that handles a field error locally uses `@catch` on that field.
 
 The compiler generates eight pagination queries, which carry no directive of their own. Six of them run through
 `usePaginationFragment` on a `@refetchable` fragment that carries the directive: `readerDetailTags`,

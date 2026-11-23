@@ -23,10 +23,19 @@ may not notice which condition moved. View and sort are standing choices, so cle
 
 ## Acceptance criteria
 
-- Sibling edits made in the same turn both take effect.
-- Blur followed by Clear does not bring back the cleared condition.
-- Clear removes every filter condition and leaves view and sort unchanged.
-- Clearing one section leaves sibling sections unchanged.
-- Entered text and its selected operator are kept, and remain editable, while they contribute no effective predicate.
-- The GraphQL books request's effective filter arguments represent exactly the published edit and preserve sibling
-  conditions. Dormant entered text and operators remain available without contributing an effective predicate.
+- Sibling edits made in the same turn both take effect. Checked by
+  `same-turn sibling edits compose and preserve unrelated native entry data` in
+  `frontend/tests/browser/use-library-filters.test.tsx`.
+- Blur followed by Clear does not bring back the cleared condition. Checked by
+  `blur, Clear and subsequent typing use the current intent without resurrection` in
+  `frontend/tests/browser/use-library-filters.test.tsx`.
+- Clear removes every filter condition and leaves view and sort unchanged. Checked by
+  `clearing all filters preserves the visit view and the stored sort` in `frontend/tests/browser/LibraryPage.test.tsx`.
+- Clearing one section or removing one chip leaves sibling sections unchanged. Checked by
+  `a chip's remove control drops exactly that filter param` in `frontend/tests/browser/LibraryPage.test.tsx`.
+- Entered text and its selected operator stay editable while they contribute no effective predicate. Checked by
+  `raw text and its operator stay editable while they contribute no predicate` in
+  `frontend/tests/browser/FilterRail.test.tsx`.
+- The books request's effective filter arguments represent exactly the published edit and preserve sibling conditions,
+  while dormant entered text and operators contribute no effective predicate. Checked by
+  `frontend/tests/journeys/library-navigation.spec.ts`.

@@ -38,18 +38,18 @@ Chosen option: **Server-typed scalars and enums, with envelope checks in the bro
 defined once, in the Rust type that produces or accepts the value, and GraphQL result coercion turns any breach into an
 execution error on that field, so no operation can skip the check.
 
-A format-bearing value in browser GraphQL data is a custom scalar backed by a Rust type, and a closed set of values is
-an enum. The browser checks the transport response and the execution-error envelope, not value formats. A user-entered
-value whose refusal must return field feedback stays a string and is validated by its domain service.
+Under this decision, format-bearing values in browser GraphQL data use custom scalars backed by Rust types and closed
+value sets use enums, leaving the browser to validate the transport and error envelope rather than duplicating format
+schemas per operation. User-entered values whose refusals return field-level feedback stay strings validated by their
+domain service.
 
 ### Consequences
 
 - Positive: a format is stated once, and the schema and generated types carry it to every client.
 - Positive: a coercion failure reaches the client as an execution error on the field, so a malformed value is never
   published as data.
-- Positive: browser code sheds its hand-written projections.
-- Negative: hand-written projections and server-typed formats coexist until the last operation moves.
-- Negative: until a released server honours `onError`, the browser refuses a whole response with any error, so one
+- Positive: browser code avoids per-operation format projections as operations adopt typed scalars and enums.
+- Negative: while the server lacks `onError` support, the browser refuses a whole response carrying any error, so one
   field's coercion failure fails the operation.
 - Negative: user-entered formats such as ISBNs and publication dates stay strings, so the schema does not express them.
 

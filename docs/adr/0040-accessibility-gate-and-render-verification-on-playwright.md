@@ -14,88 +14,83 @@ decision-makers:
 
 ## Context and problem statement
 
-The WCAG 2.2 AA accessibility gate runs axe-core against the dev-only design showcase and fails on any violation outside
-a documented allowlist. It was built on `agent-browser`, a first-party CDP runner, because the dev workspace is ARM64
-and the off-the-shelf `@axe-core/cli` bundles an x64-only chromedriver. That same ARM64 constraint also made
+The WCAG 2.2 AA accessibility gate runs axe-core against frontend routes and fails on any violation outside approved
+exceptions. It originally ran on `agent-browser`, a first-party CDP runner, because contributors on ARM64 hosts could
+not run `@axe-core/cli`'s x64-only bundled chromedriver. That same ARM64 compatibility requirement also made
 `agent-browser` the interactive tool for render verification of UI work.
 
-`agent-browser` is a single-vendor interim runner: the a11y gate carries a bespoke CDP driver plus a hand-rolled
-dev-server start/poll/kill block, and the render-verification path depends on the same binary. Standard,
-vendor-supported browser automation now covers both needs on ARM64 and x86 alike, and the project already standardises
-on it elsewhere.
+`agent-browser` is an interim runner that requires maintaining a bespoke CDP driver and a hand-rolled dev-server
+lifecycle block, and ties interactive render verification to the same binary. Standard, vendor-supported browser
+automation covers both needs on ARM64 and x86 alike, and the project already standardises on Playwright elsewhere.
 
 Should browser automation for the accessibility gate and for frontend render verification stay on `agent-browser`, or
 move to the Playwright stack?
 
 ## Decision drivers
 
-- The gate must be reproducible on both the ARM64 dev box and x86 CI without a bespoke browser driver.
-- One browser-automation stack, not two: a second stack is maintenance surface and a skew risk.
-- The documented gold carve-out must stay expressible precisely enough that the gate still fails on genuine misuse.
-- Automated tooling cannot catch every accessibility concern (keyboard order, screen-reader semantics, focus management,
-  motion budget); the process must still name what is left to a human audit and when.
+- The gate must be reproducible for contributors on ARM64 and x86 hosts as well as x86 CI without a bespoke browser
+  driver.
+- One browser-automation stack avoids maintenance overhead and skew between separate browser runners.
+- Violations must fail cleanly with precise per-node evidence rather than coarse rule-wide exclusions.
+- Automated tooling cannot catch every accessibility concern such as keyboard order, screen-reader semantics, focus
+  management and motion budget; the process still names what a human audit covers.
 
 ## Considered options
 
-- **`@playwright/test` + `@axe-core/playwright`**: axe-core on Playwright-managed browsers, with the allowlist/verdict
-  filter kept as first-party code.
+- **`@playwright/test` + `@axe-core/playwright`**: axe-core on Playwright-managed browsers, with first-party target
+  resolution and liveness checks.
 - **Keep `agent-browser` + axe-core**: the prior first-party CDP runner.
-- **`@axe-core/cli`**: the off-the-shelf axe CLI (selenium + chromedriver).
+- **`@axe-core/cli`**: the off-the-shelf axe CLI using Selenium and chromedriver.
 
 ## Decision outcome
 
-Chosen option: **`@playwright/test` + `@axe-core/playwright` for the CI gate, with `playwright-mcp` as the interactive
+Chosen option: **`@playwright/test` + `@axe-core/playwright` for the CI gate, with `playwright-cli` as the interactive
 render-verification tool**, retiring `agent-browser`, because Playwright resolves both original grounds for the CDP
 runner.
 
-The automated accessibility gate uses Playwright with axe against a product route and the WCAG 2.2 AA rules. Interactive
-render verification uses Playwright, while manual audits retain responsibility for keyboard, screen-reader, focus, and
-motion behaviour that axe cannot establish.
+The automated accessibility gate runs Playwright with axe against product routes using the full WCAG 2.2 AA tag set.
+Interactive render verification uses Playwright, while manual audits retain responsibility for keyboard, screen-reader,
+focus and motion behaviour that axe cannot establish.
 
 ### Consequences
 
-- Positive: the gate runs on a vendor-supported test runner with a single lifecycle owner, on ARM64 and x86, and the
-  bespoke CDP driver plus hand-rolled server block are gone.
-- Positive: failures ship a Playwright trace (DOM snapshots, console, and the attached axe results) instead of a bare
-  results JSON.
+- Positive: the gate runs on a vendor-supported test runner with a single lifecycle owner, on ARM64 and x86, retiring
+  the bespoke CDP driver and hand-rolled server lifecycle block.
+- Positive: failures ship a Playwright trace with DOM snapshots, console output and attached axe results instead of a
+  bare JSON report.
 - Positive: the project converges on one browser-automation stack.
-- Positive: the allowlist/verdict layer is unaffected by the driver change; it stays first-party code (small, pure,
-  unit-tested).
-- Negative: the gate covers one route. `/login` and `/setup` each call `fetchSetupStatus` in a mount-time query, so
-  against the Vite-only server this gate boots they render an error branch rather than their real markup; scanning them
-  needs a backend. Post-login views need that and a stored-session fixture. Both are added to the run targets as that
-  becomes possible.
+- Positive: target parsing and liveness checks remain small, pure first-party code.
+- Negative: unauthenticated routes that depend on live backend state and authenticated post-login views require a
+  backend and stored-session fixture before they can join the Vite-only gate.
 
 ## Pros and cons of the options
 
 ### `@playwright/test` + `@axe-core/playwright`
 
-- Positive: Playwright ships ARM64 and x86 browsers, so the gate is locally reproducible on the dev box without a
-  browser substitution.
+- Positive: Playwright ships ARM64 and x86 browsers, so contributors on ARM64 and x86 hosts can reproduce the gate
+  locally without a browser substitution.
 - Positive: `webServer` owns the dev-server lifecycle, removing the hand-rolled start/poll/kill block.
-- Positive: it is the standard automation stack, retiring the second one.
-- Neutral: the axe engine is unchanged (`@axe-core/playwright` tilde-pins the same `axe-core` minor the lockfile already
-  resolved), so gate semantics are preserved.
+- Positive: standardises on the existing automation stack and retires the second runner.
+- Neutral: the underlying axe engine is unchanged, so scan semantics stay consistent.
 
 ### Keep `agent-browser` + axe-core
 
-- Negative: it keeps a bespoke first-party CDP runner and a duplicated dev-server lifecycle where a vendor-supported
-  runner now suffices.
-- Negative: it maintains a second browser-automation stack alongside Playwright.
+- Negative: keeps a bespoke first-party CDP runner and duplicated dev-server lifecycle where a vendor-supported runner
+  suffices.
+- Negative: maintains a second browser-automation stack alongside Playwright.
 
 ### `@axe-core/cli`
 
-- Negative: its bundled chromedriver and Selenium Manager are x64-only ELF binaries: `exec format error` on the ARM64
-  dev box, so the gate would be CI-only and not locally reproducible.
-- Negative: its allowlisting is coarse (whole-rule disable or selector exclude), which would mask genuine violations
-  alongside the carve-out.
+- Negative: its bundled chromedriver and Selenium Manager are x64-only ELF binaries that fail with `exec format error`
+  on ARM64 hosts, making the gate CI-only for ARM64 contributors.
+- Negative: its exception mechanism relies on coarse whole-rule disables or selector excludes that can mask genuine
+  violations.
 
 ## More information
 
-- The `wcag22aa` tag selects only the rules new in WCAG 2.2 (for example `target-size`) and does not include
-  `color-contrast`; narrowing the gate to it alone would make it pass trivially. The full AA tag set is required and is
-  hard-coded in the spec.
-- Related: `frontend/DESIGN.md` §2 (Light-Gold Restriction Rule), `frontend/PRODUCT.md` § Accessibility, and the PR
-  template accessibility checklist that fires on UI-touching PRs.
-- Revisit trigger: if a second Playwright spec (for example authenticated scan targets) is added, factor the
-  `AxeBuilder` setup into the official `axe-test.ts` fixture; a single spec does not yet earn it.
+- The `wcag22aa` tag selects only rules introduced in WCAG 2.2 such as `target-size` and omits `color-contrast`; the
+  gate requires the full Level A and Level AA tag set (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`).
+- Related: `frontend/DESIGN.md`, `frontend/PRODUCT.md` Accessibility section, and the pull request accessibility
+  checklist.
+- Revisit trigger: if authenticated scan targets add a second Playwright accessibility spec, factor the `AxeBuilder`
+  setup into a shared Playwright fixture.

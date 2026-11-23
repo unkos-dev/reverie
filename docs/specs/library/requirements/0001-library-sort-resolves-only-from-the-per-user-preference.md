@@ -11,43 +11,40 @@ governed-by:
 
 ## Statement
 
-The library surface MUST resolve the active sort stack from the reader's stored `sort_stack` preference alone, falling
-back to the installation default when that preference is unset. A component on the library route MUST NOT read or write
-a `?sort=` URL parameter, and every sort gesture MUST persist its result as the reader's `sort_stack` preference. WHEN
-the books list request is built, the client MUST send the reader's non-empty override explicitly as the HTTP `sort`
-query parameter or typed GraphQL `sort` argument. When the reader has no override, the client MUST omit the HTTP
-parameter and MUST omit the GraphQL argument or supply `null`, without serialising the installation-default levels.
+The Library MUST resolve its active sort order from the reader's stored per-user sort preference alone, falling back to
+the installation default when that preference is unset. The Library MUST ignore any `?sort=` URL query parameter and
+MUST NOT write a `?sort=` URL query parameter. Every sort gesture MUST persist its result as the reader's sort
+preference, and clearing the last sort level or activating Reset MUST clear the reader's override so the Library returns
+to the installation default without ever becoming unsorted.
 
 ## Rationale
 
-A URL-carried sort and an account-level sort are two sources of truth for one value, and two sources let surfaces
-disagree on the active order, let a clearing gesture write an absent value over an absent value, and give the route
-loader a cache key that cannot match a reader with a stored override. Binding resolution to the one preference removes
-the second source by construction. Sending the installation-default levels explicitly would reintroduce the mismatch,
-because an inheriting reader's list-query key would then depend on server state the route loader cannot see. The
-decision and its drivers are recorded in
-[Library sort is a per-user preference, never URL state](../../../adr/0047-library-sort-is-a-per-user-preference-never-url-state.md).
+Carrying sort order in both the URL and account preferences creates two competing sources of truth, allowing views to
+disagree on the active order and stale bookmarks to override a reader's chosen preference. Resolving sort strictly from
+the per-user preference keeps the displayed order consistent across visits and devices while preserving the installation
+default whenever no override is set.
 
 ## Acceptance criteria
 
-- No component under the library route reads a `?sort=` URL parameter to resolve the active sort stack.
-- No component under the library route writes a `?sort=` URL parameter.
-- A stale `?sort=` value present in the URL (for example from an old bookmark) does not change the resolved sort stack;
-  the stored preference, or the installation default when the reader has no override, still applies.
-- A table header click and every action in the sort stack editor (add a level, remove a level, reorder, flip direction,
-  reset) reach the wire as a `sort_stack` write on `/auth/me/preferences` or a `sortStack` write through
-  `updateLibraryPreferences`.
-- Removing the last level of the reader's override, or pressing the sort section's reset control, sends
-  `sort_stack: null` through HTTP or `sortStack: null` through GraphQL. The display transitions to the installation
-  order; it never becomes unsorted.
-- WHEN the reader has a non-empty `sort_stack` override, the books list request (`GET /api/v1/books`) carries that stack
-  as its `sort` query parameter.
-- WHEN the reader has no override, the books list request carries no `sort` parameter.
-- WHEN the reader has a non-empty override, the GraphQL books request carries the same ordered levels and directions in
-  its typed `sort` argument. With no override, the request supplies no sort levels: its variables omit `sort` or supply
-  `null`.
+- A `?sort=` query parameter in the Library URL does not change the resolved sort order; the reader's stored preference,
+  or the installation default when unset, still applies. Checked by
+  `a stale URL ?sort= is inert: $resolved still applies` in `frontend/tests/browser/LibraryPage.test.tsx`.
+- A table header click persists the sort change to the reader's preference and writes no `?sort=` parameter to the URL.
+  Checked by `table header click persists the sort to the account and never touches the URL` in
+  `frontend/tests/browser/LibraryPage.test.tsx`.
+- Adding, reordering, flipping or removing levels in the sort editor persists the edited stack. Checked by
+  `adding a field appends a level to the effective stack` and
+  `direction toggle, reorder, and remove dispatch the edited stack` in `frontend/tests/browser/FilterRail.test.tsx`.
+- Removing the last level or activating Reset clears the reader's override and returns the Library to the installation
+  default without becoming unsorted. Checked by `removing the last level is the reset gesture, not an unsorted state` in
+  `frontend/tests/browser/FilterRail.test.tsx` and
+  `the rail's reset drops the override and returns to the installation order` in
+  `frontend/tests/browser/LibraryPage.test.tsx`.
+- When the reader's stored sort preference arrives after an initial load using the installation default, the Library
+  re-sorts to match the stored preference. Checked by `a late preferences response re-sorts the initial list once` in
+  `frontend/tests/browser/LibraryPage.test.tsx`.
 
 ## More information
 
 - [Multi-column sort stack on the keyset list contract](../../../adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md):
-  the wire grammar and whitelist the resolved stack is expressed in.
+  the sort vocabulary and stack grammar the resolved order uses.

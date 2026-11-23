@@ -14,6 +14,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0011"
   - "REV-ADR-0069"
+  - "REV-ADR-0084"
 ---
 
 # Conditional requests and optimistic concurrency
@@ -127,8 +128,10 @@ provider-key registry check.
 
 ### Client editing baselines
 
-GraphQL editing responses publish only with a valid envelope. Server-typed scalars and enums guarantee the formats of
-metadata values and validators.
+GraphQL editing responses publish only with a valid, error-free envelope carrying data. Server-typed scalars and enums
+guarantee the formats of metadata values and validators, and a missing validator or incomplete payload prevents forming
+an editing baseline. Because each metadata revision is its own `MetadataRevision` record keyed by revision ID, Relay
+store merges cannot pair values from one revision with a validator from another.
 
 The Library captures its baselines from raw executions. `LibrarySource` (`frontend/src/lib/relay/library-visit.ts`) runs
 each `readerLibraryQuery` page through `executeEditingOnce` and keeps a detached copy of every row's raw `metadata` and

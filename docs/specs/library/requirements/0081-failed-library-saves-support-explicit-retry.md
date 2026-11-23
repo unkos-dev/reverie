@@ -9,32 +9,41 @@ title: "Failed Library saves support explicit Retry"
 
 ## Statement
 
-WHEN a Library metadata or reading save fails temporarily or has an uncertain outcome, the Library MUST offer explicit
-Retry of the retained attempt under its original editing baseline. It MUST preserve submitted input through refusal or
-uncertainty and use authoritative recovery to recognise a committed save. Ordinary recovery MUST NOT replay a save.
+WHEN a Library metadata or reading-state save fails, the Library MUST preserve the submitted input and the original
+[editing baseline](../../api/requirements/0083-editing-baselines-form-only-from-complete-values-of-one-revision.md#statement)
+without replaying the save automatically. For a temporary or uncertain failure, the Library MUST offer an explicit Retry
+control that sends the retained attempt again under its original editing baseline. For a stale-baseline refusal, the
+Library MUST offer an explicit Reload control that fetches current values without sending a write and without offering
+an unchanged Retry. For a validation refusal, the Library MUST preserve the submitted input with field feedback for
+correction, and for a locked-field or permission refusal it MUST show specific feedback without offering an unchanged
+Retry or Reload. For a batch action over multiple books, the Library MUST classify each target independently under its
+own editing baseline and Retry MUST send only temporary or uncertain failures again, never successful or conflicted
+targets.
 
 ## Rationale
 
-A reader must be able to recover a failed save without reconstructing their input or overwriting changes they never saw.
-An uncertain acknowledgement does not establish whether the write committed. Keeping the original attempt and
-recognising authoritative success avoids both lost input and duplicate Undo entries.
+A reader recovering from a failed save should neither lose entered input nor silently overwrite changes made elsewhere.
+Automatic replay can double-apply writes or race with concurrent edits, while offering unchanged Retry on a stale or
+locked target repeats a refusal the reader cannot resolve without reloading or correcting the input. Independent target
+classification in batch actions keeps one conflicted book from blocking Retry of temporarily failed siblings or
+re-sending already committed updates.
 
 ## Acceptance criteria
 
-- E1: Temporary or uncertain failures offer "Not saved. Retry" and resend the retained attempt on activation, showing
-  "Retrying…" while pending. Metadata conflicts resolve the original request first. A conflict not confirmed as saved
-  uses the existing matched "Not saved. Reload" or new-edit path. Validation failures retain input and field feedback
-  for correction in the editor. Permission and locked-field refusals keep specific feedback without an unchanged resend.
-  Batch actions classify each target independently, offer Retry only for temporary or uncertain failures, and never
-  resend successful or conflicted targets. No bulk Reload control is offered.
-- E2: Explicit Retry sends the original submitted payload and starting baseline for the failed metadata or reading edit.
-  Background reads, live record merges and precondition refusals do not advance that baseline or reconstruct the input.
-- E3: An unchanged metadata attempt reuses its request UUID, patch and baseline. A stale repeat resolves that UUID
-  before conflict feedback. Authoritative saved resolution adopts its matching acknowledgement; unknown resolution
-  remains uncertain. Reading recovery uses a matched read. Ordinary recovery sends no write, and a request UUID alone
-  does not prove idempotency or success.
-- E4: Successful Retry publishes its matched acknowledgement and eligible exact Undo once. Refused or unresolved Retry
-  retains submitted input and conflict or recovery feedback. Reload sends no write and adopts fresh selected values with
-  their matching baseline while keeping the failed submitted value available. Only an explicit matched reset or a new
-  editing decision can adopt that new pair. Corrected input starts a new request identity against the retained baseline
-  unless an explicit matched reset replaced it.
+- A temporary or uncertain metadata or reading-state save failure shows an explicit Retry action, sends no automatic
+  replay, shows pending feedback while retrying, and on activation sends the original submitted input again under its
+  original editing baseline even if later reads refreshed displayed values. Checked by
+  `Library Retry sends the retained edit again` in `frontend/tests/browser/LibraryPage.test.tsx`.
+- A stale-baseline refusal offers an explicit Reload action and no Retry action; activating Reload sends no write,
+  updates displayed values with their matching validator, and keeps the failed submitted value visible until the reader
+  makes a new edit. Checked by `Library Retry sends the retained edit again` in
+  `frontend/tests/browser/LibraryPage.test.tsx`.
+- A validation refusal retains the submitted input and field feedback so reopening the editor lets the reader correct
+  and resubmit against the retained baseline. Checked by `Library Retry sends the retained edit again` in
+  `frontend/tests/browser/LibraryPage.test.tsx`.
+- A locked-field refusal shows specific feedback without offering Retry or Reload. Checked by
+  `Library Retry sends the retained edit again` in `frontend/tests/browser/LibraryPage.test.tsx`.
+- A batch Set status action sends each target's own editing baseline, classifies successful, temporarily failed and
+  conflicted targets independently, and activating Retry failed books sends only the temporarily failed target again
+  under its original baseline while leaving successful and conflicted targets unsent. Checked by
+  `Library Retry sends the retained edit again` in `frontend/tests/browser/LibraryPage.test.tsx`.
