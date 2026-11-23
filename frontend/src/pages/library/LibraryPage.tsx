@@ -675,7 +675,7 @@ function LibraryContent({
         },
         onCompleted: ({ addShelfItem }) => {
           if (addShelfItem.__typename === "ShelfItemAdded") {
-            invalidateLibraryVisits(environment, [], shelfId);
+            invalidateLibraryVisits(environment, [], { shelfId });
             resolve({ saved: true, action: "none" });
           } else if (addShelfItem.__typename === "NotFound")
             resolve({ saved: false, action: "none", message: addShelfItem.message });

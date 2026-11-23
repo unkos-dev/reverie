@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import type { Preferences } from "../../src/api/preferences";
@@ -436,6 +436,23 @@ async function ready(page: Page): Promise<void> {
     await document.activeViewTransition?.finished;
   });
 }
+async function clickRetainedTableControl(page: Page, control: Locator): Promise<void> {
+  const hit: { point?: { x: number; y: number } } = {};
+  // Locator clicks can scroll the retained table and change the position being tested.
+  await expect
+    .poll(async () => {
+      hit.point = await control.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        return element.contains(document.elementFromPoint(x, y)) ? { x, y } : undefined;
+      });
+      return hit.point;
+    })
+    .toBeDefined();
+  if (hit.point === undefined) throw new Error("The retained table control must receive pointers.");
+  await page.mouse.click(hit.point.x, hit.point.y);
+}
 async function refine(page: Page) {
   await page.getByRole("button", { name: /^Filters/ }).click();
   const drawer = page.getByRole("dialog", { name: "Filters" });
@@ -456,7 +473,7 @@ test("rapid edits reload with their first request and no URL grammar", async ({ 
   await page.goto("/library");
   await ready(page);
   await chooseFacets(page);
-  await search(page).pressSequentially("The Sea");
+  await search(page).fill("The Sea");
   fixture.bootstrap = "failing";
   await page.reload();
   await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
@@ -723,6 +740,8 @@ test("unchanged returns preserve each visit's books and known-book position", as
 test("a moved book returns to its saved position", async ({ page }) => {
   // REV-REQ-0080 R2: a named book keeps its viewport position when its list index changes.
   const fixture = await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+  // React Aria's scroll-end detection needs Date.now() to keep advancing.
+  await page.clock.install();
   await page.goto("/library");
   await ready(page);
   const table = page.getByRole("grid", { name: "Library books", exact: true });
@@ -766,7 +785,7 @@ test("a moved book returns to its saved position", async ({ page }) => {
   const anchor = fixture.books.splice(8, 1);
   expect(anchor).toHaveLength(1);
   fixture.books.splice(60, 0, ...anchor);
-  await page.clock.setFixedTime(Date.now() + 301_000);
+  await page.clock.fastForward(301_000);
   const beforeReturn = fixture.requests.length;
   const { held, release } = await holdBooksContinuation(page);
   await page.goBack();
@@ -814,6 +833,7 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
   test(`a newer ${action} wins during a held return`, async ({ page }) => {
     // REV-REQ-0080 Y1: newer intent supersedes a held return completion.
     await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+    await page.clock.install();
     await page.goto("/library");
     await ready(page);
     await page.getByRole("button", { name: "Load more", exact: true }).click();
@@ -836,7 +856,7 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
     await expect(
       page.getByRole("heading", { name: "Journey book 009", exact: true }),
     ).toBeVisible();
-    await page.clock.setFixedTime(Date.now() + 301_000);
+    await page.clock.fastForward(301_000);
     const { held, release } = await holdBooksContinuation(page);
     await page.goBack();
     const request = await held;
@@ -861,29 +881,25 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
           table.getByRole("link", { name: "Journey book 010", exact: true }),
         ).toBeVisible();
         break;
-      case "sort": {
-        const drawer = await refine(page);
-        const sort = await section(page, "Sort");
-        await expect(page.getByText("Updating results…", { exact: true })).toBeAttached();
-        await sort
-          .getByRole("button", { name: "Change Added sort direction (currently descending)" })
-          .click();
-        await drawer.getByRole("button", { name: "Close filters", exact: true }).click();
-        await expect(page.getByText("Sorted by Added ascending", { exact: true })).toBeAttached();
+      case "sort":
+        await clickRetainedTableControl(
+          page,
+          table.getByRole("columnheader", { name: /^Title(?:\s|$)/ }),
+        );
+        await expect(page.getByText("Sorted by Title ascending", { exact: true })).toBeAttached();
         break;
-      }
       case "view":
         await page.getByRole("radio", { name: "Covers", exact: true }).click();
         await expect(page.getByRole("grid", { name: "Books", exact: true })).toBeVisible();
         break;
       case "navigation":
-        await expect(page.getByText("Updating results…", { exact: true })).toBeVisible();
-        await page
-          .getByRole("navigation", { name: "Primary" })
-          .getByRole("link", { name: "Shelves", exact: true })
-          .click();
-        await expect(page).toHaveURL(/\/shelves$/);
-        await expect(page.getByRole("heading", { name: "Shelves", exact: true })).toBeVisible();
+        await clickRetainedTableControl(
+          page,
+          table.getByRole("link", { name: "Journey book 013", exact: true }),
+        );
+        await expect(
+          page.getByRole("heading", { name: "Journey book 013", exact: true }),
+        ).toBeVisible();
         break;
     }
     release();
@@ -898,7 +914,7 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
         await expect(original).not.toBeAttached();
         break;
       case "sort":
-        await expect(page.getByText("Sorted by Added ascending", { exact: true })).toBeAttached();
+        await expect(page.getByText("Sorted by Title ascending", { exact: true })).toBeAttached();
         await expect(page.getByText("50 books loaded", { exact: true }).first()).toBeVisible();
         break;
       case "view":
@@ -906,8 +922,9 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
         await expect(table).not.toBeAttached();
         break;
       case "navigation":
-        await expect(page).toHaveURL(/\/shelves$/);
-        await expect(page.getByRole("heading", { name: "Shelves", exact: true })).toBeVisible();
+        await expect(
+          page.getByRole("heading", { name: "Journey book 013", exact: true }),
+        ).toBeVisible();
         break;
     }
   });

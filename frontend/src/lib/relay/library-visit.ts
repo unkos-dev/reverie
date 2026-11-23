@@ -4,6 +4,7 @@ import {
   ROOT_ID,
   createOperationDescriptor,
   type Environment,
+  type ReadOnlyRecordProxy,
   type Subscription,
 } from "relay-runtime";
 
@@ -198,6 +199,12 @@ export class LibraryPreparation {
     for (const reference of this.held.splice(0)) reference.dispose();
   }
 }
+
+type LibraryInvalidation = {
+  shelfId?: string;
+  reloadId?: string;
+  siblingEditions?: { id: string; workId: string };
+};
 
 /** Own one Navigation entry's intent, displayed source, isolated replacement and route references. */
 export class LibraryVisitOwner {
@@ -449,11 +456,17 @@ export class LibraryVisitOwner {
     this.replace(source.request, source.sort, position);
   }
 
-  invalidate(fields: readonly string[], shelfId?: string): void {
+  invalidate(
+    fields: readonly string[],
+    { shelfId, reloadId, siblingEditions }: LibraryInvalidation,
+  ): void {
     const source = this.state.source;
     const candidate = this.state.candidate;
+    const stale = new Set<LibrarySource>();
     for (const generation of [source, candidate]) {
-      if (generation === undefined || !dependsOn(generation, fields, shelfId)) continue;
+      if (generation === undefined) continue;
+      const matchesRequest = dependsOn(generation, fields, shelfId);
+      if (!matchesRequest && reloadId === undefined && siblingEditions === undefined) continue;
       const { filter, sort } = generation.request;
       const id = ConnectionHandler.getConnectionID(ROOT_ID, "readerLibrary_books", {
         __dynamicKey: generation.key,
@@ -461,16 +474,36 @@ export class LibraryVisitOwner {
         sort,
       });
       this.environment.commitUpdate((store) => {
-        store.get(id)?.invalidateRecord();
+        const connection = store.get(id);
+        const record: ReadOnlyRecordProxy | null | undefined = connection;
+        const affected =
+          matchesRequest ||
+          record?.getLinkedRecords("edges")?.some((edge) => {
+            const book: ReadOnlyRecordProxy | null | undefined = edge?.getLinkedRecord("node");
+            if (book == null) return false;
+            return (
+              book.getDataID() === reloadId ||
+              (siblingEditions !== undefined &&
+                book.getDataID() !== siblingEditions.id &&
+                book.getLinkedRecord("work")?.getDataID() === siblingEditions.workId)
+            );
+          });
+        if (affected === true) {
+          stale.add(generation);
+          connection?.invalidateRecord();
+        }
       });
     }
-    if (candidate !== undefined && dependsOn(candidate, fields, shelfId) && this.isCurrent()) {
-      this.replace(candidate.request, candidate.sort, this.state.position);
-    } else if (
-      candidate === undefined &&
-      source !== undefined &&
-      dependsOn(source, fields, shelfId)
+    if (
+      candidate !== undefined &&
+      this.isCurrent() &&
+      (stale.has(candidate) ||
+        (source !== undefined &&
+          stale.has(source) &&
+          sameRequest(source.request, candidate.request)))
     ) {
+      this.replace(candidate.request, candidate.sort, this.state.position);
+    } else if (candidate === undefined && source !== undefined && stale.has(source)) {
       this.refresh();
     }
   }
@@ -622,10 +655,10 @@ export function bindLibraryVisit(owner: LibraryVisitOwner): void {
 export function invalidateLibraryVisits(
   environment: Environment,
   fields: readonly string[],
-  shelfId?: string,
+  options: LibraryInvalidation = {},
 ): void {
   for (const owner of visits.values()) {
-    if (owner.environment === environment) owner.invalidate(fields, shelfId);
+    if (owner.environment === environment) owner.invalidate(fields, options);
   }
 }
 

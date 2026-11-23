@@ -131,6 +131,10 @@ const reloadQuery = graphql`
   query useCellEditReloadQuery($id: ID!) @throwOnFieldError {
     manifestation(id: $id) {
       ...LibraryTable_cell
+      ...BookCard_book
+      work {
+        id
+      }
       metadata {
         etag
         title
@@ -224,6 +228,15 @@ function changedField(field: EditableColumnKey): string {
   return field === "authors" ? "author" : field;
 }
 
+function siblingEditions(target: EditTarget, column: EditableColumnKey) {
+  if (
+    target.workId === undefined ||
+    (column !== "title" && column !== "subtitle" && column !== "authors")
+  )
+    return undefined;
+  return { id: target.id, workId: target.workId };
+}
+
 function refusal(result: { __typename: string; message?: string }): Refusal {
   let action: RecoveryAction = "none";
   if (result.__typename === "StaleBaseline") action = "reload";
@@ -278,7 +291,35 @@ function runMutation<T>(
   });
 }
 
-export type UseCellEditResult = ReturnType<typeof useCellEdit>;
+type CellEditFeedback = {
+  id: string;
+  rowId: string;
+  columnKey: EditableColumnKey;
+  bookTitle: string;
+  field: string;
+  submitted: string;
+  retained: EditValue | undefined;
+  message: string;
+  action: RecoveryAction;
+  reloading: boolean;
+  retrying: boolean;
+  reload: () => void;
+  retry: () => void;
+};
+
+export type UseCellEditResult = {
+  pendingCells: ReadonlyMap<string, string>;
+  savedCells: ReadonlySet<string>;
+  onCellEdit: (report: CellEditReport) => void;
+  statusTargets: (rows: readonly { id: string }[], status: ReadingStatus | null) => StatusTarget[];
+  keyboardProps: ReturnType<typeof useKeyboard>["keyboardProps"];
+  undo: () => void;
+  undoPending: boolean;
+  undoAvailable: boolean;
+  undoLabel: string | undefined;
+  undoOutcome: string | null;
+  feedback: readonly CellEditFeedback[];
+};
 
 export function useCellEdit({
   enabled,
@@ -286,7 +327,7 @@ export function useCellEdit({
 }: {
   enabled: boolean;
   rows: useCellEdit_batchRows$key;
-}) {
+}): UseCellEditResult {
   const environment = useRelayEnvironment();
   const targets = useFragment(batchRows, rows);
   const controller = useRef<AbortController | null>(null);
@@ -418,7 +459,9 @@ export function useCellEdit({
         });
       }
     }
-    invalidateLibraryVisits(environment, [changedField(columnKey)]);
+    invalidateLibraryVisits(environment, [changedField(columnKey)], {
+      siblingEditions: siblingEditions(target, columnKey),
+    });
     return null;
   }
 
@@ -469,7 +512,15 @@ export function useCellEdit({
       if (controller.current?.signal.aborted) return;
       if (data?.manifestation == null)
         setRecord({ ...record, reloading: false, message: "This book is unavailable." });
-      else setRecord({ ...record, reloading: false, reloaded: true });
+      else {
+        const id = record.attempt.target.id;
+        const workId = data.manifestation.work?.id;
+        invalidateLibraryVisits(environment, [], {
+          reloadId: id,
+          siblingEditions: workId === undefined ? undefined : { id, workId },
+        });
+        setRecord({ ...record, reloading: false, reloaded: true });
+      }
     } catch (error) {
       if (!controller.current?.signal.aborted)
         setRecord({
@@ -587,7 +638,9 @@ export function useCellEdit({
         }
       }
       if (result?.__typename === "MetadataRestored") {
-        invalidateLibraryVisits(environment, [changedField(columnKey)]);
+        invalidateLibraryVisits(environment, [changedField(columnKey)], {
+          siblingEditions: siblingEditions(target, columnKey),
+        });
         retire = true;
         message = `${COLUMN_LABELS[columnKey]} for “${target.title}” restored.`;
       } else if (result !== undefined) {

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<fc899af4a22b5f326c5841bfecad4c78>>
- * @relayHash 06bcbe912a02c4a01738a3a362e2e23a
+ * @generated SignedSource<<5e7bd6cb37b6ec65b35c6c1354ce821d>>
+ * @relayHash 65e1b78ba908120c097b561da509cd7b
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 5d202b4b1f6fc03a243ab2228d712f64718c9a71ca1b4ffcabb9a8031d5abb41
+// @relayRequestID 6d5d88d1ecfc57261c595da8633c27942dc92f865090d0af2dcf8e204d7eedb5
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -37,7 +37,13 @@ export type useCellEditReloadQuery$data = {
           readonly rating: number | null | undefined;
           readonly status: ReadingStatus | null | undefined;
         };
-        readonly " $fragmentSpreads": FragmentRefs<"LibraryTable_cell">;
+        readonly work:
+          | {
+              readonly id: string;
+            }
+          | null
+          | undefined;
+        readonly " $fragmentSpreads": FragmentRefs<"BookCard_book" | "LibraryTable_cell">;
       }
     | null
     | undefined;
@@ -66,56 +72,56 @@ const node: ConcreteRequest = (function () {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "etag",
+      name: "id",
       storageKey: null,
     },
     v3 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "title",
+      name: "etag",
       storageKey: null,
     },
     v4 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "subtitle",
+      name: "title",
       storageKey: null,
     },
     v5 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "isbn13",
+      name: "subtitle",
       storageKey: null,
     },
     v6 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "pages",
+      name: "isbn13",
       storageKey: null,
     },
     v7 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "status",
+      name: "pages",
       storageKey: null,
     },
     v8 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "rating",
+      name: "status",
       storageKey: null,
     },
     v9 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "id",
+      name: "rating",
       storageKey: null,
     },
     v10 = [
@@ -126,7 +132,7 @@ const node: ConcreteRequest = (function () {
         name: "name",
         storageKey: null,
       },
-      v9 /*:: as any*/,
+      v2 /*:: as any*/,
     ];
   return {
     fragment: {
@@ -151,6 +157,21 @@ const node: ConcreteRequest = (function () {
               name: "LibraryTable_cell",
             },
             {
+              args: null,
+              kind: "FragmentSpread",
+              name: "BookCard_book",
+            },
+            {
+              alias: null,
+              args: null,
+              concreteType: "Work",
+              kind: "LinkedField",
+              name: "work",
+              plural: false,
+              selections: [v2 /*:: as any*/],
+              storageKey: null,
+            },
+            {
               alias: null,
               args: null,
               concreteType: "MetadataRevision",
@@ -158,11 +179,11 @@ const node: ConcreteRequest = (function () {
               name: "metadata",
               plural: false,
               selections: [
-                v2 /*:: as any*/,
                 v3 /*:: as any*/,
                 v4 /*:: as any*/,
                 v5 /*:: as any*/,
                 v6 /*:: as any*/,
+                v7 /*:: as any*/,
               ],
               storageKey: null,
             },
@@ -173,7 +194,7 @@ const node: ConcreteRequest = (function () {
               kind: "LinkedField",
               name: "readingState",
               plural: false,
-              selections: [v2 /*:: as any*/, v7 /*:: as any*/, v8 /*:: as any*/],
+              selections: [v3 /*:: as any*/, v8 /*:: as any*/, v9 /*:: as any*/],
               storageKey: null,
             },
           ],
@@ -197,7 +218,7 @@ const node: ConcreteRequest = (function () {
           name: "manifestation",
           plural: false,
           selections: [
-            v9 /*:: as any*/,
+            v2 /*:: as any*/,
             {
               alias: null,
               args: null,
@@ -220,9 +241,9 @@ const node: ConcreteRequest = (function () {
               name: "work",
               plural: false,
               selections: [
-                v9 /*:: as any*/,
-                v3 /*:: as any*/,
+                v2 /*:: as any*/,
                 v4 /*:: as any*/,
+                v5 /*:: as any*/,
                 {
                   alias: null,
                   args: [
@@ -300,12 +321,12 @@ const node: ConcreteRequest = (function () {
               name: "metadata",
               plural: false,
               selections: [
-                v2 /*:: as any*/,
                 v3 /*:: as any*/,
                 v4 /*:: as any*/,
                 v5 /*:: as any*/,
                 v6 /*:: as any*/,
-                v9 /*:: as any*/,
+                v7 /*:: as any*/,
+                v2 /*:: as any*/,
               ],
               storageKey: null,
             },
@@ -316,7 +337,19 @@ const node: ConcreteRequest = (function () {
               kind: "LinkedField",
               name: "readingState",
               plural: false,
-              selections: [v2 /*:: as any*/, v7 /*:: as any*/, v8 /*:: as any*/, v9 /*:: as any*/],
+              selections: [
+                v3 /*:: as any*/,
+                v8 /*:: as any*/,
+                v9 /*:: as any*/,
+                v2 /*:: as any*/,
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "progressPct",
+                  storageKey: null,
+                },
+              ],
               storageKey: null,
             },
           ],
@@ -325,7 +358,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "5d202b4b1f6fc03a243ab2228d712f64718c9a71ca1b4ffcabb9a8031d5abb41",
+      id: "6d5d88d1ecfc57261c595da8633c27942dc92f865090d0af2dcf8e204d7eedb5",
       metadata: {},
       name: "useCellEditReloadQuery",
       operationKind: "query",
@@ -334,6 +367,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "3a8be3b9958945bf9517ecd8dc4068d7";
+(node as any).hash = "04e30e1bc1bb8a898ce1c93f4c5c1f24";
 
 export default node;

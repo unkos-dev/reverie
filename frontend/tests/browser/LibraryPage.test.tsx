@@ -742,12 +742,20 @@ describe("LibraryPage", () => {
 });
 
 // REV-REQ-0080: a newer filter intent replaces the previous displayed rows, including an empty result.
+// REV-REQ-0083: shared title edits refresh sibling baselines.
 // Data loss boundary: after the row disappears, Undo retries the same saved operation for the same book.
 test("metadata Undo keeps its exact target after the row disappears", async () => {
   const original = bookFixture({ pages: 100 });
+  const sibling = bookFixture({ id: "44444444-4444-4444-8444-444444444444" });
   const saved = { ...original, title: "Saved title", metadata_etag: '"cccccccccccccccccccccc"' };
   const latest = { ...saved, pages: 250, metadata_etag: '"dddddddddddddddddddddd"' };
   const restored = { ...latest, title: original.title, metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
+  const savedSibling = {
+    ...sibling,
+    title: saved.title,
+    metadata_etag: '"ssssssssssssssssssssss"',
+  };
+  const restoredSibling = { ...sibling, metadata_etag: '"tttttttttttttttttttttt"' };
   const operation = {
     operationId: "33333333-3333-4333-8333-333333333333",
     fieldName: "title",
@@ -757,11 +765,11 @@ test("metadata Undo keeps its exact target after the row disappears", async () =
   const undoMutation = "useCellEditUndoMutation";
   const resolveQuery = "useCellEditUndoEligibilityQuery";
   const fixture = await renderLibrary({
-    items: [original],
+    items: [original, sibling],
     visit: { view: "table" },
     handler: (name, variables, owner) => {
       if (name === "useCellEditSaveMutation") {
-        owner.books = [saved];
+        owner.books = [saved, savedSibling];
         return savedCells(metadataVariables.parse(variables).requestId, saved, [operation]);
       }
       if (name === resolveQuery) {
@@ -776,18 +784,25 @@ test("metadata Undo keeps its exact target after the row disappears", async () =
       if (name === undoMutation) {
         if (variables.baseline !== latest.metadata_etag)
           return refused("undoMetadata", "StaleBaseline", "if-match-mismatch");
-        owner.books = [restored];
+        owner.books = [restored, restoredSibling];
         return restoredCells(restored, { ...operation, status: "CONSUMED" });
       }
     },
   });
-  await editTitle(original.title, saved.title);
+  await userEvent.click(
+    page.getByRole("button", { name: `Edit title of ${original.title}` }).first(),
+  );
+  await page.getByRole("dialog").getByRole("textbox").fill(saved.title);
+  await userEvent.keyboard("{Enter}");
   const undo = page.getByRole("button", {
     name: `Undo Title for “${original.title}”`,
     exact: true,
   });
   await expect.element(undo).toBeEnabled();
-  fixture.books = [latest];
+  await userEvent.click(page.getByRole("button", { name: `Edit title of ${saved.title}` }).last());
+  await expect.element(page.getByRole("dialog").getByRole("textbox")).toHaveValue(saved.title);
+  await userEvent.keyboard("{Escape}");
+  fixture.books = [latest, savedSibling];
   await userEvent.fill(page.getByRole("searchbox"), "missing");
   await expect.element(findLibraryTable()).not.toBeInTheDocument();
   await userEvent.click(undo);
@@ -851,6 +866,7 @@ it("Library Retry sends the retained edit again", async () => {
   const writes: z.infer<typeof metadataVariables>[] = [];
   const readingWrites: z.infer<typeof readingVariables>[] = [];
   let reloads = 0;
+  let holdReplacement = false;
   let rejectDelayed: ((error: Error) => void) | undefined;
   const delayed = new Promise<Response>((_resolve, reject) => {
     rejectDelayed = reject;
@@ -858,6 +874,7 @@ it("Library Retry sends the retained edit again", async () => {
   const fixture = await renderLibrary({
     visit: { view: "table" },
     handler: (name, variables, owner) => {
+      if (holdReplacement && name === "LibraryPageQuery") return new Promise<Response>(() => {});
       if (name === "useCellEditSaveMutation") {
         const write = metadataVariables.parse(variables);
         writes.push(write);
@@ -918,6 +935,21 @@ it("Library Retry sends the retained edit again", async () => {
   expect(writes).toHaveLength(3);
   expect(writes[1]).toEqual(writes[0]);
   expect(writes[2]).toEqual(writes[0]);
+  const search = page.getByRole("searchbox");
+  await userEvent.fill(search, original.title);
+  await vi.waitFor(() => {
+    expect(
+      fixture.calls.some(
+        ({ name, variables }) =>
+          name === "LibraryPageQuery" &&
+          listVariables.parse(variables).filter?.q === original.title,
+      ),
+    ).toBe(true);
+  });
+  await expect
+    .element(page.getByText("Updating results…", { exact: true }))
+    .not.toBeInTheDocument();
+  await expect.element(page.getByRole("link", { name: original.title, exact: true })).toBeVisible();
   current = { ...current, title: "Fresh canonical", metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
   fixture.books = [current];
   await expect
@@ -936,6 +968,8 @@ it("Library Retry sends the retained edit again", async () => {
   await expect.element(reload).not.toHaveAttribute("data-pending");
   expect(reloads).toBe(2);
   expect(writes).toHaveLength(beforeReload);
+  await expect.element(page.getByText("No books match these filters")).toBeVisible();
+  await userEvent.fill(search, "");
   mode = "success";
   await userEvent.click(page.getByRole("button", { name: `Edit title of ${current.title}` }));
   await page.getByRole("dialog").getByRole("textbox").fill("Corrected title");
@@ -999,6 +1033,23 @@ it("Library Retry sends the retained edit again", async () => {
   expect(readingWrites[1]).toEqual(readingWrites[0]);
   expect(readingWrites[0]?.baseline).toBe(original.reading_etag);
   await expect.element(outcomes.getByText("Submitted value: 5")).toBeInTheDocument();
+  current = {
+    ...current,
+    reading_state: {
+      status: "reading",
+      rating: null,
+      progress_pct: 37,
+      started_at: null,
+      finished_at: null,
+    },
+  };
+  fixture.books = [current];
+  holdReplacement = true;
+  await userEvent.click(reload);
+  await expect.element(reload).not.toHaveAttribute("data-pending");
+  await expect.element(page.getByText("Updating results…", { exact: true })).toBeVisible();
+  await userEvent.click(page.getByRole("radio", { name: "Covers", exact: true }));
+  await expect.element(page.getByText("37% read", { exact: true })).toBeVisible();
   await cleanup();
   setRelayAccount(null);
   vi.restoreAllMocks();
