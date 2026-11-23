@@ -50,6 +50,20 @@ url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9
 url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/745393873"
 provenance = "github-attestations"
 
+[[tools."github:opengrep/opengrep"]]
+version = "2.0.0"
+backend = "github:opengrep/opengrep"
+specifiers = ["v2.0.0"]
+
+[tools."github:opengrep/opengrep".options]
+asset_pattern = "opengrep_linux_x86"
+
+[tools."github:opengrep/opengrep"."platforms.linux-x64"]
+checksum = "sha256:37e93f4da5fd04a18c5c1febbdd12f7e98dfccd4d0c9cf2593bcb25eeb462da0"
+url = "https://github.com/opengrep/opengrep/releases/download/v2.0.0/opengrep_linux_x86"
+url_api = "https://api.github.com/repos/opengrep/opengrep/releases/assets/743710463"
+provenance = "github-attestations"
+
 [[tools."github:owenlamont/ryl"]]
 version = "0.30.0"
 backend = "github:owenlamont/ryl"
@@ -136,17 +150,6 @@ specifiers = ["3.0.0"]
 checksum = "sha256:6c90d4a474c7c0409dfb575be03a5345878ac14fdba18de8b40fa58c60121189"
 url = "https://github.com/rui314/mold/releases/download/v3.0.0/mold-3.0.0-x86_64-linux.tar.gz"
 url_api = "https://api.github.com/repos/rui314/mold/releases/assets/612122001"
-
-[[tools.opengrep]]
-version = "1.33.1"
-backend = "aqua:opengrep/opengrep"
-specifiers = ["1.33.1"]
-
-[tools.opengrep."platforms.linux-x64"]
-checksum = "sha256:46e8133cc490f9f50518061590ce2f6be5a08afaeda034471c0ceda4b3899808"
-checksum_source = "mise-versions"
-url = "https://github.com/opengrep/opengrep/releases/download/v1.33.1/opengrep_manylinux_x86"
-url_api = "https://api.github.com/repos/opengrep/opengrep/releases/assets/688084224"
 
 [[tools.pnpm]]
 version = "11.28.13"
