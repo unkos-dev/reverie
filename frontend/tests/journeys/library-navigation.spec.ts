@@ -870,10 +870,13 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
         await expect(page.getByRole("grid", { name: "Books", exact: true })).toBeVisible();
         break;
       case "navigation":
-        await original.getByRole("link", { name: "Journey book 009", exact: true }).click();
-        await expect(
-          page.getByRole("heading", { name: "Journey book 009", exact: true }),
-        ).toBeVisible();
+        await expect(page.getByText("Updating results…", { exact: true })).toBeVisible();
+        await page
+          .getByRole("navigation", { name: "Primary" })
+          .getByRole("link", { name: "Shelves", exact: true })
+          .click();
+        await expect(page).toHaveURL(/\/shelves$/);
+        await expect(page.getByRole("heading", { name: "Shelves", exact: true })).toBeVisible();
         break;
     }
     release();
@@ -896,9 +899,8 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
         await expect(table).not.toBeAttached();
         break;
       case "navigation":
-        await expect(
-          page.getByRole("heading", { name: "Journey book 009", exact: true }),
-        ).toBeVisible();
+        await expect(page).toHaveURL(/\/shelves$/);
+        await expect(page.getByRole("heading", { name: "Shelves", exact: true })).toBeVisible();
         break;
     }
   });
