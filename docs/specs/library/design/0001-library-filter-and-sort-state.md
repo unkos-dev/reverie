@@ -113,8 +113,8 @@ The `reverieLibrary` entry field holds the owned visit; writes preserve unrelate
 text and its selected operator even when the text is blank. Chips and counts describe effective predicates. Requests
 retain raw ISBN-13 contains text, so the server applies its raw length cap before separator removal; the client uses the
 same raw request value for eligibility and source identity. Complete inverted bounds remain entered. Only the entry's
-visit owner writes its entry state: dispatched edits, captured positions and the route load's prune. Query completion
-and suggestion responses never write filter intent.
+visit owner writes its entry state: dispatched edits, captured positions and the route load's reset when a restored
+selection is no longer visible. Query completion and suggestion responses never write filter intent.
 
 Callers include quick search, every rail section, section clear, chip removal, global and empty-state clear, view
 gestures and the table-chunk fallback. View gestures also write the account preference; chunk failure changes only the
@@ -138,19 +138,19 @@ load it reached. The owner rejects an intent write, a position write and a books
 longer current, so a departing page cannot write into the destination's visit during a pending traversal.
 
 The loader confirms the account, then reads `libraryBootstrapQuery`: the account's preferences and lookups of the
-restored author, series and shelf IDs, each sent once. Genre, mood and tag values are names and are not looked up. Each
-restored selection that its lookup omits is dropped from every mode, and dropping any selection also clears the saved
-position. Only a successful bootstrap establishes that the viewer can no longer see a selection; a failed bootstrap
-drops nothing. The owner writes the pruned visit to its entry only while that entry is current. The loader then starts
-`LibraryPageQuery` with the surviving selections, and the page reads it under Suspense with LibrarySkeleton as the
-fallback. The first document load sends the bootstrap, the screen query and the books request. A push has empty lookups
-and finds stored preferences in the store, so it sends no bootstrap request. A label lookup is answered from the store
-when every requested record is already there, as it is for a pick from suggestions or the shelf list.
+restored author, series and shelf IDs, each sent once. Genre, mood and tag values are names and are not looked up. When
+any lookup omits a restored ID, the loader resets the visit's filters and saved position to empty while keeping any view
+override. Only a successful bootstrap establishes that the viewer can no longer see a selection; a failed bootstrap
+resets nothing. The owner writes the reset visit to its entry only while that entry is current. The loader then starts
+`LibraryPageQuery` with the resolved visit's selections, and the page reads it under Suspense with LibrarySkeleton as
+the fallback. The first document load sends the bootstrap, the screen query and the books request. A push has empty
+lookups and finds stored preferences in the store, so it sends no bootstrap request. A label lookup is answered from the
+store when every requested record is already there, as it is for a pick from suggestions or the shelf list.
 
 A bootstrap answered from the store keeps its selections until a deletion invalidates a selected record or a fetch
 occurs. Deleting a shelf invalidates that shelf's record, so a return to a visit that selected it fetches the bootstrap
-and drops the shelf. Authors and series leave the visible set only through edits and enrichment, which invalidate no
-record, so a retained visit keeps such a selection until its bootstrap is next fetched.
+and resets the visit's filters. Authors and series leave the visible set only through edits and enrichment, which
+invalidate no record, so a retained visit keeps such a selection until its bootstrap is next fetched.
 
 The requested source follows published filter intent immediately. A request is eligible only when each multi-value
 predicate contains at most 20 values and every active text predicate contains at most 200 Unicode scalar values after
@@ -218,9 +218,9 @@ bootstrap lookups and the label read send each selected ID once; displayed rows 
 
 A failed bootstrap reaches the route error page before the loader writes anything, so the saved visit keeps every
 restored selection, and a later load with the server healthy restores them. A failed screen query also reaches the route
-error page; by then the loader has already persisted any prune. A failed continuation page of the shelf list stops
-loading shelves, keeps the loaded ones and gives the Shelf section and batch bar their degraded state; a failed first
-page fails the screen query. A failed suggestion search logs the failure and shows "Couldn't load suggestions. Try
+error page; by then the loader has already persisted any filter reset. A failed continuation page of the shelf list
+stops loading shelves, keeps the loaded ones and gives the Shelf section and batch bar their degraded state; a failed
+first page fails the screen query. A failed suggestion search logs the failure and shows "Couldn't load suggestions. Try
 again." in the popover while the input keeps its element, focus and text. A term longer than 100 Unicode scalar values
 sends no request and shows the same text.
 

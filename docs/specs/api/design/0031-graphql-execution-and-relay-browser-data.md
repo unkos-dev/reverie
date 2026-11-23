@@ -308,7 +308,7 @@ The Library route loader confirms the account, retains `libraryBootstrapQuery` f
 fetches it with `fetchQuery` under `store-or-network`, resolving on completion with the last payload. It then starts
 `LibraryPageQuery` with `loadQuery` under `store-or-network` and assigns that reference to the same owner, which
 releases both on abort, failure, a changed account, a newer preparation of the same entry, or entry disposal. The Design
-"Library filter and sort state" describes the destination, the prune and the page's reads.
+"Library filter and sort state" describes the destination, the restore check and the page's reads.
 
 The environment's `missingFieldHandlers` holds one `pluralLinked` handler. For a root `authorLabels`, `seriesLabels` or
 `shelfLabels` field it returns the requested IDs, and for every other field it returns nothing. Relay uses that answer
