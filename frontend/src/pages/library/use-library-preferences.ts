@@ -11,12 +11,13 @@
  * `docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md`).
  */
 import { graphql, useFragment, useMutation } from "react-relay";
-import type { RecordProxy, RecordSourceSelectorProxy } from "relay-runtime";
+import type { RecordSourceSelectorProxy } from "relay-runtime";
 import { mutationsUpdateLibraryPreferencesMutation } from "@/lib/relay/mutations";
 import type {
   useLibraryPreferences_preferences$data as PreferencesData,
   useLibraryPreferences_preferences$key,
 } from "@/lib/relay/__generated__/useLibraryPreferences_preferences.graphql";
+import type { useLibraryPreferences_updatable$key as UpdatablePreferencesKey } from "@/lib/relay/__generated__/useLibraryPreferences_updatable.graphql";
 import type {
   mutationsUpdateLibraryPreferencesMutation as PreferencesMutation,
   UpdateLibraryPreferencesInput,
@@ -34,6 +35,7 @@ import { HIDEABLE_COLUMNS } from "./table-columns";
 
 const preferencesFragment = graphql`
   fragment useLibraryPreferences_preferences on LibraryPreferences @throwOnFieldError {
+    ...useLibraryPreferences_updatable
     hiddenColumns
     density
     view
@@ -53,9 +55,16 @@ const preferencesFragment = graphql`
   }
 `;
 
+const updatablePreferencesFragment = graphql`
+  fragment useLibraryPreferences_updatable on LibraryPreferences @updatable {
+    hiddenColumns
+    density
+    view
+  }
+`;
+
 type Column = NonNullable<PreferencesData["hiddenColumns"]>[number];
 type SortColumn = PreferencesData["defaults"]["sort"][number]["column"];
-type PreferencesRecord = RecordProxy<Record<never, never>>;
 
 const COLUMNS = new Map<string, Column>([
   ["subtitle", "SUBTITLE"],
@@ -132,16 +141,11 @@ export function useLibraryPreferences(
 
   function write(
     input: UpdateLibraryPreferencesInput,
-    apply: (record: PreferencesRecord, store: RecordSourceSelectorProxy) => void,
+    optimisticUpdater: (store: RecordSourceSelectorProxy) => void,
   ): void {
     commit({
       variables: { input },
-      optimisticUpdater: (store) => {
-        const record: PreferencesRecord | null | undefined = store
-          .get(viewerId)
-          ?.getLinkedRecord("libraryPreferences");
-        if (record != null) apply(record, store);
-      },
+      optimisticUpdater,
       onCompleted: ({ updateLibraryPreferences }) => {
         if (updateLibraryPreferences.__typename === "LibraryPreferencesInvalid")
           console.error(
@@ -181,31 +185,44 @@ export function useLibraryPreferences(
     canResetColumns: data.hiddenColumns != null,
     setDensity: (next) => {
       const value = next === "compact" ? "COMPACT" : "COMFORTABLE";
-      write({ density: value }, (record) => {
-        record.setValue(value, "density");
+      write({ density: value }, (store) => {
+        const { updatableData } = store.readUpdatableFragment<UpdatablePreferencesKey>(
+          updatablePreferencesFragment,
+          data,
+        );
+        updatableData.density = value;
       });
     },
     setColumnHidden: (columnKey, hidden) => {
       const column = COLUMNS.get(columnKey);
       if (column === undefined) return;
-      write({ columns: [{ column, hidden }] }, (record) => {
-        const stored = record.getValue("hiddenColumns");
-        const current: readonly string[] = Array.isArray(stored)
-          ? stored.filter((item): item is string => typeof item === "string")
-          : data.defaults.hiddenColumns;
-        const others = current.filter((item) => item !== column);
-        record.setValue(hidden ? [...others, column] : others, "hiddenColumns");
+      write({ columns: [{ column, hidden }] }, (store) => {
+        const { updatableData } = store.readUpdatableFragment<UpdatablePreferencesKey>(
+          updatablePreferencesFragment,
+          data,
+        );
+        const current = updatableData.hiddenColumns ?? data.defaults.hiddenColumns;
+        const others = current.filter((stored) => stored !== column);
+        updatableData.hiddenColumns = hidden ? [...others, column] : others;
       });
     },
     resetColumns: () => {
-      write({ resetHiddenColumns: true }, (record) => {
-        record.setValue(null, "hiddenColumns");
+      write({ resetHiddenColumns: true }, (store) => {
+        const { updatableData } = store.readUpdatableFragment<UpdatablePreferencesKey>(
+          updatablePreferencesFragment,
+          data,
+        );
+        updatableData.hiddenColumns = null;
       });
     },
     setView: (next) => {
       const value = next === "table" ? "TABLE" : "GRID";
-      write({ view: value }, (record) => {
-        record.setValue(value, "view");
+      write({ view: value }, (store) => {
+        const { updatableData } = store.readUpdatableFragment<UpdatablePreferencesKey>(
+          updatablePreferencesFragment,
+          data,
+        );
+        updatableData.view = value;
       });
     },
     setSortLevels: (levels) => {
@@ -216,7 +233,10 @@ export function useLibraryPreferences(
               column: SORT_COLUMNS[level.field],
               direction: level.desc ? ("DESC" as const) : ("ASC" as const),
             }));
-      write({ sort }, (record, store) => {
+      write({ sort }, (store) => {
+        // Relay @updatable cannot construct new un-identified LibrarySortLevel records.
+        const record = store.get(viewerId)?.getLinkedRecord("libraryPreferences");
+        if (record == null) return;
         if (sort === null) {
           record.setValue(null, "sort");
           return;

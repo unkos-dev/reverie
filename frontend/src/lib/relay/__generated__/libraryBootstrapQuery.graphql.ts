@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<cacbd526bcd0226916e47f2014c548b8>>
- * @relayHash 906ef492db211d7a18929b77826b3ab9
+ * @generated SignedSource<<bf5ba7f4e00fcc15e51ddf75aeaa95c1>>
+ * @relayHash bb2df1e30340803f7da44836ad1e9830
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID e1ab7f2fa99255692c48547aaefd59426c0f3f200bb23c942c2f32161ed37b6e
+// @relayRequestID 41c54a7dbf3f4aaa62e7fef0e109faefe6a5a1f70bb552a70fba6694ce117b96
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -226,6 +226,13 @@ const node: ConcreteRequest = (function () {
               name: "libraryPreferences",
               plural: false,
               selections: [
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "__typename",
+                  storageKey: null,
+                },
                 v6 /*:: as any*/,
                 v7 /*:: as any*/,
                 v8 /*:: as any*/,
@@ -257,7 +264,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "e1ab7f2fa99255692c48547aaefd59426c0f3f200bb23c942c2f32161ed37b6e",
+      id: "41c54a7dbf3f4aaa62e7fef0e109faefe6a5a1f70bb552a70fba6694ce117b96",
       metadata: {},
       name: "libraryBootstrapQuery",
       operationKind: "query",

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<ec2ae6e3c4709b3b0af5bb304349ec3e>>
- * @relayHash 6434ba7f3e282eec67c4603ea3b50057
+ * @generated SignedSource<<9fa5ff0f2284f727c28b7179bd2a81ec>>
+ * @relayHash 2052176c96d194cd9c4257e7c9877b99
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 3852637eb2a35a5342282e2ee916d1f3e8bb8c3c364439a78e5ecfc32f8b8aa5
+// @relayRequestID 5131fcda3de8510b6581173598ff7b50a740a1b3f0a3869da63c512ca13c9c41
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -253,6 +253,7 @@ const node: ConcreteRequest = (function () {
                       name: "libraryPreferences",
                       plural: false,
                       selections: [
+                        v2 /*:: as any*/,
                         v5 /*:: as any*/,
                         v6 /*:: as any*/,
                         v7 /*:: as any*/,
@@ -289,7 +290,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "3852637eb2a35a5342282e2ee916d1f3e8bb8c3c364439a78e5ecfc32f8b8aa5",
+      id: "5131fcda3de8510b6581173598ff7b50a740a1b3f0a3869da63c512ca13c9c41",
       metadata: {},
       name: "mutationsUpdateLibraryPreferencesMutation",
       operationKind: "mutation",

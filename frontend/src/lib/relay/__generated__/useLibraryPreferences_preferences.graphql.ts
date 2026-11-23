@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<9f5c2e5042698bd2c618d37908ce006c>>
+ * @generated SignedSource<<9876a385573b68007de9c0dca89af00e>>
  * @lightSyntaxTransform
  */
 
@@ -24,6 +24,7 @@ export type LibraryView = "GRID" | "TABLE" | "%future added value";
 export type SortField = "AUTHOR" | "CREATED_AT" | "PAGES" | "TITLE" | "%future added value";
 import { FragmentRefs } from "relay-runtime";
 export type useLibraryPreferences_preferences$data = {
+  readonly $updatableFragmentSpreads: FragmentRefs<"useLibraryPreferences_updatable">;
   readonly defaults: {
     readonly density: LibraryDensity;
     readonly hiddenColumns: ReadonlyArray<LibraryColumn>;
@@ -105,6 +106,11 @@ const node: ReaderFragment = (function () {
     },
     name: "useLibraryPreferences_preferences",
     selections: [
+      {
+        args: null,
+        kind: "FragmentSpread",
+        name: "useLibraryPreferences_updatable",
+      },
       v0 /*:: as any*/,
       v1 /*:: as any*/,
       v2 /*:: as any*/,
@@ -125,6 +131,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "813ffb81d218cf7d99b5e24589154bed";
+(node as any).hash = "ec86cb1c4a15b59daa51af8d2f7a4cf2";
 
 export default node;
