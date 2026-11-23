@@ -39,7 +39,7 @@ runs:
       uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
       with:
         # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-        version: "2026.11.10"
+        version: "2026.11.11"
         install_args: ${{ inputs.mise-install-args }}
         add_shims_to_path: ${{ inputs.add-shims-to-path }}
 
