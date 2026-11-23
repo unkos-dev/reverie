@@ -861,10 +861,17 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
           table.getByRole("link", { name: "Journey book 010", exact: true }),
         ).toBeVisible();
         break;
-      case "sort":
-        await table.getByRole("columnheader", { name: /^Title(?:\s|$)/ }).click();
-        await expect(page.getByText("Sorted by Title ascending", { exact: true })).toBeAttached();
+      case "sort": {
+        const drawer = await refine(page);
+        const sort = await section(page, "Sort");
+        await expect(page.getByText("Updating results…", { exact: true })).toBeAttached();
+        await sort
+          .getByRole("button", { name: "Change Added sort direction (currently descending)" })
+          .click();
+        await drawer.getByRole("button", { name: "Close filters", exact: true }).click();
+        await expect(page.getByText("Sorted by Added ascending", { exact: true })).toBeAttached();
         break;
+      }
       case "view":
         await page.getByRole("radio", { name: "Covers", exact: true }).click();
         await expect(page.getByRole("grid", { name: "Books", exact: true })).toBeVisible();
@@ -891,7 +898,7 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
         await expect(original).not.toBeAttached();
         break;
       case "sort":
-        await expect(page.getByText("Sorted by Title ascending", { exact: true })).toBeAttached();
+        await expect(page.getByText("Sorted by Added ascending", { exact: true })).toBeAttached();
         await expect(page.getByText("50 books loaded", { exact: true }).first()).toBeVisible();
         break;
       case "view":

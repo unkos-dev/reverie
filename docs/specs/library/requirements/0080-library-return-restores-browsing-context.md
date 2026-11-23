@@ -28,6 +28,10 @@ sort while retaining different amounts of the collection. Returning to either vi
 - Y1: A newer filter, sort, view, navigation or user scroll prevents a delayed completion from restoring the old
   position or replacing the newer intent.
 
-Checked by `unchanged returns preserve each visit's books and known-book position` for R1a and R1b,
-`a moved book returns to its saved position` for R2, and `a user scroll wins during a held return` for Y1 in
-`frontend/tests/journeys/library-navigation.spec.ts`.
+The navigation journeys in `frontend/tests/journeys/library-navigation.spec.ts` check each criterion.
+
+- R1a and R1b use `unchanged returns preserve each visit's books and known-book position`.
+- R2 uses `a moved book returns to its saved position`.
+- Y1 uses `a newer scroll wins during a held return`, `a newer filter wins during a held return`,
+  `a newer sort wins during a held return`, `a newer view wins during a held return` and
+  `a newer navigation wins during a held return`.
