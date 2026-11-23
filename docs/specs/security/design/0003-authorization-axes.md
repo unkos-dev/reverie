@@ -50,11 +50,13 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
 ## Structure
 
 GraphQL root fields declare scope through guards in `backend/src/graphql/mod.rs` and `mutations.rs`. Ordinary queries
-require read scope; mutations and `metadataOperation` require write scope independently of HTTP POST. The HTTP matrix
-continues to cover `/api/v1`. GraphQL request-boundary coverage exercises its own adapter. Role, child status and
-ownership remain separate checks in the shared operations. Metadata edits and review, plus shelf creation, rename and
-delete, refuse children. Reading and permitted shelf membership changes allow children. Exact Undo and operation
-resolution also require the actual live issuing browser session; Basic and device tokens cannot use those capabilities.
+require read scope. Mutations and `metadataOperation` require write scope independently of HTTP POST. Library uses
+`metadataOperation` with the exact operation ID for stale Undo. Reading saves retain child access to visible books.
+Metadata refresh requires an adult caller. The HTTP matrix continues to cover `/api/v1`. GraphQL request-boundary
+coverage exercises its own adapter. Role, child status and ownership remain separate checks in the shared operations.
+Metadata edits and review, plus shelf creation, rename and delete, refuse children. Reading and permitted shelf
+membership changes allow children. Exact Undo and operation resolution also require the actual live issuing browser
+session; Basic and device tokens cannot use those capabilities.
 
 - `backend/src/auth/scope.rs` declares `Scope { Read, Write, Admin }` with a derived `Ord`, so the hierarchy
   `Read < Write < Admin` is a comparison rather than a lookup table. `Scope::for_role` gives every role `{Read, Write}`

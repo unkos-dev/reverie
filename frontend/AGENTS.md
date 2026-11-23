@@ -45,8 +45,8 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
 - **Recovery:** Use the owning data library's normal query and mutation lifecycle. Preserve confirmed mutation data,
   authoritative recovery, pending input and matched editing baselines. A shared-cache update never advances a retained
   draft's write precondition. Ordinary save recovery never automatically replays a write. An explicit Library Retry
-  resends the retained failed edit under its original baseline and the canonical request-resolution contract. Exact Undo
-  retains its existing session-bound eligibility and resolution contract.
+  resends the retained failed edit under its original baseline. A stale refusal offers Reload. A stale Undo checks the
+  exact operation's eligibility before resending once under the current validator.
 - **Effects:** Keep dependency arrays complete and never suppress the rule. Use `useEffectEvent` for non-reactive event
   logic an Effect calls, never to drop a dependency that should resynchronise the Effect. Return a cleanup when the
   Effect starts something that must be stopped or undone. Never pass an async function directly. An async Effect for
@@ -115,9 +115,9 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
   the list request carries the override explicitly. Never add a `?sort=` reader or writer to the library surface, never
   send the installation default sort in a request, and never resolve sort independently in a component: a second
   resolution is the read split that made an inherited descending sort unclearable.
-- **Retained rows keep their source:** While previous results stay on screen, row edits, Undo and conflict reload use
-  the displayed Relay operation, variables and retained source, independently of the current destination. Native
-  connection references retain membership; detached raw snapshots retain matched editing values and baselines.
+- **Retained rows keep their source:** Read each displayed generation through its retained Relay reference. The visit
+  owner controls replacement and invalidation. A mutation publishes its consuming fragments and reports changed sort or
+  filter fields to that owner. Hold only the opened value, validator and submitted input in editors.
 
 ## Styling architecture
 

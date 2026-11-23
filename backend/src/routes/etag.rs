@@ -38,6 +38,19 @@ pub(crate) struct MetadataRevision {
 }
 
 impl MetadataRevision {
+    /// Stable `UUIDv8` identity shared by the GraphQL record and its relation cursors.
+    pub(crate) fn record_uuid(&self) -> Result<uuid::Uuid, AppError> {
+        const NAMESPACE: uuid::Uuid = uuid::uuid!("700a2922-1735-49de-a6ea-910315c7da8f");
+        let name = serde_json::to_vec(self).map_err(|error| AppError::Internal(error.into()))?;
+        let digest = Sha256::new()
+            .chain_update(NAMESPACE.as_bytes())
+            .chain_update(name)
+            .finalize();
+        let mut bytes = [0; 16];
+        bytes.copy_from_slice(&digest[..16]);
+        Ok(uuid::Builder::from_custom_bytes(bytes).into_uuid())
+    }
+
     pub(crate) fn etag(&self) -> Result<HeaderValue, AppError> {
         hash_etag(self)
     }

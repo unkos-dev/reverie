@@ -44,7 +44,9 @@ capability is deficient for Reverie, with approval governed by the root rules.
   and expected outcomes ([ADR-0082](../docs/adr/0082-expected-graphql-mutation-outcomes-as-union-results.md)). Reuse the
   shared outcome types in `src/graphql/mutations.rs`. Forbidden, internal and malformed-header failures stay execution
   errors. A metadata success member returns `manifestation` through `Manifestation::with_metadata`, carrying the
-  revision the write projected inside its transaction, so the acknowledgement never mixes revisions.
+  revision the write projected inside its transaction. Return the committed reading revision through
+  `Manifestation::with_reading` from the write's returned row. Key revision relation cursors by the revision UUID and
+  use the owning work or manifestation for SQL predicates.
 - **GraphQL formats:** A format-bearing value uses a Reverie custom scalar in `src/graphql/library.rs` (`ETag`, `UUID`,
   `DateTime`) whose `@specifiedBy` URL points at Design 0031's custom scalars section. A closed set of values is an
   enum; declare an output enum with `output_enum!` and an input enum with `input_enum!`, because `derive(Enum)` trips

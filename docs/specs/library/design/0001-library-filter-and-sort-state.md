@@ -71,8 +71,7 @@ filter intent.
 reader's override, else the installation default. It resolves the sort override separately from the effective stack. The
 page supplies its one sort intent handler to the filter panel, Covers sort control and table headers. `useLibraryBooks`
 owns one displayed Relay source and a candidate replacement through the account-scoped `LibraryVisitOwner`. Native
-fragments render the displayed connection. Detached raw list projections retain the metadata and reading values with
-their matching editing baselines.
+fragments render the displayed connection and read complete metadata and reading revisions for edits.
 
 ## Interfaces and dependencies
 
@@ -96,7 +95,7 @@ so the server applies the installation default. It never serialises the installa
 reader's list-query key depends only on the absent override, never on server defaults the client cannot see. `listBooks`
 (`frontend/src/api/books.ts`) is an HTTP adapter that serialises the parameters it is given and omits any that are
 absent, including `sort`. Native query references retain connection membership. Each source keeps its operation,
-variables and detached editing pairs for row actions.
+variables and generation key. The editing owner retains submitted values and their starting validators.
 
 ## Data and state
 
@@ -143,9 +142,9 @@ any lookup omits a restored ID, the loader resets the visit's filters and saved 
 override. Only a successful bootstrap establishes that the viewer can no longer see a selection; a failed bootstrap
 resets nothing. The owner writes the reset visit to its entry only while that entry is current. The loader then starts
 `LibraryPageQuery` with the resolved visit's selections, and the page reads it under Suspense with LibrarySkeleton as
-the fallback. The first document load sends the bootstrap, the screen query and the books request. A push has empty
-lookups and finds stored preferences in the store, so it sends no bootstrap request. A label lookup is answered from the
-store when every requested record is already there, as it is for a pick from suggestions or the shelf list.
+the fallback. The first eligible document load sends the bootstrap and the screen query, which includes books. A push
+with stored preferences sends the screen query alone. A label lookup is answered from the store when every requested
+record is already there, as it is for a pick from suggestions or the shelf list.
 
 A bootstrap answered from the store keeps its selections until a deletion invalidates a selected record or a fetch
 occurs. Deleting a shelf invalidates that shelf's record, so a return to a visit that selected it fetches the bootstrap
@@ -158,31 +157,34 @@ trimming surrounding whitespace. Blank optional text has no predicate; text reta
 dormant. SearchField and TextField use controlled `isInvalid` and associated FieldError feedback immediately, without
 native `maxLength` truncation. Raw overlong text and oversized selections remain published and persisted, including
 across reload and traversal. An ineligible visit prevents the whole list request, pagination and source refetches. The
-results region explains that results are paused; correction or Clear restores request eligibility. Sort uses
-`useDeferredValue` so its controls resolve at gesture time while the request catches up. Initial uncached loading uses
-LibrarySkeleton. Later changes retain the controls with visible “Updating results…” and busy treatment during fetching.
-Pending recovery without previous pages uses a skeleton inside the results region; neither empty state appears until the
-request settles. Retained results cannot load more while a replacement is pending. Successful responses adopt their
-source, including real empty results for contradictory bounds. Range explanations appear against settled current
-results, rather than describing retained rows as the current result set.
+results region explains that results are paused. Correction or Clear restores request eligibility. Sort controls resolve
+at gesture time while a replacement query loads. Initial uncached loading uses LibrarySkeleton. Later changes retain the
+controls with visible “Updating results…” and busy treatment during fetching. Pending recovery without previous pages
+uses a skeleton inside the results region; neither empty state appears until the request settles. Retained results
+cannot load more while a replacement is pending. Successful responses adopt their source, including real empty results
+for contradictory bounds. Range explanations appear against settled current results, rather than describing retained
+rows as the current result set.
 
-Each Navigation entry and source generation has a distinct native connection identity through
-`dynamicKey_UNSTABLE: $sourceKey`. Pagination preserves that identity. Replacements allocate another generation and keep
-the displayed connection intact while bounded reads rebuild the candidate. Native Relay connection handlers assemble
-pages; there is no custom merge handler or second reader cache. A replaced source remains retained until its editors,
-failed attempts and Undo entries release their uses.
+Each Navigation entry owns distinct connection generations through `dynamicKey_UNSTABLE: $sourceKey`. A provisional
+owner allocates a distinct key for a push before the browser assigns the entry ID. The owner fetches the replacement's
+first page while the displayed reader uses `store-only`. The candidate reader mounts once that page is available and
+extends it through `usePaginationFragment` in a separate Suspense boundary. Pagination and adoption use ordinary
+updates, so the shell's document view transition does not capture pointer input for those updates. Relay retains the
+displayed connection and its record data. The editing owner holds drafts, validators and Undo above the virtualised
+rows.
 
 The synchronous Navigation `navigate` event captures an anchor, the first visible book and its position within the
 viewport, together with the loaded extent and absolute scroll position. Entry state contains only serialisable geometry
-and visit intent. Relay references remain in memory. Return renders the retained source while a candidate reads from
-page one through the saved extent and anchor, or the connection end. If a later rebuild page fails with the
-`invalid-cursor` execution error code, the owner restarts the rebuild once from page one. Intermediate pages preserve
-the displayed books and position until the complete replacement is ready, including on repeated returns. The search for
-an absent anchor exhausts the connection before applying the fallback. The owner adopts its ready reference once. A
-moved anchor restores at its saved viewport position as far as the scroll range allows. An absent anchor uses the saved
-absolute offset, or zero when that offset exceeds the new range. Account, entry, source and generation checks reject
-obsolete completion. New intent and user scroll cancel delayed restoration. Entry disposal and account loss release
-retained references.
+and visit intent. Relay retains references in memory. A fresh return reuses the retained connection without a request.
+Relay marks a query stale after five minutes. A committed edit invalidates each retained connection whose sort or filter
+depends on the changed field. A stale return renders the retained source while the candidate loads both the saved extent
+and anchor, or reaches the connection end. If a later rebuild page fails with the `invalid-cursor` execution error code,
+the owner restarts the rebuild once from page one. Intermediate pages preserve the displayed books and position until
+the complete replacement is ready, including on repeated returns. The search for an absent anchor exhausts the
+connection before applying the fallback. The owner adopts its ready reference once. A moved anchor restores at its saved
+viewport position as far as the scroll range allows. An absent anchor uses the saved absolute offset, or zero when that
+offset exceeds the new range. Account, entry, source and generation checks reject obsolete completion. New intent and
+user scroll cancel delayed restoration. Entry disposal and account loss release retained references.
 
 Selection clears at filter, sort or view intent and displayed-source replacement. Pagination retains selection. The
 Library editing owner keeps at most ten exact field operations above conditional results. Filtering, sorting, loading

@@ -1,48 +1,167 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useKeyboard } from "react-aria";
-import { useRelayEnvironment } from "react-relay";
-import { commitLocalUpdate } from "relay-runtime";
+import { fetchQuery, graphql, useFragment, useRelayEnvironment } from "react-relay";
+import { commitMutation } from "relay-runtime";
 
-import { ReadingStatusSchema, type ReadingStatus } from "@/api/books";
-import { ApiError } from "@/api/errors";
-import {
-  GraphQLExecutionError,
-  MetadataRefusal,
-  editingFailureAction,
-  executeEditingOnce,
-  loadAuthorField,
-  type ReaderBook,
-} from "@/api/graphql";
-import type { LibrarySource } from "@/lib/relay/library-visit";
-import {
-  mutationsCellsQuery,
-  mutationsReadingMutation,
-  mutationsReadingQuery,
-  mutationsSaveCellsMutation,
-  mutationsSaveAuthorsMutation,
-  mutationsResolveCellsQuery,
-  mutationsResolveAuthorsQuery,
-  mutationsUndoCellsMutation,
-  mutationsUndoAuthorsMutation,
-} from "@/lib/relay/mutations";
-import type { mutationsCellsQuery as CellsQuery } from "@/lib/relay/__generated__/mutationsCellsQuery.graphql";
-import type {
-  mutationsReadingMutation as ReadingMutation,
-  ReadingPatch,
-} from "@/lib/relay/__generated__/mutationsReadingMutation.graphql";
-import type { mutationsReadingQuery as ReadingQuery } from "@/lib/relay/__generated__/mutationsReadingQuery.graphql";
-import type {
-  mutationsSaveCellsMutation as SaveCells,
-  MetadataPatch,
-} from "@/lib/relay/__generated__/mutationsSaveCellsMutation.graphql";
-import type { mutationsSaveAuthorsMutation as SaveAuthors } from "@/lib/relay/__generated__/mutationsSaveAuthorsMutation.graphql";
-import type { mutationsResolveCellsQuery as ResolveCells } from "@/lib/relay/__generated__/mutationsResolveCellsQuery.graphql";
-import type { mutationsResolveAuthorsQuery as ResolveAuthors } from "@/lib/relay/__generated__/mutationsResolveAuthorsQuery.graphql";
-import type { mutationsUndoCellsMutation as UndoCells } from "@/lib/relay/__generated__/mutationsUndoCellsMutation.graphql";
-import type { mutationsUndoAuthorsMutation as UndoAuthors } from "@/lib/relay/__generated__/mutationsUndoAuthorsMutation.graphql";
-import { EDIT_ROUTES, READING_STATUS_INPUT, type EditableColumnKey } from "./edit-routing";
+import { editingFailureAction } from "@/api/graphql";
+import type { ReadingStatus } from "@/api/books";
+import { invalidateLibraryVisits } from "@/lib/relay/library-visit";
+import type { useCellEdit_batchRows$key } from "@/lib/relay/__generated__/useCellEdit_batchRows.graphql";
+import type { useCellEditSaveMutation } from "@/lib/relay/__generated__/useCellEditSaveMutation.graphql";
+import type { useCellEditReadingMutation } from "@/lib/relay/__generated__/useCellEditReadingMutation.graphql";
+import type { useCellEditUndoMutation } from "@/lib/relay/__generated__/useCellEditUndoMutation.graphql";
+import type { useCellEditReloadQuery } from "@/lib/relay/__generated__/useCellEditReloadQuery.graphql";
+import type { useCellEditUndoEligibilityQuery } from "@/lib/relay/__generated__/useCellEditUndoEligibilityQuery.graphql";
+import { READING_STATUS_INPUT, readingStatus, type EditableColumnKey } from "./edit-routing";
 
-const COLUMN_LABELS: Record<EditableColumnKey, string> = {
+const batchRows = graphql`
+  fragment useCellEdit_batchRows on Manifestation @relay(plural: true) @throwOnFieldError {
+    id
+    metadata {
+      title
+    }
+    readingState {
+      etag
+      status
+    }
+  }
+`;
+
+const saveMutation = graphql`
+  mutation useCellEditSaveMutation($input: UpdateMetadataInput!) {
+    updateMetadata(input: $input) {
+      __typename
+      ... on MetadataSaved {
+        operations {
+          operationId
+          fieldName
+          expiresAt
+        }
+        manifestation {
+          ...LibraryTable_cell
+          ...BookCard_book
+          metadata {
+            etag
+          }
+        }
+      }
+      ... on StaleBaseline {
+        message
+      }
+      ... on MetadataInvalid {
+        message
+        fieldErrors {
+          message
+          field
+        }
+      }
+      ... on FieldsLocked {
+        message
+      }
+      ... on EditTooLarge {
+        message
+      }
+      ... on NotFound {
+        message
+      }
+    }
+  }
+`;
+
+const readingMutation = graphql`
+  mutation useCellEditReadingMutation($input: UpdateReadingStateInput!) {
+    updateReadingState(input: $input) {
+      __typename
+      ... on ReadingStateUpdated {
+        manifestation {
+          ...LibraryTable_cell
+          ...BookCard_book
+          ...useCellEdit_batchRows
+          readingState {
+            etag
+          }
+        }
+      }
+      ... on StaleBaseline {
+        message
+      }
+      ... on MetadataInvalid {
+        message
+      }
+      ... on NotFound {
+        message
+      }
+    }
+  }
+`;
+
+const undoMutation = graphql`
+  mutation useCellEditUndoMutation($input: UndoMetadataInput!) {
+    undoMetadata(input: $input) {
+      __typename
+      ... on MetadataRestored {
+        manifestation {
+          ...LibraryTable_cell
+          ...BookCard_book
+        }
+      }
+      ... on StaleBaseline {
+        message
+      }
+      ... on FieldsLocked {
+        message
+      }
+      ... on UndoConflict {
+        message
+      }
+      ... on UndoUnavailable {
+        message
+      }
+      ... on EditTooLarge {
+        message
+      }
+      ... on NotFound {
+        message
+      }
+    }
+  }
+`;
+
+const reloadQuery = graphql`
+  query useCellEditReloadQuery($id: ID!) @throwOnFieldError {
+    manifestation(id: $id) {
+      ...LibraryTable_cell
+      metadata {
+        etag
+        title
+        subtitle
+        isbn13
+        pages
+      }
+      readingState {
+        etag
+        status
+        rating
+      }
+    }
+  }
+`;
+
+const eligibilityQuery = graphql`
+  query useCellEditUndoEligibilityQuery($id: ID!, $operationId: UUID!) @throwOnFieldError {
+    metadataOperation(id: $id, operationId: $operationId) {
+      operations {
+        operationId
+        status
+      }
+      metadata {
+        etag
+      }
+    }
+  }
+`;
+
+const COLUMN_LABELS: Readonly<Record<EditableColumnKey, string>> = {
   title: "Title",
   subtitle: "Subtitle",
   isbn_13: "ISBN",
@@ -51,143 +170,125 @@ const COLUMN_LABELS: Record<EditableColumnKey, string> = {
   status: "Status",
   rating: "Rating",
 };
-const UNDO_STACK_CAP = 10;
-type SavedCells = Extract<SaveCells["response"]["updateMetadata"], { __typename: "MetadataSaved" }>;
-type SavedAuthors = Extract<
-  SaveAuthors["response"]["updateMetadata"],
-  { __typename: "MetadataSaved" }
->;
-type MetadataResult = {
-  metadata: SavedCells["manifestation"]["metadata"] | SavedAuthors["manifestation"]["metadata"];
-  operations: SavedCells["operations"];
-};
 
-function saved(
-  result: SaveCells["response"]["updateMetadata"] | SaveAuthors["response"]["updateMetadata"],
-): MetadataResult {
-  if (result.__typename === "MetadataSaved")
-    return { metadata: result.manifestation.metadata, operations: result.operations };
-  throw new MetadataRefusal(result);
-}
-
-function restored(
-  result: UndoCells["response"]["undoMetadata"] | UndoAuthors["response"]["undoMetadata"],
-): MetadataResult {
-  if (result.__typename === "MetadataRestored")
-    return { metadata: result.manifestation.metadata, operations: [result.operation] };
-  throw new MetadataRefusal(result);
-}
-type ReadingSnapshot = ReadingMutation["response"]["updateReadingState"];
 type RecoveryAction = "retry" | "reload" | "correct" | "none";
-type Attempt = {
-  id: string;
-  row: ReaderBook;
-  draft: ReaderBook;
+export type EditValue = string | number | readonly string[] | null;
+type EditTarget = { id: string; workId?: string; title: string; baseline: string };
+export type CellEditReport = {
+  target: EditTarget;
   columnKey: EditableColumnKey;
-  value: unknown;
-  display: string;
-  baseline: string;
-  source: LibrarySource;
-  release: () => void;
-  undoContext: object;
-} & ({ pipeline: "metadata"; patch: MetadataPatch } | { pipeline: "reading"; patch: ReadingPatch });
+  previous: EditValue;
+  value: EditValue;
+};
+type Attempt = CellEditReport & { id: string; undoContext: object };
 type EditRecord = {
   attempt: Attempt;
   pending: boolean;
   retrying: boolean;
   reloading: boolean;
-  error: Error | null;
+  reloaded?: boolean;
+  message?: string;
   action: RecoveryAction;
-  reset: ReaderBook | undefined;
 };
 type UndoEntry = {
   attempt: Attempt;
-  operation: MetadataResult["operations"][number];
+  operationId: string;
+  expiresAt: string;
   baseline: string;
-  release: () => void;
 };
 type Owner = { enabled: boolean; context: object; entries: UndoEntry[] };
+type Refusal = { action: RecoveryAction; message: string };
+type SaveResult = { saved: boolean; action: RecoveryAction; message?: string };
+export type StatusTarget = {
+  id: string;
+  attemptId: string;
+  send: () => Promise<SaveResult | undefined>;
+};
 
-/** Identify one editable cell across pending, failure and saved feedback. */
 export function pendingKey(rowId: string, columnKey: string): string {
   return `${rowId}:${columnKey}`;
 }
 
-function formatError(error: unknown): string {
-  if (error instanceof ApiError)
-    return [error.title, error.detail].filter(Boolean).join(": ") || "Request failed.";
-  return error instanceof Error ? error.message : "Request failed.";
+function displayValue(value: EditValue): string {
+  if (value === null) return "unset";
+  return typeof value === "object" ? value.join(", ") : String(value);
 }
 
-function errorCode(error: unknown): string | undefined {
-  if (error instanceof MetadataRefusal) return error.typename;
-  if (error instanceof GraphQLExecutionError) return error.errors.at(0)?.extensions?.code;
-  if (error instanceof ApiError) return error.problemSlug ?? undefined;
-  return undefined;
+function undoField(field: EditableColumnKey): string {
+  if (field === "authors") return "contributors.author";
+  if (field === "isbn_13") return "isbn_13";
+  return field;
 }
 
-function displayValue(value: string | number | string[] | null): string {
-  if (Array.isArray(value)) return value.join(", ");
-  return value === null ? "unset" : String(value);
+function changedField(field: EditableColumnKey): string {
+  return field === "authors" ? "author" : field;
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.matches("input, textarea, select") ||
-      target.isContentEditable ||
-      target.closest('[role="dialog"]') !== null)
-  );
+function refusal(result: { __typename: string; message?: string }): Refusal {
+  let action: RecoveryAction = "none";
+  if (result.__typename === "StaleBaseline") action = "reload";
+  else if (result.__typename === "MetadataInvalid") action = "correct";
+  return { action, message: result.message ?? "Request failed." };
 }
 
-type CellEditFeedback = {
-  id: string;
-  rowId: string;
-  columnKey: EditableColumnKey;
-  bookTitle: string;
-  field: string;
-  submitted: string;
-  message: string;
-  action: RecoveryAction;
-  reloading: boolean;
-  retrying: boolean;
-  retained: ReaderBook | undefined;
-  retainSource: () => () => void;
-  reload: () => void;
-  retry: () => void;
-};
-export type CellEditReport = { row: ReaderBook; previousRow: ReaderBook; columnKey: string };
-export type StatusTarget = {
-  id: string;
-  attemptId: string;
-  send: () => Promise<{ saved: boolean; action: RecoveryAction; message?: string } | undefined>;
-};
-export type UseCellEditResult = {
-  pendingCells: ReadonlyMap<string, string>;
-  savedCells: ReadonlySet<string>;
-  onCellEdit: (report: CellEditReport) => void;
-  retainSource: () => () => void;
-  statusTargets: (rows: readonly ReaderBook[], status: ReadingStatus | null) => StatusTarget[];
-  keyboardProps: ReturnType<typeof useKeyboard>["keyboardProps"];
-  undo: () => void;
-  undoPending: boolean;
-  undoAvailable: boolean;
-  undoLabel: string | undefined;
-  feedback: CellEditFeedback[];
-  undoOutcome: string | null;
-};
+function metadataPatch(
+  column: EditableColumnKey,
+  value: EditValue,
+): useCellEditSaveMutation["variables"]["input"]["patch"] {
+  switch (column) {
+    case "title":
+      return { title: typeof value === "string" ? value : null };
+    case "subtitle":
+      return { subtitle: typeof value === "string" ? value : null };
+    case "isbn_13":
+      return { isbn13: typeof value === "string" ? value : null };
+    case "pages":
+      return { pages: typeof value === "number" ? value : null };
+    case "authors":
+      return {
+        contributors: { author: value === null || typeof value === "object" ? value : null },
+      };
+    case "rating":
+    case "status":
+      throw new Error("Reading fields require a reading revision.");
+  }
+}
 
-/** Own retained cell attempts, authoritative recovery and short-lived exact Undo. */
+function runMutation<T>(
+  signal: AbortSignal,
+  start: (resolve: (data: T) => void, reject: (error: Error) => void) => { dispose: () => void },
+): Promise<T | undefined> {
+  if (signal.aborted) return Promise.resolve(undefined);
+  return new Promise((resolve, reject) => {
+    const dispose = start(
+      (data) => {
+        signal.removeEventListener("abort", abort);
+        resolve(data);
+      },
+      (error) => {
+        signal.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+    function abort(): void {
+      dispose.dispose();
+      resolve(undefined);
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+export type UseCellEditResult = ReturnType<typeof useCellEdit>;
+
 export function useCellEdit({
-  source,
   enabled,
-  onChanged,
+  rows,
 }: {
-  source: LibrarySource | undefined;
   enabled: boolean;
-  onChanged: () => void;
-}): UseCellEditResult {
+  rows: useCellEdit_batchRows$key;
+}) {
   const environment = useRelayEnvironment();
+  const targets = useFragment(batchRows, rows);
   const controller = useRef<AbortController | null>(null);
   const [records, setRecords] = useState<EditRecord[]>([]);
   const [savedCells, setSavedCells] = useState<ReadonlySet<string>>(new Set());
@@ -198,48 +299,26 @@ export function useCellEdit({
     setOwner({ enabled, context: {}, entries: [] });
     setUndoOutcome(null);
   }
-  const latestOwner = useRef(owner);
-  const held = useRef(new Set<() => void>());
-  const committedUndo = useRef<UndoEntry[]>([]);
-  const adopted = useRef(new Set<string>());
-  useLayoutEffect(() => {
-    latestOwner.current = owner;
-  }, [owner]);
-  useEffect(() => {
-    for (const entry of committedUndo.current) {
-      if (
-        !owner.entries.some(
-          (current) => current.operation.operationId === entry.operation.operationId,
-        )
-      )
-        entry.release();
-    }
-    committedUndo.current = owner.entries;
-  }, [owner.entries]);
+  const active = useRef(new Set<string>());
   useEffect(() => {
     const lifetime = new AbortController();
-    const releases = held.current;
     controller.current = lifetime;
     return () => {
       lifetime.abort();
-      for (const release of releases) release();
     };
   }, []);
   const deadline = owner.entries.reduce(
-    (next, entry) => Math.min(next, Date.parse(entry.operation.expiresAt)),
+    (next, entry) => Math.min(next, Date.parse(entry.expiresAt)),
     Infinity,
   );
   useEffect(() => {
     if (!Number.isFinite(deadline)) return;
-    const removeExpired = (current: Owner): Owner => ({
-      ...current,
-      entries: current.entries.filter(
-        (entry) => Date.parse(entry.operation.expiresAt) > Date.now(),
-      ),
-    });
     const timer = setTimeout(
       () => {
-        setOwner(removeExpired);
+        setOwner((current) => ({
+          ...current,
+          entries: current.entries.filter((entry) => Date.parse(entry.expiresAt) > Date.now()),
+        }));
       },
       Math.max(0, deadline - Date.now()),
     );
@@ -248,631 +327,353 @@ export function useCellEdit({
     };
   }, [deadline]);
 
-  function retainSource(target: LibrarySource | undefined = source): () => void {
-    if (target === undefined) return () => {};
-    const release = target.acquire();
-    const dispose = (): void => {
-      release();
-      held.current.delete(dispose);
-    };
-    held.current.add(dispose);
-    return dispose;
+  function setRecord(record: EditRecord): void {
+    setRecords((current) => [
+      ...current.filter(({ attempt }) => attempt.id !== record.attempt.id),
+      record,
+    ]);
   }
 
-  function publishMetadata(attempt: Attempt, result: MetadataResult): void {
-    const snapshot = result.metadata;
-    const previous = attempt.source.rows.get(attempt.row.id);
-    if ("title" in snapshot && previous !== undefined)
-      attempt.source.rows.set(attempt.row.id, { ...previous, metadata: snapshot });
-    commitLocalUpdate(environment, (store) => {
-      const edition = store.get(snapshot.manifestationId);
-      const work = store.get(snapshot.workId);
-      if ("title" in snapshot) {
-        work?.setValue(snapshot.title, "title");
-        work?.setValue(snapshot.subtitle, "subtitle");
-        edition?.setValue(snapshot.isbn13, "isbn13");
-        edition?.setValue(snapshot.pages, "pages");
-      }
-      work?.invalidateRecord();
-      edition?.invalidateRecord();
-    });
-    onChanged();
-  }
-
-  function publishReading(attempt: Attempt, snapshot: ReadingSnapshot): void {
-    const previous = attempt.source.rows.get(attempt.row.id);
-    if (previous !== undefined)
-      attempt.source.rows.set(attempt.row.id, { ...previous, readingState: snapshot });
-    commitLocalUpdate(environment, (store) => {
-      const edition = store.get(attempt.row.id);
-      const reading = edition?.getLinkedRecord("readingState");
-      for (const [key, value] of Object.entries(snapshot)) reading?.setValue(value, key);
-      edition?.invalidateRecord();
-    });
-    onChanged();
-  }
-
-  function acceptMetadata(attempt: Attempt, result: MetadataResult): void {
-    if (adopted.current.has(attempt.id)) return;
-    adopted.current.add(attempt.id);
-    publishMetadata(attempt, result);
-    const route = EDIT_ROUTES[attempt.columnKey];
-    if (
-      route.pipeline === "metadata" &&
-      latestOwner.current.enabled &&
-      latestOwner.current.context === attempt.undoContext
-    ) {
-      const operation = result.operations.find((item) => item.fieldName === route.field);
-      let entry: UndoEntry | undefined;
-      if (
-        operation !== undefined &&
-        (operation.status === "ELIGIBLE" || operation.status === "LOCKED") &&
-        Date.parse(operation.expiresAt) > Date.now()
-      ) {
-        const release = retainSource(attempt.source);
-        entry = { attempt, operation, baseline: result.metadata.etag, release };
-      }
-      setOwner((current) => {
-        const entries = current.entries.filter(
-          (previous) =>
-            !(
-              previous.operation.fieldName === route.field &&
-              (route.workScoped
-                ? previous.attempt.row.work_id === attempt.row.work_id
-                : previous.attempt.row.id === attempt.row.id)
-            ),
-        );
-        if (entry !== undefined) entries.push(entry);
-        return { ...current, entries: entries.slice(-UNDO_STACK_CAP) };
-      });
-    }
-  }
-
-  async function resolve(attempt: Attempt, operationId?: string) {
-    const variables = {
-      id: attempt.row.id,
-      ...(operationId === undefined ? { requestId: attempt.id } : { operationId }),
-    };
-    if (attempt.columnKey === "authors") {
-      const response = await executeEditingOnce<ResolveAuthors>(
-        environment,
-        mutationsResolveAuthorsQuery,
-        variables,
-        controller.current?.signal,
+  async function write(attempt: Attempt, signal: AbortSignal): Promise<Refusal | null | undefined> {
+    const { target, columnKey, value } = attempt;
+    if (columnKey === "status" || columnKey === "rating") {
+      const response = await runMutation<useCellEditReadingMutation["response"]>(
+        signal,
+        (ok, fail) =>
+          commitMutation<useCellEditReadingMutation>(environment, {
+            mutation: readingMutation,
+            variables: {
+              input: {
+                id: target.id,
+                baseline: target.baseline,
+                patch:
+                  columnKey === "status"
+                    ? {
+                        status:
+                          typeof value === "string"
+                            ? READING_STATUS_INPUT[value as ReadingStatus]
+                            : null,
+                      }
+                    : { rating: typeof value === "number" ? value : null },
+              },
+            },
+            onCompleted: ok,
+            onError: fail,
+          }),
       );
-      return response?.metadataOperation;
-    }
-    const response = await executeEditingOnce<ResolveCells>(
-      environment,
-      mutationsResolveCellsQuery,
-      variables,
-      controller.current?.signal,
-    );
-    return response?.metadataOperation;
-  }
-
-  async function sendMetadata(attempt: Attempt & { pipeline: "metadata" }) {
-    const variables = {
-      input: {
-        id: attempt.row.id,
-        baseline: attempt.baseline,
-        patch: attempt.patch,
-        requestId: attempt.id,
-      },
-    };
-    if (attempt.columnKey === "authors") {
-      const response = await executeEditingOnce<SaveAuthors>(
-        environment,
-        mutationsSaveAuthorsMutation,
-        variables,
-        controller.current?.signal,
-      );
-      return response === undefined ? undefined : saved(response.updateMetadata);
+      if (response === undefined) return undefined;
+      if (response.updateReadingState.__typename !== "ReadingStateUpdated")
+        return refusal(response.updateReadingState);
     } else {
-      const response = await executeEditingOnce<SaveCells>(
-        environment,
-        mutationsSaveCellsMutation,
-        variables,
-        controller.current?.signal,
+      const response = await runMutation<useCellEditSaveMutation["response"]>(signal, (ok, fail) =>
+        commitMutation<useCellEditSaveMutation>(environment, {
+          mutation: saveMutation,
+          variables: {
+            input: {
+              id: target.id,
+              baseline: target.baseline,
+              patch: metadataPatch(columnKey, value),
+              requestId: attempt.id,
+            },
+          },
+          onCompleted: ok,
+          onError: fail,
+        }),
       );
-      return response === undefined ? undefined : saved(response.updateMetadata);
-    }
-  }
-
-  async function sendReading(attempt: Attempt & { pipeline: "reading" }) {
-    const response = await executeEditingOnce<ReadingMutation>(
-      environment,
-      mutationsReadingMutation,
-      {
-        id: attempt.row.id,
-        baseline: attempt.baseline,
-        patch: attempt.patch,
-      },
-      controller.current?.signal,
-    );
-    return response?.updateReadingState;
-  }
-
-  async function recoverMetadata(attempt: Attempt): Promise<boolean> {
-    const response = await resolve(attempt);
-    if (response?.outcome !== "SAVED") return false;
-    acceptMetadata(attempt, response);
-    return true;
-  }
-
-  async function recoverReading(attempt: Attempt): Promise<boolean> {
-    const response = await executeEditingOnce<ReadingQuery>(
-      environment,
-      mutationsReadingQuery,
-      { id: attempt.row.id },
-      controller.current?.signal,
-    );
-    const reading = response?.manifestation?.readingState;
-    if (
-      reading !== undefined &&
-      ((attempt.columnKey === "status" && reading.status === attempt.value) ||
-        (attempt.columnKey === "rating" && reading.rating === attempt.value))
-    ) {
-      publishReading(attempt, reading);
-      return true;
-    }
-    return false;
-  }
-
-  async function sendAttempt(attempt: Attempt): Promise<boolean> {
-    if (attempt.pipeline === "metadata") {
-      const response = await sendMetadata(attempt);
-      if (response === undefined) return false;
-      acceptMetadata(attempt, response);
-    } else {
-      const response = await sendReading(attempt);
-      if (response === undefined) return false;
-      publishReading(attempt, response);
-    }
-    return true;
-  }
-
-  function recoverAttempt(attempt: Attempt): Promise<boolean> {
-    return attempt.pipeline === "metadata" ? recoverMetadata(attempt) : recoverReading(attempt);
-  }
-
-  async function save(
-    attempt: Attempt,
-    retrying = false,
-  ): Promise<{ saved: boolean; action: RecoveryAction } | undefined> {
-    setRecords((current) => {
-      const previous = current.find((record) => record.attempt.id === attempt.id);
-      return [
-        ...current.filter((record) => record.attempt.id !== attempt.id),
-        {
-          attempt,
-          pending: true,
-          retrying,
-          reloading: false,
-          error: previous?.error ?? null,
-          action: previous?.action ?? "none",
-          reset: undefined,
-        },
-      ];
-    });
-    try {
-      if (!(await sendAttempt(attempt))) return;
-      complete(attempt);
-      return { saved: true, action: "none" };
-    } catch (error) {
-      if (controller.current?.signal.aborted) return;
-      const action = editingFailureAction(error);
-      if (action === "retry" || action === "reload") {
-        try {
-          const recovered = await recoverAttempt(attempt);
-          if (recovered) {
-            complete(attempt);
-            return { saved: true, action: "none" };
-          }
-        } catch (recoveryError) {
-          console.error("[useCellEdit] save resolution failed", recoveryError);
+      if (response === undefined) return undefined;
+      const saved = response.updateMetadata;
+      if (saved.__typename !== "MetadataSaved") {
+        if (saved.__typename === "MetadataInvalid") {
+          return {
+            action: "correct",
+            message:
+              saved.fieldErrors.find((field) => field.field === undoField(columnKey))?.message ??
+              saved.message,
+          };
         }
+        return refusal(saved);
       }
-      setRecords((current) =>
-        current.map((record) =>
-          record.attempt.id === attempt.id
-            ? {
-                ...record,
-                pending: false,
-                retrying: false,
-                action,
-                error: error instanceof Error ? error : new Error("Request failed."),
-              }
-            : record,
-        ),
-      );
-      return { saved: false, action };
+      const operation = saved.operations.find((entry) => entry.fieldName === undoField(columnKey));
+      if (operation !== undefined) {
+        const key =
+          columnKey === "title" || columnKey === "subtitle" || columnKey === "authors"
+            ? (target.workId ?? target.id)
+            : target.id;
+        setOwner((current) => {
+          if (current.context !== attempt.undoContext) return current;
+          const entries = current.entries.filter((entry) => {
+            if (entry.attempt.columnKey !== columnKey) return true;
+            const other = entry.attempt.target;
+            return (
+              (columnKey === "title" || columnKey === "subtitle" || columnKey === "authors"
+                ? (other.workId ?? other.id)
+                : other.id) !== key
+            );
+          });
+          const baseline = saved.manifestation.metadata.etag;
+          return {
+            ...current,
+            entries: [...entries, { attempt, ...operation, baseline }].slice(-10),
+          };
+        });
+      }
     }
+    invalidateLibraryVisits(environment, [changedField(columnKey)]);
+    return null;
   }
 
-  function complete(attempt: Attempt): void {
-    attempt.release();
-    setRecords((current) => current.filter((record) => record.attempt.id !== attempt.id));
-    setSavedCells((current) => new Set(current).add(pendingKey(attempt.row.id, attempt.columnKey)));
+  async function save(attempt: Attempt, retrying = false): Promise<SaveResult | undefined> {
+    const signal = controller.current?.signal;
+    const key = pendingKey(attempt.target.id, attempt.columnKey);
+    if (signal === undefined || signal.aborted || active.current.has(key)) return undefined;
+    active.current.add(key);
+    setRecord({
+      attempt,
+      pending: true,
+      retrying,
+      reloading: false,
+      action: retrying ? "retry" : "none",
+    });
+    setSavedCells((current) => new Set([...current].filter((saved) => saved !== key)));
+    let failure: Refusal | null | undefined;
+    try {
+      failure = await write(attempt, signal);
+    } catch (error) {
+      failure = {
+        action: editingFailureAction(error),
+        message: error instanceof Error ? error.message : "Request failed.",
+      };
+    }
+    active.current.delete(key);
+    if (controller.current?.signal.aborted || failure === undefined) return undefined;
+    if (failure === null) {
+      setRecords((current) => current.filter((record) => record.attempt.id !== attempt.id));
+      setSavedCells((current) => new Set(current).add(key));
+      return { saved: true, action: "none" };
+    }
+    setRecord({ attempt, pending: false, retrying: false, reloading: false, ...failure });
+    return { saved: false, ...failure };
   }
 
   async function reload(record: EditRecord): Promise<void> {
-    const attempt = record.attempt;
-    setRecords((current) =>
-      current.map((item) => (item.attempt.id === attempt.id ? { ...item, reloading: true } : item)),
-    );
+    const signal = controller.current?.signal;
+    if (signal === undefined || signal.aborted || record.reloading) return;
+    setRecord({ ...record, reloading: true });
     try {
-      let reset: ReaderBook;
-      if (attempt.pipeline === "reading") {
-        const response = await executeEditingOnce<ReadingQuery>(
-          environment,
-          mutationsReadingQuery,
-          { id: attempt.row.id },
-          controller.current?.signal,
-        );
-        if (response?.manifestation === undefined || response.manifestation === null) return;
-        const reading = response.manifestation.readingState;
-        publishReading(attempt, reading);
-        reset = {
-          ...attempt.row,
-          reading_etag: reading.etag,
-          reading_state: {
-            status: ReadingStatusSchema.nullable().parse(reading.status),
-            rating: reading.rating ?? null,
-            progress_pct: reading.progressPct ?? null,
-            started_at: reading.startedAt ?? null,
-            finished_at: reading.finishedAt ?? null,
-          },
-        };
-      } else if (attempt.columnKey === "authors") {
-        const field = await loadAuthorField(
-          environment,
-          attempt.row.id,
-          controller.current?.signal,
-        );
-        if (field === undefined) return;
-        reset = {
-          ...attempt.row,
-          authors: field.authors.map((author) => author.name),
-          metadata_etag: field.etag,
-        };
-        onChanged();
-      } else {
-        const response = await executeEditingOnce<CellsQuery>(
-          environment,
-          mutationsCellsQuery,
-          { id: attempt.row.id },
-          controller.current?.signal,
-        );
-        if (response?.manifestation === undefined || response.manifestation === null) return;
-        const metadata = response.manifestation.metadata;
-        publishMetadata(attempt, { metadata, operations: [] });
-        reset = {
-          ...attempt.row,
-          title: metadata.title,
-          subtitle: metadata.subtitle ?? null,
-          isbn_13: metadata.isbn13 ?? null,
-          pages: metadata.pages ?? null,
-          metadata_etag: metadata.etag,
-        };
-      }
-      setRecords((current) =>
-        current.map((item) =>
-          item.attempt.id === attempt.id ? { ...item, reset, reloading: false } : item,
-        ),
-      );
+      const data = await fetchQuery<useCellEditReloadQuery>(
+        environment,
+        reloadQuery,
+        { id: record.attempt.target.id },
+        { fetchPolicy: "network-only" },
+      ).toPromise();
+      if (controller.current?.signal.aborted) return;
+      if (data?.manifestation == null)
+        setRecord({ ...record, reloading: false, message: "This book is unavailable." });
+      else setRecord({ ...record, reloading: false, reloaded: true });
     } catch (error) {
-      console.error("[useCellEdit] reload failed", error);
-      setRecords((current) =>
-        current.map((item) =>
-          item.attempt.id === attempt.id ? { ...item, reloading: false } : item,
-        ),
-      );
+      if (!controller.current?.signal.aborted)
+        setRecord({
+          ...record,
+          reloading: false,
+          message: error instanceof Error ? error.message : "Reload failed.",
+        });
     }
   }
 
-  function onCellEdit({ row, previousRow, columnKey }: CellEditReport): void {
-    if (!enabled || source === undefined || !(columnKey in EDIT_ROUTES)) return;
-    const column = Object.keys(COLUMN_LABELS).find(
-      (key): key is EditableColumnKey => key === columnKey,
+  function onCellEdit(report: CellEditReport): void {
+    if (!enabled || JSON.stringify(report.previous) === JSON.stringify(report.value)) return;
+    const previous = records.find(
+      (record) =>
+        record.attempt.target.id === report.target.id &&
+        record.attempt.columnKey === report.columnKey,
     );
-    if (column === undefined) return;
-    const route = EDIT_ROUTES[column];
-    const previous = records.findLast(
-      (record) => record.attempt.row.id === row.id && record.attempt.columnKey === column,
-    );
-    const opening = previous?.reset ?? previous?.attempt.row ?? previousRow;
-    const patch = route.toPatch(opening, row);
-    if (
-      previous === undefined &&
-      JSON.stringify(patch) === JSON.stringify(route.toPatch(opening, opening))
-    )
-      return;
-    const value =
-      column === "status" || column === "rating"
-        ? (row.reading_state?.[column] ?? null)
-        : row[column];
-    const display = displayValue(value);
-    let baseline = route.pipeline === "metadata" ? opening.metadata_etag : opening.reading_etag;
-    if (previous !== undefined && previous.reset === undefined)
-      baseline = previous.attempt.baseline;
-    let id: string = crypto.randomUUID();
     if (
       previous !== undefined &&
-      previous.reset === undefined &&
-      JSON.stringify(previous.attempt.patch) === JSON.stringify(patch)
-    ) {
-      if (previous.action !== "retry") return;
-      id = previous.attempt.id;
-    }
-    const target = previous?.attempt.source ?? source;
-    const release = retainSource(target);
-    const common = {
-      id,
-      row: opening,
-      draft: {
-        ...row,
-        metadata_etag: route.pipeline === "metadata" ? baseline : opening.metadata_etag,
-        reading_etag: route.pipeline === "reading" ? baseline : opening.reading_etag,
-      },
-      columnKey: column,
-      value,
-      display,
-      baseline,
-      source: target,
-      release,
-      undoContext: owner.context,
-    };
-    const attempt: Attempt =
-      route.pipeline === "metadata"
-        ? { ...common, pipeline: "metadata", patch: route.toPatch(opening, row) }
-        : { ...common, pipeline: "reading", patch: route.toPatch(opening, row) };
-    previous?.attempt.release();
-    setRecords((current) => current.filter((record) => record.attempt.id !== previous?.attempt.id));
-    setUndoOutcome(null);
-    setSavedCells((current) => {
-      const next = new Set(current);
-      next.delete(pendingKey(row.id, column));
-      return next;
-    });
-    void save(attempt);
+      previous.reloaded !== true &&
+      JSON.stringify(previous.attempt.value) === JSON.stringify(report.value)
+    )
+      return;
+    const target =
+      previous?.action === "correct"
+        ? { ...report.target, baseline: previous.attempt.target.baseline }
+        : report.target;
+    if (previous !== undefined)
+      setRecords((current) => current.filter(({ attempt }) => attempt.id !== previous.attempt.id));
+    void save({ ...report, target, id: crypto.randomUUID(), undoContext: owner.context });
   }
 
   function statusTargets(
-    rows: readonly ReaderBook[],
+    rows: readonly { id: string }[],
     status: ReadingStatus | null,
   ): StatusTarget[] {
-    if (source === undefined) return [];
-    const keepSavedCell = (key: string): boolean =>
-      !rows.some((row) => key === pendingKey(row.id, "status"));
-    setSavedCells((current) => new Set([...current].filter(keepSavedCell)));
-    return rows.map((row) => {
-      const previous = records.findLast(
-        (record) => record.attempt.row.id === row.id && record.attempt.columnKey === "status",
-      );
-      const opening = previous?.reset ?? row;
-      const attempt: Attempt = {
-        id: crypto.randomUUID(),
-        row: opening,
-        draft: {
-          ...opening,
-          reading_state: {
-            status,
-            rating: opening.reading_state?.rating ?? null,
-            progress_pct: opening.reading_state?.progress_pct ?? null,
-            started_at: opening.reading_state?.started_at ?? null,
-            finished_at: opening.reading_state?.finished_at ?? null,
+    const ids = new Set(rows.map(({ id }) => id));
+    return targets
+      .filter((row) => ids.has(row.id))
+      .map((row) => {
+        const attempt: Attempt = {
+          id: crypto.randomUUID(),
+          undoContext: owner.context,
+          target: { id: row.id, title: row.metadata.title, baseline: row.readingState.etag },
+          columnKey: "status",
+          value: status,
+          previous: readingStatus(row.readingState.status),
+        };
+        let sent = false;
+        return {
+          id: row.id,
+          attemptId: attempt.id,
+          send: () => {
+            const retrying = sent;
+            sent = true;
+            if (!retrying)
+              setRecords((current) =>
+                current.filter(
+                  (record) =>
+                    record.attempt.target.id !== row.id || record.attempt.columnKey !== "status",
+                ),
+              );
+            return save(attempt, retrying);
           },
-        },
-        columnKey: "status",
-        value: status,
-        display: status ?? "unset",
-        baseline: opening.reading_etag,
-        source,
-        release: retainSource(source),
-        undoContext: owner.context,
-        pipeline: "reading",
-        patch: { status: status === null ? null : READING_STATUS_INPUT[status] },
-      };
-      previous?.attempt.release();
-      const keepRecord = (record: EditRecord): boolean =>
-        record.attempt.id !== previous?.attempt.id;
-      setRecords((current) => current.filter(keepRecord));
-      let sent = false;
-      return {
-        id: row.id,
-        attemptId: attempt.id,
-        send: () => {
-          const retrying = sent;
-          sent = true;
-          return save(attempt, retrying);
-        },
-      };
-    });
+        };
+      });
   }
 
   const latest = owner.entries.at(-1);
   const undoAvailable =
     enabled && latest !== undefined && !undoPending && !records.some((record) => record.pending);
-  async function sendUndo(attempt: Attempt, variables: UndoCells["variables"]) {
-    const response =
-      attempt.columnKey === "authors"
-        ? (
-            await executeEditingOnce<UndoAuthors>(
-              environment,
-              mutationsUndoAuthorsMutation,
-              variables,
-              controller.current?.signal,
-            )
-          )?.undoMetadata
-        : (
-            await executeEditingOnce<UndoCells>(
-              environment,
-              mutationsUndoCellsMutation,
-              variables,
-              controller.current?.signal,
-            )
-          )?.undoMetadata;
-    return response === undefined ? undefined : restored(response);
-  }
+  const latestContext = useRef(owner.context);
+  useLayoutEffect(() => {
+    latestContext.current = owner.context;
+  }, [owner.context]);
 
-  async function recoverUndo(
-    entry: UndoEntry,
-    variables: UndoCells["variables"],
-    response: MetadataResult | undefined,
-    failure: unknown,
-  ) {
-    const attempt = entry.attempt;
-    const resolution = await resolve(attempt, entry.operation.operationId);
-    if (resolution?.outcome === "RESTORED") response = resolution;
-    else {
-      const operation = resolution?.operations.find(
-        (item) => item.operationId === entry.operation.operationId,
+  async function undo(): Promise<void> {
+    const signal = controller.current?.signal;
+    if (signal === undefined || !undoAvailable || Date.parse(latest.expiresAt) <= Date.now())
+      return;
+    const entry = latest;
+    const { target, columnKey, undoContext } = entry.attempt;
+    const send = (baseline: string) =>
+      runMutation<useCellEditUndoMutation["response"]>(signal, (ok, fail) =>
+        commitMutation<useCellEditUndoMutation>(environment, {
+          mutation: undoMutation,
+          variables: { input: { id: target.id, operationId: entry.operationId, baseline } },
+          onCompleted: ok,
+          onError: fail,
+        }),
       );
-      if (operation?.status === "LOCKED")
-        failure = new ApiError(
-          409,
-          "/field-locked",
-          "Field locked",
-          "Unlock this field before retrying Undo.",
-        );
-      else if (operation?.status === "UNAVAILABLE" || operation?.status === "CONSUMED")
-        failure = new ApiError(
-          422,
-          "/undo-unavailable",
-          "Undo unavailable",
-          "This saved edit can no longer be undone.",
-        );
-      else if (resolution !== undefined && operation?.status === "ELIGIBLE") {
-        const retry = { input: { ...variables.input, baseline: resolution.metadata.etag } };
-        response = await sendUndo(attempt, retry);
+    setUndoPending(true);
+    let message: string | undefined;
+    let retire = false;
+    try {
+      let result = (await send(entry.baseline))?.undoMetadata;
+      if (result?.__typename === "StaleBaseline") {
+        const refresh = await fetchQuery<useCellEditUndoEligibilityQuery>(
+          environment,
+          eligibilityQuery,
+          { id: target.id, operationId: entry.operationId },
+          { fetchPolicy: "network-only" },
+        ).toPromise();
+        const status = refresh?.metadataOperation.operations.find(
+          (operation) => operation.operationId === entry.operationId,
+        )?.status;
+        if (signal.aborted || latestContext.current !== undoContext) result = undefined;
+        else if (refresh !== undefined && status === "ELIGIBLE")
+          result = (await send(refresh.metadataOperation.metadata.etag))?.undoMetadata;
+        else {
+          retire = status !== "LOCKED";
+          message =
+            status === "LOCKED" ? "Metadata fields are locked." : "Metadata Undo is unavailable.";
+          result = undefined;
+        }
       }
+      if (result?.__typename === "MetadataRestored") {
+        invalidateLibraryVisits(environment, [changedField(columnKey)]);
+        retire = true;
+        message = `${COLUMN_LABELS[columnKey]} for “${target.title}” restored.`;
+      } else if (result !== undefined) {
+        retire = result.__typename === "UndoUnavailable" || result.__typename === "UndoConflict";
+        message = `Undo ${COLUMN_LABELS[columnKey]} for “${target.title}”: ${refusal(result).message}`;
+      }
+    } catch (error) {
+      message = `Undo ${COLUMN_LABELS[columnKey]} for “${target.title}”: ${error instanceof Error ? error.message : "Request failed."}`;
     }
-    return { response, failure };
+    if (signal.aborted) return;
+    setUndoPending(false);
+    if (latestContext.current !== undoContext || message === undefined) return;
+    if (retire)
+      setOwner((current) => ({
+        ...current,
+        entries: current.entries.filter((item) => item !== entry),
+      }));
+    setUndoOutcome(message);
   }
 
-  async function undoEntry(entry: UndoEntry): Promise<void> {
-    const attempt = entry.attempt;
-    const variables = {
-      input: {
-        id: attempt.row.id,
-        operationId: entry.operation.operationId,
-        baseline: entry.baseline,
-      },
-    };
-    setUndoPending(true);
-    let response: MetadataResult | undefined;
-    let failure: unknown;
-    try {
-      response = await sendUndo(attempt, variables);
-    } catch (error) {
-      failure = error;
-    }
-    const action = failure === undefined ? "none" : editingFailureAction(failure);
-    if (action === "retry" || action === "reload") {
-      try {
-        const recovered = await recoverUndo(entry, variables, response, failure);
-        response = recovered.response;
-        failure = recovered.failure;
-      } catch (error) {
-        failure = error;
-      }
-    }
-    if (!controller.current?.signal.aborted) {
-      if (response !== undefined) {
-        publishMetadata(attempt, response);
-        setOwner((current) => ({
-          ...current,
-          entries: current.entries.filter(
-            (item) => item.operation.operationId !== entry.operation.operationId,
-          ),
-        }));
-        setUndoOutcome(`${COLUMN_LABELS[attempt.columnKey]} for “${attempt.row.title}” restored.`);
-      } else if (failure !== undefined) {
-        if (
-          ["UndoUnavailable", "UndoConflict", "undo-unavailable", "undo-conflict"].includes(
-            errorCode(failure) ?? "",
-          )
-        )
-          setOwner((current) => ({
-            ...current,
-            entries: current.entries.filter(
-              (item) => item.operation.operationId !== entry.operation.operationId,
-            ),
-          }));
-        setUndoOutcome(
-          `Undo ${COLUMN_LABELS[attempt.columnKey]} for “${attempt.row.title}”: ${formatError(failure)}`,
-        );
-      }
-    }
-    setUndoPending(false);
-  }
-  const undo = (): void => {
-    if (undoAvailable) void undoEntry(latest);
-  };
   const { keyboardProps } = useKeyboard({
     onKeyDown: (event) => {
+      const target = event.target;
       if (
         event.key.toLowerCase() !== "z" ||
         event.shiftKey ||
         event.altKey ||
         !(event.ctrlKey || event.metaKey) ||
-        isEditableTarget(event.target)
+        (target instanceof HTMLElement &&
+          (target.matches("input, textarea, select") ||
+            target.isContentEditable ||
+            target.closest('[role="dialog"]') !== null))
       ) {
         event.continuePropagation();
         return;
       }
       event.preventDefault();
-      undo();
+      void undo();
     },
   });
-  const feedback = records
-    .filter((record) => record.error !== null)
-    .map((record): CellEditFeedback => ({
-      id: record.attempt.id,
-      rowId: record.attempt.row.id,
-      columnKey: record.attempt.columnKey,
-      bookTitle: record.attempt.row.title,
-      field: COLUMN_LABELS[record.attempt.columnKey],
-      submitted: record.attempt.display,
-      message:
-        record.action === "reload"
-          ? "This book changed elsewhere. Reload the latest values before editing again."
-          : formatError(record.error),
-      action: record.action,
-      reloading: record.reloading,
-      retrying: record.retrying,
-      retained: record.reset ?? record.attempt.draft,
-      retainSource: () => retainSource(record.attempt.source),
-      reload: () => {
-        if (!records.some((item) => item.pending)) void reload(record);
-      },
-      retry: () => {
-        if (!record.pending && record.action === "retry") void save(record.attempt, true);
-      },
-    }));
   return {
     pendingCells: new Map(
       records
         .filter((record) => record.pending)
-        .map((record) => [
-          pendingKey(record.attempt.row.id, record.attempt.columnKey),
-          record.attempt.display,
+        .map(({ attempt }) => [
+          pendingKey(attempt.target.id, attempt.columnKey),
+          displayValue(attempt.value),
         ]),
     ),
     savedCells,
     onCellEdit,
-    retainSource,
     statusTargets,
     keyboardProps,
-    undo,
+    undo: () => {
+      void undo();
+    },
     undoPending,
     undoAvailable,
-    undoOutcome,
     undoLabel:
       latest === undefined
         ? undefined
-        : `${COLUMN_LABELS[latest.attempt.columnKey]} for “${latest.attempt.row.title}”`,
-    feedback,
+        : `${COLUMN_LABELS[latest.attempt.columnKey]} for “${latest.attempt.target.title}”`,
+    undoOutcome,
+    feedback: records
+      .filter((record) => record.message !== undefined || record.retrying)
+      .map((record) => ({
+        id: record.attempt.id,
+        rowId: record.attempt.target.id,
+        columnKey: record.attempt.columnKey,
+        bookTitle: record.attempt.target.title,
+        field: COLUMN_LABELS[record.attempt.columnKey],
+        submitted: displayValue(record.attempt.value),
+        retained: record.action === "correct" ? record.attempt.value : undefined,
+        message:
+          record.action === "reload" && !record.reloading
+            ? "This book changed elsewhere. Reload the latest values before editing again."
+            : (record.message ?? "Request failed."),
+        action: record.action,
+        reloading: record.reloading,
+        retrying: record.retrying,
+        reload: () => {
+          if (!records.some((item) => item.pending)) void reload(record);
+        },
+        retry: () => {
+          if (!record.pending && record.action === "retry") void save(record.attempt, true);
+        },
+      })),
   };
 }

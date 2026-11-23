@@ -265,7 +265,9 @@ Books expose native connection edges and PageInfo. Every edge carries its own ke
 `hasNextPage`, and a bounded existence query derives `hasPreviousPage`. The non-null `first` argument is required and
 accepts 0 through 100 independently of `REVERIE_OPDS_PAGE_SIZE`. Negative and above-maximum sizes fail validation, while
 zero returns an empty page with real flags. Nested connections bind their parent and relation order in addition to the
-boundary, preventing cursor replay between parents, relation kinds or the root books connection.
+boundary, so each cursor resumes only the list that minted it. A selected `MetadataRevision` relation also binds the
+immutable revision's UUID in the cursor. SQL still uses the work or manifestation parent for its predicates. A cursor
+from another revision yields `invalid-cursor` at its relation field path.
 
 The Design "GraphQL execution and Relay browser data" describes the pending-version connection
 ([Runtime behaviour](../../api/design/0031-graphql-execution-and-relay-browser-data.md#runtime-behaviour)).

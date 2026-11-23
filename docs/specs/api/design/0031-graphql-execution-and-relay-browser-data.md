@@ -123,8 +123,8 @@ Relay compiler maps each to `string`.
 A value that fails input coercion is an execution error with code `validation` on the field that received it, so the
 operation begins no write. Output values come from typed server state. `FieldOperationStatus` and `OperationOutcome` are
 enums. ISBN-10, ISBN-13, publication date and language are `String`. Domain validation checks their input and returns
-field feedback, and a stored year-only publication date reads as written. Reading state carries its validator,
-timestamps and status as `String`.
+field feedback, and a stored year-only publication date reads as written. Reading revisions use `ETag` for validators
+and `DateTime` for timestamps. Reading status and contributor role are enums.
 
 ### Global object IDs
 
@@ -137,7 +137,8 @@ implement `Node`, and no field fetches a past revision. `backend/src/graphql/id.
 compile time through `type-safe-id` 0.3.4. That crate's parser copies a mismatched prefix of any length, so `id.rs`
 refuses an ID longer than 80 characters before parsing. The `Node` interface has exactly `id: ID!`. Nullable `node(id:)`
 and typed lookup roots return null for malformed, wrong-type, overlong, hidden and missing records. The User variant
-resolves only the caller. Reading state has no global ID.
+resolves only the caller. A `reading_rev` ID derives from the caller, manifestation and reading validator.
+`ReadingRevision` is an immutable record reached through its manifestation, without a `Node` lookup.
 
 Browser routes carry these IDs: `/b/:id`, `/series/:id` and `/shelves/:id` loaders pass the path parameter unaltered to
 their query, and a null result is a not-found route. Links, Library rows, visit filters and the restoration anchor use
@@ -206,14 +207,15 @@ and pending page uses two batched operations, each with canonical scalar, juncti
 parent count.
 
 `mutations.rs` calls the shared metadata editing and Undo, reading and shelf operations. Typed patches preserve absent
-and null values. Metadata save and Undo take a non-null baseline in their input; the reading patch takes an explicit
-nullable baseline. Review and shelf mutations take no baseline. Scope, adult status, caller visibility, shelf ownership
-and credential ceilings are separate checks.
+and null values. Metadata save, Undo and reading saves take a non-null baseline in their input. Review and shelf
+mutations take no baseline. Scope, adult status, caller visibility, shelf ownership and credential ceilings are separate
+checks.
 
 ### Mutation results
 
-Shelf, metadata editing and library preference mutations take one `input` object named `<Mutation>Input` and return a
-`<Mutation>Result` union of one success member, named for the event, and their expected outcomes:
+Shelf, metadata editing, reading, metadata refresh and library preference mutations take one `input` object named
+`<Mutation>Input` and return a `<Mutation>Result` union of one success member, named for the event, and their expected
+outcomes:
 
 | Mutation | Success member and its fields | Outcome members |
 | -------- | ----------------------------- | --------------- |
@@ -229,6 +231,8 @@ Shelf, metadata editing and library preference mutations take one `input` object
 | `revertMetadataField` | `MetadataFieldReverted`: `manifestation` | `FieldsLocked`, `MetadataInvalid`, `NotFound` |
 | `lockMetadataField` | `MetadataFieldLockAdded`: `manifestation` | `NotFound` |
 | `unlockMetadataField` | `MetadataFieldLockRemoved`: `manifestation` | `NotFound` |
+| `updateReadingState` | `ReadingStateUpdated`: `manifestation` | `StaleBaseline`, `MetadataInvalid`, `NotFound` |
+| `refreshMetadata` | `MetadataRefreshQueued`: `manifestationId` | `NotFound` |
 | `updateLibraryPreferences` | `LibraryPreferencesUpdated`: `viewer` | `LibraryPreferencesInvalid` |
 
 Outcome types are shared across mutations and each carries a caller-safe `message`. `ShelfNameInvalid` refuses an empty
@@ -244,12 +248,13 @@ for saves and Undo, and in [Metadata review and editing](../../metadata/design/0
 review actions. Metadata success members return the `manifestation`. Its `metadata` field answers with the revision the
 write projected inside its transaction, selected through look-ahead on `manifestation.metadata`. Relay normalisation
 then points the manifestation at the new revision without an updater. Clients branch on `__typename` in `onCompleted`
-and treat `onError` as the unexpected class. The Library cell adapters carry a refusal member as `MetadataRefusal`
-through their recovery flow. `LibraryPreferencesUpdated.viewer` answers `libraryPreferences` from the row the write
-returned, so the acknowledgement normalises into the viewer's preferences record. A refused preference write is
-`LibraryPreferencesInvalid`. `refreshMetadata` and the reading patch report failures as classified execution errors.
-Exact Undo and resolution require the live browser session that issued the operation, and apply its expiry, budgets and
-non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
+and treat `onError` as the execution failure path. The Library edit owner handles typed refusals and retains input for
+explicit recovery. `LibraryPreferencesUpdated.viewer` answers `libraryPreferences` from the row the write returned, so
+the acknowledgement normalises into the viewer's preferences record. A refused preference write is
+`LibraryPreferencesInvalid`. The reading acknowledgement returns the manifestation linked to the revision built from the
+row its write returned. Exact Undo and resolution require the live browser session that issued the operation, and apply
+its expiry, budgets and non-consuming refusals. Basic and device tokens may save metadata but receive no Undo
+capability.
 
 ### Selected revisions
 
@@ -257,8 +262,8 @@ A selected metadata revision pairs scalar values and bounded editable relation p
 loaders batch core rows and selected pages in one caller-scoped REPEATABLE READ transaction. Write operations
 materialise selected acknowledgements under their parent locks before commit. Scalar-only paths skip unrelated relation
 projection loads. HTTP asks for its complete result. Whole-list editing needs every page of that field at one revision;
-continuation pages are available through the concrete Manifestation lookup. Selected pages are keyed by parent, field or
-role, and effective `first`/`after` arguments, including distinct aliases.
+continuation pages use the concrete Manifestation lookup. Selected pages are keyed by parent, revision, field and
+effective pagination arguments. The same revision UUID also binds each cursor to its own relation list.
 
 Selection inspection uses async-graphql look-ahead. It expands fragments without applying their type conditions or
 fragment-level `@include`/`@skip`, so it may load extra fields beyond the executed selection. Resolver defaults apply
@@ -272,38 +277,17 @@ It validates the response envelope before publication. For each operation named 
 selected projection. Other operations publish after envelope validation alone. Reader proposal JSON reaches the lazy
 Versions view. Execution faults are errors and do not publish partial data or trigger a resend.
 
-Thirteen of the 21 handwritten queries carry `@throwOnFieldError`: the Library bootstrap and screen queries
-(`libraryBootstrapQuery`, `LibraryPageQuery`), the book, Versions, series, shelf and shelves route queries
-(`readerDetailQuery`, `readerVersionsQuery`, `readerSeriesQuery`, `readerShelfQuery`, `readerShelvesQuery`),
-`CommandPaletteQuery`, the edit sheet's `mutationsFormQuery`, and the resolution queries `mutationsResolveTitleQuery`,
-`mutationsResolveFormQuery`, `mutationsResolveAuthorsQuery` and `mutationsResolveCellsQuery`. The other 8 carry none:
-`viewerQuery`, `readerLibraryQuery`, `readerNodeQuery`, `mutationsTitleQuery`, `mutationsRevisionQuery`,
-`mutationsReadingQuery`, `mutationsAuthorPageQuery` and `mutationsCellsQuery`.
+Library screen and editing reads use `@throwOnFieldError` on queries and fragments. The directive fails a read with
+missing selected data at the receiving error boundary. Envelope validation keeps execution-error data out of the store.
+Relay can combine fields of one immutable revision ID. An incomplete read cannot form a baseline, and only pages of that
+same revision can complete a whole-list edit.
 
-The fragments that the route pages, the Library chrome and the edit sheet read carry the directive: `readerDetailBook`,
-`readerDetailEditable`, `readerDetailTags`, `readerWorkAuthors`, `readerVersions`, `readerSeries`, `readerSeriesWorks`,
-`readerShelf`, `readerShelfItems`, `readerShelves`, `LibraryPage_labels`, `TypeaheadMultiSelect_suggestions`,
-`useLibraryPreferences_preferences` and `mutationsFormSnapshot`. `readerLibrary`, `readerLibraryBook`,
-`readerAuthorEditing`, and the title, reading and cell snapshot fragments carry none. Neither do the refusal selections
-that mutation payloads spread with `@relay(mask: false)` (`mutationsSaveRefusal`, `mutationsUndoRefusal`), because Relay
-does not accept `@throwOnFieldError` on mutations or on selections spread unmasked into them. A component that handles a
-field error locally uses `@catch` on that field.
-
-The compiler generates eight pagination queries and two refetch queries, which carry no directive of their own. Six
-pagination queries run through `usePaginationFragment` on a `@refetchable` fragment that carries the directive:
-`readerDetailTags`, `readerWorkAuthors`, `readerVersions`, `readerSeriesWorks`, `readerShelfItems` and `readerShelves`.
-The refetch queries `LibraryPageLabelsRefetchQuery` and `TypeaheadMultiSelectRefetchQuery` run through
-`useRefetchableFragment` on `LibraryPage_labels` and `TypeaheadMultiSelect_suggestions`. Nothing executes
-`readerLibraryPaginationQuery` or `readerAuthorEditingPaginationQuery`. The Library reads `readerLibrary` with
-`useFragment` and loads each page by executing `readerLibraryQuery` through `LibrarySource.loadPage`. Author editing
-loads its pages by executing `mutationsAuthorPageQuery` through `loadAuthorField`, and no component reads
-`readerAuthorEditing`.
-
-The network refuses every response that carries execution errors before publication, so no field error reaches the
-store. A component that reads a query or fragment carrying the directive throws when the store lacks data that it
-selects, for example after a graph relationship change. The throw reaches the nearest error boundary: the route
-`errorElement`, the edit sheet's boundary, or the command palette's own boundary. The cell and author resolution queries
-run as raw executions, which read no store data, so the directive does not change their failure path.
+The screen query contains the conditional, aliased `readerLibrary` connection. Table cells, Covers cards and batch
+actions read their fragments. The displayed and candidate readers use `readerLibraryPaginationQuery` through
+`usePaginationFragment`. The author editor loads `cellsAuthorsQuery` and continues through
+`readerAuthorEditingPaginationQuery`. The labels and typeahead use their generated refetch queries. Library edits use
+native `commitMutation` with success payload fragments. The Library operations publish without operation-specific
+projections. The Book dialog and Versions continue to use their own fragments and hooks.
 
 The Library route loader confirms the account, retains `libraryBootstrapQuery` for the destination's visit owner and
 fetches it with `fetchQuery` under `store-or-network`, resolving on completion with the last payload. It then starts
@@ -315,9 +299,9 @@ The environment's `missingFieldHandlers` holds one `pluralLinked` handler. For a
 `shelfLabels` field it returns the requested IDs, and for every other field it returns nothing. Relay uses that answer
 only when every returned ID is an existing record, and then publishes it into the store, so a label lookup for records
 that suggestions or the shelf list already loaded needs no request. An unanswered lookup is missing data, and its query
-fetches. The store sets no `queryCacheExpirationTime`: a record stays fresh while an operation retains it. Deleting a
-shelf invalidates the deleted shelf's record, so the next check of an operation that reads that record reports it stale
-and fetches.
+fetches. The store sets `queryCacheExpirationTime` to five minutes. A fresh retained Library return uses its existing
+connection. Deleting a shelf invalidates the deleted shelf's record, so the next check of an operation that reads that
+record reports it stale and fetches.
 
 Each other reader route loader starts its query with `loadQuery`, which retains the operation from load start. The
 loader awaits the same in-flight request for its not-found check and breadcrumb title. Abort, failure, a not-found
@@ -329,12 +313,10 @@ button, with the default `store-or-network` policy. The sheet reads it with `use
 own error boundary. Its explicit Reload calls `fetchQuery` with `network-only` from the event handler, so the open form
 stays mounted until the fresh revision arrives.
 
-`frontend/src/lib/relay/mutations.ts` contains selected title, form, author and reading reads and acknowledgements, plus
-the other protected actions. For the author-list documents, the network checks the selected revision with its
-`metadata_rev` ID, domain IDs, strong validators and PageInfo before `sink.next`. Library cells and batch Set status run
-selected raw executions. The metadata dialog and Versions actions use `useMutation`. The Design "Conditional requests
-and optimistic concurrency" describes how each captures its editing baseline
-([Client editing baselines](0007-conditional-requests-and-optimistic-concurrency.md#client-editing-baselines)).
+`frontend/src/lib/relay/mutations.ts` holds the Book form and other protected actions. The table-editing owner holds the
+Library's save, reading, Undo and recovery operations. The Design "Conditional requests and optimistic concurrency"
+describes how each editor captures its baseline.
+
 `Viewer.libraryPreferences` and `updateLibraryPreferences` share the canonical preference service with HTTP. Density,
 view and column names are enums, and each sort stack is a list of `LibrarySortLevel` values. Output omits a stored
 column key outside `LibraryColumn`, and storage keeps it. An input changes only the groups it names, and `null` resets

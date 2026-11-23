@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<722cd04e6b9592b0ce3af2cc4056a8ce>>
+ * @generated SignedSource<<d3d827488d73479f25a1b51c61be12d0>>
  * @lightSyntaxTransform
  */
 
@@ -13,7 +13,13 @@ export type readerLibrary$data = {
   readonly books: {
     readonly edges: ReadonlyArray<{
       readonly node: {
-        readonly " $fragmentSpreads": FragmentRefs<"readerLibraryBook">;
+        readonly id: string;
+        readonly metadata: {
+          readonly title: string;
+        };
+        readonly " $fragmentSpreads": FragmentRefs<
+          "BookCard_book" | "LibraryTable_rows" | "useCellEdit_batchRows"
+        >;
       };
     }>;
   };
@@ -78,6 +84,7 @@ const node: ReaderFragment = (function () {
         fragmentPathInResult: [],
         operation: readerLibraryPaginationQuery_graphql,
       },
+      throwOnFieldError: true,
     },
     name: "readerLibrary",
     selections: [
@@ -122,9 +129,44 @@ const node: ReaderFragment = (function () {
                 plural: false,
                 selections: [
                   {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "id",
+                    storageKey: null,
+                  },
+                  {
+                    alias: null,
+                    args: null,
+                    concreteType: "MetadataRevision",
+                    kind: "LinkedField",
+                    name: "metadata",
+                    plural: false,
+                    selections: [
+                      {
+                        alias: null,
+                        args: null,
+                        kind: "ScalarField",
+                        name: "title",
+                        storageKey: null,
+                      },
+                    ],
+                    storageKey: null,
+                  },
+                  {
                     args: null,
                     kind: "FragmentSpread",
-                    name: "readerLibraryBook",
+                    name: "LibraryTable_rows",
+                  },
+                  {
+                    args: null,
+                    kind: "FragmentSpread",
+                    name: "BookCard_book",
+                  },
+                  {
+                    args: null,
+                    kind: "FragmentSpread",
+                    name: "useCellEdit_batchRows",
                   },
                   {
                     alias: null,
@@ -180,6 +222,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "b7913b86b8eabe3cba69089d24fd6175";
+(node as any).hash = "b8c0363a5d29ecb7229cc4da79d8e48d";
 
 export default node;

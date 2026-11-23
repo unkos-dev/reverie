@@ -410,10 +410,10 @@ acknowledges `isbnMismatch` with the Book detail fields and the new revision, so
 warning from Book detail and the next edit-sheet read. Native named FieldErrors display ISBN refusals through the
 `Form.validationErrors` map and retain submitted values for correction. A valid mismatch remains savable.
 
-The table resolves a stale metadata request before conflict feedback. Validation keeps the entered ISBN and native field
-feedback for correction. Temporary or uncertain failures expose retained-attempt Retry; permanent refusals expose their
-specific feedback. A refusal creates no Undo entry. Confirmed selected acknowledgements publish canonical values through
-native Relay store updates and refresh the affected displayed source.
+The table uses typed Relay mutation outcomes. A stale refusal offers Reload. Validation keeps the entered ISBN and its
+field feedback. Temporary or uncertain failures offer explicit Retry of the retained attempt. Permanent refusals show
+their specific feedback. An acknowledged save can add an exact Undo operation. Normalisation updates displayed records.
+The visit owner invalidates a connection when the changed field participates in its sort or filter.
 
 **A manual identifier edit while enrichment is `in_progress`, for the same manifestation.**
 

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<e511c1fb706429855e0d59f77e5190de>>
- * @relayHash 21047b0f5bdedacb50303b6d7297d680
+ * @generated SignedSource<<92c461aeb1802e3cccd35895199bf91a>>
+ * @relayHash 7b568be076f235814e8776d45d863a69
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 791814818afcb8dd94d9b326eebf9ff557d6251c5d4481fb4ec54e5b2e36da07
+// @relayRequestID 2ef6d88ac5bd8ba461dc0eba72db86f5ddf0ac077d515dfc4610b61d5794279e
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -139,20 +139,6 @@ const node: ConcreteRequest = (function () {
                   alias: null,
                   args: null,
                   kind: "ScalarField",
-                  name: "workId",
-                  storageKey: null,
-                },
-                {
-                  alias: null,
-                  args: null,
-                  kind: "ScalarField",
-                  name: "manifestationId",
-                  storageKey: null,
-                },
-                {
-                  alias: null,
-                  args: null,
-                  kind: "ScalarField",
                   name: "etag",
                   storageKey: null,
                 },
@@ -175,13 +161,6 @@ const node: ConcreteRequest = (function () {
                         {
                           alias: null,
                           args: null,
-                          kind: "ScalarField",
-                          name: "cursor",
-                          storageKey: null,
-                        },
-                        {
-                          alias: null,
-                          args: null,
                           concreteType: "RevisionContributor",
                           kind: "LinkedField",
                           name: "node",
@@ -197,21 +176,18 @@ const node: ConcreteRequest = (function () {
                             {
                               alias: null,
                               args: null,
-                              concreteType: "Author",
-                              kind: "LinkedField",
-                              name: "author",
-                              plural: false,
-                              selections: [v2 /*:: as any*/],
-                              storageKey: null,
-                            },
-                            {
-                              alias: null,
-                              args: null,
                               kind: "ScalarField",
                               name: "__typename",
                               storageKey: null,
                             },
                           ],
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "cursor",
                           storageKey: null,
                         },
                       ],
@@ -229,28 +205,14 @@ const node: ConcreteRequest = (function () {
                           alias: null,
                           args: null,
                           kind: "ScalarField",
-                          name: "hasNextPage",
-                          storageKey: null,
-                        },
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "hasPreviousPage",
-                          storageKey: null,
-                        },
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "startCursor",
-                          storageKey: null,
-                        },
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
                           name: "endCursor",
+                          storageKey: null,
+                        },
+                        {
+                          alias: null,
+                          args: null,
+                          kind: "ScalarField",
+                          name: "hasNextPage",
                           storageKey: null,
                         },
                       ],
@@ -278,7 +240,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "791814818afcb8dd94d9b326eebf9ff557d6251c5d4481fb4ec54e5b2e36da07",
+      id: "2ef6d88ac5bd8ba461dc0eba72db86f5ddf0ac077d515dfc4610b61d5794279e",
       metadata: {},
       name: "readerAuthorEditingPaginationQuery",
       operationKind: "query",
@@ -287,6 +249,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "6640b823801bbb9fa2b7455b9cb9518d";
+(node as any).hash = "386d5ec2b8979374088cec8dfde461ee";
 
 export default node;

@@ -91,7 +91,7 @@ function columnKeys(columns: readonly Column[]): string[] {
   });
 }
 
-function sortLevelParams(levels: PreferencesData["defaults"]["sort"]): SortLevelParam[] {
+export function sortLevelParams(levels: PreferencesData["defaults"]["sort"]): SortLevelParam[] {
   return levels.flatMap((level) => {
     const field = (Object.keys(SORT_COLUMNS) as SortLevelParam["field"][]).find(
       (key) => SORT_COLUMNS[key] === level.column,

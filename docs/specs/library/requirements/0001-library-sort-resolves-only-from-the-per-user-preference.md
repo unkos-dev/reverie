@@ -41,9 +41,6 @@ default whenever no override is set.
   `removing the last level is the reset gesture, not an unsorted state` in `frontend/tests/browser/FilterRail.test.tsx`
   and `the rail's reset drops the override and returns to the installation order` in
   `frontend/tests/browser/LibraryPage.test.tsx`.
-- When the reader's stored sort preference arrives after an initial load using the installation default, the Library
-  re-sorts to match the stored preference. Checked by `a late preferences response re-sorts the initial list once` in
-  `frontend/tests/browser/LibraryPage.test.tsx`.
 
 ## More information
 

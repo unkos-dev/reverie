@@ -4,16 +4,14 @@ use super::id::Kind as _;
 use super::{WriteScope, id, library, safe_error};
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
-use crate::routes::etag::{Conditional, StrongEntityTag, parse_strong_entity_tag};
+use crate::routes::etag::Conditional;
 use crate::services::{
     metadata::editing::{self, undo},
     reading, shelves,
 };
 use crate::state::AppState;
 use async_graphql::connection::{Edge, EmptyFields};
-use async_graphql::{
-    Context, ErrorExtensions, ID, InputObject, MaybeUndefined, Object, SimpleObject, Union,
-};
+use async_graphql::{Context, ID, InputObject, MaybeUndefined, Object, SimpleObject, Union};
 use std::collections::BTreeMap;
 use tower_sessions::Session;
 use uuid::Uuid;
@@ -192,9 +190,20 @@ enum UpdateLibraryPreferencesResult {
     LibraryPreferencesInvalid(LibraryPreferencesInvalid),
 }
 
+#[derive(InputObject)]
+struct RefreshMetadataInput {
+    id: ID,
+}
+
 #[derive(SimpleObject)]
-struct MetadataRefresh {
+struct MetadataRefreshQueued {
     manifestation_id: ID,
+}
+
+#[derive(Union)]
+enum RefreshMetadataResult {
+    MetadataRefreshQueued(MetadataRefreshQueued),
+    NotFound(NotFound),
 }
 
 input_enum!(ContentRatingInput { Everyone => "EVERYONE", Teen => "TEEN", Mature => "MATURE", Adult => "ADULT", Explicit => "EXPLICIT" });
@@ -206,18 +215,6 @@ impl From<ContentRatingInput> for crate::models::content_rating::ContentRating {
             ContentRatingInput::Mature => Self::Mature,
             ContentRatingInput::Adult => Self::Adult,
             ContentRatingInput::Explicit => Self::Explicit,
-        }
-    }
-}
-input_enum!(ReadingStatusInput { WantToRead => "WANT_TO_READ", Reading => "READING", OnHold => "ON_HOLD", Finished => "FINISHED", Abandoned => "ABANDONED" });
-impl From<ReadingStatusInput> for crate::models::reading_status::ReadingStatus {
-    fn from(value: ReadingStatusInput) -> Self {
-        match value {
-            ReadingStatusInput::WantToRead => Self::WantToRead,
-            ReadingStatusInput::Reading => Self::Reading,
-            ReadingStatusInput::OnHold => Self::OnHold,
-            ReadingStatusInput::Finished => Self::Finished,
-            ReadingStatusInput::Abandoned => Self::Abandoned,
         }
     }
 }
@@ -290,8 +287,39 @@ impl MetadataPatch {
     }
 }
 #[derive(InputObject)]
+struct UpdateReadingStateInput {
+    id: ID,
+    baseline: library::ETag,
+    patch: ReadingPatch,
+}
+
+#[derive(SimpleObject)]
+struct ReadingStateUpdated {
+    manifestation: library::Manifestation,
+}
+
+#[derive(Union)]
+enum UpdateReadingStateResult {
+    ReadingStateUpdated(ReadingStateUpdated),
+    StaleBaseline(StaleBaseline),
+    MetadataInvalid(MetadataInvalid),
+    NotFound(NotFound),
+}
+
+impl From<Refusal> for async_graphql::Result<UpdateReadingStateResult> {
+    fn from(refusal: Refusal) -> Self {
+        Ok(match refusal {
+            Refusal::Stale(value) => value.into(),
+            Refusal::Invalid(value) => value.into(),
+            Refusal::NotFound(value) => value.into(),
+            _ => return Err(Refusal::unexpected()),
+        })
+    }
+}
+
+#[derive(InputObject)]
 struct ReadingPatch {
-    status: MaybeUndefined<ReadingStatusInput>,
+    status: MaybeUndefined<library::ReadingStatus>,
     rating: MaybeUndefined<i16>,
     notes: MaybeUndefined<String>,
 }
@@ -434,7 +462,7 @@ impl Refusal {
     }
     fn unexpected() -> async_graphql::Error {
         safe_error(AppError::Internal(anyhow::anyhow!(
-            "metadata service returned a refusal its mutation does not declare"
+            "service returned a refusal its mutation does not declare"
         )))
     }
 }
@@ -773,23 +801,6 @@ fn target<K: id::Kind>(value: &ID) -> async_graphql::Result<Uuid> {
     K::decode(value)
         .ok_or_else(|| safe_error(AppError::Validation(format!("Invalid {} ID.", K::NAME))))
 }
-fn baseline(value: Option<String>) -> async_graphql::Result<Option<StrongEntityTag>> {
-    value
-        .map(|value| parse_strong_entity_tag(value.as_bytes()).map_err(safe_error))
-        .transpose()
-}
-fn matched<T>(value: Conditional<T>) -> async_graphql::Result<T> {
-    match value {
-        Conditional::Matched(value) => Ok(value),
-        Conditional::Mismatch(tag) => {
-            let current = tag
-                .to_str()
-                .map_err(|e| safe_error(AppError::Internal(e.into())))?;
-            Err(safe_error(AppError::IfMatchMismatch)
-                .extend_with(|_, extensions| extensions.set("currentEtag", current)))
-        }
-    }
-}
 fn adult(ctx: &Context<'_>) -> async_graphql::Result<()> {
     ctx.data::<CurrentUser>()?
         .require_not_child()
@@ -849,29 +860,34 @@ impl Mutation {
     async fn refresh_metadata(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-    ) -> async_graphql::Result<MetadataRefresh> {
+        input: RefreshMetadataInput,
+    ) -> async_graphql::Result<RefreshMetadataResult> {
         let user = ctx.data::<CurrentUser>()?;
         user.require_not_child().map_err(safe_error)?;
+        let Some(manifestation) = id::Manifestation::decode(&input.id) else {
+            return Ok(RefreshMetadataResult::NotFound(NotFound::new()));
+        };
         let mut tx = crate::db::acquire_with_rls(ctx.data()?, user.user_id)
             .await
             .map_err(|error| safe_error(AppError::Internal(error.into())))?;
         let changed = crate::services::enrichment::reset_retries(
             &mut tx,
-            &[target::<id::Manifestation>(&id)?],
+            &[manifestation],
             crate::services::enrichment::RetryTiming::ClearProviderDelay,
         )
         .await
         .map_err(|error| safe_error(AppError::Internal(error.into())))?;
         if changed == 0 {
-            return Err(safe_error(AppError::NotFound));
+            return Ok(RefreshMetadataResult::NotFound(NotFound::new()));
         }
         tx.commit()
             .await
             .map_err(|error| safe_error(AppError::Internal(error.into())))?;
-        Ok(MetadataRefresh {
-            manifestation_id: id,
-        })
+        Ok(RefreshMetadataResult::MetadataRefreshQueued(
+            MetadataRefreshQueued {
+                manifestation_id: input.id,
+            },
+        ))
     }
 
     #[graphql(guard = "WriteScope")]
@@ -915,27 +931,44 @@ impl Mutation {
     async fn update_reading_state(
         &self,
         ctx: &Context<'_>,
-        id: ID,
-        baseline: Option<String>,
-        patch: ReadingPatch,
-    ) -> async_graphql::Result<library::ReadingState> {
-        let supplied = self::baseline(baseline)?;
-        let row = matched(
-            reading::patch_reading(
-                ctx.data()?,
-                ctx.data()?,
-                target::<id::Manifestation>(&id)?,
-                supplied,
-                reading::UpdateReadingRequest {
-                    status: patch.status.map_value(Into::into).into(),
-                    rating: patch.rating.into(),
-                    notes: patch.notes.into(),
-                },
-            )
-            .await
-            .map_err(safe_error)?,
-        )?;
-        library::ReadingState::from_row(&row)
+        input: UpdateReadingStateInput,
+    ) -> async_graphql::Result<UpdateReadingStateResult> {
+        let user = ctx.data::<CurrentUser>()?;
+        let baseline = input.baseline.strong()?;
+        let Some(edition) = id::Manifestation::decode(&input.id) else {
+            return Refusal::not_found().into();
+        };
+        let patch = input.patch;
+        let row = match reading::patch_reading(
+            user,
+            ctx.data()?,
+            edition,
+            Some(baseline),
+            reading::UpdateReadingRequest {
+                status: patch.status.map_value(Into::into).into(),
+                rating: patch.rating.into(),
+                notes: patch.notes.into(),
+            },
+        )
+        .await
+        {
+            Ok(Conditional::Matched(row)) => row,
+            Ok(Conditional::Mismatch(_)) => return Refusal::stale().into(),
+            Err(error) => return refused(error),
+        };
+        let etag = row
+            .etag()
+            .map_err(safe_error)?
+            .to_str()
+            .map_err(|error| safe_error(AppError::Internal(error.into())))?
+            .to_owned();
+        let revision = library::ReadingRevision::new(user.user_id, edition, &row, etag)?;
+        let manifestation = acknowledged(ctx, &input.id, None)
+            .await?
+            .with_reading(revision);
+        Ok(UpdateReadingStateResult::ReadingStateUpdated(
+            ReadingStateUpdated { manifestation },
+        ))
     }
     #[graphql(guard = "WriteScope")]
     async fn create_shelf(

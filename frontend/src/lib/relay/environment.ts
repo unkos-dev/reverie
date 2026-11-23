@@ -47,7 +47,7 @@ export function setRelayAccount(account: string | null): void {
         network: Network.create((request, variables) =>
           graphqlNetwork(request, variables, controller.signal),
         ),
-        store: new Store(source),
+        store: new Store(source, { queryCacheExpirationTime: 5 * 60 * 1000 }),
         missingFieldHandlers,
       }),
     };
