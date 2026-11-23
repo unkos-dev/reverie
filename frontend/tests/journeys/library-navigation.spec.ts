@@ -435,7 +435,7 @@ async function section(page: Page, title: string) {
 
 test("rapid edits reload with their first request and no URL grammar", async ({ page }) => {
   // REV-REQ-0075: the resumed visit reaches the first list request intact, a failed lookup keeps
-  // every saved selection, and a selection the lookup omits is dropped from the request and chips.
+  // every saved selection, and any invisible selection resets the visit to an unfiltered view.
   const fixture = await intercept(page, true);
   await page.goto("/library");
   await ready(page);
@@ -460,21 +460,9 @@ test("rapid edits reload with their first request and no URL grammar", async ({ 
   before = fixture.requests.length;
   await page.reload();
   await ready(page);
-  await expect(search(page)).toHaveValue("The Sea");
-  expect(fixture.requests[before]?.filter?.q).toBe("The Sea");
-  expect(fixture.requests[before]?.filter?.shelfAny).toEqual(
-    SHELVES.map((item) => graphId("Shelf", item.id)),
-  );
-  expect(fixture.requests[before]?.filter?.seriesAny).toEqual([graphId("Series", SERIES[0].id)]);
-  const chips = page.getByTestId("filter-chips");
-  await expect(chips.getByRole("row", { name: /^Series: / })).toHaveCount(1);
-  await expect(
-    chips.getByRole("row", { name: "Series: Sea adventures", exact: true }),
-  ).toBeVisible();
-  for (const shelf of SHELVES)
-    await expect(
-      chips.getByRole("row", { name: `Shelf: ${shelf.name}`, exact: true }),
-    ).toBeVisible();
+  await expect(search(page)).toHaveValue("");
+  expect(fixture.requests[before]?.filter).toEqual({});
+  await expect(page.getByTestId("filter-chips").getByRole("row")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "The Sea", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/library$/);
 });

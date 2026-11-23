@@ -560,34 +560,22 @@ export function libraryLookups(filters: FilterState): LibraryLookups {
 }
 
 /**
- * Drop each restored author, series and shelf selection the server's lookups omit. Anything
- * dropped also clears the saved position, as every filter change does.
+ * Reset a restored visit's filters and saved position when any selected author, series or shelf is
+ * omitted by the server's lookups, preserving any view override.
  */
-export function pruneVisit(
+export function validateRestoredVisit(
   visit: LibraryVisit,
+  lookups: LibraryLookups,
   visible: {
     authors: ReadonlySet<string>;
     series: ReadonlySet<string>;
     shelves: ReadonlySet<string>;
   },
 ): LibraryVisit {
-  const { authors, series, shelf } = visit.filters;
-  const keep = (ids: readonly string[], found: ReadonlySet<string>) =>
-    ids.filter((id) => found.has(id));
-  const next = {
-    authors: {
-      all: keep(authors.all, visible.authors),
-      any: keep(authors.any, visible.authors),
-      none: keep(authors.none, visible.authors),
-    },
-    series: keep(series, visible.series),
-    shelf: keep(shelf, visible.shelves),
-  };
-  const dropped =
-    next.authors.all.length + next.authors.any.length + next.authors.none.length <
-      authors.all.length + authors.any.length + authors.none.length ||
-    next.series.length < series.length ||
-    next.shelf.length < shelf.length;
-  if (!dropped) return visit;
-  return { ...visit, filters: { ...visit.filters, ...next }, position: undefined };
+  const missing =
+    lookups.authorIds.some((id) => !visible.authors.has(id)) ||
+    lookups.seriesIds.some((id) => !visible.series.has(id)) ||
+    lookups.shelfIds.some((id) => !visible.shelves.has(id));
+  if (!missing) return visit;
+  return { ...visit, filters: emptyFilterState(), position: undefined };
 }

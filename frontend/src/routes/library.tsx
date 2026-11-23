@@ -10,7 +10,7 @@ import { confirmedRelayEnvironment } from "@/lib/relay/environment";
 import {
   libraryDestination,
   libraryLookups,
-  pruneVisit,
+  validateRestoredVisit,
   type LibraryLookups,
   type LibraryPreparation,
   type LibraryVisitOwner,
@@ -116,7 +116,7 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<PreparedL
     owner.discard(preparation);
     return null;
   }
-  const visit = pruneVisit(restored, {
+  const visit = validateRestoredVisit(restored, lookups, {
     authors: new Set(data.authorLabels.map((author) => author.id)),
     series: new Set(data.seriesLabels.map((series) => series.id)),
     shelves: new Set(data.shelfLabels.map((shelf) => shelf.id)),
