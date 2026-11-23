@@ -712,7 +712,7 @@ test("a table edit keeps the validator its editor opened with", async () => {
   });
 });
 
-// REV-REQ-0081 E1-E4, REV-REQ-0019 and the data loss boundary: Retry retains each attempt and classifies each target.
+// REV-REQ-0081, REV-REQ-0019 and the data loss boundary: Retry retains each attempt and classifies each target.
 it("Library Retry sends the retained edit again", async () => {
   const original = bookFixture();
   let current = original;

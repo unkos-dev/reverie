@@ -47,8 +47,9 @@ contracts.
 ### Consequences
 
 - Positive: Relay provides one normalised owner for related records and generated browser operations.
-- Positive: retained HTTP endpoints remain governed by REV-ADR-0011, REV-ADR-0016 and REV-ADR-0056 without disturbing
-  device-token or other non-browser callers.
+- Positive: migrating a browser workflow to GraphQL removes no `/api/v1` REST operation; the versioned `/api/v1` API
+  remains the contract for device-token and other non-browser clients under REV-ADR-0011, REV-ADR-0016 and REV-ADR-0056,
+  and retiring any of it requires a separate compatibility decision.
 - Negative: schema and operation generation add build integration and matching release artefacts.
 - Negative: each workflow requires explicit connection and aggregate updates when moved to Relay.
 - Negative: moving workflows incrementally requires running TanStack Query alongside Relay until every browser workflow

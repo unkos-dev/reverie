@@ -33,9 +33,10 @@ may not notice which condition moved. View and sort are standing choices, so cle
   `clearing all filters preserves the visit view and the stored sort` in `frontend/tests/browser/LibraryPage.test.tsx`.
 - Clearing one section or removing one chip leaves sibling sections unchanged. Checked by
   `a chip's remove control drops exactly that filter param` in `frontend/tests/browser/LibraryPage.test.tsx`.
-- Entered text and its selected operator stay editable while they contribute no effective predicate. Checked by
+- Entered text and its selected operator remain editable in the filter rail while blank or dormant. Checked by
   `raw text and its operator stay editable while they contribute no predicate` in
   `frontend/tests/browser/FilterRail.test.tsx`.
-- The books request's effective filter arguments represent exactly the published edit and preserve sibling conditions,
-  while dormant entered text and operators contribute no effective predicate. Checked by
-  `frontend/tests/journeys/library-navigation.spec.ts`.
+- Blank or dormant text and operators emit no effective filter predicate in the books request parameters, while
+  published filter edits reach the GraphQL books request with sibling conditions preserved. Checked by
+  `raw spaces and an operator without text remain visit intent without predicates` in
+  `frontend/src/routes/library-params.test.ts` and `frontend/tests/journeys/library-navigation.spec.ts`.

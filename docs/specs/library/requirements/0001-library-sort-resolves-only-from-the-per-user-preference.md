@@ -32,13 +32,14 @@ default whenever no override is set.
 - A table header click persists the sort change to the reader's preference and writes no `?sort=` parameter to the URL.
   Checked by `table header click persists the sort to the account and never touches the URL` in
   `frontend/tests/browser/LibraryPage.test.tsx`.
-- Adding, reordering, flipping or removing levels in the sort editor persists the edited stack. Checked by
+- Adding, reordering, flipping or removing levels in the sort editor dispatches the edited stack to the page's sort
+  handler. Checked for editor dispatch through a test-local owner by
   `adding a field appends a level to the effective stack` and
   `direction toggle, reorder, and remove dispatch the edited stack` in `frontend/tests/browser/FilterRail.test.tsx`.
-- Removing the last level or activating Reset clears the reader's override and returns the Library to the installation
-  default without becoming unsorted. Checked by `removing the last level is the reset gesture, not an unsorted state` in
-  `frontend/tests/browser/FilterRail.test.tsx` and
-  `the rail's reset drops the override and returns to the installation order` in
+- Removing the last level dispatches the reset gesture without producing an unsorted stack, and activating Reset in the
+  rail persists the cleared override and returns the Library to the installation default. Checked by
+  `removing the last level is the reset gesture, not an unsorted state` in `frontend/tests/browser/FilterRail.test.tsx`
+  and `the rail's reset drops the override and returns to the installation order` in
   `frontend/tests/browser/LibraryPage.test.tsx`.
 - When the reader's stored sort preference arrives after an initial load using the installation default, the Library
   re-sorts to match the stored preference. Checked by `a late preferences response re-sorts the initial list once` in
