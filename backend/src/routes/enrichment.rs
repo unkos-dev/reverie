@@ -269,6 +269,28 @@ mod tests {
         .expect("seed failed state");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let (_child_id, child) =
+            test_support::db::create_child_user_and_basic_auth(&app_pool, "trigger-child").await;
+        let refused = server
+            .post(&format!("/api/v1/manifestations/{m_id}/enrichment/trigger"))
+            .add_header(AUTHORIZATION, child)
+            .await;
+        assert_eq!(refused.status_code(), StatusCode::FORBIDDEN);
+        let row = sqlx::query!(
+            "SELECT enrichment_status AS \"status!: crate::models::enrichment_status::EnrichmentStatus\", \
+                    enrichment_attempt_count, enrichment_retry_not_before, \
+                    enrichment_error, enrichment_failures \
+             FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch manifestation");
+        assert_eq!(
+            row.status,
+            crate::models::enrichment_status::EnrichmentStatus::Failed
+        );
+        assert_eq!(row.enrichment_attempt_count, 3);
         let response = server
             .post(&format!("/api/v1/manifestations/{m_id}/enrichment/trigger"))
             .add_header(AUTHORIZATION, basic)

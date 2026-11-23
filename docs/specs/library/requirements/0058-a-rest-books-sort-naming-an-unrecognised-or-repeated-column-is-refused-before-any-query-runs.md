@@ -1,0 +1,39 @@
+---
+type: REQ
+profile-version: 1
+id: "REV-REQ-0058"
+title: "A REST books sort naming an unrecognised or repeated column is refused before any query runs"
+governed-by:
+  - "REV-ADR-0037"
+---
+
+# A REST books sort naming an unrecognised or repeated column is refused before any query runs
+
+## Statement
+
+WHEN a request to `GET /api/v1/books` carries a `?sort=` value that names a column outside the endpoint's sort
+vocabulary, names the same column more than once, or names more than three columns, the server MUST refuse the request
+with `422 Unprocessable Content` before it builds or runs a list query for it. The sort vocabulary is the case-sensitive
+column names `title`, `author`, `created_at` and `pages`, each of which a `-` prefix may mark as descending.
+
+## Rationale
+
+The sort value is caller-supplied text that ends up next to the ordering clause of a SQL statement. The database
+boundary depends on that text never reaching the statement unless it is one of a fixed set of names the server itself
+maps to column expressions; a name that passed through without that mapping would be an identifier injection surface.
+The paging client depends on the refusal too: a repeated or unknown column silently dropped would produce an ordering
+the client did not ask for, and a cursor minted under it would not match the stack the client believes it holds.
+
+## Acceptance criteria
+
+- A `?sort=` value naming a column outside the vocabulary answers `422`. Checked by
+  `list_filter_unknown_sort_field_returns_422` in `backend/src/routes/library/tests.rs`.
+- A `?sort=` value naming the same column twice, in either direction, answers `422`. Checked by
+  `list_filter_duplicate_sort_column_returns_422` in `backend/src/routes/library/tests.rs`.
+- A `?sort=` value naming four or more columns answers `422`. Checked by `list_filter_too_many_sort_levels_returns_422`
+  in `backend/src/routes/library/tests.rs`.
+- A differently cased spelling of a vocabulary name answers `422`. Checked by `rejects_uppercase_field_case_sensitively`
+  in `backend/src/routes/sort_spec.rs`.
+- The refusal happens before any query is built: `list_books` in `backend/src/services/reader.rs` parses the sort value,
+  and returns the failure, before it opens a transaction or constructs its query. Satisfaction is determined by reading
+  that function's order of operations; no automated check asserts the absence of a query on the refusal path.

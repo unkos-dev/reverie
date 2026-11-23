@@ -35,3 +35,6 @@ met. Surfacing the status unconditionally, independent of the body's shape, is w
 - A response whose body is not JSON at all still surfaces an error carrying the response's real status, falling back to
   the response's status text rather than failing to produce an error. Checked by
   `"non-JSON error body falls back to status-text title"` in the same file.
+- A response whose body is JSON but not Problem Details, and one with no body, each surface an error carrying the
+  response's real status. Checked for a 409 and a 503 by `"other JSON and empty error bodies keep their status"` in the
+  same file.

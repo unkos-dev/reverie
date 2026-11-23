@@ -391,7 +391,7 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
         // Inert here: the sort mismatch is detected before the fingerprint.
         filter_fp: String::new(),
     }
-    .encode()
+    .encode(crate::routes::cursor::CursorApi::Rest)
     .expect("encode");
 
     let response = server
@@ -475,7 +475,7 @@ async fn list_endpoint_cursor_direction_mismatch_returns_422(pool: PgPool) {
         // preimage regardless.
         filter_fp: String::new(),
     }
-    .encode()
+    .encode(crate::routes::cursor::CursorApi::Rest)
     .expect("encode");
 
     let response = server

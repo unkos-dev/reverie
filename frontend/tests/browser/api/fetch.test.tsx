@@ -250,6 +250,21 @@ describe("apiFetch — RFC 9457 error parsing", () => {
     expect(err.type).toBeNull();
     expect(err.problemSlug).toBeNull();
   });
+
+  test("other JSON and empty error bodies keep their status", async () => {
+    for (const response of [
+      jsonResponse({ error: "conflict" }, { status: 409, statusText: "Conflict" }),
+      new Response(null, { status: 503, statusText: "Service Unavailable" }),
+    ]) {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response);
+      const err = await apiFetch("/api/v1/books").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ApiError);
+      if (!(err instanceof ApiError)) throw new Error("Expected ApiError");
+      expect(err.status).toBe(response.status);
+      expect(err.title).toBe(response.statusText);
+      expect(err.type).toBeNull();
+    }
+  });
 });
 
 describe("apiFetch — non-CSRF 403", () => {

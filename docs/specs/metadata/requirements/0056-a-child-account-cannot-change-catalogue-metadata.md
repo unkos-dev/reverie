@@ -11,24 +11,24 @@ governed-by:
 
 ## Statement
 
-WHEN the caller is a child account, the system MUST refuse any request that would accept, reject or revert a metadata
-proposal, set or clear a metadata field lock, patch or undo catalogue metadata, set or clear an external identifier, or
-trigger an enrichment run, whatever scope the caller's credential carries. A refused request MUST leave catalogue
-metadata, canonical pointers, proposals, field locks and writeback jobs unchanged.
+WHEN the caller is a child account, which is an account whose role is `child`, the system MUST refuse any request that
+would accept, reject or revert a metadata proposal, set or clear a metadata field lock, patch or undo catalogue
+metadata, set or clear an external identifier, or trigger an enrichment run, whatever scope the caller's credential
+carries. A refused request MUST leave catalogue metadata, canonical pointers, proposals, field locks, writeback jobs and
+enrichment state unchanged.
 
 ## Rationale
 
-A child account's own credential can carry write scope, since a child manages its own settings and shelves, so scope
-alone cannot be what keeps a child from altering metadata the whole household's catalogue shares. Gating on the caller's
-identity, independent of scope, protects that shared catalogue from a child's credential regardless of what capability
-it happens to carry, and stops a wrongly scoped or compromised child token from corrupting data every other account
-relies on.
+A child account's own credential can carry write scope, since a child manages its own settings and the books on the
+shelves it owns, so scope alone cannot be what keeps a child from altering metadata the whole household's catalogue
+shares. Gating on the caller's identity, independent of scope, protects that shared catalogue from a child's credential
+regardless of what capability it happens to carry, and stops a wrongly scoped or compromised child token from corrupting
+data every other account relies on.
 
 ## Acceptance criteria
 
-- A write-scoped child browser session cannot restore a saved metadata field. It receives 403 without canonical,
-  pointer, proposal, lock or writeback changes. A non-administrator adult browser session can restore its eligible
-  operation. Checked by `metadata_undo_binds_receipts_to_session` in `backend/src/routes/metadata.rs`.
+- A child browser session cannot restore a saved metadata field. It receives 403 without canonical, pointer, proposal,
+  lock or writeback changes. Checked by `metadata_undo_binds_receipts_to_session` in `backend/src/routes/metadata.rs`.
 - A child account's request to accept a pending metadata proposal returns 403 without writes. Checked by
   `accept_child_account_forbidden_without_writes` in `backend/src/routes/metadata.rs`.
 - A child account's request to reject a pending metadata proposal returns 403 without writes. Checked by
@@ -43,16 +43,14 @@ relies on.
 - A child account's request to patch catalogue metadata, including a request that only sets or clears a work's or
   manifestation's external identifier, is refused with a 403 status. Checked by `patch_child_account_forbidden` in
   `backend/src/routes/metadata.rs`.
-- A child account's request to trigger an enrichment re-run is refused with a 403 status. Not checked by any automated
-  test.
-- The refusal holds even when the child's credential carries write scope. Each of the five review-handler tests uses a
-  write-scoped child credential and compares the canonical records, journal, locks and writeback jobs before and after
-  refusal. `patch_child_account_forbidden` also uses write scope; the enrichment-trigger request has no automated
-  refusal test.
-- A non-administrator adult succeeds at the same accept, reject, revert, lock and unlock requests, with the expected
-  state changes. Each of the five review-handler tests includes this control. The patch and enrichment-trigger tests
-  cover administrator success but have no non-administrator adult control.
-- A child account's read of a book's detail returns an empty pending list and no pending versions, while an adult's read
-  of the same book returns them. Checked by `detail_endpoint_omits_pending_versions_for_child_caller` in
-  `backend/src/routes/library/tests.rs`. That read is outside this obligation, which governs metadata mutation and
-  enrichment-trigger requests.
+- A child account's request to trigger an enrichment re-run answers 403 and leaves the manifestation's enrichment status
+  and attempt count unchanged. Checked by `trigger_admin_resets_enrichment_state` in `backend/src/routes/enrichment.rs`.
+- A child's GraphQL `updateMetadata`, `refreshMetadata`, `acceptMetadataVersion`, `rejectMetadataVersion`,
+  `revertMetadataField`, `lockMetadataField`, `unlockMetadataField` and `undoMetadata` each produce an error with the
+  `forbidden` code. Checked by `graphql_request_boundary` in `backend/src/graphql/mod.rs`.
+- The refusals hold for a credential that carries write scope: every child request in the tests above uses a child
+  credential that carries write scope.
+- An adult is not refused by this check. A non-administrator adult succeeds at accept, reject, revert, lock, unlock and
+  Undo, checked by the five review-handler tests above and `metadata_undo_binds_receipts_to_session`. An administrator
+  succeeds at a patch and at triggering enrichment, checked by `patch_child_account_forbidden` and
+  `trigger_admin_resets_enrichment_state`.

@@ -19,15 +19,16 @@ credential's effective scope set MUST NOT be wider than what the credential itse
 Substituting a broader scope set for a credential that grants none defeats the purpose of a scoped credential. Scope
 limits the capability delegated to a token, as described by
 [RFC 6749 §3.3](https://www.rfc-editor.org/rfc/rfc6749#section-3.3). Falling back to the account's role-derived set
-would violate least privilege. This obligation binds credential resolution; the operation-level scope gates are separate
-obligations under REV-REQ-0005 and REV-REQ-0006.
+would violate least privilege. This obligation binds credential resolution. The operation-level scope gates are separate
+obligations: REV-REQ-0005 and REV-REQ-0006 for `/api/v1`, and REV-REQ-0084 and REV-REQ-0085 for GraphQL.
 
 ## Acceptance criteria
 
 - A token carrying no scope is refused at every operation. Checked by `scopeless_token_rejected_by_every_op` in
   `backend/src/authz_matrix.rs`.
 - A token carrying only read scope cannot perform a mutation, even when its owner is an administrator. Checked by
-  `read_token_blocked_from_every_mutation` in `backend/src/authz_matrix.rs`.
+  `read_token_blocked_from_every_mutation` in `backend/src/authz_matrix.rs` for `/api/v1`, and for every GraphQL
+  mutation by `graphql_request_boundary` in `backend/src/graphql/mod.rs`.
 - A token carrying only write scope cannot perform an admin operation. Checked by
   `write_token_blocked_from_every_admin_op` in `backend/src/authz_matrix.rs`.
 - A session resolves to the account's full role-derived scope set; it carries no separate scope grant to narrow.

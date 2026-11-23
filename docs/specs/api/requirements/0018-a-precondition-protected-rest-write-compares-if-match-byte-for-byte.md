@@ -2,23 +2,19 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0018"
-title: "Precondition-protected writes compare their validator byte for byte"
+title: "A precondition-protected REST write compares If-Match byte for byte"
 governed-by:
   - "REV-ADR-0011"
 ---
 
-# Precondition-protected writes compare their validator byte for byte
+# A precondition-protected REST write compares If-Match byte for byte
 
 ## Statement
 
 WHEN a `PATCH` request to a book's metadata resource or to a book's reading-state resource, or a `PUT` request to the
 settings resource, carries an `If-Match` header, the server MUST compare the header's entity-tag with the resource's
 current entity tag by strong comparison of every octet, with no normalisation or case-folding of the opaque content, and
-MUST answer `412 Precondition Failed` with the resource's current `ETag` when any octet differs. WHEN a GraphQL
-metadata, reading-state or exact metadata Undo mutation supplies a baseline, which is the entity-tag the caller's values
-came from, the server MUST compare it with the resource's current entity tag in the same way under the write lock, and
-when any octet differs it MUST leave stored state unchanged and refuse the operation with a response that identifies the
-refusal as a stale baseline, before semantic patch validation or save-request reuse checking.
+MUST answer `412 Precondition Failed` with the resource's current `ETag` when any octet differs.
 
 ## Rationale
 
@@ -26,8 +22,7 @@ refusal as a stale baseline, before semantic patch validation or save-request re
 entity-tags match only when both are strong and their opaque content is identical octet for octet. A comparison that
 normalised or case-folded the opaque content could treat two representations as equal when the issuing server did not
 intend them to be, defeating the purpose of a strong validator in an optimistic-concurrency check. Carrying the current
-`ETag` on the `412` identifies the current representation. A refusal that identifies a stale baseline tells the client
-to resolve the original request and offer Reload, not Retry or correction.
+`ETag` on the `412` identifies the current representation.
 
 ## Acceptance criteria
 
@@ -50,10 +45,3 @@ to resolve the original request and offer Reload, not Retry or correction.
 - The comparison holds for `obs-text` octets (`%x80`-`%xFF`) in the opaque content, which are valid entity-tag content
   but not valid UTF-8, so a comparison implemented over `&str` rather than bytes could not reach these values at all.
   Checked by `strong_comparison_holds_for_obs_text` in `backend/src/routes/etag.rs`.
-- GraphQL metadata and reading mutations refuse a stale baseline as stale without changing stored values, and admit a
-  matching baseline. A stale unchanged resend of a committed metadata save is refused as stale, not as a reused request.
-  Checked by `graphql_edit_baselines`.
-- A GraphQL metadata save with a stale baseline and a patch that would fail semantic validation is refused as stale, not
-  as invalid. Checked by `graphql_edit_baselines`.
-- GraphQL exact Undo refuses a stale baseline as stale without consuming the operation. Checked by
-  `graphql_undo_boundary`.

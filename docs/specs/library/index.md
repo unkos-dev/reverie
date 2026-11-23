@@ -6,13 +6,13 @@
 
 - [REV-REQ-0001](requirements/0001-library-sort-resolves-only-from-the-per-user-preference.md): Library sort resolves only from the per-user preference
 - [REV-REQ-0002](requirements/0002-a-library-filter-edit-changes-only-what-the-reader-asked-to-change.md): A Library filter edit changes only what the reader asked to change
-- [REV-REQ-0003](requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md): Library list range filters apply their bounds as declared
+- [REV-REQ-0003](requirements/0003-a-rest-books-list-range-filter-applies-its-bounds-as-declared.md): A REST books list range filter applies its bounds as declared
 - [REV-REQ-0025](requirements/0025-a-manifestation-s-file-identity-is-unique.md): A manifestation's file identity is unique
 - [REV-REQ-0026](requirements/0026-a-manifestation-s-ingestion-hash-never-changes.md): A manifestation's ingestion hash never changes
 - [REV-REQ-0027](requirements/0027-a-work-s-author-sort-key-tracks-its-current-first-author.md): A work's author sort key tracks its current first author
 - [REV-REQ-0028](requirements/0028-deleting-a-metadata-version-leaves-the-canonical-value-in-place.md): Deleting a metadata version leaves the canonical value in place
-- [REV-REQ-0057](requirements/0057-a-list-cursor-is-honoured-only-under-the-sort-and-filter-set-that-minted-it.md): A list cursor is honoured only under the sort and filter set that minted it
-- [REV-REQ-0058](requirements/0058-a-sort-request-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md): A sort request naming an unrecognised or repeated column is refused before any query runs
+- [REV-REQ-0057](requirements/0057-a-rest-list-cursor-is-honoured-only-by-the-endpoint-sort-and-filter-set-that-minted-it.md): A REST list cursor is honoured only by the endpoint, sort and filter set that minted it
+- [REV-REQ-0058](requirements/0058-a-rest-books-sort-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md): A REST books sort naming an unrecognised or repeated column is refused before any query runs
 - [REV-REQ-0059](requirements/0059-a-shelf-and-its-items-are-visible-to-and-changeable-by-their-owner-only.md): A shelf and its items are visible to and changeable by their owner only
 - [REV-REQ-0065](requirements/0065-a-managed-file-location-identifies-its-library-and-a-relative-path.md): A managed file location identifies its library and a relative path
 - [REV-REQ-0075](requirements/0075-a-resumed-library-visit-restores-its-filter-state.md): A resumed Library visit restores its filter state
@@ -20,6 +20,9 @@
 - [REV-REQ-0077](requirements/0077-library-filter-edits-add-no-history-entries.md): Library filter edits add no history entries
 - [REV-REQ-0080](requirements/0080-library-return-restores-browsing-context.md): Library return restores browsing context
 - [REV-REQ-0081](requirements/0081-failed-library-saves-support-explicit-retry.md): Failed Library saves support explicit Retry
+- [REV-REQ-0092](requirements/0092-a-graphql-books-range-filter-applies-its-bounds-as-declared.md): A GraphQL books range filter applies its bounds as declared
+- [REV-REQ-0093](requirements/0093-a-graphql-connection-honours-a-cursor-only-under-the-connection-parent-sort-and-filters-that-minted-it.md): A GraphQL connection honours a cursor only under the connection, parent, sort and filters that minted it
+- [REV-REQ-0094](requirements/0094-a-graphql-books-sort-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md): A GraphQL books sort naming an unrecognised or repeated column is refused before any query runs
 
 ## Designs
 

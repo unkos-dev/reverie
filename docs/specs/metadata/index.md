@@ -13,6 +13,7 @@
 - [REV-REQ-0072](requirements/0072-canonical-isbn-values-are-structurally-valid.md): Canonical ISBN values are structurally valid
 - [REV-REQ-0073](requirements/0073-canonical-isbn-formats-remain-independent.md): Canonical ISBN formats remain independent
 - [REV-REQ-0078](requirements/0078-a-timed-out-enrichment-run-releases-its-claim-safely.md): A timed-out enrichment run releases its claim safely
+- [REV-REQ-0098](requirements/0098-only-the-browser-session-that-saved-a-metadata-change-can-undo-it-or-resolve-its-outcome.md): Only the browser session that saved a metadata change can undo it or resolve its outcome
 
 ## Designs
 

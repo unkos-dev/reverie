@@ -45,6 +45,8 @@ that tab without a full page reload.
 ## More information
 
 When the retry itself fails, the caller sees the retried response's own status and body, never the original rejection's:
-this Requirement decides which request is the one that gets surfaced, and the surfacing itself is
+this Requirement decides which request is the one that gets surfaced. The surfacing itself is
 [REV-REQ-0016](../../api/requirements/0016-the-browser-client-surfaces-every-non-2xx-response-as-an-error-w.md)'s
-obligation.
+obligation for `/api/v1` and
+[REV-REQ-0090](../../api/requirements/0090-the-browser-graphql-client-surfaces-every-non-2xx-response-as-an-error-with-its-status.md)'s
+for `/api/graphql`.

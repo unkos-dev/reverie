@@ -20,7 +20,7 @@ use crate::models::{
     reading_status::ReadingStatus, validation_status::ValidationStatus,
 };
 use crate::routes::{
-    cursor::{CursorValue, SortCursor},
+    cursor::{CursorApi, CursorValue, SortCursor},
     etag::MetadataRevision,
     library::{ListParams, filters},
     sort_spec::{SortColumn, SortDirection, SortSpec},
@@ -893,7 +893,7 @@ pub async fn list_books(
 
     let cursor = match params.cursor.as_deref() {
         Some(raw) => Some(
-            SortCursor::parse_for(raw, &spec, &filter_fp)
+            SortCursor::parse_for(raw, CursorApi::Rest, &spec, &filter_fp)
                 .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?,
         ),
         None => None,
@@ -1021,7 +1021,7 @@ pub async fn list_books(
         Some(last) if has_more => {
             let row_id = last.get::<Uuid, _>("id");
             let encoded = next_cursor_for_row(last, &spec, &filter_fp)?
-                .encode()
+                .encode(CursorApi::Rest)
                 .map_err(|e| {
                     tracing::warn!(error = %e, %row_id, "failed to encode pagination cursor");
                     AppError::Internal(e.into())
@@ -1561,11 +1561,12 @@ pub async fn shelves(
     state: &AppState,
     after: Option<&str>,
     page_size: i64,
+    api: CursorApi,
 ) -> Result<(Vec<crate::models::shelf::Shelf>, Option<String>, bool), AppError> {
     use crate::models::shelf::Shelf;
     use crate::routes::cursor::ShelfCursor;
     let cursor = after
-        .map(ShelfCursor::parse)
+        .map(|raw| ShelfCursor::parse(raw, api))
         .transpose()
         .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
 
@@ -1627,7 +1628,7 @@ pub async fn shelves(
                 name: last.get("name"),
                 id: last.get("id"),
             }
-            .encode(),
+            .encode(api),
         ),
         _ => None,
     };
@@ -1645,7 +1646,7 @@ pub async fn shelf_items(
     use crate::models::shelf::ShelfItem;
     use crate::routes::cursor::ShelfItemCursor;
     let cursor = after
-        .map(ShelfItemCursor::parse)
+        .map(|raw| ShelfItemCursor::parse(raw, id))
         .transpose()
         .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
 
@@ -1710,6 +1711,7 @@ pub async fn shelf_items(
             let manifestation_id: Uuid = last.get("manifestation_id");
             Some(
                 ShelfItemCursor {
+                    shelf_id: id,
                     added_at: last
                         .try_get::<jiff_sqlx::Timestamp, _>("added_at")
                         .map_err(|e| AppError::Internal(e.into()))?
@@ -1888,7 +1890,7 @@ pub async fn books_connection(
     let cursor = params
         .cursor
         .as_deref()
-        .map(|raw| SortCursor::parse_for(raw, &spec, &fingerprint))
+        .map(|raw| SortCursor::parse_for(raw, CursorApi::Graphql, &spec, &fingerprint))
         .transpose()
         .map_err(|_| AppError::Validation("Invalid cursor.".into()))?;
     let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
@@ -1902,7 +1904,7 @@ pub async fn books_connection(
     for row in page {
         let id: Uuid = row.get("id");
         let cursor = next_cursor_for_row(row, &spec, &fingerprint)?
-            .encode()
+            .encode(CursorApi::Graphql)
             .map_err(|e| AppError::Internal(e.into()))?;
         if let Some(record) = records.remove(&id) {
             edges.push((cursor, record));
@@ -2153,6 +2155,7 @@ fn relation_input(key: &RelationKey, request: i32) -> Result<RelationInput, AppE
                     SortSpec::parse("created_at").map_err(|e| AppError::Internal(e.into()))?;
                 let inner = SortCursor::parse_for(
                     cursor.inner.as_deref().ok_or_else(invalid_cursor)?,
+                    CursorApi::Graphql,
                     &spec,
                     &format!("work:{}", key.parent),
                 )
@@ -2169,6 +2172,7 @@ fn relation_input(key: &RelationKey, request: i32) -> Result<RelationInput, AppE
             RelationKind::ShelfItems => {
                 let inner = crate::routes::cursor::ShelfItemCursor::parse(
                     cursor.inner.as_deref().ok_or_else(invalid_cursor)?,
+                    key.parent,
                 )
                 .map_err(|_| invalid_cursor())?;
                 Boundary {
@@ -2277,12 +2281,13 @@ fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppEr
                     format!("work:{}", key.parent),
                 )
                 .map_err(|e| AppError::Internal(e.into()))?
-                .encode()
+                .encode(CursorApi::Graphql)
                 .map_err(|e| AppError::Internal(e.into()))?,
             )
         }
         RelationKind::ShelfItems => Some(
             crate::routes::cursor::ShelfItemCursor {
+                shelf_id: key.parent,
                 added_at: row
                     .created_at
                     .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Missing shelf boundary")))?
@@ -2924,7 +2929,8 @@ pub async fn shelf_has_previous(
     let Some(after) = after else {
         return Ok(false);
     };
-    let cursor = crate::routes::cursor::ShelfCursor::parse(after).map_err(|_| invalid_cursor())?;
+    let cursor = crate::routes::cursor::ShelfCursor::parse(after, CursorApi::Graphql)
+        .map_err(|_| invalid_cursor())?;
     let mut tx = db::acquire_with_rls(&state.pool, user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;

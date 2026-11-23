@@ -1233,7 +1233,7 @@ mod tests {
         );
     }
 
-    // REV-REQ-0018/0020/0082 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
+    // REV-REQ-0095/0096/0082 GraphQL preconditions; data-integrity boundary for selected revisions and explicit resend.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_edit_baselines(pool: PgPool) {
         let (_, server, csrf) = editing_browser(&pool, "graph-edits").await;
@@ -1478,6 +1478,17 @@ mod tests {
         );
         let foreign_result = browser_graph(&foreign, &foreign_csrf, UNDO, input.clone()).await;
         assert_graph_result(&foreign_result, "undoMetadata", "UndoUnavailable");
+        let foreign_resolve = browser_graph(
+            &foreign,
+            &foreign_csrf,
+            RESOLVE,
+            json!({"id":id,"operation":operation}),
+        )
+        .await;
+        assert_eq!(
+            foreign_resolve["data"]["metadataOperation"]["outcome"], "UNKNOWN",
+            "{foreign_resolve}"
+        );
         let mut second = db::server_with_real_pools(&app, &ing);
         second.save_cookies();
         let second_csrf = test_support::mail::login(
@@ -2183,7 +2194,7 @@ mod tests {
         assert_eq!(refused["errors"][0]["extensions"]["code"], "validation");
     }
 
-    // REV-REQ-0003, REV-REQ-0057 and REV-REQ-0058 cover ranges, cursor identity and sort refusal.
+    // REV-REQ-0092, REV-REQ-0093 and REV-REQ-0094 cover ranges, cursor identity and sort refusal; REV-REQ-0057 cross-API refusal.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_cursor_contract(pool: PgPool) {
         let fixture = reader_fixture(&pool).await;
@@ -2202,6 +2213,21 @@ mod tests {
             id::Manifestation::encode(fixture.sibling).as_str()
         );
         assert_eq!(next["data"]["books"]["pageInfo"]["hasPreviousPage"], true);
+        let rest = fixture
+            .server
+            .get(&format!("/api/v1/books?sort=created_at&created_at_gte=2026-01-01T00:00:00Z&created_at_lt=2026-01-04T00:00:00Z&cursor={cursor}"))
+            .add_header("authorization", fixture.admin.clone())
+            .await;
+        assert_eq!(
+            rest.status_code(),
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let refused = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "after": retag(cursor, "gm|", "m|"), "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-04T00:00:00Z"}})).await;
+        assert_eq!(
+            refused["errors"][0]["extensions"]["code"], "validation",
+            "{refused}"
+        );
+        assert!(refused["data"]["books"].is_null());
         for filter in [
             json!({"pagesGte": 20, "pagesLte": 20}),
             json!({"pagesGte": 30, "pagesLte": 10}),
@@ -2336,7 +2362,7 @@ mod tests {
                     &fixture,
                     &fixture.admin,
                     query,
-                    json!({"after": nested_cursor}),
+                    json!({"first": 50, "after": nested_cursor}),
                 )
                 .await,
             ] {
@@ -2362,12 +2388,49 @@ mod tests {
             &fixture,
             &fixture.admin,
             query,
-            json!({"after": shelf_cursor}),
+            json!({"first": 50, "after": shelf_cursor}),
         )
         .await;
         assert_eq!(
             refused["errors"][0]["extensions"]["code"], "validation",
             "{refused}"
         );
+        let shelves =
+            "query($after: String!) { shelves(first: 50, after: $after) { edges { cursor } } }";
+        let own = reader_query(
+            &fixture,
+            &fixture.admin,
+            shelves,
+            json!({"after": shelf_cursor}),
+        )
+        .await;
+        assert!(own.get("errors").is_none(), "{own}");
+        let refused = reader_query(
+            &fixture,
+            &fixture.admin,
+            shelves,
+            json!({"after": retag(shelf_cursor, "gsh|", "sh|")}),
+        )
+        .await;
+        assert_eq!(
+            refused["errors"][0]["extensions"]["code"], "validation",
+            "{refused}"
+        );
+        let rest = fixture
+            .server
+            .get(&format!("/api/v1/shelves?cursor={shelf_cursor}"))
+            .add_header("authorization", fixture.admin.clone())
+            .await;
+        assert_eq!(
+            rest.status_code(),
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+
+    fn retag(cursor: &str, from: &str, to: &str) -> String {
+        use base64ct::{Base64UrlUnpadded, Encoding};
+        let decoded = String::from_utf8(Base64UrlUnpadded::decode_vec(cursor).unwrap()).unwrap();
+        let body = decoded.strip_prefix(from).unwrap();
+        Base64UrlUnpadded::encode_string(format!("{to}{body}").as_bytes())
     }
 }

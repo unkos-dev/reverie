@@ -6,12 +6,12 @@ title: "Library filter and sort state"
 satisfies:
   - "REV-REQ-0001"
   - "REV-REQ-0002"
-  - "REV-REQ-0003"
   - "REV-REQ-0075"
   - "REV-REQ-0076"
   - "REV-REQ-0077"
   - "REV-REQ-0080"
   - "REV-REQ-0081"
+  - "REV-REQ-0092"
 governed-by:
   - "REV-ADR-0066"
   - "REV-ADR-0075"
