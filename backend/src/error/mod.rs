@@ -103,6 +103,9 @@ pub enum AppError {
     /// callers should keep it free of sensitive context.
     #[error("validation error: {0}")]
     Validation(String),
+    /// Pagination cursor cannot be decoded or does not match the request.
+    #[error("invalid cursor")]
+    InvalidCursor,
     /// Validation details associated with named request fields.
     #[error("validation error: {detail}")]
     FieldValidation {
@@ -315,6 +318,12 @@ impl IntoResponse for AppError {
                 problems::VALIDATION,
                 "Unprocessable Entity",
                 msg,
+            ),
+            Self::InvalidCursor => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                problems::VALIDATION,
+                "Unprocessable Entity",
+                "Invalid cursor.".to_owned(),
             ),
             Self::CsrfMissing => (
                 StatusCode::PRECONDITION_REQUIRED,

@@ -175,12 +175,14 @@ failed attempts and Undo entries release their uses.
 The synchronous Navigation `navigate` event captures an anchor, the first visible book and its position within the
 viewport, together with the loaded extent and absolute scroll position. Entry state contains only serialisable geometry
 and visit intent. Relay references remain in memory. Return renders the retained source while a candidate reads from
-page one through the saved extent and anchor, or the connection end. Intermediate pages preserve the displayed books and
-position until the complete replacement is ready, including on repeated returns. The search for an absent anchor
-exhausts the connection before applying the fallback. The owner adopts its ready reference once. A moved anchor restores
-at its saved viewport position as far as the scroll range allows. An absent anchor uses the saved absolute offset, or
-zero when that offset exceeds the new range. Account, entry, source and generation checks reject obsolete completion.
-New intent and user scroll cancel delayed restoration. Entry disposal and account loss release retained references.
+page one through the saved extent and anchor, or the connection end. If a later rebuild page fails with the
+`invalid-cursor` execution error code, the owner restarts the rebuild once from page one. Intermediate pages preserve
+the displayed books and position until the complete replacement is ready, including on repeated returns. The search for
+an absent anchor exhausts the connection before applying the fallback. The owner adopts its ready reference once. A
+moved anchor restores at its saved viewport position as far as the scroll range allows. An absent anchor uses the saved
+absolute offset, or zero when that offset exceeds the new range. Account, entry, source and generation checks reject
+obsolete completion. New intent and user scroll cancel delayed restoration. Entry disposal and account loss release
+retained references.
 
 Selection clears at filter, sort or view intent and displayed-source replacement. Pagination retains selection. The
 Library editing owner keeps at most ten exact field operations above conditional results. Filtering, sorting, loading

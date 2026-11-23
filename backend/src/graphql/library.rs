@@ -572,7 +572,7 @@ pub(super) struct MetadataRevision {
     #[graphql(skip)]
     revision: Revision,
     #[graphql(skip)]
-    relation_pages: HashMap<RelationKey, RelationPage>,
+    relation_pages: HashMap<RelationKey, Result<RelationPage, reader::InvalidCursor>>,
     isbn_mismatch: bool,
     work_id: ID,
     manifestation_id: ID,
@@ -688,11 +688,15 @@ impl MetadataRevision {
                 after,
             }
             .key(&self.revision);
-            self.relation_pages.get(&key).cloned().ok_or_else(|| {
-                safe_error(AppError::Internal(anyhow::anyhow!(
-                    "Snapshot page was not materialised"
-                )))
-            })
+            self.relation_pages
+                .get(&key)
+                .cloned()
+                .ok_or_else(|| {
+                    safe_error(AppError::Internal(anyhow::anyhow!(
+                        "Snapshot page was not materialised"
+                    )))
+                })?
+                .map_err(|_| safe_error(AppError::InvalidCursor))
         })())
     }
 }
@@ -1055,7 +1059,8 @@ async fn relation(
             .load_one(key)
             .await
             .map_err(|error| batch_error(&error))?,
-    )
+    )?
+    .map_err(|_| safe_error(AppError::InvalidCursor))
 }
 fn term_connection<T: async_graphql::OutputType>(
     page: RelationPage,

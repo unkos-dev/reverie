@@ -51,7 +51,7 @@ jobs:
 
       - uses: $/.github/actions/setup
         with:
-          mise-install-args: opengrep
+          mise-install-args: github:opengrep/opengrep
 
       # Tests are not excluded wholesale (a blanket file drop is a coverage blind
       # spot); a legitimate insecure-API test gets a call-site `// nosemgrep:

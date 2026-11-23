@@ -347,11 +347,13 @@ of them is a code change, not a runtime setting. The HTTP page size is runtime-c
   key count, kinds or null-handling disagree with the freshly parsed `SortSpec`, an embedded spec string that does not
   match the current `?sort=`, or an embedded filter fingerprint that does not match the current filter set — all map to
   `AppError::Validation` where `list_books` (`backend/src/services/reader.rs`) parses the cursor, a `422` whose detail
-  names the cursor error. `books_connection` accepts only the `gm` tag and raises the same refusal with the fixed
-  message "Invalid cursor.", which GraphQL reports with the `validation` code. A cursor from the other API is refused in
-  either direction. Unlike the query-parameter split above, every shape of cursor failure lands on the same status and
-  error variant; a malformed cursor and a stale-but-well-formed one are indistinguishable to the caller by status code
-  alone.
+  names the cursor error. `books_connection` accepts only the `gm` tag and raises `AppError::InvalidCursor`, which
+  GraphQL reports with the fixed message "Invalid cursor." and the `invalid-cursor` code. Batched relation,
+  `MetadataRevision` and pending-version loaders record cursor refusals per key so each invalid cursor fails its own
+  connection field with `invalid-cursor` without failing valid sibling keys under independent nullable ancestors in the
+  same batch. A cursor from the other API is refused in either direction. Unlike the query-parameter split above, every
+  shape of cursor failure lands on the same status and error variant; a malformed cursor and a stale-but-well-formed one
+  are indistinguishable to the caller by status code alone.
 - **A decode failure on `content_rating`, `validation_status`, or the `series_id`/`series_name`/`series_position`
   triple.** Each is read via the fallible `try_get` rather than the panicking `Row::get`, so a decode failure surfaces
   as `AppError::Internal` (`500`) rather than a panic. Every other column the row-to-response mapping reads (`title`,

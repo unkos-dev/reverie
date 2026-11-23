@@ -7,7 +7,6 @@ just = "1.59.0"
 # here rather than installed with apt so CI resolves it through the same
 # checksum-verified path as every other tool.
 mold = "3.0.0"
-opengrep = "1.33.1"
 rumdl = "v0.3.5"
 shellcheck = "0.11.0"
 snyk = "v1.1309.0"
@@ -79,3 +78,8 @@ filter_bins = "cargo-mutants"
 [tools."github:unkos-dev/specful"]
 version = "v0.6.0"
 filter_bins = "specful"
+
+[tools."github:opengrep/opengrep"]
+version = "v2.0.0"
+asset_pattern = "opengrep_linux_x86"
+rename_exe = "opengrep"

@@ -399,10 +399,7 @@ export class LibraryVisitOwner {
         restartCursor &&
         source.cursor !== null &&
         error instanceof GraphQLExecutionError &&
-        error.errors.some(
-          (failure) =>
-            failure.extensions?.code === "validation" && failure.message === "Invalid cursor.",
-        )
+        error.errors.some((failure) => failure.extensions?.code === "invalid-cursor")
       ) {
         await this.replace(params, position, retainedExtent, false);
         return;
