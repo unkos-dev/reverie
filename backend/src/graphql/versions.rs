@@ -51,7 +51,7 @@ impl Loader<CanonicalKey> for ReaderLoader {
 }
 
 impl Loader<reader::PendingKey> for ReaderLoader {
-    type Value = reader::PendingPage;
+    type Value = Result<reader::PendingPage, reader::InvalidCursor>;
     type Error = Arc<AppError>;
     async fn load(
         &self,
@@ -101,7 +101,8 @@ impl MetadataVersions {
             })
             .await
             .map_err(|error| batch_error(&error))?
-            .ok_or_else(|| super::safe_error(AppError::NotFound))?;
+            .ok_or_else(|| super::safe_error(AppError::NotFound))?
+            .map_err(|_| super::safe_error(AppError::InvalidCursor))?;
         let mut connection =
             async_graphql::connection::Connection::new(page.has_previous, page.has_next);
         for (cursor, row) in page.edges {

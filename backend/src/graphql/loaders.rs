@@ -7,7 +7,8 @@ use uuid::Uuid;
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
 use crate::services::reader::{
-    self, BookRecord, RelationKey, RelationPage, SeriesRecord, ShelfRecord, WorkRecord,
+    self, BookRecord, InvalidCursor, RelationKey, RelationPage, SeriesRecord, ShelfRecord,
+    WorkRecord,
 };
 use crate::state::AppState;
 
@@ -62,7 +63,7 @@ domain_loader!(ShelfKey, ShelfRecord, shelf_records);
 domain_loader!(SeriesKey, SeriesRecord, series_records);
 
 impl Loader<RelationKey> for ReaderLoader {
-    type Value = RelationPage;
+    type Value = Result<RelationPage, InvalidCursor>;
     type Error = Arc<AppError>;
     async fn load(
         &self,
@@ -75,11 +76,14 @@ impl Loader<RelationKey> for ReaderLoader {
 }
 
 pub(super) fn batch_error(error: &Arc<AppError>) -> async_graphql::Error {
-    if let AppError::Validation(detail) = error.as_ref() {
-        return super::safe_error(AppError::Validation(detail.clone()));
+    match error.as_ref() {
+        AppError::InvalidCursor => super::safe_error(AppError::InvalidCursor),
+        AppError::Validation(detail) => super::safe_error(AppError::Validation(detail.clone())),
+        _ => {
+            tracing::error!(error = ?error, "Reader batch failed");
+            super::safe_error(AppError::Internal(anyhow::anyhow!("Reader batch failed")))
+        }
     }
-    tracing::error!(error = ?error, "Reader batch failed");
-    super::safe_error(AppError::Internal(anyhow::anyhow!("Reader batch failed")))
 }
 
 impl Loader<crate::services::metadata::editing::SnapshotKey> for ReaderLoader {

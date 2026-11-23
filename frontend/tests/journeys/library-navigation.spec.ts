@@ -621,9 +621,31 @@ test("unchanged returns preserve each visit's books and known-book position", as
     new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000039")}$`),
   );
   await expect(page.getByRole("heading", { name: "Journey book 039", exact: true })).toBeVisible();
+  let refusedOnce = false;
+  await page.route("**/api/graphql", async (route) => {
+    const body = z
+      .object({ id: z.string(), variables: z.record(z.string(), z.unknown()) })
+      .parse(route.request().postDataJSON());
+    if (
+      !refusedOnce &&
+      documents[body.id]?.includes("query readerLibraryQuery(") &&
+      body.variables.cursor === "50"
+    ) {
+      refusedOnce = true;
+      await route.fulfill({
+        json: {
+          data: { books: null },
+          errors: [{ message: "Cursor expired.", extensions: { code: "invalid-cursor" } }],
+        },
+      });
+      return;
+    }
+    await route.fallback();
+  });
   await page.goBack();
   await ready(page);
   await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
+  expect(refusedOnce).toBe(true);
   await expect(page.getByText("100 books loaded", { exact: true }).first()).toBeVisible();
   await expect
     .poll(async () =>

@@ -1568,7 +1568,10 @@ pub async fn shelves(
     let cursor = after
         .map(|raw| ShelfCursor::parse(raw, api))
         .transpose()
-        .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
+        .map_err(|e| match api {
+            CursorApi::Rest => AppError::Validation(format!("invalid cursor: {e}")),
+            CursorApi::Graphql => AppError::InvalidCursor,
+        })?;
 
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT s.id, s.name, s.is_system, s.created_at, s.updated_at, \
@@ -1892,7 +1895,7 @@ pub async fn books_connection(
         .as_deref()
         .map(|raw| SortCursor::parse_for(raw, CursorApi::Graphql, &spec, &fingerprint))
         .transpose()
-        .map_err(|_| AppError::Validation("Invalid cursor.".into()))?;
+        .map_err(|_| AppError::InvalidCursor)?;
     let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -2136,8 +2139,11 @@ pub struct RelationPage {
     pub has_previous: bool,
 }
 
-fn invalid_cursor() -> AppError {
-    AppError::Validation("Invalid cursor.".into())
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidCursor;
+
+const fn invalid_cursor() -> AppError {
+    AppError::InvalidCursor
 }
 
 fn relation_input(key: &RelationKey, request: i32) -> Result<RelationInput, AppError> {
@@ -2323,25 +2329,40 @@ fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppEr
     ))
 }
 
-fn relation_inputs(keys: &[RelationKey]) -> Result<Vec<RelationInput>, AppError> {
+type RelationBatch<'a> = (
+    Vec<&'a RelationKey>,
+    Vec<RelationInput>,
+    HashMap<RelationKey, Result<RelationPage, InvalidCursor>>,
+);
+
+fn partition_relation_inputs(keys: &[RelationKey]) -> Result<RelationBatch<'_>, AppError> {
+    let mut valid_keys = Vec::with_capacity(keys.len());
     let mut inputs = Vec::with_capacity(keys.len());
-    for (index, key) in keys.iter().enumerate() {
+    let mut pages = HashMap::with_capacity(keys.len());
+    for key in keys {
         if !(0..=i64::from(key.kind.max_first())).contains(&i64::from(key.first)) {
             return Err(AppError::Validation("Invalid page size.".into()));
         }
-        inputs.push(relation_input(
-            key,
-            i32::try_from(index).map_err(|e| AppError::Internal(e.into()))?,
-        )?);
+        let request = i32::try_from(valid_keys.len()).map_err(|e| AppError::Internal(e.into()))?;
+        match relation_input(key, request) {
+            Ok(input) => {
+                valid_keys.push(key);
+                inputs.push(input);
+            }
+            Err(AppError::InvalidCursor) => {
+                pages.insert(key.clone(), Err(InvalidCursor));
+            }
+            Err(error) => return Err(error),
+        }
     }
-    Ok(inputs)
+    Ok((valid_keys, inputs, pages))
 }
 
 pub async fn relation_pages(
     user: &CurrentUser,
     state: &AppState,
     keys: &[RelationKey],
-) -> Result<HashMap<RelationKey, RelationPage>, AppError> {
+) -> Result<HashMap<RelationKey, Result<RelationPage, InvalidCursor>>, AppError> {
     let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -2357,8 +2378,11 @@ pub async fn relation_pages_in_tx(
     state: &AppState,
     tx: &mut sqlx::Transaction<'_, Postgres>,
     keys: &[RelationKey],
-) -> Result<HashMap<RelationKey, RelationPage>, AppError> {
-    let inputs = relation_inputs(keys)?;
+) -> Result<HashMap<RelationKey, Result<RelationPage, InvalidCursor>>, AppError> {
+    let (valid_keys, inputs, mut pages) = partition_relation_inputs(keys)?;
+    if valid_keys.is_empty() {
+        return Ok(pages);
+    }
     let hidden: Vec<_> = hidden_providers(&state.settings.read().await.provider_visibility)
         .into_iter()
         .collect();
@@ -2379,7 +2403,7 @@ pub async fn relation_pages_in_tx(
         let batch: Vec<_> = inputs
             .iter()
             .enumerate()
-            .filter(|(index, _)| keys[*index].kind == kind)
+            .filter(|(index, _)| valid_keys[*index].kind == kind)
             .map(|(_, input)| input)
             .collect();
         if batch.is_empty() {
@@ -2407,14 +2431,13 @@ pub async fn relation_pages_in_tx(
         };
         for row in rows {
             let index = usize::try_from(row.request).map_err(|e| AppError::Internal(e.into()))?;
-            let key = keys.get(index).ok_or_else(|| {
+            let key = valid_keys.get(index).ok_or_else(|| {
                 AppError::Internal(anyhow::anyhow!("Unknown relation batch index"))
             })?;
-            grouped.entry(key.clone()).or_default().push(row);
+            grouped.entry((*key).clone()).or_default().push(row);
         }
     }
-    let mut pages = HashMap::new();
-    for key in keys {
+    for key in valid_keys {
         let rows = grouped.remove(key).unwrap_or_default();
         let has_previous = rows.iter().any(|row| row.previous);
         let rows: Vec<_> = rows.into_iter().filter(|row| row.present).collect();
@@ -2427,11 +2450,11 @@ pub async fn relation_pages_in_tx(
             .collect::<Result<Vec<_>, _>>()?;
         pages.insert(
             key.clone(),
-            RelationPage {
+            Ok(RelationPage {
                 edges,
                 has_next,
                 has_previous,
-            },
+            }),
         );
     }
     Ok(pages)
@@ -3059,19 +3082,20 @@ pub async fn versions(
             after: None,
         })
         .collect();
-    Ok(pending_pages(user, state, &keys)
+    pending_pages(user, state, &keys)
         .await?
         .into_iter()
         .map(|(key, page)| {
-            (
+            let page = page.map_err(|_| AppError::InvalidCursor)?;
+            Ok((
                 key.parent,
                 VersionSet {
                     pending_count: page.total,
                     accepted: page.accepted,
                 },
-            )
+            ))
         })
-        .collect())
+        .collect()
 }
 
 pub async fn canonical_counts(
@@ -3133,27 +3157,44 @@ struct PendingInput {
     id: Option<Uuid>,
 }
 
-fn pending_inputs(keys: &[PendingKey]) -> Result<Vec<PendingInput>, AppError> {
+type PendingBatch<'a> = (
+    Vec<&'a PendingKey>,
+    Vec<PendingInput>,
+    HashMap<PendingKey, Result<PendingPage, InvalidCursor>>,
+);
+
+fn parse_pending_cursor(token: &str, parent: Uuid) -> Result<PendingCursor, InvalidCursor> {
     use base64ct::{Base64UrlUnpadded, Encoding};
-    let mut inputs = Vec::new();
-    for (index, key) in keys.iter().enumerate() {
+    let bytes = Base64UrlUnpadded::decode_vec(token).map_err(|_| InvalidCursor)?;
+    let cursor: PendingCursor = serde_json::from_slice(&bytes).map_err(|_| InvalidCursor)?;
+    if cursor.parent != parent {
+        return Err(InvalidCursor);
+    }
+    Ok(cursor)
+}
+
+fn partition_pending_inputs(keys: &[PendingKey]) -> Result<PendingBatch<'_>, AppError> {
+    let mut valid_keys = Vec::with_capacity(keys.len());
+    let mut inputs = Vec::with_capacity(keys.len());
+    let mut pages = HashMap::with_capacity(keys.len());
+    for key in keys {
         if !(0..=i64::from(PENDING_MAX)).contains(&i64::from(key.first)) {
             return Err(AppError::Validation("Invalid page size.".into()));
         }
         let cursor = match &key.after {
             None => None,
-            Some(token) => {
-                let bytes = Base64UrlUnpadded::decode_vec(token).map_err(|_| invalid_cursor())?;
-                let cursor: PendingCursor =
-                    serde_json::from_slice(&bytes).map_err(|_| invalid_cursor())?;
-                if cursor.parent != key.parent {
-                    return Err(invalid_cursor());
+            Some(token) => match parse_pending_cursor(token, key.parent) {
+                Ok(cursor) => Some(cursor),
+                Err(invalid) => {
+                    pages.insert(key.clone(), Err(invalid));
+                    continue;
                 }
-                Some(cursor)
-            }
+            },
         };
+        let request = i32::try_from(valid_keys.len()).map_err(|e| AppError::Internal(e.into()))?;
+        valid_keys.push(key);
         inputs.push(PendingInput {
-            request: i32::try_from(index).map_err(|e| AppError::Internal(e.into()))?,
+            request,
             parent: key.parent,
             canonical: Vec::new(),
             first: key.first,
@@ -3161,28 +3202,30 @@ fn pending_inputs(keys: &[PendingKey]) -> Result<Vec<PendingInput>, AppError> {
             id: cursor.map(|c| c.id),
         });
     }
-    Ok(inputs)
+    Ok((valid_keys, inputs, pages))
 }
 
 pub async fn pending_pages(
     user: &CurrentUser,
     state: &AppState,
     keys: &[PendingKey],
-) -> Result<HashMap<PendingKey, PendingPage>, AppError> {
+) -> Result<HashMap<PendingKey, Result<PendingPage, InvalidCursor>>, AppError> {
     use base64ct::{Base64UrlUnpadded, Encoding};
-    let mut inputs = pending_inputs(keys)?;
+    let (valid_keys, mut inputs, mut pages) = partition_pending_inputs(keys)?;
     // THREAT: children return before any proposal count or value query.
     if user.is_child() {
-        return Ok(keys
-            .iter()
-            .cloned()
-            .map(|key| (key, PendingPage::empty()))
-            .collect());
+        for key in valid_keys {
+            pages.insert(key.clone(), Ok(PendingPage::empty()));
+        }
+        return Ok(pages);
+    }
+    if valid_keys.is_empty() {
+        return Ok(pages);
     }
     let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    let ids: Vec<_> = keys.iter().map(|key| key.parent).collect();
+    let ids: Vec<_> = valid_keys.iter().map(|key| key.parent).collect();
     let canonical = version_inputs(&mut tx, &ids).await?;
     let accepted: HashMap<_, _> = canonical
         .iter()
@@ -3214,12 +3257,12 @@ pub async fn pending_pages(
         ORDER BY e.last_seen_at DESC,e.id DESC LIMIT (q.first+1)) item ON TRUE
       ORDER BY q.request,item.last_seen_at DESC,item.id DESC
     "#,payload).fetch_all(&mut *tx).await.map_err(|e|AppError::Internal(e.into()))?;
-    let mut pages = HashMap::new();
+    let mut valid_pages = HashMap::new();
     for row in rows {
-        let key = keys
+        let key = valid_keys
             .get(usize::try_from(row.request).map_err(|e| AppError::Internal(e.into()))?)
             .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Unknown pending batch index")))?;
-        let page = pages.entry(key.clone()).or_insert(PendingPage {
+        let page = valid_pages.entry((*key).clone()).or_insert(PendingPage {
             edges: Vec::new(),
             total: i32::try_from(row.total).map_err(|e| AppError::Internal(e.into()))?,
             accepted: accepted.get(&key.parent).copied(),
@@ -3251,10 +3294,11 @@ pub async fn pending_pages(
             ));
         }
     }
-    for (key, page) in &mut pages {
+    for (key, mut page) in valid_pages {
         let size = usize::try_from(key.first).map_err(|e| AppError::Internal(e.into()))?;
         page.has_next = page.edges.len() > size;
         page.edges.truncate(size);
+        pages.insert(key, Ok(page));
     }
     tx.commit()
         .await

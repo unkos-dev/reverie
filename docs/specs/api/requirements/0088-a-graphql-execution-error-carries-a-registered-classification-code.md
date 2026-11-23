@@ -24,11 +24,13 @@ transport fault.
 
 ## Acceptance criteria
 
-The registered classification codes are `validation`, `forbidden`, `not-found`, `if-match-required`,
+The registered classification codes are `validation`, `invalid-cursor`, `forbidden`, `not-found`, `if-match-required`,
 `if-match-mismatch`, `malformed-header`, `undo-unavailable`, `undo-conflict`, `edit-too-large`,
 `system-shelf-immutable`, `field-locked` and `internal`.
 
 - A refused field carries the `forbidden` code. Checked by `graphql_request_boundary` in `backend/src/graphql/mod.rs`.
+- A refused connection cursor carries the `invalid-cursor` code. Checked by `graphql_cursor_contract` in
+  `backend/src/graphql/mod.rs`.
 - A field validation failure carries the `validation` code, keeps its own message, and carries an `extensions.errors`
   object that maps each refused field name to its message. Checked by `graphql_request_boundary`.
 - An execution error raised without extensions, such as a failed input coercion, is given the `validation` code. Checked

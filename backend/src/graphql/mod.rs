@@ -472,6 +472,7 @@ fn safe_error(error: AppError) -> async_graphql::Error {
             return async_graphql::Error::new(detail)
                 .extend_with(|_, extensions| extensions.set("code", "validation"));
         }
+        AppError::InvalidCursor => ("Invalid cursor.", "invalid-cursor"),
         AppError::Forbidden => ("Forbidden", "forbidden"),
         AppError::NotFound => ("Not found", "not-found"),
         AppError::IfMatchRequired => ("A baseline is required.", "if-match-required"),
@@ -2191,10 +2192,43 @@ mod tests {
             json!({"id":id::Manifestation::encode(fixture.sibling).as_str(),"after":cursor}),
         )
         .await;
-        assert_eq!(refused["errors"][0]["extensions"]["code"], "validation");
+        assert_eq!(refused["errors"][0]["extensions"]["code"], "invalid-cursor");
+        let batched = reader_query(
+            fixture,
+            &fixture.admin,
+            "query($good: ID!, $bad: ID!, $after: String!) { good: manifestation(id:$good) { versions { pending(first:1) { edges { node { id } } } } } bad: manifestation(id:$bad) { versions { pending(first:1,after:$after) { edges { node { id } } } } } }",
+            json!({
+                "good": id::Manifestation::encode(fixture.visible).as_str(),
+                "bad": id::Manifestation::encode(fixture.sibling).as_str(),
+                "after": cursor,
+            }),
+        )
+        .await;
+        assert_eq!(batched["errors"].as_array().unwrap().len(), 1, "{batched}");
+        assert_eq!(
+            batched["errors"][0]["extensions"]["code"], "invalid-cursor",
+            "{batched}"
+        );
+        assert_eq!(
+            batched["errors"][0]["path"],
+            json!(["bad", "versions", "pending"]),
+            "{batched}"
+        );
+        assert!(
+            batched["data"]["bad"]["versions"]["pending"].is_null(),
+            "{batched}"
+        );
+        assert_eq!(
+            batched["data"]["good"]["versions"]["pending"]["edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1,
+            "{batched}"
+        );
     }
 
-    // REV-REQ-0092, REV-REQ-0093 and REV-REQ-0094 cover ranges, cursor identity and sort refusal; REV-REQ-0057 cross-API refusal.
+    // REV-REQ-0088, REV-REQ-0092, REV-REQ-0093 and REV-REQ-0094 cover error codes, ranges, cursor identity and sort refusal; REV-REQ-0057 cross-API refusal.
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_cursor_contract(pool: PgPool) {
         let fixture = reader_fixture(&pool).await;
@@ -2224,7 +2258,7 @@ mod tests {
         );
         let refused = reader_query(&fixture, &fixture.admin, query, json!({"first": 1, "after": retag(cursor, "gm|", "m|"), "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-04T00:00:00Z"}})).await;
         assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
+            refused["errors"][0]["extensions"]["code"], "invalid-cursor",
             "{refused}"
         );
         assert!(refused["data"]["books"].is_null());
@@ -2261,6 +2295,15 @@ mod tests {
             json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "DESC"}]}),
             json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:01Z", "createdAtLt": "2026-01-04T00:00:00Z"}}),
             json!({"first": 50, "after": cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}], "filter": {"createdAtGte": "2026-01-01T00:00:00Z", "createdAtLt": "2026-01-05T00:00:00Z"}}),
+        ] {
+            let response = reader_query(&fixture, &fixture.admin, query, variables).await;
+            assert_eq!(
+                response["errors"][0]["extensions"]["code"], "invalid-cursor",
+                "{response}"
+            );
+            assert!(response["data"]["books"].is_null());
+        }
+        for variables in [
             json!({"first": 50, "sort": [{"column": "Title", "direction": "ASC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "TITLE", "direction": "DESC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "AUTHOR", "direction": "ASC"}, {"column": "PAGES", "direction": "ASC"}, {"column": "CREATED_AT", "direction": "ASC"}]}),
@@ -2279,7 +2322,7 @@ mod tests {
             .unwrap();
         let refused = reader_query(&fixture, &fixture.admin, query, json!({"first": 50, "after": ordered_cursor, "sort": [{"column": "CREATED_AT", "direction": "ASC"}, {"column": "TITLE", "direction": "ASC"}]})).await;
         assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
+            refused["errors"][0]["extensions"]["code"], "invalid-cursor",
             "{refused}"
         );
         let refused = reader_query(
@@ -2290,7 +2333,7 @@ mod tests {
         )
         .await;
         assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
+            refused["errors"][0]["extensions"]["code"], "invalid-cursor",
             "{refused}"
         );
         let tagged = reader_query(
@@ -2367,11 +2410,76 @@ mod tests {
                 .await,
             ] {
                 assert_eq!(
-                    response["errors"][0]["extensions"]["code"], "validation",
+                    response["errors"][0]["extensions"]["code"], "invalid-cursor",
                     "{response}"
                 );
             }
+            let batched = reader_query(
+                &fixture,
+                &fixture.admin,
+                &format!(
+                    "query($good: ID!, $bad: ID!, $after: String!) {{ good: {field}(id: $good) {{ {relation}(first: 1) {{ edges {{ node {{ id }} }} }} }} bad: {field}(id: $bad) {{ {relation}(first: 1, after: $after) {{ edges {{ node {{ id }} }} }} }} }}"
+                ),
+                json!({"good": parent_a.as_str(), "bad": parent_b.as_str(), "after": nested_cursor}),
+            )
+            .await;
+            assert_eq!(batched["errors"].as_array().unwrap().len(), 1, "{batched}");
+            assert_eq!(
+                batched["errors"][0]["extensions"]["code"], "invalid-cursor",
+                "{batched}"
+            );
+            assert_eq!(
+                batched["errors"][0]["path"],
+                json!(["bad", relation]),
+                "{batched}"
+            );
+            assert!(batched["data"]["bad"].is_null(), "{batched}");
+            assert_eq!(
+                batched["data"]["good"][relation]["edges"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                1,
+                "{batched}"
+            );
         }
+        let snapshot_batched = reader_query(
+            &fixture,
+            &fixture.admin,
+            "query($good: ID!, $bad: ID!, $after: String!) { good: manifestation(id: $good) { metadata { title authors(first: 1) { edges { node { name } } } } } bad: manifestation(id: $bad) { metadata { title authors(first: 1, after: $after) { edges { node { name } } } } } }",
+            json!({
+                "good": id::Manifestation::encode(fixture.sibling).as_str(),
+                "bad": id::Manifestation::encode(fixture.visible).as_str(),
+                "after": cursor,
+            }),
+        )
+        .await;
+        assert_eq!(
+            snapshot_batched["errors"].as_array().unwrap().len(),
+            1,
+            "{snapshot_batched}"
+        );
+        assert_eq!(
+            snapshot_batched["errors"][0]["extensions"]["code"], "invalid-cursor",
+            "{snapshot_batched}"
+        );
+        assert_eq!(
+            snapshot_batched["errors"][0]["path"],
+            json!(["bad", "metadata", "authors"]),
+            "{snapshot_batched}"
+        );
+        assert!(
+            snapshot_batched["data"]["bad"]["metadata"]["authors"].is_null(),
+            "{snapshot_batched}"
+        );
+        assert_eq!(
+            snapshot_batched["data"]["good"]["metadata"]["authors"]["edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1,
+            "{snapshot_batched}"
+        );
         pending_cursor_identity(&fixture).await;
         let shelf_page = reader_query(
             &fixture,
@@ -2392,7 +2500,7 @@ mod tests {
         )
         .await;
         assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
+            refused["errors"][0]["extensions"]["code"], "invalid-cursor",
             "{refused}"
         );
         let shelves =
@@ -2413,7 +2521,7 @@ mod tests {
         )
         .await;
         assert_eq!(
-            refused["errors"][0]["extensions"]["code"], "validation",
+            refused["errors"][0]["extensions"]["code"], "invalid-cursor",
             "{refused}"
         );
         let rest = fixture

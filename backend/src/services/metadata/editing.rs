@@ -1723,7 +1723,7 @@ pub enum SnapshotSelection {
 pub struct MetadataSnapshot {
     pub values: BookMetadata,
     pub revision: MetadataRevision,
-    pub pages: HashMap<RelationKey, RelationPage>,
+    pub pages: HashMap<RelationKey, Result<RelationPage, reader::InvalidCursor>>,
 }
 #[derive(Clone)]
 struct SnapshotCore {
