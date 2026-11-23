@@ -14,20 +14,20 @@ decision-makers:
 
 ## Context and problem statement
 
-A Reverie mutation can end in an outcome the caller should expect and handle: a name that fails validation, a system
-shelf that cannot change, a target that is missing or not the caller's. It can also fail unexpectedly: a lost
-connection, an internal fault, a refused credential. The editing contract needs the two classes kept apart, because an
-unexpected failure can offer Retry with the original input while an expected refusal must not offer an unchanged resend.
+A Reverie mutation can end in an expected domain outcome such as a validation refusal, an immutable system shelf or a
+missing target. It can also fail unexpectedly because of a transport fault, an internal error or a refused credential.
+Callers need expected domain outcomes and unexpected execution failures kept distinct so each class is handled without
+ambiguity.
 
-Execution errors with a classified `extensions.code` carried both classes. Relay's `commitMutation` passes response
-errors to `onCompleted` beside the data, the browser network refuses any response with errors, and Relay's error guide
-recommends modelling error information that the application displays as part of the schema. How should a mutation report
-an expected outcome?
+Execution errors with a classified `extensions.code` previously carried both classes. Relay's `commitMutation` passes
+response errors to `onCompleted` beside the data, the browser network refuses any response with errors, and Relay's
+error guide recommends modelling expected error information as part of the schema. How should a mutation report an
+expected outcome?
 
 ## Decision drivers
 
 - Expected outcomes are typed in the schema and in generated client types, not recovered from string codes.
-- The unexpected class stays recognisable, so Retry applies only to it.
+- Expected domain refusals and unexpected execution failures stay clearly distinguishable.
 - An outcome carries the data its recovery needs, such as a message or the current state of the target.
 - A success result carries the changed records, so the store updates without a refetch.
 - The convention follows published GraphQL and Relay guidance rather than a Reverie-specific protocol.
@@ -42,23 +42,17 @@ an expected outcome?
 ## Decision outcome
 
 Chosen option: **Union results**, because it is the only option in which each expected outcome is a distinct schema type
-that generated client types branch on, while every execution error remains the unexpected class.
-
-Each mutation returns a union of one success member and the expected outcomes for that mutation. Shared outcome types,
-such as `NotFound`, are reused across mutations. `forbidden`, `internal` and `malformed-header` remain execution errors.
-A caller-invisible or malformed target is a `NotFound` member, matching how reads treat it.
+that generated client types branch on, while every execution error remains in the unexpected class.
 
 ### Consequences
 
-- Positive: clients branch on `__typename` with type-checked members. A refusal never reaches `onError`, so anything in
-  `onError` is a failure that may offer Retry.
-- Positive: the success member returns the changed records and edges, so Relay publishes them through normalisation and
-  the declarative connection directives.
-- Positive: a refusal arrives as data, so the network's refusal of responses with errors no longer blocks it.
-- Negative: each mutation adds a union and usually a success type to the schema.
+- Positive: clients branch on `__typename` with type-checked members instead of inspecting string error codes.
+- Positive: the success member returns changed records and edges, so Relay publishes updates through normalisation and
+  declarative connection directives.
+- Positive: an expected refusal arrives as normal data, so whole-response execution-error rejection does not discard its
+  recovery fields.
+- Negative: each mutation adds a union and usually a dedicated success type to the schema.
 - Negative: generated union types include a future-member case that every client must handle.
-- Negative: mutations move to unions one workflow at a time, so error codes and union results coexist until the last
-  mutation moves.
 
 ## Pros and cons of the options
 

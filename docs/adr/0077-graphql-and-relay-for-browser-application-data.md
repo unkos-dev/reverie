@@ -10,7 +10,6 @@ decision-makers:
   - "John Unkovich"
 supersedes:
   - "REV-ADR-0010"
-  - "REV-ADR-0016"
 ---
 
 # GraphQL and Relay for browser application data
@@ -41,31 +40,30 @@ Chosen option: **Full browser GraphQL and Relay**, because one normalised client
 manifestation records consistent identities across every browser workflow, and a schema generated from the Rust service
 replaces manual duplication between the service and its TypeScript consumers.
 
-The code-first schema is implemented in Rust with async-graphql and async-graphql-axum, and the Relay compiler produces
-operation artefacts and TypeScript types. Relay owns fetching, normalised server data and mutations for each migrated
-browser workflow, and the target covers all browser application data. Authentication protocols, redirects, OPDS and
-binary delivery keep their HTTP contracts. Production executes only build-generated trusted documents.
+Browser application data moves to a code-first GraphQL schema and compiled Relay operations across the whole browser
+application. Authentication protocols, redirects, OPDS, binary delivery and retained `/api/v1` endpoints keep their HTTP
+contracts.
 
 ### Consequences
 
 - Positive: Relay provides one normalised owner for related records and generated browser operations.
-- Positive: retained HTTP APIs keep their URL-path major version and code-first OpenAPI 3.1 contract. REST conventions
-  in REV-ADR-0011 still govern those APIs.
-- Positive: migrating a browser workflow to GraphQL removes no REST operation. The versioned `/api/v1` data surface
-  remains the contract for device-token and other non-browser clients under REV-ADR-0011 and REV-ADR-0056, and retiring
-  any of it requires a separate compatibility decision.
+- Positive: migrating a browser workflow to GraphQL removes no `/api/v1` REST operation; the versioned `/api/v1` API
+  remains the contract for device-token and other non-browser clients under REV-ADR-0011, REV-ADR-0016 and REV-ADR-0056,
+  and retiring any of it requires a separate compatibility decision.
 - Negative: schema and operation generation add build integration and matching release artefacts.
-- Negative: each workflow migrates as a whole, with explicit connection and aggregate updates.
-- Negative: TanStack Query and Relay coexist until the last browser workflow migrates. TanStack Query is then removed;
-  coexistence is not a permanent alternative architecture.
-- Negative: trusted documents require matching frontend and server releases without raw-query fallback.
+- Negative: each workflow requires explicit connection and aggregate updates when moved to Relay.
+- Negative: moving workflows incrementally requires running TanStack Query alongside Relay until every browser workflow
+  uses Relay; coexistence is not a permanent target architecture.
+- Negative: trusted-document execution requires matching frontend and server releases without raw-query fallback.
 
 ## Pros and cons of the options
 
 ### Full browser GraphQL and Relay
 
 - Positive: shared identities and compiled operations support related data across the complete browser application.
-- Negative: compatibility with the existing Vite+ and oxc React Compiler configuration remains unproved.
+- Negative: Relay's compiler and Babel transform add build-pipeline coupling beside Vite+ and the React Compiler.
+- Negative: async-graphql is selected over Juniper because Juniper rejects omitted non-null input fields that declare a
+  default and omits list indexes from execution error paths that Relay requires.
 
 ### Retain REST and TanStack Query for browser application data
 
@@ -79,10 +77,8 @@ binary delivery keep their HTTP contracts. Production executes only build-genera
 
 ## More information
 
-Reconsider the GraphQL server library if clients need to submit their own documents, or if a Juniper release fixes both
-input-default coercion and indexed error paths. Juniper 0.18.0 was evaluated on 2026-11-20: it rejects an omitted
-non-null input field that has a default, and its execution paths omit list indexes, which Relay needs to place field
-errors. async-graphql 7.2.1 was the latest async-graphql release on that date.
+Reconsider the GraphQL server library if clients need to submit arbitrary documents, or if Juniper resolves both
+input-default coercion and indexed error paths.
 
-Reconsider device-token access to GraphQL when the first real third-party client exists. That client would submit its
-own documents, which trusted-document admission does not allow.
+Reconsider device-token access to GraphQL when a third-party client requires it, because third-party callers cannot rely
+on build-generated trusted documents.
