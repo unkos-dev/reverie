@@ -306,6 +306,10 @@ type LibraryPreferences {
   defaults: LibraryPreferenceDefaults!
 }
 
+type LibraryPreferencesInvalid {
+  message: String!
+}
+
 type LibraryPreferencesUpdated {
   viewer: Viewer!
 }
@@ -1000,7 +1004,7 @@ input UpdateLibraryPreferencesInput {
   resetHiddenColumns: Boolean
 }
 
-union UpdateLibraryPreferencesResult = LibraryPreferencesUpdated | MetadataInvalid
+union UpdateLibraryPreferencesResult = LibraryPreferencesUpdated | LibraryPreferencesInvalid
 
 input UpdateMetadataInput {
   id: ID!

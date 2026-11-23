@@ -620,8 +620,7 @@ export const mutationsUnlockMetadataFieldMutation = graphql`
 `;
 
 export const mutationsUpdateLibraryPreferencesMutation = graphql`
-  mutation mutationsUpdateLibraryPreferencesMutation($input: UpdateLibraryPreferencesInput!)
-  @raw_response_type {
+  mutation mutationsUpdateLibraryPreferencesMutation($input: UpdateLibraryPreferencesInput!) {
     updateLibraryPreferences(input: $input) {
       __typename
       ... on LibraryPreferencesUpdated {
@@ -632,7 +631,7 @@ export const mutationsUpdateLibraryPreferencesMutation = graphql`
           }
         }
       }
-      ... on MetadataInvalid {
+      ... on LibraryPreferencesInvalid {
         message
       }
     }

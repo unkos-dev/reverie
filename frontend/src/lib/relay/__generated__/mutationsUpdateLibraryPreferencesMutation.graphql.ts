@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<be7f68a39c04ce44144cd1927577fcf4>>
- * @relayHash 8a17e47111437fe7e6d357479a46c827
+ * @generated SignedSource<<ec2ae6e3c4709b3b0af5bb304349ec3e>>
+ * @relayHash 6434ba7f3e282eec67c4603ea3b50057
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID c3992fcab5ca8e7f389f8092a5b56ca06ee325421d585c937a3a01664b118b06
+// @relayRequestID 3852637eb2a35a5342282e2ee916d1f3e8bb8c3c364439a78e5ecfc32f8b8aa5
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -47,6 +47,10 @@ export type mutationsUpdateLibraryPreferencesMutation$variables = {
 export type mutationsUpdateLibraryPreferencesMutation$data = {
   readonly updateLibraryPreferences:
     | {
+        readonly __typename: "LibraryPreferencesInvalid";
+        readonly message: string;
+      }
+    | {
         readonly __typename: "LibraryPreferencesUpdated";
         readonly viewer: {
           readonly id: string;
@@ -56,54 +60,12 @@ export type mutationsUpdateLibraryPreferencesMutation$data = {
         };
       }
     | {
-        readonly __typename: "MetadataInvalid";
-        readonly message: string;
-      }
-    | {
         // This will never be '%other', but we need some
         // value in case none of the concrete values match.
         readonly __typename: "%other";
       };
 };
-export type mutationsUpdateLibraryPreferencesMutation$rawResponse = {
-  readonly updateLibraryPreferences:
-    | {
-        readonly __typename: "LibraryPreferencesUpdated";
-        readonly viewer: {
-          readonly id: string;
-          readonly libraryPreferences: {
-            readonly defaults: {
-              readonly density: LibraryDensity;
-              readonly hiddenColumns: ReadonlyArray<LibraryColumn>;
-              readonly sort: ReadonlyArray<{
-                readonly column: SortField;
-                readonly direction: Direction;
-              }>;
-              readonly view: LibraryView;
-            };
-            readonly density: LibraryDensity | null | undefined;
-            readonly hiddenColumns: ReadonlyArray<LibraryColumn> | null | undefined;
-            readonly sort:
-              | ReadonlyArray<{
-                  readonly column: SortField;
-                  readonly direction: Direction;
-                }>
-              | null
-              | undefined;
-            readonly view: LibraryView | null | undefined;
-          };
-        };
-      }
-    | {
-        readonly __typename: "MetadataInvalid";
-        readonly message: string;
-      }
-    | {
-        readonly __typename: string;
-      };
-};
 export type mutationsUpdateLibraryPreferencesMutation = {
-  rawResponse: mutationsUpdateLibraryPreferencesMutation$rawResponse;
   response: mutationsUpdateLibraryPreferencesMutation$data;
   variables: mutationsUpdateLibraryPreferencesMutation$variables;
 };
@@ -148,7 +110,7 @@ const node: ConcreteRequest = (function () {
           storageKey: null,
         },
       ],
-      type: "MetadataInvalid",
+      type: "LibraryPreferencesInvalid",
       abstractKey: null,
     },
     v5 = {
@@ -327,7 +289,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "c3992fcab5ca8e7f389f8092a5b56ca06ee325421d585c937a3a01664b118b06",
+      id: "3852637eb2a35a5342282e2ee916d1f3e8bb8c3c364439a78e5ecfc32f8b8aa5",
       metadata: {},
       name: "mutationsUpdateLibraryPreferencesMutation",
       operationKind: "mutation",
@@ -336,6 +298,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "8624403d0bd9ab1f472df20042afe255";
+(node as any).hash = "f87c73d223d7ec5258011ce70489ad46";
 
 export default node;

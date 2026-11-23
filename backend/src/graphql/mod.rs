@@ -1010,7 +1010,7 @@ mod tests {
             assert_graph_result(
                 &reader_query(fixture, &fixture.child, write, json!({"input":input})).await,
                 "updateLibraryPreferences",
-                "MetadataInvalid",
+                "LibraryPreferencesInvalid",
             );
         }
         let after_refusal = reader_query(fixture, &fixture.child, preference_read, json!({})).await;
@@ -1747,6 +1747,7 @@ mod tests {
                             | "ShelfNameInvalid"
                             | "StaleBaseline"
                             | "MetadataInvalid"
+                            | "LibraryPreferencesInvalid"
                             | "FieldsLocked"
                             | "EditTooLarge"
                             | "UndoUnavailable"

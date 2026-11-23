@@ -181,10 +181,15 @@ struct LibraryPreferencesUpdated {
     viewer: super::Viewer,
 }
 
+#[derive(SimpleObject)]
+struct LibraryPreferencesInvalid {
+    message: String,
+}
+
 #[derive(Union)]
 enum UpdateLibraryPreferencesResult {
     LibraryPreferencesUpdated(LibraryPreferencesUpdated),
-    MetadataInvalid(MetadataInvalid),
+    LibraryPreferencesInvalid(LibraryPreferencesInvalid),
 }
 
 #[derive(SimpleObject)]
@@ -801,10 +806,9 @@ impl Mutation {
     ) -> async_graphql::Result<UpdateLibraryPreferencesResult> {
         let user = ctx.data::<CurrentUser>()?;
         if input.reset_hidden_columns == Some(true) && input.columns.is_some() {
-            return Ok(UpdateLibraryPreferencesResult::MetadataInvalid(
-                MetadataInvalid {
+            return Ok(UpdateLibraryPreferencesResult::LibraryPreferencesInvalid(
+                LibraryPreferencesInvalid {
                     message: "resetHiddenColumns cannot be combined with columns".into(),
-                    field_errors: Vec::new(),
                 },
             ));
         }
@@ -832,12 +836,11 @@ impl Mutation {
                     viewer: super::Viewer::new(user, Some(preferences)),
                 },
             )),
-            Err(AppError::Validation(message)) => Ok(
-                UpdateLibraryPreferencesResult::MetadataInvalid(MetadataInvalid {
-                    message,
-                    field_errors: Vec::new(),
-                }),
-            ),
+            Err(AppError::Validation(message)) => {
+                Ok(UpdateLibraryPreferencesResult::LibraryPreferencesInvalid(
+                    LibraryPreferencesInvalid { message },
+                ))
+            }
             Err(error) => Err(safe_error(error)),
         }
     }

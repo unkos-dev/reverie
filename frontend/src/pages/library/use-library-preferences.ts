@@ -3,7 +3,7 @@
  *
  * The server owns them, so they follow the reader between devices. Each group resolves as the
  * reader's override, else the installation default that arrives with it. Each gesture sends one
- * mutation with an optimistic response, which Relay rolls back if the write fails.
+ * mutation with a single-field optimistic store update, which Relay rolls back if the write fails.
  *
  * No value here is ever written to the browser URL. A Library visit's own view override wins over
  * the stored view while the visit holds one. Sort has no URL form at all: it is a one-layer
@@ -11,6 +11,7 @@
  * `docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md`).
  */
 import { graphql, useFragment, useMutation } from "react-relay";
+import type { RecordProxy, RecordSourceSelectorProxy } from "relay-runtime";
 import { mutationsUpdateLibraryPreferencesMutation } from "@/lib/relay/mutations";
 import type {
   useLibraryPreferences_preferences$data as PreferencesData,
@@ -54,7 +55,7 @@ const preferencesFragment = graphql`
 
 type Column = NonNullable<PreferencesData["hiddenColumns"]>[number];
 type SortColumn = PreferencesData["defaults"]["sort"][number]["column"];
-type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+type PreferencesRecord = RecordProxy<Record<never, never>>;
 
 const COLUMNS = new Map<string, Column>([
   ["subtitle", "SUBTITLE"],
@@ -131,28 +132,18 @@ export function useLibraryPreferences(
 
   function write(
     input: UpdateLibraryPreferencesInput,
-    change: Partial<Mutable<Omit<PreferencesData, " $fragmentType" | "defaults">>>,
+    apply: (record: PreferencesRecord, store: RecordSourceSelectorProxy) => void,
   ): void {
     commit({
       variables: { input },
-      optimisticResponse: {
-        updateLibraryPreferences: {
-          __typename: "LibraryPreferencesUpdated",
-          viewer: {
-            id: viewerId,
-            libraryPreferences: {
-              hiddenColumns: data.hiddenColumns,
-              density: data.density,
-              view: data.view,
-              sort: data.sort,
-              defaults: data.defaults,
-              ...change,
-            },
-          },
-        },
+      optimisticUpdater: (store) => {
+        const record: PreferencesRecord | null | undefined = store
+          .get(viewerId)
+          ?.getLinkedRecord("libraryPreferences");
+        if (record != null) apply(record, store);
       },
       onCompleted: ({ updateLibraryPreferences }) => {
-        if (updateLibraryPreferences.__typename === "MetadataInvalid")
+        if (updateLibraryPreferences.__typename === "LibraryPreferencesInvalid")
           console.error(
             "[useLibraryPreferences] a preference was refused",
             updateLibraryPreferences.message,
@@ -190,23 +181,32 @@ export function useLibraryPreferences(
     canResetColumns: data.hiddenColumns != null,
     setDensity: (next) => {
       const value = next === "compact" ? "COMPACT" : "COMFORTABLE";
-      write({ density: value }, { density: value });
+      write({ density: value }, (record) => {
+        record.setValue(value, "density");
+      });
     },
     setColumnHidden: (columnKey, hidden) => {
       const column = COLUMNS.get(columnKey);
       if (column === undefined) return;
-      const others = storedColumns.filter((stored) => stored !== column);
-      write(
-        { columns: [{ column, hidden }] },
-        { hiddenColumns: hidden ? [...others, column] : others },
-      );
+      write({ columns: [{ column, hidden }] }, (record) => {
+        const stored = record.getValue("hiddenColumns");
+        const current: readonly string[] = Array.isArray(stored)
+          ? stored.filter((item): item is string => typeof item === "string")
+          : data.defaults.hiddenColumns;
+        const others = current.filter((item) => item !== column);
+        record.setValue(hidden ? [...others, column] : others, "hiddenColumns");
+      });
     },
     resetColumns: () => {
-      write({ resetHiddenColumns: true }, { hiddenColumns: null });
+      write({ resetHiddenColumns: true }, (record) => {
+        record.setValue(null, "hiddenColumns");
+      });
     },
     setView: (next) => {
       const value = next === "table" ? "TABLE" : "GRID";
-      write({ view: value }, { view: value });
+      write({ view: value }, (record) => {
+        record.setValue(value, "view");
+      });
     },
     setSortLevels: (levels) => {
       const sort =
@@ -216,7 +216,20 @@ export function useLibraryPreferences(
               column: SORT_COLUMNS[level.field],
               direction: level.desc ? ("DESC" as const) : ("ASC" as const),
             }));
-      write({ sort }, { sort });
+      write({ sort }, (record, store) => {
+        if (sort === null) {
+          record.setValue(null, "sort");
+          return;
+        }
+        const entries = sort.map((level, index) => {
+          const id = `${record.getDataID()}:sort:${String(index)}`;
+          const entry = store.get(id) ?? store.create(id, "LibrarySortLevel");
+          entry.setValue(level.column, "column");
+          entry.setValue(level.direction, "direction");
+          return entry;
+        });
+        record.setLinkedRecords(entries, "sort");
+      });
     },
   };
 }

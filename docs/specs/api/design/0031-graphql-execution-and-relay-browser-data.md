@@ -230,16 +230,16 @@ Shelf, metadata editing and library preference mutations take one `input` object
 | `revertMetadataField` | `MetadataFieldReverted`: `manifestation` | `FieldsLocked`, `MetadataInvalid`, `NotFound` |
 | `lockMetadataField` | `MetadataFieldLockAdded`: `manifestation` | `NotFound` |
 | `unlockMetadataField` | `MetadataFieldLockRemoved`: `manifestation` | `NotFound` |
-| `updateLibraryPreferences` | `LibraryPreferencesUpdated`: `viewer` | `MetadataInvalid` |
+| `updateLibraryPreferences` | `LibraryPreferencesUpdated`: `viewer` | `LibraryPreferencesInvalid` |
 
 Outcome types are shared across mutations and each carries a caller-safe `message`. `ShelfNameInvalid` refuses an empty
-shelf name, and `SystemShelfImmutable` refuses renaming or deleting a system shelf. `MetadataInvalid` carries
-`fieldErrors`, a list of `field` and `message` pairs keyed by the service field name, which is empty for a refusal that
-names no field. `FieldsLocked` carries `fields`, the canonical keys of the refused locked fields. A malformed, foreign,
-missing or caller-invisible target is a `NotFound` member. A service refusal that a mutation's union does not declare
-becomes an internal execution error. Forbidden and internal failures are execution errors, as are an input that fails
-scalar coercion and a committed metadata write whose manifestation cannot be read back. How each surface recovers from
-an execution error is described in
+shelf name, `LibraryPreferencesInvalid` refuses an invalid preference write, and `SystemShelfImmutable` refuses renaming
+or deleting a system shelf. `MetadataInvalid` carries `fieldErrors`, a list of `field` and `message` pairs keyed by the
+service field name, which is empty for a refusal that names no field. `FieldsLocked` carries `fields`, the canonical
+keys of the refused locked fields. A malformed, foreign, missing or caller-invisible target is a `NotFound` member. A
+service refusal that a mutation's union does not declare becomes an internal execution error. Forbidden and internal
+failures are execution errors, as are an input that fails scalar coercion and a committed metadata write whose
+manifestation cannot be read back. How each surface recovers from an execution error is described in
 [Conditional requests and optimistic concurrency](0007-conditional-requests-and-optimistic-concurrency.md#failure-and-recovery)
 for saves and Undo, and in [Metadata review and editing](../../metadata/design/0018-metadata-review-and-editing.md) for
 review actions. Metadata success members return the `manifestation`. Its `metadata` field answers with the revision the
@@ -248,9 +248,9 @@ then points the manifestation at the new revision without an updater. Clients br
 and treat `onError` as the unexpected class. The Library cell adapters carry a refusal member as `MetadataRefusal`
 through their recovery flow. `LibraryPreferencesUpdated.viewer` answers `libraryPreferences` from the row the write
 returned, so the acknowledgement normalises into the viewer's preferences record. A refused preference write is
-`MetadataInvalid` with no `fieldErrors`. `refreshMetadata` and the reading patch report failures as classified execution
-errors. Exact Undo and resolution require the live browser session that issued the operation, and apply its expiry,
-budgets and non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
+`LibraryPreferencesInvalid`. `refreshMetadata` and the reading patch report failures as classified execution errors.
+Exact Undo and resolution require the live browser session that issued the operation, and apply its expiry, budgets and
+non-consuming refusals. Basic and device tokens may save metadata but receive no Undo capability.
 
 ### Selected revisions
 

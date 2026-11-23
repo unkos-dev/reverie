@@ -40,9 +40,8 @@ reader's preferred order follows them between devices without a second source of
   device. A medium chosen for one lifetime should not carry the other.
 - Keyset integrity: the books cursor embeds the canonical sort spec and rejects a continuation minted under a different
   stack. Whatever resolves the sort must keep every page of one query under one explicit spec.
-- Loader ordering: the route loader reads the account's preferences before the first books request, and that request
-  sends an explicit override only when the reader has one, so an inheriting reader's request leaves the order to the
-  installation default.
+- First-page ordering: the first books request must use the reader's stored order without a visible re-sort, and an
+  inheriting reader must receive the installation default without the client guessing what that default is.
 - Deployment shape: this is a self-hosted household instance, with no anonymous traffic, and links are not a
   distribution channel. URL state earns its costs only where sharing or statelessness is the point, and neither applies
   to a reader's own ordering.

@@ -88,11 +88,11 @@ month/year rollovers and daylight-saving changes.
 
 `Viewer.libraryPreferences` and `updateLibraryPreferences` provide the account overrides and installation defaults
 through `services::preferences`. The HTTP preference endpoints share that service. Each gesture commits one
-`updateLibraryPreferences` mutation with an optimistic response built from the stored preferences and the gesture. Sort
-gestures write the structured `sort`, or `null` to reset it; a column toggle writes `columns` with that one column; the
-Columns reset writes `resetHiddenColumns`. The Library sends its books requests through GraphQL. A request carries the
-reader's non-empty override as ordered typed `sort` levels, and with no override it omits `sort` or supplies `null`, so
-the server applies the installation default. It never serialises the installation-default levels, so an inheriting
+`updateLibraryPreferences` mutation with an optimistic store update that changes only that gesture's preference field.
+Sort gestures write the structured `sort`, or `null` to reset it; a column toggle writes `columns` with that one column;
+the Columns reset writes `resetHiddenColumns`. The Library sends its books requests through GraphQL. A request carries
+the reader's non-empty override as ordered typed `sort` levels, and with no override it omits `sort` or supplies `null`,
+so the server applies the installation default. It never serialises the installation-default levels, so an inheriting
 reader's list-query key depends only on the absent override, never on server defaults the client cannot see. `listBooks`
 (`frontend/src/api/books.ts`) is an HTTP adapter that serialises the parameters it is given and omits any that are
 absent, including `sort`. Native query references retain connection membership. Each source keeps its operation,
