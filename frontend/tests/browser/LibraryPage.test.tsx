@@ -850,6 +850,7 @@ it("Library Retry sends the retained edit again", async () => {
     | "reading" = "temporary";
   const writes: z.infer<typeof metadataVariables>[] = [];
   const readingWrites: z.infer<typeof readingVariables>[] = [];
+  let reloads = 0;
   let rejectDelayed: ((error: Error) => void) | undefined;
   const delayed = new Promise<Response>((_resolve, reject) => {
     rejectDelayed = reject;
@@ -880,7 +881,15 @@ it("Library Retry sends the retained edit again", async () => {
         owner.books = [current];
         return savedCells(write.requestId, current, []);
       }
-      if (name === "useCellEditReloadQuery") return response({ manifestation: graphBook(current) });
+      if (name === "useCellEditReloadQuery") {
+        const manifestation = graphBook(current);
+        if (++reloads === 1)
+          return new Response(
+            JSON.stringify({ data: { manifestation }, errors: [{ message: "Reload failed" }] }),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        return response({ manifestation });
+      }
       if (name === "useCellEditReadingMutation") {
         const write = readingVariables.parse(variables);
         readingWrites.push(write);
@@ -916,12 +925,17 @@ it("Library Retry sends the retained edit again", async () => {
     .toBeInTheDocument();
   expect(outcomes.getByRole("button", { name: "Retry", exact: true }).elements()).toHaveLength(0);
   const beforeReload = writes.length;
-  await userEvent.click(outcomes.getByRole("button", { name: "Reload", exact: true }));
+  const reload = outcomes.getByRole("button", { name: "Reload", exact: true });
+  await userEvent.click(reload);
+  await expect.element(reload).not.toHaveAttribute("data-pending");
+  expect(reloads).toBe(1);
   await expect.element(outcomes.getByText("Submitted value: Retained title")).toBeInTheDocument();
+  await expect.element(page.getByRole("link", { name: original.title, exact: true })).toBeVisible();
   expect(writes).toHaveLength(beforeReload);
-  await expect
-    .element(outcomes.getByRole("button", { name: "Reload", exact: true }))
-    .not.toHaveAttribute("data-pending");
+  await userEvent.click(reload);
+  await expect.element(reload).not.toHaveAttribute("data-pending");
+  expect(reloads).toBe(2);
+  expect(writes).toHaveLength(beforeReload);
   mode = "success";
   await userEvent.click(page.getByRole("button", { name: `Edit title of ${current.title}` }));
   await page.getByRole("dialog").getByRole("textbox").fill("Corrected title");
