@@ -12,17 +12,18 @@ governed-by:
 ## Statement
 
 WHEN a request to a GraphQL connection presents a cursor, the server MUST resume the page walk only if that same
-connection minted the cursor under the request's parent, sort stack and filter set, and MUST otherwise refuse only that
+connection minted the cursor under the request's parent, sort stack and filter set, and MUST otherwise refuse that
 connection at its own field path with an execution error whose `extensions.code` is `invalid-cursor`, a code
 [REV-REQ-0088](../../api/requirements/0088-a-graphql-execution-error-carries-a-registered-classification-code.md#statement)
-registers, and no page, without reinterpreting the cursor against the request's own sort or filters or failing sibling
-connections in the same query. A connection's parent is the object the connection field belongs to, such as the work
-whose `manifestations` the request pages, except that the parent of a `MetadataRevision` connection is the work or
-manifestation that owns the revision; a root connection such as `books` has no parent. A sort stack is the ordered list
-of `sort` levels with their directions, and two stacks are the same only when they name the same columns in the same
-order with the same directions. A filter set is the `filter` argument's fields with their values, and two filter sets
-that differ only in the order of a multi-valued field's values are the same filter set. The refusal covers a cursor
-minted by a different connection, by the same connection under a different parent, or by an `/api/v1/` list endpoint.
+registers, and no page, without reinterpreting the cursor against the request's own sort or filters and without failing
+independent sibling connections in the same query beyond standard GraphQL null propagation. A connection's parent is the
+object the connection field belongs to, such as the work whose `manifestations` the request pages, except that a
+`MetadataRevision` connection shares its parent and cursor identity with the owning work or manifestation's
+corresponding relation connection; a root connection such as `books` has no parent. A sort stack is the ordered list of
+`sort` levels with their directions, and two stacks are the same only when they name the same columns in the same order
+with the same directions. A filter set is the `filter` argument's fields with their values, and two filter sets that
+differ only in the order of a multi-valued field's values are the same filter set. The refusal covers a cursor minted by
+a different connection, by the same connection under a different parent, or by an `/api/v1/` list endpoint.
 
 ## Rationale
 
@@ -46,8 +47,8 @@ well keeps each API's cursor format private to that API, so neither format becom
   manifestation's pending versions presented under a different manifestation, produces an execution error with the
   `invalid-cursor` code and no page. Checked by `graphql_cursor_contract`.
 - A refused cursor on one batched relation connection, pending-versions connection or `MetadataRevision` connection
-  reports `invalid-cursor` at that connection's own field path while a valid sibling connection in the same query
-  returns its page. Checked by `graphql_cursor_contract`.
+  reports `invalid-cursor` at that connection's own field path while a valid sibling connection under an independent
+  nullable ancestor in the same query returns its page. Checked by `graphql_cursor_contract`.
 - A cursor from a different connection produces an execution error with the `invalid-cursor` code and no page: a
   `shelves` cursor or a relation cursor presented to `books`, and a `books` cursor presented to `shelves`. Checked by
   `graphql_cursor_contract`.
