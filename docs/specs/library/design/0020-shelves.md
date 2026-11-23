@@ -245,7 +245,7 @@ pagination fragment, and `useShelves` in `frontend/src/api/shelves.ts` reads the
   `ShelfItemCursor::parse` also compares the cursor's shelf ID with the requested shelf and refuses a mismatch as
   `CursorError::ShelfMismatch`, so `GET /api/v1/shelves/{id}` answers 422 to an item cursor cut from another shelf. The
   GraphQL `items` cursor binds its shelf ID and relation kind, and a cursor from another parent or relation is refused
-  with the `validation` code.
+  with the `invalid-cursor` code.
 - **A child probing shelf existence via manifestation ids.** Covered in Runtime behaviour: the RLS-scoped probe in
   `add_shelf_item` and the ownership check both resolve to the same `AppError::NotFound`, so a child cannot distinguish
   "no such shelf" from "shelf is yours but that manifestation isn't visible to you".

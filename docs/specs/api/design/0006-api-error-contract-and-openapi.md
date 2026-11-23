@@ -193,13 +193,13 @@ Shelf and metadata editing mutations return union results, listed in the Design 
 data" ([Mutation results](0031-graphql-execution-and-relay-browser-data.md#mutation-results)).
 
 Other GraphQL failures, including those of `metadataOperation` and the reading and preference mutations, are execution
-errors. `safe_error` assigns each `AppError` variant a `code` extension: `validation`, `forbidden`, `not-found`,
-`if-match-required`, `if-match-mismatch`, `malformed-header`, `undo-unavailable`, `undo-conflict`, `edit-too-large`,
-`system-shelf-immutable`, `field-locked` or `internal`. A field validation error adds `errors`, keyed by field name, and
-a field lock adds `lockedFields`. A stale reading-state result adds `currentEtag` only after caller-visible target
-resolution. An execution error that carries no extensions, such as a failed input coercion, receives the `validation`
-code. Internal failures carry the fixed message "An internal error occurred." and no private diagnostics. The network
-validates these extensions and refuses partial data without replaying the operation.
+errors. `safe_error` assigns each `AppError` variant a `code` extension: `validation`, `invalid-cursor`, `forbidden`,
+`not-found`, `if-match-required`, `if-match-mismatch`, `malformed-header`, `undo-unavailable`, `undo-conflict`,
+`edit-too-large`, `system-shelf-immutable`, `field-locked` or `internal`. A field validation error adds `errors`, keyed
+by field name, and a field lock adds `lockedFields`. A stale reading-state result adds `currentEtag` only after
+caller-visible target resolution. An execution error that carries no extensions, such as a failed input coercion,
+receives the `validation` code. Internal failures carry the fixed message "An internal error occurred." and no private
+diagnostics. The network validates these extensions and refuses partial data without replaying the operation.
 
 ## Data and state
 
