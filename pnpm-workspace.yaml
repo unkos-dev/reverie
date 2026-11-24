@@ -40,7 +40,7 @@ allowBuilds:
 # every importer, which is what keeps the vp version from being restated across
 # root and frontend manifests.
 catalog:
-  vite: "npm:@voidzero-dev/vite-plus-core@1.6.0"
+  vite: "npm:@voidzero-dev/vite-plus-core@8.3.8000"
   vite-plus: "1.6.0"
   "@vitest/browser-playwright": "5.1.0"
 
