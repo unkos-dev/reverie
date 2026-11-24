@@ -155,6 +155,8 @@ test("retains refused input and reloads the Book dialog onto the current revisio
         current = snapshot("Changed elsewhere", '"bbbbbbbbbbbbbbbbbbbbbb"');
         return refused({ __typename: "StaleBaseline", message: "The baseline is stale." });
       }
+      if (saves === 3)
+        return refused({ __typename: "StaleBaseline", message: "The baseline is still stale." });
       return saved(snapshot("Updated Subtitle", '"cccccccccccccccccccccc"'));
     },
   });
@@ -191,16 +193,23 @@ test("retains refused input and reloads the Book dialog onto the current revisio
   await expect.element(reload).toBeVisible();
   await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
   expect(writes.map((write) => write.baseline)).toEqual([opening.etag, opening.etag]);
+  await page.getByLabelText("Subtitle").fill("Revised draft");
+  await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
+  await expect.element(page.getByText("The baseline is still stale.")).toBeVisible();
+  expect(writes[2]).toMatchObject({
+    baseline: opening.etag,
+    patch: { subtitle: "Revised draft" },
+  });
   await userEvent.click(reload);
   await expect.element(page.getByLabelText("Subtitle")).toHaveValue(current.subtitle);
-  expect(writes).toHaveLength(2);
+  expect(writes).toHaveLength(3);
   await page.getByLabelText("Subtitle").fill("Updated Subtitle");
   await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
   await vi.waitFor(() => {
     expect(rendered.onOpenChange).toHaveBeenCalledWith(false);
   });
-  expect(writes).toHaveLength(3);
-  expect(writes[2]).toMatchObject({
+  expect(writes).toHaveLength(4);
+  expect(writes[3]).toMatchObject({
     baseline: current.etag,
     patch: { subtitle: "Updated Subtitle" },
   });
