@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<7caf29f017020aefce14dae3da85aeb1>>
- * @relayHash 48ddf899a215c846530eb64bcb9e4462
+ * @generated SignedSource<<d9825c8a2c49eff9ac684acdd5a30c17>>
+ * @relayHash 3952bdc5db9dc00f17d9858c4bc6d25f
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 614548b269274356bd63a5e27863f37ca6e735f01810f53dc6e1fb802a7b57cb
+// @relayRequestID 18a4881ae5bf1df4033db8a923c4c4f26dc7aa1ada2435a4a0c93b183acb9be9
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -157,7 +157,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "614548b269274356bd63a5e27863f37ca6e735f01810f53dc6e1fb802a7b57cb",
+      id: "18a4881ae5bf1df4033db8a923c4c4f26dc7aa1ada2435a4a0c93b183acb9be9",
       metadata: {},
       name: "LibraryPageLabelsRefetchQuery",
       operationKind: "query",
@@ -166,6 +166,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "f4af5e99251eeb172a1ac47db9166dd7";
+(node as any).hash = "cf6f505f1d0180638dcd88f6410fce6e";
 
 export default node;

@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<61b4665491d9e39bcab027f62dd2a263>>
+ * @generated SignedSource<<e5083b6026b64d9b8df989605b7fa8c7>>
  * @lightSyntaxTransform
  */
 
@@ -33,7 +33,13 @@ export type CommandPalette_hit$data = {
       }
     | null
     | undefined;
-  readonly snippet: string | null | undefined;
+  readonly snippet:
+    | ReadonlyArray<{
+        readonly highlighted: boolean;
+        readonly text: string;
+      }>
+    | null
+    | undefined;
   readonly " $fragmentType": "CommandPalette_hit";
 };
 export type CommandPalette_hit$key = {
@@ -52,8 +58,26 @@ const node: ReaderFragment = {
     {
       alias: null,
       args: null,
-      kind: "ScalarField",
+      concreteType: "SearchSnippetPart",
+      kind: "LinkedField",
       name: "snippet",
+      plural: true,
+      selections: [
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "text",
+          storageKey: null,
+        },
+        {
+          alias: null,
+          args: null,
+          kind: "ScalarField",
+          name: "highlighted",
+          storageKey: null,
+        },
+      ],
       storageKey: null,
     },
     {
@@ -168,6 +192,6 @@ const node: ReaderFragment = {
   abstractKey: null,
 };
 
-(node as any).hash = "047b82400b9084f270029295e36f0f4f";
+(node as any).hash = "97a669b9b9661609880b006c817d0533";
 
 export default node;

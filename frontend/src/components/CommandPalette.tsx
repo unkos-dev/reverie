@@ -28,10 +28,10 @@ import {
 import { SearchIcon } from "lucide-react";
 
 import type { CommandPalette_results$key } from "@/lib/relay/__generated__/CommandPalette_results.graphql";
-import type { CommandPalette_hit$key } from "@/lib/relay/__generated__/CommandPalette_hit.graphql";
-
-const SNIPPET_HL_START = "\u0002";
-const SNIPPET_HL_END = "\u0003";
+import type {
+  CommandPalette_hit$data,
+  CommandPalette_hit$key,
+} from "@/lib/relay/__generated__/CommandPalette_hit.graphql";
 
 const commandPaletteQuery = graphql`
   query CommandPaletteQuery($q: String!) @throwOnFieldError {
@@ -57,7 +57,10 @@ const resultsFragment = graphql`
 
 const hitFragment = graphql`
   fragment CommandPalette_hit on SearchHit @throwOnFieldError {
-    snippet
+    snippet {
+      text
+      highlighted
+    }
     manifestation {
       id
       work {
@@ -223,53 +226,38 @@ function SearchResult({ hit }: Readonly<{ hit: CommandPalette_hit$key }>): React
         <span className="block text-xs text-fg-muted">
           {work.authors.edges.map(({ node }) => node.name).join(", ")}
         </span>
-        {snippet && <HighlightedSnippet text={snippet} className="block text-xs text-fg-muted" />}
+        {snippet != null && snippet.length > 0 && (
+          <HighlightedSnippet parts={snippet} className="block text-xs text-fg-muted" />
+        )}
       </Text>
     </MenuItem>
   );
 }
 
 type HighlightedSnippetProps = {
-  text: string;
+  parts: NonNullable<CommandPalette_hit$data["snippet"]>;
   className?: string;
 };
 
-/**
- * Split a `ts_headline` snippet on the STX/ETX markers Postgres
- * emits and render the highlighted runs as `<mark>`. Plain text-node
- * rendering (no `dangerouslySetInnerHTML`) — safe against
- * HTML-bearing titles or descriptions.
- */
+/** Render the server's highlight runs as text nodes and marks. */
 export function HighlightedSnippet({
-  text,
+  parts,
   className,
 }: Readonly<HighlightedSnippetProps>): ReactElement {
-  const parts: { text: string; highlight: boolean; start: number }[] = [];
-  let cursor = 0;
-  let highlight = false;
-  while (cursor < text.length) {
-    const marker = highlight ? SNIPPET_HL_END : SNIPPET_HL_START;
-    const nextIndex = text.indexOf(marker, cursor);
-    if (nextIndex === -1) {
-      parts.push({ text: text.slice(cursor), highlight, start: cursor });
-      break;
-    }
-    parts.push({ text: text.slice(cursor, nextIndex), highlight, start: cursor });
-    cursor = nextIndex + marker.length;
-    highlight = !highlight;
+  const runs: ReactElement[] = [];
+  let start = 0;
+  for (const part of parts) {
+    const key = String(start);
+    start += part.text.length + 1;
+    runs.push(
+      part.highlighted ? (
+        <mark key={key} className="bg-accent-soft text-fg rounded-sm px-0.5">
+          {part.text}
+        </mark>
+      ) : (
+        <span key={key}>{part.text}</span>
+      ),
+    );
   }
-  return (
-    <span className={className}>
-      {parts.map((part) => {
-        const key = `${String(part.start)}-${part.highlight ? "h" : "p"}`;
-        return part.highlight ? (
-          <mark key={key} className="bg-accent-soft text-fg rounded-sm px-0.5">
-            {part.text}
-          </mark>
-        ) : (
-          <span key={key}>{part.text}</span>
-        );
-      })}
-    </span>
-  );
+  return <span className={className}>{runs}</span>;
 }

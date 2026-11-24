@@ -289,6 +289,7 @@ export default defineConfig({
           "react/use-memo": "error",
           "react/void-use-memo": "error",
           "relay/graphql-syntax": "error",
+          "relay/unused-fields": "error",
           "relay/no-future-added-value": "error",
           "relay/generated-typescript-types": "error",
           "relay/hook-required-argument": "error",

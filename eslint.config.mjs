@@ -14,6 +14,7 @@ export default [
     rules: {
       ...graphqlPlugin.configs["flat/schema-relay"].rules,
       "@graphql-eslint/relay-arguments": ["error", { includeBoth: false }],
+      "@graphql-eslint/input-name": "error",
       "@graphql-eslint/relay-edge-types": [
         "error",
         { shouldImplementNode: false, listTypeCanWrapOnlyEdgeType: false },

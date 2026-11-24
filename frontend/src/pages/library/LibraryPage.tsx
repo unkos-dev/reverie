@@ -16,7 +16,6 @@ import {
   type LibrarySource,
   type LibraryVisitOwner,
 } from "@/lib/relay/library-visit";
-import { readerLibrary } from "@/lib/relay/reader";
 import type { LibraryPageQuery as PageQuery } from "@/lib/relay/__generated__/LibraryPageQuery.graphql";
 import type { LibraryPage_labels$key } from "@/lib/relay/__generated__/LibraryPage_labels.graphql";
 import type { LibraryPageLabelsRefetchQuery as LabelsRefetch } from "@/lib/relay/__generated__/LibraryPageLabelsRefetchQuery.graphql";
@@ -25,15 +24,14 @@ import shelvesFragment, {
 } from "@/lib/relay/__generated__/ShelvesListPage_shelves.graphql";
 import type { ShelvesListPagePaginationQuery as ShelvesPagination } from "@/lib/relay/__generated__/ShelvesListPagePaginationQuery.graphql";
 import type {
-  readerLibrary$data,
-  readerLibrary$key,
-} from "@/lib/relay/__generated__/readerLibrary.graphql";
-import type { readerLibraryPaginationQuery as BooksPagination } from "@/lib/relay/__generated__/readerLibraryPaginationQuery.graphql";
+  LibraryPage_rows$data,
+  LibraryPage_rows$key,
+} from "@/lib/relay/__generated__/LibraryPage_rows.graphql";
+import type { LibraryPageRowsPaginationQuery as BooksPagination } from "@/lib/relay/__generated__/LibraryPageRowsPaginationQuery.graphql";
 import type { BookCard_book$key } from "@/lib/relay/__generated__/BookCard_book.graphql";
 import { commitMutation } from "relay-runtime";
 import { useAuthMe } from "@/hooks/useAuthMe";
-import { mutationsAddShelfItemMutation } from "@/lib/relay/mutations";
-import type { mutationsAddShelfItemMutation as AddShelfItem } from "@/lib/relay/__generated__/mutationsAddShelfItemMutation.graphql";
+import type { LibraryPageAddShelfItemMutation as AddShelfItem } from "@/lib/relay/__generated__/LibraryPageAddShelfItemMutation.graphql";
 import type { LibraryPageRefreshMetadataMutation as RefreshMetadata } from "@/lib/relay/__generated__/LibraryPageRefreshMetadataMutation.graphql";
 import { Circle, CircleCheck, Loader2, Star } from "lucide-react";
 import {
@@ -99,6 +97,34 @@ const LibraryTable = lazy(() =>
   import("./table/LibraryTable").then((m) => ({ default: m.LibraryTable })),
 );
 
+const rowsFragment = graphql`
+  fragment LibraryPage_rows on Query
+  @argumentDefinitions(
+    count: { type: "Int", defaultValue: 50 }
+    cursor: { type: "String" }
+    sourceKey: { type: "String!" }
+    filter: { type: "BooksFilter" }
+    sort: { type: "[SortLevel!]" }
+  )
+  @refetchable(queryName: "LibraryPageRowsPaginationQuery")
+  @throwOnFieldError {
+    books(first: $count, after: $cursor, filter: $filter, sort: $sort)
+      @connection(key: "LibraryPage_rows_books", dynamicKey_UNSTABLE: $sourceKey) {
+      edges {
+        node {
+          id
+          metadata {
+            title
+          }
+          ...LibraryTable_rows
+          ...BookCard_book
+          ...useCellEdit_batchRows
+        }
+      }
+    }
+  }
+`;
+
 const LibraryPageQuery = graphql`
   query LibraryPageQuery(
     $authorIds: [ID!]!
@@ -120,10 +146,24 @@ const LibraryPageQuery = graphql`
       @arguments(authorIds: $authorIds, seriesIds: $seriesIds, shelfIds: $shelfIds)
     ...ShelvesListPage_shelves
     ...TypeaheadMultiSelect_suggestions
-    ...readerLibrary
+    ...LibraryPage_rows
       @alias(as: "rows")
       @include(if: $eligible)
       @arguments(count: $count, sourceKey: $sourceKey, filter: $filter, sort: $sort)
+  }
+`;
+
+const addShelfItemMutation = graphql`
+  mutation LibraryPageAddShelfItemMutation($input: AddShelfItemInput!) {
+    addShelfItem(input: $input) {
+      __typename
+      ... on ShelfItemAdded {
+        __typename
+      }
+      ... on NotFound {
+        message
+      }
+    }
   }
 `;
 
@@ -161,7 +201,7 @@ const labelsFragment = graphql`
     shelfLabels(ids: $shelfIds) {
       id
       name
-      itemCount
+      ...ShelfHeader_shelves
     }
   }
 `;
@@ -177,7 +217,7 @@ function saveCoverWidth(width: number): void {
   }
 }
 
-type LibraryRow = readerLibrary$data["books"]["edges"][number]["node"];
+type LibraryRow = LibraryPage_rows$data["books"]["edges"][number]["node"];
 
 function useLibraryBooks(
   visit: LibraryVisitOwner,
@@ -204,8 +244,8 @@ function useLibraryBooks(
   const query = usePreloadedQuery<PageQuery>(LibraryPageQuery, (state.source ?? initial).reference);
   const { data, hasNext, isLoadingNext, loadNext } = usePaginationFragment<
     BooksPagination,
-    readerLibrary$key
-  >(readerLibrary, state.source !== undefined ? (query.rows ?? null) : null);
+    LibraryPage_rows$key
+  >(rowsFragment, state.source !== undefined ? (query.rows ?? null) : null);
   const [pageError, setPageError] = useState<{ source: LibrarySource; error: Error }>();
   const moreError = pageError?.source === state.source && pageError !== undefined;
   const rejected =
@@ -256,8 +296,8 @@ function LibraryCandidate({
   const query = usePreloadedQuery<PageQuery>(LibraryPageQuery, source.reference);
   const { data, hasNext, isLoadingNext, loadNext } = usePaginationFragment<
     BooksPagination,
-    readerLibrary$key
-  >(readerLibrary, query.rows ?? null);
+    LibraryPage_rows$key
+  >(rowsFragment, query.rows ?? null);
   useEffect(() => {
     if (data == null || isLoadingNext) return;
     const ids = data.books.edges.map((edge) => edge.node.id);
@@ -604,11 +644,8 @@ function LibraryContent({
   function sendBatchShelf(id: string, shelfId: string): Promise<BatchSendResult> {
     return new Promise((resolve, reject) => {
       commitMutation<AddShelfItem>(environment, {
-        mutation: mutationsAddShelfItemMutation,
-        variables: {
-          input: { shelfId, manifestationId: id },
-          connections: [],
-        },
+        mutation: addShelfItemMutation,
+        variables: { input: { shelfId, manifestationId: id } },
         updater: (store, data) => {
           if (data?.addShelfItem.__typename === "ShelfItemAdded")
             store.get(shelfId)?.invalidateRecord();

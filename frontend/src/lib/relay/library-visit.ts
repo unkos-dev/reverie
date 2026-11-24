@@ -12,6 +12,7 @@ import { GraphQLExecutionError } from "@/api/graphql";
 import {
   parseSortParam,
   type ListBooksParams,
+  type ReadingStatus,
   type SortField,
   type SortLevelParam,
 } from "@/api/books";
@@ -26,6 +27,7 @@ import {
 } from "@/routes/library-params";
 import LibraryPageDocument, {
   type LibraryPageQuery as LibraryPageQuery,
+  type ReadingStatusFilter,
   type SortField as GraphQLSortField,
 } from "./__generated__/LibraryPageQuery.graphql";
 
@@ -35,6 +37,15 @@ const SORT_COLUMNS = {
   created_at: "CREATED_AT",
   pages: "PAGES",
 } as const satisfies Record<SortField, GraphQLSortField>;
+
+const STATUS_FILTERS = {
+  want_to_read: "WANT_TO_READ",
+  reading: "READING",
+  on_hold: "ON_HOLD",
+  finished: "FINISHED",
+  abandoned: "ABANDONED",
+  unread: "UNREAD",
+} as const satisfies Record<ReadingStatus | "unread", ReadingStatusFilter>;
 
 function libraryVariables(
   params: ListBooksParams,
@@ -57,8 +68,8 @@ function libraryVariables(
     mood: params.mood,
     moodAny: params.mood_any,
     moodNone: params.mood_none,
-    statusAny: params.status_any,
-    statusNone: params.status_none,
+    statusAny: params.status_any?.map((status) => STATUS_FILTERS[status]),
+    statusNone: params.status_none?.map((status) => STATUS_FILTERS[status]),
     titleContains: params.title_contains,
     titleEq: params.title_eq,
     titleNe: params.title_ne,
@@ -468,7 +479,7 @@ export class LibraryVisitOwner {
       const matchesRequest = dependsOn(generation, fields, shelfId);
       if (!matchesRequest && reloadId === undefined && siblingEditions === undefined) continue;
       const { filter, sort } = generation.request;
-      const id = ConnectionHandler.getConnectionID(ROOT_ID, "readerLibrary_books", {
+      const id = ConnectionHandler.getConnectionID(ROOT_ID, "LibraryPage_rows_books", {
         __dynamicKey: generation.key,
         filter,
         sort,

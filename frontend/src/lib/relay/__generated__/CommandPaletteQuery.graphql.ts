@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<3c6ff213152a77a7d8392faf87882a13>>
- * @relayHash fdba39453e1d9e19e9746c9a65defbe7
+ * @generated SignedSource<<af8b6dceb6e84ad9002fcac1d772bb67>>
+ * @relayHash f299b65d86f83c22f984588a33994fb0
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 15a6623a11a326279a73b4f9698074b0c65fa80891b6ad35beb48f60461413e8
+// @relayRequestID 4b83df6ee97a34ce2a1ac54e2a7391db65bda4d9bb1997ecf0f92c7c855e5461
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -183,8 +183,26 @@ const node: ConcreteRequest = (function () {
             {
               alias: null,
               args: null,
-              kind: "ScalarField",
+              concreteType: "SearchSnippetPart",
+              kind: "LinkedField",
               name: "snippet",
+              plural: true,
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "text",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "highlighted",
+                  storageKey: null,
+                },
+              ],
               storageKey: null,
             },
           ],
@@ -193,7 +211,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "15a6623a11a326279a73b4f9698074b0c65fa80891b6ad35beb48f60461413e8",
+      id: "4b83df6ee97a34ce2a1ac54e2a7391db65bda4d9bb1997ecf0f92c7c855e5461",
       metadata: {},
       name: "CommandPaletteQuery",
       operationKind: "query",

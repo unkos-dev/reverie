@@ -1,9 +1,3 @@
-/**
- * Barrel for the `src/api/` module. Re-exports the public surface so
- * consumers can write `import { listBooks } from "@/api"` without
- * naming the submodule. Internal helpers (request building, CSRF
- * cache mutation) stay private to their own files.
- */
 export {
   ApiError,
   IF_MATCH_MISMATCH_SLUG,
@@ -14,11 +8,6 @@ export {
 export { apiFetch } from "./fetch";
 export { getCsrfToken, refreshCsrfToken } from "./csrf";
 export {
-  listBooks,
-  getBook,
-  getWork,
-  getBookMetadata,
-  updateBookMetadata,
   UpdateBookMetadataFieldsSchema,
   PageCountInputSchema,
   parseSortParam,
@@ -28,18 +17,6 @@ export {
   ReadingStatusSchema,
 } from "./books";
 export type {
-  BookListItem,
-  BookListResponse,
-  BookDetail,
-  BookMetadata,
-  MetadataSnapshot,
-  WorkDetail,
-  WorkManifestation,
-  SeriesRef,
-  MetadataVersionSummary,
-  MetadataVersionRow,
-  IngestionStatus,
-  EnrichmentStatus,
   ReadingStatus,
   SortField,
   SortLevelParam,
@@ -50,7 +27,6 @@ export type {
 export type { SearchHit, SearchHitKind, SearchResponse } from "./search";
 export { MAX_RESOLVE_IDS } from "./suggest";
 export type { Suggestion, SuggestKind } from "./suggest";
-export { acceptVersion, rejectVersion, revertField } from "./metadata";
 export type { SeriesDetail, SeriesWork, SeriesWorkManifestation } from "./series";
 export { bookPath } from "./graphql";
 export {

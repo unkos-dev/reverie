@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<697f4b5ab8a4f1fd82e97114398a655f>>
- * @relayHash 6834b7c090df0d9efb9dc83e3c45cf94
+ * @generated SignedSource<<8c7b44eb3900e68d32963a040b29d275>>
+ * @relayHash f7b69e7c4d59a191184f259117d0f6bb
  * @lightSyntaxTransform
  */
 
@@ -8,11 +8,19 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 3d9b03e707be2b74b72fc05e311300f61faa283f66422dcf37975c1f5f6fec1d
+// @relayRequestID ac3fd6d862ee29968cf84f6cbf920b50b87caf6899cc12b15d493f4d7f9886d1
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
 export type Direction = "ASC" | "DESC" | "%future added value";
+export type ReadingStatusFilter =
+  | "ABANDONED"
+  | "FINISHED"
+  | "ON_HOLD"
+  | "READING"
+  | "UNREAD"
+  | "WANT_TO_READ"
+  | "%future added value";
 export type SortField = "AUTHOR" | "CREATED_AT" | "PAGES" | "TITLE" | "%future added value";
 export type BooksFilter = {
   author?: ReadonlyArray<string>;
@@ -40,8 +48,8 @@ export type BooksFilter = {
   seriesAny?: ReadonlyArray<string>;
   shelf?: string | null | undefined;
   shelfAny?: ReadonlyArray<string>;
-  statusAny?: ReadonlyArray<string>;
-  statusNone?: ReadonlyArray<string>;
+  statusAny?: ReadonlyArray<ReadingStatusFilter>;
+  statusNone?: ReadonlyArray<ReadingStatusFilter>;
   subtitleContains?: string | null | undefined;
   subtitleEmpty?: boolean | null | undefined;
   tag?: ReadonlyArray<string>;
@@ -68,7 +76,7 @@ export type LibraryPageQuery$variables = {
 export type LibraryPageQuery$data = {
   readonly rows?:
     | {
-        readonly " $fragmentSpreads": FragmentRefs<"readerLibrary">;
+        readonly " $fragmentSpreads": FragmentRefs<"LibraryPage_rows">;
       }
     | null
     | undefined;
@@ -385,7 +393,7 @@ const node: ConcreteRequest = (function () {
                       },
                     ],
                     kind: "FragmentSpread",
-                    name: "readerLibrary",
+                    name: "LibraryPage_rows",
                   },
                 ],
                 type: "Query",
@@ -765,7 +773,7 @@ const node: ConcreteRequest = (function () {
               args: v22 /*:: as any*/,
               filters: ["filter", "sort"],
               handle: "connection",
-              key: "readerLibrary_books",
+              key: "LibraryPage_rows_books",
               kind: "LinkedHandle",
               name: "books",
               dynamicKey: {
@@ -779,7 +787,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "3d9b03e707be2b74b72fc05e311300f61faa283f66422dcf37975c1f5f6fec1d",
+      id: "ac3fd6d862ee29968cf84f6cbf920b50b87caf6899cc12b15d493f4d7f9886d1",
       metadata: {},
       name: "LibraryPageQuery",
       operationKind: "query",
@@ -788,6 +796,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "79ec067bceb6ec385d87b6d81c60de6b";
+(node as any).hash = "5898fc7596bb57cab0c58be6da2a1a7b";
 
 export default node;

@@ -5,7 +5,6 @@ import { RelayEnvironmentProvider, loadQuery } from "react-relay";
 import { z } from "zod";
 import trustedDocuments from "../../../backend/graphql-documents.json";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
-import { encodeGraphQLId } from "@/api/graphql";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
 import formQuery, {
   type EditMetadataDialogQuery as FormQuery,
@@ -15,7 +14,7 @@ import { EditMetadataDialog, type EditableField } from "@/pages/book/EditMetadat
 const ID = "11111111-1111-4111-8111-111111111111";
 const WORK = "22222222-2222-4222-8222-222222222222";
 const FIELDS: readonly EditableField[] = [{ name: "subtitle", label: "Subtitle" }];
-const GRAPH_ID = encodeGraphQLId("Manifestation", ID);
+const GRAPH_ID = `manifestation-${ID}`;
 const documents: Record<string, string> = trustedDocuments;
 const requestSchema = z.object({ id: z.string(), variables: z.record(z.string(), z.unknown()) });
 const saveSchema = z.object({
@@ -30,7 +29,7 @@ const revisionIds = new Map<string, string>();
 function revisionId(etag: string): string {
   const known = revisionIds.get(etag);
   if (known !== undefined) return known;
-  const created = encodeGraphQLId("MetadataRevision", crypto.randomUUID());
+  const created = `metadatarevision-${crypto.randomUUID()}`;
   revisionIds.set(etag, created);
   return created;
 }
@@ -71,7 +70,7 @@ function saved(
         publisher: metadata.publisher,
         publicationDate: metadata.publicationDate,
         work: {
-          id: encodeGraphQLId("Work", WORK),
+          id: `work-${WORK}`,
           title: metadata.title,
           description: metadata.description,
           language: metadata.language,
@@ -95,7 +94,7 @@ function intercept(handlers: {
         response({
           manifestation: {
             id: GRAPH_ID,
-            work: { id: encodeGraphQLId("Work", WORK), __typename: "Work" },
+            work: { id: `work-${WORK}`, __typename: "Work" },
             metadata: handlers.read(),
           },
         }),

@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<2ef16cf9180a061941274ef7880f3615>>
+ * @generated SignedSource<<79ec9e539fce50f1803ce4fa1e813c22>>
  * @lightSyntaxTransform
  */
 
@@ -9,22 +9,25 @@
 
 import { ReaderFragment } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
-export type mutationsTitleSnapshot$data = {
-  readonly etag: string;
+export type ShelfHeader_shelves$data = ReadonlyArray<{
   readonly id: string;
-  readonly title: string;
-  readonly " $fragmentType": "mutationsTitleSnapshot";
-};
-export type mutationsTitleSnapshot$key = {
-  readonly " $data"?: mutationsTitleSnapshot$data;
-  readonly " $fragmentSpreads": FragmentRefs<"mutationsTitleSnapshot">;
-};
+  readonly itemCount: number;
+  readonly name: string;
+  readonly " $fragmentType": "ShelfHeader_shelves";
+}>;
+export type ShelfHeader_shelves$key = ReadonlyArray<{
+  readonly " $data"?: ShelfHeader_shelves$data;
+  readonly " $fragmentSpreads": FragmentRefs<"ShelfHeader_shelves">;
+}>;
 
 const node: ReaderFragment = {
   argumentDefinitions: [],
   kind: "Fragment",
-  metadata: null,
-  name: "mutationsTitleSnapshot",
+  metadata: {
+    plural: true,
+    throwOnFieldError: true,
+  },
+  name: "ShelfHeader_shelves",
   selections: [
     {
       alias: null,
@@ -37,21 +40,21 @@ const node: ReaderFragment = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "etag",
+      name: "name",
       storageKey: null,
     },
     {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "title",
+      name: "itemCount",
       storageKey: null,
     },
   ],
-  type: "MetadataRevision",
+  type: "Shelf",
   abstractKey: null,
 };
 
-(node as any).hash = "8c3b5e8ff24a674e33881242bf8b58ff";
+(node as any).hash = "491c7522dc2f27ea3cd463b35bd57019";
 
 export default node;

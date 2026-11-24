@@ -2207,6 +2207,7 @@ mod tests {
             assert!(response["data"]["books"].is_null());
         }
         for variables in [
+            json!({"first": 50, "filter": {"createdAtGte": "2026-01-01T00:00:00"}}),
             json!({"first": 50, "sort": [{"column": "Title", "direction": "ASC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "TITLE", "direction": "DESC"}]}),
             json!({"first": 50, "sort": [{"column": "TITLE", "direction": "ASC"}, {"column": "AUTHOR", "direction": "ASC"}, {"column": "PAGES", "direction": "ASC"}, {"column": "CREATED_AT", "direction": "ASC"}]}),

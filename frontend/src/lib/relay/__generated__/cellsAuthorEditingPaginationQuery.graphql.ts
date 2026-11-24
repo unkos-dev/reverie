@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<92c461aeb1802e3cccd35895199bf91a>>
- * @relayHash 7b568be076f235814e8776d45d863a69
+ * @generated SignedSource<<ae1fa320e2c2efcf69c08cbec4a7c0f4>>
+ * @relayHash 2fbf7830e0362e17e26da4b27d15a089
  * @lightSyntaxTransform
  */
 
@@ -8,26 +8,26 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 2ef6d88ac5bd8ba461dc0eba72db86f5ddf0ac077d515dfc4610b61d5794279e
+// @relayRequestID 8d2eb00d611611a9861302cd10579f05410099670bf07f016187012ccc571bee
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
-export type readerAuthorEditingPaginationQuery$variables = {
+export type cellsAuthorEditingPaginationQuery$variables = {
   count?: number | null | undefined;
   cursor?: string | null | undefined;
   id: string;
 };
-export type readerAuthorEditingPaginationQuery$data = {
+export type cellsAuthorEditingPaginationQuery$data = {
   readonly fetch__Manifestation:
     | {
-        readonly " $fragmentSpreads": FragmentRefs<"readerAuthorEditing">;
+        readonly " $fragmentSpreads": FragmentRefs<"cells_authorEditing">;
       }
     | null
     | undefined;
 };
-export type readerAuthorEditingPaginationQuery = {
-  response: readerAuthorEditingPaginationQuery$data;
-  variables: readerAuthorEditingPaginationQuery$variables;
+export type cellsAuthorEditingPaginationQuery = {
+  response: cellsAuthorEditingPaginationQuery$data;
+  variables: cellsAuthorEditingPaginationQuery$variables;
 };
 
 const node: ConcreteRequest = (function () {
@@ -79,7 +79,7 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
       metadata: null,
-      name: "readerAuthorEditingPaginationQuery",
+      name: "cellsAuthorEditingPaginationQuery",
       selections: [
         {
           alias: null,
@@ -103,7 +103,7 @@ const node: ConcreteRequest = (function () {
                 },
               ],
               kind: "FragmentSpread",
-              name: "readerAuthorEditing",
+              name: "cells_authorEditing",
             },
           ],
           storageKey: null,
@@ -116,7 +116,7 @@ const node: ConcreteRequest = (function () {
     operation: {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
-      name: "readerAuthorEditingPaginationQuery",
+      name: "cellsAuthorEditingPaginationQuery",
       selections: [
         {
           alias: null,
@@ -226,7 +226,7 @@ const node: ConcreteRequest = (function () {
                   args: v3 /*:: as any*/,
                   filters: null,
                   handle: "connection",
-                  key: "readerAuthorEditing_authors",
+                  key: "cells_authorEditing_authors",
                   kind: "LinkedHandle",
                   name: "authors",
                 },
@@ -240,15 +240,15 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "2ef6d88ac5bd8ba461dc0eba72db86f5ddf0ac077d515dfc4610b61d5794279e",
+      id: "8d2eb00d611611a9861302cd10579f05410099670bf07f016187012ccc571bee",
       metadata: {},
-      name: "readerAuthorEditingPaginationQuery",
+      name: "cellsAuthorEditingPaginationQuery",
       operationKind: "query",
       text: null,
     },
   };
 })();
 
-(node as any).hash = "386d5ec2b8979374088cec8dfde461ee";
+(node as any).hash = "02945ce6e526a82df0970e5510599586";
 
 export default node;

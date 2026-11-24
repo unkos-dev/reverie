@@ -153,10 +153,9 @@ a shelf.
 handler uses; their rejection behaviour is the API error contract's concern, referenced here only as the extractors in
 use.
 
-Browser readers use the generated shelf operations in `reader.ts` and mutations in `mutations.ts`, committed through
-`useMutation` and `commitMutation`. Relay owns normalised records and connection membership. Mutation results publish
-changed names and counts. Library batch add sends no connection IDs and invalidates the affected shelf record after
-success. A books connection filtered by that shelf is also invalidated.
+`ShelvesListPage.tsx` and `ShelfDetailPage.tsx` define their own operations and fragments. Relay owns normalised records
+and connection membership. Shelf list mutation results publish changed names and counts. The Library batch add selects
+the outcome and invalidates the affected shelf record and any books visit filtered by that shelf after success.
 
 Graph shelf roots and request-local loaders call the owner-scoped reads in `reader.rs`. `Shelf` has a TypeID domain ID
 and exposes scalar shelf metadata plus a bounded `items(first:, after:)` connection. GraphQL shelves and items require

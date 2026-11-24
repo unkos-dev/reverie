@@ -1,3 +1,5 @@
+import { graphql, useFragment } from "react-relay";
+import type { ShelfHeader_shelves$key } from "@/lib/relay/__generated__/ShelfHeader_shelves.graphql";
 import type { ReactElement } from "react";
 
 type ReadingCounts = {
@@ -64,8 +66,16 @@ export function NeedsAttentionCounts({
   );
 }
 
+const shelvesFragment = graphql`
+  fragment ShelfHeader_shelves on Shelf @relay(plural: true) @throwOnFieldError {
+    id
+    name
+    itemCount
+  }
+`;
+
 type Props = {
-  shelves: readonly { id: string; name: string; itemCount: number }[];
+  shelves: ShelfHeader_shelves$key;
   selected: readonly string[];
   readingCounts?: ReadingCounts;
   attentionCounts?: AttentionCounts;
@@ -77,7 +87,8 @@ export function ShelfHeader({
   readingCounts,
   attentionCounts,
 }: Readonly<Props>): ReactElement {
-  const shelf = selected.length === 1 ? shelves.find((item) => item.id === selected[0]) : undefined;
+  const labels = useFragment<ShelfHeader_shelves$key>(shelvesFragment, shelves);
+  const shelf = selected.length === 1 ? labels.find((item) => item.id === selected[0]) : undefined;
   const name =
     selected.length > 1 ? `${String(selected.length)} shelves` : (shelf?.name ?? "Library");
   return (

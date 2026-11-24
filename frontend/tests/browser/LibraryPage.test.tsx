@@ -14,8 +14,7 @@ import { RouterProvider, createMemoryRouter, useLocation } from "react-router";
 import { StrictMode, useSyncExternalStore, type ReactElement } from "react";
 import { RelayEnvironmentProvider } from "react-relay";
 import { z } from "zod";
-import { parseSortParam, serializeSortParam, type BookListItem, type Preferences } from "@/api";
-import { encodeGraphQLId } from "@/api/graphql";
+import { parseSortParam, serializeSortParam, type Preferences } from "@/api";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
 import { queryClient as appQueryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
@@ -31,7 +30,7 @@ function revisionId(bookId: string, etag: string): string {
   const key = `${bookId} ${etag}`;
   const known = revisionIds.get(key);
   if (known !== undefined) return known;
-  const created = encodeGraphQLId("MetadataRevision", crypto.randomUUID());
+  const created = `metadatarevision-${crypto.randomUUID()}`;
   revisionIds.set(key, created);
   return created;
 }
@@ -64,7 +63,21 @@ afterEach(async () => {
   history.replaceState(originalState ?? null, "", originalURL);
 });
 
-function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
+type BookFixture = {
+  metadata_etag: string;
+  reading_etag: string;
+  id: string;
+  work_id: string;
+  title: string;
+  subtitle: string | null;
+  authors: string[];
+  isbn_13: string | null;
+  pages: number | null;
+  cover_url: string;
+  created_at: string;
+};
+
+function bookFixture(overrides: Partial<BookFixture> = {}): BookFixture {
   return {
     metadata_etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
     reading_etag: '"bbbbbbbbbbbbbbbbbbbbbb"',
@@ -73,19 +86,9 @@ function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     title: "The Brothers Karamazov",
     subtitle: null,
     authors: ["Fyodor Dostoevsky"],
-    contributors: [],
-    series: null,
     isbn_13: "9780374528379",
     pages: null,
-    tags: [],
-    genres: [],
-    moods: [],
-    content_rating: null,
     cover_url: "/brand/raster/favicon-48.png",
-    ingestion_status: "complete",
-    validation_status: "clean",
-    enrichment_status: "complete",
-    reading_state: null,
     created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
@@ -117,7 +120,7 @@ function response(data: unknown): Response {
 function refused(root: string, typename: string, message: string, extra: object = {}): Response {
   return response({ [root]: { __typename: typename, message, ...extra } });
 }
-function savedCells(book: BookListItem): Response {
+function savedCells(book: BookFixture): Response {
   return response({
     updateMetadata: {
       __typename: "MetadataSaved",
@@ -126,7 +129,7 @@ function savedCells(book: BookListItem): Response {
   });
 }
 const pageInfo = { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null };
-function metadata(book: BookListItem) {
+function metadata(book: BookFixture) {
   return {
     __typename: "MetadataRevision",
     id: revisionId(book.id, book.metadata_etag),
@@ -137,24 +140,24 @@ function metadata(book: BookListItem) {
     pages: book.pages,
   };
 }
-function reading(book: BookListItem) {
+function reading(book: BookFixture) {
   return {
     __typename: "ReadingRevision",
     etag: book.reading_etag,
     id: `reading_rev_${revisionId(book.id, book.reading_etag)}`,
-    status: book.reading_state?.status?.toUpperCase() ?? null,
-    rating: book.reading_state?.rating ?? null,
-    progressPct: book.reading_state?.progress_pct ?? null,
-    startedAt: book.reading_state?.started_at ?? null,
-    finishedAt: book.reading_state?.finished_at ?? null,
+    status: null,
+    rating: null,
+    progressPct: null,
+    startedAt: null,
+    finishedAt: null,
     notes: null,
     lastReadAt: null,
   };
 }
-function graphBook(book: BookListItem) {
+function graphBook(book: BookFixture) {
   return {
     __typename: "Manifestation",
-    id: encodeGraphQLId("Manifestation", book.id),
+    id: `manifestation-${book.id}`,
     coverUrl: book.cover_url,
     isbn10: null,
     isbn13: book.isbn_13,
@@ -163,7 +166,7 @@ function graphBook(book: BookListItem) {
     createdAt: book.created_at,
     work: {
       __typename: "Work",
-      id: encodeGraphQLId("Work", book.work_id),
+      id: `work-${book.work_id}`,
       title: book.title,
       subtitle: book.subtitle,
       selectedSeries: null,
@@ -172,10 +175,7 @@ function graphBook(book: BookListItem) {
           cursor: String(index),
           node: {
             __typename: "Author",
-            id: encodeGraphQLId(
-              "Author",
-              `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-            ),
+            id: `author-${String(index)}`,
             name,
           },
         })),
@@ -186,7 +186,7 @@ function graphBook(book: BookListItem) {
     readingState: reading(book),
   };
 }
-const VIEWER_ID = encodeGraphQLId("User", "77777777-7777-4777-8777-777777777777");
+const VIEWER_ID = "user-77777777-7777-4777-8777-777777777777";
 const ME = {
   id: "77777777-7777-4777-8777-777777777777",
   display_name: "Reader",
@@ -265,7 +265,7 @@ function applyPreferences(preferences: Preferences, variables: unknown): Prefere
 }
 const ids = z.array(z.string()).catch([]);
 type Fixture = {
-  books: BookListItem[];
+  books: BookFixture[];
   preferences: Preferences;
   calls: { name: string; variables: Record<string, unknown> }[];
   environment: ReturnType<typeof relayEnvironment>;
@@ -290,7 +290,7 @@ async function traverseToCurrentEntry(): Promise<void> {
   await arrived;
 }
 type RenderOptions = {
-  items?: BookListItem[];
+  items?: BookFixture[];
   visit?: { filters?: Partial<FilterState>; view?: LibraryVisit["view"] };
   preferences?: Preferences;
   url?: string;
@@ -348,7 +348,7 @@ async function renderLibrary({
       const variables = listVariables.parse(request.variables);
       const q = z.string().optional().parse(variables.filter?.q) ?? "";
       const [level = { column: "CREATED_AT", direction: "DESC" }] = variables.sort ?? [];
-      const key = (book: BookListItem): string | number => {
+      const key = (book: BookFixture): string | number => {
         if (level.column === "PAGES") return book.pages ?? -1;
         return level.column === "TITLE" ? book.title : book.created_at;
       };
@@ -389,7 +389,7 @@ async function renderLibrary({
     }
     if (name === "LibraryPageLabelsRefetchQuery")
       return Promise.resolve(response(labels(variables)));
-    if (name === "mutationsUpdateLibraryPreferencesMutation") {
+    if (name === "useLibraryPreferencesMutation") {
       fixture.preferences = applyPreferences(fixture.preferences, variables);
       return Promise.resolve(
         response({
@@ -467,7 +467,7 @@ async function renderLibrary({
 }
 function preferenceWrites(fixture: Fixture) {
   return fixture.calls
-    .filter((call) => call.name === "mutationsUpdateLibraryPreferencesMutation")
+    .filter((call) => call.name === "useLibraryPreferencesMutation")
     .map((call) => call.variables);
 }
 function findLibraryTable() {
@@ -501,10 +501,10 @@ describe("LibraryPage", () => {
   test("clearing all filters preserves the visit view and the stored sort", async () => {
     // REV-REQ-0002: Clear removes every condition and preserves view and sort.
     const series = [
-      encodeGraphQLId("Series", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
-      encodeGraphQLId("Series", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+      "series-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "series-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     ];
-    const shelf = [encodeGraphQLId("Shelf", "cccccccc-cccc-4ccc-8ccc-cccccccccccc")];
+    const shelf = ["shelf-cccccccc-cccc-4ccc-8ccc-cccccccccccc"];
     await renderLibrary({
       items: [],
 
@@ -529,9 +529,9 @@ describe("LibraryPage", () => {
     test("a chip's remove control drops exactly that filter param", async () => {
       // REV-REQ-0002: a condition edit and section Clear preserve sibling sections, and the books
       // request filters by exactly the conditions that restrict results.
-      const first = encodeGraphQLId("Series", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
-      const second = encodeGraphQLId("Series", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
-      const shelfId = encodeGraphQLId("Shelf", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+      const first = "series-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      const second = "series-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+      const shelfId = "shelf-cccccccc-cccc-4ccc-8ccc-cccccccccccc";
       const shelf = [shelfId];
       const fixture = await renderLibrary({
         items: [bookFixture()],
@@ -562,7 +562,7 @@ describe("LibraryPage", () => {
         expect(request?.variables.filter).toEqual({
           seriesAny: [second],
           shelfAny: [shelfId],
-          statusAny: ["unread"],
+          statusAny: ["UNREAD"],
         });
       });
       await user.click(page.getByRole("button", { name: /^Filters/ }));
@@ -645,9 +645,7 @@ describe("LibraryPage", () => {
         await vi.waitFor(() => {
           const shown = [...document.querySelectorAll<HTMLElement>("[data-book-id]")].map(
             (row) =>
-              SORTED_BOOKS.find(
-                (book) => encodeGraphQLId("Manifestation", book.id) === row.dataset.bookId,
-              )?.title,
+              SORTED_BOOKS.find((book) => `manifestation-${book.id}` === row.dataset.bookId)?.title,
           );
           expect(shown).toEqual(order);
         });
@@ -705,9 +703,7 @@ describe("LibraryPage", () => {
         expect(request?.variables.sort ?? null).toBeNull();
         const shown = [...document.querySelectorAll<HTMLElement>("[data-book-id]")].map(
           (row) =>
-            SORTED_BOOKS.find(
-              (book) => encodeGraphQLId("Manifestation", book.id) === row.dataset.bookId,
-            )?.title,
+            SORTED_BOOKS.find((book) => `manifestation-${book.id}` === row.dataset.bookId)?.title,
         );
         expect(shown).toEqual(["Short", "Middle", "Long"]);
       });
@@ -748,9 +744,7 @@ test("a work-level save refreshes sibling editing baselines", async () => {
   await expect
     .element(page.getByText("Updating results…", { exact: true }))
     .not.toBeInTheDocument();
-  const siblingRow = document.querySelector(
-    `[data-book-id="${encodeGraphQLId("Manifestation", sibling.id)}"]`,
-  );
+  const siblingRow = document.querySelector(`[data-book-id="manifestation-${sibling.id}"]`);
   if (siblingRow === null) throw new Error("Expected sibling row.");
   const siblingTitle = page
     .elementLocator(siblingRow)
@@ -767,7 +761,7 @@ test("a work-level save refreshes sibling editing baselines", async () => {
     expect(writes).toHaveLength(2);
   });
   expect(writes[1]).toMatchObject({
-    id: encodeGraphQLId("Manifestation", sibling.id),
+    id: `manifestation-${sibling.id}`,
     baseline: savedSibling.metadata_etag,
   });
 });

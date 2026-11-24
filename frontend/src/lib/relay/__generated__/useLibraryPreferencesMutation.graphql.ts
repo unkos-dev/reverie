@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<9fa5ff0f2284f727c28b7179bd2a81ec>>
- * @relayHash 2052176c96d194cd9c4257e7c9877b99
+ * @generated SignedSource<<ae5e7f571d8d757e5f1fa8de193719bc>>
+ * @relayHash 82ea05d6b3ed79952e0bb72f5141a4b3
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 5131fcda3de8510b6581173598ff7b50a740a1b3f0a3869da63c512ca13c9c41
+// @relayRequestID e1175989e8c4021b1c1c2109c1ffbd75bc6ea4aab77aaaaabf3a0aaa35ff9924
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -41,10 +41,10 @@ export type LibraryColumnVisibility = {
   column: LibraryColumn;
   hidden: boolean;
 };
-export type mutationsUpdateLibraryPreferencesMutation$variables = {
+export type useLibraryPreferencesMutation$variables = {
   input: UpdateLibraryPreferencesInput;
 };
-export type mutationsUpdateLibraryPreferencesMutation$data = {
+export type useLibraryPreferencesMutation$data = {
   readonly updateLibraryPreferences:
     | {
         readonly __typename: "LibraryPreferencesInvalid";
@@ -65,9 +65,9 @@ export type mutationsUpdateLibraryPreferencesMutation$data = {
         readonly __typename: "%other";
       };
 };
-export type mutationsUpdateLibraryPreferencesMutation = {
-  response: mutationsUpdateLibraryPreferencesMutation$data;
-  variables: mutationsUpdateLibraryPreferencesMutation$variables;
+export type useLibraryPreferencesMutation = {
+  response: useLibraryPreferencesMutation$data;
+  variables: useLibraryPreferencesMutation$variables;
 };
 
 const node: ConcreteRequest = (function () {
@@ -164,7 +164,7 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
       metadata: null,
-      name: "mutationsUpdateLibraryPreferencesMutation",
+      name: "useLibraryPreferencesMutation",
       selections: [
         {
           alias: null,
@@ -222,7 +222,7 @@ const node: ConcreteRequest = (function () {
     operation: {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
-      name: "mutationsUpdateLibraryPreferencesMutation",
+      name: "useLibraryPreferencesMutation",
       selections: [
         {
           alias: null,
@@ -290,15 +290,15 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "5131fcda3de8510b6581173598ff7b50a740a1b3f0a3869da63c512ca13c9c41",
+      id: "e1175989e8c4021b1c1c2109c1ffbd75bc6ea4aab77aaaaabf3a0aaa35ff9924",
       metadata: {},
-      name: "mutationsUpdateLibraryPreferencesMutation",
+      name: "useLibraryPreferencesMutation",
       operationKind: "mutation",
       text: null,
     },
   };
 })();
 
-(node as any).hash = "f87c73d223d7ec5258011ce70489ad46";
+(node as any).hash = "9ec1e3cf190793667e98768d5a114d5b";
 
 export default node;

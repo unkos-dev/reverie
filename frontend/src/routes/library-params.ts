@@ -2,7 +2,6 @@ import { getLocalTimeZone, parseDate } from "@internationalized/date";
 import { z } from "zod";
 
 import { ReadingStatusSchema, type ArrayParamKey, type ListBooksParams } from "@/api";
-import { domainId } from "@/api/graphql";
 
 export type { LibraryView } from "@/api";
 
@@ -41,15 +40,15 @@ const rangeFilterSchema = (min: number, max: number) =>
     empty: z.boolean().optional(),
   });
 const tokens = z.array(z.string());
-const ids = (kind: "Author" | "Series" | "Shelf") => z.array(domainId(kind));
-const facetIds = (kind: "Series" | "Shelf") =>
-  z.union([ids(kind), domainId(kind).transform((id) => [id])]).default([]);
+const opaqueId = z.string().min(1);
+const ids = z.array(opaqueId);
+const facetIds = z.union([ids, opaqueId.transform((id) => [id])]).default([]);
 const setFilterSchema = (values: z.ZodArray<z.ZodType<string>>) =>
   z.strictObject({ all: values, any: values, none: values });
 const statuses = z.array(z.enum([...ReadingStatusSchema.options, "unread"]));
 
 const LibraryPositionSchema = z.strictObject({
-  anchorId: domainId("Manifestation").nullable(),
+  anchorId: opaqueId.nullable(),
   anchorOffset: z.number(),
   offset: z.number().nonnegative(),
   extent: z.number().int().nonnegative(),
@@ -68,12 +67,12 @@ export const LibraryVisitSchema = z.strictObject({
     addedAfter: z.iso.date().optional(),
     addedBefore: z.iso.date().optional(),
     status: z.strictObject({ any: statuses, none: statuses }),
-    authors: setFilterSchema(ids("Author")),
+    authors: setFilterSchema(ids),
     tags: setFilterSchema(tokens),
     genres: setFilterSchema(tokens),
     moods: setFilterSchema(tokens),
-    series: facetIds("Series"),
-    shelf: facetIds("Shelf"),
+    series: facetIds,
+    shelf: facetIds,
   }),
   view: z.enum(["grid", "table"]).optional(),
   position: LibraryPositionSchema.optional(),
@@ -150,9 +149,11 @@ function assignText(params: ListBooksParams, prefix: TextColumn, filter: TextFil
   if (prefix === "title" && op === "ne") params.title_ne = text;
 }
 
+type FacetParamKey = Exclude<ArrayParamKey, "status_any" | "status_none">;
+
 function assignSet(
   params: ListBooksParams,
-  keys: readonly [ArrayParamKey, ArrayParamKey, ArrayParamKey],
+  keys: readonly [FacetParamKey, FacetParamKey, FacetParamKey],
   filter: SetFilter,
 ): void {
   const [all, any, none] = keys;

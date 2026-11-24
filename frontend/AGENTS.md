@@ -82,10 +82,8 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
 - **No enums:** `erasableSyntaxOnly` rejects them. Use `as const` objects and union types.
 - **Type assertions:** Assert only to narrow at a boundary the type system cannot see, with the reason beside it.
 - **Boundary validation:** Parse forms, URL inputs and retained REST response bodies through Zod before use. For
-  GraphQL, the network validates the transport failure and execution-error envelope of every response. An operation
-  whose formats the server types through custom scalars and enums publishes without a client projection; an operation
-  not yet moved keeps its selected projection in `src/api/graphql.ts`. Generated operation types alone are not runtime
-  validation for REST or for an operation that keeps its projection.
+  GraphQL, the network validates transport failures and execution envelopes. The server carries formats through custom
+  scalars and enums. Relay publishes data after the shared envelope check.
 - **Validate formats, not just types:** A REST response field with a declared format gets a validator for that format,
   not `z.string()`. Timestamps use bare `z.iso.datetime()`: the API emits `Z`-terminated RFC 3339, and
   `{ offset: true }` would also accept `+00:00`, which nothing produces. A malformed wire format once reached production
@@ -174,8 +172,9 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
 
 ### Relay native APIs
 
-Relay owns fetching, normalised server data and mutations for migrated workflows (ADR-0077). Flag diff code that
-hand-rolls one of these Relay capabilities:
+Relay owns fetching, normalised server data and mutations for migrated workflows (ADR-0077). Flag Relay documents
+without a production caller, selections outside their consumer's fragment, and client TypeID conversions outside the
+ingestion Book links and shelf item row. Flag diff code that hand-rolls these Relay capabilities:
 
 - **Pagination:** cursor tracking, page loops or a loading flag written by hand. Native path: `usePaginationFragment`
   over an `@connection` with `@refetchable` and `@argumentDefinitions`, using `hasNext`, `isLoadingNext` and `loadNext`.

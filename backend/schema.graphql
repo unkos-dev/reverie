@@ -76,14 +76,22 @@ input BooksFilter {
   pagesGte: Int
   pagesLte: Int
   pagesEmpty: Boolean
-  createdAtGte: String
-  createdAtLt: String
-  statusAny: [String!]! = []
-  statusNone: [String!]! = []
+  createdAtGte: DateTime
+  createdAtLt: DateTime
+  statusAny: [ReadingStatusFilter!]! = []
+  statusNone: [ReadingStatusFilter!]! = []
   ratingGte: Int
   ratingLte: Int
   ratingEmpty: Boolean
   q: String
+}
+
+enum ContentRating {
+  EVERYONE
+  TEEN
+  MATURE
+  ADULT
+  EXPLICIT
 }
 
 enum ContentRatingInput {
@@ -106,6 +114,8 @@ enum ContributorRole {
   TRANSLATOR
   NARRATOR
 }
+
+scalar CoverThumbnailPath @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")
 
 input CreateShelfInput {
   name: String!
@@ -137,7 +147,7 @@ enum EnrichmentStatus {
 }
 
 type ExternalIdentifier {
-  level: String!
+  level: IdentifierLevel!
   scheme: String!
   value: String!
 }
@@ -176,7 +186,7 @@ type ExternalRating {
   rating: Float!
   scale: Float!
   reviewCount: Int
-  fetchedAt: String
+  fetchedAt: DateTime
 }
 
 type ExternalRatingConnection {
@@ -255,6 +265,11 @@ type GenreEdge {
   A cursor for use in pagination
   """
   cursor: String!
+}
+
+enum IdentifierLevel {
+  WORK
+  MANIFESTATION
 }
 
 input IdentifierPatch {
@@ -343,9 +358,9 @@ type Manifestation implements Node @fetchable(field_name: "id") {
   publisher: String
   publicationDate: String
   createdAt: DateTime!
-  updatedAt: String!
-  coverUrl: String!
-  contentRating: String
+  updatedAt: DateTime!
+  coverUrl: CoverThumbnailPath!
+  contentRating: ContentRating
   ingestionStatus: IngestionStatus!
   validationStatus: ValidationStatus!
   enrichmentStatus: EnrichmentStatus!
@@ -468,7 +483,7 @@ type MetadataRevision {
   pages: Int
   publisher: String
   publicationDate: String
-  contentRating: String
+  contentRating: ContentRating
   authors(first: Int!, after: String): RevisionContributorConnection!
   contributors(first: Int!, after: String): RevisionContributorConnection!
   genres(first: Int!, after: String): RevisionGenreConnection!
@@ -681,6 +696,15 @@ enum ReadingStatus {
   ABANDONED
 }
 
+enum ReadingStatusFilter {
+  WANT_TO_READ
+  READING
+  ON_HOLD
+  FINISHED
+  ABANDONED
+  UNREAD
+}
+
 input RefreshMetadataInput {
   id: ID!
 }
@@ -856,7 +880,12 @@ type RevisionTagEdge {
 
 type SearchHit {
   manifestation: Manifestation
-  snippet: String
+  snippet: [SearchSnippetPart!]
+}
+
+type SearchSnippetPart {
+  text: String!
+  highlighted: Boolean!
 }
 
 type SelectedSeries {

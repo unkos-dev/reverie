@@ -74,15 +74,17 @@ fragments render the displayed connection and read complete metadata and reading
 
 ## Interfaces and dependencies
 
-The visit schema validates owned entry data at restoration. The Navigation API provides `currentEntry`, its `id` and
-`getState()`, `updateCurrentEntry`, `activation`, the `navigate` event and entry disposal; React Router owns route
-navigation and runs the Library loader. The browser baseline requires recent Navigation-capable browsers. The owner does
-not patch classic history.
+The visit schema validates owned entry data at restoration. Author, series, shelf and anchor IDs are non-empty opaque
+strings. The loader checks the visibility of restored filter selections before the first request. The Navigation API
+provides `currentEntry`, its `id` and `getState()`, `updateCurrentEntry`, `activation`, the `navigate` event and entry
+disposal; React Router owns route navigation and runs the Library loader. The browser baseline requires recent
+Navigation-capable browsers. The owner does not patch classic history.
 
 The visit projects to `ListBooksParams`, then `libraryVariables` builds typed GraphQL filters and sort levels. Plain
 calendar dates become local-midnight `created_at_gte` and next-local-midnight `created_at_lt` RFC 3339 instants through
 `@internationalized/date`. The upper bound adds one calendar day before timezone conversion, including ordinary
-month/year rollovers and daylight-saving changes.
+month/year rollovers and daylight-saving changes. The GraphQL request sends `DateTime` bounds and maps the saved reading
+status tokens to `ReadingStatusFilter` enum values, including `UNREAD`.
 
 `Viewer.libraryPreferences` and `updateLibraryPreferences` provide the account overrides and installation defaults
 through `services::preferences`. The HTTP preference endpoints share that service. Each gesture commits one
