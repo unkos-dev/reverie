@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<80f025d2f183d6475a32490863b48022>>
- * @relayHash 7762b5fd7ac265a5799c1ca74bdb8f8d
+ * @generated SignedSource<<1f9e45433e90c9086f9f313c6c5a9d43>>
+ * @relayHash 458f70e18f4e50307efc05dbfb02f235
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 1941d30f4434520776b62b2635a93143125e58bf36c07c3da065be27ac6956a2
+// @relayRequestID 3ded19d730c3f689fc6660d2a806f6241c0712b041a4540f394302bba898ab1e
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -23,7 +23,6 @@ export type UpdateMetadataInput = {
   baseline: string;
   id: string;
   patch: MetadataPatch;
-  requestId?: string | null | undefined;
 };
 export type MetadataPatch = {
   contentRating?: ContentRatingInput | null | undefined;
@@ -57,10 +56,6 @@ export type mutationsSaveFormMutation$variables = {
 };
 export type mutationsSaveFormMutation$data = {
   readonly updateMetadata:
-    | {
-        readonly __typename: "EditTooLarge";
-        readonly message: string;
-      }
     | {
         readonly __typename: "FieldsLocked";
         readonly fields: ReadonlyArray<string>;
@@ -191,72 +186,66 @@ const node: ConcreteRequest = (function () {
     v9 = {
       kind: "InlineFragment",
       selections: v5 /*:: as any*/,
-      type: "EditTooLarge",
-      abstractKey: null,
-    },
-    v10 = {
-      kind: "InlineFragment",
-      selections: v5 /*:: as any*/,
       type: "NotFound",
       abstractKey: null,
     },
-    v11 = {
+    v10 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "title",
       storageKey: null,
     },
-    v12 = {
+    v11 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "description",
       storageKey: null,
     },
-    v13 = {
+    v12 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "language",
       storageKey: null,
     },
-    v14 = {
+    v13 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "publisher",
       storageKey: null,
     },
-    v15 = {
+    v14 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "publicationDate",
       storageKey: null,
     },
-    v16 = {
+    v15 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "isbn10",
       storageKey: null,
     },
-    v17 = {
+    v16 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "isbn13",
       storageKey: null,
     },
-    v18 = {
+    v17 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "isbnMismatch",
       storageKey: null,
     },
-    v19 = [
+    v18 = [
       {
         kind: "Literal",
         name: "first",
@@ -328,7 +317,6 @@ const node: ConcreteRequest = (function () {
             v7 /*:: as any*/,
             v8 /*:: as any*/,
             v9 /*:: as any*/,
-            v10 /*:: as any*/,
           ],
           storageKey: null,
         },
@@ -393,7 +381,7 @@ const node: ConcreteRequest = (function () {
                           name: "etag",
                           storageKey: null,
                         },
-                        v11 /*:: as any*/,
+                        v10 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -401,13 +389,13 @@ const node: ConcreteRequest = (function () {
                           name: "subtitle",
                           storageKey: null,
                         },
+                        v11 /*:: as any*/,
                         v12 /*:: as any*/,
                         v13 /*:: as any*/,
                         v14 /*:: as any*/,
                         v15 /*:: as any*/,
                         v16 /*:: as any*/,
                         v17 /*:: as any*/,
-                        v18 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -418,11 +406,11 @@ const node: ConcreteRequest = (function () {
                       ],
                       storageKey: null,
                     },
-                    v17 /*:: as any*/,
                     v16 /*:: as any*/,
-                    v18 /*:: as any*/,
-                    v14 /*:: as any*/,
                     v15 /*:: as any*/,
+                    v17 /*:: as any*/,
+                    v13 /*:: as any*/,
+                    v14 /*:: as any*/,
                     {
                       alias: null,
                       args: null,
@@ -432,9 +420,9 @@ const node: ConcreteRequest = (function () {
                       plural: false,
                       selections: [
                         v3 /*:: as any*/,
+                        v10 /*:: as any*/,
                         v11 /*:: as any*/,
                         v12 /*:: as any*/,
-                        v13 /*:: as any*/,
                       ],
                       storageKey: null,
                     },
@@ -455,7 +443,7 @@ const node: ConcreteRequest = (function () {
                         },
                         {
                           alias: null,
-                          args: v19 /*:: as any*/,
+                          args: v18 /*:: as any*/,
                           concreteType: "MetadataVersionConnection",
                           kind: "LinkedField",
                           name: "pending",
@@ -571,7 +559,7 @@ const node: ConcreteRequest = (function () {
                         },
                         {
                           alias: null,
-                          args: v19 /*:: as any*/,
+                          args: v18 /*:: as any*/,
                           filters: null,
                           handle: "connection",
                           key: "readerVersions_pending",
@@ -596,14 +584,13 @@ const node: ConcreteRequest = (function () {
             v7 /*:: as any*/,
             v8 /*:: as any*/,
             v9 /*:: as any*/,
-            v10 /*:: as any*/,
           ],
           storageKey: null,
         },
       ],
     },
     params: {
-      id: "1941d30f4434520776b62b2635a93143125e58bf36c07c3da065be27ac6956a2",
+      id: "3ded19d730c3f689fc6660d2a806f6241c0712b041a4540f394302bba898ab1e",
       metadata: {},
       name: "mutationsSaveFormMutation",
       operationKind: "mutation",

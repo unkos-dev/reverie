@@ -10,8 +10,7 @@ import { readerAuthorEditing } from "@/lib/relay/reader";
 import type { cellsAuthorsQuery } from "@/lib/relay/__generated__/cellsAuthorsQuery.graphql";
 import type { readerAuthorEditing$key } from "@/lib/relay/__generated__/readerAuthorEditing.graphql";
 import type { readerAuthorEditingPaginationQuery } from "@/lib/relay/__generated__/readerAuthorEditingPaginationQuery.graphql";
-import type { EditValue } from "./useCellEdit";
-import { CircleAlert, Check, GripVertical, PenLine, Star, X } from "lucide-react";
+import { Check, GripVertical, PenLine, Star, X } from "lucide-react";
 import {
   Suspense,
   useEffect,
@@ -52,9 +51,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export type CellState = {
   pending: string | undefined;
-  failed: boolean;
-  serverError?: string;
-  retained?: EditValue;
 };
 
 const STATUS_OPTIONS: readonly { id: ReadingStatus; label: string }[] = [
@@ -226,10 +222,6 @@ function PendingValue({ text }: Readonly<{ text: string }>): ReactElement {
   return <span className="text-fg-muted italic">{text === "unset" ? "Clearing…" : text}</span>;
 }
 
-function FailedMark(): ReactElement {
-  return <CircleAlert aria-hidden="true" className="text-danger-text ml-auto size-3.5 shrink-0" />;
-}
-
 type TriggerProps = {
   density: Density;
   field: string;
@@ -268,7 +260,6 @@ function Trigger({
   const pending = state.pending !== undefined;
   let label = valueText === "" ? `Add ${field}` : `${valueText}, edit ${field}`;
   if (pending) label = `${field} saving`;
-  if (state.failed) label += ", not saved";
   return (
     <AriaButton
       ref={triggerRef}
@@ -307,7 +298,6 @@ function Trigger({
           ? children
           : (renderPending?.(state.pending) ?? <PendingValue text={state.pending} />)}
       </span>
-      {state.failed ? <FailedMark /> : null}
     </AriaButton>
   );
 }
@@ -320,7 +310,6 @@ type TextEditorProps = {
   seed: string | undefined;
   kind: TextKind;
   required: boolean;
-  serverError?: string;
   onCommit: (value: string | null) => void;
   onCancel: () => void;
 };
@@ -344,7 +333,6 @@ function TextEditor({
   seed,
   kind,
   required,
-  serverError,
   onCommit,
   onCancel,
 }: Readonly<TextEditorProps>): ReactElement {
@@ -354,7 +342,6 @@ function TextEditor({
         const trimmed = z.string().parse(data.get("value")).trim();
         onCommit(trimmed === "" ? null : trimmed);
       }}
-      validationErrors={serverError === undefined ? {} : { value: serverError }}
       className="flex items-start gap-1 p-1"
     >
       <TextField
@@ -416,12 +403,7 @@ export function TextCell({
   onCommit,
 }: Readonly<TextCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const initial = state.retained === undefined ? editValue : state.retained;
-  const editor = useCellEditor<string | null>(
-    triggerRef,
-    onCommit,
-    initial === null ? "" : String(initial),
-  );
+  const editor = useCellEditor<string | null>(triggerRef, onCommit, editValue ?? "");
   return (
     <>
       <Trigger
@@ -455,7 +437,6 @@ export function TextCell({
           seed={editor.opening?.seed}
           kind={kind}
           required={required}
-          serverError={state.serverError}
           onCommit={editor.commit}
           onCancel={editor.close}
         />
@@ -519,11 +500,7 @@ export function TitleCell({
   onCommit,
 }: Readonly<TitleCellProps>): ReactElement {
   const anchorRef = useRef<HTMLDivElement>(null);
-  const editor = useCellEditor(
-    anchorRef,
-    onCommit,
-    typeof state.retained === "string" ? state.retained : initial,
-  );
+  const editor = useCellEditor(anchorRef, onCommit, initial);
   const authors = book.authors.join(", ");
   return (
     <div
@@ -596,7 +573,6 @@ export function TitleCell({
           initial={editor.opening?.initial ?? book.title}
           seed={editor.opening?.seed}
           kind="text"
-          serverError={state.serverError}
           required
           onCommit={(next) => {
             if (next === null) editor.close();
@@ -761,7 +737,6 @@ const authorsQuery = graphql`
 type AuthorsCellProps = {
   id: string;
   authors: readonly string[];
-  baseline: string;
   density: Density;
   state: CellState;
   onCommit: (authors: string[], baseline: string, previousAuthors: readonly string[]) => void;
@@ -822,7 +797,6 @@ function MatchedAuthorsEditor({
 export function AuthorsCell({
   id,
   authors,
-  baseline,
   density,
   state,
   onCommit,
@@ -837,8 +811,6 @@ export function AuthorsCell({
     onCommit(value.authors, value.baseline, value.previousAuthors);
   });
   const text = authors.join(", ");
-  const retained =
-    state.retained !== null && typeof state.retained === "object" ? state.retained : undefined;
   function close(): void {
     editor.close();
     dispose();
@@ -846,18 +818,6 @@ export function AuthorsCell({
   function editorContent(): ReactElement | null {
     const opening = editor.opening;
     if (opening === null) return null;
-    if (retained !== undefined)
-      return (
-        <AuthorsEditor
-          authors={retained}
-          seed={opening.seed}
-          onCancel={close}
-          onCommit={(next) => {
-            editor.commit({ authors: next, baseline, previousAuthors: retained });
-            dispose();
-          }}
-        />
-      );
     if (reference != null)
       return (
         <Suspense fallback={<Skeleton aria-busy="true" className="m-2 h-10" />}>
@@ -884,7 +844,7 @@ export function AuthorsCell({
         wrap
         triggerRef={triggerRef}
         onOpen={(seed) => {
-          if (retained === undefined) load({ id }, { fetchPolicy: "store-or-network" });
+          load({ id }, { fetchPolicy: "store-or-network" });
           editor.open(seed);
         }}
         allowTyping

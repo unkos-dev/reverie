@@ -9,7 +9,6 @@ satisfies:
   - "REV-REQ-0056"
   - "REV-REQ-0072"
   - "REV-REQ-0073"
-  - "REV-REQ-0098"
 governed-by:
   - "REV-ADR-0067"
 ---
@@ -17,19 +16,19 @@ governed-by:
 # Metadata review and editing
 
 This Design covers how an operator reviews, accepts, rejects, reverts, locks and manually edits a manifestation's or
-work's bibliographic metadata: the observation journal, exact field mementos and canonical-pointer promotion mechanism,
-the review-queue reads, the accept/reject/revert/lock/unlock routes, the manual `PATCH` surface with its per-field
-apply/clear dispatch and external-identifier editing, and the client's edit dialog and Versions tab that drive them.
+work's bibliographic metadata: the observation journal and canonical-pointer promotion mechanism, the review-queue
+reads, the accept/reject/revert/lock/unlock routes, the manual `PATCH` surface with its per-field apply/clear dispatch
+and external-identifier editing, and the client's edit dialog and Versions tab that drive them.
 
 ## Purpose and boundaries
 
-This subject owns canonical operations in `backend/src/services/metadata/editing.rs` and `editing/undo.rs`, with HTTP
-adapters in `backend/src/routes/metadata.rs` and `metadata/undo.rs`: the review-queue reads
-(`GET /api/v1/manifestations/{id}/metadata`, `GET /api/v1/works/{id}/metadata`), the accept, reject, revert, lock and
-unlock routes, the matched `GET`/`PATCH` pair at `/api/v1/books/{id}/metadata` that an operator edits through, the
-field-dispatch helpers those routes share (`apply_version`, `clear_field`, `apply_contributors_patch`,
-`apply_vocabulary_patch`, `apply_identifier_patch(es)`, `insert_manual_version`), and the client surface that drives
-them: `frontend/src/api/metadata.ts`, the metadata- and identifier-editing exports of `frontend/src/api/books.ts`, and
+This subject owns canonical operations in `backend/src/services/metadata/editing.rs`, with HTTP adapters in
+`backend/src/routes/metadata.rs`: the review-queue reads (`GET /api/v1/manifestations/{id}/metadata`,
+`GET /api/v1/works/{id}/metadata`), the accept, reject, revert, lock and unlock routes, the matched `GET`/`PATCH` pair
+at `/api/v1/books/{id}/metadata` that an operator edits through, the field-dispatch helpers those routes share
+(`apply_version`, `clear_field`, `apply_contributors_patch`, `apply_vocabulary_patch`, `apply_identifier_patch(es)`,
+`insert_manual_version`), and the client surface that drives them: `frontend/src/api/metadata.ts`, the metadata- and
+identifier-editing exports of `frontend/src/api/books.ts`, and
 `frontend/src/pages/book/{EditMetadataDialog,VersionsTab}.tsx`. It owns the `metadata_versions` journal's promotion
 mechanism (canonical pointers, junction `source_version_id`s) and the manual-edit and resolution write paths onto it
 (`insert_manual_version`, `reject_manifestation`); it does not own every writer of the journal itself or of the
@@ -69,8 +68,7 @@ Depended on by: `GET /api/v1/books/{id}` (`backend/src/routes/library/mod.rs`), 
 reads `metadata_versions` directly through `load_pending_versions` to populate the book-detail pending payload: a
 dependency in the other direction from every other route this subject owns, and described only as an interface here,
 since that handler belongs to the book detail subject. The Library table's cell editing calls the GraphQL
-`updateMetadata` and `undoMetadata` mutations and `metadataOperation` resolution, a dependency of the Library table cell
-editing and undo subject on this one.
+`updateMetadata` mutation.
 
 ## Structure
 
@@ -78,25 +76,22 @@ editing and undo subject on this one.
 
 - `works.{title,subtitle,description,language}` and the matching `{title,subtitle,description,language}_version_id`
   pointers: this subject writes them via `apply_version` (accept, revert-to-version, manual set) or `clear_field`
-  (revert-to-null, manual clear), and exact Undo restores them directly in `editing/undo.rs`, all under the parent locks
-  described below. The enrichment orchestrator (`backend/src/services/enrichment/orchestrator.rs`, part of the Design
-  "Enrichment pipeline") is a second writer of every one of these columns and pointers, through its own scalar-apply
-  code, under its own `SELECT ... FOR UPDATE` on the work row. Ingestion writes their first values through
-  `work::upgrade_stub`.
+  (revert-to-null, manual clear), under the parent locks described below. The enrichment orchestrator
+  (`backend/src/services/enrichment/orchestrator.rs`, part of the Design "Enrichment pipeline") is a second writer of
+  every one of these columns and pointers, through its own scalar-apply code, under its own `SELECT ... FOR UPDATE` on
+  the work row. Ingestion writes their first values through `work::upgrade_stub`.
 - `manifestations.{pages,publisher,isbn_10,isbn_13,pub_date}` and their matching `*_version_id` pointers: the same
   writers as above, scoped to one manifestation instead of its work; ingestion writes their first values from the
   ingestion orchestrator. `content_rating` and `content_rating_version_id` are the one field in this family this subject
   alone writes; the enrichment orchestrator's scalar-apply code has no `content_rating` arm.
 - `work_authors` rows and their `source_version_id`: this subject rebuilds the role wholesale via `delete_role_rows` +
-  `insert_role_rows`, from either `apply_version`'s `contributors.*` arm or `apply_contributors_patch`, and exact Undo
-  deletes the role and reinserts its captured members in `editing/undo.rs`. Ingestion's `work::upgrade_stub` inserts the
-  first rows from extracted metadata. The enrichment orchestrator's field-apply dispatch has no `contributors.*` arm, so
-  an incoming contributor observation always stays staged in `metadata_versions` for a human reviewer, regardless of
-  confidence.
+  `insert_role_rows`, from either `apply_version`'s `contributors.*` arm or `apply_contributors_patch`. Ingestion's
+  `work::upgrade_stub` inserts the first rows from extracted metadata. The enrichment orchestrator's field-apply
+  dispatch has no `contributors.*` arm, so an incoming contributor observation always stays staged in
+  `metadata_versions` for a human reviewer, regardless of confidence.
 - `manifestation_genres`, `manifestation_moods`, `manifestation_tags` junction rows and their `source_version_id`:
   rebuilt wholesale per field by `delete_vocabulary_rows` + `insert_vocabulary_rows`, from either `apply_version`'s
-  vocabulary arm or `apply_vocabulary_patch`, and restored from captured members by exact Undo. The enrichment
-  orchestrator has no writer for these three tables.
+  vocabulary arm or `apply_vocabulary_patch`. The enrichment orchestrator has no writer for these three tables.
 - `work_external_identifiers` and `manifestation_external_identifiers` registry rows: written by
   `upsert_{work,manifestation}_identifier` / `delete_{work,manifestation}_identifier`
   (`backend/src/models/external_identifier.rs`), called from this subject's `apply_version` and `clear_field`
@@ -112,41 +107,37 @@ editing and undo subject on this one.
   transaction as the move. The Design "Writeback pipeline" owns every other writer and every reader of this table.
 - The manifestation's `enrichment_status`, `enrichment_rerun_requested`, `enrichment_attempt_count`,
   `enrichment_attempted_at`, `enrichment_retry_not_before` and `enrichment_error` columns: conditionally reset by
-  `requeue_identifier_enrichment` after manual identifier writes and exact identifier restoration (see Runtime
-  behaviour); the enrichment worker is the other writer of these columns, out of this subject's scope.
+  `requeue_identifier_enrichment` after manual identifier writes (see Runtime behaviour); the enrichment worker is the
+  other writer of these columns, out of this subject's scope.
 - `works.first_author_sort_name`: recomputed by `work::refresh_first_author_sort`, called whenever an `author`-role edit
-  touches `work_authors` (`apply_version`'s contributors arm and `apply_contributors_patch`, gated on `author_touched`,
-  and the `author` restoration in exact Undo), and by ingestion's `work::upgrade_stub`.
+  touches `work_authors` (`apply_version`'s contributors arm and `apply_contributors_patch`, gated on `author_touched`),
+  and by ingestion's `work::upgrade_stub`.
 
 Every write above that this subject makes against `works` or `manifestations` columns runs inside a transaction that
 first locks both parent rows. The review operations (`accept_manifestation`, `reject_manifestation`,
-`revert_manifestation`) take one joined `FOR UPDATE OF m, w`. Save (`update_book_metadata`) and exact Undo take two
-distinct locks through `undo::lock_parents`: the manifestation row, then its work row, each `FOR UPDATE`. The enrichment
-orchestrator takes its own `SELECT ... FOR UPDATE` on the same row before its own scalar-apply writes. Both are ordinary
-Postgres row locks on the same physical row, so a concurrent write from either subject against the same manifestation or
-work still serialises against the other, even though the two lock statements are not identical. Enrichment rereads
-canonical scalars under those locks before deciding whether to apply; a value committed during its provider requests
-stages the observation instead of being overwritten. `lock_field` and `unlock_field` also open an RLS-scoped
-transaction, lock the visible manifestation row, and mutate `field_locks` before committing, so a missing or hidden
-manifestation returns `404` and a concurrent manifestation deletion cannot leave the field-lock foreign-key write as an
-internal error.
+`revert_manifestation`) take one joined `FOR UPDATE OF m, w`. Save (`update_book_metadata`) takes two distinct locks
+through `lock_parents`: the manifestation row, then its work row, each `FOR UPDATE`. The enrichment orchestrator takes
+its own `SELECT ... FOR UPDATE` on the same row before its own scalar-apply writes. Both are ordinary Postgres row locks
+on the same physical row, so a concurrent write from either subject against the same manifestation or work still
+serialises against the other, even though the two lock statements are not identical. Enrichment rereads canonical
+scalars under those locks before deciding whether to apply; a value committed during its provider requests stages the
+observation instead of being overwritten. `lock_field` and `unlock_field` also open an RLS-scoped transaction, lock the
+visible manifestation row, and mutate `field_locks` before committing, so a missing or hidden manifestation returns
+`404` and a concurrent manifestation deletion cannot leave the field-lock foreign-key write as an internal error.
 
 ### Component relationships
 
 `graphql/mutations.rs` adapts typed, presence-aware inputs to these same operations. Target version IDs are encoded
-`MetadataVersion` global IDs; request and operation handles are UUID values. Save and exact Undo take a non-null `ETag`
-baseline in their input. Review actions take no aggregate precondition. `metadataOperation` reads committed evidence
-under the original browser-session contract and never repeats a write.
+`MetadataVersion` global IDs. A save takes a non-null `ETag` baseline. Review actions take no aggregate precondition.
 
 Selected GraphQL acknowledgement pages are materialised before commit under the operation's parent locks. Snapshot reads
 batch selected pages and core revisions in one caller-scoped REPEATABLE READ transaction. Scalar-only results skip
-contributor, vocabulary and identifier projection loaders. Required memento capture and writeback work remain part of
-the submitted action. HTTP selects its complete response through the same operation. Relation pages keep their
-per-relation bounds and continuation cursors, with no universal snapshot ceiling.
+contributor, vocabulary and identifier projection loaders. Writeback work remain part of the submitted action. HTTP
+selects its complete response through the same operation. Relation pages keep their per-relation bounds and continuation
+cursors, with no universal snapshot ceiling.
 
-- `router()` registers the matched metadata pair, exact Undo and operation resolution alongside the review operations:
-  the two review-queue `GET`s, `accept`, `reject`, `revert`, `lock`, `unlock`, and the `get`/`update` pair at
-  `/api/v1/books/{id}/metadata`.
+- `router()` registers the matched metadata pair alongside the review operations: the two review-queue `GET`s, `accept`,
+  `reject`, `revert`, `lock`, `unlock`, and the `get`/`update` pair at `/api/v1/books/{id}/metadata`.
 - `apply_version` and `clear_field` are the two field-dispatch cores every promotion or clear routes through: one
   `match` arm per supported canonical field, each doing the type-specific parse (ISBN checksum, `content_rating` enum,
   `pub_date` via `publication_date::normalise`), the `UPDATE` that swaps the pointer, and, for every field but an
@@ -165,8 +156,8 @@ per-relation bounds and continuation cursors, with no universal snapshot ceiling
   scheme against the level (`external_id::validate_scheme_level`) before writing anything to the journal, so an unknown
   scheme or a wrong-level address produces no journal row on either the set or the clear path.
 - `load_book_metadata` assembles the complete values for `get_book_metadata` and for the complete HTTP post-write
-  response, pairing them with owner identities and revisions. Save and exact Undo compare their baseline under the
-  parent locks against `metadata_revision(...).etag()`, which reads the same owner identities and revisions, so
+  response, pairing them with owner identities and revisions. A save compares its baseline under the parent locks
+  against `metadata_revision(...).etag()`, which reads the same owner identities and revisions, so
   `MetadataRevision::etag` produces the same validator for GET, the locked comparison and the confirmed response.
 - Browser consumers use generated GraphQL operations in `mutations.ts` and `reader.ts`. `VersionsTab.tsx` groups the
   lazy pending connection by field, retains each field's action outcome and supplies Accept, Reject and Clear through
@@ -211,13 +202,7 @@ per-relation bounds and continuation cursors, with no universal snapshot ceiling
 record mutable review activity. The exact insertion-time `observation_key` hashes the JSONB value, including array
 order, match method and submitting user. Edition, source and field complete uniqueness. `value_hash` retains normalised
 value comparison for enrichment. Runtime UPDATE grants exclude observation meaning and its key. Account deletion can
-clear the submission reference without recomputing the insertion key; Undo refuses a captured attribution whose target
-has disappeared. A row whose submitter is unknown has a null `submitted_by`.
-
-`metadata_undo_operations` retains typed before and after field state, original source meaning, owner identities,
-last-change stamp, save request UUID, actual session, user, edition and fixed one-hour expiry. Only the latest saved
-operation per session and field remains eligible. Superseded and consumed rows retain committed evidence until expiry.
-Session, user, work and edition deletion cascade the corresponding capabilities.
+clear the submission reference without recomputing the insertion key.
 
 - **`metadata_versions`.** One row per observed (manifestation, source, field, value) combination, with duplicates
   suppressed on `(manifestation_id, source, field_name, observation_key)`. `status` is a two-value enum, `pending` or
@@ -240,60 +225,6 @@ Session, user, work and edition deletion cascade the corresponding capabilities.
 
 ## Runtime behaviour
 
-### Exact saved-field Undo
-
-A save request UUID correlates retained field operations; it is not an idempotency key. Reuse returns 422 when that
-session already has committed operation evidence for the identifier. A save that issues no operation leaves no receipt,
-so resolution reports `unknown` even if the save committed. The client retains uncertainty and never replays the write
-automatically.
-
-Browser PATCH accepts an optional `request_id` and returns complete `values`, its matching ETag and independent
-`operations`. Basic and device-token writes return no operations. Capture and issuance share the canonical save
-transaction. Structurally invalid ISBN before-values receive no capability. Exact repeats can reuse observation rows;
-different order, match method or submitter cannot overwrite their meaning.
-
-Browser capture reads only selected fields. Before and after snapshots share a 16 MiB accounted size limit and 10000
-entries. Each field frame, relation member and captured observation counts as an entry. Compact JSON encoding and a
-fixed allowance for field wrappers determine size. SQL bounds each collection, probes one extra entry and limits
-individual payloads before decoding. Incremental checks refuse overflow without truncating state. The 100-contributor
-and 50-term PATCH limits do not restrict restoration. An invalid ISBN before-state remains exempt from capture, and
-Basic/token writes have no Undo budget prerequisite.
-
-Undo and resolution have twice the capture allowance, 32 MiB and 20000 processing entries, for current-state reads,
-retained evidence and restoration-target checks. Browser save, Undo and resolution transactions have a five-second
-deadline activated before session and catalogue locks. Transaction-local PostgreSQL statement and transaction timeouts
-bound database work and lock holding, preserving stricter operator limits; encoding checks also enforce elapsed time.
-Size and entry overflow return 422 validation failures. An aborted save retains no canonical, journal, writeback or
-operation changes. A timed-out Undo retains its unconsumed operation and original expiry. Unacknowledged outcomes
-require committed-evidence resolution. Unrelated fields do not count against the snapshot budget.
-
-`POST /api/v1/books/{id}/metadata/undo` accepts `operation_id` in its JSON body and requires an adult browser session,
-write scope, CSRF and a current strong `If-Match`. It locks the edition and work, checks aggregate freshness, then
-checks operation ownership, original expiry, selected field identity, field locks and recorded after-state. Source and
-relation target locks protect exact restoration. Canonical values, membership, stored positions and null or mixed source
-pointers restore directly. A stub that previously had no authors can restore its empty role. Derived author sort, ISBN
-mismatch and rematch use current canonical data. Writeback and consumption commit with the restored field. Identifier
-restoration queues enrichment again through the claim-preserving transition and enqueues no writeback.
-
-`POST /api/v1/books/{id}/metadata/operations/resolve` accepts exactly one `request_id` or `operation_id`. It returns
-fresh paired values and server-confirmed eligible, locked, unavailable or consumed descriptors. Save evidence reports
-`saved`; consumed-operation evidence reports `restored`. Absence reports `unknown`, never rollback. Resolution reads
-relations, locks and provenance in batches and never replays a write.
-
-Stale aggregate tags return 412 with the current ETag. Invalidated, expired, consumed or foreign-session restoration
-requests return non-enumerating 422 `undo-unavailable`. Missing required targets also return 422 without recreating
-identities. A field lock returns non-consuming 409 `field-locked`; equal identity with divergent recorded after-state
-returns non-consuming 409 `undo-conflict`. GraphQL returns the same refusals as the `StaleBaseline`, `UndoUnavailable`,
-`FieldsLocked` and `UndoConflict` members of `UndoMetadataResult`. Current confidence remains mutable and outside
-restoration, but a change to a currently referenced observation still advances field identity and can invalidate Undo.
-Observation counts, timestamps and review activity are never rewound. Capability-bearing success responses are
-`Cache-Control: no-store`.
-
-The client exposes saved Undo only in Library table editing. The owner retains server operations above conditional
-results. Known newer same-field table saves replace older entries, including shared work fields. Dialog operations
-support lost-acknowledgement resolution without a book-view Undo control. Metadata and reading snapshots retain explicit
-baselines; current value equality cannot confirm a metadata save.
-
 ### Metadata review and ordinary editing
 
 `pub_date` is nullable bibliographic text. PATCH, accept and revert validate through the shared publication-date
@@ -308,13 +239,8 @@ the changed content and local feedback. ETag conflicts remain beside the refused
 explicitly replaces them with a fresh metadata read; a failed reload retains the draft. A reload that finds the book no
 longer visible shows Book detail's not-found state. Review failures stay in their field section outside removable draft
 rows. Pending, clear-confirmation and successful closure retain their owners. Metadata fields remain read-only while
-Save is pending or its outcome remains unresolved. Their values can still be selected. After the request settles, Save
-can resend the unchanged draft with its original request ID and baseline. A confirmed save closes the dialog without a
-further read. Its acknowledgement updates Book detail and links the new revision. A save confirmed only through request
-resolution invalidates the manifestation, so Book detail refetches. Validation refusals retain submitted values for
-correction. Temporary or uncertain failures expose explicit Retry of the retained request. A conflict not confirmed as
-saved exposes the matched Reload path. Offline recovery keeps one local failure message. Confirmation closes only its
-originating mounted form. Cache reconciliation continues after dismissal.
+Save is pending. After a refusal the dialog retains its draft. A successful save updates Book detail and closes its
+originating form. A stale refusal offers Reload, which replaces the draft and its validator from one revision.
 
 **An operator edits publisher and clears publication date in the metadata form.**
 
@@ -344,8 +270,7 @@ originating mounted form. Cache reconciliation continues after dismissal.
    after its role loop, and the identifier family never enqueues.
 6. If an ISBN field was touched, `work::rematch_on_isbn_change` runs before the response is assembled.
 7. The operation materialises the selected matched acknowledgement inside the transaction. The response contains its
-   aggregate baseline, selected canonical fields, request ID and exact field operations. HTTP returns its complete
-   canonical response.
+   aggregate validator and selected canonical fields. HTTP returns its complete canonical response.
 8. The edit sheet's mutation payload spreads the form snapshot, `readerDetailEditable` and `readerVersions` under the
    returned manifestation. Relay normalisation updates Book detail and links the new revision. The replaced pending
    connection shows a previous canonical value that the save returned to the review queue, and the sheet closes its
@@ -410,10 +335,9 @@ acknowledges `isbnMismatch` with the Book detail fields and the new revision, so
 warning from Book detail and the next edit-sheet read. Native named FieldErrors display ISBN refusals through the
 `Form.validationErrors` map and retain submitted values for correction. A valid mismatch remains savable.
 
-The table uses typed Relay mutation outcomes. A stale refusal offers Reload. Validation keeps the entered ISBN and its
-field feedback. Temporary or uncertain failures offer explicit Retry of the retained attempt. Permanent refusals show
-their specific feedback. An acknowledged save can add an exact Undo operation. Normalisation updates displayed records.
-The visit owner invalidates a connection when the changed field participates in its sort or filter.
+The table uses typed Relay mutation outcomes. A failed save shows one dismissible notice. A stale refusal refreshes the
+visit so a new edit uses the current value and validator. Relay normalises acknowledged values. The visit owner
+invalidates connections that sort or filter by the changed field or contain another edition of a changed work.
 
 **A manual identifier edit while enrichment is `in_progress`, for the same manifestation.**
 

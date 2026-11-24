@@ -458,29 +458,12 @@ export { BookMetadataSchema };
 
 export type MetadataSnapshot = { values: BookMetadata; etag: string };
 
-const UndoOperationSchema = z.object({
-  operation_id: z.uuid(),
-  field_name: z.string(),
-  expires_at: z.iso.datetime(),
-  status: z.enum(["eligible", "locked", "unavailable", "consumed"]),
-});
-export type UndoOperation = z.infer<typeof UndoOperationSchema>;
-
 export const UpdateMetadataResponseSchema = z.object({
   values: BookMetadataSchema,
-  request_id: z.uuid().nullable(),
-  operations: z.array(UndoOperationSchema),
 });
 export type UpdateMetadataResponse = z.infer<typeof UpdateMetadataResponseSchema> & {
   etag: string;
 };
-
-const OperationResponseSchema = z.object({
-  values: BookMetadataSchema,
-  outcome: z.enum(["saved", "restored", "unknown"]),
-  operations: z.array(UndoOperationSchema),
-});
-export type OperationResponse = z.infer<typeof OperationResponseSchema> & { etag: string };
 
 export async function getBookMetadata(id: string, signal?: AbortSignal): Promise<MetadataSnapshot> {
   const { body, headers } = await apiFetchWithHeaders(
@@ -495,7 +478,6 @@ export async function updateBookMetadata(
   id: string,
   fields: UpdateBookMetadataFields,
   baseline: string,
-  requestId: string,
   signal?: AbortSignal,
 ): Promise<UpdateMetadataResponse> {
   const { body, headers } = await apiFetchWithHeaders(
@@ -503,43 +485,11 @@ export async function updateBookMetadata(
     {
       method: "PATCH",
       headers: { "If-Match": ResourceEtagSchema.parse(baseline) },
-      body: JSON.stringify({ ...fields, request_id: z.uuid().parse(requestId) }),
+      body: JSON.stringify(fields),
       signal,
     },
   );
   const response = UpdateMetadataResponseSchema.parse(body);
-  if (response.request_id !== requestId)
-    throw new Error("The save acknowledgement did not match the request.");
-  return { ...response, etag: ResourceEtagSchema.parse(headers.get("ETag")) };
-}
-
-export async function resolveMetadataOperation(
-  id: string,
-  identity: { request_id: string } | { operation_id: string },
-  signal?: AbortSignal,
-): Promise<OperationResponse> {
-  const { body, headers } = await apiFetchWithHeaders(
-    `/api/v1/books/${encodeURIComponent(id)}/metadata/operations/resolve`,
-    { method: "POST", body: JSON.stringify(identity), signal },
-  );
-  const response = OperationResponseSchema.parse(body);
-  return { ...response, etag: ResourceEtagSchema.parse(headers.get("ETag")) };
-}
-
-export async function undoMetadataOperation(
-  id: string,
-  operationId: string,
-  baseline: string,
-): Promise<OperationResponse> {
-  const { body, headers } = await apiFetchWithHeaders(
-    `/api/v1/books/${encodeURIComponent(id)}/metadata/undo`,
-    {
-      method: "POST",
-      headers: { "If-Match": ResourceEtagSchema.parse(baseline) },
-      body: JSON.stringify({ operation_id: operationId }),
-    },
-  );
-  const response = OperationResponseSchema.parse(body);
   return { ...response, etag: ResourceEtagSchema.parse(headers.get("ETag")) };
 }
 

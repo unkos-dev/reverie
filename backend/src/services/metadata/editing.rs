@@ -2,8 +2,6 @@
 //!
 //! THREAT: shared operations retain caller scope, catalogue visibility and field-lock checks.
 
-pub mod undo;
-
 use crate::auth::{middleware::CurrentUser, scope::Scope};
 use crate::models::external_identifier::{
     IdentifierLevel, delete_manifestation_identifier, delete_work_identifier,
@@ -28,8 +26,6 @@ use uuid::Uuid;
 pub struct SaveResult {
     pub snapshot: MetadataSnapshot,
     pub etag: axum::http::HeaderValue,
-    pub request_id: Option<Uuid>,
-    pub operations: Vec<undo::UndoOperation>,
 }
 
 // ── accept / reject / revert / lock ────────────────────────────────────────
@@ -132,7 +128,7 @@ pub async fn accept_manifestation(
     .await?;
 
     // Accept promotes the version to canonical; the caller has no use for
-    // the prior pointer (that's the revert/undo surface's concern).
+    // the prior pointer (that's the revert operation's concern).
     apply_version(
         &mut tx,
         &field_name,
@@ -1385,9 +1381,6 @@ async fn apply_vocabulary_patch(
 )]
 #[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
 pub struct UpdateMetadataFields {
-    /// Client-generated save identifier for resolution; an already recorded identifier is refused.
-    #[schema(max_length = 45)]
-    pub request_id: Option<Uuid>,
     /// New title. Absent = unchanged; `null` is rejected (canonical title
     /// is NOT NULL).
     #[serde(default, with = "::serde_with::rust::double_option")]
@@ -1553,11 +1546,6 @@ pub struct ContributorsPatch {
 /// Response body for `PATCH /api/v1/books/{id}/metadata`.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct UpdateMetadataResponse {
-    /// Save identifier for session-bound outcome resolution; absent for non-browser credentials.
-    pub request_id: Option<Uuid>,
-    /// Independent exact field operations issued to the authenticated browser session.
-    #[schema(max_items = 144)]
-    pub operations: Vec<undo::UndoOperation>,
     /// Complete canonical metadata paired with the response `ETag`.
     pub values: BookMetadata,
 }
@@ -2043,6 +2031,23 @@ async fn load_manifestation_identifiers(
     .collect())
 }
 
+async fn lock_parents(tx: &mut Transaction<'_, Postgres>, edition: Uuid) -> Result<Uuid, AppError> {
+    let work = sqlx::query_scalar!(
+        "SELECT work_id FROM manifestations WHERE id = $1 FOR UPDATE",
+        edition
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|error| AppError::Internal(error.into()))?
+    .ok_or(AppError::NotFound)?;
+    sqlx::query_scalar!("SELECT id FROM works WHERE id = $1 FOR UPDATE", work)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|error| AppError::Internal(error.into()))?
+        .ok_or(AppError::NotFound)?;
+    Ok(work)
+}
+
 /// `PATCH /api/v1/books/{id}/metadata` — manual operator edit.
 ///
 /// Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are
@@ -2086,7 +2091,6 @@ async fn load_manifestation_identifiers(
 pub async fn update_book_metadata(
     current_user: &CurrentUser,
     state: &AppState,
-    session: &tower_sessions::Session,
     manifestation_id: Uuid,
     if_match: Option<StrongEntityTag>,
     mut req_fields: UpdateMetadataFields,
@@ -2097,7 +2101,6 @@ pub async fn update_book_metadata(
     let if_match = if_match.ok_or(AppError::IfMatchRequired)?;
     // Extract contributors BEFORE populated() consumes the struct — it is
     // handled separately from the other (scalar) fields.
-    let mut browser_save = undo::browser_save(current_user, session, req_fields.request_id.take())?;
     let contributors = req_fields.contributors.take();
     let genres = req_fields.genres.take();
     let moods = req_fields.moods.take();
@@ -2114,8 +2117,7 @@ pub async fn update_book_metadata(
     // Mirrors `revert_manifestation` — serialises concurrent edits and
     // gates RLS-hidden rows to 404 (the join through `manifestations`
     // applies the RLS predicate).
-    undo::require_save_session(&mut tx, browser_save.as_mut()).await?;
-    let work_id = undo::lock_parents(&mut tx, manifestation_id).await?;
+    let work_id = lock_parents(&mut tx, manifestation_id).await?;
 
     // Compared under the row lock just taken above, so a concurrent editor
     // cannot slip a change in between this check and the writes below.
@@ -2199,15 +2201,6 @@ pub async fn update_book_metadata(
     )
     .await?;
 
-    let before = undo::begin_save(
-        &mut tx,
-        browser_save,
-        manifestation_id,
-        work_id,
-        &touched_fields,
-    )
-    .await?;
-
     let touched_isbn = fields
         .iter()
         .any(|(field, _)| matches!(*field, "isbn_10" | "isbn_13"));
@@ -2274,8 +2267,6 @@ pub async fn update_book_metadata(
         project_metadata(current_user, state, &mut tx, manifestation_id, selection).await?;
     let new_etag = new_metadata.revision.etag()?;
 
-    let (request_id, operations) = undo::finish_save(&mut tx, before).await?;
-
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -2283,8 +2274,6 @@ pub async fn update_book_metadata(
     Ok(Conditional::Matched(SaveResult {
         snapshot: new_metadata,
         etag: new_etag,
-        request_id,
-        operations,
     }))
 }
 

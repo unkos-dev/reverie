@@ -103,12 +103,12 @@ application-role DSN is never substituted. One-shot administrative commands reta
 OPF observations use the shared exact observation identity. A repeat with identical value, array order and match method
 reuses its row and increments observation bookkeeping. The normalised `value_hash` remains available for cross-source
 enrichment comparisons. Runtime writes preserve each observation's semantic columns even after current canonical
-pointers move away, so active Undo mementos can retain truthful original source pointers.
+pointers move away, so journal entries continue to describe their original observations.
 
-Work and manifestation inserts initialise metadata revisions and field stamps at zero. Stub upgrades, canonical source
-pointer wiring, contributors and identifier writes advance the affected identities through the data-model triggers in
-the same registration transaction. Draft insertion alone does not advance a revision. Ingestion input observations,
-publication evidence, path claims and job bookkeeping remain outside metadata identity.
+Work and manifestation inserts initialise metadata revisions at zero. Stub upgrades, canonical source pointer wiring,
+contributors and identifier writes advance the affected identities through the data-model triggers in the same
+registration transaction. Draft insertion alone does not advance a revision. Ingestion input observations, publication
+evidence, path claims and job bookkeeping remain outside metadata identity.
 
 `ingestion_inputs` stores a byte-preserving ingestion-relative path, full source fingerprint, generation, current
 status, reason, rejection classes, optional work link, the manifestation a duplicate matched, observation and

@@ -63,32 +63,6 @@ impl async_graphql::ScalarType for ETag {
     }
 }
 
-/// A UUID in lower-case hyphenated form.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct UuidValue(pub(super) Uuid);
-
-#[async_graphql::Scalar(
-    name = "UUID",
-    specified_by_url = "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars"
-)]
-impl async_graphql::ScalarType for UuidValue {
-    fn parse(value: async_graphql::Value) -> async_graphql::InputValueResult<Self> {
-        match value {
-            async_graphql::Value::String(text) if text.len() == 36 => Uuid::try_parse(&text)
-                .map(Self)
-                .map_err(|_| async_graphql::InputValueError::custom("Expected a hyphenated UUID.")),
-            async_graphql::Value::String(_) => Err(async_graphql::InputValueError::custom(
-                "Expected a hyphenated UUID.",
-            )),
-            other => Err(async_graphql::InputValueError::expected_type(other)),
-        }
-    }
-
-    fn to_value(&self) -> async_graphql::Value {
-        async_graphql::Value::String(self.0.hyphenated().to_string())
-    }
-}
-
 /// An instant as RFC 3339 text in UTC with the `Z` designator.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct DateTime(pub(super) Timestamp);

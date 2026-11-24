@@ -192,14 +192,13 @@ and revert document the refusal; the shared runtime DTO supplies both its wire r
 Shelf, metadata editing and library preference mutations return union results, listed in the Design "GraphQL execution
 and Relay browser data" ([Mutation results](0031-graphql-execution-and-relay-browser-data.md#mutation-results)).
 
-Other GraphQL failures, including those of `metadataOperation` and the reading mutation, are execution errors.
-`safe_error` assigns each `AppError` variant a `code` extension: `validation`, `invalid-cursor`, `forbidden`,
-`not-found`, `if-match-required`, `if-match-mismatch`, `malformed-header`, `undo-unavailable`, `undo-conflict`,
-`edit-too-large`, `system-shelf-immutable`, `field-locked` or `internal`. A field validation error adds `errors`, keyed
-by field name, and a field lock adds `lockedFields`. A stale reading-state result adds `currentEtag` only after
-caller-visible target resolution. An execution error that carries no extensions, such as a failed input coercion,
-receives the `validation` code. Internal failures carry the fixed message "An internal error occurred." and no private
-diagnostics. The network validates these extensions and refuses partial data without replaying the operation.
+Other GraphQL failures are execution errors. `safe_error` assigns each `AppError` variant a `code` extension:
+`validation`, `invalid-cursor`, `forbidden`, `not-found`, `if-match-required`, `if-match-mismatch`, `malformed-header`,
+`system-shelf-immutable`, `field-locked` or `internal`. A field validation error adds `errors`, keyed by field name, and
+a field lock adds `lockedFields`. A stale reading-state result adds `currentEtag` only after caller-visible target
+resolution. An execution error that carries no extensions, such as a failed input coercion, receives the `validation`
+code. Internal failures carry the fixed message "An internal error occurred." and no private diagnostics. The network
+validates these extensions and refuses partial data without replaying the operation.
 
 ## Data and state
 
@@ -219,8 +218,7 @@ diagnostics. The network validates these extensions and refuses partial data wit
 - On the client, `ApiError` instances are ephemeral: each is constructed and thrown per failed request and carries no
   state beyond its status and decoded problem fields. `apiFetch` itself holds no module-level state; the CSRF token
   cache lives in its own module. Metadata and reading adapters validate complete response values and their ETag before
-  publishing a matched snapshot. PATCH returns `values`, `request_id` and `operations`; its generated schema exposes no
-  partial journal acknowledgement.
+  publishing a matched snapshot. PATCH returns the complete `values` and their matching ETag.
 
 ## Runtime behaviour
 
@@ -299,13 +297,6 @@ as the `401` redirect funnel keep working. Slug-based checks see `null` and fail
 `isIfMatchRequired` return false for such a response.
 
 ## Failure and recovery
-
-Exact metadata restoration registers `undo-unavailable` at 422 for expired, consumed, invalidated or otherwise
-unavailable session operations, and `undo-conflict` at 409 for a recorded after-state mismatch despite equal field
-identity. Neither reveals another session's operation. A locked selected field returns the `field-locked` response and
-keeps its operation. A stale aggregate precondition returns 412 with the current ETag. A save or restoration whose exact
-Undo capture exceeds its size limit returns 422 with the validation type and a fixed detail. Exceeding the capture time
-limit is an internal failure, so the caller may retry it.
 
 - Every `AppError` variant serialises as `application/problem+json` with a stable `type` slug drawn from `problems.rs`:
   the exhaustive, wildcard-free match in `AppError::into_response` guarantees this for the enum itself. The one producer

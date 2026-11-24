@@ -9,9 +9,9 @@ title: "A GraphQL edit without a well-formed baseline is refused and changes not
 
 ## Statement
 
-WHEN a GraphQL `updateMetadata`, `updateReadingState` or `undoMetadata` mutation omits its baseline, supplies `null` for
-it, or supplies a value that is not one strong entity-tag, the server MUST refuse the mutation with an error and leave
-stored state unchanged. The baseline is the
+WHEN a GraphQL `updateMetadata` or `updateReadingState` mutation omits its baseline, supplies `null` for it, or supplies
+a value that is not one strong entity-tag, the server MUST refuse the mutation with an error and leave stored state
+unchanged. The baseline is the
 [validator](0082-graphql-edit-acknowledgements-carry-the-validator-of-their-values.md#statement) of the values the
 caller's edit was made from. A strong entity-tag is a single `entity-tag` as
 [RFC 9110 §8.8.3](https://www.rfc-editor.org/rfc/rfc9110#section-8.8.3) defines it, without the `W/` weak indicator, so
@@ -31,6 +31,3 @@ tag or the wildcard matches more than one revision, so it cannot stand in for th
 - An `updateReadingState` whose baseline is `null`, omitted or weak produces an error, and a save made afterwards with
   the baseline read before the attempts succeeds, which shows the attempts changed nothing. Checked by
   `graphql_edit_baselines`.
-- An `undoMetadata` whose baseline is `null`, omitted or `*` produces an error without consuming the Undo operation: the
-  same session restores the change with the current baseline afterwards. Checked by `graphql_undo_boundary` in
-  `backend/src/graphql/mod.rs`.

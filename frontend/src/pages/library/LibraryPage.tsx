@@ -33,7 +33,7 @@ import { useAuthMe } from "@/hooks/useAuthMe";
 import { mutationsAddShelfItemMutation } from "@/lib/relay/mutations";
 import type { mutationsAddShelfItemMutation as AddShelfItem } from "@/lib/relay/__generated__/mutationsAddShelfItemMutation.graphql";
 import type { LibraryPageRefreshMetadataMutation as RefreshMetadata } from "@/lib/relay/__generated__/LibraryPageRefreshMetadataMutation.graphql";
-import { Circle, CircleCheck, Loader2, Star, Undo2 } from "lucide-react";
+import { Circle, CircleCheck, Loader2, Star } from "lucide-react";
 import {
   lazy,
   Suspense,
@@ -78,9 +78,8 @@ import {
   type LibraryVisit,
 } from "@/routes/library-params";
 
-import { useCellEdit, type UseCellEditResult, type StatusTarget } from "./table/useCellEdit";
+import { useCellEdit } from "./table/useCellEdit";
 import { GridShortcutsDialog, GridShortcutsTrigger } from "./table/GridShortcutsDialog";
-import { FieldError } from "@/components/ui/field";
 import { BatchBar, type BatchAction, type BatchOutcome } from "./BatchBar";
 import { ShelfHeader } from "./ShelfHeader";
 import { EmptyLibrary } from "./EmptyLibrary";
@@ -431,75 +430,18 @@ function useLibraryPosition(
   return { tableRef, coversRef, scrolled };
 }
 
-function CellEditOutcomes({ edits }: { edits: UseCellEditResult }): ReactElement | null {
-  const editFeedback = edits.feedback;
-  return editFeedback.length > 0 || edits.undoOutcome !== null ? (
-    <section aria-label="Edit outcomes" className="mb-4 space-y-3">
-      {edits.undoOutcome !== null ? (
-        <p role="status" className="text-fg-muted text-sm">
-          {edits.undoOutcome}
-        </p>
-      ) : null}
-      {editFeedback.map((feedback) => (
-        <div key={feedback.id} className="space-y-2">
-          <FieldError>
-            {feedback.field} for “{feedback.bookTitle}”: {feedback.message}
-          </FieldError>
-          <p className="text-fg-muted break-words text-sm">Submitted value: {feedback.submitted}</p>
-          {feedback.action === "retry" ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              isPending={feedback.retrying}
-              onPress={feedback.retry}
-            >
-              {feedback.retrying ? "Retrying…" : "Retry"}
-            </Button>
-          ) : null}
-          {feedback.action === "reload" ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              isPending={feedback.reloading}
-              onPress={feedback.reload}
-            >
-              {feedback.reloading ? "Reloading…" : "Reload"}
-            </Button>
-          ) : null}
-        </div>
-      ))}
-    </section>
-  ) : null;
-}
-
-function TableEditControls({ edits }: { edits: UseCellEditResult }): ReactElement {
+function TableEditControls(): ReactElement {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [undoFocused, setUndoFocused] = useState(false);
-  const helpRef = useRef<HTMLButtonElement>(null);
-  useLayoutEffect(() => {
-    if (!edits.undoAvailable && !edits.undoPending && undoFocused) helpRef.current?.focus();
-  }, [edits.undoAvailable, edits.undoPending, undoFocused]);
   return (
-    <div className="flex items-center justify-end gap-2" {...edits.keyboardProps}>
-      <Button
-        onFocusChange={setUndoFocused}
-        type="button"
-        variant="outline"
-        size="sm"
-        onPress={edits.undo}
-        isPending={edits.undoPending}
-        isDisabled={!edits.undoAvailable && !edits.undoPending}
-      >
-        {edits.undoLabel === undefined ? null : <Undo2 aria-hidden="true" className="size-4" />}
-        {edits.undoLabel === undefined ? "Undo last edit" : `Undo ${edits.undoLabel}`}
-      </Button>
-      <GridShortcutsTrigger buttonRef={helpRef} onOpenChange={setShortcutsOpen} />
+    <>
+      <GridShortcutsTrigger onOpenChange={setShortcutsOpen} />
       <GridShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-    </div>
+    </>
   );
 }
+
+type BatchAttempt = { action: BatchAction; ids: readonly string[] };
+type BatchSendResult = { saved: boolean } & Omit<BatchOutcome["failed"][number], "id">;
 
 export function LibraryPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
@@ -610,11 +552,7 @@ function LibraryContent({
     };
   }, []);
   const [batch, setBatch] = useState<BatchOutcome>();
-  const [batchAttempt, setBatchAttempt] = useState<{
-    action: BatchAction;
-    ids: readonly string[];
-    statusTargets: readonly StatusTarget[];
-  }>();
+
   const [hasRenderedControls, setHasRenderedControls] = useState(false);
   const preferences = useLibraryPreferences(query.viewer.id, query.viewer.libraryPreferences);
   const { density, hiddenColumns, sortOverride, sortLevels, defaultSortLevels, setSortLevels } =
@@ -661,7 +599,7 @@ function LibraryContent({
     if (selectedIds.size > 0) setSelectedIds(new Set());
   }
 
-  function sendBatchShelf(id: string, shelfId: string): ReturnType<StatusTarget["send"]> {
+  function sendBatchShelf(id: string, shelfId: string): Promise<BatchSendResult> {
     return new Promise((resolve, reject) => {
       commitMutation<AddShelfItem>(environment, {
         mutation: mutationsAddShelfItemMutation,
@@ -686,7 +624,7 @@ function LibraryContent({
     });
   }
 
-  function sendBatchRefresh(id: string): ReturnType<StatusTarget["send"]> {
+  function sendBatchRefresh(id: string): Promise<BatchSendResult> {
     return new Promise((resolve, reject) => {
       commitMutation<RefreshMetadata>(environment, {
         mutation: refreshMetadataMutation,
@@ -709,47 +647,59 @@ function LibraryContent({
     });
   }
 
-  function sendBatchItem(attempt: NonNullable<typeof batchAttempt>, id: string) {
-    if (attempt.action.kind === "status")
-      return attempt.statusTargets.find((target) => target.id === id)?.send();
+  async function sendBatchItem(
+    attempt: BatchAttempt,
+    id: string,
+    statusTargets: ReturnType<typeof edits.statusTargets>,
+  ): Promise<BatchSendResult | undefined> {
+    if (attempt.action.kind === "status") {
+      const target = statusTargets.find((item) => item.id === id);
+      const saved = target !== undefined && (await edits.saveStatus(target, attempt.action.status));
+      return saved === undefined ? undefined : { saved, action: "none" };
+    }
     if (attempt.action.kind === "shelf") return sendBatchShelf(id, attempt.action.shelf.id);
     return sendBatchRefresh(id);
   }
 
   async function sendBatchItems(
-    attempt: NonNullable<typeof batchAttempt>,
+    attempt: BatchAttempt,
     succeeded: string[],
     failed: BatchOutcome["failed"][number][],
+    statusTargets: ReturnType<typeof edits.statusTargets>,
   ): Promise<void> {
     for (const id of attempt.ids) {
       if (batchController.current?.signal.aborted) break;
       try {
-        const result = await sendBatchItem(attempt, id);
+        const result = await sendBatchItem(attempt, id, statusTargets);
         if (result === undefined) break;
         if (result.saved) succeeded.push(id);
         else failed.push({ id, action: result.action, message: result.message });
       } catch (error) {
         console.error("[LibraryPage] batch action failed", { id, error });
-        failed.push({
-          id,
-          action: editingFailureAction(error),
-          message: error instanceof Error ? error.message : "Request failed.",
-        });
+        if (attempt.action.kind === "status") {
+          failed.push({ id, action: "none" });
+        } else {
+          failed.push({
+            id,
+            action: editingFailureAction(error),
+            message: error instanceof Error ? error.message : "Request failed.",
+          });
+        }
       }
     }
   }
 
-  async function runBatch(
-    attempt: NonNullable<typeof batchAttempt>,
-    retrying = false,
-  ): Promise<void> {
+  async function runBatch(attempt: BatchAttempt, retrying = false): Promise<void> {
     if (batch?.pending === true) return;
     const previous = retrying ? batch : undefined;
     const succeeded: string[] = [];
     const failed: BatchOutcome["failed"][number][] =
       previous?.failed.filter((failure) => !attempt.ids.includes(failure.id)) ?? [];
     const total = previous?.total ?? attempt.ids.length;
-    setBatchAttempt(attempt);
+    const statusTargets =
+      attempt.action.kind === "status"
+        ? edits.statusTargets(attempt.ids.map((id) => ({ id })))
+        : [];
     setBatch({
       action: attempt.action,
       pending: true,
@@ -758,7 +708,7 @@ function LibraryContent({
       succeeded: previous?.succeeded ?? [],
       failed: [...failed],
     });
-    await sendBatchItems(attempt, succeeded, failed);
+    await sendBatchItems(attempt, succeeded, failed, statusTargets);
     if (batchController.current?.signal.aborted) return;
     setBatch({
       action: attempt.action,
@@ -780,15 +730,6 @@ function LibraryContent({
       );
     }
   }
-
-  const batchFeedback = new Map(
-    batch?.failed.map((failure) => {
-      const attemptId = batchAttempt?.statusTargets.find(
-        (target) => target.id === failure.id,
-      )?.attemptId;
-      return [failure.id, edits.feedback.find((entry) => entry.id === attemptId)];
-    }),
-  );
 
   function setView(next: LibraryView): void {
     preferences.setView(next);
@@ -857,7 +798,7 @@ function LibraryContent({
                 onClearAll={clearAll}
               />
             }
-            editControls={viewMode === "table" ? <TableEditControls edits={edits} /> : null}
+            editControls={viewMode === "table" ? <TableEditControls /> : null}
             loadedCount={items.length}
             hasMorePages={canLoadMore}
             query={filterState.q ?? ""}
@@ -891,7 +832,22 @@ function LibraryContent({
             data-panel-open={filtersBeside && filtersOpen}
           >
             <div className="flex min-h-0 min-w-0 flex-col">
-              <CellEditOutcomes edits={edits} />
+              {viewMode === "table" && edits.error !== null ? (
+                <div className="border-border bg-surface mb-3 flex items-center gap-3 rounded-md border px-3 py-2">
+                  <p role="alert" className="text-danger-text min-w-0 flex-1 break-words text-sm">
+                    {edits.error}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onPress={edits.dismissError}
+                    aria-label="Dismiss edit error"
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              ) : null}
               <LibraryBooks
                 scrollRef={geometry.coversRef}
                 onScroll={geometry.scrolled}
@@ -973,41 +929,20 @@ function LibraryContent({
             shelves={shelves}
             shelvesError={shelvesError}
             canRefresh={account !== undefined && !account.is_child}
-            result={
-              batch === undefined || batch.action.kind !== "status" || batch.pending
-                ? batch
-                : {
-                    ...batch,
-                    failed: batch.failed.map((failure) => ({
-                      ...failure,
-                      action: batchFeedback.get(failure.id)?.action ?? "none",
-                    })),
-                  }
-            }
+            result={batch}
             onAction={(action) => {
-              const rows = items.filter((row) => selectedIds.has(row.id));
-              void runBatch({
-                action,
-                ids: rows.map((row) => row.id),
-                statusTargets:
-                  action.kind === "status" ? edits.statusTargets(rows, action.status) : [],
-              });
+              const ids = items.filter((row) => selectedIds.has(row.id)).map((row) => row.id);
+              void runBatch({ action, ids });
             }}
             onRetry={() => {
-              if (batchAttempt === undefined || batch === undefined) return;
+              if (batch === undefined || batch.action.kind === "status") return;
               const ids = batch.failed
-                .filter(
-                  (failure) =>
-                    failure.action === "retry" &&
-                    (batch.action.kind !== "status" ||
-                      batchFeedback.get(failure.id)?.action === "retry"),
-                )
+                .filter((failure) => failure.action === "retry")
                 .map((failure) => failure.id);
-              void runBatch({ ...batchAttempt, ids }, true);
+              void runBatch({ action: batch.action, ids }, true);
             }}
             onDismiss={() => {
               setBatch(undefined);
-              setBatchAttempt(undefined);
             }}
           />
         </div>

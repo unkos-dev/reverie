@@ -2,8 +2,6 @@ use type_safe_id::{StaticType, TypeSafeId};
 use uuid::Uuid;
 
 pub(super) trait Kind: StaticType {
-    const NAME: &str;
-
     fn encode(id: Uuid) -> async_graphql::ID {
         async_graphql::ID(TypeSafeId::<Self>::from_uuid(id).to_string())
     }
@@ -28,9 +26,7 @@ macro_rules! kinds {
         impl StaticType for $name {
             const TYPE: &'static str = $prefix;
         }
-        impl Kind for $name {
-            const NAME: &'static str = stringify!($name);
-        }
+        impl Kind for $name {}
         const _: () = assert!($name::TYPE_PREFIX_IS_VALID);
     )*};
 }

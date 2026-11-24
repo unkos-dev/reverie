@@ -133,17 +133,9 @@ confirmation; a refused save leaves the sheet open with the entered values and e
 opens the confirmation before the action runs, including for implicit submission. The confirmation button allows the
 next submission through to the action.
 
-Table-load recovery belongs to the Library results region. Cell failures retain their book, field, submitted value and
-source query in account-scoped Query mutation state, outside conditional table rendering. Metadata resolution reads
-committed request evidence through ordinary retry and reconnect; current value equality cannot confirm a save. Reading
-recovery retains matched-read confirmation. Reload never replays a write. Recovery waits for conflicting writes and uses
-cancellation signals to prevent obsolete reads from applying values.
-
-Table Undo remains beside Help and labels the newest retained field and book, including hidden rows. Its native pending
-state retains focus, fixes the target and suppresses repeated activation. React Aria `useKeyboard` handles Ctrl/Cmd+Z
-inside the table area, leaving active editors and other keys to their native controls. When focused Undo becomes
-unavailable, focus moves to Help; completion never moves focus after the user leaves the button. Results name the field
-and book in Edit outcomes, without a toast. Expiry quietly removes the entry and label. The book view has no saved Undo.
+Table-load recovery belongs to the Library results region. A cell save shows pending feedback beside its value. One
+dismissible notice above the table names the book, field and reason when a save fails. A stale value refreshes
+automatically. The batch bar announces the outcome count after sequential status saves.
 
 Failed mutations use TanStack's native retention: they remain while observed, then become eligible for collection five
 minutes after their last mutation observer detaches. The initiating hook's next request or Library exit detaches that

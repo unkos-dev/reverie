@@ -37,11 +37,10 @@ governed-by:
 
 The Rust service serves authenticated browser application data at `POST /api/graphql`. This subject owns the GraphQL
 schema and its execution policy, the trusted-document manifest, and the browser's Relay environment and network. The
-schema exposes the viewer and reader graph, protected mutations and session-bound operation resolution through the same
-service operations that the HTTP adapters call. The Designs that own those operations, such as "Books list query
-contract", "Shelves" and "Metadata review and editing", describe their domain rules. The Design "API error contract and
-OpenAPI" owns the HTTP envelope and the execution error codes, and the Design "Conditional requests and optimistic
-concurrency" owns editing baselines.
+schema exposes the viewer and reader graph and protected mutations through the same service operations that the HTTP
+adapters call. The Designs that own those operations, such as "Books list query contract", "Shelves" and "Metadata
+review and editing", describe their domain rules. The Design "API error contract and OpenAPI" owns the HTTP envelope and
+the execution error codes, and the Design "Conditional requests and optimistic concurrency" owns editing baselines.
 
 The account, administration, authentication, settings and token screens, and the Library's empty-state ingestion
 summary, read HTTP endpoints through TanStack Query. Authentication protocols, OPDS, binary delivery and `/api/v1` are
@@ -50,16 +49,15 @@ HTTP contracts outside this subject.
 ## Structure
 
 `backend/src/graphql/mod.rs` builds one async-graphql schema with query and mutation roots and no subscriptions.
-Ordinary queries use `ReadScope`; mutations and `metadataOperation` use `WriteScope`, independently of HTTP POST. The
-adapter uses `ApiJson<Envelope>` and async-graphql-axum's `GraphQLResponse`. Its OpenAPI router joins `pilot_router`
-before the API CSP, CSRF and session layers. OpenAPI describes the HTTP envelope; the generated GraphQL schema describes
-application fields.
+Ordinary queries use `ReadScope`; mutations use `WriteScope`, independently of HTTP POST. The adapter uses
+`ApiJson<Envelope>` and async-graphql-axum's `GraphQLResponse`. Its OpenAPI router joins `pilot_router` before the API
+CSP, CSRF and session layers. OpenAPI describes the HTTP envelope; the generated GraphQL schema describes application
+fields.
 
 The schema holds the execution policy, never caller identity. Each request supplies its own `CurrentUser` and
-application state, pool, actual tower Session and request-local DataLoader to the executor. The viewer returns the
-encoded `User` identity. Its `displayName` reads the caller's display name through a transaction from
-`acquire_with_rls`, and its `libraryPreferences` reads the caller's preferences under read scope. It exposes no other
-account's data.
+application state, pool and request-local DataLoader to the executor. The viewer returns the encoded `User` identity.
+Its `displayName` reads the caller's display name through a transaction from `acquire_with_rls`, and its
+`libraryPreferences` reads the caller's preferences under read scope. It exposes no other account's data.
 
 `backend/src/graphql/library.rs` defines Work, Manifestation, Shelf and Series objects and their connections.
 `backend/src/services/reader.rs` owns the transport-independent reads used by HTTP adapters and graph fields.
@@ -111,20 +109,19 @@ shared environment.
 
 ### Custom scalars
 
-The metadata operations carry three Reverie scalars. Each declares `@specifiedBy` with a URL to this section, and the
-Relay compiler maps each to `string`.
+The schema exposes two Reverie scalars. Each declares `@specifiedBy` with a URL to this section, and the Relay compiler
+maps each to `string`.
 
 - `ETag` is a strong RFC 9110 §8.8.3 entity-tag in its quoted wire form. Input accepts one strong tag and refuses the
   `*` wildcard, a weak `W/` tag, a list and an unquoted value. Output is the tag the server issued.
-- `UUID` accepts only the 36-character hyphenated form as input, in either case. Output is lower-case hyphenated.
 - `DateTime` is an instant. Input must be RFC 3339 text ending in `Z`. Output is RFC 3339 in UTC ending in `Z`, with
   fractional seconds only when they are not zero.
 
 A value that fails input coercion is an execution error with code `validation` on the field that received it, so the
-operation begins no write. Output values come from typed server state. `FieldOperationStatus` and `OperationOutcome` are
-enums. ISBN-10, ISBN-13, publication date and language are `String`. Domain validation checks their input and returns
-field feedback, and a stored year-only publication date reads as written. Reading revisions use `ETag` for validators
-and `DateTime` for timestamps. Reading status and contributor role are enums.
+operation begins no write. Output values come from typed server state. ISBN-10, ISBN-13, publication date and language
+are `String`. Domain validation checks their input and returns field feedback, and a stored year-only publication date
+reads as written. Reading revisions use `ETag` for validators and `DateTime` for timestamps. Reading status and
+contributor role are enums.
 
 ### Global object IDs
 
@@ -172,11 +169,10 @@ Production refuses submitted text and unknown IDs before execution, with no runt
 text for tooling. Both modes validate variables and enforce root-field scope. Production disables schema introspection;
 development enables it. `__typename` is available in both.
 
-Fields with explicit weighting, which are every connection, the search, label and suggestion lists, and the Undo
-operation lists `MetadataSaved.operations` and `MetadataOperation.operations` (bound 144), cost one plus their effective
-bound times child complexity. Other fields use async-graphql's default complexity, including output lists such as
-`FieldsLocked.fields` and the preference `hiddenColumns`. A capped relation is always a connection with `pageInfo`, so
-nothing is silently truncated. Continuation cursors keep the remainder reachable. Requests above a maximum fail
+Fields with explicit weighting, which are every connection, the search, label and suggestion lists, cost one plus their
+effective bound times child complexity. Other fields use async-graphql's default complexity, including output lists such
+as `FieldsLocked.fields` and the preference `hiddenColumns`. A capped relation is always a connection with `pageInfo`,
+so nothing is silently truncated. Continuation cursors keep the remainder reachable. Requests above a maximum fail
 validation. Validation and execution share the same bounds and size validators. Every connection requires an explicit
 non-null `first`. GraphQL ignores `REVERIE_OPDS_PAGE_SIZE`.
 
@@ -206,10 +202,9 @@ use canonical state only. Basic detail selects the pending count without reading
 and pending page uses two batched operations, each with canonical scalar, junction and pending SQL, independent of
 parent count.
 
-`mutations.rs` calls the shared metadata editing and Undo, reading and shelf operations. Typed patches preserve absent
-and null values. Metadata save, Undo and reading saves take a non-null baseline in their input. Review and shelf
-mutations take no baseline. Scope, adult status, caller visibility, shelf ownership and credential ceilings are separate
-checks.
+`mutations.rs` calls the shared metadata editing, reading and shelf operations. Typed patches preserve absent and null
+values. Metadata and reading saves take a non-null baseline in their input. Review and shelf mutations take no baseline.
+Scope, adult status, caller visibility, shelf ownership and credential ceilings are separate checks.
 
 ### Mutation results
 
@@ -224,8 +219,7 @@ outcomes:
 | `deleteShelf` | `ShelfDeleted`: `deletedShelfId` | `SystemShelfImmutable`, `NotFound` |
 | `addShelfItem` | `ShelfItemAdded`: `shelf`, item `edge` | `NotFound` |
 | `removeShelfItem` | `ShelfItemRemoved`: `shelf`, `deletedManifestationId` | `NotFound` |
-| `updateMetadata` | `MetadataSaved`: `requestId`, `operations`, `manifestation` | `StaleBaseline`, `MetadataInvalid`, `FieldsLocked`, `EditTooLarge`, `NotFound` |
-| `undoMetadata` | `MetadataRestored`: `operation`, `manifestation` | `StaleBaseline`, `UndoUnavailable`, `UndoConflict`, `FieldsLocked`, `EditTooLarge`, `NotFound` |
+| `updateMetadata` | `MetadataSaved`: `manifestation` | `StaleBaseline`, `MetadataInvalid`, `FieldsLocked`, `NotFound` |
 | `acceptMetadataVersion` | `MetadataVersionAccepted`: `manifestation` | `FieldsLocked`, `MetadataInvalid`, `NotFound` |
 | `rejectMetadataVersion` | `MetadataVersionRejected`: `manifestation` | `NotFound` |
 | `revertMetadataField` | `MetadataFieldReverted`: `manifestation` | `FieldsLocked`, `MetadataInvalid`, `NotFound` |
@@ -244,17 +238,15 @@ service refusal that a mutation's union does not declare becomes an internal exe
 failures are execution errors, as are an input that fails scalar coercion and a committed metadata write whose
 manifestation cannot be read back. How each surface recovers from an execution error is described in
 [Conditional requests and optimistic concurrency](0007-conditional-requests-and-optimistic-concurrency.md#failure-and-recovery)
-for saves and Undo, and in [Metadata review and editing](../../metadata/design/0018-metadata-review-and-editing.md) for
-review actions. Metadata success members return the `manifestation`. Its `metadata` field answers with the revision the
-write projected inside its transaction, selected through look-ahead on `manifestation.metadata`. Relay normalisation
-then points the manifestation at the new revision without an updater. Clients branch on `__typename` in `onCompleted`
-and treat `onError` as the execution failure path. The Library edit owner handles typed refusals and retains input for
-explicit recovery. `LibraryPreferencesUpdated.viewer` answers `libraryPreferences` from the row the write returned, so
-the acknowledgement normalises into the viewer's preferences record. A refused preference write is
+for saves, and in [Metadata review and editing](../../metadata/design/0018-metadata-review-and-editing.md) for review
+actions. Metadata success members return the `manifestation`. Its `metadata` field answers with the revision the write
+projected inside its transaction, selected through look-ahead on `manifestation.metadata`. Relay normalisation then
+points the manifestation at the new revision without an updater. Clients branch on `__typename` in `onCompleted` and
+treat `onError` as the execution failure path. The Library edit owner shows typed refusals and refreshes the visit on a
+stale baseline. `LibraryPreferencesUpdated.viewer` answers `libraryPreferences` from the row the write returned, so the
+acknowledgement normalises into the viewer's preferences record. A refused preference write is
 `LibraryPreferencesInvalid`. The reading acknowledgement returns the manifestation linked to the revision built from the
-row its write returned. Exact Undo and resolution require the live browser session that issued the operation, and apply
-its expiry, budgets and non-consuming refusals. Basic and device tokens may save metadata but receive no Undo
-capability.
+row its write returned.
 
 ### Selected revisions
 
@@ -286,10 +278,8 @@ The screen query contains the conditional, aliased `readerLibrary` connection. T
 actions read their fragments. The displayed and candidate readers use `readerLibraryPaginationQuery` through
 `usePaginationFragment`. The author editor loads `cellsAuthorsQuery` and continues through
 `readerAuthorEditingPaginationQuery`. The labels and typeahead use their generated refetch queries. Library edits use
-native `commitMutation` with success payload fragments. The edit owner tracks each cell's pending and recovery state
-when virtualised rows unmount and keeps Undo pending through the eligibility read between mutations, beyond the lifetime
-tracked by `useMutation`'s single `isInFlight` flag. The Library operations publish without operation-specific
-projections. The Book dialog and Versions continue to use their own fragments and hooks.
+native `useMutation` above the virtualised rows. Save payloads spread their consuming fragments and publish without
+operation-specific projections. The Book dialog and Versions continue to use their own fragments and hooks.
 
 The Library route loader confirms the account, retains `libraryBootstrapQuery` for the destination's visit owner and
 fetches it with `fetchQuery` under `store-or-network`, resolving on completion with the last payload. It then starts
@@ -316,8 +306,8 @@ own error boundary. Its explicit Reload calls `fetchQuery` with `network-only` f
 stays mounted until the fresh revision arrives.
 
 `frontend/src/lib/relay/mutations.ts` holds the Book form and other protected actions. The table-editing owner holds the
-Library's save, reading, Undo and recovery operations. The Design "Conditional requests and optimistic concurrency"
-describes how each editor captures its baseline.
+Library's metadata and reading mutations. The Design "Conditional requests and optimistic concurrency" describes how
+each editor captures its baseline.
 
 `Viewer.libraryPreferences` and `updateLibraryPreferences` share the canonical preference service with HTTP. Density,
 view and column names are enums, and each sort stack is a list of `LibrarySortLevel` values. Output omits a stored

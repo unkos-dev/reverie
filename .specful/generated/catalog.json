@@ -537,7 +537,10 @@
       "id": "REV-ADR-0069",
       "kind": "adr",
       "path": "docs/adr/0069-metadata-change-identity-and-short-lived-exact-undo.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0085"
+      ],
       "title": "Metadata change identity and short-lived exact Undo"
     },
     {
@@ -673,6 +676,16 @@
       "title": "Editing baselines as revision records"
     },
     {
+      "id": "REV-ADR-0085",
+      "kind": "adr",
+      "path": "docs/adr/0085-database-maintained-aggregate-metadata-revisions.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0069"
+      ],
+      "title": "Database-maintained aggregate metadata revisions"
+    },
+    {
       "governed-by": [
         "REV-ADR-0066",
         "REV-ADR-0075",
@@ -688,7 +701,6 @@
         "REV-REQ-0076",
         "REV-REQ-0077",
         "REV-REQ-0080",
-        "REV-REQ-0081",
         "REV-REQ-0092"
       ],
       "title": "Library filter and sort state"
@@ -716,8 +728,7 @@
         "REV-REQ-0005",
         "REV-REQ-0006",
         "REV-REQ-0084",
-        "REV-REQ-0085",
-        "REV-REQ-0098"
+        "REV-REQ-0085"
       ],
       "title": "Authorization axes"
     },
@@ -779,7 +790,7 @@
     {
       "governed-by": [
         "REV-ADR-0011",
-        "REV-ADR-0069",
+        "REV-ADR-0085",
         "REV-ADR-0084"
       ],
       "id": "REV-DESIGN-0007",
@@ -813,7 +824,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0069",
+        "REV-ADR-0085",
         "REV-ADR-0067",
         "REV-ADR-0051",
         "REV-ADR-0052"
@@ -977,14 +988,13 @@
         "REV-REQ-0055",
         "REV-REQ-0056",
         "REV-REQ-0072",
-        "REV-REQ-0073",
-        "REV-REQ-0098"
+        "REV-REQ-0073"
       ],
       "title": "Metadata review and editing"
     },
     {
       "governed-by": [
-        "REV-ADR-0069",
+        "REV-ADR-0085",
         "REV-ADR-0066",
         "REV-ADR-0019",
         "REV-ADR-0037",
@@ -1032,7 +1042,6 @@
       "satisfies": [
         "REV-REQ-0018",
         "REV-REQ-0020",
-        "REV-REQ-0081",
         "REV-REQ-0095",
         "REV-REQ-0096"
       ],
@@ -1848,12 +1857,6 @@
       "title": "Library return restores browsing context"
     },
     {
-      "id": "REV-REQ-0081",
-      "kind": "req",
-      "path": "docs/specs/library/requirements/0081-failed-library-saves-support-explicit-retry.md",
-      "title": "Failed Library saves support explicit Retry"
-    },
-    {
       "id": "REV-REQ-0082",
       "kind": "req",
       "path": "docs/specs/api/requirements/0082-graphql-edit-acknowledgements-carry-the-validator-of-their-values.md",
@@ -1960,15 +1963,6 @@
       "kind": "req",
       "path": "docs/specs/api/requirements/0096-a-graphql-edit-without-a-well-formed-baseline-is-refused-and-changes-nothing.md",
       "title": "A GraphQL edit without a well-formed baseline is refused and changes nothing"
-    },
-    {
-      "governed-by": [
-        "REV-ADR-0069"
-      ],
-      "id": "REV-REQ-0098",
-      "kind": "req",
-      "path": "docs/specs/metadata/requirements/0098-only-the-browser-session-that-saved-a-metadata-change-can-undo-it-or-resolve-its-outcome.md",
-      "title": "Only the browser session that saved a metadata change can undo it or resolve its outcome"
     }
   ]
 }

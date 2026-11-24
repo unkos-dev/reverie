@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<69a44d7b3b42e6c8cf5fa053c099f46b>>
- * @relayHash 789b2b574e35bcbf96d15120a801039c
+ * @generated SignedSource<<7c6d0b32700c87ee7c0b414e88262a88>>
+ * @relayHash 1e329264811f0e03b98f1b4b4732c871
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID db903e2553843102950b07958a7a9820630098d9302e5c775514513360b591a1
+// @relayRequestID 4887a9dcffbe8559c2c4fd34b715f895fe57e68f7b57e2347e4d8fa987f23450
 
 import { ConcreteRequest } from "relay-runtime";
 export type ContentRatingInput =
@@ -18,17 +18,10 @@ export type ContentRatingInput =
   | "MATURE"
   | "TEEN"
   | "%future added value";
-export type FieldOperationStatus =
-  | "CONSUMED"
-  | "ELIGIBLE"
-  | "LOCKED"
-  | "UNAVAILABLE"
-  | "%future added value";
 export type UpdateMetadataInput = {
   baseline: string;
   id: string;
   patch: MetadataPatch;
-  requestId?: string | null | undefined;
 };
 export type MetadataPatch = {
   contentRating?: ContentRatingInput | null | undefined;
@@ -63,10 +56,6 @@ export type mutationsSaveTitleMutation$variables = {
 export type mutationsSaveTitleMutation$data = {
   readonly updateMetadata:
     | {
-        readonly __typename: "EditTooLarge";
-        readonly message: string;
-      }
-    | {
         readonly __typename: "FieldsLocked";
         readonly fields: ReadonlyArray<string>;
         readonly message: string;
@@ -91,13 +80,6 @@ export type mutationsSaveTitleMutation$data = {
             readonly workId: string;
           };
         };
-        readonly operations: ReadonlyArray<{
-          readonly expiresAt: string;
-          readonly fieldName: string;
-          readonly operationId: string;
-          readonly status: FieldOperationStatus;
-        }>;
-        readonly requestId: string | null | undefined;
       }
     | {
         readonly __typename: "NotFound";
@@ -150,52 +132,6 @@ const node: ConcreteRequest = (function () {
     v4 = {
       kind: "InlineFragment",
       selections: [
-        {
-          alias: null,
-          args: null,
-          kind: "ScalarField",
-          name: "requestId",
-          storageKey: null,
-        },
-        {
-          alias: null,
-          args: null,
-          concreteType: "FieldOperation",
-          kind: "LinkedField",
-          name: "operations",
-          plural: true,
-          selections: [
-            {
-              alias: null,
-              args: null,
-              kind: "ScalarField",
-              name: "operationId",
-              storageKey: null,
-            },
-            {
-              alias: null,
-              args: null,
-              kind: "ScalarField",
-              name: "fieldName",
-              storageKey: null,
-            },
-            {
-              alias: null,
-              args: null,
-              kind: "ScalarField",
-              name: "expiresAt",
-              storageKey: null,
-            },
-            {
-              alias: null,
-              args: null,
-              kind: "ScalarField",
-              name: "status",
-              storageKey: null,
-            },
-          ],
-          storageKey: null,
-        },
         {
           alias: null,
           args: null,
@@ -311,12 +247,6 @@ const node: ConcreteRequest = (function () {
     v10 = {
       kind: "InlineFragment",
       selections: v6 /*:: as any*/,
-      type: "EditTooLarge",
-      abstractKey: null,
-    },
-    v11 = {
-      kind: "InlineFragment",
-      selections: v6 /*:: as any*/,
       type: "NotFound",
       abstractKey: null,
     };
@@ -341,7 +271,6 @@ const node: ConcreteRequest = (function () {
             v8 /*:: as any*/,
             v9 /*:: as any*/,
             v10 /*:: as any*/,
-            v11 /*:: as any*/,
           ],
           storageKey: null,
         },
@@ -373,14 +302,13 @@ const node: ConcreteRequest = (function () {
             v8 /*:: as any*/,
             v9 /*:: as any*/,
             v10 /*:: as any*/,
-            v11 /*:: as any*/,
           ],
           storageKey: null,
         },
       ],
     },
     params: {
-      id: "db903e2553843102950b07958a7a9820630098d9302e5c775514513360b591a1",
+      id: "4887a9dcffbe8559c2c4fd34b715f895fe57e68f7b57e2347e4d8fa987f23450",
       metadata: {},
       name: "mutationsSaveTitleMutation",
       operationKind: "mutation",
@@ -389,6 +317,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "13d67a54fb07927f52cf7eefcec77cc2";
+(node as any).hash = "02e9ba4d567bc4924081e2240ece2fa2";
 
 export default node;

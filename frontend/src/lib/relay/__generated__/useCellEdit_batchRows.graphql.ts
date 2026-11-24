@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<e708c427a7cc259b316c47e5b832ed50>>
+ * @generated SignedSource<<0bf591ba54c21d48b8e6266804498b05>>
  * @lightSyntaxTransform
  */
 
@@ -8,22 +8,11 @@
 // @ts-nocheck
 
 import { ReaderFragment } from "relay-runtime";
-export type ReadingStatus =
-  | "ABANDONED"
-  | "FINISHED"
-  | "ON_HOLD"
-  | "READING"
-  | "WANT_TO_READ"
-  | "%future added value";
 import { FragmentRefs } from "relay-runtime";
 export type useCellEdit_batchRows$data = ReadonlyArray<{
   readonly id: string;
-  readonly metadata: {
-    readonly title: string;
-  };
   readonly readingState: {
     readonly etag: string;
-    readonly status: ReadingStatus | null | undefined;
   };
   readonly " $fragmentType": "useCellEdit_batchRows";
 }>;
@@ -51,24 +40,6 @@ const node: ReaderFragment = {
     {
       alias: null,
       args: null,
-      concreteType: "MetadataRevision",
-      kind: "LinkedField",
-      name: "metadata",
-      plural: false,
-      selections: [
-        {
-          alias: null,
-          args: null,
-          kind: "ScalarField",
-          name: "title",
-          storageKey: null,
-        },
-      ],
-      storageKey: null,
-    },
-    {
-      alias: null,
-      args: null,
       concreteType: "ReadingRevision",
       kind: "LinkedField",
       name: "readingState",
@@ -81,13 +52,6 @@ const node: ReaderFragment = {
           name: "etag",
           storageKey: null,
         },
-        {
-          alias: null,
-          args: null,
-          kind: "ScalarField",
-          name: "status",
-          storageKey: null,
-        },
       ],
       storageKey: null,
     },
@@ -96,6 +60,6 @@ const node: ReaderFragment = {
   abstractKey: null,
 };
 
-(node as any).hash = "106ccca32ac7f08694cd21bdc8a3a824";
+(node as any).hash = "213251b2e48595f2d0398a53a739ca7f";
 
 export default node;
