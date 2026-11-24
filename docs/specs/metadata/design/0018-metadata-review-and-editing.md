@@ -159,11 +159,11 @@ cursors, with no universal snapshot ceiling.
   response, pairing them with owner identities and revisions. A save compares its baseline under the parent locks
   against `metadata_revision(...).etag()`, which reads the same owner identities and revisions, so
   `MetadataRevision::etag` produces the same validator for GET, the locked comparison and the confirmed response.
-- Browser consumers use generated GraphQL operations in `mutations.ts` and `reader.ts`. `VersionsTab.tsx` groups the
-  lazy pending connection by field, retains each field's action outcome and supplies Accept, Reject and Clear through
-  `useMutation`. Its Edit metadata button starts the edit sheet's form read with `useQueryLoader`, and the sheet reads
-  it with `usePreloadedQuery` under Suspense and an error boundary. The manual edit sheet tracks touched fields and
-  submits only those keys with the baseline of the revision it opened with.
+- The Book tab selection handler starts the pending connection with `useQueryLoader`. `VersionsTab.tsx` groups proposals
+  by field, retains each field's action outcome and supplies Accept, Reject and Clear through `useMutation`. Its Edit
+  metadata button starts the edit sheet's form read with `useQueryLoader`, and the sheet reads it with
+  `usePreloadedQuery` under Suspense and an error boundary. The manual edit sheet tracks touched fields and submits only
+  those keys with the baseline of the revision it opened with.
 
 ### Three distinct review-queue reads
 
@@ -173,10 +173,11 @@ cursors, with no universal snapshot ceiling.
   joins only `manifestations` to reach `m.work_id = $1` (a column on `manifestations` itself, so no join to `works` is
   needed): a join that puts that table's own row-level-security policies in the query plan, unlike the
   manifestation-scoped read above.
-- The book-detail Versions tab executes `readerVersionsQuery` only when opened. Its native pagination fragment completes
-  the selected pending connection. The shared reader service filters out rejected rows, current canonical pointers and
-  null-valued audit rows. Basic detail reads select only the pending count. The HTTP book-detail representation uses
-  `load_pending_versions` and its `MAX_PENDING_VERSIONS` bound of 200.
+- Selecting Versions loads `VersionsTabQuery`. Its native pagination fragment completes the pending connection.
+  `MetadataVersion.newValue` returns a union member for text, a signed integer or a list of strings. `status` is a
+  review-status enum. Field names, source names and match types are strings. The shared reader service filters out
+  rejected rows, current canonical pointers and null-valued audit rows. Basic detail reads select only the pending
+  count. The HTTP book-detail representation uses `load_pending_versions` and its `MAX_PENDING_VERSIONS` bound of 200.
 
 ## Interfaces and dependencies
 
@@ -244,11 +245,11 @@ originating form. A stale refusal offers Reload, which replaces the draft and it
 
 **An operator edits publisher and clears publication date in the metadata form.**
 
-1. The Versions tab loads `mutationsFormQuery`, and the edit sheet captures its opening revision as the Design
+1. The Versions tab loads `EditMetadataDialogQuery`, and the edit sheet captures its opening revision as the Design
    "Conditional requests and optimistic concurrency" describes
    ([Client editing baselines](../../api/design/0007-conditional-requests-and-optimistic-concurrency.md#client-editing-baselines)).
-2. The native Form action sends the touched-only GraphQL patch, starting baseline and request UUID through
-   `mutationsSaveFormMutation`. An unchanged resend keeps all three values.
+2. The Form action sends the touched fields and their starting baseline through `EditMetadataDialogSaveMutation`. A
+   transport retry keeps both.
 3. The GraphQL resolver parses the supplied strong baseline and calls `editing::update_book_metadata`. The operation
    opens `acquire_with_rls_read_committed` and locks the manifestation and then its work. Hidden or missing identities
    produce the `NotFound` member.
@@ -271,14 +272,15 @@ originating form. A stale refusal offers Reload, which replaces the draft and it
 6. If an ISBN field was touched, `work::rematch_on_isbn_change` runs before the response is assembled.
 7. The operation materialises the selected matched acknowledgement inside the transaction. The response contains its
    aggregate validator and selected canonical fields. HTTP returns its complete canonical response.
-8. The edit sheet's mutation payload spreads the form snapshot, `readerDetailEditable` and `readerVersions` under the
-   returned manifestation. Relay normalisation updates Book detail and links the new revision. The replaced pending
-   connection shows a previous canonical value that the save returned to the review queue, and the sheet closes its
-   originating mounted form. Versions reads are lazy and complete their native pending connection. Field-owned review
-   outcomes survive proposal removal. A successful review action returns the manifestation with `readerDetailBook` and
-   `readerVersions`, which replaces the pending connection's first page and updates the pending count. Accept and Clear
-   also return the form snapshot, so the next edit sheet opens on the revision they produced. A refused or failed review
-   action invalidates the manifestation, so Book detail and Versions refetch.
+8. The save response spreads `EditMetadataDialog_opening`, `BookPage_book`, `VersionsTab_proposals` and
+   `LibraryTable_cell` through the manifestation. Relay links the new revision with the values the retained table reads,
+   updates the Book display and replaces the pending connection's first page. The successful save closes the originating
+   form. Accept and Clear publish the same fragments. Reject updates the Book display and pending proposals. Field-owned
+   outcomes survive proposal removal. A refusal or failed review invalidates the manifestation, so the Book and Versions
+   readers refetch.
+9. Successful form saves, Accept and Clear pass changed field names to the Library visit owner. Changes to a shared Work
+   also pass the manifestation and Work IDs so retained visits containing sibling editions refresh their editing
+   revisions. Reject affects the proposal queue.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 

@@ -130,8 +130,6 @@ function metadata(book: BookListItem) {
   return {
     __typename: "MetadataRevision",
     id: revisionId(book.id, book.metadata_etag),
-    workId: encodeGraphQLId("Work", book.work_id),
-    manifestationId: encodeGraphQLId("Manifestation", book.id),
     etag: book.metadata_etag,
     title: book.title,
     subtitle: book.subtitle,

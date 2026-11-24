@@ -136,8 +136,6 @@ function graphBook(book: typeof BOOK) {
     },
     metadata: {
       id: revisionId(book.id, book.metadata_etag),
-      manifestationId: graphId("Manifestation", book.id),
-      workId: graphId("Work", book.work_id),
       etag: book.metadata_etag,
       title: book.title,
       subtitle: null,
@@ -159,9 +157,9 @@ function graphBook(book: typeof BOOK) {
     isbnMismatch: false,
     publisher: null,
     publicationDate: null,
-    ingestionStatus: "complete",
-    validationStatus: "clean",
-    enrichmentStatus: "complete",
+    ingestionStatus: "COMPLETE",
+    validationStatus: "CLEAN",
+    enrichmentStatus: "COMPLETE",
   };
 }
 
@@ -269,14 +267,23 @@ async function intercept(
         };
         await route.fulfill({ json: { data } });
         return;
-      } else if (operation === "readerDetailQuery") {
+      } else if (operation === "BookPageQuery") {
         const book = fixture.books.find(
           (item) => graphId("Manifestation", item.id) === body.variables.id,
         );
-        data = { manifestation: book === undefined ? null : graphBook(book) };
+        if (book === undefined) data = { manifestation: null };
+        else {
+          const manifestation = graphBook(book);
+          data = {
+            manifestation: {
+              ...manifestation,
+              work: { ...manifestation.work, detailAuthors: manifestation.work.authors },
+            },
+          };
+        }
       } else if (
-        operation === "readerShelvesQuery" ||
-        operation === "readerShelvesPaginationQuery"
+        operation === "ShelvesListPageQuery" ||
+        operation === "ShelvesListPagePaginationQuery"
       ) {
         data = { shelves: shelves() };
       } else if (operation === "libraryBootstrapQuery") {

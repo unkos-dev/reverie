@@ -1609,9 +1609,10 @@ mod tests {
     }
 
     fn reader_variables(document: &str, fixture: &ReaderFixture) -> serde_json::Value {
-        let id = if document.contains("readerShelfQuery") || document.contains("fetch__Shelf(") {
+        let id = if document.contains("ShelfDetailPageQuery") || document.contains("fetch__Shelf(")
+        {
             id::Shelf::encode(fixture.shelf_a)
-        } else if document.contains("readerSeriesQuery") || document.contains("fetch__Series(") {
+        } else if document.contains("SeriesPageQuery") || document.contains("fetch__Series(") {
             id::Series::encode(fixture.series)
         } else if document.contains("fetch__Work(") {
             id::Work::encode(fixture.visible_work)
@@ -1966,7 +1967,7 @@ mod tests {
         assert_eq!(response["data"]["search"].as_array().unwrap().len(), 1);
         assert_eq!(response["data"]["authorSuggestions"], json!([]));
         assert!(!response.to_string().contains("Other graph shelf"));
-        let versions_query = "query($id: ID!) { manifestation(id: $id) { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } }";
+        let versions_query = "query($id: ID!) { manifestation(id: $id) { versions { pendingCount pending(first: 20) { edges { node { newValue { ... on MetadataProposalText { text } } } } } } } }";
         let adult_versions = reader_query(
             &fixture,
             &fixture.admin,
@@ -1980,17 +1981,18 @@ mod tests {
             1
         );
         assert_eq!(
-            adult_versions["data"]["manifestation"]["versions"]["pending"]["edges"][0]["node"]["newValue"],
+            adult_versions["data"]["manifestation"]["versions"]["pending"]["edges"][0]["node"]["newValue"]
+                ["text"],
             "Unreviewed graph proposal"
         );
         for (query, variables) in [
             (versions_query, json!({"id": visible.as_str()})),
             (
-                "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } }",
+                "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending(first: 20) { edges { node { newValue { ... on MetadataProposalText { text } } } } } } } } }",
                 json!({"id": visible.as_str()}),
             ),
             (
-                "query($id: ID!) { work(id: $id) { manifestations(first: 2) { edges { node { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } } } }",
+                "query($id: ID!) { work(id: $id) { manifestations(first: 2) { edges { node { versions { pendingCount pending(first: 20) { edges { node { newValue { ... on MetadataProposalText { text } } } } } } } } } } }",
                 json!({"id": id::Work::encode(fixture.visible_work).as_str()}),
             ),
         ] {

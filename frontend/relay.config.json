@@ -5,7 +5,7 @@
   "artifactDirectory": "./src/lib/relay/__generated__",
   "eagerEsModules": true,
   "customScalarTypes": {
-    "JSON": "unknown",
+    "SignedInteger": "number",
     "ETag": "string",
     "DateTime": "string"
   },

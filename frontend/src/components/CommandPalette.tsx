@@ -2,9 +2,15 @@
  * Global library search using server-ranked results and safe snippet highlighting.
  * React Aria owns modal focus and dismissal.
  */
-import { graphql, usePreloadedQuery, useQueryLoader, type PreloadedQuery } from "react-relay";
+import {
+  graphql,
+  useFragment,
+  usePreloadedQuery,
+  useQueryLoader,
+  type PreloadedQuery,
+} from "react-relay";
 import type { CommandPaletteQuery as SearchQuery } from "@/lib/relay/__generated__/CommandPaletteQuery.graphql";
-import { Suspense, useState, type ReactElement } from "react";
+import { Suspense, useState, type ReactElement, type ReactNode } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import {
   Autocomplete,
@@ -21,30 +27,50 @@ import {
 } from "react-aria-components";
 import { SearchIcon } from "lucide-react";
 
-import type { SearchHit } from "@/api";
-type SearchItem = Pick<SearchHit, "id" | "title" | "authors" | "snippet">;
+import type { CommandPalette_results$key } from "@/lib/relay/__generated__/CommandPalette_results.graphql";
+import type { CommandPalette_hit$key } from "@/lib/relay/__generated__/CommandPalette_hit.graphql";
 
 const SNIPPET_HL_START = "\u0002";
 const SNIPPET_HL_END = "\u0003";
 
 const commandPaletteQuery = graphql`
   query CommandPaletteQuery($q: String!) @throwOnFieldError {
+    ...CommandPalette_results @arguments(q: $q)
+  }
+`;
+
+const resultsFragment = graphql`
+  fragment CommandPalette_results on Query
+  @argumentDefinitions(q: { type: "String!" })
+  @throwOnFieldError {
     search(q: $q) {
-      snippet
       manifestation {
         id
         work {
-          title
-          authors(first: 5) {
-            edges {
-              node {
-                name
-              }
+          id
+        }
+      }
+      ...CommandPalette_hit
+    }
+  }
+`;
+
+const hitFragment = graphql`
+  fragment CommandPalette_hit on SearchHit @throwOnFieldError {
+    snippet
+    manifestation {
+      id
+      work {
+        title
+        authors(first: 5) {
+          edges {
+            node {
+              name
             }
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
           }
         }
       }
@@ -146,33 +172,23 @@ function LoadedSearchResults({
   reference,
   onClose,
 }: Readonly<{ reference: PreloadedQuery<SearchQuery>; onClose: () => void }>): ReactElement {
-  const data = usePreloadedQuery<SearchQuery>(commandPaletteQuery, reference);
-  const items = data.search.flatMap(({ manifestation, snippet }) =>
-    manifestation?.work == null
-      ? []
-      : [
-          {
-            id: manifestation.id,
-            title: manifestation.work.title,
-            authors: manifestation.work.authors.edges.map(({ node }) => node.name),
-            snippet: snippet ?? null,
-          },
-        ],
-  );
+  const query = usePreloadedQuery<SearchQuery>(commandPaletteQuery, reference);
+  const { search } = useFragment<CommandPalette_results$key>(resultsFragment, query);
+  const hits = search.filter(({ manifestation }) => manifestation?.work != null);
   return (
-    <SearchResults
-      status={items.length === 0 ? "No results." : null}
-      items={items}
-      onClose={onClose}
-    />
+    <SearchResults status={hits.length === 0 ? "No results." : null} onClose={onClose}>
+      {hits.map((hit) => (
+        <SearchResult key={hit.manifestation?.id} hit={hit} />
+      ))}
+    </SearchResults>
   );
 }
 
 function SearchResults({
   status,
-  items = [],
+  children,
   onClose,
-}: Readonly<{ status: string | null; items?: SearchItem[]; onClose: () => void }>): ReactElement {
+}: Readonly<{ status: string | null; children?: ReactNode; onClose: () => void }>): ReactElement {
   return (
     <>
       {status && (
@@ -182,28 +198,34 @@ function SearchResults({
       )}
       <Menu
         aria-label="Books"
-        items={items}
         className="max-h-72 overflow-y-auto p-1 outline-none"
         onClose={onClose}
       >
-        {(hit: SearchItem) => (
-          <MenuItem
-            id={hit.id}
-            href={`/b/${encodeURIComponent(hit.id)}`}
-            textValue={hit.title}
-            className="cursor-default rounded-md px-2 py-1.5 outline-none data-focused:bg-muted"
-          >
-            <Text slot="label">
-              <span className="block text-sm font-medium">{hit.title}</span>{" "}
-              <span className="block text-xs text-fg-muted">{hit.authors.join(", ")}</span>
-              {hit.snippet && (
-                <HighlightedSnippet text={hit.snippet} className="block text-xs text-fg-muted" />
-              )}
-            </Text>
-          </MenuItem>
-        )}
+        {children}
       </Menu>
     </>
+  );
+}
+
+function SearchResult({ hit }: Readonly<{ hit: CommandPalette_hit$key }>): ReactElement | null {
+  const { manifestation, snippet } = useFragment(hitFragment, hit);
+  if (manifestation?.work == null) return null;
+  const { id, work } = manifestation;
+  return (
+    <MenuItem
+      id={id}
+      href={`/b/${encodeURIComponent(id)}`}
+      textValue={work.title}
+      className="cursor-default rounded-md px-2 py-1.5 outline-none data-focused:bg-muted"
+    >
+      <Text slot="label">
+        <span className="block text-sm font-medium">{work.title}</span>{" "}
+        <span className="block text-xs text-fg-muted">
+          {work.authors.edges.map(({ node }) => node.name).join(", ")}
+        </span>
+        {snippet && <HighlightedSnippet text={snippet} className="block text-xs text-fg-muted" />}
+      </Text>
+    </MenuItem>
   );
 }
 

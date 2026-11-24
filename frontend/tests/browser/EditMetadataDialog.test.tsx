@@ -8,8 +8,9 @@ import trustedDocuments from "../../../backend/graphql-documents.json";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import { encodeGraphQLId } from "@/api/graphql";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
-import { mutationsFormQuery } from "@/lib/relay/mutations";
-import type { mutationsFormQuery as FormQuery } from "@/lib/relay/__generated__/mutationsFormQuery.graphql";
+import formQuery, {
+  type EditMetadataDialogQuery as FormQuery,
+} from "@/lib/relay/__generated__/EditMetadataDialogQuery.graphql";
 import { EditMetadataDialog, type EditableField } from "@/pages/book/EditMetadataDialog";
 
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -37,8 +38,6 @@ function revisionId(etag: string): string {
 function snapshot(subtitle = "Original Subtitle", etag = '"aaaaaaaaaaaaaaaaaaaaaa"') {
   return {
     id: revisionId(etag),
-    workId: encodeGraphQLId("Work", WORK),
-    manifestationId: encodeGraphQLId("Manifestation", ID),
     etag,
     title: "Original Title",
     subtitle,
@@ -73,7 +72,7 @@ function saved(
         publisher: metadata.publisher,
         publicationDate: metadata.publicationDate,
         work: {
-          id: metadata.workId,
+          id: encodeGraphQLId("Work", WORK),
           title: metadata.title,
           description: metadata.description,
           language: metadata.language,
@@ -92,8 +91,8 @@ function intercept(handlers: {
   vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
     const request = requestSchema.parse(JSON.parse(z.string().parse(init?.body)));
     const name = documents[request.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
-    if (name === "mutationsFormQuery") return Promise.resolve(handlers.read());
-    if (name === "mutationsSaveFormMutation" && handlers.save !== undefined)
+    if (name === "EditMetadataDialogQuery") return Promise.resolve(handlers.read());
+    if (name === "EditMetadataDialogSaveMutation" && handlers.save !== undefined)
       return Promise.resolve(handlers.save(saveSchema.parse(request.variables.input)));
     throw new Error(`Unexpected operation ${name ?? request.id}`);
   });
@@ -101,7 +100,7 @@ function intercept(handlers: {
 async function renderDialog(fields: readonly EditableField[] = FIELDS) {
   const onOpenChange = vi.fn();
   const environment = relayEnvironment();
-  const queryRef = loadQuery<FormQuery>(environment, mutationsFormQuery, { id: GRAPH_ID });
+  const queryRef = loadQuery<FormQuery>(environment, formQuery, { id: GRAPH_ID });
   const result = await render(
     <RelayEnvironmentProvider environment={environment}>
       <ViewTransition>

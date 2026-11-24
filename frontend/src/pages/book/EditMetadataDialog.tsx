@@ -4,6 +4,7 @@ import {
   useActionState,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactElement,
@@ -21,6 +22,7 @@ import {
 import { ErrorBoundary } from "react-error-boundary";
 import {
   fetchQuery,
+  graphql,
   useFragment,
   useMutation,
   usePreloadedQuery,
@@ -32,23 +34,18 @@ import { Popover, PopoverContent } from "@/components/ui/popover";
 import { FieldError } from "@/components/ui/field";
 
 import { ApiError, UpdateBookMetadataFieldsSchema, type UpdateBookMetadataFields } from "@/api";
-import { MetadataRefusal, editingFailureAction } from "@/api/graphql";
-import { invalidateLibraryVisits } from "@/lib/relay/library-visit";
-import {
-  mutationsFormQuery,
-  mutationsFormSnapshot,
-  mutationsSaveFormMutation,
-} from "@/lib/relay/mutations";
-import type { mutationsFormQuery as FormQuery } from "@/lib/relay/__generated__/mutationsFormQuery.graphql";
+import { editingFailureAction } from "@/api/graphql";
+import { invalidateLibraryVisits, siblingEditionsForFields } from "@/lib/relay/library-visit";
+import type { EditMetadataDialogQuery as FormQuery } from "@/lib/relay/__generated__/EditMetadataDialogQuery.graphql";
 import type {
-  mutationsFormSnapshot$data as FormSnapshot,
-  mutationsFormSnapshot$key,
-} from "@/lib/relay/__generated__/mutationsFormSnapshot.graphql";
+  EditMetadataDialog_opening$data as FormSnapshot,
+  EditMetadataDialog_opening$key,
+} from "@/lib/relay/__generated__/EditMetadataDialog_opening.graphql";
 import type {
-  mutationsSaveFormMutation as SaveForm,
+  EditMetadataDialogSaveMutation as SaveForm,
   MetadataPatch,
   UpdateMetadataInput,
-} from "@/lib/relay/__generated__/mutationsSaveFormMutation.graphql";
+} from "@/lib/relay/__generated__/EditMetadataDialogSaveMutation.graphql";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -69,6 +66,70 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+
+const formQuery = graphql`
+  query EditMetadataDialogQuery($id: ID!) @throwOnFieldError {
+    manifestation(id: $id) {
+      id
+      metadata {
+        ...EditMetadataDialog_opening
+      }
+    }
+  }
+`;
+
+const openingFragment = graphql`
+  fragment EditMetadataDialog_opening on MetadataRevision @throwOnFieldError {
+    etag
+    title
+    subtitle
+    description
+    language
+    publisher
+    publicationDate
+    isbn10
+    isbn13
+    isbnMismatch
+  }
+`;
+
+const saveFormMutation = graphql`
+  mutation EditMetadataDialogSaveMutation($input: UpdateMetadataInput!) {
+    updateMetadata(input: $input) {
+      __typename
+      ... on MetadataSaved {
+        manifestation {
+          id
+          metadata {
+            ...EditMetadataDialog_opening
+          }
+          work {
+            id
+          }
+          ...LibraryTable_cell
+          ...BookPage_book
+          ...VersionsTab_proposals
+        }
+      }
+      ... on StaleBaseline {
+        message
+      }
+      ... on MetadataInvalid {
+        message
+        fieldErrors {
+          field
+          message
+        }
+      }
+      ... on FieldsLocked {
+        message
+      }
+      ... on NotFound {
+        message
+      }
+    }
+  }
+`;
 
 /** One editable field on the edit form, seeded from the metadata revision the form opened with. */
 export type EditableField = {
@@ -200,25 +261,49 @@ function EditMetadataForm({
   onDone,
 }: Readonly<EditMetadataFormProps>): ReactElement {
   const environment = useRelayEnvironment();
-  const data = usePreloadedQuery<FormQuery>(mutationsFormQuery, queryRef);
-  const [opening, setOpening] = useState(0);
+  const [opening, setOpening] = useState<(OpeningValues & { generation: number }) | null>(null);
+  const [captureReload, setCaptureReload] = useState(false);
   const [reloading, setReloading] = useState(false);
   const [reloadError, setReloadError] = useState(false);
-  const manifestation = data.manifestation;
-  if (manifestation == null) throw new Error("Book not found.");
+  const reloadRequest = useRef<{ unsubscribe: () => void } | null>(null);
+  useEffect(
+    () => () => {
+      reloadRequest.current?.unsubscribe();
+    },
+    [],
+  );
+
+  const read = (
+    <MetadataOpening
+      queryRef={queryRef}
+      onRead={(values) => {
+        setOpening((previous) => ({ ...values, generation: (previous?.generation ?? 0) + 1 }));
+        setCaptureReload(false);
+        setReloading(false);
+        setReloadError(false);
+      }}
+    />
+  );
+  if (opening === null) return read;
   const reload = (): void => {
     if (reloading) return;
     setReloading(true);
-    fetchQuery<FormQuery>(
+    let loaded = false;
+    reloadRequest.current = fetchQuery<FormQuery>(
       environment,
-      mutationsFormQuery,
-      { id: manifestation.id },
+      formQuery,
+      { id: opening.manifestationId },
       { fetchPolicy: "network-only" },
     ).subscribe({
+      next: (result) => {
+        loaded = result.manifestation != null;
+      },
       complete: () => {
-        setReloading(false);
-        setReloadError(false);
-        setOpening((value) => value + 1);
+        if (loaded) setCaptureReload(true);
+        else {
+          setReloading(false);
+          setReloadError(true);
+        }
       },
       error: () => {
         setReloading(false);
@@ -227,17 +312,53 @@ function EditMetadataForm({
     });
   };
   return (
-    <EditMetadataFields
-      key={opening}
-      onReload={reload}
-      reloading={reloading}
-      reloadError={reloadError}
-      manifestationId={manifestation.id}
-      fields={fields}
-      metadata={manifestation.metadata}
-      onDone={onDone}
-    />
+    <>
+      {captureReload && (
+        <ErrorBoundary
+          fallback={null}
+          onError={() => {
+            setCaptureReload(false);
+            setReloading(false);
+            setReloadError(true);
+          }}
+        >
+          <Suspense fallback={null}>{read}</Suspense>
+        </ErrorBoundary>
+      )}
+      <EditMetadataFields
+        key={opening.generation}
+        onReload={reload}
+        reloading={reloading}
+        reloadError={reloadError}
+        manifestationId={opening.manifestationId}
+        fields={fields}
+        metadata={opening.metadata}
+        onDone={onDone}
+      />
+    </>
   );
+}
+
+type OpeningValues = { manifestationId: string; metadata: FormSnapshot };
+
+function MetadataOpening({
+  queryRef,
+  onRead,
+}: Readonly<{
+  queryRef: PreloadedQuery<FormQuery>;
+  onRead: (values: OpeningValues) => void;
+}>): null {
+  const { manifestation } = usePreloadedQuery<FormQuery>(formQuery, queryRef);
+  const metadata = useFragment<EditMetadataDialog_opening$key>(
+    openingFragment,
+    manifestation?.metadata,
+  );
+  useLayoutEffect(() => {
+    if (manifestation != null && metadata != null)
+      onRead({ manifestationId: manifestation.id, metadata });
+  }, [manifestation, metadata, onRead]);
+  if (manifestation == null || metadata == null) throw new Error("Book not found.");
+  return null;
 }
 
 type EditMetadataFieldsProps = {
@@ -246,7 +367,7 @@ type EditMetadataFieldsProps = {
   reloadError: boolean;
   manifestationId: string;
   fields: readonly EditableField[];
-  metadata: mutationsFormSnapshot$key;
+  metadata: FormSnapshot;
   onDone: () => void;
 };
 
@@ -256,7 +377,7 @@ function EditMetadataFields({
   reloadError,
   manifestationId,
   fields,
-  metadata: metadataKey,
+  metadata,
   onDone,
 }: Readonly<EditMetadataFieldsProps>): ReactElement {
   const environment = useRelayEnvironment();
@@ -271,15 +392,12 @@ function EditMetadataFields({
   const finish = (): void => {
     if (!controller.current?.signal.aborted) onDone();
   };
-  const current = useFragment(mutationsFormSnapshot, metadataKey);
-  // A later store merge must not advance this edit's write precondition.
-  const [metadata] = useState(current);
-  const [commitSave] = useMutation<SaveForm>(mutationsSaveFormMutation);
+  const [commitSave] = useMutation<SaveForm>(saveFormMutation);
   const attempt = useRef<MetadataPatch | null>(null);
   const touched = useRef(new Set<keyof UpdateBookMetadataFields>());
   const [pendingClearConfirm, setPendingClearConfirm] = useState(false);
   const formId = useId();
-  function buildBody(values: Record<string, string>): MetadataPatch {
+  function buildBody(values: Record<string, string>): { patch: MetadataPatch; fields: string[] } {
     const raw: Record<string, string | null> = {};
     for (const field of fields) {
       if (!touched.current.has(field.name)) continue;
@@ -291,7 +409,7 @@ function EditMetadataFields({
       }
     }
     const body = UpdateBookMetadataFieldsSchema.parse(raw);
-    return {
+    const patch: MetadataPatch = {
       ...("title" in body ? { title: body.title } : {}),
       ...("subtitle" in body ? { subtitle: body.subtitle } : {}),
       ...("description" in body ? { description: body.description } : {}),
@@ -301,6 +419,7 @@ function EditMetadataFields({
       ...("isbn_10" in body ? { isbn10: body.isbn_10 } : {}),
       ...("isbn_13" in body ? { isbn13: body.isbn_13 } : {}),
     };
+    return { patch, fields: Object.keys(body) };
   }
 
   function save(input: UpdateMetadataInput): Promise<SaveForm["response"]["updateMetadata"]> {
@@ -326,43 +445,31 @@ function EditMetadataFields({
   >(
     async (_previous, data) => {
       const values = z.record(z.string(), z.string()).parse(Object.fromEntries(data));
-      let body: MetadataPatch;
+      let change: ReturnType<typeof buildBody>;
       try {
-        body = buildBody(values);
+        change = buildBody(values);
       } catch (err) {
         console.error("[EditMetadataDialog.buildBody] schema parse failed", err);
         const error = "Form has an invalid value. Refresh and try again.";
         return { values, error };
       }
-      if (Object.keys(body).length === 0) {
+      if (change.fields.length === 0) {
         const error = "No fields touched — nothing to save.";
         return { values, error };
       }
       setPendingClearConfirm(false);
+      const { patch, fields: changedFields } = change;
       const previous = attempt.current;
-      const unchanged = previous !== null && JSON.stringify(previous) === JSON.stringify(body);
+      const unchanged = previous !== null && JSON.stringify(previous) === JSON.stringify(patch);
       if (unchanged && _previous.recovery !== undefined && _previous.recovery !== "retry")
         return { ..._previous, values };
-      attempt.current = body;
-      let failure: unknown;
+      attempt.current = patch;
+      let result: SaveForm["response"]["updateMetadata"];
       try {
-        const result = await save({
-          id: manifestationId,
-          patch: body,
-          baseline: metadata.etag,
-        });
-        if (result.__typename === "MetadataSaved") {
-          invalidateLibraryVisits(environment, Object.keys(body));
-          finish();
-          return { values, error: null };
-        }
-        failure = new MetadataRefusal(result);
-      } catch (error) {
-        failure = error;
-      }
-      const recovery = editingFailureAction(failure);
-      if (failure instanceof ApiError) {
-        const errors = failure.errors;
+        result = await save({ id: manifestationId, patch, baseline: metadata.etag });
+      } catch (failure) {
+        const recovery = editingFailureAction(failure);
+        const errors = failure instanceof ApiError ? failure.errors : undefined;
         return {
           values,
           error: Object.keys(errors ?? {}).length > 0 ? null : formatError(failure),
@@ -370,12 +477,32 @@ function EditMetadataFields({
           recovery,
         };
       }
-      return {
-        values,
-        errors: failure instanceof MetadataRefusal ? failure.fieldErrors : undefined,
-        error: formatError(failure),
-        recovery,
-      };
+      switch (result.__typename) {
+        case "MetadataSaved": {
+          const { id, work } = result.manifestation;
+          invalidateLibraryVisits(environment, changedFields, {
+            siblingEditions: siblingEditionsForFields(changedFields, id, work?.id),
+          });
+          finish();
+          return { values, error: null };
+        }
+        case "StaleBaseline":
+          return { values, error: result.message, recovery: "reload" };
+        case "MetadataInvalid":
+          return {
+            values,
+            error: result.message,
+            errors: Object.fromEntries(
+              result.fieldErrors.map(({ field, message }) => [field, message]),
+            ),
+            recovery: "correct",
+          };
+        case "FieldsLocked":
+        case "NotFound":
+          return { values, error: result.message, recovery: "none" };
+        default:
+          return { values, error: "Request failed.", recovery: "none" };
+      }
     },
     { values: {}, error: null },
   );

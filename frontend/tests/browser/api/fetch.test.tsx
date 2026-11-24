@@ -430,7 +430,6 @@ async function graphqlBaselines(): Promise<void> {
   rememberActiveUser("editing-account");
   const environment = relayEnvironment();
   const id = encodeGraphQLId("Manifestation", "12345678-1234-4234-8234-123456789abc");
-  const workId = encodeGraphQLId("Work", "22345678-1234-4234-8234-123456789abc");
   const tag = '"aaaaaaaaaaaaaaaaaaaaaa"';
   const newer = '"bbbbbbbbbbbbbbbbbbbbbb"';
   const latest = '"cccccccccccccccccccccc"';
@@ -440,7 +439,7 @@ async function graphqlBaselines(): Promise<void> {
     [latest, encodeGraphQLId("MetadataRevision", "72345678-1234-4234-8234-123456789abc")],
   ]);
   const revision = (etag: string) => revisions.get(etag) ?? "";
-  const snapshot = { id: revision(tag), workId, manifestationId: id, etag: tag, title: "Original" };
+  const snapshot = { id: revision(tag), etag: tag, title: "Original" };
   const fetch = vi.spyOn(globalThis, "fetch");
   fetch.mockClear();
   const titleResponse = (metadata: unknown) =>
@@ -455,9 +454,7 @@ async function graphqlBaselines(): Promise<void> {
     titleResponse({ ...snapshot, id: revision(newer), title: "Background", etag: newer }),
   );
   await fetchQuery<TitleQuery>(environment, mutationsTitleQuery, { id }).toPromise();
-  fetch.mockResolvedValueOnce(
-    titleResponse({ id: revision(latest), workId, manifestationId: id, etag: latest }),
-  );
+  fetch.mockResolvedValueOnce(titleResponse({ id: revision(latest), etag: latest }));
   const sparse = await fetchQuery<RevisionQuery>(environment, mutationsRevisionQuery, {
     id,
   }).toPromise();
@@ -467,9 +464,7 @@ async function graphqlBaselines(): Promise<void> {
     manifestation: { metadata: { title: undefined, etag: latest } },
   });
   expect(baseline).toEqual(snapshot);
-  fetch.mockResolvedValueOnce(
-    titleResponse({ id: revision(latest), workId, manifestationId: id, title: "Completed" }),
-  );
+  fetch.mockResolvedValueOnce(titleResponse({ id: revision(latest), title: "Completed" }));
   await fetchQuery<TitleQuery>(environment, mutationsTitleQuery, { id }).toPromise();
   expect(environment.lookup(operation.fragment).data).toMatchObject({
     manifestation: { metadata: { title: "Completed", etag: latest } },

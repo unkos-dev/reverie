@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<ef61a06ee08becbe4e886602adb61283>>
- * @relayHash 05ab1ee9b08133e6c9e94754d6b0ce94
+ * @generated SignedSource<<ba8b97d194b5799ccc1138ed403b177b>>
+ * @relayHash 0789d3fced02b0d19a93df7783395c53
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 9fc49902f0e889f6a48f1637e8bc9644fee3129ebe613c0843a0b8d944041b71
+// @relayRequestID 196ce41a24d4aab9f7e6e35d80158b852b7684a921654f86919473d700469f84
 
 import { ConcreteRequest } from "relay-runtime";
 export type mutationsRevisionQuery$variables = {
@@ -20,8 +20,6 @@ export type mutationsRevisionQuery$data = {
         readonly id: string;
         readonly metadata: {
           readonly etag: string;
-          readonly manifestationId: string;
-          readonly workId: string;
         };
       }
     | null
@@ -58,20 +56,6 @@ const node: ConcreteRequest = (function () {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "workId",
-      storageKey: null,
-    },
-    v4 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "manifestationId",
-      storageKey: null,
-    },
-    v5 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
       name: "etag",
       storageKey: null,
     };
@@ -98,7 +82,7 @@ const node: ConcreteRequest = (function () {
               kind: "LinkedField",
               name: "metadata",
               plural: false,
-              selections: [v3 /*:: as any*/, v4 /*:: as any*/, v5 /*:: as any*/],
+              selections: [v3 /*:: as any*/],
               storageKey: null,
             },
           ],
@@ -130,7 +114,7 @@ const node: ConcreteRequest = (function () {
               kind: "LinkedField",
               name: "metadata",
               plural: false,
-              selections: [v3 /*:: as any*/, v4 /*:: as any*/, v5 /*:: as any*/, v2 /*:: as any*/],
+              selections: [v3 /*:: as any*/, v2 /*:: as any*/],
               storageKey: null,
             },
           ],
@@ -139,7 +123,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "9fc49902f0e889f6a48f1637e8bc9644fee3129ebe613c0843a0b8d944041b71",
+      id: "196ce41a24d4aab9f7e6e35d80158b852b7684a921654f86919473d700469f84",
       metadata: {},
       name: "mutationsRevisionQuery",
       operationKind: "query",
@@ -148,6 +132,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "6bf0fbf7a589e22ed5524869c6139351";
+(node as any).hash = "5e89b0ad113fae4380b515d4c5acd5b7";
 
 export default node;

@@ -15,8 +15,6 @@
 import { createElement } from "react";
 import { Navigate, type RouteObject } from "react-router";
 
-import { titleCrumb } from "@/components/shell/crumbs";
-
 /** `/library` — paginated grid of books visible to the current user. */
 export const libraryRoute: RouteObject = {
   path: "library",
@@ -29,8 +27,6 @@ export const libraryRoute: RouteObject = {
 /** `/b/:id` — detail for one manifestation. */
 export const bookRoute: RouteObject = {
   path: "b/:id",
-  // Breadcrumb `Library › <title>` from the loader's `{ title } | null`.
-  handle: { crumb: titleCrumb },
   lazy: async () => {
     const mod = await import("./book");
     return { loader: mod.loader, Component: mod.Component };
@@ -40,8 +36,6 @@ export const bookRoute: RouteObject = {
 /** `/series/:id` — series detail with ordered works. */
 export const seriesRoute: RouteObject = {
   path: "series/:id",
-  // Breadcrumb `Library › <series name>` from the loader's `{ title } | null`.
-  handle: { crumb: titleCrumb },
   lazy: async () => {
     const mod = await import("./series");
     return { loader: mod.loader, Component: mod.Component };

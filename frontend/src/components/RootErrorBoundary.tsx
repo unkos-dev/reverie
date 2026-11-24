@@ -31,15 +31,11 @@ export function RootErrorBoundary(): ReactElement {
   const error = useRouteError();
 
   if (isRouteErrorResponse(error)) {
-    const is404 = error.status === 404;
+    if (error.status === 404) return <NotFound />;
     return (
       <ErrorSurface
-        title={is404 ? "Not found" : `Error ${String(error.status)}`}
-        detail={
-          is404
-            ? "We couldn't find what you were looking for. It may have been removed or you may not have permission to see it."
-            : error.statusText || "An unexpected error occurred."
-        }
+        title={`Error ${String(error.status)}`}
+        detail={error.statusText || "An unexpected error occurred."}
       />
     );
   }
@@ -60,6 +56,15 @@ export function RootErrorBoundary(): ReactElement {
     <ErrorSurface
       title="Something went wrong"
       detail="An unexpected error occurred. Try reloading the page."
+    />
+  );
+}
+
+export function NotFound(): ReactElement {
+  return (
+    <ErrorSurface
+      title="Not found"
+      detail="We couldn't find what you were looking for. It may have been removed or you may not have permission to see it."
     />
   );
 }

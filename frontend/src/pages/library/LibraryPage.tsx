@@ -16,12 +16,14 @@ import {
   type LibrarySource,
   type LibraryVisitOwner,
 } from "@/lib/relay/library-visit";
-import { readerLibrary, readerShelves } from "@/lib/relay/reader";
+import { readerLibrary } from "@/lib/relay/reader";
 import type { LibraryPageQuery as PageQuery } from "@/lib/relay/__generated__/LibraryPageQuery.graphql";
 import type { LibraryPage_labels$key } from "@/lib/relay/__generated__/LibraryPage_labels.graphql";
 import type { LibraryPageLabelsRefetchQuery as LabelsRefetch } from "@/lib/relay/__generated__/LibraryPageLabelsRefetchQuery.graphql";
-import type { readerShelves$key } from "@/lib/relay/__generated__/readerShelves.graphql";
-import type { readerShelvesPaginationQuery as ShelvesPagination } from "@/lib/relay/__generated__/readerShelvesPaginationQuery.graphql";
+import shelvesFragment, {
+  type ShelvesListPage_shelves$key,
+} from "@/lib/relay/__generated__/ShelvesListPage_shelves.graphql";
+import type { ShelvesListPagePaginationQuery as ShelvesPagination } from "@/lib/relay/__generated__/ShelvesListPagePaginationQuery.graphql";
 import type {
   readerLibrary$data,
   readerLibrary$key,
@@ -116,7 +118,7 @@ const LibraryPageQuery = graphql`
     }
     ...LibraryPage_labels
       @arguments(authorIds: $authorIds, seriesIds: $seriesIds, shelfIds: $shelfIds)
-    ...readerShelves
+    ...ShelvesListPage_shelves
     ...TypeaheadMultiSelect_suggestions
     ...readerLibrary
       @alias(as: "rows")
@@ -506,7 +508,7 @@ function LibraryContent({
     hasNext: moreShelves,
     isLoadingNext: loadingShelves,
     loadNext: loadShelves,
-  } = usePaginationFragment<ShelvesPagination, readerShelves$key>(readerShelves, query);
+  } = usePaginationFragment<ShelvesPagination, ShelvesListPage_shelves$key>(shelvesFragment, query);
   const [shelvesFailure, setShelvesFailure] = useState<Error | null>(null);
   useEffect(() => {
     if (shelvesFailure === null && moreShelves && !loadingShelves)

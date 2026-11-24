@@ -1,25 +1,17 @@
 /* oxlint-disable react/only-export-components */
+import type { PreloadedQuery } from "react-relay";
 import type { LoaderFunctionArgs } from "react-router";
 
-import { prepareReader, type PreparedReader } from "@/lib/relay/environment";
-import { readerDetailQuery } from "@/lib/relay/reader";
-import type { readerDetailQuery as ReaderQuery } from "@/lib/relay/__generated__/readerDetailQuery.graphql";
+import { preloadRouteQuery } from "@/lib/relay/environment";
+import bookPageQuery, { type BookPageQuery } from "@/lib/relay/__generated__/BookPageQuery.graphql";
 
-/** Prepare the route's reader query and breadcrumb before rendering. */
-export async function loader({
+export function loader({
   params,
   request,
-}: LoaderFunctionArgs): Promise<(PreparedReader<ReaderQuery> & { title: string | null }) | null> {
+}: LoaderFunctionArgs): Promise<PreloadedQuery<BookPageQuery> | null> {
   const id = params.id;
   if (id === undefined) throw new Response("Not found", { status: 404 });
-  const prepared = await prepareReader<ReaderQuery>(readerDetailQuery, { id }, request.signal);
-  if (prepared !== null && prepared.data?.manifestation == null) {
-    prepared.dispose();
-    throw new Response("Not found", { status: 404 });
-  }
-  return prepared === null
-    ? null
-    : { ...prepared, title: prepared.data?.manifestation?.work?.title ?? null };
+  return preloadRouteQuery<BookPageQuery>(bookPageQuery, { id }, request.signal);
 }
 
 export { BookPage as Component } from "@/pages/book/BookPage";

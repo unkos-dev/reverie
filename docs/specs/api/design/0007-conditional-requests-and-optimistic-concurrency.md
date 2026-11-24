@@ -131,11 +131,10 @@ required data. An editor takes its starting values and validator from that revis
 update the display without changing the open edit. An author replacement waits for `usePaginationFragment` to complete
 the list under one revision. A rejected revision cursor restarts the read from the first page of the current revision.
 
-The Book edit dialog captures its opening Relay fragment. `EditMetadataForm` reads the `mutationsFormQuery` reference
-that the Versions tab loads, through `usePreloadedQuery`. `EditMetadataFields` reads the `mutationsFormSnapshot`
-fragment and holds the values and `etag` of its first read in component state, so later store merges, background
-refreshes and field errors leave that opening's baseline unchanged. Its Reload fetches `mutationsFormQuery` with
-`network-only` and then remounts the fields, which capture the fresh snapshot.
+The Versions Edit metadata action loads `EditMetadataDialogQuery` before rendering the form. `MetadataOpening` reads
+`EditMetadataDialog_opening` and keeps the opening values and `etag` in its attempt state. Later store updates leave
+that pair intact. Explicit Reload fetches the form query from the network. A successful read remounts the fields so they
+capture the new values and validator together. A failed reload keeps the current attempt.
 
 The HTTP metadata and reading adapters in `frontend/src/api/books.ts` and `reading.ts` call `apiFetchWithHeaders`, which
 returns a decoded body and response headers without caching entity-tags. They validate the complete body and require the
