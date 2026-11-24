@@ -12,16 +12,15 @@
  */
 import { graphql, useFragment, useMutation } from "react-relay";
 import type { RecordSourceSelectorProxy } from "relay-runtime";
-import { mutationsUpdateLibraryPreferencesMutation } from "@/lib/relay/mutations";
 import type {
   useLibraryPreferences_preferences$data as PreferencesData,
   useLibraryPreferences_preferences$key,
 } from "@/lib/relay/__generated__/useLibraryPreferences_preferences.graphql";
 import type { useLibraryPreferences_updatable$key as UpdatablePreferencesKey } from "@/lib/relay/__generated__/useLibraryPreferences_updatable.graphql";
 import type {
-  mutationsUpdateLibraryPreferencesMutation as PreferencesMutation,
+  useLibraryPreferencesMutation as PreferencesMutation,
   UpdateLibraryPreferencesInput,
-} from "@/lib/relay/__generated__/mutationsUpdateLibraryPreferencesMutation.graphql";
+} from "@/lib/relay/__generated__/useLibraryPreferencesMutation.graphql";
 import { useMemo } from "react";
 
 import {
@@ -32,6 +31,25 @@ import {
   type SortLevelParam,
 } from "@/api";
 import { HIDEABLE_COLUMNS } from "./table-columns";
+
+const preferencesMutation = graphql`
+  mutation useLibraryPreferencesMutation($input: UpdateLibraryPreferencesInput!) {
+    updateLibraryPreferences(input: $input) {
+      __typename
+      ... on LibraryPreferencesUpdated {
+        viewer {
+          id
+          libraryPreferences {
+            ...useLibraryPreferences_preferences
+          }
+        }
+      }
+      ... on LibraryPreferencesInvalid {
+        message
+      }
+    }
+  }
+`;
 
 const preferencesFragment = graphql`
   fragment useLibraryPreferences_preferences on LibraryPreferences @throwOnFieldError {
@@ -91,13 +109,14 @@ function columnKeys(columns: readonly Column[]): string[] {
   });
 }
 
-export function sortLevelParams(levels: PreferencesData["defaults"]["sort"]): SortLevelParam[] {
-  return levels.flatMap((level) => {
-    const field = (Object.keys(SORT_COLUMNS) as SortLevelParam["field"][]).find(
-      (key) => SORT_COLUMNS[key] === level.column,
-    );
-    return field === undefined ? [] : [{ field, desc: level.direction === "DESC" }];
-  });
+export function sortLevelParam(
+  column: SortColumn,
+  direction: PreferencesData["defaults"]["sort"][number]["direction"],
+): SortLevelParam[] {
+  const field = (Object.keys(SORT_COLUMNS) as SortLevelParam["field"][]).find(
+    (key) => SORT_COLUMNS[key] === column,
+  );
+  return field === undefined ? [] : [{ field, desc: direction === "DESC" }];
 }
 
 export type LibraryPreferences = {
@@ -137,7 +156,7 @@ export function useLibraryPreferences(
   key: useLibraryPreferences_preferences$key,
 ): LibraryPreferences {
   const data = useFragment<useLibraryPreferences_preferences$key>(preferencesFragment, key);
-  const [commit] = useMutation<PreferencesMutation>(mutationsUpdateLibraryPreferencesMutation);
+  const [commit] = useMutation<PreferencesMutation>(preferencesMutation);
 
   function write(
     input: UpdateLibraryPreferencesInput,
@@ -168,8 +187,12 @@ export function useLibraryPreferences(
     () => new Set(hiddenKeys === "" ? [] : hiddenKeys.split(",")),
     [hiddenKeys],
   );
-  const sortOverride = serializeSortParam(sortLevelParams(data.sort ?? []));
-  const defaultSort = serializeSortParam(sortLevelParams(data.defaults.sort));
+  const sortOverride = serializeSortParam(
+    (data.sort ?? []).flatMap(({ column, direction }) => sortLevelParam(column, direction)),
+  );
+  const defaultSort = serializeSortParam(
+    data.defaults.sort.flatMap(({ column, direction }) => sortLevelParam(column, direction)),
+  );
   const effectiveSort = sortOverride === "" ? defaultSort : sortOverride;
   const sortLevels = useMemo(() => parseSortParam(effectiveSort), [effectiveSort]);
   const defaultSortLevels = useMemo(() => parseSortParam(defaultSort), [defaultSort]);

@@ -27,12 +27,11 @@ silently advance a draft's write precondition.
   baseline, keeping the same validator across a transparent transport retry. Checked by
   `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A read of another resource, a newer refresh of the same resource, or a stale-baseline refusal does not replace an open
-  edit's starting validator. Checked by `metadata and reading edits keep their baseline` in
-  `frontend/tests/browser/api/fetch.test.tsx` and `a table edit keeps the validator its editor opened with` in
-  `frontend/tests/browser/LibraryPage.test.tsx`.
+  edit's starting validator. The Book dialog test below checks a read of another resource and a stale-baseline refusal.
+  `a table edit keeps the validator its editor opened with` in `frontend/tests/browser/LibraryPage.test.tsx` checks a
+  newer refresh of the same resource.
 - Starting a new edit from refreshed values, or activating an explicit reload, replaces the values and their matching
-  validator together. Checked by `metadata and reading edits keep their baseline` in
-  `frontend/tests/browser/api/fetch.test.tsx` and `a stale table save refreshes before the next edit` in
+  validator together. Checked by `a stale table save refreshes before the next edit` in
   `frontend/tests/browser/LibraryPage.test.tsx`. The Book dialog Reload is checked by
   `retains refused input and reloads the Book dialog onto the current revision` in
   `frontend/tests/browser/EditMetadataDialog.test.tsx`.

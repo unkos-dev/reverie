@@ -90,31 +90,34 @@ empty to prune removed operations. `just js::relay-check` generates in a tempora
 and artefacts. An empty operation selection fails. Frontend build and test recipes run that check. Path filters select
 backend checks for frontend operations and frontend checks for GraphQL schema changes.
 
-oxlint loads `eslint-plugin-relay` 2.1.0 through its JS-plugin bridge and enforces `graphql-syntax`,
+oxlint loads `eslint-plugin-relay` 2.1.0 through its JS-plugin bridge and enforces `graphql-syntax`, `unused-fields`,
 `no-future-added-value`, `generated-typescript-types`, `hook-required-argument` and `function-required-argument` on
 frontend sources. `just js::schema-lint` runs GraphQL-ESLint 4.4.2 under ESLint over `backend/schema.graphql` only. It
-checks Relay connection, edge and `PageInfo` shapes, forward pagination arguments and the plugin's recommended naming;
-`@fetchable`'s `fetch__*` roots and `field_name` argument are exempt. The Relay compiler sets
-`requireCustomScalarTypes`, so a custom scalar without a `customScalarTypes` mapping fails generation. Component tests
-use `relay-test-utils` 21.0.1.
+checks Relay connection, edge and `PageInfo` shapes, forward pagination arguments, mutation argument naming and the
+plugin's recommended naming. The `@fetchable` contract reserves the `fetch__*` roots and `field_name` argument. The
+Relay compiler sets `requireCustomScalarTypes`, so a custom scalar without a `customScalarTypes` mapping fails
+generation. Component tests use `relay-test-utils` 21.0.1.
 
 The Library route module `frontend/src/routes/library.tsx` defines `libraryBootstrapQuery`. `LibraryPage.tsx` defines
-`LibraryPageQuery` and `LibraryPage_labels`. `TypeaheadMultiSelect.tsx` defines the suggestions fragment and
-`use-library-preferences.ts` defines the preferences fragment. The Book, Series, Shelves and shelf detail pages and the
-command palette declare their queries and masked fragments beside the readers. The basic Book query selects the
-pending-version count. Selecting Versions starts `VersionsTabQuery` and its native pagination. Work authors, tags,
-shelves, shelf items and series works complete their bounded pages through their own pagination fragments. The
-confirmed-account provider owns the shared environment.
+`LibraryPageQuery`, the books and label fragments, and the batch shelf add mutation. `TypeaheadMultiSelect.tsx` defines
+the suggestions fragment and `use-library-preferences.ts` defines the preferences fragment and mutation. The Book,
+Series, Shelves and shelf detail pages and the command palette declare their queries and masked fragments beside the
+readers. The basic Book query selects the pending-version count. Selecting Versions starts `VersionsTabQuery` and its
+native pagination. Work authors, tags, shelves, shelf items and series works complete their bounded pages through their
+own pagination fragments. The confirmed-account provider owns the shared environment.
 
 ### Custom scalars
 
-Each Reverie scalar declares `@specifiedBy` with a URL to this section. The Relay compiler maps `ETag` and `DateTime` to
-`string` and `SignedInteger` to `number`.
+Each Reverie scalar declares `@specifiedBy` with a URL to this section. The Relay compiler maps `ETag`, `DateTime` and
+`CoverThumbnailPath` to `string`, and `SignedInteger` to `number`.
 
 - `ETag` is a strong RFC 9110 §8.8.3 entity-tag in its quoted wire form. Input accepts one strong tag and refuses the
   `*` wildcard, a weak `W/` tag, a list and an unquoted value. Output is the tag the server issued.
-- `DateTime` is an instant. Input must be RFC 3339 text ending in `Z`. Output is RFC 3339 in UTC ending in `Z`, with
-  fractional seconds only when they are not zero. Shelf creation and update timestamps use this scalar.
+- `DateTime` is an RFC 3339 instant. Input accepts `Z` or a numeric UTC offset and normalises to a `jiff::Timestamp`.
+  Output is canonical UTC with `Z` and includes fractional seconds when nonzero. Creation-date filter bounds, shelf,
+  manifestation and reading timestamps, and rating fetch timestamps use this scalar.
+- `CoverThumbnailPath` carries the same-origin path `/api/v1/books/{uuid}/cover/thumb` for a manifestation, with its
+  lowercase hyphenated UUID.
 - `SignedInteger` carries a signed 64-bit integer as a JSON number. A pending proposal can hold the original value
   supplied by its source, including an integer outside the 32-bit range of GraphQL `Int`.
 
@@ -122,7 +125,14 @@ A value that fails input coercion is an execution error with code `validation` o
 operation begins no write. Output values come from typed server state. ISBN-10, ISBN-13, publication date and language
 are `String`. Domain validation checks their input and returns field feedback, and a stored year-only publication date
 reads as written. Reading revisions use `ETag` for validators and `DateTime` for timestamps. Reading status and
-contributor role are enums, as are manifestation ingestion, validation and enrichment status and metadata review status.
+contributor role are enums, as are content rating, identifier level, manifestation ingestion, validation and enrichment
+status, and metadata review status. Reading status filters have their own enum with `UNREAD` for a missing status.
+Provider and identifier scheme keys remain strings from their registries. Identifier values depend on scheme and level.
+Metadata field paths retain their spelling for per-field feedback.
+
+Search returns nullable `SearchHit.snippet` with ordered `SearchSnippetPart` runs. The server translates search headline
+delimiters into the runs' `text` and `highlighted` fields. The command palette renders the text in ordinary text nodes,
+with a `<mark>` for each highlighted run.
 
 ### Global object IDs
 
@@ -140,8 +150,8 @@ resolves only the caller. A `reading_rev` ID derives from the caller, manifestat
 
 Browser routes carry these IDs: `/b/:id`, `/series/:id` and `/shelves/:id` loaders pass the path parameter unaltered to
 their query, and a null result is a not-found route. Links, Library rows, visit filters and the restoration anchor use
-the IDs that queries return. The client converts an ID to a UUID only to show a short UUID, and converts a UUID to an ID
-only for Book links built from HTTP responses.
+the IDs that queries return. The shelf item row decodes its ID to display a short UUID. Ingestion passes the UUID of
+each retained HTTP result to `bookPath`.
 
 Work, Series, Shelf and Manifestation declare `@fetchable(field_name: "id")`. Their nullable concrete lookup roots are
 `fetch__Work(id: ID!)`, `fetch__Series(id: ID!)`, `fetch__Shelf(id: ID!)` and `fetch__Manifestation(id: ID!)`. They
@@ -152,7 +162,7 @@ Query root directly.
 
 ## Data and state
 
-`backend/graphql-documents.json` maps Relay's SHA256 operation IDs to query text for the 40 trusted documents. The
+`backend/graphql-documents.json` maps Relay's SHA256 operation IDs to query text for the 33 trusted documents. The
 server embeds it at compile time. The image's backend stage copies the backend directory, carrying the matching map
 without a runtime registry. Cached clients with unknown IDs receive a refusal; the network never falls back to text. The
 Relay compiler's `noSourceControl: true` leaves staging to explicit Git commands.
@@ -266,20 +276,19 @@ where arguments are omitted. There is no custom fragment traversal.
 ### Browser execution
 
 The Relay network sends generated IDs and variables through `apiFetch` with same-origin credentials and an abort signal.
-It validates the response envelope before publication. The Library batch shelf add also checks its response against the
-remaining operation projection in `frontend/src/api/graphql.ts`. Execution faults are errors and publish no partial
-data. A read failure never triggers a write resend.
+It validates the response envelope before publishing server-typed data. An execution error prevents publication of the
+response data. A read failure never triggers a write resend.
 
 Browser queries and fragments use `@throwOnFieldError`. The directive sends missing selected data to the receiving error
 boundary. Envelope validation keeps execution-error data out of the store. Relay can combine fields of one immutable
 revision ID. An incomplete read cannot form a baseline, and only pages of that revision can complete a whole-list edit.
 
-The screen query contains the conditional, aliased `readerLibrary` connection. Table cells, Covers cards and batch
-actions read their fragments. The displayed and candidate readers use `readerLibraryPaginationQuery` through
+The screen query contains the conditional, aliased `LibraryPage_rows` connection. Table cells, Covers cards and batch
+actions read their fragments. The displayed and candidate readers use `LibraryPageRowsPaginationQuery` through
 `usePaginationFragment`. The author editor loads `cellsAuthorsQuery` and continues through
-`readerAuthorEditingPaginationQuery`. The labels and typeahead use their generated refetch queries. Library edits use
-native `useMutation` above the virtualised rows. Save payloads spread their consuming fragments and publish without
-operation-specific projections. The Book dialog and Versions continue to use their own fragments and hooks.
+`cellsAuthorEditingPaginationQuery`. The labels and typeahead use their generated refetch queries. Library edits use
+native `useMutation` above the virtualised rows. Save payloads spread their consuming fragments. The Book dialog and
+Versions continue to use their own fragments and hooks.
 
 The Library route loader confirms the account, retains `libraryBootstrapQuery` for the destination's visit owner and
 fetches it with `fetchQuery` under `store-or-network`, resolving on completion with the last payload. It then starts

@@ -6,10 +6,9 @@ import {
   type PreloadedQuery,
 } from "react-relay";
 import { GraphQLExecutionError } from "@/api/graphql";
-import { readerAuthorEditing } from "@/lib/relay/reader";
 import type { cellsAuthorsQuery } from "@/lib/relay/__generated__/cellsAuthorsQuery.graphql";
-import type { readerAuthorEditing$key } from "@/lib/relay/__generated__/readerAuthorEditing.graphql";
-import type { readerAuthorEditingPaginationQuery } from "@/lib/relay/__generated__/readerAuthorEditingPaginationQuery.graphql";
+import type { cells_authorEditing$key } from "@/lib/relay/__generated__/cells_authorEditing.graphql";
+import type { cellsAuthorEditingPaginationQuery } from "@/lib/relay/__generated__/cellsAuthorEditingPaginationQuery.graphql";
 import { Check, GripVertical, PenLine, Star, X } from "lucide-react";
 import {
   Suspense,
@@ -726,10 +725,29 @@ function AuthorsEditor({
   );
 }
 
+const authorEditingFragment = graphql`
+  fragment cells_authorEditing on Manifestation
+  @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
+  @refetchable(queryName: "cellsAuthorEditingPaginationQuery", preferFetchable: true)
+  @throwOnFieldError {
+    id
+    metadata {
+      etag
+      authors(first: $count, after: $cursor) @connection(key: "cells_authorEditing_authors") {
+        edges {
+          node {
+            name
+          }
+        }
+      }
+    }
+  }
+`;
+
 const authorsQuery = graphql`
   query cellsAuthorsQuery($id: ID!) @throwOnFieldError {
     manifestation(id: $id) {
-      ...readerAuthorEditing
+      ...cells_authorEditing
     }
   }
 `;
@@ -755,9 +773,9 @@ function MatchedAuthorsEditor({
 }>): ReactElement {
   const query = usePreloadedQuery<cellsAuthorsQuery>(authorsQuery, reference);
   const { data, hasNext, isLoadingNext, loadNext, refetch } = usePaginationFragment<
-    readerAuthorEditingPaginationQuery,
-    readerAuthorEditing$key
-  >(readerAuthorEditing, query.manifestation ?? null);
+    cellsAuthorEditingPaginationQuery,
+    cells_authorEditing$key
+  >(authorEditingFragment, query.manifestation ?? null);
   const [error, setError] = useState<Error | null>(null);
   const [baseline, setBaseline] = useState<{ etag: string; authors: readonly string[] }>();
   if (baseline === undefined && data != null && !hasNext && !isLoadingNext && error === null)

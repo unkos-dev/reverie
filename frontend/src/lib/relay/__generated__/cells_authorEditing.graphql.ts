@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<75b733b2021052a1e67ba3505518c813>>
+ * @generated SignedSource<<ca518235aa0744c93eee3b3e470277f2>>
  * @lightSyntaxTransform
  */
 
@@ -9,7 +9,7 @@
 
 import { ReaderFragment } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
-export type readerAuthorEditing$data = {
+export type cells_authorEditing$data = {
   readonly id: string;
   readonly metadata: {
     readonly authors: {
@@ -21,14 +21,14 @@ export type readerAuthorEditing$data = {
     };
     readonly etag: string;
   };
-  readonly " $fragmentType": "readerAuthorEditing";
+  readonly " $fragmentType": "cells_authorEditing";
 };
-export type readerAuthorEditing$key = {
-  readonly " $data"?: readerAuthorEditing$data;
-  readonly " $fragmentSpreads": FragmentRefs<"readerAuthorEditing">;
+export type cells_authorEditing$key = {
+  readonly " $data"?: cells_authorEditing$data;
+  readonly " $fragmentSpreads": FragmentRefs<"cells_authorEditing">;
 };
 
-import readerAuthorEditingPaginationQuery_graphql from "./readerAuthorEditingPaginationQuery.graphql";
+import cellsAuthorEditingPaginationQuery_graphql from "./cellsAuthorEditingPaginationQuery.graphql";
 
 const node: ReaderFragment = (function () {
   var v0 = ["metadata", "authors"];
@@ -65,7 +65,7 @@ const node: ReaderFragment = (function () {
           path: v0 /*:: as any*/,
         },
         fragmentPathInResult: ["fetch__Manifestation"],
-        operation: readerAuthorEditingPaginationQuery_graphql,
+        operation: cellsAuthorEditingPaginationQuery_graphql,
         identifierInfo: {
           identifierField: "id",
           identifierQueryVariableName: "id",
@@ -73,7 +73,7 @@ const node: ReaderFragment = (function () {
       },
       throwOnFieldError: true,
     },
-    name: "readerAuthorEditing",
+    name: "cells_authorEditing",
     selections: [
       {
         alias: null,
@@ -102,7 +102,7 @@ const node: ReaderFragment = (function () {
             args: null,
             concreteType: "RevisionContributorConnection",
             kind: "LinkedField",
-            name: "__readerAuthorEditing_authors_connection",
+            name: "__cells_authorEditing_authors_connection",
             plural: false,
             selections: [
               {
@@ -185,6 +185,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "386d5ec2b8979374088cec8dfde461ee";
+(node as any).hash = "02945ce6e526a82df0970e5510599586";
 
 export default node;

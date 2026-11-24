@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<e67e6014bff8c81d6ea57e26f52154d6>>
- * @relayHash 9142ac37f5dc88bdc4385af53c6d2865
+ * @generated SignedSource<<267712a1915ad3e9348fe9410aa7911d>>
+ * @relayHash 6f7cc84edfe535a938c7e481b84ade79
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 734699295459aec8a36ebdd58bce2ee4999a13f6446d64ecb1823ae57d412dd3
+// @relayRequestID 917a17e3c06d980914327b9edd473f0bd252776e87caa89fbe159baccc2d1714
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -111,13 +111,6 @@ const node: ConcreteRequest = (function () {
               alias: null,
               args: null,
               kind: "ScalarField",
-              name: "isSystem",
-              storageKey: null,
-            },
-            {
-              alias: null,
-              args: null,
-              kind: "ScalarField",
               name: "itemCount",
               storageKey: null,
             },
@@ -210,7 +203,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "734699295459aec8a36ebdd58bce2ee4999a13f6446d64ecb1823ae57d412dd3",
+      id: "917a17e3c06d980914327b9edd473f0bd252776e87caa89fbe159baccc2d1714",
       metadata: {},
       name: "ShelfDetailPageQuery",
       operationKind: "query",

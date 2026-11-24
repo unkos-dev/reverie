@@ -1,15 +1,35 @@
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { fetchQuery, getRequest } from "relay-runtime";
 
-import { GraphQLExecutionError, encodeGraphQLId, graphqlNetwork } from "@/api/graphql";
+import { GraphQLExecutionError, graphqlNetwork } from "@/api/graphql";
 import { ApiError } from "@/api/errors";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import { activeUserEpoch, forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
 import { setUnauthenticatedHandler } from "@/lib/query/client";
 import { confirmedRelayEnvironment, relayEnvironment } from "@/lib/relay/environment";
-import { mutationsSaveTitleMutation } from "@/lib/relay/mutations";
-import { viewerQuery } from "@/lib/relay/viewer";
-import type { viewerQuery as ViewerQuery } from "@/lib/relay/__generated__/viewerQuery.graphql";
+import BootstrapDocument, {
+  type libraryBootstrapQuery as BootstrapQuery,
+} from "@/lib/relay/__generated__/libraryBootstrapQuery.graphql";
+
+const variables: BootstrapQuery["variables"] = { authorIds: [], seriesIds: [], shelfIds: [] };
+
+function bootstrapData(id: string) {
+  return {
+    authorLabels: [],
+    seriesLabels: [],
+    shelfLabels: [],
+    viewer: {
+      id,
+      libraryPreferences: {
+        hiddenColumns: null,
+        density: null,
+        view: null,
+        sort: null,
+        defaults: { hiddenColumns: [], density: "COMFORTABLE", view: "GRID", sort: [] },
+      },
+    },
+  };
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -18,13 +38,10 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function request(): Promise<ViewerQuery["response"] | undefined> {
-  return fetchQuery<ViewerQuery>(
-    relayEnvironment(),
-    viewerQuery,
-    {},
-    { fetchPolicy: "network-only" },
-  ).toPromise();
+function request(): Promise<BootstrapQuery["response"] | undefined> {
+  return fetchQuery<BootstrapQuery>(relayEnvironment(), BootstrapDocument, variables, {
+    fetchPolicy: "network-only",
+  }).toPromise();
 }
 
 afterEach(() => {
@@ -36,17 +53,15 @@ afterEach(() => {
 test("GraphQL network preserves failures, CSRF recovery and account isolation", async () => {
   rememberActiveUser("first-account");
   const fetch = vi.spyOn(globalThis, "fetch");
-  const data = {
-    viewer: { id: "User:first-account", displayName: "First reader", isChild: false },
-  };
+  const data = bootstrapData("first-viewer");
   fetch.mockResolvedValueOnce(json({ data }));
-  expect(await request()).toEqual(data);
+  expect(await request()).toMatchObject({ viewer: { id: data.viewer.id } });
   const first = fetch.mock.calls[0];
   expect(first[0]).toBe("/api/graphql");
   expect(first[1]?.credentials).toBe("same-origin");
   expect(JSON.parse(typeof first[1]?.body === "string" ? first[1].body : "null")).toEqual({
-    id: getRequest(viewerQuery).params.id,
-    variables: {},
+    id: getRequest(BootstrapDocument).params.id,
+    variables,
   });
   for (const body of [
     json(
@@ -89,7 +104,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
     .mockResolvedValueOnce(json({ type: "https://reverie.example/probs/csrf-mismatch" }, 403))
     .mockResolvedValueOnce(json({ csrf_token: "fresh-token" }))
     .mockResolvedValueOnce(json({ data }));
-  expect(await request()).toEqual(data);
+  expect(await request()).toMatchObject({ viewer: { id: data.viewer.id } });
   expect(fetch).toHaveBeenCalledTimes(3);
   expect(fetch.mock.calls[0]?.[1]?.body).toBe(fetch.mock.calls[2]?.[1]?.body);
   expect(new Headers(fetch.mock.calls[2]?.[1]?.headers).get("X-CSRF-Token")).toBe("fresh-token");
@@ -103,7 +118,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   fetch.mockClear();
   fetch.mockResolvedValueOnce(
     json({
-      data,
+      data: bootstrapData("unpublished-viewer"),
       errors: [
         {
           message: "Refused",
@@ -131,6 +146,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
     ],
   });
   expect(fetch).toHaveBeenCalledTimes(1);
+  expect(relayEnvironment().getStore().getSource().get("unpublished-viewer")).toBeUndefined();
   fetch.mockResolvedValueOnce(
     json({
       errors: [{ message: "An internal error occurred.", extensions: { code: "internal" } }],
@@ -148,35 +164,13 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
     fetch.mockResolvedValueOnce(json(malformed));
     await expect(request()).rejects.toThrow();
   }
-  const id = encodeGraphQLId("Manifestation", "12345678-1234-4234-8234-123456789abc");
-  const save = {
-    updateMetadata: {
-      __typename: "MetadataSaved",
-      manifestation: {
-        id,
-        metadata: {
-          id: encodeGraphQLId("MetadataRevision", "52345678-1234-4234-8234-123456789abc"),
-          etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
-          title: "Saved",
-        },
-      },
-    },
-  };
-  fetch.mockResolvedValueOnce(json({ data: save }));
-  await expect(
-    graphqlNetwork(
-      getRequest(mutationsSaveTitleMutation).params,
-      {},
-      new AbortController().signal,
-    ).toPromise(),
-  ).resolves.toEqual({ data: save });
   const navigate = vi.fn();
   setUnauthenticatedHandler(navigate);
   fetch.mockResolvedValueOnce(json({}, 401)).mockResolvedValueOnce(json({}, 401));
   const firstFailure = request();
   const secondFailure = graphqlNetwork(
-    getRequest(viewerQuery).params,
-    {},
+    getRequest(BootstrapDocument).params,
+    variables,
     new AbortController().signal,
   ).toPromise();
   await expect(firstFailure).rejects.toBeInstanceOf(ApiError);
@@ -185,7 +179,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   expect(confirmedRelayEnvironment()).toBeNull();
   rememberActiveUser("second-account");
   const secondEnv = relayEnvironment();
-  expect(secondEnv.getStore().getSource().get("User:first-account")).toBeUndefined();
+  expect(secondEnv.getStore().getSource().get(data.viewer.id)).toBeUndefined();
   fetch.mockResolvedValueOnce(
     json({ errors: [{ message: "Forbidden", extensions: { code: "forbidden" } }] }),
   );
@@ -202,12 +196,9 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   fetch.mockImplementationOnce(() => pending);
   const published = vi.fn();
   const completed = vi.fn();
-  const cancelledSource = fetchQuery<ViewerQuery>(
-    previous,
-    viewerQuery,
-    {},
-    { fetchPolicy: "network-only" },
-  );
+  const cancelledSource = fetchQuery<BootstrapQuery>(previous, BootstrapDocument, variables, {
+    fetchPolicy: "network-only",
+  });
   const subscription = cancelledSource.subscribe({
     next: published,
     error: published,
@@ -225,21 +216,19 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   await expect(cancelledRequest).resolves.toBeUndefined();
   respond(
     json({
-      data: {
-        viewer: { id: "User:second-account", displayName: "Old private data", isChild: false },
-      },
+      data: bootstrapData("second-viewer"),
     }),
   );
   fetch.mockResolvedValueOnce(
     json({
-      data: { viewer: { id: "User:third-account", displayName: "Third reader", isChild: false } },
+      data: bootstrapData("third-viewer"),
     }),
   );
   await request();
   expect(published).not.toHaveBeenCalled();
   expect(completed).toHaveBeenCalledTimes(1);
-  expect(previous.getStore().getSource().get("User:second-account")).toBeUndefined();
-  expect(relayEnvironment().getStore().getSource().get("User:second-account")).toBeUndefined();
+  expect(previous.getStore().getSource().get("second-viewer")).toBeUndefined();
+  expect(relayEnvironment().getStore().getSource().get("second-viewer")).toBeUndefined();
   rememberActiveUser("second-account", epoch);
   expect(confirmedRelayEnvironment()).toBe(thirdEnv);
   subscription.unsubscribe();
@@ -247,14 +236,9 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   fetch.mockImplementationOnce(() => new Promise<Response>(() => {}));
   const lost = vi.fn();
   const lostValues = vi.fn();
-  const lostSource = fetchQuery<ViewerQuery>(
-    relayEnvironment(),
-    viewerQuery,
-    {},
-    {
-      fetchPolicy: "network-only",
-    },
-  );
+  const lostSource = fetchQuery<BootstrapQuery>(relayEnvironment(), BootstrapDocument, variables, {
+    fetchPolicy: "network-only",
+  });
   const lostSubscription = lostSource.subscribe({
     next: lostValues,
     error: lostValues,
@@ -275,7 +259,7 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
   fetch.mockClear();
   const alreadyCompleted = vi.fn();
   await expect(
-    graphqlNetwork(getRequest(viewerQuery).params, {}, aborted.signal)
+    graphqlNetwork(getRequest(BootstrapDocument).params, variables, aborted.signal)
       .do({ complete: alreadyCompleted, next: lostValues, error: lostValues })
       .toPromise(),
   ).resolves.toBeUndefined();

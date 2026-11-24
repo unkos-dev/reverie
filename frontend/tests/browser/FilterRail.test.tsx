@@ -6,7 +6,6 @@ import {
   type PreloadedQuery,
 } from "react-relay";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
-import { encodeGraphQLId } from "@/api/graphql";
 import LibraryPageQuery, {
   type LibraryPageQuery as PageQuery,
 } from "@/lib/relay/__generated__/LibraryPageQuery.graphql";
@@ -47,7 +46,7 @@ function mockFetchByUrl(): void {
             edges: SHELVES.map((shelf) => ({
               cursor: shelf.id,
               node: {
-                id: encodeGraphQLId("Shelf", shelf.id),
+                id: `shelf-${shelf.id}`,
                 name: shelf.name,
                 isSystem: shelf.is_system,
                 itemCount: shelf.item_count,
@@ -61,7 +60,7 @@ function mockFetchByUrl(): void {
             },
           },
           viewer: {
-            id: encodeGraphQLId("User", "77777777-7777-4777-8777-777777777777"),
+            id: "user-77777777-7777-4777-8777-777777777777",
             libraryPreferences: {
               hiddenColumns: null,
               density: null,
@@ -124,7 +123,7 @@ function SortOwner({
         labels={{ authorLabel: () => "", seriesName: () => "" }}
         shelves={{
           items: SHELVES.map((shelf) => ({
-            id: encodeGraphQLId("Shelf", shelf.id),
+            id: `shelf-${shelf.id}`,
             name: shelf.name,
           })),
           loading: false,

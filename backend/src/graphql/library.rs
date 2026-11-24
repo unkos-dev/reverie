@@ -17,7 +17,7 @@ use async_graphql::{ComplexObject, Context, ID, InputObject, Interface, SimpleOb
 use jiff::Timestamp;
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use uuid::Uuid;
 
 /// A strong RFC 9110 entity-tag in its quoted wire form.
@@ -63,7 +63,7 @@ impl async_graphql::ScalarType for ETag {
     }
 }
 
-/// An instant as RFC 3339 text in UTC with the `Z` designator.
+/// An RFC 3339 instant, emitted in UTC with the `Z` designator.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct DateTime(pub(super) Timestamp);
 
@@ -73,14 +73,19 @@ pub(super) struct DateTime(pub(super) Timestamp);
 )]
 impl async_graphql::ScalarType for DateTime {
     fn parse(value: async_graphql::Value) -> async_graphql::InputValueResult<Self> {
+        static RFC3339: LazyLock<regex::Regex> = LazyLock::new(|| {
+            #[expect(clippy::expect_used, reason = "The RFC 3339 pattern is a fixed literal.")]
+            regex::Regex::new(r"\A[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})\z")
+                .expect("valid RFC 3339 pattern")
+        });
         match value {
-            async_graphql::Value::String(text) if text.ends_with('Z') => {
+            async_graphql::Value::String(text) if RFC3339.is_match(&text) => {
                 text.parse::<Timestamp>().map(Self).map_err(|_| {
                     async_graphql::InputValueError::custom("Expected an RFC 3339 instant.")
                 })
             }
             async_graphql::Value::String(_) => Err(async_graphql::InputValueError::custom(
-                "Expected an RFC 3339 instant in UTC.",
+                "Expected an RFC 3339 instant.",
             )),
             other => Err(async_graphql::InputValueError::expected_type(other)),
         }
@@ -88,6 +93,36 @@ impl async_graphql::ScalarType for DateTime {
 
     fn to_value(&self) -> async_graphql::Value {
         async_graphql::Value::String(self.0.to_string())
+    }
+}
+
+/// The same-origin thumbnail path for a manifestation.
+struct CoverThumbnailPath(Uuid);
+
+#[async_graphql::Scalar(
+    name = "CoverThumbnailPath",
+    specified_by_url = "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars"
+)]
+impl async_graphql::ScalarType for CoverThumbnailPath {
+    fn parse(value: async_graphql::Value) -> async_graphql::InputValueResult<Self> {
+        let async_graphql::Value::String(path) = value else {
+            return Err(async_graphql::InputValueError::expected_type(value));
+        };
+        path.strip_prefix("/api/v1/books/")
+            .and_then(|path| path.strip_suffix("/cover/thumb"))
+            .and_then(|id| {
+                Uuid::try_parse(id)
+                    .ok()
+                    .filter(|uuid| uuid.to_string() == id)
+            })
+            .map(Self)
+            .ok_or_else(|| {
+                async_graphql::InputValueError::custom("Expected a cover thumbnail path.")
+            })
+    }
+
+    fn to_value(&self) -> async_graphql::Value {
+        async_graphql::Value::String(format!("/api/v1/books/{}/cover/thumb", self.0))
     }
 }
 
@@ -169,7 +204,7 @@ impl Work {
             .await?,
             |row| {
                 Ok(ExternalIdentifier {
-                    level: "work".into(),
+                    level: IdentifierLevel::Work,
                     scheme: required(row.name)?,
                     value: required(row.value)?,
                 })
@@ -304,17 +339,14 @@ impl Manifestation {
     async fn created_at(&self) -> DateTime {
         DateTime(self.record.detail.created_at)
     }
-    async fn updated_at(&self) -> String {
-        self.record.detail.updated_at.to_string()
+    async fn updated_at(&self) -> DateTime {
+        DateTime(self.record.detail.updated_at)
     }
-    async fn cover_url(&self) -> String {
-        format!("/api/v1/books/{}/cover/thumb", self.record.detail.id)
+    async fn cover_url(&self) -> CoverThumbnailPath {
+        CoverThumbnailPath(self.record.detail.id)
     }
-    async fn content_rating(&self) -> Option<&'static str> {
-        self.record
-            .detail
-            .content_rating
-            .map(crate::models::content_rating::ContentRating::as_str)
+    async fn content_rating(&self) -> Option<ContentRating> {
+        self.record.detail.content_rating.map(Into::into)
     }
     async fn ingestion_status(&self) -> IngestionStatus {
         self.record.ingestion_status.into()
@@ -383,7 +415,7 @@ impl Manifestation {
             pages: row.pages,
             publisher: row.publisher.clone(),
             publication_date: row.pub_date.clone(),
-            content_rating: row.content_rating.map(|value| value.as_str().to_owned()),
+            content_rating: row.content_rating.map(Into::into),
         }))
     }
     #[graphql(
@@ -478,9 +510,9 @@ impl Manifestation {
             |row| {
                 Ok(ExternalIdentifier {
                     level: if required(row.level)? == 0 {
-                        "work".into()
+                        IdentifierLevel::Work
                     } else {
-                        "manifestation".into()
+                        IdentifierLevel::Manifestation
                     },
                     scheme: required(row.name)?,
                     value: required(row.value)?,
@@ -512,7 +544,7 @@ impl Manifestation {
                     rating: required(row.rating)?,
                     scale: required(row.scale)?,
                     review_count: row.reviews,
-                    fetched_at: row.created_at.map(|value| timestamp(value.to_jiff())),
+                    fetched_at: row.created_at.map(|value| DateTime(value.to_jiff())),
                 })
             },
         )
@@ -643,7 +675,7 @@ pub(super) struct MetadataRevision {
     pages: Option<i32>,
     publisher: Option<String>,
     publication_date: Option<String>,
-    content_rating: Option<String>,
+    content_rating: Option<ContentRating>,
 }
 pub(super) fn snapshot_pages(
     look: &async_graphql::Lookahead<'_>,
@@ -727,7 +759,7 @@ impl MetadataRevision {
             pages: row.pages,
             publisher: row.publisher.clone(),
             publication_date: row.pub_date.clone(),
-            content_rating: row.content_rating.map(|v| v.as_str().to_owned()),
+            content_rating: row.content_rating.map(Into::into),
         })
     }
     fn page(
@@ -861,7 +893,7 @@ impl MetadataRevision {
                 .await?,
             |row| {
                 Ok(ExternalIdentifier {
-                    level: "work".to_owned(),
+                    level: IdentifierLevel::Work,
                     scheme: required(row.name)?,
                     value: required(row.value)?,
                 })
@@ -880,7 +912,7 @@ impl MetadataRevision {
             self.page(RelationKind::Identifiers, first, after).await?,
             |row| {
                 Ok(ExternalIdentifier {
-                    level: "manifestation".to_owned(),
+                    level: IdentifierLevel::Manifestation,
                     scheme: required(row.name)?,
                     value: required(row.value)?,
                 })
@@ -964,9 +996,32 @@ pub(super) struct Tag {
     id: ID,
     name: String,
 }
+output_enum!(ContentRating {
+    Everyone => "EVERYONE",
+    Teen => "TEEN",
+    Mature => "MATURE",
+    Adult => "ADULT",
+    Explicit => "EXPLICIT",
+});
+
+impl From<crate::models::content_rating::ContentRating> for ContentRating {
+    fn from(value: crate::models::content_rating::ContentRating) -> Self {
+        use crate::models::content_rating::ContentRating as Stored;
+        match value {
+            Stored::Everyone => Self::Everyone,
+            Stored::Teen => Self::Teen,
+            Stored::Mature => Self::Mature,
+            Stored::Adult => Self::Adult,
+            Stored::Explicit => Self::Explicit,
+        }
+    }
+}
+
+output_enum!(IdentifierLevel { Work => "WORK", Manifestation => "MANIFESTATION" });
+
 #[derive(SimpleObject)]
 pub(super) struct ExternalIdentifier {
-    level: String,
+    level: IdentifierLevel,
     scheme: String,
     value: String,
 }
@@ -976,7 +1031,7 @@ pub(super) struct ExternalRating {
     rating: f64,
     scale: f64,
     review_count: Option<i32>,
-    fetched_at: Option<String>,
+    fetched_at: Option<DateTime>,
 }
 
 #[derive(Clone, SimpleObject)]
@@ -1097,9 +1152,6 @@ impl Series {
     }
 }
 
-fn timestamp(value: Timestamp) -> String {
-    value.to_string()
-}
 fn required<T>(value: Option<T>) -> async_graphql::Result<T> {
     value.ok_or_else(|| {
         safe_error(AppError::Internal(anyhow::anyhow!(
@@ -1280,12 +1332,12 @@ pub(super) struct BooksFilter {
     pages_gte: Option<i32>,
     pages_lte: Option<i32>,
     pages_empty: Option<bool>,
-    created_at_gte: Option<String>,
-    created_at_lt: Option<String>,
+    created_at_gte: Option<DateTime>,
+    created_at_lt: Option<DateTime>,
     #[graphql(default)]
-    status_any: Vec<String>,
+    status_any: Vec<ReadingStatusFilter>,
     #[graphql(default)]
-    status_none: Vec<String>,
+    status_none: Vec<ReadingStatusFilter>,
     rating_gte: Option<i16>,
     rating_lte: Option<i16>,
     rating_empty: Option<bool>,
@@ -1349,18 +1401,18 @@ impl BooksFilter {
             pages_gte: self.pages_gte,
             pages_lte: self.pages_lte,
             pages_empty: self.pages_empty,
-            created_at_gte: self
-                .created_at_gte
-                .as_deref()
-                .map(filter_timestamp)
-                .transpose()?,
-            created_at_lt: self
-                .created_at_lt
-                .as_deref()
-                .map(filter_timestamp)
-                .transpose()?,
-            status_any: self.status_any,
-            status_none: self.status_none,
+            created_at_gte: self.created_at_gte.map(|value| value.0),
+            created_at_lt: self.created_at_lt.map(|value| value.0),
+            status_any: self
+                .status_any
+                .into_iter()
+                .map(ReadingStatusFilter::wire)
+                .collect(),
+            status_none: self
+                .status_none
+                .into_iter()
+                .map(ReadingStatusFilter::wire)
+                .collect(),
             rating_gte: self.rating_gte,
             rating_lte: self.rating_lte,
             rating_empty: self.rating_empty,
@@ -1374,10 +1426,27 @@ fn filter_id<K: id::Kind>(value: &ID) -> async_graphql::Result<Uuid> {
     K::decode(value)
         .ok_or_else(|| safe_error(AppError::Validation("Invalid filter identity.".into())))
 }
-fn filter_timestamp(value: &str) -> async_graphql::Result<Timestamp> {
-    value
-        .parse::<jiff::Timestamp>()
-        .map_err(|_| safe_error(AppError::Validation("Invalid timestamp bound.".into())))
+input_enum!(ReadingStatusFilter {
+    WantToRead => "WANT_TO_READ",
+    Reading => "READING",
+    OnHold => "ON_HOLD",
+    Finished => "FINISHED",
+    Abandoned => "ABANDONED",
+    Unread => "UNREAD",
+});
+impl ReadingStatusFilter {
+    fn wire(self) -> String {
+        use crate::models::reading_status::ReadingStatus as Stored;
+        match self {
+            Self::WantToRead => Stored::WantToRead.as_str(),
+            Self::Reading => Stored::Reading.as_str(),
+            Self::OnHold => Stored::OnHold.as_str(),
+            Self::Finished => Stored::Finished.as_str(),
+            Self::Abandoned => Stored::Abandoned.as_str(),
+            Self::Unread => "unread",
+        }
+        .to_owned()
+    }
 }
 
 input_output_enum!(SortField { Title => "TITLE", Author => "AUTHOR", CreatedAt => "CREATED_AT", Pages => "PAGES" });
@@ -1520,7 +1589,33 @@ pub(super) async fn shelves(
 #[derive(SimpleObject)]
 pub(super) struct SearchHit {
     manifestation: Option<Manifestation>,
-    snippet: Option<String>,
+    snippet: Option<Vec<SearchSnippetPart>>,
+}
+
+#[derive(SimpleObject)]
+struct SearchSnippetPart {
+    text: String,
+    highlighted: bool,
+}
+
+fn snippet_parts(mut text: &str) -> Vec<SearchSnippetPart> {
+    let mut parts = Vec::new();
+    let mut highlighted = false;
+    while !text.is_empty() {
+        let marker = if highlighted {
+            reader::SNIPPET_HL_END
+        } else {
+            reader::SNIPPET_HL_START
+        };
+        let (run, rest) = text.split_once(marker).unwrap_or((text, ""));
+        parts.push(SearchSnippetPart {
+            text: run.to_owned(),
+            highlighted,
+        });
+        text = rest;
+        highlighted = !highlighted;
+    }
+    parts
 }
 pub(super) async fn search(ctx: &Context<'_>, q: &str) -> async_graphql::Result<Vec<SearchHit>> {
     let response = reader::search(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, Some(q))
@@ -1536,7 +1631,7 @@ pub(super) async fn search(ctx: &Context<'_>, q: &str) -> async_graphql::Result<
         .into_iter()
         .map(|item| SearchHit {
             manifestation: records.get(&item.id).cloned().map(Manifestation::new),
-            snippet: item.snippet,
+            snippet: item.snippet.as_deref().map(snippet_parts),
         })
         .collect())
 }

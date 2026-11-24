@@ -137,7 +137,7 @@ const saveFormMutation = graphql`
 /** One editable field on the edit form, seeded from the metadata revision the form opened with. */
 export type EditableField = {
   /** Wire name — must match a key in [`UpdateBookMetadataFields`] and a
-   *  scalar field on [`BookMetadata`]. */
+   *  scalar field on the metadata revision. */
   name: keyof UpdateBookMetadataFields;
   /** Display label shown above the input. */
   label: string;

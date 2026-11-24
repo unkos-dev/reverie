@@ -232,12 +232,12 @@ async function intercept(
       if (
         operation === "libraryBootstrapQuery" ||
         operation === "LibraryPageQuery" ||
-        operation === "readerLibraryPaginationQuery"
+        operation === "LibraryPageRowsPaginationQuery"
       )
         fixture.libraryRequests.push(operation);
       let data: unknown;
       if (
-        operation === "readerLibraryPaginationQuery" ||
+        operation === "LibraryPageRowsPaginationQuery" ||
         (operation === "LibraryPageQuery" && body.variables.eligible === true)
       ) {
         const variables = variablesSchema.parse(body.variables);
@@ -322,7 +322,7 @@ async function intercept(
                 : [],
             ]),
         );
-      } else if (operation === "mutationsUpdateLibraryPreferencesMutation") {
+      } else if (operation === "useLibraryPreferencesMutation") {
         const input = z.record(z.string(), z.unknown()).parse(body.variables.input);
         libraryPreferences = {
           ...libraryPreferences,
@@ -816,11 +816,11 @@ async function holdBooksContinuation(page: Page) {
   const held = page.waitForRequest((request) => {
     if (!request.url().endsWith("/api/graphql")) return false;
     const body = z.object({ id: z.string() }).parse(request.postDataJSON());
-    return documents[body.id]?.includes("query readerLibraryPaginationQuery(");
+    return documents[body.id]?.includes("query LibraryPageRowsPaginationQuery(");
   });
   await page.route("**/api/graphql", async (route) => {
     const body = z.object({ id: z.string() }).parse(route.request().postDataJSON());
-    if (documents[body.id]?.includes("query readerLibraryPaginationQuery(")) {
+    if (documents[body.id]?.includes("query LibraryPageRowsPaginationQuery(")) {
       await paused;
     }
     await route.fallback();

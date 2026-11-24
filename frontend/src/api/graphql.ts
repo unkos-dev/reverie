@@ -32,77 +32,31 @@ const envelope = z.object({
 });
 
 const uuid = z.uuid();
-const ID_PREFIXES = {
-  Author: "author",
-  Genre: "genre",
-  Manifestation: "book",
-  MetadataRevision: "metadata_rev",
-  MetadataVersion: "metadata_version",
-  Mood: "mood",
-  Series: "series",
-  Shelf: "shelf",
-  Tag: "tag",
-  User: "user",
-  Work: "work",
-} as const;
-type IdKind = keyof typeof ID_PREFIXES;
+const MANIFESTATION_PREFIX = "book_";
 const CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz";
 const TYPE_ID_SUFFIX = /^[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 
-function typeIdUuid(kind: IdKind, value: string): string | undefined {
-  const prefix = `${ID_PREFIXES[kind]}_`;
-  const suffix = value.slice(prefix.length);
-  if (!value.startsWith(prefix) || !TYPE_ID_SUFFIX.test(suffix)) return undefined;
-  let bits = 0n;
-  for (const char of suffix) bits = (bits << 5n) | BigInt(CROCKFORD.indexOf(char));
-  const hex = bits.toString(16).padStart(32, "0");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-export function domainId(kind: IdKind): z.ZodType<string> {
-  return z.string().refine((value) => typeIdUuid(kind, value) !== undefined, `Invalid ${kind} ID.`);
-}
-const shelf = z.object({
-  id: domainId("Shelf"),
-  itemCount: z.number().int(),
-  updatedAt: z.iso.datetime(),
-});
-const refusal = <T extends string>(typename: T) =>
-  z.object({ __typename: z.literal(typename), message: z.string() });
-const editingProjections = new Map<string, z.ZodType>();
-
-export function encodeGraphQLId(kind: IdKind, value: string): string {
-  let bits = BigInt(`0x${uuid.parse(value).replaceAll("-", "")}`);
+/** The Book route for a manifestation UUID from a retained HTTP response. */
+export function bookPath(manifestationId: string): string {
+  let bits = BigInt(`0x${uuid.parse(manifestationId).replaceAll("-", "")}`);
   let suffix = "";
   for (let index = 0; index < 26; index += 1) {
     suffix = CROCKFORD.charAt(Number(bits & 31n)) + suffix;
     bits >>= 5n;
   }
-  return `${ID_PREFIXES[kind]}_${suffix}`;
+  return `/b/${MANIFESTATION_PREFIX}${suffix}`;
 }
 
-/** The Book route for a manifestation UUID from a retained HTTP response. */
-export function bookPath(manifestationId: string): string {
-  return `/b/${encodeGraphQLId("Manifestation", manifestationId)}`;
+export function decodeGraphQLId(value: string): string {
+  const suffix = value.slice(MANIFESTATION_PREFIX.length);
+  if (!value.startsWith(MANIFESTATION_PREFIX) || !TYPE_ID_SUFFIX.test(suffix))
+    throw new TypeError("Invalid manifestation ID.");
+  let bits = 0n;
+  for (const char of suffix) bits = (bits << 5n) | BigInt(CROCKFORD.indexOf(char));
+  const hex = bits.toString(16).padStart(32, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export function decodeGraphQLId(kind: IdKind, value: string): string {
-  const id = typeIdUuid(kind, value);
-  if (id === undefined) throw new TypeError(`Invalid ${kind} ID.`);
-  return id;
-}
-editingProjections.set(
-  "mutationsAddShelfItemMutation",
-  z.object({
-    addShelfItem: z.discriminatedUnion("__typename", [
-      z.object({
-        __typename: z.literal("ShelfItemAdded"),
-        shelf,
-        edge: z.object({ cursor: z.string(), node: z.object({ id: domainId("Manifestation") }) }),
-      }),
-      refusal("NotFound"),
-    ]),
-  }),
-);
 export class GraphQLExecutionError extends Error {
   readonly errors: z.infer<typeof executionError>[];
 
@@ -158,7 +112,6 @@ export function graphqlNetwork(
         if (result.errors !== undefined) throw new GraphQLExecutionError(result.errors);
         if (result.data === undefined || result.data === null)
           throw new Error("Missing GraphQL response data.");
-        editingProjections.get(request.name)?.parse(result.data);
         sink.next({ data: result.data });
         sink.complete();
       } catch (error) {

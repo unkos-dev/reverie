@@ -7,7 +7,8 @@
   "customScalarTypes": {
     "SignedInteger": "number",
     "ETag": "string",
-    "DateTime": "string"
+    "DateTime": "string",
+    "CoverThumbnailPath": "string"
   },
   "requireCustomScalarTypes": true,
   "persistConfig": {

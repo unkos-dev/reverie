@@ -1,11 +1,10 @@
 import { cleanup, render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import { RelayEnvironmentProvider, loadQuery } from "react-relay";
+import { RelayEnvironmentProvider, fetchQuery, loadQuery } from "react-relay";
 import { z } from "zod";
 import trustedDocuments from "../../../backend/graphql-documents.json";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
-import { encodeGraphQLId } from "@/api/graphql";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
 import formQuery, {
   type EditMetadataDialogQuery as FormQuery,
@@ -15,7 +14,7 @@ import { EditMetadataDialog, type EditableField } from "@/pages/book/EditMetadat
 const ID = "11111111-1111-4111-8111-111111111111";
 const WORK = "22222222-2222-4222-8222-222222222222";
 const FIELDS: readonly EditableField[] = [{ name: "subtitle", label: "Subtitle" }];
-const GRAPH_ID = encodeGraphQLId("Manifestation", ID);
+const GRAPH_ID = `manifestation-${ID}`;
 const documents: Record<string, string> = trustedDocuments;
 const requestSchema = z.object({ id: z.string(), variables: z.record(z.string(), z.unknown()) });
 const saveSchema = z.object({
@@ -30,7 +29,7 @@ const revisionIds = new Map<string, string>();
 function revisionId(etag: string): string {
   const known = revisionIds.get(etag);
   if (known !== undefined) return known;
-  const created = encodeGraphQLId("MetadataRevision", crypto.randomUUID());
+  const created = `metadatarevision-${crypto.randomUUID()}`;
   revisionIds.set(etag, created);
   return created;
 }
@@ -71,7 +70,7 @@ function saved(
         publisher: metadata.publisher,
         publicationDate: metadata.publicationDate,
         work: {
-          id: encodeGraphQLId("Work", WORK),
+          id: `work-${WORK}`,
           title: metadata.title,
           description: metadata.description,
           language: metadata.language,
@@ -84,22 +83,24 @@ function refused(refusal: Record<string, unknown>): Response {
   return response({ updateMetadata: refusal });
 }
 function intercept(handlers: {
-  read: () => ReturnType<typeof snapshot>;
+  read: (id: string) => ReturnType<typeof snapshot>;
   save?: (variables: z.infer<typeof saveSchema>) => Response | Promise<Response>;
 }): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
     const request = requestSchema.parse(JSON.parse(z.string().parse(init?.body)));
     const name = documents[request.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
-    if (name === "EditMetadataDialogQuery")
+    if (name === "EditMetadataDialogQuery") {
+      const id = z.string().parse(request.variables.id);
       return Promise.resolve(
         response({
           manifestation: {
-            id: GRAPH_ID,
-            work: { id: encodeGraphQLId("Work", WORK), __typename: "Work" },
-            metadata: handlers.read(),
+            id,
+            work: { id: `work-${WORK}`, __typename: "Work" },
+            metadata: handlers.read(id),
           },
         }),
       );
+    }
     if (name === "EditMetadataDialogSaveMutation" && handlers.save !== undefined)
       return Promise.resolve(handlers.save(saveSchema.parse(request.variables.input)));
     throw new Error(`Unexpected operation ${name ?? request.id}`);
@@ -135,12 +136,14 @@ afterEach(async () => {
 // REV-REQ-0019 and the data loss boundary: a refusal keeps the draft until Reload replaces its values and validator.
 test("retains refused input and reloads the Book dialog onto the current revision", async () => {
   const opening = snapshot();
+  const otherId = "another-manifestation";
+  const other = snapshot("Another book", '"dddddddddddddddddddddd"');
   const writes: z.infer<typeof saveSchema>[] = [];
   let finish: ((value: Response) => void) | undefined;
   let saves = 0;
   let current = opening;
   intercept({
-    read: () => current,
+    read: (id) => (id === otherId ? other : current),
     save: (variables) => {
       writes.push(variables);
       saves += 1;
@@ -152,12 +155,18 @@ test("retains refused input and reloads the Book dialog onto the current revisio
         current = snapshot("Changed elsewhere", '"bbbbbbbbbbbbbbbbbbbbbb"');
         return refused({ __typename: "StaleBaseline", message: "The baseline is stale." });
       }
+      if (saves === 3)
+        return refused({ __typename: "StaleBaseline", message: "The baseline is still stale." });
       return saved(snapshot("Updated Subtitle", '"cccccccccccccccccccccc"'));
     },
   });
   const rendered = await renderDialog([...FIELDS, { name: "pub_date", label: "Publication date" }]);
   await page.getByLabelText("Publication date").fill("unknown");
   await page.getByLabelText("Subtitle").fill("Updated Subtitle");
+  const otherRead = await fetchQuery<FormQuery>(relayEnvironment(), formQuery, {
+    id: otherId,
+  }).toPromise();
+  expect(otherRead).toMatchObject({ manifestation: { id: otherId } });
   await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
   await expect
     .element(page.getByRole("button", { name: "Save", exact: true }))
@@ -184,16 +193,23 @@ test("retains refused input and reloads the Book dialog onto the current revisio
   await expect.element(reload).toBeVisible();
   await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
   expect(writes.map((write) => write.baseline)).toEqual([opening.etag, opening.etag]);
+  await page.getByLabelText("Subtitle").fill("Revised draft");
+  await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
+  await expect.element(page.getByText("The baseline is still stale.")).toBeVisible();
+  expect(writes[2]).toMatchObject({
+    baseline: opening.etag,
+    patch: { subtitle: "Revised draft" },
+  });
   await userEvent.click(reload);
   await expect.element(page.getByLabelText("Subtitle")).toHaveValue(current.subtitle);
-  expect(writes).toHaveLength(2);
+  expect(writes).toHaveLength(3);
   await page.getByLabelText("Subtitle").fill("Updated Subtitle");
   await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
   await vi.waitFor(() => {
     expect(rendered.onOpenChange).toHaveBeenCalledWith(false);
   });
-  expect(writes).toHaveLength(3);
-  expect(writes[2]).toMatchObject({
+  expect(writes).toHaveLength(4);
+  expect(writes[3]).toMatchObject({
     baseline: current.etag,
     patch: { subtitle: "Updated Subtitle" },
   });

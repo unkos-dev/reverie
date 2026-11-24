@@ -1423,10 +1423,6 @@ pub async fn search(
         .inspect_err(|e| tracing::error!(error = %e, "search: acquire_with_rls failed"))
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    // ts_headline option string assembled from typed constants so the
-    // marker bytes stay in sync with [`SNIPPET_HL_START`] /
-    // [`SNIPPET_HL_END`] (the frontend reads them at the matching
-    // offsets in `CommandPalette.tsx`).
     let headline_opts = format!(
         "StartSel={SNIPPET_HL_START}, StopSel={SNIPPET_HL_END}, \
          MaxFragments=2, MaxWords=20, MinWords=5"
@@ -1526,9 +1522,9 @@ pub const SEARCH_LIMIT: u16 = 20;
 
 const TRGM_SIMILARITY_FLOOR: f32 = 0.3;
 
-const SNIPPET_HL_START: &str = "\u{0002}";
+pub const SNIPPET_HL_START: &str = "\u{0002}";
 
-const SNIPPET_HL_END: &str = "\u{0003}";
+pub const SNIPPET_HL_END: &str = "\u{0003}";
 
 async fn search_authors(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,

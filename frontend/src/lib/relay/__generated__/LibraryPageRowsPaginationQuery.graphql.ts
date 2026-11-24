@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<703a13ddd5d8521506cc1cfd01d5f5bc>>
- * @relayHash 27f61dcdf77b545c8aa7e18b37669091
+ * @generated SignedSource<<aaba12bde7fc22825a341c200a68bba3>>
+ * @relayHash a7bb3f90e6ae1fc7200b73f52fa0f4d9
  * @lightSyntaxTransform
  */
 
@@ -8,11 +8,19 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 2a45af98cd37ad9ada0617a859872d642071a7dff8600dd1b26d3686bddd021a
+// @relayRequestID ad47c03fbb21a191d95d5c3ed923d3f43928629efdbbdb99cd20391668488b71
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
 export type Direction = "ASC" | "DESC" | "%future added value";
+export type ReadingStatusFilter =
+  | "ABANDONED"
+  | "FINISHED"
+  | "ON_HOLD"
+  | "READING"
+  | "UNREAD"
+  | "WANT_TO_READ"
+  | "%future added value";
 export type SortField = "AUTHOR" | "CREATED_AT" | "PAGES" | "TITLE" | "%future added value";
 export type BooksFilter = {
   author?: ReadonlyArray<string>;
@@ -40,8 +48,8 @@ export type BooksFilter = {
   seriesAny?: ReadonlyArray<string>;
   shelf?: string | null | undefined;
   shelfAny?: ReadonlyArray<string>;
-  statusAny?: ReadonlyArray<string>;
-  statusNone?: ReadonlyArray<string>;
+  statusAny?: ReadonlyArray<ReadingStatusFilter>;
+  statusNone?: ReadonlyArray<ReadingStatusFilter>;
   subtitleContains?: string | null | undefined;
   subtitleEmpty?: boolean | null | undefined;
   tag?: ReadonlyArray<string>;
@@ -55,19 +63,19 @@ export type SortLevel = {
   column: SortField;
   direction: Direction;
 };
-export type readerLibraryPaginationQuery$variables = {
+export type LibraryPageRowsPaginationQuery$variables = {
   count?: number | null | undefined;
   cursor?: string | null | undefined;
   filter?: BooksFilter | null | undefined;
   sort?: ReadonlyArray<SortLevel> | null | undefined;
   sourceKey: string;
 };
-export type readerLibraryPaginationQuery$data = {
-  readonly " $fragmentSpreads": FragmentRefs<"readerLibrary">;
+export type LibraryPageRowsPaginationQuery$data = {
+  readonly " $fragmentSpreads": FragmentRefs<"LibraryPage_rows">;
 };
-export type readerLibraryPaginationQuery = {
-  response: readerLibraryPaginationQuery$data;
-  variables: readerLibraryPaginationQuery$variables;
+export type LibraryPageRowsPaginationQuery = {
+  response: LibraryPageRowsPaginationQuery$data;
+  variables: LibraryPageRowsPaginationQuery$variables;
 };
 
 const node: ConcreteRequest = (function () {
@@ -165,7 +173,7 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
       metadata: null,
-      name: "readerLibraryPaginationQuery",
+      name: "LibraryPageRowsPaginationQuery",
       selections: [
         {
           args: [
@@ -188,7 +196,7 @@ const node: ConcreteRequest = (function () {
             },
           ],
           kind: "FragmentSpread",
-          name: "readerLibrary",
+          name: "LibraryPage_rows",
         },
       ],
       type: "Query",
@@ -198,7 +206,7 @@ const node: ConcreteRequest = (function () {
     operation: {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
-      name: "readerLibraryPaginationQuery",
+      name: "LibraryPageRowsPaginationQuery",
       selections: [
         {
           alias: null,
@@ -435,7 +443,7 @@ const node: ConcreteRequest = (function () {
           args: v3 /*:: as any*/,
           filters: ["filter", "sort"],
           handle: "connection",
-          key: "readerLibrary_books",
+          key: "LibraryPage_rows_books",
           kind: "LinkedHandle",
           name: "books",
           dynamicKey: {
@@ -447,15 +455,15 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "2a45af98cd37ad9ada0617a859872d642071a7dff8600dd1b26d3686bddd021a",
+      id: "ad47c03fbb21a191d95d5c3ed923d3f43928629efdbbdb99cd20391668488b71",
       metadata: {},
-      name: "readerLibraryPaginationQuery",
+      name: "LibraryPageRowsPaginationQuery",
       operationKind: "query",
       text: null,
     },
   };
 })();
 
-(node as any).hash = "b8c0363a5d29ecb7229cc4da79d8e48d";
+(node as any).hash = "cb6cdfe277737fd46661ac1c1e0a779a";
 
 export default node;

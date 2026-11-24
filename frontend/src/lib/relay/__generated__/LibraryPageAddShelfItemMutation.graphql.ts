@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<51739c4372a2d277c01a5e5feaad797b>>
- * @relayHash 2a6a49b157d94d5be7794f4b933df886
+ * @generated SignedSource<<d909453b9e55a47d3b7ecb21922c6b35>>
+ * @relayHash b5886aa8571384b08d2ba2519242bb59
  * @lightSyntaxTransform
  */
 
@@ -8,29 +8,25 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID e5b59e6564acc8388fd23ac9a94bd612332147a641fff37c135d1d9695c22ff8
+// @relayRequestID c112e68841610f2b459733492153adfee10df806703d3948c66c76e286be0ac4
 
 import { ConcreteRequest } from "relay-runtime";
-export type FieldLockScope = "MANIFESTATION" | "WORK" | "%future added value";
-export type LockMetadataFieldInput = {
-  entityType: FieldLockScope;
-  fieldName: string;
-  id: string;
+export type AddShelfItemInput = {
+  manifestationId: string;
+  shelfId: string;
 };
-export type mutationsLockMetadataFieldMutation$variables = {
-  input: LockMetadataFieldInput;
+export type LibraryPageAddShelfItemMutation$variables = {
+  input: AddShelfItemInput;
 };
-export type mutationsLockMetadataFieldMutation$data = {
-  readonly lockMetadataField:
-    | {
-        readonly __typename: "MetadataFieldLockAdded";
-        readonly manifestation: {
-          readonly id: string;
-        };
-      }
+export type LibraryPageAddShelfItemMutation$data = {
+  readonly addShelfItem:
     | {
         readonly __typename: "NotFound";
         readonly message: string;
+      }
+    | {
+        readonly __typename: "ShelfItemAdded";
+        readonly __typename: "ShelfItemAdded";
       }
     | {
         // This will never be '%other', but we need some
@@ -38,9 +34,9 @@ export type mutationsLockMetadataFieldMutation$data = {
         readonly __typename: "%other";
       };
 };
-export type mutationsLockMetadataFieldMutation = {
-  response: mutationsLockMetadataFieldMutation$data;
-  variables: mutationsLockMetadataFieldMutation$variables;
+export type LibraryPageAddShelfItemMutation = {
+  response: LibraryPageAddShelfItemMutation$data;
+  variables: LibraryPageAddShelfItemMutation$variables;
 };
 
 const node: ConcreteRequest = (function () {
@@ -63,7 +59,7 @@ const node: ConcreteRequest = (function () {
         ],
         concreteType: null,
         kind: "LinkedField",
-        name: "lockMetadataField",
+        name: "addShelfItem",
         plural: false,
         selections: [
           {
@@ -72,31 +68,6 @@ const node: ConcreteRequest = (function () {
             kind: "ScalarField",
             name: "__typename",
             storageKey: null,
-          },
-          {
-            kind: "InlineFragment",
-            selections: [
-              {
-                alias: null,
-                args: null,
-                concreteType: "Manifestation",
-                kind: "LinkedField",
-                name: "manifestation",
-                plural: false,
-                selections: [
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "id",
-                    storageKey: null,
-                  },
-                ],
-                storageKey: null,
-              },
-            ],
-            type: "MetadataFieldLockAdded",
-            abstractKey: null,
           },
           {
             kind: "InlineFragment",
@@ -121,7 +92,7 @@ const node: ConcreteRequest = (function () {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Fragment",
       metadata: null,
-      name: "mutationsLockMetadataFieldMutation",
+      name: "LibraryPageAddShelfItemMutation",
       selections: v1 /*:: as any*/,
       type: "Mutation",
       abstractKey: null,
@@ -130,19 +101,19 @@ const node: ConcreteRequest = (function () {
     operation: {
       argumentDefinitions: v0 /*:: as any*/,
       kind: "Operation",
-      name: "mutationsLockMetadataFieldMutation",
+      name: "LibraryPageAddShelfItemMutation",
       selections: v1 /*:: as any*/,
     },
     params: {
-      id: "e5b59e6564acc8388fd23ac9a94bd612332147a641fff37c135d1d9695c22ff8",
+      id: "c112e68841610f2b459733492153adfee10df806703d3948c66c76e286be0ac4",
       metadata: {},
-      name: "mutationsLockMetadataFieldMutation",
+      name: "LibraryPageAddShelfItemMutation",
       operationKind: "mutation",
       text: null,
     },
   };
 })();
 
-(node as any).hash = "6d3f322f8434af147bb43d274cfa2e0e";
+(node as any).hash = "1b1eef6faba34c5c63262864bda87492";
 
 export default node;

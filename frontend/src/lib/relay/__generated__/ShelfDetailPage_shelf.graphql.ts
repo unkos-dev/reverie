@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<627571eb2d15b1eb971fe938c0e1ec2a>>
+ * @generated SignedSource<<fedebdf7b1506b529e0a520bdf721d84>>
  * @lightSyntaxTransform
  */
 
@@ -10,7 +10,6 @@
 import { ReaderFragment } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
 export type ShelfDetailPage_shelf$data = {
-  readonly isSystem: boolean;
   readonly itemCount: number;
   readonly name: string;
   readonly " $fragmentSpreads": FragmentRefs<"ShelfDetailPage_items">;
@@ -40,13 +39,6 @@ const node: ReaderFragment = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "isSystem",
-      storageKey: null,
-    },
-    {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
       name: "itemCount",
       storageKey: null,
     },
@@ -60,6 +52,6 @@ const node: ReaderFragment = {
   abstractKey: null,
 };
 
-(node as any).hash = "4757cd1a12186338d9225099ee9b38d9";
+(node as any).hash = "030220d70dfd2549eff3ba7c7484839a";
 
 export default node;

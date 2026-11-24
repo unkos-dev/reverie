@@ -40,17 +40,18 @@ capability is deficient for Reverie, with approval governed by the root rules.
   require write scope or the higher declared scope. Keep role, child status, ownership and credential ceilings separate.
   Supply caller identity through execution-request data, never schema-global data. Transport failures use Problem
   Details; execution faults carry safe classifications and fixed internal messages. Never expose internal Display text.
-- **Mutation outcomes:** A mutation on union results takes one `input` object and returns a union of its success member
-  and expected outcomes ([ADR-0082](../docs/adr/0082-expected-graphql-mutation-outcomes-as-union-results.md)). Reuse the
-  shared outcome types in `src/graphql/mutations.rs`. Forbidden, internal and malformed-header failures stay execution
-  errors. A metadata success member returns `manifestation` through `Manifestation::with_metadata`, carrying the
-  revision the write projected inside its transaction. Return the committed reading revision through
-  `Manifestation::with_reading` from the write's returned row. Key revision relation cursors by the revision UUID and
-  use the owning work or manifestation for SQL predicates.
+- **Mutation outcomes:** Each mutation takes one `input` object and returns a union of its success member and expected
+  outcomes ([ADR-0082](../docs/adr/0082-expected-graphql-mutation-outcomes-as-union-results.md)). Reuse the shared
+  outcome types in `src/graphql/mutations.rs`. Forbidden, internal and malformed-header failures stay execution errors.
+  A metadata success member returns `manifestation` through `Manifestation::with_metadata`, carrying the revision the
+  write projected inside its transaction. Return the committed reading revision through `Manifestation::with_reading`
+  from the write's returned row. Key revision relation cursors by the revision UUID and use the owning work or
+  manifestation for SQL predicates.
 - **GraphQL formats:** A format-bearing value uses a Reverie custom scalar in `src/graphql/library.rs` (`ETag`,
-  `DateTime`) whose `@specifiedBy` URL points at Design 0031's custom scalars section. A closed set of values is an
-  enum; declare an output enum with `output_enum!` and an input enum with `input_enum!`, because `derive(Enum)` trips
-  clippy's `unused_async_trait_impl` inside the derive expansion.
+  `DateTime`, `CoverThumbnailPath`) whose `@specifiedBy` URL points at Design 0031's custom scalars section. Keep
+  registry keys and user input that needs domain-level field feedback as strings. A closed set of values is an enum;
+  declare an output enum with `output_enum!` and an input enum with `input_enum!`, because `derive(Enum)` trips clippy's
+  `unused_async_trait_impl` inside the derive expansion.
 - **GraphQL IDs:** Encode and decode global IDs only through the `Kind` types in `src/graphql/id.rs`, which bind each
   TypeID prefix at compile time. A new prefix is a maintainer decision.
 - **Extractor order:** The request body extractor (e.g., `Json<T>`, `String`, `Bytes`) is the last argument in the

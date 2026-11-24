@@ -18,7 +18,7 @@ import {
   type LibraryVisitOwner,
 } from "@/lib/relay/library-visit";
 import { serializeSortParam } from "@/api/books";
-import { sortLevelParams } from "@/pages/library/use-library-preferences";
+import { sortLevelParam } from "@/pages/library/use-library-preferences";
 import type {
   libraryBootstrapQuery as BootstrapQuery,
   libraryBootstrapQuery$data,
@@ -135,9 +135,15 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<PreparedL
   owner.intent.restore(visit);
   if (visit !== restored) owner.intent.update(() => visit);
   const preferences = data.viewer.libraryPreferences;
-  const override = sortLevelParams(preferences.sort ?? []);
+  const override = (preferences.sort ?? []).flatMap(({ column, direction }) =>
+    sortLevelParam(column, direction),
+  );
   const effective =
-    preferences.sort === null ? sortLevelParams(preferences.defaults.sort) : override;
+    preferences.sort === null
+      ? preferences.defaults.sort.flatMap(({ column, direction }) =>
+          sortLevelParam(column, direction),
+        )
+      : override;
   const initial = preparation.hold(
     owner.prepare(libraryRequest(visit.filters, serializeSortParam(override)), effective),
   );

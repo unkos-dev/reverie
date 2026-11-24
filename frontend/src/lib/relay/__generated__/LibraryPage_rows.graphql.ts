@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<d3d827488d73479f25a1b51c61be12d0>>
+ * @generated SignedSource<<54404b64628c74123ae2dc99e93e13bd>>
  * @lightSyntaxTransform
  */
 
@@ -9,7 +9,7 @@
 
 import { ReaderFragment } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
-export type readerLibrary$data = {
+export type LibraryPage_rows$data = {
   readonly books: {
     readonly edges: ReadonlyArray<{
       readonly node: {
@@ -23,14 +23,14 @@ export type readerLibrary$data = {
       };
     }>;
   };
-  readonly " $fragmentType": "readerLibrary";
+  readonly " $fragmentType": "LibraryPage_rows";
 };
-export type readerLibrary$key = {
-  readonly " $data"?: readerLibrary$data;
-  readonly " $fragmentSpreads": FragmentRefs<"readerLibrary">;
+export type LibraryPage_rows$key = {
+  readonly " $data"?: LibraryPage_rows$data;
+  readonly " $fragmentSpreads": FragmentRefs<"LibraryPage_rows">;
 };
 
-import readerLibraryPaginationQuery_graphql from "./readerLibraryPaginationQuery.graphql";
+import LibraryPageRowsPaginationQuery_graphql from "./LibraryPageRowsPaginationQuery.graphql";
 
 const node: ReaderFragment = (function () {
   var v0 = ["books"];
@@ -82,11 +82,11 @@ const node: ReaderFragment = (function () {
           path: v0 /*:: as any*/,
         },
         fragmentPathInResult: [],
-        operation: readerLibraryPaginationQuery_graphql,
+        operation: LibraryPageRowsPaginationQuery_graphql,
       },
       throwOnFieldError: true,
     },
-    name: "readerLibrary",
+    name: "LibraryPage_rows",
     selections: [
       {
         alias: "books",
@@ -109,7 +109,7 @@ const node: ReaderFragment = (function () {
         ],
         concreteType: "ManifestationConnection",
         kind: "LinkedField",
-        name: "__readerLibrary_books_connection",
+        name: "__LibraryPage_rows_books_connection",
         plural: false,
         selections: [
           {
@@ -222,6 +222,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "b8c0363a5d29ecb7229cc4da79d8e48d";
+(node as any).hash = "cb6cdfe277737fd46661ac1c1e0a779a";
 
 export default node;

@@ -93,26 +93,17 @@ Operations import their generated artefacts; the runtime never executes a raw `g
 `src/api/graphql.ts` sends generated document IDs to `/api/graphql` through the existing fetch and CSRF boundary. It
 preserves HTTP errors, validates execution envelopes and never repeats a request after an execution fault. Account
 confirmation creates or reuses the environment from `src/lib/relay/environment.ts`. Account replacement or loss aborts
-old requests and clears old records before another account can publish. CSRF tokens stay outside Relay records. No
-custom scalar or editing snapshot is exposed by the viewer operation.
+old requests and clears old records before another account can publish. CSRF tokens stay outside Relay records.
 
-`src/lib/relay/reader.ts` supplies the reader fragments and prepared route operations. Basic detail requests the
-pending-version count; the Versions tab loads proposals lazily and completes its native connection. Required relation
-pages use concrete refetch roots. Library keeps account/Navigation-entry source references and unique source connection
-keys in `library-visit.ts`. Replacements rebuild bounded candidates without replacing displayed membership midway. Entry
-disposal and account loss release references.
+Routes and feature modules define queries, fragments and mutations beside their consumers. Basic Book detail requests
+the pending-version count. Versions loads proposals through its own query and connection. Library retains account- and
+Navigation-entry-scoped references in `library-visit.ts`. Replacements rebuild a candidate before changing the visible
+membership. Entry disposal and account loss release references.
 
-`src/lib/relay/mutations.ts` contains selected editing reads, acknowledgements and resolution. `api/graphql.ts`
-validates each selected revision-bearing projection before publication. `executeEditing` captures the detached raw
-payload; fragment reads, store lookups, `fetchQuery` and `commitMutation.onCompleted` do not supply draft baselines.
-Authors replacement uses `captureAuthorPages` to validate a complete same-revision chain. Failed edits retain their
-patch, baseline and request identity. Retry is explicit and classified; matched Reload reads without writing. Metadata
-Undo retains field-scoped server operations and their original expiry.
-
-Preferences retain their 400 ms merged queue, per-group local intent and per-account display mirror. An account epoch
-prevents a queued unmount flush from reaching another account. Subtitle is hidden on a cold load unless the caller's
-explicit override controls visibility. Batch Set status retains each selected row's original conditional baseline;
-Refresh metadata reports scheduling, and Retry excludes successful and conflicted targets.
+Production operations use server-typed formats. The network validates the shared response envelope before Relay
+publishes it. Editors keep the values and validator of their opening revision. The author editor reads every page of a
+single revision before submitting a replacement. Preferences submit each gesture through its own mutation. Batch status
+changes retain each selected row's opening validator.
 
 Run `just rust::regen`, `just js::relay-gen`, `just js::relay-check` and `just js::build` after operation changes.
 Rebuild the backend after the trusted map changes. The admin-only `EmptyLibrary` ingestion reads share the existing

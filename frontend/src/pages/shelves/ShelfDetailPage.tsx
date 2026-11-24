@@ -36,7 +36,6 @@ const shelfDetailPageQuery = graphql`
 const shelfFragment = graphql`
   fragment ShelfDetailPage_shelf on Shelf @throwOnFieldError {
     name
-    isSystem
     itemCount
     ...ShelfDetailPage_items
   }
@@ -101,7 +100,7 @@ function ShelfDetailContent({
       </header>
       <ul className="space-y-2">
         {items?.items.edges.map(({ node }) => (
-          <ShelfItemRow key={node.id} id={decodeGraphQLId("Manifestation", node.id)} />
+          <ShelfItemRow key={node.id} id={decodeGraphQLId(node.id)} />
         ))}
       </ul>
     </div>

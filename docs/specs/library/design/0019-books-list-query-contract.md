@@ -250,16 +250,17 @@ The browser Library sends typed GraphQL sort levels and an opaque `after` cursor
 state" describes its requests
 ([Interfaces and dependencies](0001-library-filter-and-sort-state.md#interfaces-and-dependencies)).
 
-Timestamp bounds are canonical UTC instants in the fingerprint, so equivalent RFC 3339 offsets do not change a cursor's
-filter identity. A different instant changes the fingerprint even if the local calendar date is unchanged.
+The `DateTime` scalar converts filter bounds to UTC instants before fingerprinting, so equivalent RFC 3339 offsets share
+one cursor filter identity. A different instant changes the fingerprint even if the local calendar date is unchanged.
 
 The GraphQL `books(first:, after:, filter:, sort:)` root resolves typed input objects to the same `ListParams`,
 validators, `SortSpec` and filter fingerprint in `backend/src/services/reader.rs`. Omitted or null `sort` uses the
 installation default through `SortSpec::default()`, independently of the reader's stored preference. Numeric endpoints
 are inclusive and timestamps use inclusive lower and exclusive upper instants. Equivalent offsets share a fingerprint.
 Invalid columns, duplicate levels and stacks over three levels fail before SQL. Graph execution refusals carry the
-`validation` classification. The `author`, `series` and `shelf` filters take GraphQL IDs, and a malformed or wrong-type
-filter ID refuses the request with the same classification.
+`validation` classification. The status filters use `ReadingStatusFilter`, including `UNREAD` for a missing status.
+`isbn13Eq` uses trimmed literal equality and `isbn13Contains` uses the partial match. The `author`, `series` and `shelf`
+filters take GraphQL IDs, and a malformed or wrong-type filter ID refuses the request with the same classification.
 
 Books expose native connection edges and PageInfo. Every edge carries its own keyset cursor. One extra row derives
 `hasNextPage`, and a bounded existence query derives `hasPreviousPage`. The non-null `first` argument is required and

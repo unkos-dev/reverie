@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<85e1880c482c0ec7aae52988acfb7776>>
- * @relayHash 8603558ea66a5ffa4246a37319623350
+ * @generated SignedSource<<828c00d217a98aadc3cd331dda8aaf7a>>
+ * @relayHash dbd9c59af0f0567de33106ade2e7593f
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 3cebcc98a7a8612d9f860f237850e8cd58bee8ec07fab4e42dae6ac6854d9944
+// @relayRequestID 3eb218645aaa86852f75d354f21019ac7d0e211bee99c70743f3946cfffac66a
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -18,7 +18,7 @@ export type cellsAuthorsQuery$variables = {
 export type cellsAuthorsQuery$data = {
   readonly manifestation:
     | {
-        readonly " $fragmentSpreads": FragmentRefs<"readerAuthorEditing">;
+        readonly " $fragmentSpreads": FragmentRefs<"cells_authorEditing">;
       }
     | null
     | undefined;
@@ -77,7 +77,7 @@ const node: ConcreteRequest = (function () {
             {
               args: null,
               kind: "FragmentSpread",
-              name: "readerAuthorEditing",
+              name: "cells_authorEditing",
             },
           ],
           storageKey: null,
@@ -200,7 +200,7 @@ const node: ConcreteRequest = (function () {
                   args: v3 /*:: as any*/,
                   filters: null,
                   handle: "connection",
-                  key: "readerAuthorEditing_authors",
+                  key: "cells_authorEditing_authors",
                   kind: "LinkedHandle",
                   name: "authors",
                 },
@@ -214,7 +214,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "3cebcc98a7a8612d9f860f237850e8cd58bee8ec07fab4e42dae6ac6854d9944",
+      id: "3eb218645aaa86852f75d354f21019ac7d0e211bee99c70743f3946cfffac66a",
       metadata: {},
       name: "cellsAuthorsQuery",
       operationKind: "query",
@@ -223,6 +223,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "86bf79db2595220a0df0ab9e5a2c0d7d";
+(node as any).hash = "71d6f6e6d336f05321df17d6b5d66e85";
 
 export default node;

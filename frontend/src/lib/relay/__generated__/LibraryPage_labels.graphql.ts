@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<d20e4d01138838db166190c75bda642c>>
+ * @generated SignedSource<<2da2b5f9e253a1c2625d9e5ebdd915bd>>
  * @lightSyntaxTransform
  */
 
@@ -20,8 +20,8 @@ export type LibraryPage_labels$data = {
   }>;
   readonly shelfLabels: ReadonlyArray<{
     readonly id: string;
-    readonly itemCount: number;
     readonly name: string;
+    readonly " $fragmentSpreads": FragmentRefs<"ShelfHeader_shelves">;
   }>;
   readonly " $fragmentType": "LibraryPage_labels";
 };
@@ -126,11 +126,9 @@ const node: ReaderFragment = (function () {
           v0 /*:: as any*/,
           v1 /*:: as any*/,
           {
-            alias: null,
             args: null,
-            kind: "ScalarField",
-            name: "itemCount",
-            storageKey: null,
+            kind: "FragmentSpread",
+            name: "ShelfHeader_shelves",
           },
         ],
         storageKey: null,
@@ -141,6 +139,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "f4af5e99251eeb172a1ac47db9166dd7";
+(node as any).hash = "cf6f505f1d0180638dcd88f6410fce6e";
 
 export default node;

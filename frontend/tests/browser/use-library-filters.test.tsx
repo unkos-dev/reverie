@@ -83,7 +83,7 @@ test("blur, Clear and subsequent typing use the current intent without resurrect
 });
 test.each([
   undefined,
-  { filters: { ...emptyFilterState(), q: "saved search", shelf: ["not-a-uuid"] }, view: "table" },
+  { filters: { ...emptyFilterState(), q: "saved search", shelf: [""] }, view: "table" },
   { filters: emptyFilterState(), view: "list" },
   {
     filters: { ...emptyFilterState(), q: "saved search" },

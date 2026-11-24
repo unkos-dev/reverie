@@ -152,9 +152,9 @@ revert.
 ## GraphQL schema and trusted documents
 
 The authenticated GraphQL endpoint is `POST /api/graphql`, built with async-graphql and async-graphql-axum 7.2.1 in the
-existing process. Ordinary query roots use read scope and caller-scoped transactions. Mutations and operation resolution
-use write scope. Session POST requests retain CSRF enforcement. Retained `/api/v1`, authentication, OPDS and binary
-endpoints keep their HTTP contracts and OpenAPI documentation.
+existing process. Ordinary query roots use read scope and caller-scoped transactions. Mutations use write scope. Session
+POST requests retain CSRF enforcement. Retained `/api/v1`, authentication, OPDS and binary endpoints keep their HTTP
+contracts and OpenAPI documentation.
 
 Run `just rust::regen` to export `backend/schema.graphql`, then `just js::relay-gen` from the repository root to
 generate the matching frontend operations and `backend/graphql-documents.json`. Commit all generated output together.
@@ -165,27 +165,23 @@ introspection; debug builds accept developer documents and retain introspection.
 policy. `__typename` remains available. Unknown cached-client IDs receive a refusal without registration or text
 fallback. The backend image carries the map through its existing backend-directory copy.
 
-Shared reads live in `src/services/reader.rs`. Both transports call the canonical metadata and Undo operations in
-`src/services/metadata/editing.rs` and `editing/undo.rs`, reading writes in `src/services/reading.rs`, and shelf writes
-in `src/services/shelves.rs`. Metadata, reading and Undo mutations take explicit nullable baselines. Actual browser
-sessions bind Undo and operation resolution; Basic and device tokens cannot use those capabilities. Selected relation
-pages and revisions are materialised in one transaction, and HTTP keeps its complete matched results.
+Shared reads live in `src/services/reader.rs`. Both transports use the metadata editing, reading and shelf services.
+GraphQL metadata and reading saves take a non-null baseline and publish the matching revision. Selected relation pages
+and revisions are materialised in one transaction. HTTP reads keep their complete matched results.
 
 Graph request-local loaders batch Work, Manifestation, Shelf, Series and relation keys without sharing caller records
-across requests. IDs use padded base64 of `Type:<uuid>`. Typed roots and `node(id:)` return null for invalid, hidden or
-missing identities. Work, Series, Shelf and Manifestation declare `@fetchable(field_name: "id")` and expose guarded
-concrete roots `fetch__Work`, `fetch__Series`, `fetch__Shelf` and `fetch__Manifestation`, each taking `id: ID!`. Their
-paging fragments set `@refetchable(preferFetchable: true)` so Relay refetches through the concrete type and validation
-retains page complexity multipliers. Connections use keyset SQL and configured page bounds. Metadata values and their
-matching entity-tags stay together. Selecting `versions` loads proposals separately, with a required `first`, 50-row
-maximum and an early child exclusion. Representative operations request 20 rows. Pending PageInfo keeps remaining rows
-reachable.
+across requests. IDs use TypeID. Typed roots and `node(id:)` return null for invalid, hidden or missing identities.
+Work, Series, Shelf and Manifestation declare `@fetchable(field_name: "id")` and expose guarded concrete roots
+`fetch__Work`, `fetch__Series`, `fetch__Shelf` and `fetch__Manifestation`, each taking `id: ID!`. Their paging fragments
+set `@refetchable(preferFetchable: true)` so Relay refetches through the concrete type and validation retains page
+complexity multipliers. Connections use keyset SQL and configured page bounds. Metadata values and their matching
+entity-tags stay together. Selecting `versions` loads proposals separately, with a required `first`, 50-row maximum and
+an early child exclusion. Representative operations request 20 rows. Pending PageInfo keeps remaining rows reachable.
 
-Reader operations live in `frontend/src/lib/relay/reader.ts` and `mutations.ts`, including the 50-row Library page,
-prepared detail, shelf and series reads, and the lazy versions query. The browser uses one account-scoped Relay owner
-for these workflows. Preferences share `services::preferences` with HTTP, and `refreshMetadata` schedules the canonical
-claim-preserving enrichment operation. The trusted map grows only through generation and must be rebuilt into the
-backend. Every connection requires `first`. Books, shelves, shelf items and series works accept 0 through 100; nested
-maxima are recorded in the GraphQL execution Design. GraphQL ignores `REVERIE_OPDS_PAGE_SIZE`. Both policies enforce
-depth 12 and weighted complexity 200,000. The worst measured trusted operation costs 17,904 at maximum variables, with
-maximum measured depth 8. The GraphQL execution Design records the per-operation calibration.
+Routes and feature modules define the Relay queries, fragments and mutations beside their consumers. The browser uses
+one account-scoped environment for these workflows. Preferences share `services::preferences` with HTTP, and
+`refreshMetadata` schedules the canonical claim-preserving enrichment operation. Rebuild the backend when the trusted
+map changes. Every connection requires `first`. Books, shelves, shelf items and series works accept 0 through 100;
+nested maxima are recorded in the GraphQL execution Design. GraphQL ignores `REVERIE_OPDS_PAGE_SIZE`. Both policies
+enforce depth 12 and weighted complexity 200,000. The worst measured trusted operation costs 17,904 at maximum
+variables, with maximum measured depth 8. The GraphQL execution Design records the per-operation calibration.
