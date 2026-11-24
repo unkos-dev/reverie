@@ -80,6 +80,7 @@ const COLUMN_LABELS: Readonly<Record<EditableColumnKey, string>> = {
   status: "Status",
   rating: "Rating",
 };
+const EMPTY_PENDING_CELLS: ReadonlyMap<string, string> = new Map();
 
 export type EditValue = string | number | readonly string[] | null;
 type EditTarget = { id: string; workId?: string; title: string; baseline: string };
@@ -310,7 +311,7 @@ export function useCellEdit({
   }
 
   return {
-    pendingCells: metadataInFlight || readingInFlight ? submittedCells : new Map(),
+    pendingCells: metadataInFlight || readingInFlight ? submittedCells : EMPTY_PENDING_CELLS,
     savedCells,
     onCellEdit,
     statusTargets,
