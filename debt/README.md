@@ -117,6 +117,9 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Playwright rollback for Chromium renderer crashes](2026-11-24-playwright-chromium-renderer-crash.md): lifts when a
+  Playwright release later than 1.65.1 passes the frontend browser suite with its bundled Chromium and no
+  `VITEST_BROWSER_CONNECTION_CLOSED` renderer crashes.
 - [Snyk ignores for ESLint's URI parser](2026-11-18-snyk-uri-js-ignores.md): lifts when the ESLint the schema lint runs
   on no longer resolves `uri-js` 4.4.1 and Snyk reports no `uri-js` issues without the ignores.
 - [GraphQL-ESLint dependency override](2026-11-18-graphql-tools-utils-override.md): lifts when a GraphQL-ESLint release
