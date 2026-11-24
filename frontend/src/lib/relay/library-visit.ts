@@ -646,7 +646,7 @@ export function bindLibraryVisit(owner: LibraryVisitOwner): void {
   track(entry, owner);
 }
 
-export function siblingEditionsForFields(
+function siblingEditionsForFields(
   fields: readonly string[],
   id: string,
   workId: string | undefined,
@@ -662,6 +662,21 @@ export function siblingEditionsForFields(
       field.startsWith("identifiers.work."),
   );
   return sharedWork ? { id, workId } : undefined;
+}
+
+export function invalidateAfterMetadataEdit(
+  environment: Environment,
+  fields: readonly string[],
+  id: string,
+  workId: string | undefined,
+): void {
+  const siblingEditions = siblingEditionsForFields(fields, id, workId);
+  if (siblingEditions !== undefined) {
+    environment.commitUpdate((store) => {
+      store.get(siblingEditions.workId)?.invalidateRecord();
+    });
+  }
+  invalidateLibraryVisits(environment, fields, { siblingEditions });
 }
 
 export function invalidateLibraryVisits(

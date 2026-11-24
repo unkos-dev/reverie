@@ -12,7 +12,7 @@ import {
   type PreloadedQuery,
 } from "react-relay";
 import { commitLocalUpdate } from "relay-runtime";
-import { invalidateLibraryVisits, siblingEditionsForFields } from "@/lib/relay/library-visit";
+import { invalidateAfterMetadataEdit } from "@/lib/relay/library-visit";
 import editMetadataDialogQuery, {
   type EditMetadataDialogQuery,
 } from "@/lib/relay/__generated__/EditMetadataDialogQuery.graphql";
@@ -120,6 +120,16 @@ const proposalFragment = graphql`
       }
       ... on MetadataProposalStringList {
         strings
+      }
+      ... on MetadataProposalSeries {
+        name
+        position
+      }
+      ... on MetadataProposalContributors {
+        contributors {
+          name
+          code
+        }
       }
     }
   }
@@ -388,9 +398,7 @@ function FieldGroup({
         case "MetadataVersionAccepted":
         case "MetadataFieldReverted": {
           const { id, work } = result.manifestation;
-          invalidateLibraryVisits(environment, [variables.field], {
-            siblingEditions: siblingEditionsForFields([variables.field], id, work?.id),
-          });
+          invalidateAfterMetadataEdit(environment, [variables.field], id, work?.id);
           onAction({ status: "success", variables });
           break;
         }
@@ -647,6 +655,10 @@ function renderProposalValue(value: VersionsTab_proposal$data["newValue"]): stri
       return String(value.integer);
     case "MetadataProposalStringList":
       return JSON.stringify(value.strings);
+    case "MetadataProposalSeries":
+      return JSON.stringify({ name: value.name, position: value.position });
+    case "MetadataProposalContributors":
+      return JSON.stringify(value.contributors.map(({ code, name }) => ({ code, name })));
     default:
       return "(null)";
   }

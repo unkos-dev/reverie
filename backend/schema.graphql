@@ -423,8 +423,22 @@ input MetadataPatch {
   manifestationIdentifiers: [IdentifierPatch!]
 }
 
+type MetadataProposalContributor {
+  name: String!
+  code: String
+}
+
+type MetadataProposalContributors {
+  contributors: [MetadataProposalContributor!]!
+}
+
 type MetadataProposalInteger {
   integer: SignedInteger!
+}
+
+type MetadataProposalSeries {
+  name: String!
+  position: Float
 }
 
 type MetadataProposalStringList {
@@ -435,7 +449,7 @@ type MetadataProposalText {
   text: String!
 }
 
-union MetadataProposalValue = MetadataProposalText | MetadataProposalInteger | MetadataProposalStringList
+union MetadataProposalValue = MetadataProposalText | MetadataProposalInteger | MetadataProposalStringList | MetadataProposalSeries | MetadataProposalContributors
 
 type MetadataRefreshQueued {
   manifestationId: ID!

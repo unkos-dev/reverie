@@ -110,9 +110,10 @@ impl MetadataVersions {
                 cursor,
                 MetadataVersion {
                     id: super::id::MetadataVersion::encode(row.id),
+                    new_value: MetadataProposalValue::from_json(&row.field_name, row.new_value)
+                        .map_err(super::safe_error)?,
                     field_name: row.field_name,
                     source: row.source,
-                    new_value: row.new_value.try_into().map_err(super::safe_error)?,
                     status: MetadataVersionStatus::try_from(row.status.as_str())
                         .map_err(super::safe_error)?,
                     confidence_score: f64::from(row.confidence_score),
@@ -157,6 +158,8 @@ enum MetadataProposalValue {
     Text(MetadataProposalText),
     Integer(MetadataProposalInteger),
     StringList(MetadataProposalStringList),
+    Series(MetadataProposalSeries),
+    Contributors(MetadataProposalContributors),
 }
 
 #[derive(SimpleObject)]
@@ -172,6 +175,23 @@ struct MetadataProposalInteger {
 #[derive(SimpleObject)]
 struct MetadataProposalStringList {
     strings: Vec<String>,
+}
+
+#[derive(SimpleObject, serde::Deserialize)]
+struct MetadataProposalSeries {
+    name: String,
+    position: Option<f64>,
+}
+
+#[derive(SimpleObject)]
+struct MetadataProposalContributors {
+    contributors: Vec<MetadataProposalContributor>,
+}
+
+#[derive(SimpleObject, serde::Deserialize)]
+struct MetadataProposalContributor {
+    name: String,
+    code: Option<String>,
 }
 
 struct SignedInteger(i64);
@@ -195,13 +215,26 @@ impl async_graphql::ScalarType for SignedInteger {
     }
 }
 
-impl TryFrom<serde_json::Value> for MetadataProposalValue {
-    type Error = AppError;
-
-    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
+impl MetadataProposalValue {
+    fn from_json(field: &str, value: serde_json::Value) -> Result<Self, AppError> {
         use serde_json::Value;
 
         let invalid = || AppError::Internal(anyhow::anyhow!("Unsupported metadata proposal shape"));
+        match field {
+            "series" if value.is_object() => {
+                return serde_json::from_value(value)
+                    .map(Self::Series)
+                    .map_err(|_| invalid());
+            }
+            "contributors.other" if value.is_array() => {
+                return serde_json::from_value(value)
+                    .map(|contributors| {
+                        Self::Contributors(MetadataProposalContributors { contributors })
+                    })
+                    .map_err(|_| invalid());
+            }
+            _ => {}
+        }
         match value {
             Value::String(text) => Ok(Self::Text(MetadataProposalText { text })),
             Value::Number(number) => Ok(Self::Integer(MetadataProposalInteger {

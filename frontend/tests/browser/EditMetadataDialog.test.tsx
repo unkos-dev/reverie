@@ -84,13 +84,22 @@ function refused(refusal: Record<string, unknown>): Response {
   return response({ updateMetadata: refusal });
 }
 function intercept(handlers: {
-  read: () => Response | Promise<Response>;
+  read: () => ReturnType<typeof snapshot>;
   save?: (variables: z.infer<typeof saveSchema>) => Response | Promise<Response>;
 }): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
     const request = requestSchema.parse(JSON.parse(z.string().parse(init?.body)));
     const name = documents[request.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
-    if (name === "EditMetadataDialogQuery") return Promise.resolve(handlers.read());
+    if (name === "EditMetadataDialogQuery")
+      return Promise.resolve(
+        response({
+          manifestation: {
+            id: GRAPH_ID,
+            work: { id: encodeGraphQLId("Work", WORK), __typename: "Work" },
+            metadata: handlers.read(),
+          },
+        }),
+      );
     if (name === "EditMetadataDialogSaveMutation" && handlers.save !== undefined)
       return Promise.resolve(handlers.save(saveSchema.parse(request.variables.input)));
     throw new Error(`Unexpected operation ${name ?? request.id}`);
@@ -131,7 +140,7 @@ test("retains refused input and reloads the Book dialog onto the current revisio
   let saves = 0;
   let current = opening;
   intercept({
-    read: () => response({ manifestation: { id: GRAPH_ID, metadata: current } }),
+    read: () => current,
     save: (variables) => {
       writes.push(variables);
       saves += 1;
@@ -192,7 +201,7 @@ test("retains refused input and reloads the Book dialog onto the current revisio
   let acknowledge: ((value: Response) => void) | undefined;
   vi.restoreAllMocks();
   intercept({
-    read: () => response({ manifestation: { id: GRAPH_ID, metadata: opening } }),
+    read: () => opening,
     save: () =>
       new Promise<Response>((resolve) => {
         acknowledge = resolve;
@@ -217,7 +226,7 @@ test("cancelling a populated-field clear keeps the edit and sends nothing; confi
   const writes: z.infer<typeof saveSchema>[] = [];
   const current = snapshot();
   intercept({
-    read: () => response({ manifestation: { id: GRAPH_ID, metadata: current } }),
+    read: () => current,
     save: (variables) => {
       writes.push(variables);
       return saved({ ...current, subtitle: null });

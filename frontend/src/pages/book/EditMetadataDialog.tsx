@@ -35,7 +35,7 @@ import { FieldError } from "@/components/ui/field";
 
 import { ApiError, UpdateBookMetadataFieldsSchema, type UpdateBookMetadataFields } from "@/api";
 import { editingFailureAction } from "@/api/graphql";
-import { invalidateLibraryVisits, siblingEditionsForFields } from "@/lib/relay/library-visit";
+import { invalidateAfterMetadataEdit } from "@/lib/relay/library-visit";
 import type { EditMetadataDialogQuery as FormQuery } from "@/lib/relay/__generated__/EditMetadataDialogQuery.graphql";
 import type {
   EditMetadataDialog_opening$data as FormSnapshot,
@@ -71,6 +71,9 @@ const formQuery = graphql`
   query EditMetadataDialogQuery($id: ID!) @throwOnFieldError {
     manifestation(id: $id) {
       id
+      work {
+        id
+      }
       metadata {
         ...EditMetadataDialog_opening
       }
@@ -480,9 +483,7 @@ function EditMetadataFields({
       switch (result.__typename) {
         case "MetadataSaved": {
           const { id, work } = result.manifestation;
-          invalidateLibraryVisits(environment, changedFields, {
-            siblingEditions: siblingEditionsForFields(changedFields, id, work?.id),
-          });
+          invalidateAfterMetadataEdit(environment, changedFields, id, work?.id);
           finish();
           return { values, error: null };
         }

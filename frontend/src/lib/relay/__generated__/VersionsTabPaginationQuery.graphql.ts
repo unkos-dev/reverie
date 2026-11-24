@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<81f2c57df05e629b839d9051257c262b>>
- * @relayHash 7e18f5a0db19db4090dbac7ed0035a44
+ * @generated SignedSource<<9d14907a27e68c90e37f3e2efde926b3>>
+ * @relayHash c245d34da0e70a4c3f96170490f1b02b
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID b460222785ae6a354da9dc1c13b9624200a994516c6a841e884254e8454c1e83
+// @relayRequestID 396ae9842261d316e11085ef31a7d78f1178abee1b5329c6853acce6af65efcf
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -79,6 +79,13 @@ const node: ConcreteRequest = (function () {
       args: null,
       kind: "ScalarField",
       name: "__typename",
+      storageKey: null,
+    },
+    v5 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "name",
       storageKey: null,
     };
   return {
@@ -252,6 +259,47 @@ const node: ConcreteRequest = (function () {
                                   type: "MetadataProposalStringList",
                                   abstractKey: null,
                                 },
+                                {
+                                  kind: "InlineFragment",
+                                  selections: [
+                                    v5 /*:: as any*/,
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      kind: "ScalarField",
+                                      name: "position",
+                                      storageKey: null,
+                                    },
+                                  ],
+                                  type: "MetadataProposalSeries",
+                                  abstractKey: null,
+                                },
+                                {
+                                  kind: "InlineFragment",
+                                  selections: [
+                                    {
+                                      alias: null,
+                                      args: null,
+                                      concreteType: "MetadataProposalContributor",
+                                      kind: "LinkedField",
+                                      name: "contributors",
+                                      plural: true,
+                                      selections: [
+                                        v5 /*:: as any*/,
+                                        {
+                                          alias: null,
+                                          args: null,
+                                          kind: "ScalarField",
+                                          name: "code",
+                                          storageKey: null,
+                                        },
+                                      ],
+                                      storageKey: null,
+                                    },
+                                  ],
+                                  type: "MetadataProposalContributors",
+                                  abstractKey: null,
+                                },
                               ],
                               storageKey: null,
                             },
@@ -316,7 +364,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "b460222785ae6a354da9dc1c13b9624200a994516c6a841e884254e8454c1e83",
+      id: "396ae9842261d316e11085ef31a7d78f1178abee1b5329c6853acce6af65efcf",
       metadata: {},
       name: "VersionsTabPaginationQuery",
       operationKind: "query",

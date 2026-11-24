@@ -201,7 +201,8 @@ rows are excluded. No overall row cap hides the remainder. HTTP detail caps its 
 return an empty result before any proposal count or value query, including typed, Node and nested reads. Accepted counts
 use canonical state only. Basic detail selects the pending count without reading a proposal page. Selecting the count
 and pending page uses two batched operations, each with canonical scalar, junction and pending SQL, independent of
-parent count.
+parent count. The proposal value union represents text, signed integers, lists of strings, imported series with their
+optional position, and lists of contributors with names and optional role codes.
 
 `mutations.rs` calls the shared metadata editing, reading and shelf operations. Typed patches preserve absent and null
 values. Metadata and reading saves take a non-null baseline in their input. Review and shelf mutations take no baseline.

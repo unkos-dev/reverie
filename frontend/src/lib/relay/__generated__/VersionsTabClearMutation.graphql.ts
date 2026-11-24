@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<518abb38198481441ac54c2ed0a16284>>
- * @relayHash 943590a3d7fcc35d7089b615499dff1e
+ * @generated SignedSource<<cea9a6aa25bf75b5aba88fd1bd2a1bbd>>
+ * @relayHash 1c8d442036b678d8065650a1b51cba25
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 036a5c09aebd7dcc7f3a6d5cc668c229b1d20d5af5e27bf54c5b6f77100f1ec8
+// @relayRequestID 0d803d32cec75d25299c23efb445aea801656b62611fb4f3bdf6f80bf830e537
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -174,22 +174,29 @@ const node: ConcreteRequest = (function () {
       storageKey: null,
     },
     v11 = [v10 /*:: as any*/, v3 /*:: as any*/],
-    v12 = [
+    v12 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "position",
+      storageKey: null,
+    },
+    v13 = [
       {
         kind: "Literal",
         name: "first",
         value: 20,
       },
     ],
-    v13 = [v3 /*:: as any*/, v10 /*:: as any*/, v2 /*:: as any*/],
-    v14 = {
+    v14 = [v3 /*:: as any*/, v10 /*:: as any*/, v2 /*:: as any*/],
+    v15 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "cursor",
       storageKey: null,
     },
-    v15 = {
+    v16 = {
       alias: null,
       args: null,
       concreteType: "PageInfo",
@@ -214,56 +221,56 @@ const node: ConcreteRequest = (function () {
       ],
       storageKey: null,
     },
-    v16 = {
+    v17 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "description",
       storageKey: null,
     },
-    v17 = {
+    v18 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "language",
       storageKey: null,
     },
-    v18 = {
+    v19 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "etag",
       storageKey: null,
     },
-    v19 = {
+    v20 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "publisher",
       storageKey: null,
     },
-    v20 = {
+    v21 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "publicationDate",
       storageKey: null,
     },
-    v21 = {
+    v22 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "isbn10",
       storageKey: null,
     },
-    v22 = {
+    v23 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "isbn13",
       storageKey: null,
     },
-    v23 = {
+    v24 = {
       alias: null,
       args: null,
       kind: "ScalarField",
@@ -450,19 +457,13 @@ const node: ConcreteRequest = (function () {
                               selections: v11 /*:: as any*/,
                               storageKey: null,
                             },
-                            {
-                              alias: null,
-                              args: null,
-                              kind: "ScalarField",
-                              name: "position",
-                              storageKey: null,
-                            },
+                            v12 /*:: as any*/,
                           ],
                           storageKey: null,
                         },
                         {
                           alias: "detailAuthors",
-                          args: v12 /*:: as any*/,
+                          args: v13 /*:: as any*/,
                           concreteType: "AuthorConnection",
                           kind: "LinkedField",
                           name: "authors",
@@ -483,28 +484,28 @@ const node: ConcreteRequest = (function () {
                                   kind: "LinkedField",
                                   name: "node",
                                   plural: false,
-                                  selections: v13 /*:: as any*/,
+                                  selections: v14 /*:: as any*/,
                                   storageKey: null,
                                 },
-                                v14 /*:: as any*/,
+                                v15 /*:: as any*/,
                               ],
                               storageKey: null,
                             },
-                            v15 /*:: as any*/,
+                            v16 /*:: as any*/,
                           ],
                           storageKey: "authors(first:20)",
                         },
                         {
                           alias: "detailAuthors",
-                          args: v12 /*:: as any*/,
+                          args: v13 /*:: as any*/,
                           filters: null,
                           handle: "connection",
                           key: "BookPage_detailAuthors",
                           kind: "LinkedHandle",
                           name: "authors",
                         },
-                        v16 /*:: as any*/,
                         v17 /*:: as any*/,
+                        v18 /*:: as any*/,
                       ],
                       storageKey: null,
                     },
@@ -516,16 +517,16 @@ const node: ConcreteRequest = (function () {
                       name: "metadata",
                       plural: false,
                       selections: [
-                        v18 /*:: as any*/,
+                        v19 /*:: as any*/,
                         v8 /*:: as any*/,
                         v9 /*:: as any*/,
-                        v16 /*:: as any*/,
                         v17 /*:: as any*/,
-                        v19 /*:: as any*/,
+                        v18 /*:: as any*/,
                         v20 /*:: as any*/,
                         v21 /*:: as any*/,
                         v22 /*:: as any*/,
                         v23 /*:: as any*/,
+                        v24 /*:: as any*/,
                         v3 /*:: as any*/,
                         {
                           alias: null,
@@ -559,7 +560,7 @@ const node: ConcreteRequest = (function () {
                       name: "readingState",
                       plural: false,
                       selections: [
-                        v18 /*:: as any*/,
+                        v19 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -578,9 +579,9 @@ const node: ConcreteRequest = (function () {
                       ],
                       storageKey: null,
                     },
-                    v22 /*:: as any*/,
-                    v21 /*:: as any*/,
                     v23 /*:: as any*/,
+                    v22 /*:: as any*/,
+                    v24 /*:: as any*/,
                     {
                       alias: null,
                       args: null,
@@ -604,7 +605,7 @@ const node: ConcreteRequest = (function () {
                     },
                     {
                       alias: null,
-                      args: v12 /*:: as any*/,
+                      args: v13 /*:: as any*/,
                       concreteType: "TagConnection",
                       kind: "LinkedField",
                       name: "tags",
@@ -625,28 +626,28 @@ const node: ConcreteRequest = (function () {
                               kind: "LinkedField",
                               name: "node",
                               plural: false,
-                              selections: v13 /*:: as any*/,
+                              selections: v14 /*:: as any*/,
                               storageKey: null,
                             },
-                            v14 /*:: as any*/,
+                            v15 /*:: as any*/,
                           ],
                           storageKey: null,
                         },
-                        v15 /*:: as any*/,
+                        v16 /*:: as any*/,
                       ],
                       storageKey: "tags(first:20)",
                     },
                     {
                       alias: null,
-                      args: v12 /*:: as any*/,
+                      args: v13 /*:: as any*/,
                       filters: null,
                       handle: "connection",
                       key: "BookPage_tags",
                       kind: "LinkedHandle",
                       name: "tags",
                     },
-                    v19 /*:: as any*/,
                     v20 /*:: as any*/,
+                    v21 /*:: as any*/,
                     {
                       alias: null,
                       args: null,
@@ -664,7 +665,7 @@ const node: ConcreteRequest = (function () {
                         },
                         {
                           alias: null,
-                          args: v12 /*:: as any*/,
+                          args: v13 /*:: as any*/,
                           concreteType: "MetadataVersionConnection",
                           kind: "LinkedField",
                           name: "pending",
@@ -766,6 +767,38 @@ const node: ConcreteRequest = (function () {
                                           type: "MetadataProposalStringList",
                                           abstractKey: null,
                                         },
+                                        {
+                                          kind: "InlineFragment",
+                                          selections: [v10 /*:: as any*/, v12 /*:: as any*/],
+                                          type: "MetadataProposalSeries",
+                                          abstractKey: null,
+                                        },
+                                        {
+                                          kind: "InlineFragment",
+                                          selections: [
+                                            {
+                                              alias: null,
+                                              args: null,
+                                              concreteType: "MetadataProposalContributor",
+                                              kind: "LinkedField",
+                                              name: "contributors",
+                                              plural: true,
+                                              selections: [
+                                                v10 /*:: as any*/,
+                                                {
+                                                  alias: null,
+                                                  args: null,
+                                                  kind: "ScalarField",
+                                                  name: "code",
+                                                  storageKey: null,
+                                                },
+                                              ],
+                                              storageKey: null,
+                                            },
+                                          ],
+                                          type: "MetadataProposalContributors",
+                                          abstractKey: null,
+                                        },
                                       ],
                                       storageKey: null,
                                     },
@@ -773,17 +806,17 @@ const node: ConcreteRequest = (function () {
                                   ],
                                   storageKey: null,
                                 },
-                                v14 /*:: as any*/,
+                                v15 /*:: as any*/,
                               ],
                               storageKey: null,
                             },
-                            v15 /*:: as any*/,
+                            v16 /*:: as any*/,
                           ],
                           storageKey: "pending(first:20)",
                         },
                         {
                           alias: null,
-                          args: v12 /*:: as any*/,
+                          args: v13 /*:: as any*/,
                           filters: null,
                           handle: "connection",
                           key: "VersionsTab_proposals_pending",
@@ -809,7 +842,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "036a5c09aebd7dcc7f3a6d5cc668c229b1d20d5af5e27bf54c5b6f77100f1ec8",
+      id: "0d803d32cec75d25299c23efb445aea801656b62611fb4f3bdf6f80bf830e537",
       metadata: {},
       name: "VersionsTabClearMutation",
       operationKind: "mutation",

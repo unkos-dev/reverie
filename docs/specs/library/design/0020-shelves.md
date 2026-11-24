@@ -97,9 +97,9 @@ selection to shelf" action — all described below only as consumers, since none
 - Shelf create appends the returned edge to the shelf list connection, so a new shelf shows last until the list next
   loads in server order. Rename updates the shelf record in place. Deletion removes the edge through `@deleteEdge`, and
   its updater invalidates the deleted shelf's record. A failed create, rename or delete acknowledgement refetches the
-  shelf list with `network-only`, never replaying the write. Library membership writes run serially and retain
-  per-target outcomes. Each publishes the shelf's count and, when that shelf's items are in the store, appends the item
-  edge; the active filtered Library connection then refreshes.
+  shelf list with `network-only`, never replaying the write. Library batch adds run serially and retain per-target
+  outcomes. Each publishes the shelf's count and invalidates the shelf. The next detail read fetches membership. An
+  active Library visit filtered by that shelf refreshes its results.
 
 ### State-writer census
 

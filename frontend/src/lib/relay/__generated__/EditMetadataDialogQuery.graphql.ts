@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<6ea33a8bc444012fcc256860be740a27>>
- * @relayHash 084ea0c4042594cc1d23a7f72ded4466
+ * @generated SignedSource<<3866f0d79950f283b899ad096df84b87>>
+ * @relayHash de393e04b26f09cc11d4a65dffe2cb17
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 81f74b3fe42ed2c97804eec390ff5edc5dada86816714504aeecc0e6f2ccfbb4
+// @relayRequestID f586f40a6784f571f86c03d4a59f0ddfe110aeb5249ae0856c36f2d3c41175e5
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -22,6 +22,12 @@ export type EditMetadataDialogQuery$data = {
         readonly metadata: {
           readonly " $fragmentSpreads": FragmentRefs<"EditMetadataDialog_opening">;
         };
+        readonly work:
+          | {
+              readonly id: string;
+            }
+          | null
+          | undefined;
       }
     | null
     | undefined;
@@ -52,6 +58,16 @@ const node: ConcreteRequest = (function () {
       kind: "ScalarField",
       name: "id",
       storageKey: null,
+    },
+    v3 = {
+      alias: null,
+      args: null,
+      concreteType: "Work",
+      kind: "LinkedField",
+      name: "work",
+      plural: false,
+      selections: [v2 /*:: as any*/],
+      storageKey: null,
     };
   return {
     fragment: {
@@ -71,6 +87,7 @@ const node: ConcreteRequest = (function () {
           plural: false,
           selections: [
             v2 /*:: as any*/,
+            v3 /*:: as any*/,
             {
               alias: null,
               args: null,
@@ -109,6 +126,7 @@ const node: ConcreteRequest = (function () {
           plural: false,
           selections: [
             v2 /*:: as any*/,
+            v3 /*:: as any*/,
             {
               alias: null,
               args: null,
@@ -197,7 +215,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "81f74b3fe42ed2c97804eec390ff5edc5dada86816714504aeecc0e6f2ccfbb4",
+      id: "f586f40a6784f571f86c03d4a59f0ddfe110aeb5249ae0856c36f2d3c41175e5",
       metadata: {},
       name: "EditMetadataDialogQuery",
       operationKind: "query",
@@ -206,6 +224,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "cb75a909e2ba85016e3ebfacb6ac51ba";
+(node as any).hash = "5ecf3f389f5c693bb9f9ee2983888907";
 
 export default node;

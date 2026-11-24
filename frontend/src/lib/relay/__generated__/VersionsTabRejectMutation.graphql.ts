@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<c84b2a6a03452ef993efed0733b60bd9>>
- * @relayHash 7e2def38c2a7f27a9c8e3ffd31d141ef
+ * @generated SignedSource<<e744150d92e59d9d38315718cc91140e>>
+ * @relayHash fd0460a316085f0d7b278b560fd6be73
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID e1b21366f6c4e265bc0511b0097d64dd8f7b9070451179ee96d4ebe4324ea355
+// @relayRequestID ad67b7ff1bfc6ba054d54912794b585dd72c43fc0b50660bfb2dce89baa70482
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -131,6 +131,13 @@ const node: ConcreteRequest = (function () {
           storageKey: null,
         },
       ],
+      storageKey: null,
+    },
+    v10 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "position",
       storageKey: null,
     };
   return {
@@ -290,13 +297,7 @@ const node: ConcreteRequest = (function () {
                               selections: [v3 /*:: as any*/, v6 /*:: as any*/],
                               storageKey: null,
                             },
-                            {
-                              alias: null,
-                              args: null,
-                              kind: "ScalarField",
-                              name: "position",
-                              storageKey: null,
-                            },
+                            v10 /*:: as any*/,
                           ],
                           storageKey: null,
                         },
@@ -542,6 +543,38 @@ const node: ConcreteRequest = (function () {
                                           type: "MetadataProposalStringList",
                                           abstractKey: null,
                                         },
+                                        {
+                                          kind: "InlineFragment",
+                                          selections: [v6 /*:: as any*/, v10 /*:: as any*/],
+                                          type: "MetadataProposalSeries",
+                                          abstractKey: null,
+                                        },
+                                        {
+                                          kind: "InlineFragment",
+                                          selections: [
+                                            {
+                                              alias: null,
+                                              args: null,
+                                              concreteType: "MetadataProposalContributor",
+                                              kind: "LinkedField",
+                                              name: "contributors",
+                                              plural: true,
+                                              selections: [
+                                                v6 /*:: as any*/,
+                                                {
+                                                  alias: null,
+                                                  args: null,
+                                                  kind: "ScalarField",
+                                                  name: "code",
+                                                  storageKey: null,
+                                                },
+                                              ],
+                                              storageKey: null,
+                                            },
+                                          ],
+                                          type: "MetadataProposalContributors",
+                                          abstractKey: null,
+                                        },
                                       ],
                                       storageKey: null,
                                     },
@@ -583,7 +616,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "e1b21366f6c4e265bc0511b0097d64dd8f7b9070451179ee96d4ebe4324ea355",
+      id: "ad67b7ff1bfc6ba054d54912794b585dd72c43fc0b50660bfb2dce89baa70482",
       metadata: {},
       name: "VersionsTabRejectMutation",
       operationKind: "mutation",

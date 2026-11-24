@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<5b8645775bbeab7c748fbd8f60a4bdc4>>
- * @relayHash 9ffd9ee5b2038ff06617455896257a59
+ * @generated SignedSource<<5824e00ade5f47df6719f32a5b1029c8>>
+ * @relayHash d8d78198a5414fc186c3ac3ee2f75319
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 390de682c17d7e78510caf8cd09cd15d6cc3cabd0f5dc14d7b9022532c526947
+// @relayRequestID 937598db534c10a3e86e3ab3800180873a5d0efae14dc04e19ec580d657ea169
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -71,6 +71,9 @@ export type useCellEditSaveMutation$data = {
     | {
         readonly __typename: "MetadataSaved";
         readonly manifestation: {
+          readonly isbn10: string | null | undefined;
+          readonly isbn13: string | null | undefined;
+          readonly isbnMismatch: boolean;
           readonly " $fragmentSpreads": FragmentRefs<"BookCard_book" | "LibraryTable_cell">;
         };
       }
@@ -119,20 +122,41 @@ const node: ConcreteRequest = (function () {
       alias: null,
       args: null,
       kind: "ScalarField",
+      name: "isbn10",
+      storageKey: null,
+    },
+    v4 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isbn13",
+      storageKey: null,
+    },
+    v5 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isbnMismatch",
+      storageKey: null,
+    },
+    v6 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
       name: "message",
       storageKey: null,
     },
-    v4 = [v3 /*:: as any*/],
-    v5 = {
+    v7 = [v6 /*:: as any*/],
+    v8 = {
       kind: "InlineFragment",
-      selections: v4 /*:: as any*/,
+      selections: v7 /*:: as any*/,
       type: "StaleBaseline",
       abstractKey: null,
     },
-    v6 = {
+    v9 = {
       kind: "InlineFragment",
       selections: [
-        v3 /*:: as any*/,
+        v6 /*:: as any*/,
         {
           alias: null,
           args: null,
@@ -141,7 +165,7 @@ const node: ConcreteRequest = (function () {
           name: "fieldErrors",
           plural: true,
           selections: [
-            v3 /*:: as any*/,
+            v6 /*:: as any*/,
             {
               alias: null,
               args: null,
@@ -156,40 +180,40 @@ const node: ConcreteRequest = (function () {
       type: "MetadataInvalid",
       abstractKey: null,
     },
-    v7 = {
+    v10 = {
       kind: "InlineFragment",
-      selections: v4 /*:: as any*/,
+      selections: v7 /*:: as any*/,
       type: "FieldsLocked",
       abstractKey: null,
     },
-    v8 = {
+    v11 = {
       kind: "InlineFragment",
-      selections: v4 /*:: as any*/,
+      selections: v7 /*:: as any*/,
       type: "NotFound",
       abstractKey: null,
     },
-    v9 = {
+    v12 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "id",
       storageKey: null,
     },
-    v10 = {
+    v13 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "title",
       storageKey: null,
     },
-    v11 = {
+    v14 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "subtitle",
       storageKey: null,
     },
-    v12 = [
+    v15 = [
       {
         alias: null,
         args: null,
@@ -197,9 +221,9 @@ const node: ConcreteRequest = (function () {
         name: "name",
         storageKey: null,
       },
-      v9 /*:: as any*/,
+      v12 /*:: as any*/,
     ],
-    v13 = {
+    v16 = {
       alias: null,
       args: null,
       kind: "ScalarField",
@@ -233,6 +257,9 @@ const node: ConcreteRequest = (function () {
                   name: "manifestation",
                   plural: false,
                   selections: [
+                    v3 /*:: as any*/,
+                    v4 /*:: as any*/,
+                    v5 /*:: as any*/,
                     {
                       args: null,
                       kind: "FragmentSpread",
@@ -250,10 +277,10 @@ const node: ConcreteRequest = (function () {
               type: "MetadataSaved",
               abstractKey: null,
             },
-            v5 /*:: as any*/,
-            v6 /*:: as any*/,
-            v7 /*:: as any*/,
             v8 /*:: as any*/,
+            v9 /*:: as any*/,
+            v10 /*:: as any*/,
+            v11 /*:: as any*/,
           ],
           storageKey: null,
         },
@@ -287,7 +314,10 @@ const node: ConcreteRequest = (function () {
                   name: "manifestation",
                   plural: false,
                   selections: [
-                    v9 /*:: as any*/,
+                    v3 /*:: as any*/,
+                    v4 /*:: as any*/,
+                    v5 /*:: as any*/,
+                    v12 /*:: as any*/,
                     {
                       alias: null,
                       args: null,
@@ -310,9 +340,9 @@ const node: ConcreteRequest = (function () {
                       name: "work",
                       plural: false,
                       selections: [
-                        v9 /*:: as any*/,
-                        v10 /*:: as any*/,
-                        v11 /*:: as any*/,
+                        v12 /*:: as any*/,
+                        v13 /*:: as any*/,
+                        v14 /*:: as any*/,
                         {
                           alias: null,
                           args: [
@@ -342,7 +372,7 @@ const node: ConcreteRequest = (function () {
                                   kind: "LinkedField",
                                   name: "node",
                                   plural: false,
-                                  selections: v12 /*:: as any*/,
+                                  selections: v15 /*:: as any*/,
                                   storageKey: null,
                                 },
                               ],
@@ -366,7 +396,7 @@ const node: ConcreteRequest = (function () {
                               kind: "LinkedField",
                               name: "node",
                               plural: false,
-                              selections: v12 /*:: as any*/,
+                              selections: v15 /*:: as any*/,
                               storageKey: null,
                             },
                             {
@@ -390,16 +420,10 @@ const node: ConcreteRequest = (function () {
                       name: "metadata",
                       plural: false,
                       selections: [
+                        v16 /*:: as any*/,
                         v13 /*:: as any*/,
-                        v10 /*:: as any*/,
-                        v11 /*:: as any*/,
-                        {
-                          alias: null,
-                          args: null,
-                          kind: "ScalarField",
-                          name: "isbn13",
-                          storageKey: null,
-                        },
+                        v14 /*:: as any*/,
+                        v4 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -407,7 +431,7 @@ const node: ConcreteRequest = (function () {
                           name: "pages",
                           storageKey: null,
                         },
-                        v9 /*:: as any*/,
+                        v12 /*:: as any*/,
                       ],
                       storageKey: null,
                     },
@@ -419,7 +443,7 @@ const node: ConcreteRequest = (function () {
                       name: "readingState",
                       plural: false,
                       selections: [
-                        v13 /*:: as any*/,
+                        v16 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -434,7 +458,7 @@ const node: ConcreteRequest = (function () {
                           name: "rating",
                           storageKey: null,
                         },
-                        v9 /*:: as any*/,
+                        v12 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -452,17 +476,17 @@ const node: ConcreteRequest = (function () {
               type: "MetadataSaved",
               abstractKey: null,
             },
-            v5 /*:: as any*/,
-            v6 /*:: as any*/,
-            v7 /*:: as any*/,
             v8 /*:: as any*/,
+            v9 /*:: as any*/,
+            v10 /*:: as any*/,
+            v11 /*:: as any*/,
           ],
           storageKey: null,
         },
       ],
     },
     params: {
-      id: "390de682c17d7e78510caf8cd09cd15d6cc3cabd0f5dc14d7b9022532c526947",
+      id: "937598db534c10a3e86e3ab3800180873a5d0efae14dc04e19ec580d657ea169",
       metadata: {},
       name: "useCellEditSaveMutation",
       operationKind: "mutation",
@@ -471,6 +495,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "26147b94347762eff3b4fe1155f494db";
+(node as any).hash = "4c9ad6197650f52e33aa3b2f92ba7db2";
 
 export default node;

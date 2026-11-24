@@ -156,7 +156,9 @@ function graphBook(book: BookListItem) {
     __typename: "Manifestation",
     id: encodeGraphQLId("Manifestation", book.id),
     coverUrl: book.cover_url,
+    isbn10: null,
     isbn13: book.isbn_13,
+    isbnMismatch: false,
     pages: book.pages,
     createdAt: book.created_at,
     work: {

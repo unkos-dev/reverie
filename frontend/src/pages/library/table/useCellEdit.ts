@@ -2,7 +2,7 @@ import { useState } from "react";
 import { graphql, useFragment, useMutation, useRelayEnvironment } from "react-relay";
 
 import type { ReadingStatus } from "@/api/books";
-import { invalidateLibraryVisits } from "@/lib/relay/library-visit";
+import { invalidateAfterMetadataEdit, invalidateLibraryVisits } from "@/lib/relay/library-visit";
 import type { useCellEdit_batchRows$key } from "@/lib/relay/__generated__/useCellEdit_batchRows.graphql";
 import type { useCellEditSaveMutation } from "@/lib/relay/__generated__/useCellEditSaveMutation.graphql";
 import type { useCellEditReadingMutation } from "@/lib/relay/__generated__/useCellEditReadingMutation.graphql";
@@ -23,6 +23,9 @@ const saveMutation = graphql`
       __typename
       ... on MetadataSaved {
         manifestation {
+          isbn10
+          isbn13
+          isbnMismatch
           ...LibraryTable_cell
           ...BookCard_book
         }
@@ -97,19 +100,6 @@ export function pendingKey(rowId: string, columnKey: string): string {
 function displayValue(value: EditValue): string {
   if (value === null) return "unset";
   return typeof value === "object" ? value.join(", ") : String(value);
-}
-
-function changedField(field: EditableColumnKey): string {
-  return field === "authors" ? "author" : field;
-}
-
-function siblingEditions(target: EditTarget, column: EditableColumnKey) {
-  if (
-    target.workId === undefined ||
-    (column !== "title" && column !== "subtitle" && column !== "authors")
-  )
-    return undefined;
-  return { id: target.id, workId: target.workId };
 }
 
 function metadataPatch(
@@ -190,9 +180,8 @@ export function useCellEdit({
     function complete(failure?: { message: string; stale?: boolean }): void {
       releaseCell();
       if (failure === undefined) {
-        invalidateLibraryVisits(environment, [changedField(columnKey)], {
-          siblingEditions: siblingEditions(target, columnKey),
-        });
+        const field = columnKey === "authors" ? "contributors.author" : columnKey;
+        invalidateAfterMetadataEdit(environment, [field], target.id, target.workId);
         setSavedCells((current) => new Set(current).add(key));
       } else {
         if (failure.stale === true) {
