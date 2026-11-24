@@ -1,7 +1,7 @@
 import { cleanup, render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import { RelayEnvironmentProvider, loadQuery } from "react-relay";
+import { RelayEnvironmentProvider, fetchQuery, loadQuery } from "react-relay";
 import { z } from "zod";
 import trustedDocuments from "../../../backend/graphql-documents.json";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
@@ -83,22 +83,24 @@ function refused(refusal: Record<string, unknown>): Response {
   return response({ updateMetadata: refusal });
 }
 function intercept(handlers: {
-  read: () => ReturnType<typeof snapshot>;
+  read: (id: string) => ReturnType<typeof snapshot>;
   save?: (variables: z.infer<typeof saveSchema>) => Response | Promise<Response>;
 }): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
     const request = requestSchema.parse(JSON.parse(z.string().parse(init?.body)));
     const name = documents[request.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
-    if (name === "EditMetadataDialogQuery")
+    if (name === "EditMetadataDialogQuery") {
+      const id = z.string().parse(request.variables.id);
       return Promise.resolve(
         response({
           manifestation: {
-            id: GRAPH_ID,
+            id,
             work: { id: `work-${WORK}`, __typename: "Work" },
-            metadata: handlers.read(),
+            metadata: handlers.read(id),
           },
         }),
       );
+    }
     if (name === "EditMetadataDialogSaveMutation" && handlers.save !== undefined)
       return Promise.resolve(handlers.save(saveSchema.parse(request.variables.input)));
     throw new Error(`Unexpected operation ${name ?? request.id}`);
@@ -134,12 +136,14 @@ afterEach(async () => {
 // REV-REQ-0019 and the data loss boundary: a refusal keeps the draft until Reload replaces its values and validator.
 test("retains refused input and reloads the Book dialog onto the current revision", async () => {
   const opening = snapshot();
+  const otherId = "another-manifestation";
+  const other = snapshot("Another book", '"dddddddddddddddddddddd"');
   const writes: z.infer<typeof saveSchema>[] = [];
   let finish: ((value: Response) => void) | undefined;
   let saves = 0;
   let current = opening;
   intercept({
-    read: () => current,
+    read: (id) => (id === otherId ? other : current),
     save: (variables) => {
       writes.push(variables);
       saves += 1;
@@ -157,6 +161,10 @@ test("retains refused input and reloads the Book dialog onto the current revisio
   const rendered = await renderDialog([...FIELDS, { name: "pub_date", label: "Publication date" }]);
   await page.getByLabelText("Publication date").fill("unknown");
   await page.getByLabelText("Subtitle").fill("Updated Subtitle");
+  const otherRead = await fetchQuery<FormQuery>(relayEnvironment(), formQuery, {
+    id: otherId,
+  }).toPromise();
+  expect(otherRead).toMatchObject({ manifestation: { id: otherId } });
   await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
   await expect
     .element(page.getByRole("button", { name: "Save", exact: true }))

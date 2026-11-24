@@ -354,8 +354,8 @@ test("metadata and reading edits keep their baseline", async () => {
   };
   const fetch = vi.spyOn(globalThis, "fetch");
   fetch.mockClear();
-  const titleResponse = (metadata: unknown, bookId = id) =>
-    jsonResponse({ data: { manifestation: { id: bookId, work: null, metadata } } });
+  const titleResponse = (metadata: unknown) =>
+    jsonResponse({ data: { manifestation: { id, work: null, metadata } } });
   const initialQuery = () =>
     fetchQuery<OpeningQuery>(environment, OpeningDocument, { id }).toPromise();
   const readOpening = (key: unknown) =>
@@ -373,18 +373,6 @@ test("metadata and reading edits keep their baseline", async () => {
     .object({ etag: z.string(), title: z.string() })
     .parse(readOpening(initial?.manifestation?.metadata).data);
   fetch.mockResolvedValueOnce(
-    titleResponse(
-      {
-        ...formValues,
-        id: "another-revision",
-        etag: newer,
-        title: "Another book",
-      },
-      "another-book",
-    ),
-  );
-  await fetchQuery<OpeningQuery>(environment, OpeningDocument, { id: "another-book" }).toPromise();
-  fetch.mockResolvedValueOnce(
     titleResponse({ ...formValues, id: revision(newer), title: "Background", etag: newer }),
   );
   await initialQuery();
@@ -398,7 +386,6 @@ test("metadata and reading edits keep their baseline", async () => {
   await fetchQuery<AuthorsQuery>(environment, AuthorsDocument, { id }).toPromise();
   expect(currentOpening().isMissingData).toBe(true);
   expect(currentOpening().data).toMatchObject({ title: undefined, etag: latest });
-  expect(baseline).toEqual({ etag: tag, title: "Original" });
   fetch.mockResolvedValueOnce(
     titleResponse({ ...formValues, id: revision(latest), title: "Completed" }),
   );
