@@ -27,7 +27,7 @@ import {
   useRelayEnvironment,
   type PreloadedQuery,
 } from "react-relay";
-import { commitLocalUpdate, type FetchPolicy } from "relay-runtime";
+import { type FetchPolicy } from "relay-runtime";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { FieldError } from "@/components/ui/field";
 
@@ -38,7 +38,6 @@ import {
   mutationsFormQuery,
   mutationsFormSnapshot,
   mutationsSaveFormMutation,
-  mutationsResolveFormQuery,
 } from "@/lib/relay/mutations";
 import type { mutationsFormQuery as FormQuery } from "@/lib/relay/__generated__/mutationsFormQuery.graphql";
 import type {
@@ -50,7 +49,6 @@ import type {
   MetadataPatch,
   UpdateMetadataInput,
 } from "@/lib/relay/__generated__/mutationsSaveFormMutation.graphql";
-import type { mutationsResolveFormQuery as ResolveForm } from "@/lib/relay/__generated__/mutationsResolveFormQuery.graphql";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -277,7 +275,7 @@ function EditMetadataFields({
   // A later store merge must not advance this edit's write precondition.
   const [metadata] = useState(current);
   const [commitSave] = useMutation<SaveForm>(mutationsSaveFormMutation);
-  const attempt = useRef<{ body: MetadataPatch; requestId: string } | null>(null);
+  const attempt = useRef<MetadataPatch | null>(null);
   const touched = useRef(new Set<keyof UpdateBookMetadataFields>());
   const [pendingClearConfirm, setPendingClearConfirm] = useState(false);
   const formId = useId();
@@ -317,25 +315,6 @@ function EditMetadataFields({
     });
   }
 
-  async function resolvedSaved(requestId: string): Promise<boolean> {
-    try {
-      const resolution = await fetchQuery<ResolveForm>(
-        environment,
-        mutationsResolveFormQuery,
-        { id: manifestationId, requestId },
-        { fetchPolicy: "network-only" },
-      ).toPromise();
-      if (resolution?.metadataOperation.outcome !== "SAVED") return false;
-      commitLocalUpdate(environment, (store) => {
-        store.get(manifestationId)?.invalidateRecord();
-      });
-      return true;
-    } catch (error) {
-      console.error("[EditMetadataDialog] save resolution failed", error);
-      return false;
-    }
-  }
-
   const [state, action, pending] = useActionState<
     {
       values: Partial<Record<string, string>>;
@@ -361,18 +340,16 @@ function EditMetadataFields({
       }
       setPendingClearConfirm(false);
       const previous = attempt.current;
-      const unchanged = previous !== null && JSON.stringify(previous.body) === JSON.stringify(body);
+      const unchanged = previous !== null && JSON.stringify(previous) === JSON.stringify(body);
       if (unchanged && _previous.recovery !== undefined && _previous.recovery !== "retry")
         return { ..._previous, values };
-      const requestId = unchanged ? previous.requestId : crypto.randomUUID();
-      attempt.current = { body, requestId };
+      attempt.current = body;
       let failure: unknown;
       try {
         const result = await save({
           id: manifestationId,
           patch: body,
           baseline: metadata.etag,
-          requestId,
         });
         if (result.__typename === "MetadataSaved") {
           invalidateLibraryVisits(environment, Object.keys(body));
@@ -384,11 +361,6 @@ function EditMetadataFields({
         failure = error;
       }
       const recovery = editingFailureAction(failure);
-      if ((recovery === "retry" || recovery === "reload") && (await resolvedSaved(requestId))) {
-        invalidateLibraryVisits(environment, Object.keys(body));
-        finish();
-        return { values, error: null };
-      }
       if (failure instanceof ApiError) {
         const errors = failure.errors;
         return {

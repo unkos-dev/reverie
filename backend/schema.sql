@@ -350,45 +350,33 @@ BEGIN
     PERFORM m.id FROM public.manifestations m
     WHERE m.id IN (
         SELECT owner_id
-        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
+        FROM jsonb_to_recordset(affected) AS owner(owner_kind text, owner_id uuid)
         WHERE owner_kind = 'manifestation'
     )
     ORDER BY m.id FOR UPDATE OF m;
     PERFORM w.id FROM public.works w
     WHERE w.id IN (
         SELECT owner_id
-        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
+        FROM jsonb_to_recordset(affected) AS owner(owner_kind text, owner_id uuid)
         WHERE owner_kind = 'work'
     )
     ORDER BY w.id FOR UPDATE OF w;
 
-    WITH changed AS (
-        SELECT owner_id, array_agg(DISTINCT field_name ORDER BY field_name) AS fields
-        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
-        WHERE owner_kind = 'manifestation'
-        GROUP BY owner_id
-    )
     UPDATE public.manifestations AS m
-    SET metadata_revision = m.metadata_revision + 1,
-        metadata_field_revisions = m.metadata_field_revisions || (
-            SELECT jsonb_object_agg(field_name, m.metadata_revision + 1)
-            FROM unnest(changed.fields) AS field_name
-        )
-    FROM changed WHERE m.id = changed.owner_id;
+    SET metadata_revision = m.metadata_revision + 1
+    WHERE m.id IN (
+        SELECT owner_id
+        FROM jsonb_to_recordset(affected) AS owner(owner_kind text, owner_id uuid)
+        WHERE owner_kind = 'manifestation'
+    );
 
-    WITH changed AS (
-        SELECT owner_id, array_agg(DISTINCT field_name ORDER BY field_name) AS fields
-        FROM jsonb_to_recordset(affected) AS field(owner_kind text, owner_id uuid, field_name text)
-        WHERE owner_kind = 'work'
-        GROUP BY owner_id
-    )
     UPDATE public.works AS w
-    SET metadata_revision = w.metadata_revision + 1,
-        metadata_field_revisions = w.metadata_field_revisions || (
-            SELECT jsonb_object_agg(field_name, w.metadata_revision + 1)
-            FROM unnest(changed.fields) AS field_name
-        )
-    FROM changed WHERE w.id = changed.owner_id;
+    SET metadata_revision = w.metadata_revision + 1
+    WHERE w.id IN (
+        SELECT owner_id
+        FROM jsonb_to_recordset(affected) AS owner(owner_kind text, owner_id uuid)
+        WHERE owner_kind = 'work'
+    );
 END;
 $$;
 
@@ -638,28 +626,21 @@ CREATE FUNCTION public.metadata_scalar_revision() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE
-    changed_fields text[];
 BEGIN
     IF TG_OP = 'INSERT' THEN
         NEW.metadata_revision := 0;
-        NEW.metadata_field_revisions := '{}'::jsonb;
         RETURN NEW;
     END IF;
 
-    SELECT array_agg(field.key ORDER BY field.key) INTO changed_fields
-    FROM unnest(TG_ARGV) AS specification
-    CROSS JOIN LATERAL jsonb_each(specification::jsonb) AS field
-    WHERE EXISTS (
-        SELECT 1 FROM jsonb_array_elements_text(field.value) AS column_name
-        WHERE to_jsonb(OLD) -> column_name IS DISTINCT FROM to_jsonb(NEW) -> column_name
-    );
-    IF changed_fields IS NOT NULL THEN
+    IF EXISTS (
+        SELECT 1 FROM unnest(TG_ARGV) AS specification
+        CROSS JOIN LATERAL jsonb_each(specification::jsonb) AS field
+        WHERE EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(field.value) AS column_name
+            WHERE to_jsonb(OLD) -> column_name IS DISTINCT FROM to_jsonb(NEW) -> column_name
+        )
+    ) THEN
         NEW.metadata_revision := OLD.metadata_revision + 1;
-        NEW.metadata_field_revisions := OLD.metadata_field_revisions || (
-            SELECT jsonb_object_agg(field_name, NEW.metadata_revision)
-            FROM unnest(changed_fields) AS field_name
-        );
     END IF;
     RETURN NEW;
 END;
@@ -683,26 +664,6 @@ $$;
 
 
 ALTER FUNCTION public.notify_settings_changed() OWNER TO reverie_migrator;
-
---
--- Name: reclaim_metadata_undo(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
---
-
-CREATE FUNCTION public.reclaim_metadata_undo() RETURNS bigint
-    LANGUAGE sql SECURITY DEFINER
-    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
-    AS $$
-    WITH expired AS (
-        SELECT id FROM public.metadata_undo_operations
-        WHERE expires_at <= clock_timestamp() ORDER BY expires_at, id LIMIT 1000
-    ), removed AS (
-        DELETE FROM public.metadata_undo_operations
-        WHERE expires_at <= clock_timestamp() AND id IN (SELECT id FROM expired) RETURNING id
-    ) SELECT count(*) FROM removed;
-$$;
-
-
-ALTER FUNCTION public.reclaim_metadata_undo() OWNER TO reverie_migrator;
 
 --
 -- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: reverie_migrator
@@ -1320,7 +1281,6 @@ CREATE TABLE public.manifestations (
     enrichment_retry_not_before timestamp with time zone,
     enrichment_claim_seq bigint DEFAULT 0 NOT NULL,
     metadata_revision bigint DEFAULT 0 NOT NULL,
-    metadata_field_revisions jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT manifestations_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_enrichment_attempted_at_ts_decode_range CHECK (((enrichment_attempted_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (enrichment_attempted_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_enrichment_failures_check CHECK ((jsonb_typeof(enrichment_failures) = 'array'::text)),
@@ -1375,33 +1335,6 @@ CREATE TABLE public.metadata_sources (
 
 
 ALTER TABLE public.metadata_sources OWNER TO reverie_migrator;
-
---
--- Name: metadata_undo_operations; Type: TABLE; Schema: public; Owner: reverie_migrator
---
-
-CREATE TABLE public.metadata_undo_operations (
-    id uuid NOT NULL,
-    user_id uuid NOT NULL,
-    session_id text NOT NULL,
-    manifestation_id uuid NOT NULL,
-    work_id uuid NOT NULL,
-    request_id uuid NOT NULL,
-    field_name text NOT NULL,
-    before_state jsonb NOT NULL,
-    after_state jsonb NOT NULL,
-    after_revision bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    expires_at timestamp with time zone DEFAULT (clock_timestamp() + '01:00:00'::interval) NOT NULL,
-    consumed_at timestamp with time zone,
-    superseded_at timestamp with time zone,
-    CONSTRAINT metadata_undo_operations_after_revision_check CHECK ((after_revision >= 0))
-);
-
-ALTER TABLE ONLY public.metadata_undo_operations FORCE ROW LEVEL SECURITY;
-
-
-ALTER TABLE public.metadata_undo_operations OWNER TO reverie_migrator;
 
 --
 -- Name: metadata_versions; Type: TABLE; Schema: public; Owner: reverie_migrator
@@ -1883,7 +1816,6 @@ CREATE TABLE public.works (
     subtitle_version_id uuid,
     first_author_sort_name text,
     metadata_revision bigint DEFAULT 0 NOT NULL,
-    metadata_field_revisions jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT works_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT works_metadata_revision_check CHECK ((metadata_revision >= 0)),
     CONSTRAINT works_updated_at_ts_decode_range CHECK (((updated_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (updated_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
@@ -2213,22 +2145,6 @@ ALTER TABLE ONLY public.manifestations
 
 ALTER TABLE ONLY public.metadata_sources
     ADD CONSTRAINT metadata_sources_pkey PRIMARY KEY (id);
-
-
---
--- Name: metadata_undo_operations metadata_undo_operations_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.metadata_undo_operations
-    ADD CONSTRAINT metadata_undo_operations_pkey PRIMARY KEY (id);
-
-
---
--- Name: metadata_undo_operations metadata_undo_operations_user_id_session_id_manifestation_i_key; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.metadata_undo_operations
-    ADD CONSTRAINT metadata_undo_operations_user_id_session_id_manifestation_i_key UNIQUE (user_id, session_id, manifestation_id, request_id, field_name);
 
 
 --
@@ -3121,20 +3037,6 @@ CREATE INDEX idx_writeback_jobs_queue ON public.writeback_jobs USING btree (last
 
 
 --
--- Name: metadata_undo_expiry; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE INDEX metadata_undo_expiry ON public.metadata_undo_operations USING btree (expires_at);
-
-
---
--- Name: metadata_undo_latest; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE UNIQUE INDEX metadata_undo_latest ON public.metadata_undo_operations USING btree (user_id, session_id, manifestation_id, field_name) WHERE ((consumed_at IS NULL) AND (superseded_at IS NULL));
-
-
---
 -- Name: session_expiry_date_idx; Type: INDEX; Schema: tower_sessions; Owner: reverie_migrator
 --
 
@@ -3726,38 +3628,6 @@ ALTER TABLE ONLY public.manifestations
 
 ALTER TABLE ONLY public.manifestations
     ADD CONSTRAINT manifestations_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE CASCADE;
-
-
---
--- Name: metadata_undo_operations metadata_undo_operations_manifestation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.metadata_undo_operations
-    ADD CONSTRAINT metadata_undo_operations_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations(id) ON DELETE CASCADE;
-
-
---
--- Name: metadata_undo_operations metadata_undo_operations_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.metadata_undo_operations
-    ADD CONSTRAINT metadata_undo_operations_session_id_fkey FOREIGN KEY (session_id) REFERENCES tower_sessions.session(id) ON DELETE CASCADE;
-
-
---
--- Name: metadata_undo_operations metadata_undo_operations_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.metadata_undo_operations
-    ADD CONSTRAINT metadata_undo_operations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: metadata_undo_operations metadata_undo_operations_work_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE ONLY public.metadata_undo_operations
-    ADD CONSTRAINT metadata_undo_operations_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE CASCADE;
 
 
 --
@@ -4362,26 +4232,6 @@ CREATE POLICY manifestations_update_system ON public.manifestations FOR UPDATE T
 
 
 --
--- Name: metadata_undo_operations metadata_undo_expired_maintenance; Type: POLICY; Schema: public; Owner: reverie_migrator
---
-
-CREATE POLICY metadata_undo_expired_maintenance ON public.metadata_undo_operations TO reverie_migrator USING ((expires_at <= clock_timestamp()));
-
-
---
--- Name: metadata_undo_operations; Type: ROW SECURITY; Schema: public; Owner: reverie_migrator
---
-
-ALTER TABLE public.metadata_undo_operations ENABLE ROW LEVEL SECURITY;
-
---
--- Name: metadata_undo_operations metadata_undo_owner; Type: POLICY; Schema: public; Owner: reverie_migrator
---
-
-CREATE POLICY metadata_undo_owner ON public.metadata_undo_operations USING ((user_id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid)) WITH CHECK ((user_id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid));
-
-
---
 -- Name: reading_sessions; Type: ROW SECURITY; Schema: public; Owner: reverie_migrator
 --
 
@@ -4539,14 +4389,6 @@ REVOKE ALL ON FUNCTION public.metadata_relation_revision() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION public.metadata_scalar_revision() FROM PUBLIC;
-
-
---
--- Name: FUNCTION reclaim_metadata_undo(); Type: ACL; Schema: public; Owner: reverie_migrator
---
-
-REVOKE ALL ON FUNCTION public.reclaim_metadata_undo() FROM PUBLIC;
-GRANT ALL ON FUNCTION public.reclaim_metadata_undo() TO reverie_app;
 
 
 --
@@ -5091,13 +4933,6 @@ GRANT INSERT(enrichment_claim_seq),UPDATE(enrichment_claim_seq) ON TABLE public.
 GRANT SELECT ON TABLE public.metadata_sources TO reverie_app;
 GRANT SELECT ON TABLE public.metadata_sources TO reverie_ingestion;
 GRANT SELECT ON TABLE public.metadata_sources TO reverie_readonly;
-
-
---
--- Name: TABLE metadata_undo_operations; Type: ACL; Schema: public; Owner: reverie_migrator
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.metadata_undo_operations TO reverie_app;
 
 
 --

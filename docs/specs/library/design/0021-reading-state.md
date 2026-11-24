@@ -6,7 +6,6 @@ title: "Reading state"
 satisfies:
   - "REV-REQ-0018"
   - "REV-REQ-0020"
-  - "REV-REQ-0081"
   - "REV-REQ-0095"
   - "REV-REQ-0096"
 governed-by:
@@ -41,10 +40,10 @@ existence, the precondition, and body validation. This subject supplies only its
 and the handler code that sequence runs against; it does not restate that Design's general contract. It does not own the
 scope and role authorisation model that `require_scope` enforces; that is the Design "Authorization axes". It does not
 own the `ApiPath`/`ApiJson` request extractors or the `AppError`-to-Problem-Details mapping; that is the Design "API
-error contract and OpenAPI". It does not own the generic library-table cell-edit orchestration (pending-cell state, the
-metadata operation collection and local conflict recovery) in `frontend/src/pages/library/table/useCellEdit.ts` and
-`edit-routing.ts`, which applies identically to the metadata pipeline and is the Library table cell editing and undo
-subject; this subject owns only the two cell controls that orchestration routes commits through.
+error contract and OpenAPI". It does not own the generic library-table cell-edit orchestration (pending-cell state and
+local conflict recovery) in `frontend/src/pages/library/table/useCellEdit.ts` and `edit-routing.ts`, which applies
+identically to the metadata pipeline and is the Library table cell editing subject; this subject owns only the two cell
+controls that orchestration routes commits through.
 
 Depends on: `crate::db::acquire_with_rls` for the RLS-scoped transaction every query in this subject runs inside; the
 `manifestations` table's own row-level-security policies, which `ensure_manifestation_visible` relies on for its
@@ -54,8 +53,8 @@ in `backend/src/routes/etag.rs`; `crate::extract::{ApiPath, ApiJson}` for reques
 Depended on by: `GET /api/v1/books` (`backend/src/services/reader.rs::load_reading_state_for_manifestations`), which
 batch-loads a `ReadingStateSummary` onto every list row under the caller's own RLS scope — the Design "Books list query
 contract"; the library table's status and rating columns and the cell-edit orchestration in the Library table cell
-editing and undo subject, which route a commit through the conditional `updateReadingState` mutation and rely on its
-entity-tag for conflict detection.
+editing subject, which route a commit through the conditional `updateReadingState` mutation and rely on its entity-tag
+for conflict detection.
 
 ## Structure
 
@@ -129,8 +128,8 @@ for their visible books.
 ## Data and state
 
 Table editors take their starting values and validator from one reading revision and retain the validator through CSRF
-retry and failure. Relay updates display when a save or a recovery read publishes another revision. Reading status and
-rating have no saved Undo; active inputs retain native typing Undo and Redo.
+retry and failure. Relay updates display when a save or a recovery read publishes another revision. Active inputs retain
+native typing Undo and Redo.
 
 - **The `reading_state` row.** One per `(user_id, manifestation_id)`, created only by a `PATCH` — never by `GET`, which
   returns the all-null default when no row exists. That all-null shape is the "unread" domain state itself, not an
@@ -156,10 +155,8 @@ rating have no saved Undo; active inputs retain native typing Undo and Redo.
 
 ## Runtime behaviour
 
-Library cell and batch saves retain their validated raw starting values and baseline. Explicit Retry sends that
-conditional attempt again. A matched recovery read can recognise the requested reading result; a refusal retains the
-input. Conflicts use per-book matched Reload before a new editing decision. Batch targets keep distinct baselines and
-classifications, and Retry excludes successful and conflicted books. Reading edits create no metadata Undo entry.
+Library cell and batch saves use each book's matched reading baseline. A stale cell save refreshes the visit. Batch
+status applies the chosen status sequentially and reports how many books saved and how many could not be saved.
 
 **A caller reading their state for one book**, `GET /api/v1/books/{id}/reading`:
 

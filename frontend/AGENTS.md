@@ -44,9 +44,8 @@ workaround does not justify keeping it when the chosen tool meets the requiremen
   Drafts and interaction state stay with their owning components.
 - **Recovery:** Use the owning data library's normal query and mutation lifecycle. Preserve confirmed mutation data,
   authoritative recovery, pending input and matched editing baselines. A shared-cache update never advances a retained
-  draft's write precondition. Ordinary save recovery never automatically replays a write. An explicit Library Retry
-  resends the retained failed edit under its original baseline. A stale refusal offers Reload. A stale Undo checks the
-  exact operation's eligibility before resending once under the current validator.
+  draft's write precondition. Recovery reads never replay a write. Library cell failures show one inline notice. A stale
+  cell save refreshes the visit. The Book metadata dialog keeps its draft and offers Reload.
 - **Effects:** Keep dependency arrays complete and never suppress the rule. Use `useEffectEvent` for non-reactive event
   logic an Effect calls, never to drop a dependency that should resynchronise the Effect. Return a cleanup when the
   Effect starts something that must be stopped or undone. Never pass an async function directly. An async Effect for

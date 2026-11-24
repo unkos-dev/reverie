@@ -19,7 +19,6 @@
 - [REV-REQ-0076](requirements/0076-a-fresh-library-visit-starts-without-filters.md): A fresh Library visit starts without filters
 - [REV-REQ-0077](requirements/0077-library-filter-edits-add-no-history-entries.md): Library filter edits add no history entries
 - [REV-REQ-0080](requirements/0080-library-return-restores-browsing-context.md): Library return restores browsing context
-- [REV-REQ-0081](requirements/0081-failed-library-saves-support-explicit-retry.md): Failed Library saves support explicit Retry
 - [REV-REQ-0092](requirements/0092-a-graphql-books-range-filter-applies-its-bounds-as-declared.md): A GraphQL books range filter applies its bounds as declared
 - [REV-REQ-0093](requirements/0093-a-graphql-connection-honours-a-cursor-only-under-the-connection-parent-sort-and-filters-that-minted-it.md): A GraphQL connection honours a cursor only under the connection, parent, sort and filters that minted it
 - [REV-REQ-0094](requirements/0094-a-graphql-books-sort-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md): A GraphQL books sort naming an unrecognised or repeated column is refused before any query runs

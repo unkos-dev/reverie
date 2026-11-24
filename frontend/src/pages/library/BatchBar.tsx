@@ -105,8 +105,10 @@ export function BatchBar({
           {status}
         </p>
       )}
-      {result?.failed.some((failure) => failure.action === "retry") === true ||
-      (result?.retrying === true && pending) ? (
+      {result !== undefined &&
+      result.action.kind !== "status" &&
+      (result.failed.some((failure) => failure.action === "retry") ||
+        (result.retrying && pending)) ? (
         <Button type="button" variant="outline" size="sm" isPending={pending} onPress={onRetry}>
           Retry failed books
         </Button>

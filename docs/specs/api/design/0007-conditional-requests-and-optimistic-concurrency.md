@@ -13,7 +13,7 @@ satisfies:
   - "REV-REQ-0096"
 governed-by:
   - "REV-ADR-0011"
-  - "REV-ADR-0069"
+  - "REV-ADR-0085"
   - "REV-ADR-0084"
 ---
 
@@ -51,9 +51,9 @@ race-free against a concurrent writer (owned by that endpoint's own subject, not
 
 Depended on by: `PATCH /api/v1/books/{id}/reading` (the Design "Reading state"), `PATCH /api/v1/books/{id}/metadata`
 (the Design "Metadata review and editing"), `PUT /api/v1/settings` (`backend/src/routes/settings/mod.rs`), and the
-GraphQL `updateMetadata`, `undoMetadata` and `updateReadingState` mutations on the server side. On the client side, the
-Book edit dialog takes its baseline from its opening Relay fragment snapshot, and the Library table's cell editing takes
-its baselines from raw executions; Client editing baselines below describes both.
+GraphQL `updateMetadata` and `updateReadingState` mutations on the server side. On the client side, the Book edit dialog
+takes its baseline from its opening Relay fragment snapshot, and the Library table's cell editing takes its baselines
+from Relay revision fragments; Client editing baselines below describes both.
 
 ## Structure
 
@@ -74,8 +74,8 @@ zero or greater. The data-model triggers advance revisions for canonical and pro
 changes away and back. `load_book_metadata` returns `MetadataSnapshot`, pairing complete `BookMetadata` values with
 those owner revisions. HTTP selects complete values; GraphQL selects the values and bounded relation pages its edit
 needs. Matched GET assembles that snapshot in a read-only REPEATABLE READ RLS transaction. PATCH compares the tag under
-its manifestation and work locks and loads the post-write snapshot before commit. Its response returns request identity,
-field operations and complete `values`; GET serves the same values type directly.
+its manifestation and work locks and loads the post-write snapshot before commit. Its response returns complete `values`
+with the matching ETag. GET serves the same values type directly.
 
 List rows carry `metadata_etag` and `reading_etag`. Their projected values, revisions, relation batches and complete
 reading hash inputs come from one read-only REPEATABLE READ transaction. The list keeps its compact projection and omits
@@ -103,12 +103,12 @@ tag and inserts the resource's current `ETag` into it.
 
 ### The precondition contract's evaluation order
 
-Metadata save, reading patch, exact metadata Undo and settings writes apply this contract. HTTP reads the baseline from
-`If-Match`. GraphQL metadata saves, reading saves and exact Undo take a non-null `ETag` baseline in their `input`
-object. Missing, null or malformed tags fail request validation. Both transports use the same strong-tag parser. A
-locked mismatch returns the `StaleBaseline` union member over GraphQL. Over HTTP, their relative order is:
-`CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header and rejecting it as
-absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
+Metadata save, reading patch and settings writes apply this contract. HTTP reads the baseline from `If-Match`. GraphQL
+metadata and reading saves take a non-null `ETag` baseline in their `input` object. Missing, null or malformed tags fail
+request validation. Both transports use the same strong-tag parser. A locked mismatch returns the `StaleBaseline` union
+member over GraphQL. Over HTTP, their relative order is: `CurrentUser::require_scope` and the endpoint's role check run
+first; parsing the `If-Match` header and rejecting it as absent (`428`) or malformed/policy-refused (`400`) runs second,
+before any database work.
 
 For metadata and reading, the request then resolves whether the target manifestation exists and is visible to the
 caller, returning `404` when it does not. `update_book_metadata` uses a `SELECT ... FOR UPDATE` whose locked row the
@@ -174,9 +174,9 @@ a `428` the same as a `412` for recovery purposes: reload a matched representati
 
 ## Data and state
 
-Entity-tags are derived inside the request transaction. Metadata revisions and field stamps live on their owning rows;
-tags themselves are not stored. Writes compare under their resource locks, while matched metadata and list reads share
-an explicit database snapshot:
+Entity-tags are derived inside the request transaction. Metadata revisions live on their owning rows; tags themselves
+are not stored. Writes compare under their resource locks, while matched metadata and list reads share an explicit
+database snapshot:
 
 | Endpoint family | Constructor | Hash/comparison input |
 | --------------- | ----------- | --------------------- |
@@ -190,30 +190,14 @@ No shelf endpoint emits an `ETag` or reads an `If-Match` header.
 concurrency validator, not an integrity guarantee: the server always recomputes the tag from its own row and never
 trusts a client-supplied hash as data.
 
-The Library edit owner keeps submitted input and its starting validator independent of the displayed row and its
-lifetime. The Book dialog keeps its opening snapshot until Reload remounts its fields. Relay owns the display and holds
-each revision under a distinct record ID. The Library table-editing owner keeps at most ten exact field operations.
-Leaving Library or Table editing clears them. Filtering, sorting and empty results preserve them.
+A table editor keeps its starting value and validator while open. The Book dialog keeps its opening snapshot until
+Reload remounts its fields. Relay stores each revision under a distinct record ID.
 
 ## Runtime behaviour
 
-A metadata save carries a client request UUID and its editing baseline. A stale aggregate precondition returns 412, or
-the `StaleBaseline` member over GraphQL, before request-reuse checking. After a lost acknowledgement, unchanged dialog
-input reuses its original request UUID, patch and baseline. A committed resend therefore receives the stale-baseline
-refusal, then resolves the original request before conflict feedback. A matched GraphQL acknowledgement returns the
-manifestation whose `metadata` is the revision the save projected inside its own transaction, so its values and ETag
-come from one revision. The Library commit uses native Relay mutation payloads. A temporary or uncertain failure offers
-explicit Retry of the original attempt. A stale refusal offers a read-only Reload. Validation preserves the input for
-correction. Other expected refusals show their own feedback. Acknowledged metadata saves may add exact Undo operations.
-
-Exact metadata Undo uses the same strong aggregate precondition as PATCH. It requires its baseline before database
-writes and compares it under edition and work locks. Selected-field eligibility is an additional decision, independent
-of aggregate freshness. Operation resolution supplies current complete metadata and its matching ETag without replaying
-writes. It cannot authorise an ordinary save from retained draft values.
-
-Undo sends the operation ID and its retained aggregate validator. A stale refusal triggers one eligibility read for that
-operation ID. The owner sends an eligible operation again once, using the current matching validator. Locked operations
-remain available until expiry. Unavailable and conflicting operations leave the local collection.
+A metadata save carries its editing baseline. A stale precondition returns 412 or GraphQL `StaleBaseline`. A GraphQL
+acknowledgement returns the manifestation with the metadata revision projected in the write transaction. The Library
+shows a dismissible notice on failure and refreshes its visit on a stale refusal.
 
 **A metadata or reading `PATCH` with a malformed `If-Match`:**
 
@@ -226,13 +210,9 @@ handler body executes at all). The response is `400`, problem type `.../malforme
 
 ## Failure and recovery
 
-- Missing `If-Match` returns 428 before database work. A stale supplied precondition returns 412 with the current tag.
-  Ordinary saves retain input and require a matched read before a new editing decision; they never automatically retry.
-- An unusable acknowledgement leaves the Library attempt uncertain. A failed Reload retains the input and starting
-  validator. The Book dialog uses its committed request evidence when resolving a lost acknowledgement.
-- Undo refuses locked fields with 409, or `FieldsLocked` over GraphQL, and retains the entry until its original expiry.
-  A 422 `undo-unavailable` or 409 `undo-conflict`, or the `UndoUnavailable` or `UndoConflict` member over GraphQL,
-  removes it. Expiry removes entries quietly, without extending their deadlines.
+- Missing `If-Match` returns 428 before database work. A stale supplied precondition returns 412 with the current tag. A
+  Library refresh fetches current values. The reader can start a new edit from those values.
+- Book dialog Reload replaces the draft and validator with a fresh snapshot. A failed reload retains both.
 
 ## Security and operations
 

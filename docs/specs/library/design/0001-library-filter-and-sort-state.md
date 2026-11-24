@@ -10,7 +10,6 @@ satisfies:
   - "REV-REQ-0076"
   - "REV-REQ-0077"
   - "REV-REQ-0080"
-  - "REV-REQ-0081"
   - "REV-REQ-0092"
 governed-by:
   - "REV-ADR-0066"
@@ -170,34 +169,30 @@ owner allocates a distinct key for a push before the browser assigns the entry I
 first page while the displayed reader uses `store-only`. The candidate reader mounts once that page is available and
 extends it through `usePaginationFragment` in a separate Suspense boundary. Pagination and adoption use ordinary
 updates, so the shell's document view transition does not capture pointer input for those updates. Relay retains the
-displayed connection and its record data. The editing owner holds drafts, validators and Undo above the virtualised
-rows.
+displayed connection and its record data. The editing owner commits saves above the virtualised rows.
 
 The synchronous Navigation `navigate` event captures an anchor, the first visible book and its position within the
 viewport, together with the loaded extent and absolute scroll position. Entry state contains only serialisable geometry
 and visit intent. Relay retains references in memory. A fresh return reuses the retained connection without a request.
 Relay marks a query stale after five minutes. A committed edit invalidates each retained connection whose sort or filter
-depends on the changed field. A work-level Library save or Undo also invalidates connections containing another edition
-of that work. A successful Library Reload invalidates connections containing the reloaded book or another edition of its
-work. Active connections rebuild and inactive connections rebuild on return. A stale return renders the retained source
-while the candidate loads both the saved extent and anchor, or reaches the connection end. If a later rebuild page fails
-with the `invalid-cursor` execution error code, the owner restarts the rebuild once from page one. Intermediate pages
-preserve the displayed books and position until the complete replacement is ready, including on repeated returns. The
-search for an absent anchor exhausts the connection before applying the fallback. The owner adopts its ready reference
-once. A moved anchor restores at its saved viewport position as far as the scroll range allows. An absent anchor uses
-the saved absolute offset, or zero when that offset exceeds the new range. Account, entry, source and generation checks
-reject obsolete completion. New intent and user scroll cancel delayed restoration. Entry disposal and account loss
-release retained references.
+depends on the changed field. A work-level Library save also invalidates connections containing another edition of that
+work. A stale cell refusal invalidates connections containing the book or a sibling edition for metadata edits. Active
+connections rebuild and inactive connections rebuild on return. A stale return renders the retained source while the
+candidate loads both the saved extent and anchor, or reaches the connection end. If a later rebuild page fails with the
+`invalid-cursor` execution error code, the owner restarts the rebuild once from page one. Intermediate pages preserve
+the displayed books and position until the complete replacement is ready, including on repeated returns. The search for
+an absent anchor exhausts the connection before applying the fallback. The owner adopts its ready reference once. A
+moved anchor restores at its saved viewport position as far as the scroll range allows. An absent anchor uses the saved
+absolute offset, or zero when that offset exceeds the new range. Account, entry, source and generation checks reject
+obsolete completion. New intent and user scroll cancel delayed restoration. Entry disposal and account loss release
+retained references.
 
-Selection clears at filter, sort or view intent and displayed-source replacement. Pagination retains selection. The
-Library editing owner keeps at most ten exact field operations above conditional results. Filtering, sorting, loading
-and empty results preserve Undo. Leaving Library or Table editing clears it.
+Selection clears at filter, sort or view intent and displayed-source replacement. Pagination retains selection. A cell
+editor captures the opened value and its validator. A failed save shows one dismissible notice above the table.
 
-The batch bar captures selected loaded IDs once. Add to shelf runs serial membership writes. Set status captures one
-status and each target's matched reading baseline before sending. Refresh metadata schedules enrichment for non-child
-callers and reports scheduling separately from completed enrichment. Each target retains its own outcome; successful IDs
-leave selection. Retry includes only temporary or uncertain failures with their retained inputs. Conflicts and
-validation refusals keep their per-book recovery in Edit outcomes, without a bulk Reload control.
+The batch bar captures selected loaded IDs once. Add to shelf runs serial membership writes. Set status uses each book's
+matched reading baseline and reports success and failure counts. Refresh metadata schedules enrichment for non-child
+callers and reports scheduling separately from completed enrichment. Successful IDs leave selection.
 
 At viewport widths of at least 1600 px, the filter editor occupies a non-modal panel beside the collection. Opening it
 narrows the collection without hiding columns. Its translucent material matches the floating bars, and its top stays

@@ -305,7 +305,6 @@ function BookCell({
         <AuthorsCell
           id={book.id}
           authors={authors}
-          baseline={metadata.etag}
           density={density}
           state={state}
           onCommit={(value, baseline, previous) => {
@@ -686,18 +685,9 @@ export function LibraryTable({
   const context: TableEditContextValue = {
     density,
     isMobile,
-    stateFor: (rowId, columnKey) => {
-      const key = pendingKey(rowId, columnKey);
-      const failure = edits.feedback.find(
-        (entry) => pendingKey(entry.rowId, entry.columnKey) === key,
-      );
-      return {
-        pending: edits.pendingCells.get(key),
-        failed: failure !== undefined,
-        retained: failure?.retained,
-        serverError: failure?.action === "correct" ? failure.message : undefined,
-      };
-    },
+    stateFor: (rowId, columnKey) => ({
+      pending: edits.pendingCells.get(pendingKey(rowId, columnKey)),
+    }),
     commit: edits.onCellEdit,
   };
 
@@ -800,7 +790,6 @@ export function LibraryTable({
     <div
       data-testid="library-table"
       className="rv-table flex h-full min-h-0 flex-col"
-      {...edits.keyboardProps}
       onPointerDownCapture={(event) => {
         shiftHeld.current = event.shiftKey;
       }}
@@ -849,13 +838,7 @@ export function LibraryTable({
               <TableBody>
                 <Collection
                   items={items}
-                  dependencies={[
-                    columns,
-                    density,
-                    edits.pendingCells,
-                    edits.feedback,
-                    edits.savedCells,
-                  ]}
+                  dependencies={[columns, density, edits.pendingCells, edits.savedCells]}
                 >
                   {(book) => (
                     <Row
@@ -863,7 +846,7 @@ export function LibraryTable({
                       data-book-id={book.id}
                       textValue={book.metadata.title}
                       columns={columns}
-                      dependencies={[edits.pendingCells, edits.feedback, edits.savedCells]}
+                      dependencies={[edits.pendingCells, edits.savedCells]}
                       className="group/row text-fg data-hovered:bg-surface data-selected:bg-accent-soft [height:inherit] [width:inherit] cursor-default outline-none"
                     >
                       {(column) => (
@@ -876,9 +859,6 @@ export function LibraryTable({
                             <CellSaveState
                               saved={edits.savedCells.has(pendingKey(book.id, column.id))}
                               pending={edits.pendingCells.has(pendingKey(book.id, column.id))}
-                              feedback={edits.feedback.find(
-                                (entry) => entry.rowId === book.id && entry.columnKey === column.id,
-                              )}
                             />
                           </div>
                         </Cell>

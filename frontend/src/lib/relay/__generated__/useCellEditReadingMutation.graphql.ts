@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<a613539ec3e095b289d5ee56453c1b53>>
- * @relayHash 591d066ae04f14b0dc7ef51821c9eadd
+ * @generated SignedSource<<a9e15c53e125f69a5cb74b953898252c>>
+ * @relayHash 538158e8288e617b1d3f28bb67708ca6
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 81c9eaf2425fdedfa216235e22e04203c72304da7e4508004dafabc122cd7720
+// @relayRequestID 154ef3549bb4842c64d6b497a0a5a4395f61e28ee6efc5a6f3ec918eaab989f7
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -45,9 +45,6 @@ export type useCellEditReadingMutation$data = {
     | {
         readonly __typename: "ReadingStateUpdated";
         readonly manifestation: {
-          readonly readingState: {
-            readonly etag: string;
-          };
           readonly " $fragmentSpreads": FragmentRefs<
             "BookCard_book" | "LibraryTable_cell" | "useCellEdit_batchRows"
           >;
@@ -90,14 +87,7 @@ const node: ConcreteRequest = (function () {
       name: "__typename",
       storageKey: null,
     },
-    v3 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "etag",
-      storageKey: null,
-    },
-    v4 = [
+    v3 = [
       {
         alias: null,
         args: null,
@@ -106,46 +96,46 @@ const node: ConcreteRequest = (function () {
         storageKey: null,
       },
     ],
+    v4 = {
+      kind: "InlineFragment",
+      selections: v3 /*:: as any*/,
+      type: "StaleBaseline",
+      abstractKey: null,
+    },
     v5 = {
       kind: "InlineFragment",
-      selections: v4 /*:: as any*/,
-      type: "StaleBaseline",
+      selections: v3 /*:: as any*/,
+      type: "MetadataInvalid",
       abstractKey: null,
     },
     v6 = {
       kind: "InlineFragment",
-      selections: v4 /*:: as any*/,
-      type: "MetadataInvalid",
-      abstractKey: null,
-    },
-    v7 = {
-      kind: "InlineFragment",
-      selections: v4 /*:: as any*/,
+      selections: v3 /*:: as any*/,
       type: "NotFound",
       abstractKey: null,
     },
-    v8 = {
+    v7 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "id",
       storageKey: null,
     },
-    v9 = {
+    v8 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "title",
       storageKey: null,
     },
-    v10 = {
+    v9 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "subtitle",
       storageKey: null,
     },
-    v11 = [
+    v10 = [
       {
         alias: null,
         args: null,
@@ -153,8 +143,15 @@ const node: ConcreteRequest = (function () {
         name: "name",
         storageKey: null,
       },
-      v8 /*:: as any*/,
-    ];
+      v7 /*:: as any*/,
+    ],
+    v11 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "etag",
+      storageKey: null,
+    };
   return {
     fragment: {
       argumentDefinitions: v0 /*:: as any*/,
@@ -197,16 +194,6 @@ const node: ConcreteRequest = (function () {
                       kind: "FragmentSpread",
                       name: "useCellEdit_batchRows",
                     },
-                    {
-                      alias: null,
-                      args: null,
-                      concreteType: "ReadingRevision",
-                      kind: "LinkedField",
-                      name: "readingState",
-                      plural: false,
-                      selections: [v3 /*:: as any*/],
-                      storageKey: null,
-                    },
                   ],
                   storageKey: null,
                 },
@@ -214,9 +201,9 @@ const node: ConcreteRequest = (function () {
               type: "ReadingStateUpdated",
               abstractKey: null,
             },
+            v4 /*:: as any*/,
             v5 /*:: as any*/,
             v6 /*:: as any*/,
-            v7 /*:: as any*/,
           ],
           storageKey: null,
         },
@@ -250,7 +237,7 @@ const node: ConcreteRequest = (function () {
                   name: "manifestation",
                   plural: false,
                   selections: [
-                    v8 /*:: as any*/,
+                    v7 /*:: as any*/,
                     {
                       alias: null,
                       args: null,
@@ -273,9 +260,9 @@ const node: ConcreteRequest = (function () {
                       name: "work",
                       plural: false,
                       selections: [
+                        v7 /*:: as any*/,
                         v8 /*:: as any*/,
                         v9 /*:: as any*/,
-                        v10 /*:: as any*/,
                         {
                           alias: null,
                           args: [
@@ -305,7 +292,7 @@ const node: ConcreteRequest = (function () {
                                   kind: "LinkedField",
                                   name: "node",
                                   plural: false,
-                                  selections: v11 /*:: as any*/,
+                                  selections: v10 /*:: as any*/,
                                   storageKey: null,
                                 },
                               ],
@@ -329,7 +316,7 @@ const node: ConcreteRequest = (function () {
                               kind: "LinkedField",
                               name: "node",
                               plural: false,
-                              selections: v11 /*:: as any*/,
+                              selections: v10 /*:: as any*/,
                               storageKey: null,
                             },
                             {
@@ -353,9 +340,9 @@ const node: ConcreteRequest = (function () {
                       name: "metadata",
                       plural: false,
                       selections: [
-                        v3 /*:: as any*/,
+                        v11 /*:: as any*/,
+                        v8 /*:: as any*/,
                         v9 /*:: as any*/,
-                        v10 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -370,7 +357,7 @@ const node: ConcreteRequest = (function () {
                           name: "pages",
                           storageKey: null,
                         },
-                        v8 /*:: as any*/,
+                        v7 /*:: as any*/,
                       ],
                       storageKey: null,
                     },
@@ -382,7 +369,7 @@ const node: ConcreteRequest = (function () {
                       name: "readingState",
                       plural: false,
                       selections: [
-                        v3 /*:: as any*/,
+                        v11 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -397,7 +384,7 @@ const node: ConcreteRequest = (function () {
                           name: "rating",
                           storageKey: null,
                         },
-                        v8 /*:: as any*/,
+                        v7 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -415,16 +402,16 @@ const node: ConcreteRequest = (function () {
               type: "ReadingStateUpdated",
               abstractKey: null,
             },
+            v4 /*:: as any*/,
             v5 /*:: as any*/,
             v6 /*:: as any*/,
-            v7 /*:: as any*/,
           ],
           storageKey: null,
         },
       ],
     },
     params: {
-      id: "81c9eaf2425fdedfa216235e22e04203c72304da7e4508004dafabc122cd7720",
+      id: "154ef3549bb4842c64d6b497a0a5a4395f61e28ee6efc5a6f3ec918eaab989f7",
       metadata: {},
       name: "useCellEditReadingMutation",
       operationKind: "mutation",
@@ -433,6 +420,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "651bd4256e11cd4c6fc2042e389b6f8b";
+(node as any).hash = "3a8daf3d73da3ce5540efe5780afe071";
 
 export default node;

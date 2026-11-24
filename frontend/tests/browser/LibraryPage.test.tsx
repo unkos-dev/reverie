@@ -2,7 +2,7 @@ import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
-import { afterEach, beforeEach, describe, expect, test, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import {
   emptyFilterState,
   filterStateToParams,
@@ -49,16 +49,7 @@ const listVariables = z.object({
 const metadataVariables = z.object({
   id: z.string(),
   baseline: z.string(),
-  requestId: z.uuid(),
   patch: z.record(z.string(), z.unknown()),
-});
-const readingVariables = z.object({
-  id: z.string(),
-  baseline: z.string(),
-  patch: z.object({
-    status: z.string().nullable().optional(),
-    rating: z.number().nullable().optional(),
-  }),
 });
 beforeEach(() => {
   __seedCsrfTokenForTesting("synthetic-library-browser-csrf-token");
@@ -123,30 +114,13 @@ function response(data: unknown): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
-function refusal(code: string, errors?: Record<string, string>): Response {
-  return new Response(
-    JSON.stringify({ errors: [{ message: code, extensions: { code, errors } }] }),
-    { headers: { "Content-Type": "application/json" } },
-  );
-}
 function refused(root: string, typename: string, message: string, extra: object = {}): Response {
   return response({ [root]: { __typename: typename, message, ...extra } });
 }
-function savedCells(requestId: string | null, book: BookListItem, operations: unknown[]): Response {
+function savedCells(book: BookListItem): Response {
   return response({
     updateMetadata: {
       __typename: "MetadataSaved",
-      requestId,
-      operations,
-      manifestation: graphBook(book),
-    },
-  });
-}
-function restoredCells(book: BookListItem, operation: unknown): Response {
-  return response({
-    undoMetadata: {
-      __typename: "MetadataRestored",
-      operation,
       manifestation: graphBook(book),
     },
   });
@@ -741,52 +715,29 @@ describe("LibraryPage", () => {
   });
 });
 
-// REV-REQ-0080: a newer filter intent replaces the previous displayed rows, including an empty result.
-// REV-REQ-0083: shared title edits refresh sibling baselines.
-// Data loss boundary: after the row disappears, Undo retries the same saved operation for the same book.
-test("metadata Undo keeps its exact target after the row disappears", async () => {
-  const original = bookFixture({ pages: 100 });
+// REV-REQ-0083: a work-level save refreshes the revision of another edition before its next edit.
+test("a work-level save refreshes sibling editing baselines", async () => {
+  const original = bookFixture();
   const sibling = bookFixture({ id: "44444444-4444-4444-8444-444444444444" });
   const saved = { ...original, title: "Saved title", metadata_etag: '"cccccccccccccccccccccc"' };
-  const latest = { ...saved, pages: 250, metadata_etag: '"dddddddddddddddddddddd"' };
-  const restored = { ...latest, title: original.title, metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
   const savedSibling = {
     ...sibling,
     title: saved.title,
     metadata_etag: '"ssssssssssssssssssssss"',
   };
-  const restoredSibling = { ...sibling, metadata_etag: '"tttttttttttttttttttttt"' };
-  const operation = {
-    operationId: "33333333-3333-4333-8333-333333333333",
-    fieldName: "title",
-    expiresAt: new Date(Date.now() + 3600000).toISOString(),
-    status: "ELIGIBLE",
-  };
-  const undoMutation = "useCellEditUndoMutation";
-  const resolveQuery = "useCellEditUndoEligibilityQuery";
-  const fixture = await renderLibrary({
+  const writes: z.infer<typeof metadataVariables>[] = [];
+  await renderLibrary({
     items: [original, sibling],
     visit: { view: "table" },
+    preferences: preferencesFixture({ sort_stack: "-created_at" }),
     handler: (name, variables, owner) => {
-      if (name === "useCellEditSaveMutation") {
+      if (name !== "useCellEditSaveMutation") return;
+      writes.push(metadataVariables.parse(variables));
+      if (writes.length === 1) {
         owner.books = [saved, savedSibling];
-        return savedCells(metadataVariables.parse(variables).requestId, saved, [operation]);
+        return savedCells(saved);
       }
-      if (name === resolveQuery) {
-        return response({
-          metadataOperation: {
-            outcome: "SAVED",
-            metadata: metadata(latest),
-            operations: [operation],
-          },
-        });
-      }
-      if (name === undoMutation) {
-        if (variables.baseline !== latest.metadata_etag)
-          return refused("undoMetadata", "StaleBaseline", "if-match-mismatch");
-        owner.books = [restored, restoredSibling];
-        return restoredCells(restored, { ...operation, status: "CONSUMED" });
-      }
+      return savedCells(savedSibling);
     },
   });
   await userEvent.click(
@@ -794,33 +745,31 @@ test("metadata Undo keeps its exact target after the row disappears", async () =
   );
   await page.getByRole("dialog").getByRole("textbox").fill(saved.title);
   await userEvent.keyboard("{Enter}");
-  const undo = page.getByRole("button", {
-    name: `Undo Title for “${original.title}”`,
-    exact: true,
-  });
-  await expect.element(undo).toBeEnabled();
-  await userEvent.click(page.getByRole("button", { name: `Edit title of ${saved.title}` }).last());
-  await expect.element(page.getByRole("dialog").getByRole("textbox")).toHaveValue(saved.title);
-  await userEvent.keyboard("{Escape}");
-  fixture.books = [latest, savedSibling];
-  await userEvent.fill(page.getByRole("searchbox"), "missing");
-  await expect.element(findLibraryTable()).not.toBeInTheDocument();
-  await userEvent.click(undo);
   await expect
-    .element(page.getByText(`Title for “${original.title}” restored.`, { exact: true }))
-    .toBeInTheDocument();
-
-  const target = {
-    id: encodeGraphQLId("Manifestation", original.id),
-    operationId: operation.operationId,
-  };
-  expect(
-    fixture.calls.filter(({ name }) => name === undoMutation || name === resolveQuery),
-  ).toEqual([
-    { name: undoMutation, variables: { ...target, baseline: saved.metadata_etag } },
-    { name: resolveQuery, variables: target },
-    { name: undoMutation, variables: { ...target, baseline: latest.metadata_etag } },
-  ]);
+    .element(page.getByText("Updating results…", { exact: true }))
+    .not.toBeInTheDocument();
+  const siblingRow = document.querySelector(
+    `[data-book-id="${encodeGraphQLId("Manifestation", sibling.id)}"]`,
+  );
+  if (siblingRow === null) throw new Error("Expected sibling row.");
+  const siblingTitle = page
+    .elementLocator(siblingRow)
+    .getByRole("link", { name: saved.title, exact: true });
+  await expect.element(siblingTitle).toBeVisible();
+  await userEvent.hover(siblingTitle);
+  await userEvent.click(
+    page.elementLocator(siblingRow).getByRole("button", { name: `Edit title of ${saved.title}` }),
+  );
+  await expect.element(page.getByRole("dialog").getByRole("textbox")).toHaveValue(saved.title);
+  await page.getByRole("dialog").getByRole("textbox").fill("Next title");
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => {
+    expect(writes).toHaveLength(2);
+  });
+  expect(writes[1]).toMatchObject({
+    id: encodeGraphQLId("Manifestation", sibling.id),
+    baseline: savedSibling.metadata_etag,
+  });
 });
 
 // REV-REQ-0019 and the data loss boundary: an open editor retains its original matched write precondition.
@@ -862,15 +811,14 @@ test("a held Library candidate cannot revert an acknowledged edit", async () => 
   const fixture = await renderLibrary({
     items: [original],
     visit: { view: "table" },
-    handler: (name, variables, owner) => {
+    handler: (name, _variables, owner) => {
       if (name === "LibraryPageQuery" && holdCandidate) {
         holdCandidate = false;
         return held;
       }
       if (name === "useCellEditSaveMutation") {
-        const write = metadataVariables.parse(variables);
         owner.books = [saved];
-        return savedCells(write.requestId, saved, []);
+        return savedCells(saved);
       }
     },
   });
@@ -906,347 +854,49 @@ test("a held Library candidate cannot revert an acknowledged edit", async () => 
   });
 });
 
-// REV-REQ-0081: each batch status target is classified independently.
-test("batch Set status continues past a pending status save", async () => {
-  const first = bookFixture();
-  const second = bookFixture({
-    id: "55555555-5555-4555-8555-555555555555",
-    work_id: "88888888-8888-4888-8888-888888888888",
-    title: "Second book",
-    reading_etag: '"cccccccccccccccccccccc"',
-    created_at: "2025-01-01T00:00:00Z",
-  });
-  const firstId = encodeGraphQLId("Manifestation", first.id);
-  const secondId = encodeGraphQLId("Manifestation", second.id);
-  const pending = new Promise<Response>(() => {});
-  const fixture = await renderLibrary({
-    items: [first, second],
-    visit: { view: "table" },
-    handler: (name, variables) => {
-      if (name !== "useCellEditReadingMutation") return;
-      const { id } = readingVariables.parse(variables);
-      if (id === firstId) return pending;
-      return response({
-        updateReadingState: {
-          __typename: "ReadingStateUpdated",
-          manifestation: graphBook({
-            ...second,
-            reading_etag: '"dddddddddddddddddddddd"',
-            reading_state: {
-              status: "finished",
-              rating: null,
-              progress_pct: null,
-              started_at: null,
-              finished_at: null,
-            },
-          }),
-        },
-      });
-    },
-  });
-  await userEvent.click(
-    page.getByRole("button", { name: "None, edit status", exact: true }).first(),
-  );
-  await userEvent.click(page.getByRole("option", { name: "Reading", exact: true }));
-  const saving = page.getByRole("button", { name: "status saving", exact: true });
-  await expect.element(saving).toBeVisible();
-
-  page.getByRole("checkbox", { name: "Select all loaded books" }).element().focus();
-  await userEvent.keyboard(" ");
-  await userEvent.click(page.getByRole("button", { name: "Set status", exact: true }));
-  await userEvent.click(page.getByRole("menuitem", { name: "Finished", exact: true }));
-  await expect
-    .element(page.getByRole("group", { name: "Batch actions" }).getByRole("status"))
-    .toHaveTextContent("Set status for 1 of 2 books. 1 could not be saved.");
-  await expect.element(saving).toBeVisible();
-  expect(
-    fixture.calls
-      .filter(({ name }) => name === "useCellEditReadingMutation")
-      .map(({ variables }) => readingVariables.parse(variables)),
-  ).toEqual([
-    { id: firstId, baseline: first.reading_etag, patch: { status: "READING" } },
-    { id: secondId, baseline: second.reading_etag, patch: { status: "FINISHED" } },
-  ]);
-});
-
-// REV-REQ-0081, REV-REQ-0019 and the data loss boundary: Retry retains each attempt and classifies each target.
-it("Library Retry sends the retained edit again", async () => {
+// REV-REQ-0019 and REV-REQ-0095: a stale write refreshes values without replaying the edit.
+test("a stale table save refreshes before the next edit", async () => {
   const original = bookFixture();
-  let current = original;
-  let mode:
-    | "temporary"
-    | "lost"
-    | "conflict"
-    | "validation"
-    | "success"
-    | "locked"
-    | "permission"
-    | "reading" = "temporary";
-  const writes: z.infer<typeof metadataVariables>[] = [];
-  const readingWrites: z.infer<typeof readingVariables>[] = [];
-  let reloads = 0;
-  let holdReplacement = false;
-  let rejectDelayed: ((error: Error) => void) | undefined;
-  const delayed = new Promise<Response>((_resolve, reject) => {
-    rejectDelayed = reject;
-  });
-  const fixture = await renderLibrary({
-    visit: { view: "table" },
-    handler: (name, variables, owner) => {
-      if (holdReplacement && name === "LibraryPageQuery") return new Promise<Response>(() => {});
-      if (name === "useCellEditSaveMutation") {
-        const write = metadataVariables.parse(variables);
-        writes.push(write);
-        if (mode === "temporary") return Promise.reject(new TypeError("Offline"));
-        if (mode === "lost") return delayed;
-        if (mode === "conflict")
-          return refused("updateMetadata", "StaleBaseline", "if-match-mismatch");
-        if (mode === "validation")
-          return refused("updateMetadata", "MetadataInvalid", "validation", {
-            fieldErrors: [{ __typename: "FieldError", field: "isbn_13", message: "Invalid ISBN" }],
-          });
-        if (mode === "permission") return refusal("forbidden");
-        if (mode === "locked")
-          return refused("updateMetadata", "FieldsLocked", "field-locked", { fields: ["isbn_13"] });
-        current = {
-          ...current,
-          title: z.string().optional().parse(write.patch.title) ?? current.title,
-          isbn_13: z.string().optional().parse(write.patch.isbn13) ?? current.isbn_13,
-          metadata_etag: `"${"d".repeat(20)}${String(writes.length).padStart(2, "0")}"`,
-        };
-        owner.books = [current];
-        return savedCells(write.requestId, current, []);
-      }
-      if (name === "useCellEditReloadQuery") {
-        const manifestation = graphBook(current);
-        if (++reloads === 1)
-          return new Response(
-            JSON.stringify({ data: { manifestation }, errors: [{ message: "Reload failed" }] }),
-            { headers: { "Content-Type": "application/json" } },
-          );
-        return response({ manifestation });
-      }
-      if (name === "useCellEditReadingMutation") {
-        const write = readingVariables.parse(variables);
-        readingWrites.push(write);
-        return mode === "reading"
-          ? Promise.reject(new TypeError("Offline"))
-          : refused("updateReadingState", "StaleBaseline", "The baseline is stale.");
-      }
-    },
-  });
-  await editTitle(original.title, "Retained title");
-  const outcomes = page.getByRole("region", { name: "Edit outcomes" });
-  await expect
-    .element(outcomes.getByRole("button", { name: "Retry", exact: true }))
-    .toBeInTheDocument();
-  expect(writes).toHaveLength(1);
-  mode = "lost";
-  await userEvent.click(outcomes.getByRole("button", { name: "Retry", exact: true }));
-  await expect
-    .element(page.getByRole("button", { name: "Retrying…", exact: true }).first())
-    .toBeInTheDocument();
-  rejectDelayed?.(new TypeError("Lost acknowledgement"));
-  await expect.element(outcomes.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
-  mode = "conflict";
-  await userEvent.click(outcomes.getByRole("button", { name: "Retry", exact: true }));
-  await expect.element(outcomes.getByRole("button", { name: "Reload", exact: true })).toBeEnabled();
-  expect(writes).toHaveLength(3);
-  expect(writes[1]).toEqual(writes[0]);
-  expect(writes[2]).toEqual(writes[0]);
-  const search = page.getByRole("searchbox");
-  await userEvent.fill(search, original.title);
-  await vi.waitFor(() => {
-    expect(
-      fixture.calls.some(
-        ({ name, variables }) =>
-          name === "LibraryPageQuery" &&
-          listVariables.parse(variables).filter?.q === original.title,
-      ),
-    ).toBe(true);
-  });
-  await expect
-    .element(page.getByText("Updating results…", { exact: true }))
-    .not.toBeInTheDocument();
-  await expect.element(page.getByRole("link", { name: original.title, exact: true })).toBeVisible();
-  current = { ...current, title: "Fresh canonical", metadata_etag: '"eeeeeeeeeeeeeeeeeeeeee"' };
-  fixture.books = [current];
-  await expect
-    .element(outcomes.getByRole("button", { name: "Reload", exact: true }))
-    .toBeInTheDocument();
-  expect(outcomes.getByRole("button", { name: "Retry", exact: true }).elements()).toHaveLength(0);
-  const beforeReload = writes.length;
-  const reload = outcomes.getByRole("button", { name: "Reload", exact: true });
-  await userEvent.click(reload);
-  await expect.element(reload).not.toHaveAttribute("data-pending");
-  expect(reloads).toBe(1);
-  await expect.element(outcomes.getByText("Submitted value: Retained title")).toBeInTheDocument();
-  await expect.element(page.getByRole("link", { name: original.title, exact: true })).toBeVisible();
-  expect(writes).toHaveLength(beforeReload);
-  await userEvent.click(reload);
-  await expect.element(reload).not.toHaveAttribute("data-pending");
-  expect(reloads).toBe(2);
-  expect(writes).toHaveLength(beforeReload);
-  await expect.element(page.getByText("No books match these filters")).toBeVisible();
-  await userEvent.fill(search, "");
-  mode = "success";
-  await userEvent.click(page.getByRole("button", { name: `Edit title of ${current.title}` }));
-  await page.getByRole("dialog").getByRole("textbox").fill("Corrected title");
-  await userEvent.keyboard("{Enter}");
-  await expect.element(page.getByText("Corrected title").first()).toBeInTheDocument();
-  expect(writes.at(-1)?.baseline).toBe('"eeeeeeeeeeeeeeeeeeeeee"');
-  expect(writes.at(-1)?.requestId).not.toBe(writes.at(-2)?.requestId);
-  mode = "validation";
-  await userEvent.click(
-    page.getByRole("button", { name: "9780374528379, edit ISBN", exact: true }),
-  );
-  await page.getByRole("dialog").getByRole("textbox").fill("bad");
-  await userEvent.keyboard("{Enter}");
-  await expect.element(outcomes.getByText("Submitted value: bad")).toBeInTheDocument();
-  await expect
-    .element(page.getByRole("dialog", { name: "Edit ISBN", includeHidden: true }))
-    .not.toBeInTheDocument();
-  page
-    .getByRole("button", { name: "9780374528379, edit ISBN, not saved", exact: true })
-    .element()
-    .focus();
-  await userEvent.keyboard("{F2}");
-  const isbnInput = page.getByRole("dialog", { name: "Edit ISBN" }).getByRole("textbox");
-  await expect.element(isbnInput).toHaveValue("bad");
-  const invalidRequest = writes.at(-1);
-  mode = "success";
-  await isbnInput.fill("9780140449242");
-  await userEvent.keyboard("{Enter}");
-  await expect
-    .element(page.getByRole("button", { name: "9780140449242, edit ISBN", exact: true }))
-    .toBeInTheDocument();
-  expect(writes.at(-1)?.baseline).toBe(invalidRequest?.baseline);
-  expect(writes.at(-1)?.requestId).not.toBe(invalidRequest?.requestId);
-  mode = "locked";
-  await editTitle(current.title, "Locked title");
-  await expect.element(outcomes.getByText(/field-locked/)).toBeInTheDocument();
-  expect(outcomes.getByRole("button", { name: /Retry|Reload/ }).elements()).toHaveLength(0);
-  mode = "permission";
-  await editTitle(current.title, "Forbidden title");
-  await expect.element(outcomes.getByText("Submitted value: Forbidden title")).toBeInTheDocument();
-  await expect.element(outcomes.getByText(/forbidden/)).toBeInTheDocument();
-  expect(outcomes.getByRole("button", { name: /Retry|Reload/ }).elements()).toHaveLength(0);
-  mode = "reading";
-  await userEvent.click(page.getByRole("button", { name: "Add rating", exact: true }), {
-    position: { x: 1, y: 1 },
-  });
-  const ratingEditor = page.getByRole("dialog", { name: "Rating", exact: true });
-  await expect.element(ratingEditor).toBeVisible();
-  await userEvent.click(ratingEditor.getByRole("radio", { name: "5 stars", exact: true }));
-  await expect
-    .element(outcomes.getByRole("button", { name: "Retry", exact: true }))
-    .toBeInTheDocument();
-  current = { ...current, reading_etag: '"ffffffffffffffffffffff"' };
-  fixture.books = [current];
-  mode = "conflict";
-  await userEvent.click(outcomes.getByRole("button", { name: "Retry", exact: true }));
-  await expect
-    .element(outcomes.getByRole("button", { name: "Reload", exact: true }))
-    .toBeInTheDocument();
-  expect(readingWrites).toHaveLength(2);
-  expect(readingWrites[1]).toEqual(readingWrites[0]);
-  expect(readingWrites[0]?.baseline).toBe(original.reading_etag);
-  await expect.element(outcomes.getByText("Submitted value: 5")).toBeInTheDocument();
-  current = {
-    ...current,
-    reading_state: {
-      status: "reading",
-      rating: null,
-      progress_pct: 37,
-      started_at: null,
-      finished_at: null,
-    },
+  const current = {
+    ...original,
+    title: "Changed elsewhere",
+    metadata_etag: '"cccccccccccccccccccccc"',
   };
-  fixture.books = [current];
-  holdReplacement = true;
-  await userEvent.click(reload);
-  await expect.element(reload).not.toHaveAttribute("data-pending");
-  await expect.element(page.getByText("Updating results…", { exact: true })).toBeVisible();
-  await userEvent.click(page.getByRole("radio", { name: "Covers", exact: true }));
-  await expect.element(page.getByText("37% read", { exact: true })).toBeVisible();
-  await cleanup();
-  setRelayAccount(null);
-  vi.restoreAllMocks();
-  setRelayAccount("batch-browser");
-  const second = bookFixture({
-    id: "55555555-5555-4555-8555-555555555555",
-    work_id: "88888888-8888-4888-8888-888888888888",
-    title: "Temporary",
-    reading_etag: '"cccccccccccccccccccccc"',
-  });
-  const third = bookFixture({
-    id: "66666666-6666-4666-8666-666666666666",
-    work_id: "99999999-9999-4999-8999-999999999999",
-    title: "Conflicted",
-    reading_etag: '"dddddddddddddddddddddd"',
-  });
-  const batchWrites: z.infer<typeof readingVariables>[] = [];
-  const books = [original, second, third];
-  const baselines = books.map((book) => book.reading_etag);
+  const saved = { ...current, title: "New edit", metadata_etag: '"dddddddddddddddddddddd"' };
+  const writes: z.infer<typeof metadataVariables>[] = [];
   await renderLibrary({
-    items: books,
+    items: [original],
     visit: { view: "table" },
     handler: (name, variables, owner) => {
-      if (name === "useCellEditReadingMutation") {
-        const write = readingVariables.parse(variables);
-        batchWrites.push(write);
-        if (write.id === encodeGraphQLId("Manifestation", third.id))
-          return refused("updateReadingState", "StaleBaseline", "The baseline is stale.");
-        if (
-          write.id === encodeGraphQLId("Manifestation", second.id) &&
-          batchWrites.filter((item) => item.id === write.id).length === 1
-        )
-          return refusal("internal");
-        const index = books.findIndex(
-          (book) => encodeGraphQLId("Manifestation", book.id) === write.id,
-        );
-        const target = books.at(index) ?? original;
-        const updated = {
-          ...target,
-          reading_etag: '"eeeeeeeeeeeeeeeeeeeeee"',
-          reading_state: {
-            status: "reading" as const,
-            rating: null,
-            progress_pct: null,
-            started_at: null,
-            finished_at: null,
-          },
-        };
-        books[index] = updated;
-        owner.books = [...books];
-        return response({
-          updateReadingState: {
-            __typename: "ReadingStateUpdated",
-            manifestation: graphBook(updated),
-          },
-        });
+      if (name !== "useCellEditSaveMutation") return;
+      writes.push(metadataVariables.parse(variables));
+      if (writes.length === 1) {
+        owner.books = [current];
+        return refused("updateMetadata", "StaleBaseline", "The baseline is stale.");
       }
+      owner.books = [saved];
+      return savedCells(saved);
     },
   });
-  await expect.element(findLibraryTable()).toBeInTheDocument();
-  page.getByRole("checkbox", { name: "Select all loaded books" }).element().focus();
-  await userEvent.keyboard(" ");
-  await userEvent.click(page.getByRole("button", { name: "Set status", exact: true }));
-  await userEvent.click(page.getByRole("menuitem", { name: "Reading", exact: true }));
+  await editTitle(original.title, "Rejected draft");
+  const notice = page.getByRole("alert");
   await expect
-    .element(page.getByRole("button", { name: "Retry failed books", exact: true }))
-    .toBeInTheDocument();
-  expect(batchWrites.map((write) => write.baseline)).toEqual(baselines);
-  await expect.element(page.getByRole("checkbox", { name: /^Select Temporary/ })).toBeChecked();
-  await expect.element(page.getByRole("checkbox", { name: /^Select Conflicted/ })).toBeChecked();
-  await userEvent.click(page.getByRole("button", { name: "Retry failed books", exact: true }));
-  await vi.waitFor(() => {
-    expect(batchWrites).toHaveLength(4);
+    .element(notice)
+    .toHaveTextContent(`Title for “${original.title}”: The baseline is stale.`);
+  await expect.element(page.getByRole("link", { name: current.title, exact: true })).toBeVisible();
+  expect(writes).toHaveLength(1);
+  expect(writes[0]?.baseline).toBe(original.metadata_etag);
+  await userEvent.click(page.getByRole("button", { name: "Dismiss edit error", exact: true }));
+  await expect.element(notice).not.toBeInTheDocument();
+  await userEvent.click(page.getByRole("button", { name: `Edit title of ${current.title}` }));
+  const input = page.getByRole("dialog").getByRole("textbox");
+  await expect.element(input).toHaveValue(current.title);
+  await input.fill(saved.title);
+  await userEvent.keyboard("{Enter}");
+  await expect.element(page.getByRole("link", { name: saved.title, exact: true })).toBeVisible();
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toMatchObject({
+    baseline: current.metadata_etag,
+    patch: { title: saved.title },
   });
-  expect(batchWrites[3]).toEqual(batchWrites[1]);
-  await expect
-    .element(page.getByRole("group", { name: "Batch actions" }).getByRole("status"))
-    .toHaveTextContent("Set status for 2 of 3 books. 1 could not be saved.");
-  await expect.element(page.getByRole("checkbox", { name: /^Select Conflicted/ })).toBeChecked();
-  await expect.element(page.getByText("Submitted value: reading").first()).toBeInTheDocument();
-}, 60000);
+});

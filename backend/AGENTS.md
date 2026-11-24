@@ -47,7 +47,7 @@ capability is deficient for Reverie, with approval governed by the root rules.
   revision the write projected inside its transaction. Return the committed reading revision through
   `Manifestation::with_reading` from the write's returned row. Key revision relation cursors by the revision UUID and
   use the owning work or manifestation for SQL predicates.
-- **GraphQL formats:** A format-bearing value uses a Reverie custom scalar in `src/graphql/library.rs` (`ETag`, `UUID`,
+- **GraphQL formats:** A format-bearing value uses a Reverie custom scalar in `src/graphql/library.rs` (`ETag`,
   `DateTime`) whose `@specifiedBy` URL points at Design 0031's custom scalars section. A closed set of values is an
   enum; declare an output enum with `output_enum!` and an input enum with `input_enum!`, because `derive(Enum)` trips
   clippy's `unused_async_trait_impl` inside the derive expansion.

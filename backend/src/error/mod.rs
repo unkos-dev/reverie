@@ -40,9 +40,6 @@ pub mod problems;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
-/// Caller-facing explanation shared by the HTTP and GraphQL refusals of [`AppError::EditTooLarge`].
-pub const EDIT_TOO_LARGE: &str = "This change is too large to prepare for Undo.";
-
 /// Errors returned from Axum handlers; converted to RFC 9457 Problem
 /// Details JSON responses by the [`IntoResponse`] impl on this type.
 ///
@@ -137,15 +134,6 @@ pub enum AppError {
     /// Requested canonical fields are locked on the target edition. HTTP 409.
     #[error("metadata fields are locked")]
     FieldLocked(Vec<String>),
-    /// An exact field operation is expired, consumed, invalidated or outside its session.
-    #[error("metadata Undo is unavailable")]
-    UndoUnavailable,
-    /// An eligible operation disagrees with its recorded after-state.
-    #[error("metadata Undo state conflicts")]
-    UndoConflict,
-    /// A metadata edit or its Undo exceeds the size its exact Undo can capture. HTTP 422.
-    #[error("metadata edit exceeds the Undo capture limit")]
-    EditTooLarge,
     /// Mutation attempt on a system-managed shelf (`is_system =
     /// TRUE`). RFC 9457 `type` [`problems::SYSTEM_SHELF_IMMUTABLE`].
     /// HTTP 409 Conflict.
@@ -360,24 +348,6 @@ impl IntoResponse for AppError {
                 problems::FIELD_LOCKED,
                 "Conflict",
                 "A requested metadata field is locked.".to_owned(),
-            ),
-            Self::UndoUnavailable => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                problems::UNDO_UNAVAILABLE,
-                "Unprocessable Content",
-                "The saved field operation is unavailable.".to_owned(),
-            ),
-            Self::UndoConflict => (
-                StatusCode::CONFLICT,
-                problems::UNDO_CONFLICT,
-                "Conflict",
-                "The saved field operation conflicts with current state.".to_owned(),
-            ),
-            Self::EditTooLarge => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                problems::VALIDATION,
-                "Unprocessable Entity",
-                EDIT_TOO_LARGE.to_owned(),
             ),
             Self::MalformedQuery(msg) => (
                 StatusCode::BAD_REQUEST,

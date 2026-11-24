@@ -193,10 +193,10 @@ on `libraries`, `identifier_schemes`, `metadata_sources`, `rating_sources`, `man
 migration history table `_sqlx_migrations`; `SELECT` and `UPDATE` on `settings`; `SELECT` and `INSERT` on
 `instance_bootstrap`; and everything except `DELETE` on `user_preferences`. Works and manifestations retain SELECT and
 DELETE table grants, with INSERT and UPDATE granted only on non-revision columns to both `reverie_app` and
-`reverie_ingestion`. Neither runtime role can assign aggregate revisions or field stamps. Revision trigger functions
-have a fixed `pg_catalog, public, pg_temp` search path and no PUBLIC or runtime EXECUTE grant. Installed relation and
-reference triggers run as their migration owner and update only affected parent identities, including references outside
-the writer's RLS view. The temporary schema is last to prevent object masking, following
+`reverie_ingestion`. Neither runtime role can assign aggregate revisions. Revision trigger functions have a fixed
+`pg_catalog, public, pg_temp` search path and no PUBLIC or runtime EXECUTE grant. Installed relation and reference
+triggers run as their migration owner and update only affected parent identities, including references outside the
+writer's RLS view. The temporary schema is last to prevent object masking, following
 [PostgreSQL's definer-function guidance](https://www.postgresql.org/docs/18/sql-createfunction.html#SQL-CREATEFUNCTION-SECURITY).
 They do not grant access to those canonical values or broaden the original statement's policies.
 
@@ -234,12 +234,6 @@ table.
   add the per-table `GRANT` and `CREATE POLICY` statements.
 
 ## Data and state
-
-`metadata_undo_operations` forces RLS and permits runtime access only to rows matching `app.current_user_id`.
-`reverie_app` has capability DML access; ingestion and read-only roles have none. Handlers additionally check the actual
-browser session and visible edition. The expiry function runs as `reverie_migrator` with a fixed search path and an
-expired-row-only maintenance policy. Its only runtime grant is execution by the application role; it returns a deletion
-count, never mementos. It deletes at most 1000 expired rows per call using SELECT and DELETE privileges.
 
 Observation UPDATE grants permit current confidence, review and observation bookkeeping. Source, owning edition, field,
 value, match method, submission author and insertion key cannot be reassigned by runtime writes. Native account-deletion

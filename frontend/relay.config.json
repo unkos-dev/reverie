@@ -7,7 +7,6 @@
   "customScalarTypes": {
     "JSON": "unknown",
     "ETag": "string",
-    "UUID": "string",
     "DateTime": "string"
   },
   "requireCustomScalarTypes": true,

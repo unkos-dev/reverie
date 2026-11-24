@@ -6,10 +6,19 @@ import { getBookMetadata, updateBookMetadata, type BookMetadata } from "@/api/bo
 import { getReadingState, updateReadingState } from "@/api/reading";
 import { apiFetch } from "@/api/fetch";
 
-import { commitMutation, createOperationDescriptor, getRequest } from "relay-runtime";
+import {
+  commitMutation,
+  createOperationDescriptor,
+  getFragment,
+  getPluralSelector,
+  getRequest,
+  getSingularSelector,
+} from "relay-runtime";
 import { fetchQuery, RelayEnvironmentProvider } from "react-relay";
 import { render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
+import { z } from "zod";
+import { readerLibrary } from "@/lib/relay/reader";
 import { AuthorsCell } from "@/pages/library/table/cells";
 import { encodeGraphQLId } from "@/api/graphql";
 import { forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
@@ -25,9 +34,10 @@ import type { mutationsSaveTitleMutation as SaveTitle } from "@/lib/relay/__gene
 import ReadingDocument, {
   type useCellEditReadingMutation as ReadingMutation,
 } from "@/lib/relay/__generated__/useCellEditReadingMutation.graphql";
-import ReloadDocument, {
-  type useCellEditReloadQuery,
-} from "@/lib/relay/__generated__/useCellEditReloadQuery.graphql";
+import LibraryDocument, {
+  type readerLibraryPaginationQuery as LibraryQuery,
+} from "@/lib/relay/__generated__/readerLibraryPaginationQuery.graphql";
+import BatchRows from "@/lib/relay/__generated__/useCellEdit_batchRows.graphql";
 
 const SAMPLE_TOKEN = "abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE"; // 43 chars
 const REFRESHED_TOKEN = "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"; // 43 Z
@@ -342,7 +352,6 @@ test("metadata and reading edits keep their baseline", async () => {
   await seedCsrf(SAMPLE_TOKEN);
   const tag = '"aaaaaaaaaaaaaaaaaaaaaa"';
   const newer = '"bbbbbbbbbbbbbbbbbbbbbb"';
-  const requestId = "12345678-1234-4234-8234-123456789abc";
   const values: BookMetadata = {
     title: "Original",
     subtitle: null,
@@ -386,13 +395,8 @@ test("metadata and reading edits keep their baseline", async () => {
     }),
   );
   fetchSpy.mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }));
-  fetchSpy.mockResolvedValueOnce(
-    withEtag(
-      { values: { ...values, title: "Saved" }, request_id: requestId, operations: [] },
-      newer,
-    ),
-  );
-  const saved = await updateBookMetadata("one", { title: "Saved" }, baseline.etag, requestId);
+  fetchSpy.mockResolvedValueOnce(withEtag({ values: { ...values, title: "Saved" } }, newer));
+  const saved = await updateBookMetadata("one", { title: "Saved" }, baseline.etag);
   expect(saved.values.title).toBe("Saved");
   expect(saved.etag).toBe(newer);
   const writes = fetchSpy.mock.calls.filter(([, init]) => init?.method === "PATCH");
@@ -401,20 +405,14 @@ test("metadata and reading edits keep their baseline", async () => {
   expect(writes[0]?.[1]?.body).toBe(writes[1]?.[1]?.body);
   fetchSpy.mockResolvedValueOnce(mismatchResponse(newer));
   await expect(
-    updateBookMetadata("one", { title: "Retained" }, baseline.etag, crypto.randomUUID()),
+    updateBookMetadata("one", { title: "Retained" }, baseline.etag),
   ).rejects.toMatchObject({ status: 412 });
   fetchSpy.mockResolvedValueOnce(jsonResponse(values));
   await expect(getBookMetadata("one")).rejects.toThrow();
-  fetchSpy.mockResolvedValueOnce(
-    withEtag({ values: {}, request_id: requestId, operations: [] }, newer),
-  );
-  await expect(
-    updateBookMetadata("one", { title: "Retained" }, baseline.etag, requestId),
-  ).rejects.toThrow();
-  fetchSpy.mockResolvedValueOnce(jsonResponse({ values, request_id: requestId, operations: [] }));
-  await expect(
-    updateBookMetadata("one", { title: "Retained" }, baseline.etag, requestId),
-  ).rejects.toThrow();
+  fetchSpy.mockResolvedValueOnce(withEtag({ values: {} }, newer));
+  await expect(updateBookMetadata("one", { title: "Retained" }, baseline.etag)).rejects.toThrow();
+  fetchSpy.mockResolvedValueOnce(jsonResponse({ values }));
+  await expect(updateBookMetadata("one", { title: "Retained" }, baseline.etag)).rejects.toThrow();
   fetchSpy.mockResolvedValueOnce(withEtag(reading, tag));
   await getReadingState("two");
   fetchSpy.mockResolvedValueOnce(withEtag({ ...reading, rating: 4 }, tag));
@@ -476,9 +474,8 @@ async function graphqlBaselines(): Promise<void> {
   expect(environment.lookup(operation.fragment).data).toMatchObject({
     manifestation: { metadata: { title: "Completed", etag: latest } },
   });
-  const requestId = crypto.randomUUID();
   const variables = {
-    input: { id, baseline: baseline.etag, requestId, patch: { title: "Saved" } },
+    input: { id, baseline: baseline.etag, patch: { title: "Saved" } },
   };
   fetch.mockClear();
   fetch.mockResolvedValueOnce(
@@ -494,8 +491,6 @@ async function graphqlBaselines(): Promise<void> {
       data: {
         updateMetadata: {
           __typename: "MetadataSaved",
-          requestId,
-          operations: [],
           manifestation: {
             id,
             metadata: { ...snapshot, id: revision(latest), title: "Saved", etag: latest },
@@ -567,30 +562,54 @@ async function graphqlBaselines(): Promise<void> {
     work: null,
     createdAt: "2026-01-01T00:00:00Z",
   };
-  const readForEdit = () =>
-    fetchQuery<useCellEditReloadQuery>(environment, ReloadDocument, { id }).toPromise();
-  fetch.mockResolvedValueOnce(
-    jsonResponse({
+  function libraryResponse(row: unknown): Response {
+    return jsonResponse({
       data: {
-        manifestation: {
-          ...manifestation,
-          readingState: { id: "reading_rev_missing", status: null, rating: null },
+        books: {
+          edges: [{ cursor: "one", node: row }],
+          pageInfo: {
+            hasNextPage: false,
+            hasPreviousPage: false,
+            startCursor: "one",
+            endCursor: "one",
+          },
         },
       },
+    });
+  }
+  const readForEdit = async () => {
+    const query = await fetchQuery<LibraryQuery>(environment, LibraryDocument, {
+      sourceKey: "editing",
+    }).toPromise();
+    const connection = environment.lookup(
+      getSingularSelector(getFragment(readerLibrary), query),
+    ).data;
+    const node = z
+      .object({
+        books: z.object({
+          edges: z.array(z.object({ node: z.unknown() })),
+        }),
+      })
+      .parse(connection).books.edges[0]?.node;
+    const selector = getPluralSelector(BatchRows, [node]).selectors[0];
+    const batch = environment.lookup(selector);
+    if (batch.isMissingData) throw new Error("Incomplete reading revision.");
+    return z.object({ readingState: z.object({ etag: z.string() }) }).parse(batch.data)
+      .readingState;
+  };
+  fetch.mockResolvedValueOnce(
+    libraryResponse({
+      ...manifestation,
+      readingState: { id: "reading_rev_missing", status: null, rating: null },
     }),
   );
-  await expect(readForEdit()).rejects.toThrow();
-  fetch.mockResolvedValueOnce(jsonResponse({ data: { manifestation } }));
-  const opened = (await readForEdit())?.manifestation?.readingState;
-  if (opened === undefined) throw new Error("Expected an opening revision.");
+  await expect(readForEdit()).rejects.toThrow("Incomplete reading revision.");
+  fetch.mockResolvedValueOnce(libraryResponse(manifestation));
+  const opened = await readForEdit();
   fetch.mockResolvedValueOnce(
-    jsonResponse({
-      data: {
-        manifestation: {
-          ...manifestation,
-          readingState: { ...reading, id: "reading_rev_background", etag: newer },
-        },
-      },
+    libraryResponse({
+      ...manifestation,
+      readingState: { ...reading, id: "reading_rev_background", etag: newer },
     }),
   );
   await readForEdit();
@@ -659,9 +678,8 @@ async function graphqlBaselines(): Promise<void> {
       <AuthorsCell
         id={id}
         authors={["Old author"]}
-        baseline={tag}
         density="comfortable"
-        state={{ pending: undefined, failed: false }}
+        state={{ pending: undefined }}
         onCommit={onCommit}
       />
     </RelayEnvironmentProvider>,

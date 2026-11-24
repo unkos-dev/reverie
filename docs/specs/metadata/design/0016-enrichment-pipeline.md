@@ -233,7 +233,7 @@ ambient path and has no production caller.
 Journal upsert conflicts use the exact observation key and change only observation bookkeeping. A distinct raw
 representation or match method retains a distinct observation, even when normalised hashes agree. Quorum and
 disagreement continue to use `value_hash`. Confidence recalculation changes the current assessment without rewriting
-observation meaning. These rules apply to all observations, including those held only by a live Undo memento.
+observation meaning.
 
 The shared comparison function serves manual edits, OPF ingestion, enrichment and its dry-run preview. It normalises
 strings before sorting list fields and serialising canonical JSON for SHA-256. Other arrays retain item order, and
@@ -242,10 +242,10 @@ exists only for hashing; source payloads and exact observation keys retain their
 Publication-date validation remains separate: comparison does not infer components, truncate precision or convert
 timestamps to UTC.
 
-Canonical scalar, relation and source-pointer changes advance metadata aggregate revisions and the affected field stamps
-through the data-model triggers. A referenced journal row's value, source, origin edition, field, confidence, match type
-or submission author change also advances its current references. An unattached proposal, repeated observation count,
-last-seen time or review-activity change does not. No application-level revision call is required.
+Canonical scalar, relation and source-pointer changes advance aggregate metadata revisions through the data-model
+triggers. A referenced journal row's value, source, origin edition, field, confidence, match type or submission author
+change also advances its current references. An unattached proposal, repeated observation count, last-seen time or
+review-activity change does not. No application-level revision call is required.
 
 These triggers remain inside the existing catalogue transaction. The manifestation claim-sequence lock still precedes
 work locks and canonical writes, and the attempt retains transaction ownership through commit or acknowledged rollback.

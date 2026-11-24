@@ -21,7 +21,6 @@ const requestSchema = z.object({ id: z.string(), variables: z.record(z.string(),
 const saveSchema = z.object({
   id: z.string(),
   baseline: z.string(),
-  requestId: z.uuid(),
   patch: z.object({
     subtitle: z.string().nullable().optional(),
     publicationDate: z.string().nullable().optional(),
@@ -89,7 +88,6 @@ function refused(refusal: Record<string, unknown>): Response {
 function intercept(handlers: {
   read: () => Response | Promise<Response>;
   save?: (variables: z.infer<typeof saveSchema>) => Response | Promise<Response>;
-  resolve?: () => Response | Promise<Response>;
 }): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
     const request = requestSchema.parse(JSON.parse(z.string().parse(init?.body)));
@@ -97,8 +95,6 @@ function intercept(handlers: {
     if (name === "mutationsFormQuery") return Promise.resolve(handlers.read());
     if (name === "mutationsSaveFormMutation" && handlers.save !== undefined)
       return Promise.resolve(handlers.save(saveSchema.parse(request.variables.input)));
-    if (name === "mutationsResolveFormQuery" && handlers.resolve !== undefined)
-      return Promise.resolve(handlers.resolve());
     throw new Error(`Unexpected operation ${name ?? request.id}`);
   });
 }
@@ -131,15 +127,15 @@ afterEach(async () => {
   setRelayAccount(null);
 });
 
-// Data loss boundary: failed and uncertain writes retain values, the opening baseline and unchanged-attempt identity.
-test("awaits save, retains publication-date errors and other edits, and closes after correction", async () => {
+// REV-REQ-0019 and the data loss boundary: a refusal keeps the draft until Reload replaces its values and validator.
+test("retains refused input and reloads the Book dialog onto the current revision", async () => {
   const opening = snapshot();
   const writes: z.infer<typeof saveSchema>[] = [];
   let finish: ((value: Response) => void) | undefined;
   let saves = 0;
-  let resolutions = 0;
+  let current = opening;
   intercept({
-    read: () => response({ manifestation: { id: GRAPH_ID, metadata: opening } }),
+    read: () => response({ manifestation: { id: GRAPH_ID, metadata: current } }),
     save: (variables) => {
       writes.push(variables);
       saves += 1;
@@ -147,17 +143,11 @@ test("awaits save, retains publication-date errors and other edits, and closes a
         return new Promise<Response>((resolve) => {
           finish = resolve;
         });
-      if (saves === 2) return Promise.reject(new TypeError("Connection lost"));
-      return refused({ __typename: "StaleBaseline", message: "The baseline is stale." });
-    },
-    resolve: () => {
-      resolutions += 1;
-      return response({
-        metadataOperation: {
-          metadata: snapshot("Updated Subtitle", '"bbbbbbbbbbbbbbbbbbbbbb"'),
-          outcome: resolutions === 1 ? "UNKNOWN" : "SAVED",
-        },
-      });
+      if (saves === 2) {
+        current = snapshot("Changed elsewhere", '"bbbbbbbbbbbbbbbbbbbbbb"');
+        return refused({ __typename: "StaleBaseline", message: "The baseline is stale." });
+      }
+      return saved(snapshot("Updated Subtitle", '"cccccccccccccccccccccc"'));
     },
   });
   const rendered = await renderDialog([...FIELDS, { name: "pub_date", label: "Publication date" }]);
@@ -185,18 +175,23 @@ test("awaits save, retains publication-date errors and other edits, and closes a
   await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
   await page.getByLabelText("Publication date").fill("2024-06");
   await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
-  await expect
-    .element(page.getByRole("button", { name: "Retry", exact: true }))
-    .toBeInTheDocument();
-  expect(writes[1]?.baseline).toBe(opening.etag);
-  expect(writes[1]?.requestId).not.toBe(writes[0]?.requestId);
-  await userEvent.click(page.getByRole("button", { name: "Retry", exact: true }));
+  const reload = page.getByRole("button", { name: "Discard edits and reload", exact: true });
+  await expect.element(reload).toBeVisible();
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue("Updated Subtitle");
+  expect(writes.map((write) => write.baseline)).toEqual([opening.etag, opening.etag]);
+  await userEvent.click(reload);
+  await expect.element(page.getByLabelText("Subtitle")).toHaveValue(current.subtitle);
+  expect(writes).toHaveLength(2);
+  await page.getByLabelText("Subtitle").fill("Updated Subtitle");
+  await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
   await vi.waitFor(() => {
     expect(rendered.onOpenChange).toHaveBeenCalledWith(false);
   });
-  expect(writes[2]).toEqual(writes[1]);
   expect(writes).toHaveLength(3);
-  expect(resolutions).toBe(2);
+  expect(writes[2]).toMatchObject({
+    baseline: current.etag,
+    patch: { subtitle: "Updated Subtitle" },
+  });
   await rendered.unmount();
   let acknowledge: ((value: Response) => void) | undefined;
   vi.restoreAllMocks();

@@ -12,10 +12,10 @@ governed-by:
 ## Statement
 
 WHEN the caller is a child account, which is an account whose role is `child`, the system MUST refuse any request that
-would accept, reject or revert a metadata proposal, set or clear a metadata field lock, patch or undo catalogue
-metadata, set or clear an external identifier, or trigger an enrichment run, whatever scope the caller's credential
-carries. A refused request MUST leave catalogue metadata, canonical pointers, proposals, field locks, writeback jobs and
-enrichment state unchanged.
+would accept, reject or revert a metadata proposal, set or clear a metadata field lock, patch catalogue metadata, set or
+clear an external identifier, or trigger an enrichment run, whatever scope the caller's credential carries. A refused
+request MUST leave catalogue metadata, canonical pointers, proposals, field locks, writeback jobs and enrichment state
+unchanged.
 
 ## Rationale
 
@@ -27,8 +27,6 @@ data every other account relies on.
 
 ## Acceptance criteria
 
-- A child browser session cannot restore a saved metadata field. It receives 403 without canonical, pointer, proposal,
-  lock or writeback changes. Checked by `metadata_undo_binds_receipts_to_session` in `backend/src/routes/metadata.rs`.
 - A child account's request to accept a pending metadata proposal returns 403 without writes. Checked by
   `accept_child_account_forbidden_without_writes` in `backend/src/routes/metadata.rs`.
 - A child account's request to reject a pending metadata proposal returns 403 without writes. Checked by
@@ -46,11 +44,10 @@ data every other account relies on.
 - A child account's request to trigger an enrichment re-run answers 403 and leaves the manifestation's enrichment status
   and attempt count unchanged. Checked by `trigger_admin_resets_enrichment_state` in `backend/src/routes/enrichment.rs`.
 - A child's GraphQL `updateMetadata`, `refreshMetadata`, `acceptMetadataVersion`, `rejectMetadataVersion`,
-  `revertMetadataField`, `lockMetadataField`, `unlockMetadataField` and `undoMetadata` each produce an error with the
-  `forbidden` code. Checked by `graphql_request_boundary` in `backend/src/graphql/mod.rs`.
+  `revertMetadataField`, `lockMetadataField` and `unlockMetadataField` each produce an error with the `forbidden` code.
+  Checked by `graphql_request_boundary` in `backend/src/graphql/mod.rs`.
 - The refusals hold for a credential that carries write scope: every child request in the tests above uses a child
   credential that carries write scope.
-- An adult is not refused by this check. A non-administrator adult succeeds at accept, reject, revert, lock, unlock and
-  Undo, checked by the five review-handler tests above and `metadata_undo_binds_receipts_to_session`. An administrator
-  succeeds at a patch and at triggering enrichment, checked by `patch_child_account_forbidden` and
-  `trigger_admin_resets_enrichment_state`.
+- An adult is not refused by this check. A non-administrator adult succeeds at accept, reject, revert, lock and unlock,
+  checked by the five review-handler tests above. An administrator succeeds at a patch and at triggering enrichment,
+  checked by `patch_child_account_forbidden` and `trigger_admin_resets_enrichment_state`.

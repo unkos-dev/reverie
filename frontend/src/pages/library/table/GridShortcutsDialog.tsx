@@ -44,7 +44,6 @@ const SHORTCUT_ROWS: ShortcutRow[] = [
   { keys: ["1", "…", "5"], description: "On the rating edit button: set it. 0 clears it" },
   { keys: ["Enter"], description: "In a text editor: save" },
   { keys: ["Esc"], description: "In an editor: discard. On a row or cell: clear the selection" },
-  { keys: ["Ctrl", "Z"], description: "Undo the most recent saved edit" },
 ];
 
 type GridShortcutsDialogProps = {

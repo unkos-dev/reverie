@@ -32,5 +32,7 @@ silently advance a draft's write precondition.
   `frontend/tests/browser/LibraryPage.test.tsx`.
 - Starting a new edit from refreshed values, or activating an explicit reload, replaces the values and their matching
   validator together. Checked by `metadata and reading edits keep their baseline` in
-  `frontend/tests/browser/api/fetch.test.tsx` and `Library Retry sends the retained edit again` in
-  `frontend/tests/browser/LibraryPage.test.tsx`.
+  `frontend/tests/browser/api/fetch.test.tsx` and `a stale table save refreshes before the next edit` in
+  `frontend/tests/browser/LibraryPage.test.tsx`. The Book dialog Reload is checked by
+  `retains refused input and reloads the Book dialog onto the current revision` in
+  `frontend/tests/browser/EditMetadataDialog.test.tsx`.

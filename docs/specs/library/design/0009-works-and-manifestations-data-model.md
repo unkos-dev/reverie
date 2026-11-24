@@ -10,7 +10,7 @@ satisfies:
   - "REV-REQ-0028"
   - "REV-REQ-0065"
 governed-by:
-  - "REV-ADR-0069"
+  - "REV-ADR-0085"
   - "REV-ADR-0067"
   - "REV-ADR-0051"
   - "REV-ADR-0052"
@@ -94,10 +94,10 @@ copy of the lowest-`position` `author`-role contributor's `sort_name`, kept dire
 (`backend/src/models/work.rs`) is its only writer. `upgrade_stub` in that same file calls it whenever the extracted
 metadata carries any contributor row; `apply_contributors_patch` in `backend/src/services/metadata/editing.rs`, and
 `apply_version`'s contributors arm in that file (the accept/revert path for an enrichment-suggested contributor value),
-each call it after `insert_role_rows`/`delete_role_rows` only when the write touched the `author` role's rows; exact
-Undo restoration in `backend/src/services/metadata/editing/undo.rs` also calls it. A third `work_authors` delete site,
-`clear_field`'s contributor arm in `editing.rs`, never calls it: that path is restricted to the `editor` and
-`translator` roles, since clearing the `author` role is rejected outright, so the sort key never needs refreshing there.
+each call it after `insert_role_rows`/`delete_role_rows` only when the write touched the `author` role's rows. A third
+`work_authors` delete site, `clear_field`'s contributor arm in `editing.rs`, never calls it: that path is restricted to
+the `editor` and `translator` roles, since clearing the `author` role is rejected outright, so the sort key never needs
+refreshing there.
 
 **Sort columns.** `works.sort_title` is `title` converted to lower case; `authors.sort_name` is the comma-inverted form
 `generate_sort_name` in `backend/src/services/metadata/extractor.rs` produces (`"Tolkien, J. R. R."` from
@@ -190,8 +190,7 @@ entry point of the Design "Ingestion pipeline" into this model, called from
 `backend/src/services/ingestion/orchestrator.rs`; the same file's `rematch_on_isbn_change`, consumed by the enrichment
 orchestrator's ISBN re-check and, in `backend/src/services/metadata/editing.rs`, by `accept_manifestation`'s
 accepted-ISBN-version path, `update_book_metadata`'s touched-ISBN path and `revert_manifestation`'s ISBN revert/clear
-path, and by the ISBN restoration in exact Undo (`editing/undo.rs`); `backend/src/services/metadata/editing.rs` and
-`editing/undo.rs`, the manual review, edit and Undo operations behind the HTTP adapters in
+path; `backend/src/services/metadata/editing.rs`, the manual review and edit operations behind the HTTP adapters in
 `backend/src/routes/metadata.rs` and the GraphQL mutations, which also write `work_authors` and the vocabulary junctions
 through `apply_contributors_patch` and `apply_vocabulary_patch`; `backend/src/services/enrichment/` (`orchestrator.rs`,
 `queue.rs`, `field_lock.rs`), which applies accepted canonical values; `backend/src/services/writeback/`
@@ -225,40 +224,33 @@ and nested catalogue lookups enforce permitted manifestation visibility, with ex
 Observation identity uses edition, source, field and an exact insertion key over value, order, match method and
 submission author. The normalised value hash serves enrichment comparisons separately. Submission authorship and mutable
 review actor data have separate columns. Confidence remains a current assessment; a change on a currently referenced
-observation advances its affected field stamps. Exact Undo preserves original entity and source-pointer identities,
-including null and mixed relation attribution.
+observation advances the aggregate revisions of the works and editions that reference it.
 
 ### Metadata change identity
 
-Works and manifestations each store a `metadata_revision` of zero or greater and a `metadata_field_revisions` JSON
-object. Each object's key is a canonical field name and its value is the owner's revision at that field's last change.
-Missing keys have initial identity zero. Work keys include scalar names, `contributors.<role>` and
-`identifiers.work.<scheme>`; edition keys include scalar names, vocabulary names and
-`identifiers.manifestation.<scheme>`. Changing the parent work also stamps the edition's `work` key. Aggregate tags
-include both owner identities, so equal counters on different works remain distinct.
+Work and manifestation rows each store a non-negative `metadata_revision`. Aggregate tags include both owner identities
+and their revisions.
 
-`metadata_scalar_revision` initialises new rows and advances changed scalar keys before update. It compares values and
-source pointers together. Relation statement triggers compare transition tables, collect distinct owner-field pairs and
-advance each parent once per statement. `advance_metadata_revisions` locks affected manifestations in UUID order, then
-affected works in UUID order, before applying one grouped `UPDATE` per owner table. Referenced-name and provenance
-triggers use the same parent ordering. Scalar provenance lookups use the individual version-pointer indexes; relation
-lookups use their source-version indexes. Empty meaning changes skip these lookups. Revisions can advance several times
-within a transaction; field stamps reuse these revisions and have no independent sequence.
+`metadata_scalar_revision` initialises new rows and compares canonical values and source pointers on updates. Relation
+statement triggers inspect transition tables and advance each affected parent once per statement. Referenced-name and
+provenance changes use the same parent ordering, manifestations first and then works, each in UUID order. Scalar
+provenance lookups use version-pointer indexes. Relation lookups use source-version indexes. A single transaction can
+advance a revision several times.
 
 | Writer or action | Revision coverage |
 | ---------------- | ----------------- |
 | Manual PATCH, Accept, Clear and historical revert | Work and manifestation scalar values and version-pointer triggers |
 | Work stub creation and upgrade; ingestion registration | Initial revision zero; scalar and relation triggers on canonical wiring |
 | Contributor replacement, order, membership or source pointer | `work_authors` INSERT, UPDATE and DELETE statement triggers, keyed by role |
-| First-author sort refresh | Work scalar trigger stamps `contributors.author` |
+| First-author sort refresh | Work scalar trigger advances the work revision |
 | Vocabulary replacement, clear or source pointer | Each vocabulary junction's INSERT, UPDATE and DELETE statement triggers |
 | Work or edition identifier upsert, delete or source pointer | Identifier relation triggers, keyed by owning level and scheme |
 | Enrichment canonical batches | The same scalar and relation triggers inside the fenced catalogue transaction |
-| Referenced journal meaning change | Source, origin edition, field, value, confidence, match type or submission author changes stamp every current reference |
+| Referenced journal meaning change | Source, origin edition, field, value, confidence, match type or submission author changes advance revisions of current owners |
 | Version deletion | The SET NULL actions run scalar or relation triggers without clearing canonical values |
-| Shared author names and sort names | Author reference trigger stamps every linked contributor role |
-| Shared genre, mood or tag names | Name reference triggers stamp linked editions only when stored names differ |
-| Identifier scheme display names | Scheme reference trigger stamps every linked identifier slot |
+| Shared author names and sort names | Author reference trigger advances revisions of linked works |
+| Shared genre, mood or tag names | Name reference triggers advance revisions of linked editions only when stored names differ |
+| Identifier scheme display names | Scheme reference trigger advances revisions of linked owners |
 | Author or vocabulary deletion | Link cascades run relation DELETE triggers on surviving parents |
 | Changing the parent work | Manifestation scalar trigger and owner identities in the aggregate tag |
 | Unattached proposals, observation counts, last-seen times and review activity | Excluded unless a currently referenced meaning column also changes |
@@ -396,16 +388,15 @@ predicate, while their `INSERT`, `UPDATE` and `DELETE` policies add an independe
 `admin` or `adult` role, regardless of the manifestation's visibility.
 
 Because the shared catalogue tables carry no row-level security, the only defence against an under-privileged write is
-the operation that reaches them. Every metadata operation in `backend/src/services/metadata/editing.rs` and
-`editing/undo.rs` that writes to this model (`accept_manifestation`, `reject_manifestation`, `revert_manifestation`,
-`lock_field`, `unlock_field`, exact Undo, and `update_book_metadata`, which reaches `work_authors` via
-`apply_contributors_patch` and the vocabulary junctions via `apply_vocabulary_patch`) calls
-`CurrentUser::require_not_child` before any write, whichever transport calls it; the mechanism that check draws on is
-the Design "Authorization axes", not restated here. The writers the Designs "Ingestion pipeline", "Enrichment pipeline"
-and "Writeback pipeline" own, named in "Interfaces and dependencies", reach this model over their own dedicated
-connection pools rather than a per-request credential, so no caller-supplied role or scope gates them; the pool and
-grant boundary that confines those pools to the catalogue and pipeline tables is again the Design "Row-level security
-and database context".
+the operation that reaches them. Every metadata operation in `backend/src/services/metadata/editing.rs` that writes to
+this model (`accept_manifestation`, `reject_manifestation`, `revert_manifestation`, `lock_field`, `unlock_field`, and
+`update_book_metadata`, which reaches `work_authors` via `apply_contributors_patch` and the vocabulary junctions via
+`apply_vocabulary_patch`) calls `CurrentUser::require_not_child` before any write, whichever transport calls it; the
+mechanism that check draws on is the Design "Authorization axes", not restated here. The writers the Designs "Ingestion
+pipeline", "Enrichment pipeline" and "Writeback pipeline" own, named in "Interfaces and dependencies", reach this model
+over their own dedicated connection pools rather than a per-request credential, so no caller-supplied role or scope
+gates them; the pool and grant boundary that confines those pools to the catalogue and pipeline tables is again the
+Design "Row-level security and database context".
 
 This subject has no operational surface of its own to run, restart, or scale: it is schema, read and written entirely
 through the neighbouring subjects named above.

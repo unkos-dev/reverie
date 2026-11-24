@@ -45,33 +45,6 @@ export const mutationsSaveRefusal = graphql`
       message
       fields
     }
-    ... on EditTooLarge {
-      message
-    }
-    ... on NotFound {
-      message
-    }
-  }
-`;
-
-export const mutationsUndoRefusal = graphql`
-  fragment mutationsUndoRefusal on UndoMetadataResult {
-    ... on StaleBaseline {
-      message
-    }
-    ... on UndoUnavailable {
-      message
-    }
-    ... on UndoConflict {
-      message
-    }
-    ... on FieldsLocked {
-      message
-      fields
-    }
-    ... on EditTooLarge {
-      message
-    }
     ... on NotFound {
       message
     }
@@ -94,13 +67,6 @@ export const mutationsSaveTitleMutation = graphql`
     updateMetadata(input: $input) {
       __typename
       ... on MetadataSaved {
-        requestId
-        operations {
-          operationId
-          fieldName
-          expiresAt
-          status
-        }
         manifestation {
           id
           metadata {
@@ -109,29 +75,6 @@ export const mutationsSaveTitleMutation = graphql`
         }
       }
       ...mutationsSaveRefusal @relay(mask: false)
-    }
-  }
-`;
-
-export const mutationsUndoTitleMutation = graphql`
-  mutation mutationsUndoTitleMutation($input: UndoMetadataInput!) {
-    undoMetadata(input: $input) {
-      __typename
-      ... on MetadataRestored {
-        operation {
-          operationId
-          fieldName
-          expiresAt
-          status
-        }
-        manifestation {
-          id
-          metadata {
-            ...mutationsTitleSnapshot @relay(mask: false)
-          }
-        }
-      }
-      ...mutationsUndoRefusal @relay(mask: false)
     }
   }
 `;
@@ -162,41 +105,6 @@ export const mutationsSaveFormMutation = graphql`
         }
       }
       ...mutationsSaveRefusal @relay(mask: false)
-    }
-  }
-`;
-
-export const mutationsUndoFormMutation = graphql`
-  mutation mutationsUndoFormMutation($input: UndoMetadataInput!) {
-    undoMetadata(input: $input) {
-      __typename
-      ... on MetadataRestored {
-        operation {
-          operationId
-          fieldName
-          expiresAt
-          status
-        }
-        manifestation {
-          id
-          metadata {
-            ...mutationsFormSnapshot
-          }
-        }
-      }
-      ...mutationsUndoRefusal @relay(mask: false)
-    }
-  }
-`;
-
-export const mutationsResolveFormQuery = graphql`
-  query mutationsResolveFormQuery($id: ID!, $requestId: UUID, $operationId: UUID)
-  @throwOnFieldError {
-    metadataOperation(id: $id, requestId: $requestId, operationId: $operationId) {
-      outcome
-      metadata {
-        ...mutationsFormSnapshot
-      }
     }
   }
 `;

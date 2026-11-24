@@ -149,17 +149,9 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
     await expect(request()).rejects.toThrow();
   }
   const id = encodeGraphQLId("Manifestation", "12345678-1234-4234-8234-123456789abc");
-  const operation = {
-    operationId: "22345678-1234-4234-8234-123456789abc",
-    fieldName: "title",
-    expiresAt: "2026-11-16T00:00:00Z",
-    status: "ELIGIBLE",
-  };
   const save = {
     updateMetadata: {
       __typename: "MetadataSaved",
-      requestId: "32345678-1234-4234-8234-123456789abc",
-      operations: [operation],
       manifestation: {
         id,
         metadata: {

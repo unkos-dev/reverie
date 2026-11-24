@@ -8,7 +8,6 @@ satisfies:
   - "REV-REQ-0006"
   - "REV-REQ-0084"
   - "REV-REQ-0085"
-  - "REV-REQ-0098"
 governed-by:
   - "REV-ADR-0056"
 ---
@@ -50,13 +49,11 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
 ## Structure
 
 GraphQL root fields declare scope through guards in `backend/src/graphql/mod.rs` and `mutations.rs`. Ordinary queries
-require read scope. Mutations and `metadataOperation` require write scope independently of HTTP POST. Library uses
-`metadataOperation` with the exact operation ID for stale Undo. Reading saves retain child access to visible books.
-Metadata refresh requires an adult caller. The HTTP matrix continues to cover `/api/v1`. GraphQL request-boundary
-coverage exercises its own adapter. Role, child status and ownership remain separate checks in the shared operations.
-Metadata edits and review, plus shelf creation, rename and delete, refuse children. Reading and permitted shelf
-membership changes allow children. Exact Undo and operation resolution also require the actual live issuing browser
-session; Basic and device tokens cannot use those capabilities.
+require read scope. Mutations require write scope independently of HTTP POST. Reading saves retain child access to
+visible books. Metadata refresh requires an adult caller. The HTTP matrix continues to cover `/api/v1`. GraphQL
+request-boundary coverage exercises its own adapter. Role, child status and ownership remain separate checks in the
+shared operations. Metadata edits and review, plus shelf creation, rename and delete, refuse children. Reading and
+permitted shelf membership changes allow children.
 
 - `backend/src/auth/scope.rs` declares `Scope { Read, Write, Admin }` with a derived `Ord`, so the hierarchy
   `Read < Write < Admin` is a comparison rather than a lookup table. `Scope::for_role` gives every role `{Read, Write}`
@@ -131,9 +128,9 @@ session; Basic and device tokens cannot use those capabilities.
 ## Data and state
 
 Work and manifestation revision state belongs to database triggers. Runtime writer roles retain column grants for
-canonical and operational data but cannot assign revisions or field stamps. Definer trigger functions advance only the
-owners referenced by the original permitted change. This fan-out does not widen the request's canonical write or read
-scope; the RLS Design owns its grant and execution details.
+canonical and operational data but cannot assign revisions. Definer trigger functions advance only the owners referenced
+by the original permitted change. This fan-out does not widen the request's canonical write or read scope; the RLS
+Design owns its grant and execution details.
 
 - **Scope values** are stored only on a `device_tokens` row (`scopes: Vec<Scope>`), written once at mint by
   `create_token` and never rewritten; no endpoint edits an existing token's scopes. A session stores no scope set; it
@@ -148,10 +145,7 @@ scope; the RLS Design owns its grant and execution details.
 
 ## Runtime behaviour
 
-Exact metadata Undo and operation resolution require adult browser-session credentials with write scope. Capability
-lookups bind the actual persisted session, user and target edition; knowledge of an operation UUID alone grants no
-access. Basic and device-token metadata saves remain supported without issuing Undo capabilities. Child refusal occurs
-before catalogue writes, independently of the credential's write scope.
+Child refusal occurs before catalogue writes, independently of the credential's write scope.
 
 **A credential one scope level below an operation's requirement**, as the matrix exercises it for
 `POST /api/v1/shelves`, which requires `write`:

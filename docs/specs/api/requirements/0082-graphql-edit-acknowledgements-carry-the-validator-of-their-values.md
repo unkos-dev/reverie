@@ -9,10 +9,9 @@ title: "GraphQL edit acknowledgements carry the validator of their values"
 
 ## Statement
 
-WHEN a GraphQL metadata save, reading-state save or exact metadata Undo succeeds, the server MUST return the values the
-operation selected together with the validator of the revision those values belong to. A revision is one committed state
-of a book's metadata or a reader's reading state. A validator is the strong RFC 9110 entity-tag the server issues for
-one revision.
+WHEN a GraphQL metadata or reading-state save succeeds, the server MUST return the values the operation selected
+together with the validator of the revision those values belong to. A revision is one committed state of a book's
+metadata or a reader's reading state. A validator is the strong RFC 9110 entity-tag the server issues for one revision.
 
 ## Rationale
 
@@ -24,5 +23,3 @@ against current values.
 
 - A successful GraphQL metadata save or reading-state save returns selected values with the same validator that a fresh
   read of the resource then returns. Checked by `graphql_edit_baselines` in `backend/src/graphql/mod.rs`.
-- A successful exact Undo returns the restored values with the same validator that a fresh read of the resource then
-  returns. Checked by `graphql_undo_boundary` in `backend/src/graphql/mod.rs`.

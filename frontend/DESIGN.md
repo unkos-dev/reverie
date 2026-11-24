@@ -283,10 +283,9 @@ boundary. Removable filter chips keep a quiet outline, a muted category label, a
 
 Rows use hairline rules, a surface hover, and a soft-accent selection. Empty ratings and the ISBN editing affordance
 appear on hover or focus. The book title link and hover Open control navigate; clicking or pressing Enter on a row does
-not. In-cell save feedback stays beside the value, and failed edits also remain in Edit outcomes above the table.
-Temporary or uncertain failures show Not saved. Retry, with Retrying… during the resend. Conflicts not confirmed as
-saved show Not saved. Reload. Validation retains entered input and field feedback for correction in the existing editor.
-Permission and field-lock refusals keep their specific feedback without an unchanged resend.
+not. Enter submits and closes a cell editor. The cell shows progress while saving, then briefly marks a successful save.
+On failure, one dismissible notice above the table names the book, field and reason. A stale baseline refreshes the
+visit automatically. Reopening a cell begins a new edit with the values on screen.
 
 Covers show their selection checkbox on hover, focus, or selection. Selected artwork gains an accent outline. Reading
 progress occupies the bottom edge; status and rating sit below the author. Stored cover images take precedence over the
@@ -300,10 +299,10 @@ interaction ends.
 
 The floating batch bar keeps its selection count, Add to shelf, Set status, Refresh metadata and Clear selection
 controls together. Set status uses the existing five statuses and No status in the native menu. Refresh metadata is
-available to non-child callers and reports scheduled work. Pending and result text stay in the bar. Retry includes only
-temporary or uncertain failed books; successful and conflicted targets are excluded. Conflicts and validation keep the
-existing per-book recovery, with no bulk Reload control. The bar sits above bottom navigation at narrow widths. Subtitle
-is hidden by default; an explicit column override, including an empty array, controls its visibility.
+available to non-child callers and reports scheduled work. Pending and result text stay in the bar. Set status saves
+each book in sequence and reports how many books saved and how many could not be saved. The bar sits above bottom
+navigation at narrow widths. Subtitle is hidden by default; an explicit column override, including an empty array,
+controls its visibility.
 
 ## Do's and Don'ts
 

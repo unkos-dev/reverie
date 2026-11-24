@@ -128,10 +128,6 @@ enum Direction {
 
 scalar ETag @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")
 
-type EditTooLarge {
-  message: String!
-}
-
 type ExternalIdentifier {
   level: String!
   scheme: String!
@@ -212,20 +208,6 @@ type FieldError {
 enum FieldLockScope {
   WORK
   MANIFESTATION
-}
-
-type FieldOperation {
-  operationId: UUID!
-  fieldName: String!
-  expiresAt: DateTime!
-  status: FieldOperationStatus!
-}
-
-enum FieldOperationStatus {
-  ELIGIBLE
-  LOCKED
-  UNAVAILABLE
-  CONSUMED
 }
 
 type FieldsLocked {
@@ -411,12 +393,6 @@ type MetadataInvalid {
   fieldErrors: [FieldError!]!
 }
 
-type MetadataOperation {
-  outcome: OperationOutcome!
-  operations: [FieldOperation!]!
-  metadata: MetadataRevision!
-}
-
 input MetadataPatch {
   title: String
   subtitle: String
@@ -438,11 +414,6 @@ input MetadataPatch {
 
 type MetadataRefreshQueued {
   manifestationId: ID!
-}
-
-type MetadataRestored {
-  operation: FieldOperation!
-  manifestation: Manifestation!
 }
 
 type MetadataRevision {
@@ -471,8 +442,6 @@ type MetadataRevision {
 }
 
 type MetadataSaved {
-  requestId: UUID
-  operations: [FieldOperation!]!
   manifestation: Manifestation!
 }
 
@@ -579,7 +548,6 @@ type Mutation {
   revertMetadataField(input: RevertMetadataFieldInput!): RevertMetadataFieldResult!
   lockMetadataField(input: LockMetadataFieldInput!): LockMetadataFieldResult!
   unlockMetadataField(input: UnlockMetadataFieldInput!): UnlockMetadataFieldResult!
-  undoMetadata(input: UndoMetadataInput!): UndoMetadataResult!
 }
 
 interface Node {
@@ -588,12 +556,6 @@ interface Node {
 
 type NotFound {
   message: String!
-}
-
-enum OperationOutcome {
-  SAVED
-  RESTORED
-  UNKNOWN
 }
 
 """
@@ -619,7 +581,6 @@ type PageInfo {
 }
 
 type Query {
-  metadataOperation(id: ID!, requestId: UUID, operationId: UUID): MetadataOperation!
   viewer: Viewer!
   node(id: ID!): Node
   work(id: ID!): Work
@@ -988,24 +949,6 @@ type TagEdge {
   cursor: String!
 }
 
-scalar UUID @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")
-
-type UndoConflict {
-  message: String!
-}
-
-input UndoMetadataInput {
-  id: ID!
-  baseline: ETag!
-  operationId: UUID!
-}
-
-union UndoMetadataResult = MetadataRestored | StaleBaseline | UndoUnavailable | UndoConflict | FieldsLocked | EditTooLarge | NotFound
-
-type UndoUnavailable {
-  message: String!
-}
-
 input UnlockMetadataFieldInput {
   id: ID!
   fieldName: String!
@@ -1027,11 +970,10 @@ union UpdateLibraryPreferencesResult = LibraryPreferencesUpdated | LibraryPrefer
 input UpdateMetadataInput {
   id: ID!
   baseline: ETag!
-  requestId: UUID
   patch: MetadataPatch!
 }
 
-union UpdateMetadataResult = MetadataSaved | StaleBaseline | MetadataInvalid | FieldsLocked | EditTooLarge | NotFound
+union UpdateMetadataResult = MetadataSaved | StaleBaseline | MetadataInvalid | FieldsLocked | NotFound
 
 input UpdateReadingStateInput {
   id: ID!
