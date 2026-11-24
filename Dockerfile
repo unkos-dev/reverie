@@ -10,7 +10,7 @@
 # `:main` images with `GLIBC_2.38 not found` against a bookworm runner. Both
 # stages share the same codename so the dynamic linker can resolve every
 # symbol the release binary requests.
-FROM rust:1-slim-trixie@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe AS chef
+FROM rust:1-slim-trixie@sha256:51fdc80ccc3fb83bf14481f2cd8d0d11703eeb9f416ab47476c32a793a822307 AS chef
 # cargo-auditable embeds the resolved dependency list into the release
 # binary. Without it the published SBOM is silent about every crate,
 # because the runtime image holds a compiled binary rather than
