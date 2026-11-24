@@ -44,8 +44,9 @@ configuration unified in a root `vite.config.ts`. The forces are convergence (on
 Chosen option: **Vite+ monorepo**, because it gives the workspace one toolchain and one config home while preserving
 parity with the prior lint, format, build, and test behaviour.
 
-The workspace uses one root toolchain configuration, one pnpm lockfile and catalog, and tsgo for TypeScript checking.
-The change retains the existing lint, format, build, and test gates.
+The workspace uses one root toolchain configuration, one pnpm lockfile and catalog, and the TypeScript checker that
+Vite+ bundles with its type-aware lint backend, currently `tsrs`. The change retains the existing lint, format, build,
+and test gates.
 
 ### Consequences
 
@@ -54,7 +55,10 @@ The change retains the existing lint, format, build, and test gates.
 - Positive: a single lockfile replaces three, and it pins every platform's native binding.
 - Positive: the isolated layout means a project can only import what it declares: an undeclared transitive dependency
   fails at resolution rather than working by accident until the graph shifts.
-- Negative: vp is pre-release, so the binary is pinned.
+- Negative: each Vite+ release requires exact versions of its core, Vitest and browser provider, so the catalog pins all
+  three and a bump moves them together.
+- Negative: the type checker follows the Vite+ release rather than the frontend's `typescript` dependency. `tsrs`
+  targets TypeScript 7.1 beta while that dependency stays on 7.0.
 - Negative: tooling that walks `node_modules` must account for the virtual store: a scanner pointed at the workspace
   root sees the root's own dependencies, not a project's.
 
@@ -63,8 +67,4 @@ The change retains the existing lint, format, build, and test gates.
 Pairs with [adopt oxlint](./0030-adopt-oxlint-replacing-the-eslint-toolchain.md),
 [adopt oxfmt](./0032-adopt-oxfmt-replacing-prettier.md), and
 [adopt lefthook](./0031-adopt-lefthook-replacing-husky-and-lint-staged.md), which moved lint, format, and git hooks to
-this toolchain. The workspace-image bake that runs `vp env setup` for fresh workspaces is a follow-up for the arm64
-staging host.
-
-Vite+ 1.0, released on 28 September 2026, is the first stable release, so vp is no longer pre-release. The workspace
-catalog still pins the exact version.
+this toolchain.

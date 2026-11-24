@@ -63,7 +63,7 @@
       },
       {
         "path": "docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md",
-        "description": "Strict lint policy ratified for both stacks. Backend: clippy::pedantic + nursery + cargo-deny. Frontend: oxlint with type-aware (tsgolint) strict rules + native react rules. Style nits should already be machine-caught, so flag what slipped past. Amended by the oxlint-toolchain ADR pinned below."
+        "description": "Strict lint policy ratified for both stacks. Backend: clippy::pedantic + nursery + cargo-deny. Frontend: oxlint with type-aware (tsrs) strict rules + native react rules. Style nits should already be machine-caught, so flag what slipped past. Amended by the oxlint ADR pinned below."
       },
       {
         "path": "docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md",
@@ -106,12 +106,12 @@
         "description": "Accessibility gate and render-verification on the Playwright stack, plus the WCAG 2.2 Level AA target for the frontend. Treat a11y findings on interactive UI (semantics, ARIA, focus, keyboard) as load-bearing, not nice-to-have."
       },
       {
-        "path": "docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md",
-        "description": "Amends the strict-lint ADR: ESLint is fully removed; oxlint (native rules plus oxlint-tsgolint type-aware) is the lint engine. Docstring presence and the inline-JSX-style ban are no longer machine-gated, so the reviewer must catch them; the object-literal as-cast ban is still machine-enforced."
+        "path": "docs/adr/0079-oxlint-with-scoped-bridges-for-relay-and-schema-lint.md",
+        "description": "Amends the strict-lint ADR: oxlint (native rules plus type-aware rules through Vite+'s bundled tsrs) lints all JavaScript and TypeScript, and loads eslint-plugin-relay through its JS-plugin bridge for frontend sources. ESLint runs only GraphQL-ESLint over backend/schema.graphql; ESLint on TypeScript is a finding. Docstring presence and the inline-JSX-style ban are no longer machine-gated, so the reviewer must catch them; the object-literal as-cast ban is still machine-enforced."
       },
       {
         "path": "docs/adr/0033-adopt-the-vite-vp-monorepo-toolchain.md",
-        "description": "Structural: single pnpm workspace (frontend, website) declared in pnpm-workspace.yaml and driven by Vite+ (vp), with one root pnpm-lock.yaml and tsgo as the sole typechecker. pnpm's layout is isolated, so a per-project node_modules is correct and expected; a per-project lockfile, a second package manager, or a tsc invocation in scripts or CI is a finding."
+        "description": "Structural: single pnpm workspace (frontend, website) declared in pnpm-workspace.yaml and driven by Vite+ (vp), with one root pnpm-lock.yaml and Vite+'s bundled tsrs as the sole typechecker. pnpm's layout is isolated, so a per-project node_modules is correct and expected; a per-project lockfile, a second package manager, or a tsc invocation in scripts or CI is a finding."
       },
       {
         "path": "docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md",

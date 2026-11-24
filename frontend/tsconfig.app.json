@@ -24,7 +24,7 @@
 
     /* Path aliases for shadcn imports (@/* → src/*). `paths` entries are
        resolved relative to this config, so no `baseUrl` anchor is needed.
-       This is the form the TS 7.0 native compiler and tsgolint require.
+       This is the form the TS 7 native compiler and tsrs require.
        Vite's resolve.alias in vite.config.ts mirrors this for runtime
        resolution. */
     "paths": {
