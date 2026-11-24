@@ -1,5 +1,5 @@
 import { RouterProvider as AriaRouterProvider } from "react-aria-components";
-import { useState, ViewTransition, type ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { Outlet, useHref, useNavigate } from "react-router";
 import { RelayEnvironmentProvider } from "react-relay";
 
@@ -28,15 +28,13 @@ function App(): ReactElement | null {
         }}
         useHref={useHref}
       >
-        <ViewTransition>
-          <AppShell
-            onOpenSearch={() => {
-              setPaletteOpen(true);
-            }}
-          >
-            <Outlet />
-          </AppShell>
-        </ViewTransition>
+        <AppShell
+          onOpenSearch={() => {
+            setPaletteOpen(true);
+          }}
+        >
+          <Outlet />
+        </AppShell>
         <CommandPalette isOpen={paletteOpen} onOpenChange={setPaletteOpen} />
       </AriaRouterProvider>
     </RelayEnvironmentProvider>

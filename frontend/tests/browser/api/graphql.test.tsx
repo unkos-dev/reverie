@@ -156,8 +156,6 @@ test("GraphQL network preserves failures, CSRF recovery and account isolation", 
         id,
         metadata: {
           id: encodeGraphQLId("MetadataRevision", "52345678-1234-4234-8234-123456789abc"),
-          manifestationId: id,
-          workId: encodeGraphQLId("Work", "42345678-1234-4234-8234-123456789abc"),
           etag: '"aaaaaaaaaaaaaaaaaaaaaa"',
           title: "Saved",
         },

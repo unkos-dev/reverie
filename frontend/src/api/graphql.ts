@@ -61,93 +61,9 @@ function typeIdUuid(kind: IdKind, value: string): string | undefined {
 export function domainId(kind: IdKind): z.ZodType<string> {
   return z.string().refine((value) => typeIdUuid(kind, value) !== undefined, `Invalid ${kind} ID.`);
 }
-function connection(node: z.ZodType) {
-  return z.object({ edges: z.array(z.object({ node })) });
-}
-const authorIds = connection(z.object({ id: domainId("Author") }));
-const workProjection = z.object({ id: domainId("Work"), authors: authorIds });
-const shelfProjection = z.object({
-  id: domainId("Shelf"),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
-});
-const shelfItems = z.object({
-  id: domainId("Shelf"),
-  items: connection(z.object({ id: domainId("Manifestation") })),
-});
-const seriesWorks = z.object({
-  id: domainId("Series"),
-  works: connection(
-    workProjection.extend({
-      manifestations: connection(z.object({ id: domainId("Manifestation") })),
-    }),
-  ),
-});
-const versionProjection = z.object({
-  id: domainId("Manifestation"),
-  versions: z.object({ pending: connection(z.object({ id: domainId("MetadataVersion") })) }),
-});
-const readerProjections = new Map<string, z.ZodType>([
-  [
-    "readerDetailQuery",
-    z.object({
-      manifestation: z
-        .object({
-          id: domainId("Manifestation"),
-          createdAt: z.iso.datetime(),
-          work: workProjection
-            .extend({
-              selectedSeries: z.object({ node: z.object({ id: domainId("Series") }) }).nullable(),
-            })
-            .nullable(),
-          tags: connection(z.object({ id: domainId("Tag") })),
-        })
-        .nullable(),
-    }),
-  ],
-  ["readerWorkAuthorsPaginationQuery", z.object({ fetch__Work: workProjection.nullable() })],
-  [
-    "readerDetailTagsPaginationQuery",
-    z.object({
-      fetch__Manifestation: z
-        .object({
-          id: domainId("Manifestation"),
-          tags: connection(z.object({ id: domainId("Tag") })),
-        })
-        .nullable(),
-    }),
-  ],
-  ["readerShelfQuery", z.object({ shelf: shelfProjection.extend(shelfItems.shape).nullable() })],
-  ["readerShelfItemsPaginationQuery", z.object({ fetch__Shelf: shelfItems.nullable() })],
-  ["readerSeriesQuery", z.object({ series: seriesWorks.nullable() })],
-  ["readerSeriesWorksPaginationQuery", z.object({ fetch__Series: seriesWorks.nullable() })],
-  [
-    "CommandPaletteQuery",
-    z.object({
-      search: z.array(
-        z.object({
-          manifestation: z
-            .object({
-              id: domainId("Manifestation"),
-              work: workProjection.nullable(),
-            })
-            .nullable(),
-        }),
-      ),
-    }),
-  ],
-  ["readerVersionsQuery", z.object({ manifestation: versionProjection.nullable() })],
-  [
-    "readerVersionsPaginationQuery",
-    z.object({ fetch__Manifestation: versionProjection.nullable() }),
-  ],
-]);
 const shelf = z.object({
   id: domainId("Shelf"),
-  name: z.string(),
-  isSystem: z.boolean(),
   itemCount: z.number().int(),
-  createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
 const refusal = <T extends string>(typename: T) =>
@@ -175,48 +91,12 @@ export function decodeGraphQLId(kind: IdKind, value: string): string {
   return id;
 }
 editingProjections.set(
-  "mutationsCreateShelfMutation",
-  z.object({
-    createShelf: z.discriminatedUnion("__typename", [
-      z.object({
-        __typename: z.literal("ShelfCreated"),
-        edge: z.object({ cursor: z.string(), node: shelf }),
-      }),
-      refusal("ShelfNameInvalid"),
-    ]),
-  }),
-);
-editingProjections.set(
-  "mutationsRenameShelfMutation",
-  z.object({
-    renameShelf: z.discriminatedUnion("__typename", [
-      z.object({
-        __typename: z.literal("ShelfRenamed"),
-        shelf: shelf.pick({ id: true, name: true, updatedAt: true }),
-      }),
-      refusal("ShelfNameInvalid"),
-      refusal("SystemShelfImmutable"),
-      refusal("NotFound"),
-    ]),
-  }),
-);
-editingProjections.set(
-  "mutationsDeleteShelfMutation",
-  z.object({
-    deleteShelf: z.discriminatedUnion("__typename", [
-      z.object({ __typename: z.literal("ShelfDeleted"), deletedShelfId: domainId("Shelf") }),
-      refusal("SystemShelfImmutable"),
-      refusal("NotFound"),
-    ]),
-  }),
-);
-editingProjections.set(
   "mutationsAddShelfItemMutation",
   z.object({
     addShelfItem: z.discriminatedUnion("__typename", [
       z.object({
         __typename: z.literal("ShelfItemAdded"),
-        shelf: shelf.pick({ id: true, itemCount: true, updatedAt: true }),
+        shelf,
         edge: z.object({ cursor: z.string(), node: z.object({ id: domainId("Manifestation") }) }),
       }),
       refusal("NotFound"),
@@ -233,34 +113,7 @@ export class GraphQLExecutionError extends Error {
   }
 }
 
-const REFUSAL_ACTIONS: Readonly<Record<string, "reload" | "correct" | "none">> = {
-  StaleBaseline: "reload",
-  MetadataInvalid: "correct",
-};
-
-type MetadataRefusalResult = {
-  readonly __typename: string;
-  readonly message?: string;
-  readonly fieldErrors?: readonly { readonly field: string; readonly message: string }[];
-};
-
-/** An expected metadata mutation outcome other than success, kept as data for its owning flow. */
-export class MetadataRefusal extends Error {
-  readonly typename: string;
-  readonly fieldErrors: Readonly<Record<string, string>>;
-
-  constructor(result: MetadataRefusalResult) {
-    super(result.message ?? "Request failed.");
-    this.name = "MetadataRefusal";
-    this.typename = result.__typename;
-    this.fieldErrors = Object.fromEntries(
-      (result.fieldErrors ?? []).map(({ field, message }) => [field, message]),
-    );
-  }
-}
-
 export function editingFailureAction(error: unknown): "retry" | "reload" | "correct" | "none" {
-  if (error instanceof MetadataRefusal) return REFUSAL_ACTIONS[error.typename] ?? "none";
   const code =
     error instanceof GraphQLExecutionError ? error.errors.at(0)?.extensions?.code : undefined;
   if (code === "if-match-mismatch" || code === "if-match-required") return "reload";
@@ -305,9 +158,7 @@ export function graphqlNetwork(
         if (result.errors !== undefined) throw new GraphQLExecutionError(result.errors);
         if (result.data === undefined || result.data === null)
           throw new Error("Missing GraphQL response data.");
-        (editingProjections.get(request.name) ?? readerProjections.get(request.name))?.parse(
-          result.data,
-        );
+        editingProjections.get(request.name)?.parse(result.data);
         sink.next({ data: result.data });
         sink.complete();
       } catch (error) {

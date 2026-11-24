@@ -316,14 +316,14 @@ impl Manifestation {
             .content_rating
             .map(crate::models::content_rating::ContentRating::as_str)
     }
-    async fn ingestion_status(&self) -> &str {
-        &self.record.detail.ingestion_status
+    async fn ingestion_status(&self) -> IngestionStatus {
+        self.record.ingestion_status.into()
     }
-    async fn validation_status(&self) -> &'static str {
-        self.record.detail.validation_status.as_str()
+    async fn validation_status(&self) -> ValidationStatus {
+        self.record.detail.validation_status.into()
     }
-    async fn enrichment_status(&self) -> &str {
-        &self.record.detail.enrichment_status
+    async fn enrichment_status(&self) -> EnrichmentStatus {
+        self.record.enrichment_status.into()
     }
     #[expect(
         clippy::unused_async,
@@ -373,8 +373,6 @@ impl Manifestation {
             revision,
             relation_pages: HashMap::new(),
             isbn_mismatch: row.isbn_mismatch(),
-            work_id: id::Work::encode(row.work_id),
-            manifestation_id: id::Manifestation::encode(row.id),
             etag: ETag::from_wire(self.record.metadata_etag.clone())?,
             title: row.title.clone(),
             subtitle: row.subtitle.clone(),
@@ -521,6 +519,51 @@ impl Manifestation {
     }
 }
 
+output_enum!(IngestionStatus { Pending => "PENDING", Processing => "PROCESSING", Complete => "COMPLETE", Failed => "FAILED", Skipped => "SKIPPED" });
+
+impl From<crate::models::ingestion_status::IngestionStatus> for IngestionStatus {
+    fn from(value: crate::models::ingestion_status::IngestionStatus) -> Self {
+        use crate::models::ingestion_status::IngestionStatus as Stored;
+        match value {
+            Stored::Pending => Self::Pending,
+            Stored::Processing => Self::Processing,
+            Stored::Complete => Self::Complete,
+            Stored::Failed => Self::Failed,
+            Stored::Skipped => Self::Skipped,
+        }
+    }
+}
+
+output_enum!(ValidationStatus { Pending => "PENDING", Clean => "CLEAN", Repaired => "REPAIRED", Degraded => "DEGRADED", Failed => "FAILED" });
+
+impl From<crate::models::validation_status::ValidationStatus> for ValidationStatus {
+    fn from(value: crate::models::validation_status::ValidationStatus) -> Self {
+        use crate::models::validation_status::ValidationStatus as Stored;
+        match value {
+            Stored::Pending => Self::Pending,
+            Stored::Clean => Self::Clean,
+            Stored::Repaired => Self::Repaired,
+            Stored::Degraded => Self::Degraded,
+            Stored::Failed => Self::Failed,
+        }
+    }
+}
+
+output_enum!(EnrichmentStatus { Pending => "PENDING", InProgress => "IN_PROGRESS", Complete => "COMPLETE", Failed => "FAILED", Skipped => "SKIPPED" });
+
+impl From<crate::models::enrichment_status::EnrichmentStatus> for EnrichmentStatus {
+    fn from(value: crate::models::enrichment_status::EnrichmentStatus) -> Self {
+        use crate::models::enrichment_status::EnrichmentStatus as Stored;
+        match value {
+            Stored::Pending => Self::Pending,
+            Stored::InProgress => Self::InProgress,
+            Stored::Complete => Self::Complete,
+            Stored::Failed => Self::Failed,
+            Stored::Skipped => Self::Skipped,
+        }
+    }
+}
+
 input_output_enum!(ReadingStatus { WantToRead => "WANT_TO_READ", Reading => "READING", OnHold => "ON_HOLD", Finished => "FINISHED", Abandoned => "ABANDONED" });
 
 impl From<crate::models::reading_status::ReadingStatus> for ReadingStatus {
@@ -590,8 +633,6 @@ pub(super) struct MetadataRevision {
     #[graphql(skip)]
     relation_pages: HashMap<RelationKey, Result<RelationPage, reader::InvalidCursor>>,
     isbn_mismatch: bool,
-    work_id: ID,
-    manifestation_id: ID,
     etag: ETag,
     title: String,
     subtitle: Option<String>,
@@ -667,8 +708,6 @@ impl MetadataRevision {
             id: id::MetadataRevision::encode(revision.record_uuid().map_err(safe_error)?),
             revision,
             relation_pages: snapshot.pages.clone(),
-            work_id: id::Work::encode(snapshot.revision.work_id),
-            manifestation_id: id::Manifestation::encode(snapshot.revision.manifestation_id),
             etag: ETag::from_wire(
                 snapshot
                     .revision
@@ -976,11 +1015,11 @@ impl Shelf {
     async fn is_system(&self) -> bool {
         self.record.is_system
     }
-    async fn created_at(&self) -> String {
-        self.record.created_at.to_string()
+    async fn created_at(&self) -> DateTime {
+        DateTime(self.record.created_at)
     }
-    async fn updated_at(&self) -> String {
-        self.record.updated_at.to_string()
+    async fn updated_at(&self) -> DateTime {
+        DateTime(self.record.updated_at)
     }
     #[graphql(
         complexity = "super::complexity::nested(RelationKind::ShelfItems, first, child_complexity)?"

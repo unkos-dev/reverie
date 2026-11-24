@@ -128,6 +128,14 @@ enum Direction {
 
 scalar ETag @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")
 
+enum EnrichmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETE
+  FAILED
+  SKIPPED
+}
+
 type ExternalIdentifier {
   level: String!
   scheme: String!
@@ -254,10 +262,13 @@ input IdentifierPatch {
   value: String
 }
 
-"""
-A scalar that can represent any JSON value.
-"""
-scalar JSON
+enum IngestionStatus {
+  PENDING
+  PROCESSING
+  COMPLETE
+  FAILED
+  SKIPPED
+}
 
 enum LibraryColumn {
   SUBTITLE
@@ -335,9 +346,9 @@ type Manifestation implements Node @fetchable(field_name: "id") {
   updatedAt: String!
   coverUrl: String!
   contentRating: String
-  ingestionStatus: String!
-  validationStatus: String!
-  enrichmentStatus: String!
+  ingestionStatus: IngestionStatus!
+  validationStatus: ValidationStatus!
+  enrichmentStatus: EnrichmentStatus!
   readingState: ReadingRevision!
   metadata: MetadataRevision!
   genres(first: Int!, after: String): GenreConnection!
@@ -412,6 +423,34 @@ input MetadataPatch {
   manifestationIdentifiers: [IdentifierPatch!]
 }
 
+type MetadataProposalContributor {
+  name: String!
+  code: String
+}
+
+type MetadataProposalContributors {
+  contributors: [MetadataProposalContributor!]!
+}
+
+type MetadataProposalInteger {
+  integer: SignedInteger!
+}
+
+type MetadataProposalSeries {
+  name: String!
+  position: Float
+}
+
+type MetadataProposalStringList {
+  strings: [String!]!
+}
+
+type MetadataProposalText {
+  text: String!
+}
+
+union MetadataProposalValue = MetadataProposalText | MetadataProposalInteger | MetadataProposalStringList | MetadataProposalSeries | MetadataProposalContributors
+
 type MetadataRefreshQueued {
   manifestationId: ID!
 }
@@ -419,8 +458,6 @@ type MetadataRefreshQueued {
 type MetadataRevision {
   id: ID!
   isbnMismatch: Boolean!
-  workId: ID!
-  manifestationId: ID!
   etag: ETag!
   title: String!
   subtitle: String
@@ -449,8 +486,8 @@ type MetadataVersion {
   id: ID!
   fieldName: String!
   source: String!
-  newValue: JSON!
-  status: String!
+  newValue: MetadataProposalValue!
+  status: MetadataVersionStatus!
   confidenceScore: Float!
   matchType: String!
   observationCount: Int!
@@ -491,6 +528,11 @@ type MetadataVersionEdge {
 
 type MetadataVersionRejected {
   manifestation: Manifestation!
+}
+
+enum MetadataVersionStatus {
+  PENDING
+  REJECTED
 }
 
 type MetadataVersions {
@@ -834,8 +876,8 @@ type Shelf implements Node @fetchable(field_name: "id") {
   itemCount: Int!
   name: String!
   isSystem: Boolean!
-  createdAt: String!
-  updatedAt: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
   items(first: Int!, after: String): ManifestationConnection!
 }
 
@@ -894,6 +936,8 @@ type ShelfNameInvalid {
 type ShelfRenamed {
   shelf: Shelf!
 }
+
+scalar SignedInteger @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")
 
 enum SortField {
   TITLE
@@ -982,6 +1026,14 @@ input UpdateReadingStateInput {
 }
 
 union UpdateReadingStateResult = ReadingStateUpdated | StaleBaseline | MetadataInvalid | NotFound
+
+enum ValidationStatus {
+  PENDING
+  CLEAN
+  REPAIRED
+  DEGRADED
+  FAILED
+}
 
 """
 Caller-owned identity, independent of existing browser account projections.

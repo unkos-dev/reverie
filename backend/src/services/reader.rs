@@ -1810,6 +1810,8 @@ async fn fetch_list_rows(
 #[derive(Clone)]
 pub struct BookRecord {
     pub detail: std::sync::Arc<DetailRow>,
+    pub ingestion_status: IngestionStatus,
+    pub enrichment_status: EnrichmentStatus,
     pub reading: std::sync::Arc<ReadingStateRow>,
     pub metadata_etag: String,
     pub reading_etag: String,
@@ -1824,8 +1826,8 @@ async fn read_book_records(
     let mut reading = load_reading_state_for_manifestations(tx, &visible).await?;
     let mut records = HashMap::new();
     for row in rows {
-        parse_ingestion(&row.ingestion_status)?;
-        parse_enrichment(&row.enrichment_status)?;
+        let ingestion_status = parse_ingestion(&row.ingestion_status)?;
+        let enrichment_status = parse_enrichment(&row.enrichment_status)?;
         let reading = reading.remove(&row.id).unwrap_or_default();
         let metadata_etag = MetadataRevision {
             work_id: row.work_id,
@@ -1839,6 +1841,8 @@ async fn read_book_records(
             row.id,
             BookRecord {
                 detail: std::sync::Arc::new(row),
+                ingestion_status,
+                enrichment_status,
                 reading: std::sync::Arc::new(reading),
                 metadata_etag: metadata_etag
                     .to_str()

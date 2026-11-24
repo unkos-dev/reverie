@@ -3,7 +3,7 @@ use super::loaders::{ReaderLoader, RequestLoader, batch_error};
 use crate::error::AppError;
 use crate::services::reader::{self, VersionSet};
 use async_graphql::dataloader::Loader;
-use async_graphql::{ComplexObject, Context, ID, Json, SimpleObject};
+use async_graphql::{ComplexObject, Context, ID, SimpleObject, Union};
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -110,10 +110,12 @@ impl MetadataVersions {
                 cursor,
                 MetadataVersion {
                     id: super::id::MetadataVersion::encode(row.id),
+                    new_value: MetadataProposalValue::from_json(&row.field_name, row.new_value)
+                        .map_err(super::safe_error)?,
                     field_name: row.field_name,
                     source: row.source,
-                    new_value: Json(row.new_value),
-                    status: row.status,
+                    status: MetadataVersionStatus::try_from(row.status.as_str())
+                        .map_err(super::safe_error)?,
                     confidence_score: f64::from(row.confidence_score),
                     match_type: row.match_type,
                     observation_count: row.observation_count,
@@ -128,11 +130,129 @@ struct MetadataVersion {
     id: ID,
     field_name: String,
     source: String,
-    new_value: Json<serde_json::Value>,
-    status: String,
+    new_value: MetadataProposalValue,
+    status: MetadataVersionStatus,
     confidence_score: f64,
     match_type: String,
     observation_count: i32,
+}
+
+output_enum!(MetadataVersionStatus { Pending => "PENDING", Rejected => "REJECTED" });
+
+impl TryFrom<&str> for MetadataVersionStatus {
+    type Error = AppError;
+
+    fn try_from(status: &str) -> Result<Self, Self::Error> {
+        match status {
+            "pending" => Ok(Self::Pending),
+            "rejected" => Ok(Self::Rejected),
+            _ => Err(AppError::Internal(anyhow::anyhow!(
+                "Unsupported metadata review status"
+            ))),
+        }
+    }
+}
+
+#[derive(Union)]
+enum MetadataProposalValue {
+    Text(MetadataProposalText),
+    Integer(MetadataProposalInteger),
+    StringList(MetadataProposalStringList),
+    Series(MetadataProposalSeries),
+    Contributors(MetadataProposalContributors),
+}
+
+#[derive(SimpleObject)]
+struct MetadataProposalText {
+    text: String,
+}
+
+#[derive(SimpleObject)]
+struct MetadataProposalInteger {
+    integer: SignedInteger,
+}
+
+#[derive(SimpleObject)]
+struct MetadataProposalStringList {
+    strings: Vec<String>,
+}
+
+#[derive(SimpleObject, serde::Deserialize)]
+struct MetadataProposalSeries {
+    name: String,
+    position: Option<f64>,
+}
+
+#[derive(SimpleObject)]
+struct MetadataProposalContributors {
+    contributors: Vec<MetadataProposalContributor>,
+}
+
+#[derive(SimpleObject, serde::Deserialize)]
+struct MetadataProposalContributor {
+    name: String,
+    code: Option<String>,
+}
+
+struct SignedInteger(i64);
+
+#[async_graphql::Scalar(
+    name = "SignedInteger",
+    specified_by_url = "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars"
+)]
+impl async_graphql::ScalarType for SignedInteger {
+    fn parse(value: async_graphql::Value) -> async_graphql::InputValueResult<Self> {
+        match value {
+            async_graphql::Value::Number(number) => number.as_i64().map(Self).ok_or_else(|| {
+                async_graphql::InputValueError::custom("Expected a signed 64-bit integer.")
+            }),
+            other => Err(async_graphql::InputValueError::expected_type(other)),
+        }
+    }
+
+    fn to_value(&self) -> async_graphql::Value {
+        async_graphql::Value::Number(self.0.into())
+    }
+}
+
+impl MetadataProposalValue {
+    fn from_json(field: &str, value: serde_json::Value) -> Result<Self, AppError> {
+        use serde_json::Value;
+
+        let invalid = || AppError::Internal(anyhow::anyhow!("Unsupported metadata proposal shape"));
+        match field {
+            "series" if value.is_object() => {
+                return serde_json::from_value(value)
+                    .map(Self::Series)
+                    .map_err(|_| invalid());
+            }
+            "contributors.other" if value.is_array() => {
+                return serde_json::from_value(value)
+                    .map(|contributors| {
+                        Self::Contributors(MetadataProposalContributors { contributors })
+                    })
+                    .map_err(|_| invalid());
+            }
+            _ => {}
+        }
+        match value {
+            Value::String(text) => Ok(Self::Text(MetadataProposalText { text })),
+            Value::Number(number) => Ok(Self::Integer(MetadataProposalInteger {
+                integer: SignedInteger(number.as_i64().ok_or_else(invalid)?),
+            })),
+            Value::Array(values) => {
+                let strings = values
+                    .into_iter()
+                    .map(|value| match value {
+                        Value::String(text) => Ok(text),
+                        _ => Err(invalid()),
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(Self::StringList(MetadataProposalStringList { strings }))
+            }
+            _ => Err(invalid()),
+        }
+    }
 }
 
 pub(super) async fn resolve(

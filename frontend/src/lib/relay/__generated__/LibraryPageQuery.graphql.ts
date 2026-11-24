@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<f687abaf949d15cd83354a126c5a5400>>
- * @relayHash e2950238836ba3b5ee3b0a3b0241c61c
+ * @generated SignedSource<<697f4b5ab8a4f1fd82e97114398a655f>>
+ * @relayHash 6834b7c090df0d9efb9dc83e3c45cf94
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 2834a2b747f999507bede3e9c9e1a7175810cb82a5378f1f8ac2fd2993be03c0
+// @relayRequestID 3d9b03e707be2b74b72fc05e311300f61faa283f66422dcf37975c1f5f6fec1d
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -79,7 +79,7 @@ export type LibraryPageQuery$data = {
     };
   };
   readonly " $fragmentSpreads": FragmentRefs<
-    "LibraryPage_labels" | "TypeaheadMultiSelect_suggestions" | "readerShelves"
+    "LibraryPage_labels" | "ShelvesListPage_shelves" | "TypeaheadMultiSelect_suggestions"
   >;
 };
 export type LibraryPageQuery = {
@@ -353,7 +353,7 @@ const node: ConcreteRequest = (function () {
         {
           args: null,
           kind: "FragmentSpread",
-          name: "readerShelves",
+          name: "ShelvesListPage_shelves",
         },
         {
           args: null,
@@ -557,7 +557,7 @@ const node: ConcreteRequest = (function () {
           args: v19 /*:: as any*/,
           filters: null,
           handle: "connection",
-          key: "readerShelves_shelves",
+          key: "ShelvesListPage_shelves",
           kind: "LinkedHandle",
           name: "shelves",
         },
@@ -779,7 +779,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "2834a2b747f999507bede3e9c9e1a7175810cb82a5378f1f8ac2fd2993be03c0",
+      id: "3d9b03e707be2b74b72fc05e311300f61faa283f66422dcf37975c1f5f6fec1d",
       metadata: {},
       name: "LibraryPageQuery",
       operationKind: "query",
@@ -788,6 +788,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "a3316da9f42c04aa2a243b40da91df1c";
+(node as any).hash = "79ec067bceb6ec385d87b6d81c60de6b";
 
 export default node;

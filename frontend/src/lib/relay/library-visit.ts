@@ -646,6 +646,39 @@ export function bindLibraryVisit(owner: LibraryVisitOwner): void {
   track(entry, owner);
 }
 
+function siblingEditionsForFields(
+  fields: readonly string[],
+  id: string,
+  workId: string | undefined,
+): LibraryInvalidation["siblingEditions"] {
+  if (workId === undefined) return undefined;
+  const sharedWork = fields.some(
+    (field) =>
+      field === "title" ||
+      field === "subtitle" ||
+      field === "description" ||
+      field === "language" ||
+      field.startsWith("contributors.") ||
+      field.startsWith("identifiers.work."),
+  );
+  return sharedWork ? { id, workId } : undefined;
+}
+
+export function invalidateAfterMetadataEdit(
+  environment: Environment,
+  fields: readonly string[],
+  id: string,
+  workId: string | undefined,
+): void {
+  const siblingEditions = siblingEditionsForFields(fields, id, workId);
+  if (siblingEditions !== undefined) {
+    environment.commitUpdate((store) => {
+      store.get(siblingEditions.workId)?.invalidateRecord();
+    });
+  }
+  invalidateLibraryVisits(environment, fields, { siblingEditions });
+}
+
 export function invalidateLibraryVisits(
   environment: Environment,
   fields: readonly string[],

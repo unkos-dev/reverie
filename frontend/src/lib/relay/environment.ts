@@ -1,5 +1,5 @@
-import { Environment, Network, Observable, ROOT_ID, RecordSource, Store } from "relay-runtime";
-import { fetchQuery, loadQuery, type PreloadedQuery } from "react-relay";
+import { Environment, Network, ROOT_ID, RecordSource, Store } from "relay-runtime";
+import { loadQuery, type PreloadedQuery } from "react-relay";
 import type { GraphQLTaggedNode, MissingFieldHandler, OperationType } from "relay-runtime";
 
 import { graphqlNetwork } from "@/api/graphql";
@@ -63,53 +63,23 @@ export function confirmedRelayEnvironment(): Environment | null {
   return current?.environment ?? null;
 }
 
-export type PreparedReader<T extends OperationType> = {
-  reference: PreloadedQuery<T>;
-  data: T["response"] | undefined;
-  dispose: () => void;
-};
-
-/** Prepare one route read after account confirmation, with abort and route disposal ownership. */
-export async function prepareReader<T extends OperationType>(
+export async function preloadRouteQuery<T extends OperationType>(
   document: GraphQLTaggedNode,
   variables: T["variables"],
   signal: AbortSignal,
-): Promise<PreparedReader<T> | null> {
+): Promise<PreloadedQuery<T> | null> {
   const account = await queryClient.query(authMeQueryOptions);
-  if (account === null || signal.aborted) return null;
-  const environment = relayEnvironment();
+  const environment = current?.account === account?.id ? current?.environment : undefined;
+  if (environment === undefined || signal.aborted) return null;
   const reference = loadQuery<T>(environment, document, variables, {
-    fetchPolicy: "network-only",
+    fetchPolicy: "store-or-network",
   });
-  const dispose = () => {
-    signal.removeEventListener("abort", dispose);
-    reference.dispose();
-  };
-  signal.addEventListener("abort", dispose, { once: true });
-  try {
-    const data = await Observable.create<T["response"]>((sink) => {
-      if (signal.aborted) {
-        sink.complete();
-        return;
-      }
-      const cancel = () => {
-        sink.complete();
-      };
-      signal.addEventListener("abort", cancel, { once: true });
-      const subscription = fetchQuery<T>(environment, document, variables).subscribe(sink);
-      return () => {
-        signal.removeEventListener("abort", cancel);
-        subscription.unsubscribe();
-      };
-    }).toPromise();
-    signal.throwIfAborted();
-    if (current?.environment !== environment) {
-      dispose();
-      return null;
-    }
-    return { reference, data, dispose };
-  } catch (error) {
-    dispose();
-    throw error;
-  }
+  signal.addEventListener(
+    "abort",
+    () => {
+      reference.dispose();
+    },
+    { once: true },
+  );
+  return reference;
 }

@@ -2,14 +2,14 @@ import { cleanup, render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { RelayEnvironmentProvider, loadQuery } from "react-relay";
-import { ViewTransition } from "react";
 import { z } from "zod";
 import trustedDocuments from "../../../backend/graphql-documents.json";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import { encodeGraphQLId } from "@/api/graphql";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
-import { mutationsFormQuery } from "@/lib/relay/mutations";
-import type { mutationsFormQuery as FormQuery } from "@/lib/relay/__generated__/mutationsFormQuery.graphql";
+import formQuery, {
+  type EditMetadataDialogQuery as FormQuery,
+} from "@/lib/relay/__generated__/EditMetadataDialogQuery.graphql";
 import { EditMetadataDialog, type EditableField } from "@/pages/book/EditMetadataDialog";
 
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -37,8 +37,6 @@ function revisionId(etag: string): string {
 function snapshot(subtitle = "Original Subtitle", etag = '"aaaaaaaaaaaaaaaaaaaaaa"') {
   return {
     id: revisionId(etag),
-    workId: encodeGraphQLId("Work", WORK),
-    manifestationId: encodeGraphQLId("Manifestation", ID),
     etag,
     title: "Original Title",
     subtitle,
@@ -73,7 +71,7 @@ function saved(
         publisher: metadata.publisher,
         publicationDate: metadata.publicationDate,
         work: {
-          id: metadata.workId,
+          id: encodeGraphQLId("Work", WORK),
           title: metadata.title,
           description: metadata.description,
           language: metadata.language,
@@ -86,14 +84,23 @@ function refused(refusal: Record<string, unknown>): Response {
   return response({ updateMetadata: refusal });
 }
 function intercept(handlers: {
-  read: () => Response | Promise<Response>;
+  read: () => ReturnType<typeof snapshot>;
   save?: (variables: z.infer<typeof saveSchema>) => Response | Promise<Response>;
 }): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
     const request = requestSchema.parse(JSON.parse(z.string().parse(init?.body)));
     const name = documents[request.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
-    if (name === "mutationsFormQuery") return Promise.resolve(handlers.read());
-    if (name === "mutationsSaveFormMutation" && handlers.save !== undefined)
+    if (name === "EditMetadataDialogQuery")
+      return Promise.resolve(
+        response({
+          manifestation: {
+            id: GRAPH_ID,
+            work: { id: encodeGraphQLId("Work", WORK), __typename: "Work" },
+            metadata: handlers.read(),
+          },
+        }),
+      );
+    if (name === "EditMetadataDialogSaveMutation" && handlers.save !== undefined)
       return Promise.resolve(handlers.save(saveSchema.parse(request.variables.input)));
     throw new Error(`Unexpected operation ${name ?? request.id}`);
   });
@@ -101,18 +108,16 @@ function intercept(handlers: {
 async function renderDialog(fields: readonly EditableField[] = FIELDS) {
   const onOpenChange = vi.fn();
   const environment = relayEnvironment();
-  const queryRef = loadQuery<FormQuery>(environment, mutationsFormQuery, { id: GRAPH_ID });
+  const queryRef = loadQuery<FormQuery>(environment, formQuery, { id: GRAPH_ID });
   const result = await render(
     <RelayEnvironmentProvider environment={environment}>
-      <ViewTransition>
-        <EditMetadataDialog
-          queryRef={queryRef}
-          load={vi.fn()}
-          open
-          onOpenChange={onOpenChange}
-          fields={fields}
-        />
-      </ViewTransition>
+      <EditMetadataDialog
+        queryRef={queryRef}
+        load={vi.fn()}
+        open
+        onOpenChange={onOpenChange}
+        fields={fields}
+      />
     </RelayEnvironmentProvider>,
   );
   return { ...result, onOpenChange };
@@ -135,7 +140,7 @@ test("retains refused input and reloads the Book dialog onto the current revisio
   let saves = 0;
   let current = opening;
   intercept({
-    read: () => response({ manifestation: { id: GRAPH_ID, metadata: current } }),
+    read: () => current,
     save: (variables) => {
       writes.push(variables);
       saves += 1;
@@ -196,7 +201,7 @@ test("retains refused input and reloads the Book dialog onto the current revisio
   let acknowledge: ((value: Response) => void) | undefined;
   vi.restoreAllMocks();
   intercept({
-    read: () => response({ manifestation: { id: GRAPH_ID, metadata: opening } }),
+    read: () => opening,
     save: () =>
       new Promise<Response>((resolve) => {
         acknowledge = resolve;
@@ -221,7 +226,7 @@ test("cancelling a populated-field clear keeps the edit and sends nothing; confi
   const writes: z.infer<typeof saveSchema>[] = [];
   const current = snapshot();
   intercept({
-    read: () => response({ manifestation: { id: GRAPH_ID, metadata: current } }),
+    read: () => current,
     save: (variables) => {
       writes.push(variables);
       return saved({ ...current, subtitle: null });

@@ -6,6 +6,7 @@
  * refuses changes to them with a `SystemShelfImmutable` result.
  */
 import {
+  graphql,
   useMutation,
   usePaginationFragment,
   usePreloadedQuery,
@@ -13,21 +14,15 @@ import {
   type PreloadedQuery,
 } from "react-relay";
 import { ConnectionHandler, ROOT_ID } from "relay-runtime";
-import { readerShelves, readerShelvesQuery } from "@/lib/relay/reader";
-import {
-  mutationsCreateShelfMutation,
-  mutationsRenameShelfMutation,
-  mutationsDeleteShelfMutation,
-} from "@/lib/relay/mutations";
-import type { readerShelvesQuery as ShelvesQuery } from "@/lib/relay/__generated__/readerShelvesQuery.graphql";
+import type { ShelvesListPageQuery } from "@/lib/relay/__generated__/ShelvesListPageQuery.graphql";
 import type {
-  readerShelves$data,
-  readerShelves$key,
-} from "@/lib/relay/__generated__/readerShelves.graphql";
-import type { readerShelvesPaginationQuery as ShelvesPagination } from "@/lib/relay/__generated__/readerShelvesPaginationQuery.graphql";
-import type { mutationsCreateShelfMutation as CreateShelf } from "@/lib/relay/__generated__/mutationsCreateShelfMutation.graphql";
-import type { mutationsRenameShelfMutation as RenameShelf } from "@/lib/relay/__generated__/mutationsRenameShelfMutation.graphql";
-import type { mutationsDeleteShelfMutation as DeleteShelf } from "@/lib/relay/__generated__/mutationsDeleteShelfMutation.graphql";
+  ShelvesListPage_shelves$data,
+  ShelvesListPage_shelves$key,
+} from "@/lib/relay/__generated__/ShelvesListPage_shelves.graphql";
+import type { ShelvesListPagePaginationQuery } from "@/lib/relay/__generated__/ShelvesListPagePaginationQuery.graphql";
+import type { ShelvesListPageCreateMutation } from "@/lib/relay/__generated__/ShelvesListPageCreateMutation.graphql";
+import type { ShelvesListPageRenameMutation } from "@/lib/relay/__generated__/ShelvesListPageRenameMutation.graphql";
+import type { ShelvesListPageDeleteMutation } from "@/lib/relay/__generated__/ShelvesListPageDeleteMutation.graphql";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import {
   Suspense,
@@ -50,30 +45,119 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import type { loader } from "@/routes/shelves";
 
-const SHELVES_CONNECTION = ConnectionHandler.getConnectionID(ROOT_ID, "readerShelves_shelves");
+const shelvesListPageQuery = graphql`
+  query ShelvesListPageQuery @throwOnFieldError {
+    ...ShelvesListPage_shelves
+  }
+`;
 
-type ShelfRow = readerShelves$data["shelves"]["edges"][number]["node"];
+const shelvesFragment = graphql`
+  fragment ShelvesListPage_shelves on Query
+  @throwOnFieldError
+  @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
+  @refetchable(queryName: "ShelvesListPagePaginationQuery") {
+    shelves(first: $count, after: $cursor) @connection(key: "ShelvesListPage_shelves") {
+      edges {
+        node {
+          id
+          name
+          isSystem
+          itemCount
+        }
+      }
+    }
+  }
+`;
+
+const createShelfMutation = graphql`
+  mutation ShelvesListPageCreateMutation($input: CreateShelfInput!, $connections: [ID!]!) {
+    createShelf(input: $input) {
+      __typename
+      ... on ShelfCreated {
+        edge @appendEdge(connections: $connections) {
+          cursor
+          node {
+            id
+            name
+            isSystem
+            itemCount
+            createdAt
+            updatedAt
+          }
+        }
+      }
+      ... on ShelfNameInvalid {
+        message
+      }
+    }
+  }
+`;
+
+const renameShelfMutation = graphql`
+  mutation ShelvesListPageRenameMutation($input: RenameShelfInput!) {
+    renameShelf(input: $input) {
+      __typename
+      ... on ShelfRenamed {
+        shelf {
+          id
+          name
+          updatedAt
+        }
+      }
+      ... on ShelfNameInvalid {
+        message
+      }
+      ... on SystemShelfImmutable {
+        message
+      }
+      ... on NotFound {
+        message
+      }
+    }
+  }
+`;
+
+const deleteShelfMutation = graphql`
+  mutation ShelvesListPageDeleteMutation($input: DeleteShelfInput!, $connections: [ID!]!) {
+    deleteShelf(input: $input) {
+      __typename
+      ... on ShelfDeleted {
+        deletedShelfId @deleteEdge(connections: $connections)
+      }
+      ... on SystemShelfImmutable {
+        message
+      }
+      ... on NotFound {
+        message
+      }
+    }
+  }
+`;
+
+const SHELVES_CONNECTION = ConnectionHandler.getConnectionID(ROOT_ID, "ShelvesListPage_shelves");
+
+type ShelfRow = ShelvesListPage_shelves$data["shelves"]["edges"][number]["node"];
 
 /** Top-level page component (Suspense boundary + content). */
 export function ShelvesListPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
-  if (prepared === null) return null;
+  const [reference] = useQueryLoader<ShelvesListPageQuery>(shelvesListPageQuery, prepared);
+  if (reference == null || prepared === null) return null;
   return (
     <Suspense fallback={<ShelvesSkeleton />}>
-      <ShelvesContent reference={prepared.reference} />
+      <ShelvesContent reference={reference} />
     </Suspense>
   );
 }
 
 function ShelvesContent({
   reference,
-}: Readonly<{ reference: PreloadedQuery<ShelvesQuery> }>): ReactElement {
-  const [current] = useQueryLoader<ShelvesQuery>(readerShelvesQuery, reference);
-  const query = usePreloadedQuery<ShelvesQuery>(readerShelvesQuery, current ?? reference);
+}: Readonly<{ reference: PreloadedQuery<ShelvesListPageQuery> }>): ReactElement {
+  const query = usePreloadedQuery<ShelvesListPageQuery>(shelvesListPageQuery, reference);
   const { data, hasNext, isLoadingNext, loadNext, refetch } = usePaginationFragment<
-    ShelvesPagination,
-    readerShelves$key
-  >(readerShelves, query);
+    ShelvesListPagePaginationQuery,
+    ShelvesListPage_shelves$key
+  >(shelvesFragment, query);
   const [error, setError] = useState<Error | null>(null);
   const [, startTransition] = useTransition();
   useEffect(() => {
@@ -85,12 +169,16 @@ function ShelvesContent({
       refetch({}, { fetchPolicy: "network-only", onComplete: setError });
     });
   }
-  const [commitCreate, createPending] = useMutation<CreateShelf>(mutationsCreateShelfMutation);
-  const [commitRename, renamePending] = useMutation<RenameShelf>(mutationsRenameShelfMutation);
-  const [commitDelete, deletePending] = useMutation<DeleteShelf>(mutationsDeleteShelfMutation);
+  const [commitCreate, createPending] =
+    useMutation<ShelvesListPageCreateMutation>(createShelfMutation);
+  const [commitRename, renamePending] =
+    useMutation<ShelvesListPageRenameMutation>(renameShelfMutation);
+  const [commitDelete, deletePending] =
+    useMutation<ShelvesListPageDeleteMutation>(deleteShelfMutation);
   const [createOpen, setCreateOpen] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<ShelfRow | null>(null);
-  const [deletion, setDeletion] = useState<{ shelf: ShelfRow; error: string | null }>();
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const renameTarget = shelves.find((shelf) => shelf.id === renameId);
+  const [deletion, setDeletion] = useState<{ id: string; name: string; error: string | null }>();
   if (error !== null) throw error;
   function create(name: string): Promise<string | null> {
     return new Promise((resolve, reject) => {
@@ -115,13 +203,13 @@ function ShelvesContent({
   }
   function rename(name: string): Promise<string | null> {
     const target = renameTarget;
-    if (target === null) return Promise.resolve(null);
+    if (target === undefined) return Promise.resolve(null);
     return new Promise((resolve, reject) => {
       commitRename({
         variables: { input: { id: target.id, name } },
         onCompleted: ({ renameShelf }) => {
           if (renameShelf.__typename === "ShelfRenamed") {
-            setRenameTarget(null);
+            setRenameId(null);
             resolve(null);
           } else if (
             renameShelf.__typename === "ShelfNameInvalid" ||
@@ -140,10 +228,10 @@ function ShelvesContent({
       });
     });
   }
-  function remove(shelf: ShelfRow): void {
-    setDeletion({ shelf, error: null });
+  function remove({ id, name }: ShelfRow): void {
+    setDeletion({ id, name, error: null });
     commitDelete({
-      variables: { input: { id: shelf.id }, connections: [SHELVES_CONNECTION] },
+      variables: { input: { id }, connections: [SHELVES_CONNECTION] },
       updater: (store, response) => {
         if (response?.deleteShelf.__typename === "ShelfDeleted")
           store.get(response.deleteShelf.deletedShelfId)?.invalidateRecord();
@@ -152,7 +240,8 @@ function ShelvesContent({
         if (deleteShelf.__typename === "ShelfDeleted") setDeletion(undefined);
         else
           setDeletion({
-            shelf,
+            id,
+            name,
             error:
               deleteShelf.__typename === "SystemShelfImmutable" ||
               deleteShelf.__typename === "NotFound"
@@ -161,7 +250,7 @@ function ShelvesContent({
           });
       },
       onError: (failure) => {
-        setDeletion({ shelf, error: failure.message });
+        setDeletion({ id, name, error: failure.message });
         reload();
       },
     });
@@ -188,7 +277,7 @@ function ShelvesContent({
 
       {deletion?.error ? (
         <FieldError>
-          Could not delete {deletion.shelf.name}: {deletion.error}
+          Could not delete {deletion.name}: {deletion.error}
         </FieldError>
       ) : null}
       <ul className="space-y-2">
@@ -218,7 +307,7 @@ function ShelvesContent({
                   size="icon"
                   aria-label="Rename shelf"
                   onPress={() => {
-                    setRenameTarget(shelf);
+                    setRenameId(shelf.id);
                   }}
                 >
                   <Pencil className="size-4" aria-hidden="true" />
@@ -231,8 +320,8 @@ function ShelvesContent({
                   onPress={() => {
                     remove(shelf);
                   }}
-                  isPending={deletePending && deletion?.shelf.id === shelf.id}
-                  isDisabled={deletePending && deletion?.shelf.id !== shelf.id}
+                  isPending={deletePending && deletion?.id === shelf.id}
+                  isDisabled={deletePending && deletion?.id !== shelf.id}
                 >
                   <Trash2 className="size-4" aria-hidden="true" />
                 </Button>
@@ -258,11 +347,11 @@ function ShelvesContent({
         // name on the next open (React only runs the initializer once
         // per mount).
         key={renameTarget?.id ?? "none"}
-        open={renameTarget !== null}
+        open={renameTarget !== undefined}
         title="Rename shelf"
         initialName={renameTarget?.name ?? ""}
         onClose={() => {
-          setRenameTarget(null);
+          setRenameId(null);
         }}
         onSubmit={rename}
         pending={renamePending}

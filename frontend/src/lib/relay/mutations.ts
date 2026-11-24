@@ -3,29 +3,8 @@ import { graphql } from "react-relay";
 export const mutationsTitleSnapshot = graphql`
   fragment mutationsTitleSnapshot on MetadataRevision {
     id
-    workId
-    manifestationId
     etag
     title
-  }
-`;
-
-export const mutationsFormSnapshot = graphql`
-  fragment mutationsFormSnapshot on MetadataRevision @throwOnFieldError {
-    id
-    workId
-    manifestationId
-    etag
-    title
-    subtitle
-    description
-    language
-    publisher
-    publicationDate
-    isbn10
-    isbn13
-    isbnMismatch
-    pages
   }
 `;
 
@@ -79,109 +58,12 @@ export const mutationsSaveTitleMutation = graphql`
   }
 `;
 
-export const mutationsFormQuery = graphql`
-  query mutationsFormQuery($id: ID!) @throwOnFieldError {
-    manifestation(id: $id) {
-      id
-      metadata {
-        ...mutationsFormSnapshot
-      }
-    }
-  }
-`;
-
-export const mutationsSaveFormMutation = graphql`
-  mutation mutationsSaveFormMutation($input: UpdateMetadataInput!) {
-    updateMetadata(input: $input) {
-      __typename
-      ... on MetadataSaved {
-        manifestation {
-          id
-          metadata {
-            ...mutationsFormSnapshot
-          }
-          ...readerDetailEditable
-          ...readerVersions
-        }
-      }
-      ...mutationsSaveRefusal @relay(mask: false)
-    }
-  }
-`;
-
 export const mutationsRevisionQuery = graphql`
   query mutationsRevisionQuery($id: ID!) {
     manifestation(id: $id) {
       id
       metadata {
-        workId
-        manifestationId
         etag
-      }
-    }
-  }
-`;
-
-export const mutationsCreateShelfMutation = graphql`
-  mutation mutationsCreateShelfMutation($input: CreateShelfInput!, $connections: [ID!]!) {
-    createShelf(input: $input) {
-      __typename
-      ... on ShelfCreated {
-        edge @appendEdge(connections: $connections) {
-          cursor
-          node {
-            id
-            name
-            isSystem
-            itemCount
-            createdAt
-            updatedAt
-          }
-        }
-      }
-      ... on ShelfNameInvalid {
-        message
-      }
-    }
-  }
-`;
-
-export const mutationsRenameShelfMutation = graphql`
-  mutation mutationsRenameShelfMutation($input: RenameShelfInput!) {
-    renameShelf(input: $input) {
-      __typename
-      ... on ShelfRenamed {
-        shelf {
-          id
-          name
-          updatedAt
-        }
-      }
-      ... on ShelfNameInvalid {
-        message
-      }
-      ... on SystemShelfImmutable {
-        message
-      }
-      ... on NotFound {
-        message
-      }
-    }
-  }
-`;
-
-export const mutationsDeleteShelfMutation = graphql`
-  mutation mutationsDeleteShelfMutation($input: DeleteShelfInput!, $connections: [ID!]!) {
-    deleteShelf(input: $input) {
-      __typename
-      ... on ShelfDeleted {
-        deletedShelfId @deleteEdge(connections: $connections)
-      }
-      ... on SystemShelfImmutable {
-        message
-      }
-      ... on NotFound {
-        message
       }
     }
   }
@@ -202,88 +84,6 @@ export const mutationsAddShelfItemMutation = graphql`
           node {
             id
           }
-        }
-      }
-      ... on NotFound {
-        message
-      }
-    }
-  }
-`;
-
-export const mutationsAcceptMetadataVersionMutation = graphql`
-  mutation mutationsAcceptMetadataVersionMutation($input: AcceptMetadataVersionInput!) {
-    acceptMetadataVersion(input: $input) {
-      __typename
-      ... on MetadataVersionAccepted {
-        manifestation {
-          id
-          metadata {
-            ...mutationsFormSnapshot
-          }
-          ...readerDetailBook
-          ...readerVersions
-        }
-      }
-      ... on FieldsLocked {
-        message
-        fields
-      }
-      ... on MetadataInvalid {
-        message
-        fieldErrors {
-          field
-          message
-        }
-      }
-      ... on NotFound {
-        message
-      }
-    }
-  }
-`;
-
-export const mutationsRejectMetadataVersionMutation = graphql`
-  mutation mutationsRejectMetadataVersionMutation($input: RejectMetadataVersionInput!) {
-    rejectMetadataVersion(input: $input) {
-      __typename
-      ... on MetadataVersionRejected {
-        manifestation {
-          id
-          ...readerDetailBook
-          ...readerVersions
-        }
-      }
-      ... on NotFound {
-        message
-      }
-    }
-  }
-`;
-
-export const mutationsRevertMetadataFieldMutation = graphql`
-  mutation mutationsRevertMetadataFieldMutation($input: RevertMetadataFieldInput!) {
-    revertMetadataField(input: $input) {
-      __typename
-      ... on MetadataFieldReverted {
-        manifestation {
-          id
-          metadata {
-            ...mutationsFormSnapshot
-          }
-          ...readerDetailBook
-          ...readerVersions
-        }
-      }
-      ... on FieldsLocked {
-        message
-        fields
-      }
-      ... on MetadataInvalid {
-        message
-        fieldErrors {
-          field
-          message
         }
       }
       ... on NotFound {

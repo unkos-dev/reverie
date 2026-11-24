@@ -4,67 +4,127 @@
  * Lists recorded work metadata in series order.
  */
 import {
+  graphql,
   useFragment,
   usePaginationFragment,
   usePreloadedQuery,
   useQueryLoader,
   type PreloadedQuery,
 } from "react-relay";
-import {
-  readerSeriesQuery,
-  readerSeries,
-  readerSeriesWorks,
-  readerWorkAuthors,
-} from "@/lib/relay/reader";
-import type { readerSeriesQuery as SeriesQuery } from "@/lib/relay/__generated__/readerSeriesQuery.graphql";
-import type { readerSeries$key } from "@/lib/relay/__generated__/readerSeries.graphql";
-import type {
-  readerSeriesWorks$key,
-  readerSeriesWorks$data,
-} from "@/lib/relay/__generated__/readerSeriesWorks.graphql";
-import type { readerSeriesWorksPaginationQuery as WorksPagination } from "@/lib/relay/__generated__/readerSeriesWorksPaginationQuery.graphql";
-import type { readerWorkAuthors$key } from "@/lib/relay/__generated__/readerWorkAuthors.graphql";
-import type { readerWorkAuthorsPaginationQuery as AuthorsPagination } from "@/lib/relay/__generated__/readerWorkAuthorsPaginationQuery.graphql";
+import type { SeriesPageQuery } from "@/lib/relay/__generated__/SeriesPageQuery.graphql";
+import type { SeriesPage_series$key } from "@/lib/relay/__generated__/SeriesPage_series.graphql";
+import type { SeriesPage_works$key } from "@/lib/relay/__generated__/SeriesPage_works.graphql";
+import type { SeriesPageWorksPaginationQuery } from "@/lib/relay/__generated__/SeriesPageWorksPaginationQuery.graphql";
+import type { SeriesPage_work$key } from "@/lib/relay/__generated__/SeriesPage_work.graphql";
+import type { SeriesPage_authors$key } from "@/lib/relay/__generated__/SeriesPage_authors.graphql";
+import type { SeriesPageAuthorsPaginationQuery } from "@/lib/relay/__generated__/SeriesPageAuthorsPaginationQuery.graphql";
 import { useEffect, useState, Suspense, type ReactElement } from "react";
 import { Link, useLoaderData } from "react-router";
 
+import { NotFound } from "@/components/RootErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import type { loader } from "@/routes/series";
 
-/**
- * Top-level page component. The `<Suspense>` boundary covers the
- * cold-cache path; the route loader pre-warms the cache so render is
- * synchronous on direct navigation.
- */
+const seriesPageQuery = graphql`
+  query SeriesPageQuery($id: ID!) @throwOnFieldError {
+    series(id: $id) {
+      ...SeriesPage_series
+    }
+  }
+`;
+
+const seriesFragment = graphql`
+  fragment SeriesPage_series on Series @throwOnFieldError {
+    name
+    ...SeriesPage_works
+  }
+`;
+
+const seriesWorks = graphql`
+  fragment SeriesPage_works on Series
+  @throwOnFieldError
+  @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
+  @refetchable(queryName: "SeriesPageWorksPaginationQuery", preferFetchable: true) {
+    works(first: $count, after: $cursor) @connection(key: "SeriesPage_works") {
+      edges {
+        position
+        node {
+          id
+          ...SeriesPage_work
+        }
+      }
+    }
+  }
+`;
+
+const seriesWork = graphql`
+  fragment SeriesPage_work on Work @throwOnFieldError {
+    title
+    ...SeriesPage_authors
+    manifestations(first: 1) {
+      edges {
+        node {
+          id
+          coverUrl
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
+const seriesAuthors = graphql`
+  fragment SeriesPage_authors on Work
+  @throwOnFieldError
+  @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
+  @refetchable(queryName: "SeriesPageAuthorsPaginationQuery", preferFetchable: true) {
+    id
+    authors(first: $count, after: $cursor) @connection(key: "SeriesPage_authors") {
+      edges {
+        node {
+          id
+          name
+        }
+      }
+    }
+  }
+`;
+
 export function SeriesPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
-  if (prepared === null) return null;
+  const [reference] = useQueryLoader<SeriesPageQuery>(seriesPageQuery, prepared);
+  if (reference == null || prepared === null) return null;
   return (
     <Suspense fallback={<SeriesSkeleton />}>
-      <SeriesContent reference={prepared.reference} />
+      <SeriesContent reference={reference} />
     </Suspense>
   );
 }
 
 function SeriesContent({
   reference,
-}: Readonly<{ reference: PreloadedQuery<SeriesQuery> }>): ReactElement {
-  const [current] = useQueryLoader<SeriesQuery>(readerSeriesQuery, reference);
-  const query = usePreloadedQuery<SeriesQuery>(readerSeriesQuery, current ?? reference);
-  const data = useFragment<readerSeries$key>(readerSeries, query.series);
+}: Readonly<{ reference: PreloadedQuery<SeriesPageQuery> }>): ReactElement {
+  const query = usePreloadedQuery<SeriesPageQuery>(seriesPageQuery, reference);
+  const data = useFragment<SeriesPage_series$key>(seriesFragment, query.series);
   const {
     data: works,
     hasNext,
     isLoadingNext,
     loadNext,
-  } = usePaginationFragment<WorksPagination, readerSeriesWorks$key>(readerSeriesWorks, data);
+  } = usePaginationFragment<SeriesPageWorksPaginationQuery, SeriesPage_works$key>(
+    seriesWorks,
+    data,
+  );
   const [error, setError] = useState<Error | null>(null);
   useEffect(() => {
     if (hasNext && !isLoadingNext) loadNext(50, { onComplete: setError });
   }, [hasNext, isLoadingNext, loadNext]);
   if (error !== null) throw error;
-  if (data == null) throw new Error("Series not found.");
+  if (data == null) return <NotFound />;
   return (
     <div className="mx-auto max-w-5xl px-6 py-10 sm:px-10">
       <header className="mb-8">
@@ -75,7 +135,7 @@ function SeriesContent({
       </header>
       <ol className="space-y-3">
         {works?.works.edges.map((edge) => (
-          <SeriesWorkRow key={edge.node.id} edge={edge} />
+          <SeriesWorkRow key={edge.node.id} work={edge.node} position={edge.position ?? null} />
         ))}
       </ol>
     </div>
@@ -83,16 +143,15 @@ function SeriesContent({
 }
 
 function SeriesWorkRow({
-  edge,
-}: Readonly<{
-  edge: readerSeriesWorks$data["works"]["edges"][number];
-}>): ReactElement {
-  const work = edge.node;
+  work: workKey,
+  position,
+}: Readonly<{ work: SeriesPage_work$key; position: number | null }>): ReactElement {
+  const work = useFragment(seriesWork, workKey);
   const edition = work.manifestations.edges.at(0)?.node;
   const { data, hasNext, isLoadingNext, loadNext } = usePaginationFragment<
-    AuthorsPagination,
-    readerWorkAuthors$key
-  >(readerWorkAuthors, work);
+    SeriesPageAuthorsPaginationQuery,
+    SeriesPage_authors$key
+  >(seriesAuthors, work);
   const [error, setError] = useState<Error | null>(null);
   useEffect(() => {
     if (hasNext && !isLoadingNext) loadNext(20, { onComplete: setError });
@@ -110,9 +169,7 @@ function SeriesWorkRow({
         <div className="border-border bg-surface-2 h-16 w-12 rounded-sm border" />
       )}
       <div className="min-w-0 flex-1">
-        <p className="text-fg-muted text-xs">
-          {edge.position == null ? "" : `#${String(edge.position)}`}
-        </p>
+        <p className="text-fg-muted text-xs">{position == null ? "" : `#${String(position)}`}</p>
         <Link
           to={`/b/${edition?.id ?? ""}`}
           className="text-fg block truncate text-base font-medium hover:underline"

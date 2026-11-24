@@ -1443,6 +1443,48 @@ mod tests {
         assert_eq!(cleared["rating"], 3);
     }
 
+    async fn seed_structured_proposals(pool: &PgPool, edition: uuid::Uuid) {
+        use crate::services::metadata::{
+            draft,
+            extractor::{ExtractedMetadata, SeriesInfo, UnmappedContributor},
+        };
+
+        let metadata = ExtractedMetadata {
+            series: Some(SeriesInfo {
+                name: "Imported series".into(),
+                position: Some(2.5),
+            }),
+            unmapped_contributors: vec![
+                UnmappedContributor {
+                    name: "Imported contributor".into(),
+                    code: Some("ill".into()),
+                },
+                UnmappedContributor {
+                    name: "Uncredited role".into(),
+                    code: None,
+                },
+            ],
+            title: None,
+            sort_title: None,
+            subtitle: None,
+            description: None,
+            language: None,
+            creators: vec![],
+            pages: None,
+            publisher: None,
+            pub_date: None,
+            isbn_10: None,
+            isbn_13: None,
+            subjects: vec![],
+            inversion: None,
+            confidence: 0.5,
+        };
+        let mut connection = pool.acquire().await.unwrap();
+        draft::write_drafts(&mut connection, edition, &metadata)
+            .await
+            .unwrap();
+    }
+
     async fn trusted_editing_document(pool: &PgPool, document_id: &str, text: &str) {
         let fixture_name = format!("trusted-{}", uuid::Uuid::new_v4());
         let (user, server, csrf) = editing_browser(pool, &fixture_name).await;
@@ -1456,6 +1498,9 @@ mod tests {
             assert_graph_result(&locked, "lockMetadataField", "MetadataFieldLockAdded");
         }
         let version = sqlx::query_scalar!("INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, status, confidence_score) VALUES ($1, 'opf', 'description', to_jsonb('Trusted proposal'::text), decode('00000001', 'hex'), 'title', 'pending'::metadata_review_status, 0.5) RETURNING id", edition).fetch_one(&ing).await.unwrap();
+        if text.contains("pending(") {
+            seed_structured_proposals(&ing, edition).await;
+        }
         let current = browser_graph(&server, &csrf, TITLE_READ, json!({"id":id})).await;
         let mut baseline = current["data"]["manifestation"]["metadata"]["etag"].clone();
         let mut patch = json!({"title":"Trusted title"});
@@ -1529,6 +1574,8 @@ mod tests {
             serde_json::from_str(include_str!("../../graphql-documents.json")).unwrap();
         assert!(!documents.is_empty());
         let fixture = reader_fixture(&pool).await;
+        let ingestion = db::ingestion_pool_for(&pool).await;
+        seed_structured_proposals(&ingestion, fixture.visible).await;
         for id in documents.keys() {
             let envelope = serde_json::from_value(json!({"id":id})).unwrap();
             assert_eq!(
@@ -1546,7 +1593,31 @@ mod tests {
                 .json(&json!({"id": id, "variables": reader_variables(&documents[id], &fixture)}))
                 .await;
             response.assert_status_ok();
-            assert!(response.json::<serde_json::Value>().get("errors").is_none());
+            let body: serde_json::Value = response.json();
+            assert_graph_ok(&body);
+            if documents[id].starts_with("query VersionsTabQuery") {
+                let values: BTreeMap<_, _> =
+                    body["data"]["manifestation"]["versions"]["pending"]["edges"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|edge| {
+                            let node = &edge["node"];
+                            (node["fieldName"].as_str().unwrap(), &node["newValue"])
+                        })
+                        .collect();
+                assert_eq!(
+                    values["series"],
+                    &json!({"__typename":"MetadataProposalSeries","name":"Imported series","position":2.5})
+                );
+                assert_eq!(
+                    values["contributors.other"],
+                    &json!({"__typename":"MetadataProposalContributors","contributors":[
+                        {"name":"Imported contributor","code":"ill"},
+                        {"name":"Uncredited role","code":null}
+                    ]})
+                );
+            }
         }
         for request in [
             json!({"id":"unknown"}),
@@ -1609,9 +1680,10 @@ mod tests {
     }
 
     fn reader_variables(document: &str, fixture: &ReaderFixture) -> serde_json::Value {
-        let id = if document.contains("readerShelfQuery") || document.contains("fetch__Shelf(") {
+        let id = if document.contains("ShelfDetailPageQuery") || document.contains("fetch__Shelf(")
+        {
             id::Shelf::encode(fixture.shelf_a)
-        } else if document.contains("readerSeriesQuery") || document.contains("fetch__Series(") {
+        } else if document.contains("SeriesPageQuery") || document.contains("fetch__Series(") {
             id::Series::encode(fixture.series)
         } else if document.contains("fetch__Work(") {
             id::Work::encode(fixture.visible_work)
@@ -1966,7 +2038,7 @@ mod tests {
         assert_eq!(response["data"]["search"].as_array().unwrap().len(), 1);
         assert_eq!(response["data"]["authorSuggestions"], json!([]));
         assert!(!response.to_string().contains("Other graph shelf"));
-        let versions_query = "query($id: ID!) { manifestation(id: $id) { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } }";
+        let versions_query = "query($id: ID!) { manifestation(id: $id) { versions { pendingCount pending(first: 20) { edges { node { newValue { ... on MetadataProposalText { text } } } } } } } }";
         let adult_versions = reader_query(
             &fixture,
             &fixture.admin,
@@ -1980,17 +2052,18 @@ mod tests {
             1
         );
         assert_eq!(
-            adult_versions["data"]["manifestation"]["versions"]["pending"]["edges"][0]["node"]["newValue"],
+            adult_versions["data"]["manifestation"]["versions"]["pending"]["edges"][0]["node"]["newValue"]
+                ["text"],
             "Unreviewed graph proposal"
         );
         for (query, variables) in [
             (versions_query, json!({"id": visible.as_str()})),
             (
-                "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } }",
+                "query($id: ID!) { node(id: $id) { ... on Manifestation { versions { pendingCount pending(first: 20) { edges { node { newValue { ... on MetadataProposalText { text } } } } } } } } }",
                 json!({"id": visible.as_str()}),
             ),
             (
-                "query($id: ID!) { work(id: $id) { manifestations(first: 2) { edges { node { versions { pendingCount pending(first: 20) { edges { node { newValue } } } } } } } } }",
+                "query($id: ID!) { work(id: $id) { manifestations(first: 2) { edges { node { versions { pendingCount pending(first: 20) { edges { node { newValue { ... on MetadataProposalText { text } } } } } } } } } } }",
                 json!({"id": id::Work::encode(fixture.visible_work).as_str()}),
             ),
         ] {

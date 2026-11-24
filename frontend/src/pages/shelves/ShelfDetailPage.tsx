@@ -5,6 +5,7 @@
  * each was added.
  */
 import {
+  graphql,
   useFragment,
   usePaginationFragment,
   usePreloadedQuery,
@@ -12,25 +13,58 @@ import {
   type PreloadedQuery,
 } from "react-relay";
 import { decodeGraphQLId } from "@/api/graphql";
-import { readerShelfQuery, readerShelf, readerShelfItems } from "@/lib/relay/reader";
-import type { readerShelfQuery as ShelfQuery } from "@/lib/relay/__generated__/readerShelfQuery.graphql";
-import type { readerShelf$key } from "@/lib/relay/__generated__/readerShelf.graphql";
-import type { readerShelfItems$key } from "@/lib/relay/__generated__/readerShelfItems.graphql";
-import type { readerShelfItemsPaginationQuery as ItemsPagination } from "@/lib/relay/__generated__/readerShelfItemsPaginationQuery.graphql";
+import type { ShelfDetailPageQuery as ShelfQuery } from "@/lib/relay/__generated__/ShelfDetailPageQuery.graphql";
+import type { ShelfDetailPage_shelf$key } from "@/lib/relay/__generated__/ShelfDetailPage_shelf.graphql";
+import type { ShelfDetailPage_items$key } from "@/lib/relay/__generated__/ShelfDetailPage_items.graphql";
+import type { ShelfDetailPageItemsPaginationQuery as ItemsPagination } from "@/lib/relay/__generated__/ShelfDetailPageItemsPaginationQuery.graphql";
 import { useEffect, useState, Suspense, type ReactElement } from "react";
 import { useLoaderData } from "react-router";
 
+import { NotFound } from "@/components/RootErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import type { loader } from "@/routes/shelf-detail";
 
+const shelfDetailPageQuery = graphql`
+  query ShelfDetailPageQuery($id: ID!) @throwOnFieldError {
+    shelf(id: $id) {
+      ...ShelfDetailPage_shelf
+    }
+  }
+`;
+
+const shelfFragment = graphql`
+  fragment ShelfDetailPage_shelf on Shelf @throwOnFieldError {
+    name
+    isSystem
+    itemCount
+    ...ShelfDetailPage_items
+  }
+`;
+
+const shelfItems = graphql`
+  fragment ShelfDetailPage_items on Shelf
+  @throwOnFieldError
+  @argumentDefinitions(count: { type: "Int", defaultValue: 50 }, cursor: { type: "String" })
+  @refetchable(queryName: "ShelfDetailPageItemsPaginationQuery", preferFetchable: true) {
+    items(first: $count, after: $cursor) @connection(key: "ShelfDetailPage_items") {
+      edges {
+        node {
+          id
+        }
+      }
+    }
+  }
+`;
+
 /** Top-level page component (Suspense boundary + content). */
 export function ShelfDetailPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
-  if (prepared === null) return null;
+  const [reference] = useQueryLoader<ShelfQuery>(shelfDetailPageQuery, prepared);
+  if (reference == null || prepared === null) return null;
   return (
     <Suspense fallback={<ShelfDetailSkeleton />}>
-      <ShelfDetailContent reference={prepared.reference} />
+      <ShelfDetailContent reference={reference} />
     </Suspense>
   );
 }
@@ -40,21 +74,20 @@ function ShelfDetailContent({
 }: Readonly<{
   reference: PreloadedQuery<ShelfQuery>;
 }>): ReactElement {
-  const [current] = useQueryLoader<ShelfQuery>(readerShelfQuery, reference);
-  const query = usePreloadedQuery<ShelfQuery>(readerShelfQuery, current ?? reference);
-  const data = useFragment<readerShelf$key>(readerShelf, query.shelf);
+  const query = usePreloadedQuery<ShelfQuery>(shelfDetailPageQuery, reference);
+  const data = useFragment<ShelfDetailPage_shelf$key>(shelfFragment, query.shelf);
   const {
     data: items,
     hasNext,
     isLoadingNext,
     loadNext,
-  } = usePaginationFragment<ItemsPagination, readerShelfItems$key>(readerShelfItems, data);
+  } = usePaginationFragment<ItemsPagination, ShelfDetailPage_items$key>(shelfItems, data);
   const [error, setError] = useState<Error | null>(null);
   useEffect(() => {
     if (hasNext && !isLoadingNext) loadNext(50, { onComplete: setError });
   }, [hasNext, isLoadingNext, loadNext]);
   if (error !== null) throw error;
-  if (data == null) throw new Error("Shelf not found.");
+  if (data == null) return <NotFound />;
   return (
     <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
       <header className="mb-6">
