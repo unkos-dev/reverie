@@ -1860,6 +1860,9 @@
       "title": "GraphQL edit acknowledgements carry the validator of their values"
     },
     {
+      "governed-by": [
+        "REV-ADR-0084"
+      ],
       "id": "REV-REQ-0083",
       "kind": "req",
       "path": "docs/specs/api/requirements/0083-editing-baselines-form-only-from-complete-values-of-one-revision.md",

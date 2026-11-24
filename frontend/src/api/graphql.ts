@@ -1,31 +1,13 @@
-import type { readerLibraryBook$data } from "@/lib/relay/__generated__/readerLibraryBook.graphql";
-import type { LibraryRowSnapshot } from "@/lib/relay/library-visit";
-import { Observable, createOperationDescriptor, getRequest } from "relay-runtime";
-import type {
-  Environment,
-  GraphQLResponse,
-  GraphQLTaggedNode,
-  OperationType,
-  RequestParameters,
-  Variables,
+import {
+  Observable,
+  type GraphQLResponse,
+  type RequestParameters,
+  type Variables,
 } from "relay-runtime";
 import { z } from "zod";
 
 import { invokeUnauthenticatedHandler } from "@/lib/query/client";
-import {
-  ReadingStatusSchema,
-  ResourceEtagSchema,
-  parseSortParam,
-  type BookListItem,
-  type ListBooksParams,
-  type SortField,
-} from "./books";
-import type {
-  SortField as GraphQLSortField,
-  readerLibraryQuery$variables,
-} from "@/lib/relay/__generated__/readerLibraryQuery.graphql";
-import type { mutationsAuthorPageQuery } from "@/lib/relay/__generated__/mutationsAuthorPageQuery.graphql";
-import { mutationsAuthorPageQuery as authorPageDocument } from "@/lib/relay/mutations";
+import { ResourceEtagSchema } from "./books";
 import { ApiError } from "./errors";
 import { apiFetch } from "./fetch";
 
@@ -79,24 +61,6 @@ function typeIdUuid(kind: IdKind, value: string): string | undefined {
 export function domainId(kind: IdKind): z.ZodType<string> {
   return z.string().refine((value) => typeIdUuid(kind, value) !== undefined, `Invalid ${kind} ID.`);
 }
-const revision = z.object({
-  id: domainId("MetadataRevision"),
-  workId: domainId("Work"),
-  manifestationId: domainId("Manifestation"),
-  etag: ResourceEtagSchema,
-});
-const titleSnapshot = revision.extend({ title: z.string() });
-const cellsSnapshot = titleSnapshot.extend({
-  subtitle: z.string().nullable(),
-  isbn13: z.string().nullable(),
-  pages: z.number().int().nullable(),
-});
-const pageInfo = z.object({
-  hasNextPage: z.boolean(),
-  hasPreviousPage: z.boolean(),
-  startCursor: z.string().nullable(),
-  endCursor: z.string().nullable(),
-});
 function connection(node: z.ZodType) {
   return z.object({ edges: z.array(z.object({ node })) });
 }
@@ -178,38 +142,6 @@ const readerProjections = new Map<string, z.ZodType>([
     z.object({ fetch__Manifestation: versionProjection.nullable() }),
   ],
 ]);
-const authorSnapshot = revision.extend({
-  authors: z.object({
-    edges: z.array(
-      z.object({
-        cursor: z.string(),
-        node: z.object({ name: z.string(), author: z.object({ id: domainId("Author") }) }),
-      }),
-    ),
-    pageInfo: pageInfo.refine(
-      (page) => !page.hasNextPage || page.endCursor !== null,
-      "An author continuation cursor is required.",
-    ),
-  }),
-});
-const readingSnapshot = z.object({
-  etag: ResourceEtagSchema,
-  status: ReadingStatusSchema.nullable(),
-  rating: z.number().int().nullable(),
-  notes: z.string().nullable(),
-  progressPct: z.number().nullable(),
-  startedAt: z.iso.datetime().nullable(),
-  finishedAt: z.iso.datetime().nullable(),
-  lastReadAt: z.iso.datetime().nullable(),
-});
-const operations = z.array(
-  z.object({
-    operationId: uuid,
-    fieldName: z.string(),
-    expiresAt: z.iso.datetime(),
-    status: z.enum(["ELIGIBLE", "LOCKED", "UNAVAILABLE", "CONSUMED"]),
-  }),
-);
 const shelf = z.object({
   id: domainId("Shelf"),
   name: z.string(),
@@ -220,126 +152,7 @@ const shelf = z.object({
 });
 const refusal = <T extends string>(typename: T) =>
   z.object({ __typename: z.literal(typename), message: z.string() });
-const metadataInvalid = z.object({
-  __typename: z.literal("MetadataInvalid"),
-  message: z.string(),
-  fieldErrors: z.array(z.object({ field: z.string(), message: z.string() })),
-});
-const fieldsLocked = z.object({
-  __typename: z.literal("FieldsLocked"),
-  message: z.string(),
-  fields: z.array(z.string()),
-});
-const saveRefusals = [
-  refusal("StaleBaseline"),
-  metadataInvalid,
-  fieldsLocked,
-  refusal("EditTooLarge"),
-  refusal("NotFound"),
-] as const;
-const undoRefusals = [
-  refusal("StaleBaseline"),
-  refusal("UndoUnavailable"),
-  refusal("UndoConflict"),
-  fieldsLocked,
-  refusal("EditTooLarge"),
-  refusal("NotFound"),
-] as const;
-function acknowledgement(snapshot: z.ZodType) {
-  return z.object({ id: domainId("Manifestation"), metadata: snapshot });
-}
 const editingProjections = new Map<string, z.ZodType>();
-editingProjections.set(
-  "mutationsSaveAuthorsMutation",
-  z.object({
-    updateMetadata: z.discriminatedUnion("__typename", [
-      z.object({
-        __typename: z.literal("MetadataSaved"),
-        requestId: uuid.nullable(),
-        operations,
-        manifestation: acknowledgement(authorSnapshot),
-      }),
-      ...saveRefusals,
-    ]),
-  }),
-);
-editingProjections.set(
-  "mutationsUndoAuthorsMutation",
-  z.object({
-    undoMetadata: z.discriminatedUnion("__typename", [
-      z.object({
-        __typename: z.literal("MetadataRestored"),
-        operation: operations.element,
-        manifestation: acknowledgement(authorSnapshot),
-      }),
-      ...undoRefusals,
-    ]),
-  }),
-);
-editingProjections.set(
-  "mutationsResolveAuthorsQuery",
-  z.object({
-    metadataOperation: z.object({
-      outcome: z.enum(["SAVED", "RESTORED", "UNKNOWN"]),
-      operations,
-      metadata: authorSnapshot,
-    }),
-  }),
-);
-editingProjections.set(
-  "mutationsAuthorPageQuery",
-  z.object({
-    manifestation: z.object({ id: domainId("Manifestation"), metadata: authorSnapshot }).nullable(),
-  }),
-);
-editingProjections.set(
-  "readerAuthorEditingPaginationQuery",
-  z.object({
-    fetch__Manifestation: z
-      .object({ id: domainId("Manifestation"), metadata: authorSnapshot })
-      .nullable(),
-  }),
-);
-
-const libraryPage = z.object({
-  books: z.object({
-    edges: z.array(
-      z.object({
-        cursor: z.string(),
-        node: z.object({
-          id: domainId("Manifestation"),
-          createdAt: z.iso.datetime(),
-          work: workProjection
-            .extend({
-              selectedSeries: z.object({ node: z.object({ id: domainId("Series") }) }).nullable(),
-            })
-            .nullable(),
-          metadata: cellsSnapshot,
-          readingState: z.object({
-            etag: ResourceEtagSchema,
-            status: ReadingStatusSchema.nullable(),
-            rating: z.number().int().min(1).max(5).nullable(),
-            progressPct: z.number().nullable(),
-            startedAt: z.iso.datetime().nullable(),
-            finishedAt: z.iso.datetime().nullable(),
-          }),
-        }),
-      }),
-    ),
-    pageInfo: pageInfo
-      .pick({ hasNextPage: true, endCursor: true })
-      .refine(
-        (page) => !page.hasNextPage || page.endCursor !== null,
-        "A Library continuation cursor is required.",
-      ),
-  }),
-});
-editingProjections.set("readerLibraryQuery", libraryPage);
-editingProjections.set("readerLibraryPaginationQuery", libraryPage);
-
-type EditingResponse<T extends OperationType> = T extends { readonly rawResponse: infer Raw }
-  ? Raw
-  : T["response"];
 
 export function encodeGraphQLId(kind: IdKind, value: string): string {
   let bits = BigInt(`0x${uuid.parse(value).replaceAll("-", "")}`);
@@ -361,18 +174,6 @@ export function decodeGraphQLId(kind: IdKind, value: string): string {
   if (id === undefined) throw new TypeError(`Invalid ${kind} ID.`);
   return id;
 }
-editingProjections.set(
-  "mutationsReadingQuery",
-  z.object({
-    manifestation: z
-      .object({ id: domainId("Manifestation"), readingState: readingSnapshot })
-      .nullable(),
-  }),
-);
-editingProjections.set(
-  "mutationsReadingMutation",
-  z.object({ updateReadingState: readingSnapshot }),
-);
 editingProjections.set(
   "mutationsCreateShelfMutation",
   z.object({
@@ -410,10 +211,6 @@ editingProjections.set(
   }),
 );
 editingProjections.set(
-  "mutationsRefreshMetadataMutation",
-  z.object({ refreshMetadata: z.object({ manifestationId: domainId("Manifestation") }) }),
-);
-editingProjections.set(
   "mutationsAddShelfItemMutation",
   z.object({
     addShelfItem: z.discriminatedUnion("__typename", [
@@ -426,124 +223,6 @@ editingProjections.set(
     ]),
   }),
 );
-/** Execute an editing document and capture its raw response payload. */
-export function executeEditing<T extends OperationType>(
-  environment: Environment,
-  document: GraphQLTaggedNode,
-  variables: T["variables"],
-): Observable<EditingResponse<T>> {
-  const request = getRequest(document);
-  const operation = createOperationDescriptor(request, variables);
-  const source =
-    request.params.operationKind === "mutation"
-      ? environment.executeMutation({ operation })
-      : environment.execute({ operation });
-  return source.map((payload) => {
-    if (!("data" in payload) || payload.data == null)
-      throw new Error("Missing editing projection.");
-    return structuredClone(payload.data) as EditingResponse<T>;
-  });
-}
-
-/** Await one validated raw payload and settle disposal without acknowledging cancellation. */
-export function executeEditingOnce<T extends OperationType>(
-  environment: Environment,
-  document: GraphQLTaggedNode,
-  variables: T["variables"],
-  signal?: AbortSignal,
-  capture?: (payload: EditingResponse<T>) => void,
-): Promise<EditingResponse<T> | undefined> {
-  return Observable.create<EditingResponse<T>>((sink) => {
-    if (signal?.aborted) {
-      sink.complete();
-      return;
-    }
-    const cancel = () => {
-      sink.complete();
-    };
-    signal?.addEventListener("abort", cancel, { once: true });
-    const subscription = executeEditing<T>(environment, document, variables)
-      .map((payload) => {
-        capture?.(payload);
-        return payload;
-      })
-      .subscribe(sink);
-    return () => {
-      signal?.removeEventListener("abort", cancel);
-      subscription.unsubscribe();
-    };
-  }).toPromise();
-}
-type AuthorPage = {
-  after: string | null;
-  snapshot: NonNullable<mutationsAuthorPageQuery["response"]["manifestation"]>["metadata"];
-};
-/** Capture one complete author field from pages belonging to the same revision. */
-export function captureAuthorPages(pages: readonly AuthorPage[]): {
-  workId: string;
-  manifestationId: string;
-  etag: string;
-  authors: readonly { id: string; name: string }[];
-} {
-  if (pages.length === 0) throw new Error("Complete author pages are required.");
-  const first = pages[0];
-  const base = authorSnapshot.parse(first.snapshot);
-  const authors: { id: string; name: string }[] = [];
-  let after: string | null = null;
-  let hasNext = true;
-  for (const page of pages) {
-    const snapshot = authorSnapshot.parse(page.snapshot);
-    if (
-      !hasNext ||
-      page.after !== after ||
-      snapshot.etag !== base.etag ||
-      snapshot.workId !== base.workId ||
-      snapshot.manifestationId !== base.manifestationId ||
-      (after === null && snapshot.authors.pageInfo.hasPreviousPage)
-    )
-      throw new Error("Author pages do not form one matched field.");
-    authors.push(
-      ...snapshot.authors.edges.map(({ node }) => ({ id: node.author.id, name: node.name })),
-    );
-    after = snapshot.authors.pageInfo.endCursor;
-    hasNext = snapshot.authors.pageInfo.hasNextPage;
-    if (hasNext && after === null) throw new Error("An author continuation cursor is required.");
-  }
-  if (hasNext) throw new Error("Complete author pages are required.");
-  return { workId: base.workId, manifestationId: base.manifestationId, etag: base.etag, authors };
-}
-
-/** Load the complete author field at one revision before allowing replacement. */
-export async function loadAuthorField(
-  environment: Environment,
-  id: string,
-  signal?: AbortSignal,
-): Promise<ReturnType<typeof captureAuthorPages> | undefined> {
-  const pages: AuthorPage[] = [];
-  let after: string | null = null;
-  let hasNext: boolean;
-  do {
-    const response: mutationsAuthorPageQuery["response"] | undefined =
-      await executeEditingOnce<mutationsAuthorPageQuery>(
-        environment,
-        authorPageDocument,
-        {
-          id,
-          first: 20,
-          after,
-        },
-        signal,
-      );
-    if (response === undefined) return undefined;
-    const snapshot: AuthorPage["snapshot"] | undefined = response.manifestation?.metadata;
-    if (snapshot === undefined) throw new Error("Not found");
-    pages.push({ after, snapshot });
-    after = snapshot.authors.pageInfo.endCursor ?? null;
-    hasNext = snapshot.authors.pageInfo.hasNextPage;
-  } while (hasNext);
-  return captureAuthorPages(pages);
-}
-
 export class GraphQLExecutionError extends Error {
   readonly errors: z.infer<typeof executionError>[];
 
@@ -643,119 +322,4 @@ export function graphqlNetwork(
       controller.abort();
     };
   });
-}
-
-const SORT_COLUMNS = {
-  title: "TITLE",
-  author: "AUTHOR",
-  created_at: "CREATED_AT",
-  pages: "PAGES",
-} as const satisfies Record<SortField, GraphQLSortField>;
-
-export function libraryVariables(
-  params: ListBooksParams,
-  sourceKey: string,
-): readerLibraryQuery$variables {
-  const filter = {
-    q: params.q,
-    author: params.author,
-    authorAny: params.author_any,
-    authorNone: params.author_none,
-    series: params.series,
-    seriesAny: params.series_any,
-    shelf: params.shelf,
-    shelfAny: params.shelf_any,
-    tag: params.tag,
-    tagAny: params.tag_any,
-    tagNone: params.tag_none,
-    genre: params.genre,
-    genreAny: params.genre_any,
-    genreNone: params.genre_none,
-    mood: params.mood,
-    moodAny: params.mood_any,
-    moodNone: params.mood_none,
-    statusAny: params.status_any,
-    statusNone: params.status_none,
-    titleContains: params.title_contains,
-    titleEq: params.title_eq,
-    titleNe: params.title_ne,
-    subtitleContains: params.subtitle_contains,
-    subtitleEmpty: params.subtitle_empty,
-    isbn13Contains: params.isbn_13_contains,
-    isbn13Eq: params.isbn_13_eq,
-    isbn13Empty: params.isbn_13_empty,
-    pagesGte: params.pages_gte,
-    pagesLte: params.pages_lte,
-    pagesEmpty: params.pages_empty,
-    ratingGte: params.rating_gte,
-    ratingLte: params.rating_lte,
-    ratingEmpty: params.rating_empty,
-    createdAtGte: params.created_at_gte,
-    createdAtLt: params.created_at_lt,
-  };
-  return {
-    sourceKey,
-    count: 50,
-    filter,
-    ...(params.sort === undefined || params.sort === ""
-      ? {}
-      : {
-          sort: parseSortParam(params.sort).map((level) => ({
-            column: SORT_COLUMNS[level.field],
-            direction: level.desc ? "DESC" : "ASC",
-          })),
-        }),
-  };
-}
-
-export type ReaderBook = Pick<
-  BookListItem,
-  | "id"
-  | "work_id"
-  | "metadata_etag"
-  | "reading_etag"
-  | "title"
-  | "subtitle"
-  | "authors"
-  | "series"
-  | "isbn_13"
-  | "pages"
-  | "cover_url"
-  | "reading_state"
-  | "created_at"
->;
-
-export function readerBook(
-  data: readerLibraryBook$data[number],
-  snapshot: LibraryRowSnapshot,
-): ReaderBook {
-  const series = data.work?.selectedSeries;
-  return {
-    id: data.id,
-    work_id: snapshot.metadata.workId,
-    metadata_etag: snapshot.metadata.etag,
-    reading_etag: snapshot.readingState.etag,
-    title: snapshot.metadata.title,
-    subtitle: snapshot.metadata.subtitle ?? null,
-    isbn_13: snapshot.metadata.isbn13 ?? null,
-    pages: snapshot.metadata.pages ?? null,
-    authors: data.work?.authors.edges.map((edge) => edge.node.name) ?? [],
-    series:
-      series == null
-        ? null
-        : {
-            id: series.node.id,
-            name: series.node.name,
-            position: series.position ?? null,
-          },
-    cover_url: data.coverUrl,
-    created_at: data.createdAt,
-    reading_state: {
-      status: ReadingStatusSchema.nullable().parse(snapshot.readingState.status),
-      rating: snapshot.readingState.rating ?? null,
-      progress_pct: snapshot.readingState.progressPct ?? null,
-      started_at: snapshot.readingState.startedAt ?? null,
-      finished_at: snapshot.readingState.finishedAt ?? null,
-    },
-  };
 }

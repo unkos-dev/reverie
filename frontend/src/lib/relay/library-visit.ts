@@ -1,129 +1,145 @@
-import { loadQuery, type PreloadedQuery } from "react-relay";
-import { createOperationDescriptor, getRequest, type Environment } from "relay-runtime";
+import { fetchQuery, loadQuery, type PreloadedQuery } from "react-relay";
+import {
+  ConnectionHandler,
+  ROOT_ID,
+  createOperationDescriptor,
+  type Environment,
+  type ReadOnlyRecordProxy,
+  type Subscription,
+} from "relay-runtime";
 
-import { GraphQLExecutionError, executeEditingOnce, libraryVariables } from "@/api/graphql";
-import type { ListBooksParams } from "@/api/books";
+import { GraphQLExecutionError } from "@/api/graphql";
+import {
+  parseSortParam,
+  type ListBooksParams,
+  type SortField,
+  type SortLevelParam,
+} from "@/api/books";
 import { LibraryIntent } from "@/lib/hooks/use-library-filters";
 import {
   emptyFilterState,
+  filterStateToParams,
+  isLibraryRequestEligible,
   type FilterState,
   type LibraryPosition,
   type LibraryVisit,
 } from "@/routes/library-params";
-import { readerLibraryQuery } from "./reader";
-import type { readerLibraryQuery as LibraryQuery } from "./__generated__/readerLibraryQuery.graphql";
+import LibraryPageDocument, {
+  type LibraryPageQuery as LibraryPageQuery,
+  type SortField as GraphQLSortField,
+} from "./__generated__/LibraryPageQuery.graphql";
 
-export type LibraryRowSnapshot = Pick<
-  LibraryQuery["rawResponse"]["books"]["edges"][number]["node"],
-  "metadata" | "readingState"
->;
+const SORT_COLUMNS = {
+  title: "TITLE",
+  author: "AUTHOR",
+  created_at: "CREATED_AT",
+  pages: "PAGES",
+} as const satisfies Record<SortField, GraphQLSortField>;
 
-/** One native connection generation with detached editing snapshots and explicit retention. */
+function libraryVariables(
+  params: ListBooksParams,
+): Pick<LibraryPageQuery["variables"], "count" | "filter" | "sort"> {
+  const filter = {
+    q: params.q,
+    author: params.author,
+    authorAny: params.author_any,
+    authorNone: params.author_none,
+    series: params.series,
+    seriesAny: params.series_any,
+    shelf: params.shelf,
+    shelfAny: params.shelf_any,
+    tag: params.tag,
+    tagAny: params.tag_any,
+    tagNone: params.tag_none,
+    genre: params.genre,
+    genreAny: params.genre_any,
+    genreNone: params.genre_none,
+    mood: params.mood,
+    moodAny: params.mood_any,
+    moodNone: params.mood_none,
+    statusAny: params.status_any,
+    statusNone: params.status_none,
+    titleContains: params.title_contains,
+    titleEq: params.title_eq,
+    titleNe: params.title_ne,
+    subtitleContains: params.subtitle_contains,
+    subtitleEmpty: params.subtitle_empty,
+    isbn13Contains: params.isbn_13_contains,
+    isbn13Eq: params.isbn_13_eq,
+    isbn13Empty: params.isbn_13_empty,
+    pagesGte: params.pages_gte,
+    pagesLte: params.pages_lte,
+    pagesEmpty: params.pages_empty,
+    ratingGte: params.rating_gte,
+    ratingLte: params.rating_lte,
+    ratingEmpty: params.rating_empty,
+    createdAtGte: params.created_at_gte,
+    createdAtLt: params.created_at_lt,
+  };
+  return {
+    count: 50,
+    filter,
+    ...(params.sort === undefined || params.sort === ""
+      ? {}
+      : {
+          sort: parseSortParam(params.sort).map((level) => ({
+            column: SORT_COLUMNS[level.field],
+            direction: level.desc ? "DESC" : "ASC",
+          })),
+        }),
+  };
+}
+
+type LibraryRequest = Omit<LibraryPageQuery["variables"], "sourceKey">;
+
+export function libraryRequest(filters: FilterState, sort: string): LibraryRequest {
+  const params = filterStateToParams(filters);
+  if (sort !== "") params.sort = sort;
+  const { filter, sort: levels, count } = libraryVariables(params);
+  return {
+    ...libraryLookups(filters),
+    eligible: isLibraryRequestEligible(params),
+    filter,
+    sort: levels,
+    count,
+  };
+}
+
 export class LibrarySource {
-  readonly rows = new Map<string, LibraryRowSnapshot>();
-  controller = new AbortController();
-  readonly variables: LibraryQuery["variables"];
-  reference: PreloadedQuery<LibraryQuery> | undefined;
-  cursor: string | null = null;
-  hasNext = true;
-  private readonly initialRetention;
-  private uses = 0;
-  private retired = false;
-  private disposed = false;
-
-  readonly environment: Environment;
-  readonly params: ListBooksParams;
+  readonly operation;
+  readonly request: LibraryRequest;
   readonly key: string;
-  private readonly released: () => void;
+  readonly sort: readonly SortLevelParam[];
+  readonly variables: LibraryPageQuery["variables"];
+  readonly reference: PreloadedQuery<LibraryPageQuery>;
 
   constructor(
     environment: Environment,
-    params: ListBooksParams,
+    request: LibraryRequest,
     key: string,
-    released: () => void,
+    sort: readonly SortLevelParam[],
+    storeOnly = false,
   ) {
-    this.environment = environment;
-    this.params = params;
+    this.request = request;
     this.key = key;
-    this.released = released;
-    this.variables = libraryVariables(params, key);
-    this.initialRetention = environment.retain(
-      createOperationDescriptor(getRequest(readerLibraryQuery), this.variables),
-    );
-  }
-
-  async loadPage(): Promise<boolean> {
-    const controller = this.controller;
-    const data = await executeEditingOnce<LibraryQuery>(
-      this.environment,
-      readerLibraryQuery,
-      {
-        ...this.variables,
-        cursor: this.cursor,
-      },
-      controller.signal,
-      (payload) => {
-        for (const edge of payload.books.edges)
-          this.rows.set(edge.node.id, {
-            metadata: edge.node.metadata,
-            readingState: edge.node.readingState,
-          });
-        this.cursor = payload.books.pageInfo.endCursor ?? null;
-        this.hasNext = payload.books.pageInfo.hasNextPage;
-      },
-    );
-    if (data === undefined || controller.signal.aborted) return false;
-    if (this.reference === undefined) {
-      this.reference = loadQuery<LibraryQuery>(
-        this.environment,
-        readerLibraryQuery,
-        this.variables,
-        { fetchPolicy: "store-only" },
-      );
-      this.initialRetention.dispose();
-    }
-    return true;
-  }
-
-  acquire(): () => void {
-    this.uses += 1;
-    let held = true;
-    return () => {
-      if (!held) return;
-      held = false;
-      this.uses -= 1;
-      if (this.retired && this.uses === 0) this.dispose();
-    };
-  }
-
-  pause(): void {
-    this.controller.abort();
-    this.controller = new AbortController();
-  }
-
-  retire(): void {
-    this.retired = true;
-    this.controller.abort();
-    if (this.uses === 0) this.dispose();
+    this.sort = sort;
+    this.variables = { ...request, sourceKey: key };
+    this.operation = createOperationDescriptor(LibraryPageDocument, this.variables);
+    this.reference = loadQuery<LibraryPageQuery>(environment, LibraryPageDocument, this.variables, {
+      fetchPolicy: storeOnly ? "store-only" : "store-or-network",
+    });
   }
 
   dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
-    this.controller.abort();
-    this.reference?.dispose();
-    this.initialRetention.dispose();
-    this.rows.clear();
-    this.released();
+    this.reference.dispose();
   }
 }
 
 type VisitState = {
   source: LibrarySource | undefined;
-  pending: boolean;
-  loadingMore: boolean;
+  candidate: LibrarySource | undefined;
+  candidateReady: boolean;
   error: Error | null;
-  moreError: Error | null;
   restoreGeneration: number;
   position: LibraryPosition | undefined;
 };
@@ -184,33 +200,34 @@ export class LibraryPreparation {
   }
 }
 
+type LibraryInvalidation = {
+  shelfId?: string;
+  reloadId?: string;
+  siblingEditions?: { id: string; workId: string };
+};
+
 /** Own one Navigation entry's intent, displayed source, isolated replacement and route references. */
 export class LibraryVisitOwner {
   private state: VisitState = {
     source: undefined,
-    pending: false,
-    loadingMore: false,
+    candidate: undefined,
+    candidateReady: false,
     error: null,
-    moreError: null,
     restoreGeneration: 0,
     position: undefined,
   };
   private readonly listeners = new Set<() => void>();
-  private readonly sources = new Set<LibrarySource>();
-  private generation = 0;
-  private request = 0;
-  private intentToken = "";
-  private activation = "";
-  private candidate: LibrarySource | undefined;
-  private returning = false;
-  private disposed = false;
-  private desired: ListBooksParams | undefined;
-  private eligible = false;
-  private captureCurrent: (() => LibraryPosition | undefined) | undefined;
   private readonly preparations = new Set<LibraryPreparation>();
   private settled: LibraryPreparation | undefined;
-  readonly environment: Environment;
+  private generation = 0;
+  private readonly provisionalKey = crypto.randomUUID();
+  private activation = "";
+  private candidateRequest: Subscription | undefined;
+  private restartedCursor = false;
+  private disposed = false;
+  private captureCurrent: (() => LibraryPosition | undefined) | undefined;
   readonly intent: LibraryIntent;
+  readonly environment: Environment;
 
   constructor(environment: Environment, entryId: string | undefined, visit: LibraryVisit) {
     this.environment = environment;
@@ -226,7 +243,9 @@ export class LibraryVisitOwner {
   }
 
   private isCurrent(): boolean {
-    return this.entryId !== undefined && navigation.currentEntry?.id === this.entryId;
+    return (
+      !this.disposed && this.entryId !== undefined && navigation.currentEntry?.id === this.entryId
+    );
   }
 
   begin(): LibraryPreparation {
@@ -263,9 +282,50 @@ export class LibraryVisitOwner {
     for (const listener of this.listeners) listener();
   }
 
-  enter(position: LibraryPosition | undefined): void {
-    this.returning = this.state.source !== undefined || position !== undefined;
-    this.publish({ position, restoreGeneration: this.state.restoreGeneration + 1 });
+  private newSource(
+    request: LibraryRequest,
+    sort: readonly SortLevelParam[],
+    storeOnly = false,
+  ): LibrarySource {
+    return new LibrarySource(
+      this.environment,
+      request,
+      `${this.entryId ?? this.provisionalKey}:${String(++this.generation)}`,
+      sort,
+      storeOnly,
+    );
+  }
+
+  prepare(request: LibraryRequest, sort: readonly SortLevelParam[]): LibrarySource {
+    const source = this.state.source;
+    if (source !== undefined && sameRequest(source.request, request))
+      return new LibrarySource(this.environment, request, source.key, sort, true);
+    return this.newSource(request, sort);
+  }
+
+  enter(initial: LibrarySource, position: LibraryPosition | undefined): void {
+    if (!this.isCurrent()) return;
+    const previous = this.state.source;
+    const source = previous?.key === initial.key ? previous : undefined;
+    const fresh = this.environment.check(initial.operation).status === "available";
+    this.activation = "";
+    this.cancelCandidate();
+    this.publish({ position, error: null, restoreGeneration: this.state.restoreGeneration + 1 });
+    if (!initial.request.eligible) return;
+    if (source !== undefined) {
+      if (!fresh) this.replace(initial.request, initial.sort, position);
+    } else if (position !== undefined) {
+      const candidate = new LibrarySource(
+        this.environment,
+        initial.request,
+        initial.key,
+        initial.sort,
+        true,
+      );
+      this.publish({ candidate, candidateReady: true });
+    } else {
+      this.adopt(initial);
+    }
   }
 
   capture(position: LibraryPosition): void {
@@ -281,186 +341,236 @@ export class LibraryVisitOwner {
 
   cancelRestoration(): void {
     if (this.state.position === undefined) return;
-    const restart = this.state.source === undefined ? this.candidate?.params : undefined;
-    this.cancelCandidate();
-    this.publish({
-      position: undefined,
-      pending: false,
-      restoreGeneration: this.state.restoreGeneration + 1,
-    });
-    if (restart !== undefined) void this.replace(restart);
+    if (this.state.source !== undefined) this.cancelCandidate();
+    this.publish({ position: undefined, restoreGeneration: this.state.restoreGeneration + 1 });
   }
 
   leave(): void {
     this.cancelCandidate();
-    this.state.source?.pause();
     this.captureCurrent = undefined;
     this.activation = "";
   }
 
   private cancelCandidate(): void {
-    this.request += 1;
-    this.candidate?.retire();
-    this.candidate = undefined;
+    this.candidateRequest?.unsubscribe();
+    this.candidateRequest = undefined;
+    this.state.candidate?.dispose();
+    if (this.state.candidate !== undefined)
+      this.publish({ candidate: undefined, candidateReady: false });
   }
 
-  activate(params: ListBooksParams, intent: string, eligible: boolean): void {
-    if (!this.isCurrent()) return;
-    const returning = this.returning;
-    const activation = JSON.stringify([params, intent, eligible]);
-    if (!returning && activation === this.activation) return;
-    this.activation = activation;
-    this.returning = false;
-    this.desired = structuredClone(params);
-    this.eligible = eligible;
-    const changedIntent = intent !== this.intentToken;
-    this.intentToken = intent;
-    if (changedIntent) {
+  activate(request: LibraryRequest, sort: readonly SortLevelParam[], intent: string): void {
+    if (!this.isCurrent() || this.activation === intent) return;
+    const changed = this.activation !== "";
+    this.activation = intent;
+    if (changed) {
       this.cancelCandidate();
-      if (!returning)
-        this.publish({ position: undefined, restoreGeneration: this.state.restoreGeneration + 1 });
+      this.publish({ position: undefined, restoreGeneration: this.state.restoreGeneration + 1 });
     }
-    if (!eligible) {
+    if (!request.eligible) {
       this.cancelCandidate();
-      this.publish({ pending: false });
       return;
     }
-    if (!returning && JSON.stringify(params) === JSON.stringify(this.state.source?.params)) {
-      this.publish({ pending: false, error: null });
-      return;
-    }
-    void this.replace(params, returning ? this.state.position : undefined);
+    const current = this.state.candidate ?? this.state.source;
+    if (current !== undefined && sameRequest(current.request, request)) return;
+    this.replace(request, sort);
   }
 
-  refresh = (): Promise<void> => {
-    const source = this.state.source;
-    if (source === undefined || this.desired === undefined || !this.eligible)
-      return Promise.resolve();
-    const sameArguments = JSON.stringify(source.params) === JSON.stringify(this.desired);
-    return this.replace(
-      this.desired,
-      sameArguments ? this.captureCurrent?.() : undefined,
-      sameArguments ? source.rows.size : 0,
-    );
-  };
-
-  private needsRetainedRows(
-    source: LibrarySource,
-    retainedExtent: number,
-    position: LibraryPosition | undefined,
-  ): boolean {
-    return (
-      source.rows.size < retainedExtent ||
-      (position?.anchorId !== null &&
-        position?.anchorId !== undefined &&
-        !source.rows.has(position.anchorId))
-    );
-  }
-
-  private async replace(
-    params: ListBooksParams,
+  private replace(
+    request: LibraryRequest,
+    sort: readonly SortLevelParam[],
     position?: LibraryPosition,
-    retainedExtent = position?.extent ?? 0,
-    restartCursor = true,
-  ): Promise<void> {
+  ): void {
     this.cancelCandidate();
-    const request = this.request;
-    const intent = this.intentToken;
-    const source = new LibrarySource(
-      this.environment,
-      structuredClone(params),
-      `${String(this.entryId)}:${String(++this.generation)}`,
-      () => {
-        this.sources.delete(source);
-      },
-    );
-    this.sources.add(source);
-    this.candidate = source;
+    this.restartedCursor = false;
+    const candidate = this.newSource(request, sort, true);
     this.publish({
-      pending: true,
-      error: null,
+      candidate,
+      candidateReady: false,
       position,
+      error: null,
       restoreGeneration: this.state.restoreGeneration + 1,
     });
-    try {
-      do {
-        if (!(await source.loadPage()) || !this.current(request, intent)) return;
-      } while (source.hasNext && this.needsRetainedRows(source, retainedExtent, position));
-      if (!this.current(request, intent)) return;
-      const previous = this.state.source;
-      this.candidate = undefined;
-      this.publish({ source, pending: false, loadingMore: false, error: null, moreError: null });
-      previous?.retire();
-    } catch (error) {
-      if (!this.current(request, intent)) return;
-      source.retire();
-      this.candidate = undefined;
-      if (
-        restartCursor &&
-        source.cursor !== null &&
-        error instanceof GraphQLExecutionError &&
-        error.errors.some((failure) => failure.extensions?.code === "invalid-cursor")
-      ) {
-        await this.replace(params, position, retainedExtent, false);
-        return;
-      }
-      if (this.state.source !== undefined)
-        console.error("[LibraryPage] replacement fetch failed", error);
-      this.publish({
-        pending: false,
-        error: error instanceof Error ? error : new Error("Library request failed."),
+    this.candidateRequest = fetchQuery<LibraryPageQuery>(
+      this.environment,
+      LibraryPageDocument,
+      candidate.variables,
+    ).subscribe({
+      complete: () => {
+        if (this.isCurrent() && this.state.candidate === candidate)
+          this.publish({ candidateReady: true });
+      },
+      error: (error: Error) => {
+        this.failed(candidate, error);
+      },
+    });
+  }
+
+  private adopt(candidate: LibrarySource): void {
+    const previous = this.state.source;
+    const source = new LibrarySource(
+      this.environment,
+      candidate.request,
+      candidate.key,
+      candidate.sort,
+      true,
+    );
+    this.publish({ source, candidate: undefined, candidateReady: false, error: null });
+    previous?.dispose();
+  }
+
+  pageCommitted(candidate: LibrarySource, ids: readonly string[], hasNext: boolean): boolean {
+    if (!this.isCurrent() || this.state.candidate !== candidate) return false;
+    const position = this.state.position;
+    if (
+      hasNext &&
+      position !== undefined &&
+      (ids.length < position.extent ||
+        (position.anchorId !== null && !ids.includes(position.anchorId)))
+    )
+      return true;
+    this.adopt(candidate);
+    candidate.dispose();
+    return false;
+  }
+
+  failed(candidate: LibrarySource, error: Error): void {
+    if (!this.isCurrent() || this.state.candidate !== candidate) return;
+    if (
+      !this.restartedCursor &&
+      error instanceof GraphQLExecutionError &&
+      error.errors.some((failure) => failure.extensions?.code === "invalid-cursor")
+    ) {
+      this.replace(candidate.request, candidate.sort, this.state.position);
+      this.restartedCursor = true;
+      return;
+    }
+    this.cancelCandidate();
+    this.publish({ error });
+  }
+
+  refresh(): void {
+    const source = this.state.source;
+    if (source === undefined || !this.isCurrent()) return;
+    const position = this.captureCurrent?.() ?? this.state.position;
+    this.replace(source.request, source.sort, position);
+  }
+
+  invalidate(
+    fields: readonly string[],
+    { shelfId, reloadId, siblingEditions }: LibraryInvalidation,
+  ): void {
+    const source = this.state.source;
+    const candidate = this.state.candidate;
+    const stale = new Set<LibrarySource>();
+    for (const generation of [source, candidate]) {
+      if (generation === undefined) continue;
+      const matchesRequest = dependsOn(generation, fields, shelfId);
+      if (!matchesRequest && reloadId === undefined && siblingEditions === undefined) continue;
+      const { filter, sort } = generation.request;
+      const id = ConnectionHandler.getConnectionID(ROOT_ID, "readerLibrary_books", {
+        __dynamicKey: generation.key,
+        filter,
+        sort,
+      });
+      this.environment.commitUpdate((store) => {
+        const connection = store.get(id);
+        const record: ReadOnlyRecordProxy | null | undefined = connection;
+        const affected =
+          matchesRequest ||
+          record?.getLinkedRecords("edges")?.some((edge) => {
+            const book: ReadOnlyRecordProxy | null | undefined = edge?.getLinkedRecord("node");
+            if (book == null) return false;
+            return (
+              book.getDataID() === reloadId ||
+              (siblingEditions !== undefined &&
+                book.getDataID() !== siblingEditions.id &&
+                book.getLinkedRecord("work")?.getDataID() === siblingEditions.workId)
+            );
+          });
+        if (affected === true) {
+          stale.add(generation);
+          connection?.invalidateRecord();
+        }
       });
     }
-  }
-
-  private current(request: number, intent: string): boolean {
-    return (
-      !this.disposed && request === this.request && intent === this.intentToken && this.isCurrent()
-    );
-  }
-
-  loadMore = async (): Promise<void> => {
-    const source = this.state.source;
-    if (
-      source === undefined ||
-      !source.hasNext ||
-      this.state.loadingMore ||
-      this.state.pending ||
-      this.returning
-    )
-      return;
-    this.publish({ loadingMore: true, moreError: null });
-    try {
-      await source.loadPage();
-      if (this.state.source === source && !this.disposed) this.publish({ loadingMore: false });
-    } catch (error) {
-      if (this.state.source === source && !this.disposed) {
-        console.error("[LibraryPage] page fetch failed", error);
-        this.publish({
-          loadingMore: false,
-          moreError: error instanceof Error ? error : new Error("Library page failed."),
-        });
-      }
+    if (candidate !== undefined && this.isCurrent()) {
+      // A pre-edit read can publish an older revision even if its sort and filters are unaffected.
+      this.replace(candidate.request, candidate.sort, this.state.position);
+    } else if (candidate === undefined && source !== undefined && stale.has(source)) {
+      this.refresh();
     }
-  };
+  }
 
   dispose(): void {
     this.disposed = true;
     this.cancelCandidate();
-    for (const source of this.sources) source.dispose();
-    this.sources.clear();
+    this.state.source?.dispose();
     for (const preparation of this.preparations) preparation.drop();
     this.preparations.clear();
     this.settled = undefined;
-    this.state = {
-      ...this.state,
-      source: undefined,
-      position: undefined,
-      pending: false,
-      loadingMore: false,
-    };
     this.listeners.clear();
+    this.state = { ...this.state, source: undefined, position: undefined };
   }
+}
+
+function sameRequest(left: LibraryRequest, right: LibraryRequest): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function dependsOn(source: LibrarySource, fields: readonly string[], shelfId?: string): boolean {
+  const filter = source.request.filter;
+  if (shelfId !== undefined)
+    return filter?.shelf === shelfId || (filter?.shelfAny?.includes(shelfId) ?? false);
+  return fields.some((field) => {
+    const sortField = field === "contributors.author" || field === "authors" ? "author" : field;
+    if (source.sort.some((level) => level.field === sortField)) return true;
+    if (filter == null) return false;
+    switch (sortField) {
+      case "title":
+        return (
+          filter.q !== undefined ||
+          filter.titleContains !== undefined ||
+          filter.titleEq !== undefined ||
+          filter.titleNe !== undefined
+        );
+      case "description":
+        return filter.q !== undefined;
+      case "subtitle":
+        return filter.subtitleContains !== undefined || filter.subtitleEmpty !== undefined;
+      case "author":
+        return filter.author != null || filter.authorAny != null || filter.authorNone != null;
+      case "isbn_13":
+      case "isbn13":
+        return (
+          filter.isbn13Contains !== undefined ||
+          filter.isbn13Eq !== undefined ||
+          filter.isbn13Empty !== undefined
+        );
+      case "pages":
+        return (
+          filter.pagesGte !== undefined ||
+          filter.pagesLte !== undefined ||
+          filter.pagesEmpty !== undefined
+        );
+      case "status":
+        return filter.statusAny != null || filter.statusNone != null;
+      case "rating":
+        return (
+          filter.ratingGte !== undefined ||
+          filter.ratingLte !== undefined ||
+          filter.ratingEmpty !== undefined
+        );
+      case "genres":
+        return filter.genre != null || filter.genreAny != null || filter.genreNone != null;
+      case "moods":
+        return filter.mood != null || filter.moodAny != null || filter.moodNone != null;
+      case "tags":
+        return filter.tag != null || filter.tagAny != null || filter.tagNone != null;
+      default:
+        return false;
+    }
+  });
 }
 
 const visits = new Map<string, LibraryVisitOwner>();
@@ -534,6 +644,16 @@ export function bindLibraryVisit(owner: LibraryVisitOwner): void {
   if (provisional === owner) provisional = undefined;
   owner.bind(entry.id);
   track(entry, owner);
+}
+
+export function invalidateLibraryVisits(
+  environment: Environment,
+  fields: readonly string[],
+  options: LibraryInvalidation = {},
+): void {
+  for (const owner of visits.values()) {
+    if (owner.environment === environment) owner.invalidate(fields, options);
+  }
 }
 
 export function clearLibraryVisits(): void {

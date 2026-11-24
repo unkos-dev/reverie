@@ -2076,6 +2076,7 @@ impl RelationKind {
 pub struct RelationKey {
     pub kind: RelationKind,
     pub parent: Uuid,
+    pub revision: Option<Uuid>,
     pub first: i32,
     pub after: Option<String>,
 }
@@ -2095,6 +2096,8 @@ struct Boundary {
 struct RelationCursor {
     kind: RelationKind,
     parent: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    revision: Option<Uuid>,
     boundary: Boundary,
     inner: Option<String>,
 }
@@ -2152,7 +2155,8 @@ fn relation_input(key: &RelationKey, request: i32) -> Result<RelationInput, AppE
         let bytes = Base64UrlUnpadded::decode_vec(after).map_err(|_| invalid_cursor())?;
         let cursor: RelationCursor =
             serde_json::from_slice(&bytes).map_err(|_| invalid_cursor())?;
-        if cursor.kind != key.kind || cursor.parent != key.parent {
+        if cursor.kind != key.kind || cursor.parent != key.parent || cursor.revision != key.revision
+        {
             return Err(invalid_cursor());
         }
         match key.kind {
@@ -2241,6 +2245,7 @@ pub fn shelf_item_cursor(
         &RelationKey {
             kind: RelationKind::ShelfItems,
             parent: shelf_id,
+            revision: None,
             first: 0,
             after: None,
         },
@@ -2321,6 +2326,7 @@ fn relation_cursor(key: &RelationKey, row: &RelationRow) -> Result<String, AppEr
     let cursor = RelationCursor {
         kind: key.kind,
         parent: key.parent,
+        revision: key.revision,
         boundary,
         inner,
     };

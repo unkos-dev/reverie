@@ -116,24 +116,21 @@ entity-tag for conflict detection.
 - `frontend/src/api/books.ts` mirrors the wire types a second time for the list-embedded shape — `ReadingStatusSchema`
   and `ReadingStateSummarySchema`, validated as part of `BookListItemSchema`.
 
-Graph Manifestation exposes caller-owned `readingState` without a global ID. `backend/src/services/reader.rs` loads its
-values and matching entity-tag within the same caller-scoped snapshot as the file projection. A missing state row
-produces the existing unread values and token without inserting a row. Request-local loaders carry the caller and keep
-records isolated between requests. Typed, Node and nested paths use the same visibility checks and state owner.
+GraphQL Manifestation exposes the caller's `readingState` as an immutable `ReadingRevision`. Its `reading_rev` identity
+derives from the caller ID, manifestation ID and strong validator. `backend/src/services/reader.rs` loads its values and
+validator in the caller-scoped snapshot. An absent row yields the unread revision without an insert.
 
-The GraphQL projection includes notes when selected. Its entity-tag remains an editing baseline paired with those
-values, independent of later metadata-version reads. No reader operation is wired to a browser consumer.
-
-`updateReadingState` requires write scope and calls the same seed, row-lock, compare and merge operation as HTTP. Its
-nullable baseline distinguishes missing, malformed and stale input. Presence-aware status, rating and notes inputs
-preserve absent and clear semantics. The acknowledgement contains the selected caller state and its matching token
-computed before commit. Child accounts retain their own visible-book reading permissions.
+`updateReadingState(input:)` requires write scope and uses the HTTP reading service's seed, row lock, compare and merge.
+The input requires a strong `ETag!` baseline and distinguishes absent patch fields from explicit clears. Its success
+member, `ReadingStateUpdated`, returns the Manifestation with `readingState` built from the row the write returned.
+`StaleBaseline`, `MetadataInvalid` and `NotFound` classify expected refusals. Child accounts retain reading permissions
+for their visible books.
 
 ## Data and state
 
-Reading executions return selected values and their matching baseline together. Table edits retain the displayed row's
-`reading_etag` through CSRF retry and failure. Confirmed saves and matched recovery reads reconcile that pair. Reading
-status and rating have no saved Undo; active inputs retain native typing Undo and Redo.
+Table editors take their starting values and validator from one reading revision and retain the validator through CSRF
+retry and failure. Relay updates display when a save or a recovery read publishes another revision. Reading status and
+rating have no saved Undo; active inputs retain native typing Undo and Redo.
 
 - **The `reading_state` row.** One per `(user_id, manifestation_id)`, created only by a `PATCH` — never by `GET`, which
   returns the all-null default when no row exists. That all-null shape is the "unread" domain state itself, not an

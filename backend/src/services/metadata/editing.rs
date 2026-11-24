@@ -1697,8 +1697,9 @@ pub struct SnapshotPage {
     pub after: Option<String>,
 }
 impl SnapshotPage {
-    pub fn key(&self, revision: &MetadataRevision) -> RelationKey {
-        RelationKey {
+    pub fn key(&self, revision: &MetadataRevision) -> Result<RelationKey, AppError> {
+        Ok(RelationKey {
+            revision: Some(revision.record_uuid()?),
             kind: self.kind,
             first: self.first,
             after: self.after.clone(),
@@ -1708,7 +1709,7 @@ impl SnapshotPage {
                 | RelationKind::WorkIdentifiers => revision.work_id,
                 _ => revision.manifestation_id,
             },
-        }
+        })
     }
 }
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -1868,7 +1869,7 @@ async fn selected_metadata(
             };
             key.pages.iter().map(move |page| page.key(&revision))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
     let mut distinct = std::collections::HashSet::new();
     relations.retain(|key| distinct.insert(key.clone()));
     let pages = reader::relation_pages_in_tx(user, state, tx, &relations).await?;
@@ -1877,7 +1878,7 @@ async fn selected_metadata(
         if let Some(core) = cores.get(&key.manifestation_id) {
             let mut snapshot = core_snapshot(core.clone());
             for page in &key.pages {
-                let relation = page.key(&snapshot.revision);
+                let relation = page.key(&snapshot.revision)?;
                 if let Some(value) = pages.get(&relation) {
                     snapshot.pages.insert(relation, value.clone());
                 }

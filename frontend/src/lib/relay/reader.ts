@@ -1,55 +1,5 @@
 import { graphql } from "react-relay";
 
-export const readerLibraryBook = graphql`
-  fragment readerLibraryBook on Manifestation @relay(plural: true) {
-    id
-    coverUrl
-    isbn13
-    pages
-    createdAt
-    work {
-      id
-      title
-      subtitle
-      authors(first: 5) {
-        edges {
-          node {
-            name
-          }
-        }
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
-      }
-      selectedSeries {
-        node {
-          id
-          name
-        }
-        position
-      }
-    }
-    metadata {
-      workId
-      manifestationId
-      etag
-      title
-      subtitle
-      isbn13
-      pages
-    }
-    readingState {
-      etag
-      status
-      rating
-      progressPct
-      startedAt
-      finishedAt
-    }
-  }
-`;
-
 export const readerWorkAuthors = graphql`
   fragment readerWorkAuthors on Work
   @throwOnFieldError
@@ -137,34 +87,22 @@ export const readerLibrary = graphql`
     filter: { type: "BooksFilter" }
     sort: { type: "[SortLevel!]" }
   )
-  @refetchable(queryName: "readerLibraryPaginationQuery", directives: ["@raw_response_type"]) {
+  @refetchable(queryName: "readerLibraryPaginationQuery")
+  @throwOnFieldError {
     books(first: $count, after: $cursor, filter: $filter, sort: $sort)
       @connection(key: "readerLibrary_books", dynamicKey_UNSTABLE: $sourceKey) {
       edges {
         node {
-          ...readerLibraryBook
+          id
+          metadata {
+            title
+          }
+          ...LibraryTable_rows
+          ...BookCard_book
+          ...useCellEdit_batchRows
         }
       }
     }
-  }
-`;
-
-export const readerLibraryQuery = graphql`
-  query readerLibraryQuery(
-    $count: Int = 50
-    $cursor: String
-    $sourceKey: String!
-    $filter: BooksFilter
-    $sort: [SortLevel!]
-  ) @raw_response_type {
-    ...readerLibrary
-      @arguments(
-        count: $count
-        cursor: $cursor
-        sourceKey: $sourceKey
-        filter: $filter
-        sort: $sort
-      )
   }
 `;
 
@@ -332,27 +270,16 @@ export const readerNodeQuery = graphql`
 export const readerAuthorEditing = graphql`
   fragment readerAuthorEditing on Manifestation
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
-  @refetchable(queryName: "readerAuthorEditingPaginationQuery", preferFetchable: true) {
+  @refetchable(queryName: "readerAuthorEditingPaginationQuery", preferFetchable: true)
+  @throwOnFieldError {
     id
     metadata {
-      workId
-      manifestationId
       etag
       authors(first: $count, after: $cursor) @connection(key: "readerAuthorEditing_authors") {
         edges {
-          cursor
           node {
             name
-            author {
-              id
-            }
           }
-        }
-        pageInfo {
-          hasNextPage
-          hasPreviousPage
-          startCursor
-          endCursor
         }
       }
     }

@@ -151,6 +151,8 @@ async function renderRail(
     authorIds: [],
     seriesIds: [],
     shelfIds: [],
+    eligible: false,
+    sourceKey: "filters",
   });
   const router = createMemoryRouter(
     [

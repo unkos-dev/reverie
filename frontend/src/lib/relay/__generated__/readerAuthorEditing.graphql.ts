@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<e97a0070a3d574d11ab4e67532d72de2>>
+ * @generated SignedSource<<75b733b2021052a1e67ba3505518c813>>
  * @lightSyntaxTransform
  */
 
@@ -14,24 +14,12 @@ export type readerAuthorEditing$data = {
   readonly metadata: {
     readonly authors: {
       readonly edges: ReadonlyArray<{
-        readonly cursor: string;
         readonly node: {
-          readonly author: {
-            readonly id: string;
-          };
           readonly name: string;
         };
       }>;
-      readonly pageInfo: {
-        readonly endCursor: string | null | undefined;
-        readonly hasNextPage: boolean;
-        readonly hasPreviousPage: boolean;
-        readonly startCursor: string | null | undefined;
-      };
     };
     readonly etag: string;
-    readonly manifestationId: string;
-    readonly workId: string;
   };
   readonly " $fragmentType": "readerAuthorEditing";
 };
@@ -43,14 +31,7 @@ export type readerAuthorEditing$key = {
 import readerAuthorEditingPaginationQuery_graphql from "./readerAuthorEditingPaginationQuery.graphql";
 
 const node: ReaderFragment = (function () {
-  var v0 = ["metadata", "authors"],
-    v1 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "id",
-      storageKey: null,
-    };
+  var v0 = ["metadata", "authors"];
   return {
     argumentDefinitions: [
       {
@@ -90,10 +71,17 @@ const node: ReaderFragment = (function () {
           identifierQueryVariableName: "id",
         },
       },
+      throwOnFieldError: true,
     },
     name: "readerAuthorEditing",
     selections: [
-      v1 /*:: as any*/,
+      {
+        alias: null,
+        args: null,
+        kind: "ScalarField",
+        name: "id",
+        storageKey: null,
+      },
       {
         alias: null,
         args: null,
@@ -102,20 +90,6 @@ const node: ReaderFragment = (function () {
         name: "metadata",
         plural: false,
         selections: [
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "workId",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "manifestationId",
-            storageKey: null,
-          },
           {
             alias: null,
             args: null,
@@ -142,13 +116,6 @@ const node: ReaderFragment = (function () {
                   {
                     alias: null,
                     args: null,
-                    kind: "ScalarField",
-                    name: "cursor",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
                     concreteType: "RevisionContributor",
                     kind: "LinkedField",
                     name: "node",
@@ -164,21 +131,18 @@ const node: ReaderFragment = (function () {
                       {
                         alias: null,
                         args: null,
-                        concreteType: "Author",
-                        kind: "LinkedField",
-                        name: "author",
-                        plural: false,
-                        selections: [v1 /*:: as any*/],
-                        storageKey: null,
-                      },
-                      {
-                        alias: null,
-                        args: null,
                         kind: "ScalarField",
                         name: "__typename",
                         storageKey: null,
                       },
                     ],
+                    storageKey: null,
+                  },
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "cursor",
                     storageKey: null,
                   },
                 ],
@@ -196,28 +160,14 @@ const node: ReaderFragment = (function () {
                     alias: null,
                     args: null,
                     kind: "ScalarField",
-                    name: "hasNextPage",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "hasPreviousPage",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "startCursor",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
                     name: "endCursor",
+                    storageKey: null,
+                  },
+                  {
+                    alias: null,
+                    args: null,
+                    kind: "ScalarField",
+                    name: "hasNextPage",
                     storageKey: null,
                   },
                 ],
@@ -235,6 +185,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "6640b823801bbb9fa2b7455b9cb9518d";
+(node as any).hash = "386d5ec2b8979374088cec8dfde461ee";
 
 export default node;

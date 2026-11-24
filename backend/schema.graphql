@@ -40,7 +40,7 @@ type AuthorEdge {
   The item at the end of the edge
   """
   node: Author!
-  role: String!
+  role: ContributorRole!
   position: Int!
   """
   A cursor for use in pagination
@@ -98,6 +98,13 @@ input ContributorPatch {
   author: [String!]
   editor: [String!]
   translator: [String!]
+}
+
+enum ContributorRole {
+  AUTHOR
+  EDITOR
+  TRANSLATOR
+  NARRATOR
 }
 
 input CreateShelfInput {
@@ -342,14 +349,14 @@ type Manifestation implements Node @fetchable(field_name: "id") {
   pages: Int
   publisher: String
   publicationDate: String
-  createdAt: String!
+  createdAt: DateTime!
   updatedAt: String!
   coverUrl: String!
   contentRating: String
   ingestionStatus: String!
   validationStatus: String!
   enrichmentStatus: String!
-  readingState: ReadingState!
+  readingState: ReadingRevision!
   metadata: MetadataRevision!
   genres(first: Int!, after: String): GenreConnection!
   moods(first: Int!, after: String): MoodConnection!
@@ -429,7 +436,7 @@ input MetadataPatch {
   manifestationIdentifiers: [IdentifierPatch!]
 }
 
-type MetadataRefresh {
+type MetadataRefreshQueued {
   manifestationId: ID!
 }
 
@@ -559,9 +566,9 @@ type MoodEdge {
 
 type Mutation {
   updateLibraryPreferences(input: UpdateLibraryPreferencesInput!): UpdateLibraryPreferencesResult!
-  refreshMetadata(id: ID!): MetadataRefresh!
+  refreshMetadata(input: RefreshMetadataInput!): RefreshMetadataResult!
   updateMetadata(input: UpdateMetadataInput!): UpdateMetadataResult!
-  updateReadingState(id: ID!, baseline: String, patch: ReadingPatch!): ReadingState!
+  updateReadingState(input: UpdateReadingStateInput!): UpdateReadingStateResult!
   createShelf(input: CreateShelfInput!): CreateShelfResult!
   renameShelf(input: RenameShelfInput!): RenameShelfResult!
   deleteShelf(input: DeleteShelfInput!): DeleteShelfResult!
@@ -642,29 +649,40 @@ type Query {
 }
 
 input ReadingPatch {
-  status: ReadingStatusInput
+  status: ReadingStatus
   rating: Int
   notes: String
 }
 
-type ReadingState {
-  etag: String!
-  status: String
+type ReadingRevision {
+  id: ID!
+  etag: ETag!
+  status: ReadingStatus
   rating: Int
   notes: String
   progressPct: Float
-  startedAt: String
-  finishedAt: String
-  lastReadAt: String
+  startedAt: DateTime
+  finishedAt: DateTime
+  lastReadAt: DateTime
 }
 
-enum ReadingStatusInput {
+type ReadingStateUpdated {
+  manifestation: Manifestation!
+}
+
+enum ReadingStatus {
   WANT_TO_READ
   READING
   ON_HOLD
   FINISHED
   ABANDONED
 }
+
+input RefreshMetadataInput {
+  id: ID!
+}
+
+union RefreshMetadataResult = MetadataRefreshQueued | NotFound
 
 input RejectMetadataVersionInput {
   id: ID!
@@ -723,7 +741,7 @@ type RevisionContributorEdge {
   The item at the end of the edge
   """
   node: RevisionContributor!
-  role: String!
+  role: ContributorRole!
   position: Int!
   """
   A cursor for use in pagination
@@ -1014,6 +1032,14 @@ input UpdateMetadataInput {
 }
 
 union UpdateMetadataResult = MetadataSaved | StaleBaseline | MetadataInvalid | FieldsLocked | EditTooLarge | NotFound
+
+input UpdateReadingStateInput {
+  id: ID!
+  baseline: ETag!
+  patch: ReadingPatch!
+}
+
+union UpdateReadingStateResult = ReadingStateUpdated | StaleBaseline | MetadataInvalid | NotFound
 
 """
 Caller-owned identity, independent of existing browser account projections.

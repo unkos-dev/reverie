@@ -1,5 +1,5 @@
 /* oxlint-disable react/only-export-components */
-import { fetchQuery, graphql, loadQuery, type PreloadedQuery } from "react-relay";
+import { fetchQuery, graphql } from "react-relay";
 import { createOperationDescriptor, getRequest, type Environment } from "relay-runtime";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -10,14 +10,15 @@ import { confirmedRelayEnvironment } from "@/lib/relay/environment";
 import {
   libraryDestination,
   libraryLookups,
+  libraryRequest,
   validateRestoredVisit,
   type LibraryLookups,
   type LibraryPreparation,
+  type LibrarySource,
   type LibraryVisitOwner,
 } from "@/lib/relay/library-visit";
-import LibraryPageQuery, {
-  type LibraryPageQuery as PageQuery,
-} from "@/lib/relay/__generated__/LibraryPageQuery.graphql";
+import { serializeSortParam } from "@/api/books";
+import { sortLevelParams } from "@/pages/library/use-library-preferences";
 import type {
   libraryBootstrapQuery as BootstrapQuery,
   libraryBootstrapQuery$data,
@@ -31,6 +32,16 @@ const libraryBootstrapQuery = graphql`
       id
       libraryPreferences {
         ...useLibraryPreferences_preferences
+        sort {
+          column
+          direction
+        }
+        defaults {
+          sort {
+            column
+            direction
+          }
+        }
       }
     }
     authorLabels(ids: $authorIds) {
@@ -49,7 +60,7 @@ export type PreparedLibrary = {
   owner: LibraryVisitOwner;
   preparation: LibraryPreparation;
   visit: LibraryVisit;
-  reference: PreloadedQuery<PageQuery>;
+  initial: LibrarySource;
 };
 
 function bootstrap(
@@ -123,13 +134,15 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<PreparedL
   });
   owner.intent.restore(visit);
   if (visit !== restored) owner.intent.update(() => visit);
-  const reference = preparation.hold(
-    loadQuery<PageQuery>(environment, LibraryPageQuery, libraryLookups(visit.filters), {
-      fetchPolicy: "store-or-network",
-    }),
+  const preferences = data.viewer.libraryPreferences;
+  const override = sortLevelParams(preferences.sort ?? []);
+  const effective =
+    preferences.sort === null ? sortLevelParams(preferences.defaults.sort) : override;
+  const initial = preparation.hold(
+    owner.prepare(libraryRequest(visit.filters, serializeSortParam(override)), effective),
   );
   owner.settle(preparation);
-  return { owner, preparation, visit, reference };
+  return { owner, preparation, visit, initial };
 }
 
 export { LibraryPage as Component } from "@/pages/library/LibraryPage";

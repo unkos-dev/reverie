@@ -6,24 +6,28 @@ import { getBookMetadata, updateBookMetadata, type BookMetadata } from "@/api/bo
 import { getReadingState, updateReadingState } from "@/api/reading";
 import { apiFetch } from "@/api/fetch";
 
-import { createOperationDescriptor, getRequest } from "relay-runtime";
-import { captureAuthorPages, encodeGraphQLId, executeEditing } from "@/api/graphql";
+import { commitMutation, createOperationDescriptor, getRequest } from "relay-runtime";
+import { fetchQuery, RelayEnvironmentProvider } from "react-relay";
+import { render } from "vitest-browser-react";
+import { page, userEvent } from "vite-plus/test/browser";
+import { AuthorsCell } from "@/pages/library/table/cells";
+import { encodeGraphQLId } from "@/api/graphql";
 import { forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
 import { relayEnvironment } from "@/lib/relay/environment";
 import {
   mutationsTitleQuery,
   mutationsRevisionQuery,
   mutationsSaveTitleMutation,
-  mutationsReadingQuery,
-  mutationsReadingMutation,
-  mutationsAuthorPageQuery,
 } from "@/lib/relay/mutations";
 import type { mutationsTitleQuery as TitleQuery } from "@/lib/relay/__generated__/mutationsTitleQuery.graphql";
 import type { mutationsRevisionQuery as RevisionQuery } from "@/lib/relay/__generated__/mutationsRevisionQuery.graphql";
 import type { mutationsSaveTitleMutation as SaveTitle } from "@/lib/relay/__generated__/mutationsSaveTitleMutation.graphql";
-import type { mutationsReadingQuery as ReadingQuery } from "@/lib/relay/__generated__/mutationsReadingQuery.graphql";
-import type { mutationsReadingMutation as ReadingMutation } from "@/lib/relay/__generated__/mutationsReadingMutation.graphql";
-import type { mutationsAuthorPageQuery as AuthorPageQuery } from "@/lib/relay/__generated__/mutationsAuthorPageQuery.graphql";
+import ReadingDocument, {
+  type useCellEditReadingMutation as ReadingMutation,
+} from "@/lib/relay/__generated__/useCellEditReadingMutation.graphql";
+import ReloadDocument, {
+  type useCellEditReloadQuery,
+} from "@/lib/relay/__generated__/useCellEditReloadQuery.graphql";
 
 const SAMPLE_TOKEN = "abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE"; // 43 chars
 const REFRESHED_TOKEN = "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"; // 43 Z
@@ -444,7 +448,7 @@ async function graphqlBaselines(): Promise<void> {
   const titleResponse = (metadata: unknown) =>
     jsonResponse({ data: { manifestation: { id, metadata } } });
   fetch.mockResolvedValueOnce(titleResponse(snapshot));
-  const initial = await executeEditing<TitleQuery>(environment, mutationsTitleQuery, {
+  const initial = await fetchQuery<TitleQuery>(environment, mutationsTitleQuery, {
     id,
   }).toPromise();
   const baseline = initial?.manifestation?.metadata;
@@ -452,11 +456,11 @@ async function graphqlBaselines(): Promise<void> {
   fetch.mockResolvedValueOnce(
     titleResponse({ ...snapshot, id: revision(newer), title: "Background", etag: newer }),
   );
-  await executeEditing<TitleQuery>(environment, mutationsTitleQuery, { id }).toPromise();
+  await fetchQuery<TitleQuery>(environment, mutationsTitleQuery, { id }).toPromise();
   fetch.mockResolvedValueOnce(
     titleResponse({ id: revision(latest), workId, manifestationId: id, etag: latest }),
   );
-  const sparse = await executeEditing<RevisionQuery>(environment, mutationsRevisionQuery, {
+  const sparse = await fetchQuery<RevisionQuery>(environment, mutationsRevisionQuery, {
     id,
   }).toPromise();
   expect(sparse?.manifestation?.metadata).not.toHaveProperty("title");
@@ -465,6 +469,13 @@ async function graphqlBaselines(): Promise<void> {
     manifestation: { metadata: { title: undefined, etag: latest } },
   });
   expect(baseline).toEqual(snapshot);
+  fetch.mockResolvedValueOnce(
+    titleResponse({ id: revision(latest), workId, manifestationId: id, title: "Completed" }),
+  );
+  await fetchQuery<TitleQuery>(environment, mutationsTitleQuery, { id }).toPromise();
+  expect(environment.lookup(operation.fragment).data).toMatchObject({
+    manifestation: { metadata: { title: "Completed", etag: latest } },
+  });
   const requestId = crypto.randomUUID();
   const variables = {
     input: { id, baseline: baseline.etag, requestId, patch: { title: "Saved" } },
@@ -493,12 +504,17 @@ async function graphqlBaselines(): Promise<void> {
       },
     }),
   );
-  const saved = await executeEditing<SaveTitle>(
-    environment,
-    mutationsSaveTitleMutation,
-    variables,
-  ).toPromise();
-  expect(saved?.updateMetadata).toMatchObject({
+  const saveTitle = () =>
+    new Promise<SaveTitle["response"]>((resolve, reject) => {
+      commitMutation<SaveTitle>(environment, {
+        mutation: mutationsSaveTitleMutation,
+        variables,
+        onCompleted: resolve,
+        onError: reject,
+      });
+    });
+  const saved = await saveTitle();
+  expect(saved.updateMetadata).toMatchObject({
     __typename: "MetadataSaved",
     manifestation: { metadata: { title: "Saved", etag: latest } },
   });
@@ -513,122 +529,157 @@ async function graphqlBaselines(): Promise<void> {
       data: { updateMetadata: { __typename: "StaleBaseline", message: "The baseline is stale." } },
     }),
   );
-  await expect(
-    executeEditing<SaveTitle>(environment, mutationsSaveTitleMutation, variables).toPromise(),
-  ).resolves.toMatchObject({ updateMetadata: { __typename: "StaleBaseline" } });
+  await expect(saveTitle()).resolves.toMatchObject({
+    updateMetadata: { __typename: "StaleBaseline" },
+  });
   expect(environment.lookup(operation.fragment).data).toMatchObject({
     manifestation: { metadata: { title: "Saved", etag: latest } },
   });
   fetch.mockResolvedValueOnce(
     titleResponse({ ...snapshot, id: revision(latest), title: "Fresh decision", etag: latest }),
   );
-  const fresh = await executeEditing<TitleQuery>(environment, mutationsTitleQuery, {
+  const fresh = await fetchQuery<TitleQuery>(environment, mutationsTitleQuery, {
     id,
   }).toPromise();
   expect(fresh?.manifestation?.metadata).toMatchObject({ title: "Fresh decision", etag: latest });
   expect(baseline).toEqual(snapshot);
   const reading = {
+    id: "reading_rev_initial",
     etag: tag,
     status: null,
     rating: null,
-    notes: "Starting",
     progressPct: null,
-    startedAt: null,
-    finishedAt: null,
-    lastReadAt: null,
   };
-  fetch.mockResolvedValueOnce(
-    jsonResponse({ data: { manifestation: { id, readingState: reading } } }),
-  );
-  const read = await executeEditing<ReadingQuery>(environment, mutationsReadingQuery, {
+  const metadata = {
+    ...snapshot,
+    id: revision(latest),
+    title: "Saved",
+    etag: latest,
+    subtitle: null,
+    isbn13: null,
+    pages: null,
+  };
+  const manifestation = {
     id,
-  }).toPromise();
-  const readBaseline = read?.manifestation?.readingState;
-  if (readBaseline === undefined) throw new Error("Expected reading baseline.");
+    metadata,
+    readingState: reading,
+    coverUrl: "",
+    work: null,
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  const readForEdit = () =>
+    fetchQuery<useCellEditReloadQuery>(environment, ReloadDocument, { id }).toPromise();
   fetch.mockResolvedValueOnce(
     jsonResponse({
       data: {
-        manifestation: { id, readingState: { ...reading, notes: "Background", etag: newer } },
+        manifestation: {
+          ...manifestation,
+          readingState: { id: "reading_rev_missing", status: null, rating: null },
+        },
       },
     }),
   );
-  await executeEditing<ReadingQuery>(environment, mutationsReadingQuery, { id }).toPromise();
+  await expect(readForEdit()).rejects.toThrow();
+  fetch.mockResolvedValueOnce(jsonResponse({ data: { manifestation } }));
+  const opened = (await readForEdit())?.manifestation?.readingState;
+  if (opened === undefined) throw new Error("Expected an opening revision.");
   fetch.mockResolvedValueOnce(
-    jsonResponse({ data: { updateReadingState: { ...reading, notes: "Saved", etag: latest } } }),
+    jsonResponse({
+      data: {
+        manifestation: {
+          ...manifestation,
+          readingState: { ...reading, id: "reading_rev_background", etag: newer },
+        },
+      },
+    }),
   );
-  await executeEditing<ReadingMutation>(environment, mutationsReadingMutation, {
-    id,
-    baseline: readBaseline.etag,
-    patch: { notes: "Saved" },
-  }).toPromise();
+  await readForEdit();
+  fetch.mockResolvedValueOnce(
+    jsonResponse({
+      data: {
+        updateReadingState: {
+          __typename: "ReadingStateUpdated",
+          manifestation: {
+            ...manifestation,
+            readingState: { ...reading, id: "reading_rev_saved", rating: 3, etag: latest },
+          },
+        },
+      },
+    }),
+  );
+  await new Promise<ReadingMutation["response"]>((resolve, reject) => {
+    commitMutation<ReadingMutation>(environment, {
+      mutation: ReadingDocument,
+      variables: { input: { id, baseline: opened.etag, patch: { rating: 3 } } },
+      onCompleted: resolve,
+      onError: reject,
+    });
+  });
   expect(
     JSON.parse(
       typeof fetch.mock.lastCall?.[1]?.body === "string" ? fetch.mock.lastCall[1].body : "null",
     ),
-  ).toMatchObject({ variables: { baseline: tag } });
-  expect(readBaseline).toEqual(reading);
-  const authorPage = (name: string, cursor: string, hasNextPage: boolean, etag = tag) => ({
-    id: revision(etag),
-    workId,
-    manifestationId: id,
-    etag,
-    authors: {
-      edges: [
-        {
-          cursor,
-          node: {
-            name,
-            author: {
-              id: encodeGraphQLId(
-                "Author",
-                `${cursor === "one" ? "32345678" : "42345678"}-1234-4234-8234-123456789abc`,
-              ),
-            },
+  ).toMatchObject({ variables: { input: { baseline: tag } } });
+
+  const authorPage = (
+    etag: string,
+    name: string,
+    cursor: string,
+    hasNextPage: boolean,
+    continuation = false,
+  ) => ({
+    data: {
+      [continuation ? "fetch__Manifestation" : "manifestation"]: {
+        id,
+        metadata: {
+          id: revision(etag),
+          etag,
+          authors: {
+            edges: [{ cursor, node: { name } }],
+            pageInfo: { hasNextPage, endCursor: cursor },
           },
         },
-      ],
-      pageInfo: {
-        hasNextPage,
-        hasPreviousPage: cursor !== "one",
-        startCursor: cursor,
-        endCursor: cursor,
       },
     },
   });
-  fetch.mockResolvedValueOnce(titleResponse(authorPage("Alice", "one", true)));
-  const firstResult = await executeEditing<AuthorPageQuery>(environment, mutationsAuthorPageQuery, {
-    id,
-    first: 1,
-  }).toPromise();
-  const first = firstResult?.manifestation?.metadata;
-  if (first === undefined) throw new Error("Expected author page.");
-  expect(() => captureAuthorPages([{ after: null, snapshot: first }])).toThrow();
-  fetch.mockResolvedValueOnce(titleResponse(authorPage("Bob", "two", false, newer)));
-  const changedResult = await executeEditing<AuthorPageQuery>(
-    environment,
-    mutationsAuthorPageQuery,
-    { id, first: 1, after: "one" },
-  ).toPromise();
-  const changed = changedResult?.manifestation?.metadata;
-  if (changed === undefined) throw new Error("Expected author page.");
-  expect(() =>
-    captureAuthorPages([
-      { after: null, snapshot: first },
-      { after: "one", snapshot: changed },
-    ]),
-  ).toThrow();
-  fetch.mockResolvedValueOnce(titleResponse(authorPage("Bob", "two", false)));
-  const lastResult = await executeEditing<AuthorPageQuery>(environment, mutationsAuthorPageQuery, {
-    id,
-    first: 1,
-    after: "one",
-  }).toPromise();
-  const last = lastResult?.manifestation?.metadata;
-  if (last === undefined) throw new Error("Expected author page.");
-  const complete = captureAuthorPages([
-    { after: null, snapshot: first },
-    { after: "one", snapshot: last },
-  ]);
-  expect(complete).toMatchObject({ etag: tag, authors: [{ name: "Alice" }, { name: "Bob" }] });
-  expect(complete).not.toHaveProperty("title");
+  fetch.mockClear();
+  fetch.mockResolvedValueOnce(jsonResponse(authorPage(tag, "Old author", "old-one", true)));
+  let refuseOld: ((value: Response) => void) | undefined;
+  fetch.mockReturnValueOnce(
+    new Promise<Response>((resolve) => {
+      refuseOld = resolve;
+    }),
+  );
+  fetch.mockResolvedValueOnce(jsonResponse(authorPage(newer, "Alice", "new-one", true, true)));
+  fetch.mockResolvedValueOnce(jsonResponse(authorPage(newer, "Bob", "new-two", false, true)));
+
+  const onCommit = vi.fn();
+  await render(
+    <RelayEnvironmentProvider environment={environment}>
+      <AuthorsCell
+        id={id}
+        authors={["Old author"]}
+        baseline={tag}
+        density="comfortable"
+        state={{ pending: undefined, failed: false }}
+        onCommit={onCommit}
+      />
+    </RelayEnvironmentProvider>,
+  );
+  await userEvent.click(page.getByRole("button", { name: /edit authors/i }));
+  await vi.waitFor(() => {
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  expect(page.getByRole("button", { name: "Save", exact: true }).elements()).toHaveLength(0);
+  expect(onCommit).not.toHaveBeenCalled();
+  refuseOld?.(
+    jsonResponse({ errors: [{ message: "Stale cursor", extensions: { code: "invalid-cursor" } }] }),
+  );
+  await expect
+    .element(page.getByRole("dialog", { name: "Edit authors" }).getByRole("row", { name: "Bob" }))
+    .toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledTimes(4);
+  await userEvent.fill(page.getByRole("textbox", { name: "Add an author" }), "Dee");
+  await userEvent.click(page.getByRole("button", { name: "Save", exact: true }));
+  expect(onCommit).toHaveBeenCalledWith(["Alice", "Bob", "Dee"], newer, ["Alice", "Bob"]);
 }

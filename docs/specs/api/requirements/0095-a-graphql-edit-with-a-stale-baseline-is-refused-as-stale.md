@@ -36,8 +36,8 @@ no longer hold.
 - Sending a committed `updateMetadata` again unchanged, so that its baseline is stale and its save request ID has been
   used, returns `StaleBaseline`. The same save request ID with the current baseline returns `MetadataInvalid`. Checked
   by `graphql_edit_baselines`.
-- An `updateReadingState` with a stale baseline produces an error with the `if-match-mismatch` code, and a read
-  afterwards returns the reading state the last successful save stored. Checked by `graphql_edit_baselines`.
+- An `updateReadingState` with a stale baseline returns `StaleBaseline`, and a read afterwards returns the values and
+  validator from the last successful save. Checked by `graphql_edit_baselines`.
 - An `undoMetadata` with a stale baseline returns `StaleBaseline` without consuming the Undo operation: the same session
   restores the change with the current baseline afterwards. Checked by `graphql_undo_boundary` in
   `backend/src/graphql/mod.rs`.

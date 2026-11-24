@@ -266,6 +266,8 @@ pub(super) struct Manifestation {
     pub(super) record: BookRecord,
     #[graphql(skip)]
     committed: Option<Arc<MetadataRevision>>,
+    #[graphql(skip)]
+    committed_reading: Option<Arc<ReadingRevision>>,
 }
 
 impl Manifestation {
@@ -274,6 +276,7 @@ impl Manifestation {
             id: id::Manifestation::encode(record.detail.id),
             record,
             committed: None,
+            committed_reading: None,
         }
     }
 
@@ -281,6 +284,11 @@ impl Manifestation {
     /// acknowledgement pairs its values with the validator that write produced.
     pub(super) fn with_metadata(mut self, revision: MetadataRevision) -> Self {
         self.committed = Some(Arc::new(revision));
+        self
+    }
+
+    pub(super) fn with_reading(mut self, revision: ReadingRevision) -> Self {
+        self.committed_reading = Some(Arc::new(revision));
         self
     }
 }
@@ -319,8 +327,8 @@ impl Manifestation {
     async fn publication_date(&self) -> Option<&str> {
         self.record.detail.pub_date.as_deref()
     }
-    async fn created_at(&self) -> String {
-        self.record.detail.created_at.to_string()
+    async fn created_at(&self) -> DateTime {
+        DateTime(self.record.detail.created_at)
     }
     async fn updated_at(&self) -> String {
         self.record.detail.updated_at.to_string()
@@ -343,18 +351,24 @@ impl Manifestation {
     async fn enrichment_status(&self) -> &str {
         &self.record.detail.enrichment_status
     }
-    async fn reading_state(&self) -> ReadingState {
-        let row = &self.record.reading;
-        ReadingState {
-            etag: self.record.reading_etag.clone(),
-            status: row.status.map(|value| value.as_str().to_owned()),
-            rating: row.rating.map(i32::from),
-            notes: row.notes.clone(),
-            progress_pct: row.progress_pct.map(f64::from),
-            started_at: row.started_at.map(|value| timestamp(value.to_jiff())),
-            finished_at: row.finished_at.map(|value| timestamp(value.to_jiff())),
-            last_read_at: row.last_read_at.map(|value| timestamp(value.to_jiff())),
+    #[expect(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "async-graphql awaits complex-object resolvers"
+    )]
+    async fn reading_state(
+        &self,
+        ctx: &Context<'_>,
+    ) -> async_graphql::Result<Arc<ReadingRevision>> {
+        if let Some(committed) = &self.committed_reading {
+            return Ok(Arc::clone(committed));
         }
+        Ok(Arc::new(ReadingRevision::new(
+            ctx.data::<CurrentUser>()?.user_id,
+            self.record.detail.id,
+            &self.record.reading,
+            self.record.reading_etag.clone(),
+        )?))
     }
     async fn metadata(&self, ctx: &Context<'_>) -> async_graphql::Result<Arc<MetadataRevision>> {
         if let Some(committed) = &self.committed {
@@ -381,7 +395,7 @@ impl Manifestation {
             manifestation_revision: row.manifestation_revision,
         };
         Ok(Arc::new(MetadataRevision {
-            id: id::metadata_revision(&revision).map_err(safe_error)?,
+            id: id::MetadataRevision::encode(revision.record_uuid().map_err(safe_error)?),
             revision,
             relation_pages: HashMap::new(),
             isbn_mismatch: row.isbn_mismatch(),
@@ -533,35 +547,63 @@ impl Manifestation {
     }
 }
 
+input_output_enum!(ReadingStatus { WantToRead => "WANT_TO_READ", Reading => "READING", OnHold => "ON_HOLD", Finished => "FINISHED", Abandoned => "ABANDONED" });
+
+impl From<crate::models::reading_status::ReadingStatus> for ReadingStatus {
+    fn from(value: crate::models::reading_status::ReadingStatus) -> Self {
+        use crate::models::reading_status::ReadingStatus as Stored;
+        match value {
+            Stored::WantToRead => Self::WantToRead,
+            Stored::Reading => Self::Reading,
+            Stored::OnHold => Self::OnHold,
+            Stored::Finished => Self::Finished,
+            Stored::Abandoned => Self::Abandoned,
+        }
+    }
+}
+
+impl From<ReadingStatus> for crate::models::reading_status::ReadingStatus {
+    fn from(value: ReadingStatus) -> Self {
+        match value {
+            ReadingStatus::WantToRead => Self::WantToRead,
+            ReadingStatus::Reading => Self::Reading,
+            ReadingStatus::OnHold => Self::OnHold,
+            ReadingStatus::Finished => Self::Finished,
+            ReadingStatus::Abandoned => Self::Abandoned,
+        }
+    }
+}
+
 #[derive(SimpleObject)]
-pub(super) struct ReadingState {
-    etag: String,
-    status: Option<String>,
+pub(super) struct ReadingRevision {
+    id: ID,
+    etag: ETag,
+    status: Option<ReadingStatus>,
     rating: Option<i32>,
     notes: Option<String>,
     progress_pct: Option<f64>,
-    started_at: Option<String>,
-    finished_at: Option<String>,
-    last_read_at: Option<String>,
+    started_at: Option<DateTime>,
+    finished_at: Option<DateTime>,
+    last_read_at: Option<DateTime>,
 }
-impl ReadingState {
-    pub(super) fn from_row(
+
+impl ReadingRevision {
+    pub(super) fn new(
+        user: Uuid,
+        manifestation: Uuid,
         row: &crate::services::reading::ReadingStateRow,
+        etag: String,
     ) -> async_graphql::Result<Self> {
         Ok(Self {
-            etag: row
-                .etag()
-                .map_err(safe_error)?
-                .to_str()
-                .map_err(|e| safe_error(AppError::Internal(e.into())))?
-                .to_owned(),
-            status: row.status.map(|v| v.as_str().to_owned()),
+            id: id::reading_revision(user, manifestation, &etag),
+            etag: ETag::from_wire(etag)?,
+            status: row.status.map(Into::into),
             rating: row.rating.map(i32::from),
             notes: row.notes.clone(),
             progress_pct: row.progress_pct.map(f64::from),
-            started_at: row.started_at.map(|value| timestamp(value.to_jiff())),
-            finished_at: row.finished_at.map(|value| timestamp(value.to_jiff())),
-            last_read_at: row.last_read_at.map(|value| timestamp(value.to_jiff())),
+            started_at: row.started_at.map(|value| DateTime(value.to_jiff())),
+            finished_at: row.finished_at.map(|value| DateTime(value.to_jiff())),
+            last_read_at: row.last_read_at.map(|value| DateTime(value.to_jiff())),
         })
     }
 }
@@ -648,7 +690,7 @@ impl MetadataRevision {
             manifestation_revision: snapshot.revision.manifestation_revision,
         };
         Ok(Self {
-            id: id::metadata_revision(&revision).map_err(safe_error)?,
+            id: id::MetadataRevision::encode(revision.record_uuid().map_err(safe_error)?),
             revision,
             relation_pages: snapshot.pages.clone(),
             work_id: id::Work::encode(snapshot.revision.work_id),
@@ -687,7 +729,8 @@ impl MetadataRevision {
                 first: super::complexity::nested_size(kind, first).map_err(safe_error)?,
                 after,
             }
-            .key(&self.revision);
+            .key(&self.revision)
+            .map_err(safe_error)?;
             self.relation_pages
                 .get(&key)
                 .cloned()
@@ -870,9 +913,23 @@ pub(super) struct Author {
     id: ID,
     name: String,
 }
+output_enum!(ContributorRole { Author => "AUTHOR", Editor => "EDITOR", Translator => "TRANSLATOR", Narrator => "NARRATOR" });
+
+impl From<crate::models::contributor_role::ContributorRole> for ContributorRole {
+    fn from(value: crate::models::contributor_role::ContributorRole) -> Self {
+        use crate::models::contributor_role::ContributorRole as Stored;
+        match value {
+            Stored::Author => Self::Author,
+            Stored::Editor => Self::Editor,
+            Stored::Translator => Self::Translator,
+            Stored::Narrator => Self::Narrator,
+        }
+    }
+}
+
 #[derive(SimpleObject)]
 pub(super) struct ContributorFields {
-    role: String,
+    role: ContributorRole,
     position: i32,
 }
 #[derive(SimpleObject)]
@@ -1051,6 +1108,7 @@ async fn relation(
     let key = RelationKey {
         kind,
         parent,
+        revision: None,
         first: super::complexity::nested_size(kind, first).map_err(safe_error)?,
         after,
     };
@@ -1086,13 +1144,7 @@ fn contributor_connection<T: async_graphql::OutputType>(
                 name: required(row.name)?,
             }),
             ContributorFields {
-                role: match required(row.role)? {
-                    crate::models::contributor_role::ContributorRole::Author => "author",
-                    crate::models::contributor_role::ContributorRole::Editor => "editor",
-                    crate::models::contributor_role::ContributorRole::Translator => "translator",
-                    crate::models::contributor_role::ContributorRole::Narrator => "narrator",
-                }
-                .to_owned(),
+                role: required(row.role)?.into(),
                 position,
             },
         ));

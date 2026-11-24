@@ -1,4 +1,6 @@
-import type { ReaderBook as BookListItem } from "@/api/graphql";
+import { graphql, useFragment } from "react-relay";
+import type { LibraryTable_rows$key } from "@/lib/relay/__generated__/LibraryTable_rows.graphql";
+import type { LibraryTable_cell$key } from "@/lib/relay/__generated__/LibraryTable_cell.graphql";
 import { ArrowRight, ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Loader2 } from "lucide-react";
 import {
   createContext,
@@ -59,8 +61,13 @@ import {
 } from "./cells";
 import "./library-table.css";
 import { CellSaveState } from "../CellSaveState";
-import { pendingKey, type UseCellEditResult } from "./useCellEdit";
-import type { EditableColumnKey } from "./edit-routing";
+import {
+  pendingKey,
+  type EditValue,
+  type CellEditReport,
+  type UseCellEditResult,
+} from "./useCellEdit";
+import { readingStatus, type EditableColumnKey } from "./edit-routing";
 
 type ColumnId =
   | "select"
@@ -116,13 +123,57 @@ const SORT_WORDS: Readonly<Record<SortField, { asc: string; desc: string }>> = {
 const ESTIMATED_ROW: Record<Density, number> = { comfortable: 52, compact: 40 };
 const HEADER_HEIGHT = 42;
 
-const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
-  status: null,
-  rating: null,
-  progress_pct: null,
-  started_at: null,
-  finished_at: null,
-};
+const rowsFragment = graphql`
+  fragment LibraryTable_rows on Manifestation @relay(plural: true) @throwOnFieldError {
+    id
+    metadata {
+      title
+      isbn13
+    }
+    readingState {
+      rating
+    }
+    ...LibraryTable_cell
+  }
+`;
+
+const cellFragment = graphql`
+  fragment LibraryTable_cell on Manifestation @throwOnFieldError {
+    id
+    coverUrl
+    createdAt
+    work {
+      id
+      title
+      subtitle
+      authors(first: 5) {
+        edges {
+          node {
+            name
+          }
+        }
+      }
+      selectedSeries {
+        node {
+          name
+        }
+        position
+      }
+    }
+    metadata {
+      etag
+      title
+      subtitle
+      isbn13
+      pages
+    }
+    readingState {
+      etag
+      status
+      rating
+    }
+  }
+`;
 
 const dateFormat = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
@@ -165,7 +216,7 @@ type TableEditContextValue = {
   density: Density;
   isMobile: boolean;
   stateFor: (rowId: string, columnKey: string) => CellState;
-  commit: (book: BookListItem, columnKey: EditableColumnKey, next: BookListItem) => void;
+  commit: (report: CellEditReport) => void;
 };
 
 const TableEditContext = createContext<TableEditContextValue | null>(null);
@@ -177,20 +228,38 @@ function useTableEdit(): TableEditContextValue {
 }
 
 function BookCell({
-  book,
+  book: fragment,
   columnId,
-}: Readonly<{ book: BookListItem; columnId: ColumnId }>): ReactElement | null {
+}: Readonly<{ book: LibraryTable_cell$key; columnId: ColumnId }>): ReactElement | null {
   const { density, isMobile, stateFor, commit } = useTableEdit();
+  const book = useFragment(cellFragment, fragment);
   const state = stateFor(book.id, columnId);
-  const opening = state.retained ?? book;
-  const reading = opening.reading_state ?? EMPTY_READING_STATE;
+  const { metadata, readingState, work } = book;
+  const title = work?.title ?? metadata.title;
+  const authors = work?.authors.edges.map((edge) => edge.node.name) ?? [];
+  const series = work?.selectedSeries;
+  const status = readingStatus(readingState.status);
+  const target = { id: book.id, workId: work?.id, title };
+  const submit = (
+    columnKey: EditableColumnKey,
+    previous: EditValue,
+    value: EditValue,
+    baseline?: string,
+  ) => {
+    commit({
+      target: { ...target, baseline: baseline ?? metadata.etag },
+      columnKey,
+      previous,
+      value,
+    });
+  };
   switch (columnId) {
     case "select":
       return (
         <div className="flex h-full items-center justify-center">
           <Checkbox
             slot="selection"
-            aria-label={`Select ${book.title}`}
+            aria-label={`Select ${title}`}
             className="size-full justify-center"
           />
         </div>
@@ -207,12 +276,13 @@ function BookCell({
     case "title":
       return (
         <TitleCell
-          book={book}
+          book={{ id: book.id, title, authors, coverUrl: book.coverUrl }}
+          initial={metadata.title}
           density={density}
           showAuthors={isMobile && density === "comfortable"}
           state={state}
-          onCommit={(title) => {
-            commit(opening, "title", { ...book, title });
+          onCommit={(value) => {
+            submit("title", metadata.title, value);
           }}
         />
       );
@@ -221,39 +291,37 @@ function BookCell({
         <TextCell
           density={density}
           field="subtitle"
-          value={book.subtitle}
+          value={(work == null ? metadata.subtitle : work.subtitle) ?? null}
+          editValue={metadata.subtitle ?? null}
           kind="text"
           state={state}
           onCommit={(subtitle) => {
-            commit(opening, "subtitle", { ...book, subtitle });
+            submit("subtitle", metadata.subtitle ?? null, subtitle);
           }}
         />
       );
     case "authors":
       return (
         <AuthorsCell
-          book={book}
+          id={book.id}
+          authors={authors}
+          baseline={metadata.etag}
           density={density}
           state={state}
-          onCommit={(authors, baseline, previousAuthors) => {
-            const authorOpening = {
-              ...opening,
-              authors: [...previousAuthors],
-              metadata_etag: baseline,
-            };
-            commit(authorOpening, "authors", { ...authorOpening, authors });
+          onCommit={(value, baseline, previous) => {
+            submit("authors", previous, value, baseline);
           }}
         />
       );
     case "series":
       return (
         <StaticCell density={density} className="text-fg-muted">
-          {book.series === null ? null : (
+          {series == null ? null : (
             <>
-              {book.series.name}
-              {book.series.position === null ? null : (
+              {series.node.name}
+              {series.position === null ? null : (
                 <span className="text-fg-faint ml-1.5 font-mono text-xs tabular-nums">
-                  #{book.series.position}
+                  #{series.position}
                 </span>
               )}
             </>
@@ -265,12 +333,12 @@ function BookCell({
         <TextCell
           density={density}
           field="ISBN"
-          value={book.isbn_13}
+          value={metadata.isbn13 ?? null}
           kind="text"
           mono
           state={state}
           onCommit={(isbn) => {
-            commit(opening, "isbn_13", { ...book, isbn_13: isbn });
+            submit("isbn_13", metadata.isbn13 ?? null, isbn);
           }}
         />
       );
@@ -279,15 +347,16 @@ function BookCell({
         <TextCell
           density={density}
           field="pages"
-          value={book.pages === null ? null : String(book.pages)}
+          value={metadata.pages == null ? null : String(metadata.pages)}
           kind="pages"
           align="end"
           state={state}
           onCommit={(pages) => {
-            commit(opening, "pages", {
-              ...book,
-              pages: pages === null ? null : PageCountInputSchema.parse(pages),
-            });
+            submit(
+              "pages",
+              metadata.pages ?? null,
+              pages === null ? null : PageCountInputSchema.parse(pages),
+            );
           }}
         />
       );
@@ -295,10 +364,10 @@ function BookCell({
       return (
         <StatusCell
           density={density}
-          status={reading.status}
+          status={status}
           state={state}
-          onCommit={(status) => {
-            commit(opening, "status", { ...book, reading_state: { ...reading, status } });
+          onCommit={(next) => {
+            submit("status", status, next, readingState.etag);
           }}
         />
       );
@@ -306,10 +375,10 @@ function BookCell({
       return (
         <RatingCell
           density={density}
-          rating={reading.rating}
+          rating={readingState.rating ?? null}
           state={state}
           onCommit={(rating) => {
-            commit(opening, "rating", { ...book, reading_state: { ...reading, rating } });
+            submit("rating", readingState.rating ?? null, rating, readingState.etag);
           }}
         />
       );
@@ -319,7 +388,7 @@ function BookCell({
           density={density}
           className={cn("text-fg-muted tabular-nums", isMobile && "px-2 text-xs")}
         >
-          {formatAdded(book.created_at, isMobile)}
+          {formatAdded(book.createdAt, isMobile)}
         </StaticCell>
       );
   }
@@ -557,7 +626,7 @@ const MENU_ITEM =
 type Props = {
   scrollRef?: (element: HTMLTableElement | null) => void;
   onScroll?: () => void;
-  items: readonly BookListItem[];
+  items: LibraryTable_rows$key;
   sort: readonly SortLevelParam[];
   defaultSort: readonly SortLevelParam[];
   onSortChange: (levels: readonly SortLevelParam[]) => void;
@@ -576,7 +645,7 @@ type Props = {
 export function LibraryTable({
   scrollRef,
   onScroll,
-  items,
+  items: fragment,
   sort,
   defaultSort,
   onSortChange,
@@ -607,8 +676,9 @@ export function LibraryTable({
     [hiddenColumns, isMobile],
   );
 
-  const hasIsbn = items.some((book) => Boolean(book.isbn_13));
-  const hasRating = items.some((book) => book.reading_state?.rating != null);
+  const items = useFragment(rowsFragment, fragment);
+  const hasIsbn = items.some((book) => Boolean(book.metadata.isbn13));
+  const hasRating = items.some((book) => book.readingState.rating != null);
   const compactColumns = new Set([
     ...(!hasIsbn ? ["isbn_13"] : []),
     ...(!hasRating ? ["rating"] : []),
@@ -626,12 +696,9 @@ export function LibraryTable({
         failed: failure !== undefined,
         retained: failure?.retained,
         serverError: failure?.action === "correct" ? failure.message : undefined,
-        retainSource: failure?.retainSource ?? edits.retainSource,
       };
     },
-    commit: (book, columnKey, next) => {
-      edits.onCellEdit({ row: next, previousRow: book, columnKey });
-    },
+    commit: edits.onCellEdit,
   };
 
   const primary = sort.at(0);
@@ -794,14 +861,14 @@ export function LibraryTable({
                     <Row
                       id={book.id}
                       data-book-id={book.id}
-                      textValue={book.title}
+                      textValue={book.metadata.title}
                       columns={columns}
                       dependencies={[edits.pendingCells, edits.feedback, edits.savedCells]}
                       className="group/row text-fg data-hovered:bg-surface data-selected:bg-accent-soft [height:inherit] [width:inherit] cursor-default outline-none"
                     >
                       {(column) => (
                         <Cell
-                          textValue={column.id === "title" ? book.title : undefined}
+                          textValue={column.id === "title" ? book.metadata.title : undefined}
                           className="border-border size-full overflow-hidden border-b outline-none"
                         >
                           <div className="relative flex size-full items-center">

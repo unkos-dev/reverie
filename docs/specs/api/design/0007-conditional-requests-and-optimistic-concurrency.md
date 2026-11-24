@@ -104,12 +104,9 @@ tag and inserts the resource's current `ETag` into it.
 ### The precondition contract's evaluation order
 
 Metadata save, reading patch, exact metadata Undo and settings writes apply this contract. HTTP reads the baseline from
-`If-Match`. GraphQL metadata saves and exact Undo take a non-null `ETag` baseline in their `input` object, so omission
-or null is a request error before execution, and a malformed tag fails scalar coercion with code `validation` before the
-operation runs. The GraphQL reading patch takes a nullable `baseline` argument whose omission or null produces
-`if-match-required` and whose malformed input produces `malformed-header`. Every form uses the same strong-tag parser. A
-locked mismatch returns the `StaleBaseline` union member for metadata saves and Undo, and `if-match-mismatch` with
-`currentEtag` for the reading patch. Both transports call the same operations. Over HTTP, their relative order is:
+`If-Match`. GraphQL metadata saves, reading saves and exact Undo take a non-null `ETag` baseline in their `input`
+object. Missing, null or malformed tags fail request validation. Both transports use the same strong-tag parser. A
+locked mismatch returns the `StaleBaseline` union member over GraphQL. Over HTTP, their relative order is:
 `CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header and rejecting it as
 absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
 
@@ -128,26 +125,17 @@ provider-key registry check.
 
 ### Client editing baselines
 
-GraphQL editing responses publish only with a valid, error-free envelope carrying data. Server-typed scalars and enums
-guarantee the formats of metadata values and validators, and a missing validator or incomplete payload prevents forming
-an editing baseline. Because each metadata revision is its own `MetadataRevision` record keyed by revision ID, Relay
-store merges cannot pair values from one revision with a validator from another.
+The network publishes only valid GraphQL envelopes that carry data and no execution errors. Relay assembles error-free
+fields under an immutable `MetadataRevision` or `ReadingRevision` ID. Editing fragments use `@throwOnFieldError` for
+required data. An editor takes its starting values and validator from that revision when it opens. Later store merges
+update the display without changing the open edit. An author replacement waits for `usePaginationFragment` to complete
+the list under one revision. A rejected revision cursor restarts the read from the first page of the current revision.
 
-The Library captures its baselines from raw executions. `LibrarySource` (`frontend/src/lib/relay/library-visit.ts`) runs
-each `readerLibraryQuery` page through `executeEditingOnce` and keeps a detached copy of every row's raw `metadata` and
-`readingState` selections, so each row's values and validators come from one response. Cell saves, Undo and their
-resolution reads run through `executeEditing` (`frontend/src/api/graphql.ts`), which clones the raw
-`environment.execute` or `executeMutation` payload. No Library baseline comes from a merged store read or
-`commitMutation.onCompleted`. A whole-list author replacement reads every page of that field through `loadAuthorField`,
-and `captureAuthorPages` accepts only a complete cursor chain at one revision with one pair of domain IDs. A cell commit
-sends the captured row's tag with its input and holds the source generation that supplied it. A confirmed
-acknowledgement replaces that row's captured snapshot in its source.
-
-The Book edit dialog captures its opening Relay fragment snapshot instead. `EditMetadataForm` reads the
-`mutationsFormQuery` reference that the Versions tab loads, through `usePreloadedQuery`. `EditMetadataFields` reads the
-`mutationsFormSnapshot` fragment and holds the values and `etag` of its first read in component state, so later store
-merges, background refreshes and field errors leave that opening's baseline unchanged. Its Reload fetches
-`mutationsFormQuery` with `network-only` and then remounts the fields, which capture the fresh snapshot.
+The Book edit dialog captures its opening Relay fragment. `EditMetadataForm` reads the `mutationsFormQuery` reference
+that the Versions tab loads, through `usePreloadedQuery`. `EditMetadataFields` reads the `mutationsFormSnapshot`
+fragment and holds the values and `etag` of its first read in component state, so later store merges, background
+refreshes and field errors leave that opening's baseline unchanged. Its Reload fetches `mutationsFormQuery` with
+`network-only` and then remounts the fields, which capture the fresh snapshot.
 
 The HTTP metadata and reading adapters in `frontend/src/api/books.ts` and `reading.ts` call `apiFetchWithHeaders`, which
 returns a decoded body and response headers without caching entity-tags. They validate the complete body and require the
@@ -202,11 +190,10 @@ No shelf endpoint emits an `ETag` or reads an `If-Match` header.
 concurrency validator, not an integrity guarantee: the server always recomputes the tag from its own row and never
 trusts a client-supplied hash as data.
 
-Library editing snapshots live in their `LibrarySource` and the table's attempts. The edit dialog's opening snapshot
-lives in `EditMetadataFields` state until Reload remounts the fields. Relay owns normalised display records. Each
-metadata revision is its own Relay record, so a store merge cannot pair one revision's values with another revision's
-entity-tag. The Library table-editing owner holds at most ten field operations in memory. Leaving Library or table
-editing clears them; filtering, sorting, loading and empty results preserve them.
+The Library edit owner keeps submitted input and its starting validator independent of the displayed row and its
+lifetime. The Book dialog keeps its opening snapshot until Reload remounts its fields. Relay owns the display and holds
+each revision under a distinct record ID. The Library table-editing owner keeps at most ten exact field operations.
+Leaving Library or Table editing clears them. Filtering, sorting and empty results preserve them.
 
 ## Runtime behaviour
 
@@ -215,23 +202,18 @@ the `StaleBaseline` member over GraphQL, before request-reuse checking. After a 
 input reuses its original request UUID, patch and baseline. A committed resend therefore receives the stale-baseline
 refusal, then resolves the original request before conflict feedback. A matched GraphQL acknowledgement returns the
 manifestation whose `metadata` is the revision the save projected inside its own transaction, so its values and ETag
-come from one revision. Changed input starts a fresh UUID against the retained baseline. The table resolves uncertain
-saves through selected raw Relay executions. Temporary or uncertain failures offer explicit Retry of the same tuple.
-Conflicts not confirmed as saved offer matched Reload, validation failures retain input for correction, and permanent
-refusals retain specific feedback. Neither flow automatically replays a save or infers metadata success from equal
-values. A saved resolution adopts its selected values and matching ETag; table resolutions retain eligible operations
-once.
+come from one revision. The Library commit uses native Relay mutation payloads. A temporary or uncertain failure offers
+explicit Retry of the original attempt. A stale refusal offers a read-only Reload. Validation preserves the input for
+correction. Other expected refusals show their own feedback. Acknowledged metadata saves may add exact Undo operations.
 
 Exact metadata Undo uses the same strong aggregate precondition as PATCH. It requires its baseline before database
 writes and compares it under edition and work locks. Selected-field eligibility is an additional decision, independent
 of aggregate freshness. Operation resolution supplies current complete metadata and its matching ETag without replaying
 writes. It cannot authorise an ordinary save from retained draft values.
 
-Undo sends one operation and its retained aggregate validator. After uncertainty or a stale baseline, a selected raw
-execution resolves that same operation and retries once only when the server confirms it eligible and unlocked. The
-retry uses the matched response's ETag. A restored resolution confirms an already committed Undo. Lock or unresolved
-recovery retains the entry; unavailable or conflicting operations leave the local collection. No refusal executes the
-next entry.
+Undo sends the operation ID and its retained aggregate validator. A stale refusal triggers one eligibility read for that
+operation ID. The owner sends an eligible operation again once, using the current matching validator. Locked operations
+remain available until expiry. Unavailable and conflicting operations leave the local collection.
 
 **A metadata or reading `PATCH` with a malformed `If-Match`:**
 
@@ -246,8 +228,8 @@ handler body executes at all). The response is `400`, problem type `.../malforme
 
 - Missing `If-Match` returns 428 before database work. A stale supplied precondition returns 412 with the current tag.
   Ordinary saves retain input and require a matched read before a new editing decision; they never automatically retry.
-- Missing or malformed acknowledgement values or tags leave the edit uncertain. Metadata resolution uses committed
-  request evidence through selected resolution reads. Reading recovery uses a matched read. A failed read retains input.
+- An unusable acknowledgement leaves the Library attempt uncertain. A failed Reload retains the input and starting
+  validator. The Book dialog uses its committed request evidence when resolving a lost acknowledgement.
 - Undo refuses locked fields with 409, or `FieldsLocked` over GraphQL, and retains the entry until its original expiry.
   A 422 `undo-unavailable` or 409 `undo-conflict`, or the `UndoUnavailable` or `UndoConflict` member over GraphQL,
   removes it. Expiry removes entries quietly, without extending their deadlines.

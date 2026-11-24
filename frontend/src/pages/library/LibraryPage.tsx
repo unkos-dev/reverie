@@ -3,65 +3,53 @@ import {
   useFragment,
   usePaginationFragment,
   usePreloadedQuery,
-  useQueryLoader,
   useRefetchableFragment,
   useRelayEnvironment,
-  type PreloadedQuery,
 } from "react-relay";
-import {
-  GraphQLExecutionError,
-  readerBook,
-  executeEditingOnce,
-  editingFailureAction,
-  type ReaderBook as BookListItem,
-} from "@/api/graphql";
+import { GraphQLExecutionError, editingFailureAction } from "@/api/graphql";
+import { ErrorBoundary } from "react-error-boundary";
 import {
   bindLibraryVisit,
+  invalidateLibraryVisits,
+  libraryRequest,
   libraryLookups,
   type LibrarySource,
   type LibraryVisitOwner,
 } from "@/lib/relay/library-visit";
-import {
-  readerLibrary,
-  readerLibraryBook,
-  readerLibraryQuery,
-  readerShelves,
-} from "@/lib/relay/reader";
+import { readerLibrary, readerShelves } from "@/lib/relay/reader";
 import type { LibraryPageQuery as PageQuery } from "@/lib/relay/__generated__/LibraryPageQuery.graphql";
 import type { LibraryPage_labels$key } from "@/lib/relay/__generated__/LibraryPage_labels.graphql";
 import type { LibraryPageLabelsRefetchQuery as LabelsRefetch } from "@/lib/relay/__generated__/LibraryPageLabelsRefetchQuery.graphql";
 import type { readerShelves$key } from "@/lib/relay/__generated__/readerShelves.graphql";
 import type { readerShelvesPaginationQuery as ShelvesPagination } from "@/lib/relay/__generated__/readerShelvesPaginationQuery.graphql";
-import type { readerLibraryQuery as LibraryQuery } from "@/lib/relay/__generated__/readerLibraryQuery.graphql";
-import type { readerLibrary$key } from "@/lib/relay/__generated__/readerLibrary.graphql";
-import type { readerLibraryBook$key } from "@/lib/relay/__generated__/readerLibraryBook.graphql";
-import { ConnectionHandler, commitMutation } from "relay-runtime";
+import type {
+  readerLibrary$data,
+  readerLibrary$key,
+} from "@/lib/relay/__generated__/readerLibrary.graphql";
+import type { readerLibraryPaginationQuery as BooksPagination } from "@/lib/relay/__generated__/readerLibraryPaginationQuery.graphql";
+import type { BookCard_book$key } from "@/lib/relay/__generated__/BookCard_book.graphql";
+import { commitMutation } from "relay-runtime";
 import { useAuthMe } from "@/hooks/useAuthMe";
-import {
-  mutationsAddShelfItemMutation,
-  mutationsRefreshMetadataMutation,
-} from "@/lib/relay/mutations";
+import { mutationsAddShelfItemMutation } from "@/lib/relay/mutations";
 import type { mutationsAddShelfItemMutation as AddShelfItem } from "@/lib/relay/__generated__/mutationsAddShelfItemMutation.graphql";
-import type { mutationsRefreshMetadataMutation as RefreshMetadata } from "@/lib/relay/__generated__/mutationsRefreshMetadataMutation.graphql";
+import type { LibraryPageRefreshMetadataMutation as RefreshMetadata } from "@/lib/relay/__generated__/LibraryPageRefreshMetadataMutation.graphql";
 import { Circle, CircleCheck, Loader2, Star, Undo2 } from "lucide-react";
 import {
   lazy,
   Suspense,
-  useDeferredValue,
   useCallback,
   useEffect,
   useEffectEvent,
   useSyncExternalStore,
   useLayoutEffect,
   useRef,
-  useMemo,
   useState,
   type ReactNode,
   type ReactElement,
 } from "react";
-import { matchPath, useLoaderData, useNavigate } from "react-router";
+import { useLoaderData, useNavigate } from "react-router";
 
-import { type ListBooksParams, type SortLevelParam } from "@/api";
+import { type SortLevelParam } from "@/api";
 import { z } from "zod";
 import { GridList, GridListItem } from "@/components/ui/grid-list";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -84,7 +72,6 @@ import {
   countActiveFilters,
   filterStateToParams,
   hasActiveFilterState,
-  isLibraryRequestEligible,
   hasOverLimitSelection,
   type LibraryView,
   type LibraryPosition,
@@ -112,8 +99,16 @@ const LibraryTable = lazy(() =>
 );
 
 const LibraryPageQuery = graphql`
-  query LibraryPageQuery($authorIds: [ID!]!, $seriesIds: [ID!]!, $shelfIds: [ID!]!)
-  @throwOnFieldError {
+  query LibraryPageQuery(
+    $authorIds: [ID!]!
+    $seriesIds: [ID!]!
+    $shelfIds: [ID!]!
+    $eligible: Boolean!
+    $sourceKey: String!
+    $filter: BooksFilter
+    $sort: [SortLevel!]
+    $count: Int = 50
+  ) @throwOnFieldError {
     viewer {
       id
       libraryPreferences {
@@ -124,6 +119,24 @@ const LibraryPageQuery = graphql`
       @arguments(authorIds: $authorIds, seriesIds: $seriesIds, shelfIds: $shelfIds)
     ...readerShelves
     ...TypeaheadMultiSelect_suggestions
+    ...readerLibrary
+      @alias(as: "rows")
+      @include(if: $eligible)
+      @arguments(count: $count, sourceKey: $sourceKey, filter: $filter, sort: $sort)
+  }
+`;
+
+const refreshMetadataMutation = graphql`
+  mutation LibraryPageRefreshMetadataMutation($input: RefreshMetadataInput!) {
+    refreshMetadata(input: $input) {
+      __typename
+      ... on MetadataRefreshQueued {
+        manifestationId
+      }
+      ... on NotFound {
+        message
+      }
+    }
   }
 `;
 
@@ -163,34 +176,43 @@ function saveCoverWidth(width: number): void {
   }
 }
 
+type LibraryRow = readerLibrary$data["books"]["edges"][number]["node"];
+
 function useLibraryBooks(
   visit: LibraryVisitOwner,
-  params: ListBooksParams,
-  eligible: boolean,
-  sortPending: boolean,
+  initial: LibrarySource,
   owner: LibraryFilters,
+  sortOverride: string,
+  sort: readonly SortLevelParam[],
   intent: string,
 ) {
   const state = useSyncExternalStore(visit.subscribe, visit.snapshot);
-  const paramsToken = JSON.stringify(params);
-  const enter = useEffectEvent(() => {
-    visit.enter(owner.position);
-  });
+  const params = filterStateToParams(owner.filters);
+  const request = libraryRequest(owner.filters, sortOverride);
+  const savedPosition = useEffectEvent(() => owner.position);
   useLayoutEffect(() => {
-    enter();
+    bindLibraryVisit(visit);
+    visit.enter(initial, savedPosition());
     return () => {
       visit.leave();
     };
-  }, [visit]);
-  useEffect(() => {
-    visit.activate(params, intent, eligible && !sortPending);
-  }, [visit, params, intent, eligible, sortPending]);
+  }, [visit, initial]);
+  useLayoutEffect(() => {
+    visit.activate(request, sort, intent);
+  }, [visit, request, sort, intent]);
+  const query = usePreloadedQuery<PageQuery>(LibraryPageQuery, (state.source ?? initial).reference);
+  const { data, hasNext, isLoadingNext, loadNext } = usePaginationFragment<
+    BooksPagination,
+    readerLibrary$key
+  >(readerLibrary, state.source !== undefined ? (query.rows ?? null) : null);
+  const [pageError, setPageError] = useState<{ source: LibrarySource; error: Error }>();
+  const moreError = pageError?.source === state.source && pageError !== undefined;
   const rejected =
     state.error instanceof GraphQLExecutionError &&
     state.error.errors.some((error) => error.extensions?.code === "validation");
-  const blocked = !eligible || rejected;
+  const blocked = !request.eligible || rejected;
   let blockedMessage: string | undefined;
-  if (!eligible)
+  if (!request.eligible)
     blockedMessage = hasOverLimitSelection(params)
       ? "Results are paused. Choose 20 or fewer values in each filter mode, or clear the filters."
       : "Results are paused. Shorten the search or filter text to 200 characters or fewer, or clear the filters.";
@@ -198,70 +220,61 @@ function useLibraryBooks(
     blockedMessage = "These filters could not be used. Change or clear them to try again.";
   if (
     state.error !== null &&
-    !rejected &&
-    eligible &&
-    (state.source === undefined || JSON.stringify(state.source.params) !== paramsToken)
+    !blocked &&
+    (state.source === undefined || JSON.stringify(state.source.request) !== JSON.stringify(request))
   )
     throw state.error;
   return {
     ...state,
-    visit,
     blockedMessage,
-    updating: !blocked && (sortPending || state.pending),
-    canLoadMore: !blocked && !state.pending && (state.source?.hasNext ?? false),
-    loading: eligible && state.source === undefined && state.error === null,
-    showContradiction: !blocked && !state.pending && state.error === null,
-    fetchNextPage: visit.loadMore,
-    isFetchingNextPage: state.loadingMore,
-    isFetchNextPageError: state.moreError !== null,
+    items: data?.books.edges.map((edge) => edge.node) ?? [],
+    updating: !blocked && state.candidate !== undefined,
+    canLoadMore: !blocked && state.candidate === undefined && hasNext,
+    loading: request.eligible && state.source === undefined && state.error === null,
+    showContradiction: !blocked && state.candidate === undefined && state.error === null,
+    fetchNextPage: () => {
+      const source = state.source;
+      if (source === undefined || !hasNext || isLoadingNext || state.candidate !== undefined)
+        return;
+      setPageError(undefined);
+      loadNext(50, {
+        onComplete: (error) => {
+          if (error !== null) setPageError({ source, error });
+        },
+      });
+    },
+    isFetchingNextPage: isLoadingNext,
+    isFetchNextPageError: moreError,
   };
 }
 
-type LibraryRowsProps = {
-  source: LibrarySource | undefined;
-  children: (items: BookListItem[]) => ReactElement;
-};
-
-function LibraryRows({ source, children }: Readonly<LibraryRowsProps>): ReactElement {
-  if (source?.reference === undefined) return children([]);
-  return (
-    <LoadedLibraryRows source={source} reference={source.reference}>
-      {children}
-    </LoadedLibraryRows>
-  );
-}
-
-function LoadedLibraryRows({
+function LibraryCandidate({
   source,
-  reference,
-  children,
-}: Omit<LibraryRowsProps, "source"> & {
-  source: LibrarySource;
-  reference: PreloadedQuery<LibraryQuery>;
-}): ReactElement {
-  const query = usePreloadedQuery<LibraryQuery>(readerLibraryQuery, reference);
-  const connection = useFragment<readerLibrary$key>(readerLibrary, query);
-  const data = useFragment<readerLibraryBook$key>(
-    readerLibraryBook,
-    connection.books.edges.map((edge) => edge.node),
-  );
-  const items = useMemo(
-    () =>
-      data.map((book) => {
-        const snapshot = source.rows.get(book.id);
-        if (snapshot === undefined)
-          throw new Error("A matched Library editing snapshot is required.");
-        return readerBook(book, snapshot);
-      }),
-    [data, source],
-  );
-  return children(items);
+  owner,
+}: Readonly<{ source: LibrarySource; owner: LibraryVisitOwner }>): null {
+  const query = usePreloadedQuery<PageQuery>(LibraryPageQuery, source.reference);
+  const { data, hasNext, isLoadingNext, loadNext } = usePaginationFragment<
+    BooksPagination,
+    readerLibrary$key
+  >(readerLibrary, query.rows ?? null);
+  useEffect(() => {
+    if (data == null || isLoadingNext) return;
+    const ids = data.books.edges.map((edge) => edge.node.id);
+    if (owner.pageCommitted(source, ids, hasNext))
+      loadNext(50, {
+        onComplete: (error) => {
+          if (error !== null) owner.failed(source, error);
+        },
+      });
+  }, [data, hasNext, isLoadingNext, loadNext, owner, source]);
+  return null;
 }
 
 function useLibraryPosition(
   visit: LibraryVisitOwner,
   owner: LibraryFilters,
   source: LibrarySource | undefined,
+  items: readonly LibraryRow[],
   view: LibraryView,
   density: "comfortable" | "compact",
   position: LibraryPosition | undefined,
@@ -298,10 +311,10 @@ function useLibraryPosition(
       anchorId: anchor?.row.dataset.bookId ?? null,
       anchorOffset: (anchor?.rect.top ?? start) - start,
       offset: element.scrollTop,
-      extent: source.rows.size,
+      extent: items.length,
       view,
     };
-  }, [source, view, scrollElement]);
+  }, [source, view, scrollElement, items.length]);
   const scrolled = useCallback(() => {
     const element = scrollElement();
     if (element === null || position === undefined) return;
@@ -320,6 +333,8 @@ function useLibraryPosition(
     expected.current = undefined;
     visit.cancelRestoration();
   }, [position, visit, scrollElement]);
+  const anchorIndex =
+    position?.anchorId == null ? -1 : items.findIndex((row) => row.id === position.anchorId);
   const restore = useCallback(() => {
     if (
       position === undefined ||
@@ -335,8 +350,7 @@ function useLibraryPosition(
           ? covers.current
           : document.scrollingElement;
     if (element === null) return;
-    const index =
-      position.anchorId === null ? -1 : [...source.rows.keys()].indexOf(position.anchorId);
+    const index = anchorIndex;
     function setOffset(offset: number): void {
       if (element === null) return;
       element.scrollTo({ top: offset, behavior: "instant" });
@@ -374,7 +388,7 @@ function useLibraryPosition(
     if (view === "grid" || index < 0) adjust();
     if (frame.current !== undefined) cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(adjust);
-  }, [position, view, source, visit, density, generation]);
+  }, [position, view, source, visit, density, generation, anchorIndex]);
 
   useLayoutEffect(() => {
     restore();
@@ -491,7 +505,6 @@ export function LibraryPage(): ReactElement | null {
   const prepared = useLoaderData<typeof loader>();
   useLayoutEffect(() => {
     if (prepared === null) return;
-    bindLibraryVisit(prepared.owner);
     return prepared.preparation.attach(() => {
       prepared.owner.discard(prepared.preparation);
     });
@@ -508,10 +521,6 @@ function sameIds(left: readonly { id: string }[], right: readonly string[]): boo
   return left.length === right.length && left.every((item, index) => item.id === right[index]);
 }
 
-/**
- * Read the selected authors, series and shelves. An edit that changes those selections refetches
- * the read with the edit, so a new chip renders with its name.
- */
 function useLibraryLabels(query: LibraryPage_labels$key) {
   const [labels, refetch] = useRefetchableFragment<LabelsRefetch, LibraryPage_labels$key>(
     labelsFragment,
@@ -519,15 +528,13 @@ function useLibraryLabels(query: LibraryPage_labels$key) {
   );
   function follow(next: LibraryVisit["filters"], write: () => void): void {
     const lookups = libraryLookups(next);
+    write();
     if (
       sameIds(labels.authorLabels, lookups.authorIds) &&
       sameIds(labels.seriesLabels, lookups.seriesIds) &&
       sameIds(labels.shelfLabels, lookups.shelfIds)
-    ) {
-      write();
+    )
       return;
-    }
-    write();
     refetch(lookups, { fetchPolicy: "store-or-network" });
   }
   return { labels, follow };
@@ -536,12 +543,11 @@ function useLibraryLabels(query: LibraryPage_labels$key) {
 function LibraryContent({
   prepared,
 }: Readonly<{ prepared: NonNullable<Awaited<ReturnType<typeof loader>>> }>): ReactElement {
-  const { owner: visitOwner, preparation, visit: restored, reference } = prepared;
+  const { owner: visitOwner, preparation, visit: restored, initial } = prepared;
   useLayoutEffect(() => {
     preparation.adopt();
   }, [preparation]);
-  const [currentReference] = useQueryLoader<PageQuery>(LibraryPageQuery, reference);
-  const query = usePreloadedQuery<PageQuery>(LibraryPageQuery, currentReference ?? reference);
+  const query = usePreloadedQuery<PageQuery>(LibraryPageQuery, initial.reference);
   const { labels, follow } = useLibraryLabels(query);
   const owner = useLibraryFilters(visitOwner.intent, restored, follow);
   const { filters: filterState, commitAll, clearAll, setView: setVisitView } = owner;
@@ -615,21 +621,17 @@ function LibraryContent({
     preferences;
 
   const viewMode: LibraryView = owner.view ?? preferences.view;
-  const params = filterStateToParams(filterState);
-  const deferredSortOverride = useDeferredValue(sortOverride);
-  const sortPending = deferredSortOverride !== sortOverride;
-  if (deferredSortOverride !== "") params.sort = deferredSortOverride;
   const queryToken = JSON.stringify([filterState, sortOverride, viewMode]);
   const liveIntent = useRef(queryToken);
   useLayoutEffect(() => {
     liveIntent.current = queryToken;
   }, [queryToken]);
 
-  const eligible =
-    matchPath("/library", window.location.pathname) !== null && isLibraryRequestEligible(params);
   const {
     source,
-    visit,
+    candidate,
+    candidateReady,
+    items,
     position,
     restoreGeneration,
     blockedMessage,
@@ -640,23 +642,18 @@ function LibraryContent({
     fetchNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
-  } = useLibraryBooks(visitOwner, params, eligible, sortPending, owner, queryToken);
+  } = useLibraryBooks(visitOwner, initial, owner, sortOverride, sortLevels, queryToken);
   const geometry = useLibraryPosition(
-    visit,
+    visitOwner,
     owner,
     source,
+    items,
     viewMode,
     density,
     position,
     restoreGeneration,
   );
-  const edits = useCellEdit({
-    source,
-    enabled: viewMode === "table",
-    onChanged: () => {
-      void visit.refresh();
-    },
-  });
+  const edits = useCellEdit({ enabled: viewMode === "table", rows: items });
   const selectionToken = JSON.stringify([queryToken, source?.key]);
   const [syncedSelectionToken, setSyncedSelectionToken] = useState(selectionToken);
   if (selectionToken !== syncedSelectionToken) {
@@ -665,18 +662,22 @@ function LibraryContent({
   }
 
   function sendBatchShelf(id: string, shelfId: string): ReturnType<StatusTarget["send"]> {
-    const items = ConnectionHandler.getConnectionID(shelfId, "readerShelfItems_items");
     return new Promise((resolve, reject) => {
       commitMutation<AddShelfItem>(environment, {
         mutation: mutationsAddShelfItemMutation,
         variables: {
           input: { shelfId, manifestationId: id },
-          connections: environment.getStore().getSource().has(items) ? [items] : [],
+          connections: [],
+        },
+        updater: (store, data) => {
+          if (data?.addShelfItem.__typename === "ShelfItemAdded")
+            store.get(shelfId)?.invalidateRecord();
         },
         onCompleted: ({ addShelfItem }) => {
-          if (addShelfItem.__typename === "ShelfItemAdded")
+          if (addShelfItem.__typename === "ShelfItemAdded") {
+            invalidateLibraryVisits(environment, [], { shelfId });
             resolve({ saved: true, action: "none" });
-          else if (addShelfItem.__typename === "NotFound")
+          } else if (addShelfItem.__typename === "NotFound")
             resolve({ saved: false, action: "none", message: addShelfItem.message });
           else reject(new Error("Unexpected shelf result."));
         },
@@ -685,15 +686,27 @@ function LibraryContent({
     });
   }
 
-  async function sendBatchRefresh(id: string): ReturnType<StatusTarget["send"]> {
-    const response = await executeEditingOnce<RefreshMetadata>(
-      environment,
-      mutationsRefreshMetadataMutation,
-      { id },
-      batchController.current?.signal,
-    );
-    if (response === undefined) return;
-    return { saved: true, action: "none" };
+  function sendBatchRefresh(id: string): ReturnType<StatusTarget["send"]> {
+    return new Promise((resolve, reject) => {
+      commitMutation<RefreshMetadata>(environment, {
+        mutation: refreshMetadataMutation,
+        variables: { input: { id } },
+        onCompleted: ({ refreshMetadata }) => {
+          if (refreshMetadata.__typename === "MetadataRefreshQueued")
+            resolve({ saved: true, action: "none" });
+          else
+            resolve({
+              saved: false,
+              action: "none",
+              message:
+                refreshMetadata.__typename === "NotFound"
+                  ? refreshMetadata.message
+                  : "Request failed.",
+            });
+        },
+        onError: reject,
+      });
+    });
   }
 
   function sendBatchItem(attempt: NonNullable<typeof batchAttempt>, id: string) {
@@ -731,7 +744,6 @@ function LibraryContent({
     retrying = false,
   ): Promise<void> {
     if (batch?.pending === true) return;
-    const release = source?.acquire();
     const previous = retrying ? batch : undefined;
     const succeeded: string[] = [];
     const failed: BatchOutcome["failed"][number][] =
@@ -747,14 +759,6 @@ function LibraryContent({
       failed: [...failed],
     });
     await sendBatchItems(attempt, succeeded, failed);
-    if (
-      liveIntent.current === queryToken &&
-      succeeded.length > 0 &&
-      attempt.action.kind !== "refresh"
-    ) {
-      await visit.refresh();
-    }
-    release?.();
     if (batchController.current?.signal.aborted) return;
     setBatch({
       action: attempt.action,
@@ -765,14 +769,12 @@ function LibraryContent({
       failed,
     });
     if (liveIntent.current === queryToken) {
-      const displayed = visit.snapshot().source;
-      setSyncedSelectionToken(JSON.stringify([queryToken, displayed?.key]));
       setSelectedIds(
         (current) =>
           new Set([
             ...[...current].filter((id) => !succeeded.includes(id)),
             ...failed
-              .filter((failure) => displayed?.rows.has(failure.id))
+              .filter((failure) => items.some((row) => row.id === failure.id))
               .map((failure) => failure.id),
           ]),
       );
@@ -811,219 +813,239 @@ function LibraryContent({
   const activeFilterCount = countActiveFilters(filterState);
 
   if (!loading && !hasRenderedControls) setHasRenderedControls(true);
-  if (loading && !hasRenderedControls) return <LibrarySkeleton />;
+  const candidateContent =
+    candidate === undefined || !candidateReady ? null : (
+      <ErrorBoundary
+        key={candidate.key}
+        fallback={null}
+        onError={(error) => {
+          visitOwner.failed(
+            candidate,
+            error instanceof Error ? error : new Error("Library request failed."),
+          );
+        }}
+      >
+        <Suspense fallback={null}>
+          <LibraryCandidate owner={visitOwner} source={candidate} />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  if (loading && !hasRenderedControls)
+    return (
+      <>
+        {candidateContent}
+        <LibrarySkeleton />
+      </>
+    );
 
   return (
-    <LibraryRows source={source}>
-      {(items) => (
-        <>
-          <div className="lg:h-[calc(100dvh-86px)]">
-            <div className="flex h-full min-h-0 flex-col px-3 pb-3 sm:px-5">
-              <ShelfHeader shelves={labels.shelfLabels} selected={filterState.shelf} />
-              {/* Sort announcements stay outside the filter editor so hidden controls do not silence them. */}
-              <p className="sr-only" aria-live="polite">
-                {sortStackSummary(sortLevels)}
-              </p>
-              <LibraryToolbar
-                filters={
-                  <FilterChips
-                    filters={filterState}
-                    labels={labelFor}
-                    onRemove={commitAll}
-                    onClearAll={clearAll}
-                  />
-                }
-                editControls={viewMode === "table" ? <TableEditControls edits={edits} /> : null}
-                loadedCount={items.length}
-                hasMorePages={canLoadMore}
-                query={filterState.q ?? ""}
-                onQueryChange={(q) => {
-                  commitAll((current) => ({ ...current, q }));
-                }}
-                view={viewMode}
-                onViewChange={setView}
-                filtersOpen={filtersOpen}
-                filterButtonRef={filterButtonRef}
-                coverWidth={coverWidth}
-                onCoverWidthChange={setCoverWidth}
-                onCoverWidthChangeEnd={saveCoverWidth}
-                sortLevels={sortLevels}
-                onSortChange={handleSortChange}
-                activeFilterCount={activeFilterCount}
-                onOpenFilters={() => {
-                  setFiltersOpen((open) => !open);
-                }}
-                density={density}
-                onDensityChange={preferences.setDensity}
-                hiddenColumns={hiddenColumns}
-                onToggleColumn={toggleColumn}
-                canResetColumns={preferences.canResetColumns}
-                onResetColumns={preferences.resetColumns}
-              />
-              <Separator className="mb-2" />
-
-              <div
-                className="library-results min-h-0 flex-1"
-                data-panel-open={filtersBeside && filtersOpen}
-              >
-                <div className="flex min-h-0 min-w-0 flex-col">
-                  <CellEditOutcomes edits={edits} />
-                  <LibraryBooks
-                    scrollRef={geometry.coversRef}
-                    onScroll={geometry.scrolled}
-                    items={items}
-                    filtered={hasActiveFilterState(filterState)}
-                    onClear={clearAll}
-                    viewMode={viewMode}
-                    coverWidth={coverWidth}
-                    selectedIds={selectedIds}
-                    onSelectionChange={setSelectedIds}
-                    blockedMessage={blockedMessage}
-                    loading={loading}
-                    updating={updating}
-                  >
-                    <TableChunkBoundary
-                      onFallbackToGrid={() => {
-                        setVisitView("grid");
-                      }}
-                    >
-                      <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                        <LibraryTable
-                          scrollRef={geometry.tableRef}
-                          onScroll={geometry.scrolled}
-                          items={items}
-                          sort={sortLevels}
-                          defaultSort={defaultSortLevels}
-                          onSortChange={handleSortChange}
-                          hasNextPage={canLoadMore}
-                          isFetchingNextPage={isFetchingNextPage}
-                          isFetchNextPageError={isFetchNextPageError}
-                          onLoadMore={() => {
-                            void fetchNextPage();
-                          }}
-                          edits={edits}
-                          density={density}
-                          hiddenColumns={hiddenColumns}
-                          onHideColumn={(key) => {
-                            toggleColumn(key, true);
-                          }}
-                          selectedIds={selectedIds}
-                          onSelectionChange={setSelectedIds}
-                        />
-                      </Suspense>
-                    </TableChunkBoundary>
-                  </LibraryBooks>
-
-                  {viewMode !== "table" && canLoadMore ? (
-                    <LibraryPagination
-                      isFetching={isFetchingNextPage}
-                      isError={isFetchNextPageError}
-                      onLoadMore={() => {
-                        void fetchNextPage();
-                      }}
-                    />
-                  ) : null}
-                </div>
-                {filtersBeside ? (
-                  <div className="library-filter-slot" inert={!filtersOpen}>
-                    <FilterRail
-                      owner={owner}
-                      suggestions={query}
-                      labels={labelFor}
-                      shelves={railShelves}
-                      showContradiction={showContradiction}
-                      sortLevels={sortLevels}
-                      sortInherited={preferences.sortInherited}
-                      onSortChange={handleSortChange}
-                      onClose={closeFilters}
-                    />
-                  </div>
-                ) : null}
-              </div>
-              <BatchBar
-                selectedIds={selectedIds}
-                hasMorePages={canLoadMore}
-                onClearSelection={() => {
-                  setSelectedIds(new Set());
-                }}
-                shelves={shelves}
-                shelvesError={shelvesError}
-                canRefresh={account !== undefined && !account.is_child}
-                result={
-                  batch === undefined || batch.action.kind !== "status" || batch.pending
-                    ? batch
-                    : {
-                        ...batch,
-                        failed: batch.failed.map((failure) => ({
-                          ...failure,
-                          action: batchFeedback.get(failure.id)?.action ?? "none",
-                        })),
-                      }
-                }
-                onAction={(action) => {
-                  const rows = items.filter((row) => selectedIds.has(row.id));
-                  void runBatch({
-                    action,
-                    ids: rows.map((row) => row.id),
-                    statusTargets:
-                      action.kind === "status" ? edits.statusTargets(rows, action.status) : [],
-                  });
-                }}
-                onRetry={() => {
-                  if (batchAttempt === undefined || batch === undefined) return;
-                  const ids = batch.failed
-                    .filter(
-                      (failure) =>
-                        failure.action === "retry" &&
-                        (batch.action.kind !== "status" ||
-                          batchFeedback.get(failure.id)?.action === "retry"),
-                    )
-                    .map((failure) => failure.id);
-                  void runBatch({ ...batchAttempt, ids }, true);
-                }}
-                onDismiss={() => {
-                  setBatch(undefined);
-                  setBatchAttempt(undefined);
-                }}
-              />
-            </div>
-          </div>
-
-          {!filtersBeside ? (
-            <SheetContent
-              isOpen={filtersOpen}
-              onOpenChange={setFiltersOpen}
-              side="right"
-              showCloseButton={false}
-              aria-describedby={undefined}
-              className="max-w-[100vw] p-3 data-[side=right]:w-[340px]"
-            >
-              <SheetHeader className="sr-only">
-                <SheetTitle>Filters</SheetTitle>
-              </SheetHeader>
-              <FilterRail
-                owner={owner}
-                suggestions={query}
+    <>
+      {candidateContent}
+      <div className="lg:h-[calc(100dvh-86px)]">
+        <div className="flex h-full min-h-0 flex-col px-3 pb-3 sm:px-5">
+          <ShelfHeader shelves={labels.shelfLabels} selected={filterState.shelf} />
+          {/* Sort announcements stay outside the filter editor so hidden controls do not silence them. */}
+          <p className="sr-only" aria-live="polite">
+            {sortStackSummary(sortLevels)}
+          </p>
+          <LibraryToolbar
+            filters={
+              <FilterChips
+                filters={filterState}
                 labels={labelFor}
-                shelves={railShelves}
-                showContradiction={showContradiction}
-                sortLevels={sortLevels}
-                sortInherited={preferences.sortInherited}
-                onSortChange={handleSortChange}
-                onClose={closeFilters}
+                onRemove={commitAll}
+                onClearAll={clearAll}
               />
-            </SheetContent>
-          ) : null}
-        </>
-      )}
-    </LibraryRows>
+            }
+            editControls={viewMode === "table" ? <TableEditControls edits={edits} /> : null}
+            loadedCount={items.length}
+            hasMorePages={canLoadMore}
+            query={filterState.q ?? ""}
+            onQueryChange={(q) => {
+              commitAll((current) => ({ ...current, q }));
+            }}
+            view={viewMode}
+            onViewChange={setView}
+            filtersOpen={filtersOpen}
+            filterButtonRef={filterButtonRef}
+            coverWidth={coverWidth}
+            onCoverWidthChange={setCoverWidth}
+            onCoverWidthChangeEnd={saveCoverWidth}
+            sortLevels={sortLevels}
+            onSortChange={handleSortChange}
+            activeFilterCount={activeFilterCount}
+            onOpenFilters={() => {
+              setFiltersOpen((open) => !open);
+            }}
+            density={density}
+            onDensityChange={preferences.setDensity}
+            hiddenColumns={hiddenColumns}
+            onToggleColumn={toggleColumn}
+            canResetColumns={preferences.canResetColumns}
+            onResetColumns={preferences.resetColumns}
+          />
+          <Separator className="mb-2" />
+
+          <div
+            className="library-results min-h-0 flex-1"
+            data-panel-open={filtersBeside && filtersOpen}
+          >
+            <div className="flex min-h-0 min-w-0 flex-col">
+              <CellEditOutcomes edits={edits} />
+              <LibraryBooks
+                scrollRef={geometry.coversRef}
+                onScroll={geometry.scrolled}
+                items={items}
+                filtered={hasActiveFilterState(filterState)}
+                onClear={clearAll}
+                viewMode={viewMode}
+                coverWidth={coverWidth}
+                selectedIds={selectedIds}
+                onSelectionChange={setSelectedIds}
+                blockedMessage={blockedMessage}
+                loading={loading}
+                updating={updating}
+              >
+                <TableChunkBoundary
+                  onFallbackToGrid={() => {
+                    setVisitView("grid");
+                  }}
+                >
+                  <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                    <LibraryTable
+                      scrollRef={geometry.tableRef}
+                      onScroll={geometry.scrolled}
+                      items={items}
+                      sort={sortLevels}
+                      defaultSort={defaultSortLevels}
+                      onSortChange={handleSortChange}
+                      hasNextPage={canLoadMore}
+                      isFetchingNextPage={isFetchingNextPage}
+                      isFetchNextPageError={isFetchNextPageError}
+                      onLoadMore={() => {
+                        fetchNextPage();
+                      }}
+                      edits={edits}
+                      density={density}
+                      hiddenColumns={hiddenColumns}
+                      onHideColumn={(key) => {
+                        toggleColumn(key, true);
+                      }}
+                      selectedIds={selectedIds}
+                      onSelectionChange={setSelectedIds}
+                    />
+                  </Suspense>
+                </TableChunkBoundary>
+              </LibraryBooks>
+
+              {viewMode !== "table" && canLoadMore ? (
+                <LibraryPagination
+                  isFetching={isFetchingNextPage}
+                  isError={isFetchNextPageError}
+                  onLoadMore={() => {
+                    fetchNextPage();
+                  }}
+                />
+              ) : null}
+            </div>
+            {filtersBeside ? (
+              <div className="library-filter-slot" inert={!filtersOpen}>
+                <FilterRail
+                  owner={owner}
+                  suggestions={query}
+                  labels={labelFor}
+                  shelves={railShelves}
+                  showContradiction={showContradiction}
+                  sortLevels={sortLevels}
+                  sortInherited={preferences.sortInherited}
+                  onSortChange={handleSortChange}
+                  onClose={closeFilters}
+                />
+              </div>
+            ) : null}
+          </div>
+          <BatchBar
+            selectedIds={selectedIds}
+            hasMorePages={canLoadMore}
+            onClearSelection={() => {
+              setSelectedIds(new Set());
+            }}
+            shelves={shelves}
+            shelvesError={shelvesError}
+            canRefresh={account !== undefined && !account.is_child}
+            result={
+              batch === undefined || batch.action.kind !== "status" || batch.pending
+                ? batch
+                : {
+                    ...batch,
+                    failed: batch.failed.map((failure) => ({
+                      ...failure,
+                      action: batchFeedback.get(failure.id)?.action ?? "none",
+                    })),
+                  }
+            }
+            onAction={(action) => {
+              const rows = items.filter((row) => selectedIds.has(row.id));
+              void runBatch({
+                action,
+                ids: rows.map((row) => row.id),
+                statusTargets:
+                  action.kind === "status" ? edits.statusTargets(rows, action.status) : [],
+              });
+            }}
+            onRetry={() => {
+              if (batchAttempt === undefined || batch === undefined) return;
+              const ids = batch.failed
+                .filter(
+                  (failure) =>
+                    failure.action === "retry" &&
+                    (batch.action.kind !== "status" ||
+                      batchFeedback.get(failure.id)?.action === "retry"),
+                )
+                .map((failure) => failure.id);
+              void runBatch({ ...batchAttempt, ids }, true);
+            }}
+            onDismiss={() => {
+              setBatch(undefined);
+              setBatchAttempt(undefined);
+            }}
+          />
+        </div>
+      </div>
+
+      {!filtersBeside ? (
+        <SheetContent
+          isOpen={filtersOpen}
+          onOpenChange={setFiltersOpen}
+          side="right"
+          showCloseButton={false}
+          aria-describedby={undefined}
+          className="max-w-[100vw] p-3 data-[side=right]:w-[340px]"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Filters</SheetTitle>
+          </SheetHeader>
+          <FilterRail
+            owner={owner}
+            suggestions={query}
+            labels={labelFor}
+            shelves={railShelves}
+            showContradiction={showContradiction}
+            sortLevels={sortLevels}
+            sortInherited={preferences.sortInherited}
+            onSortChange={handleSortChange}
+            onClose={closeFilters}
+          />
+        </SheetContent>
+      ) : null}
+    </>
   );
 }
 
 type LibraryBooksProps = {
   scrollRef: (element: HTMLDivElement | null) => void;
   onScroll: () => void;
-  items: BookListItem[];
+  items: LibraryRow[];
   filtered: boolean;
   onClear: () => void;
   viewMode: LibraryView;
@@ -1120,7 +1142,7 @@ function LibraryPagination({
 }
 
 type BookGridProps = {
-  items: BookListItem[];
+  items: LibraryRow[];
   coverWidth: number;
   selectedIds: ReadonlySet<string>;
   onSelectionChange: (ids: ReadonlySet<string>) => void;
@@ -1157,7 +1179,7 @@ function BookGrid({
         <GridListItem
           id={book.id}
           data-book-id={book.id}
-          textValue={book.title}
+          textValue={book.metadata.title}
           className="group/cover min-w-0 rounded-md outline-none data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-(--focus-ring)"
         >
           <BookCard book={book} />
@@ -1167,35 +1189,62 @@ function BookGrid({
   );
 }
 
-const READING_LABELS = {
-  want_to_read: "Want to read",
-  reading: "Reading",
-  on_hold: "On hold",
-  finished: "Finished",
-  abandoned: "Abandoned",
+const READING_LABELS: Record<string, string> = {
+  WANT_TO_READ: "Want to read",
+  READING: "Reading",
+  ON_HOLD: "On hold",
+  FINISHED: "Finished",
+  ABANDONED: "Abandoned",
 };
 
-function BookCard({ book }: Readonly<{ book: BookListItem }>): ReactElement {
+const bookCardFragment = graphql`
+  fragment BookCard_book on Manifestation @throwOnFieldError {
+    id
+    coverUrl
+    metadata {
+      title
+    }
+    work {
+      title
+      authors(first: 5) {
+        edges {
+          node {
+            name
+          }
+        }
+      }
+    }
+    readingState {
+      status
+      progressPct
+      rating
+    }
+  }
+`;
+
+function BookCard({ book: fragment }: Readonly<{ book: BookCard_book$key }>): ReactElement {
+  const book = useFragment(bookCardFragment, fragment);
+  const title = book.work?.title ?? book.metadata.title;
+  const authors = book.work?.authors.edges.map((edge) => edge.node.name) ?? [];
   const [coverFailed, setCoverFailed] = useState(false);
-  const reading = book.reading_state;
-  const progress = reading?.progress_pct ?? 0;
-  let label =
-    reading?.status === null || reading === null ? "None" : READING_LABELS[reading.status];
-  if (reading?.status === "reading" && reading.progress_pct !== null)
+  const reading = book.readingState;
+  const progress = reading.progressPct ?? 0;
+  let label = reading.status == null ? "None" : (READING_LABELS[reading.status] ?? "None");
+  if (reading.status === "READING" && reading.progressPct != null)
     label = `${String(Math.round(progress))}% read`;
   let statusIcon = <Circle aria-hidden="true" className="size-3" />;
-  if (reading?.status === "finished")
+  if (reading.status === "FINISHED")
     statusIcon = <CircleCheck aria-hidden="true" className="size-3" />;
   return (
     <div className="flex flex-col gap-3">
       <div className="relative aspect-[2/3] rounded-md border border-hairline bg-surface shadow-[0_8px_16px_color-mix(in_oklab,var(--fg)_15%,transparent)] dark:shadow-none group-data-selected/cover:outline-2 group-data-selected/cover:outline-offset-2 group-data-selected/cover:outline-accent">
         <div className="size-full overflow-hidden rounded-[inherit]">
-          {book.cover_url === "" || coverFailed ? (
-            <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />
+          {book.coverUrl === "" || coverFailed ? (
+            <CoverArtwork bookId={book.id} title={title} authors={authors} />
           ) : (
             <img
-              src={book.cover_url}
-              alt={`Cover of ${book.title}`}
+              src={book.coverUrl}
+              alt={`Cover of ${title}`}
               loading="lazy"
               decoding="async"
               onError={() => {
@@ -1204,9 +1253,9 @@ function BookCard({ book }: Readonly<{ book: BookListItem }>): ReactElement {
               className="size-full object-cover"
             />
           )}
-          {reading?.status === "reading" && progress > 0 ? (
+          {reading.status === "READING" && progress > 0 ? (
             <Progress
-              aria-label={`Reading progress for ${book.title}`}
+              aria-label={`Reading progress for ${title}`}
               value={progress}
               className="absolute inset-x-0 bottom-0 h-1 rounded-b-md"
             />
@@ -1214,25 +1263,25 @@ function BookCard({ book }: Readonly<{ book: BookListItem }>): ReactElement {
         </div>
         <Checkbox
           slot="selection"
-          aria-label={`Select ${book.title}`}
+          aria-label={`Select ${title}`}
           className="absolute left-2 top-2 opacity-0 group-data-hovered/cover:opacity-100 group-data-selected/cover:opacity-100 group-focus-within/cover:opacity-100"
         />
       </div>
       <div className="flex min-w-0 flex-col gap-1 text-xs">
         <h3 className="truncate text-[13px] font-semibold text-fg">
           <Link href={`/b/${book.id}`} className="block truncate text-[13px] font-semibold text-fg">
-            {book.title}
+            {title}
           </Link>
         </h3>
-        <p className="truncate text-fg-muted">{book.authors.join(", ")}</p>
+        <p className="truncate text-fg-muted">{authors.join(", ")}</p>
         <div className="mt-1 flex items-center justify-between gap-1 text-fg-muted">
           <span
-            className={`flex min-w-0 items-center gap-1.5 ${reading?.status === "reading" ? "font-semibold text-accent-text" : ""}`}
+            className={`flex min-w-0 items-center gap-1.5 ${reading.status === "READING" ? "font-semibold text-accent-text" : ""}`}
           >
-            {reading?.status === "reading" ? null : statusIcon}
+            {reading.status === "READING" ? null : statusIcon}
             <span className="truncate">{label}</span>
           </span>
-          {reading?.rating === null || reading === null ? null : (
+          {reading.rating == null ? null : (
             <span
               aria-label={`${String(reading.rating)} out of 5 stars`}
               className="flex shrink-0 gap-0.5 text-fg"

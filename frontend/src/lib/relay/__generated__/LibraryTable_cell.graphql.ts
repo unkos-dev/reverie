@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<f847dc577b90e6f55d876d2b93591659>>
+ * @generated SignedSource<<cdc4dc7afe2c0c4c5a6ffc39a75896b6>>
  * @lightSyntaxTransform
  */
 
@@ -8,29 +8,29 @@
 // @ts-nocheck
 
 import { ReaderFragment } from "relay-runtime";
+export type ReadingStatus =
+  | "ABANDONED"
+  | "FINISHED"
+  | "ON_HOLD"
+  | "READING"
+  | "WANT_TO_READ"
+  | "%future added value";
 import { FragmentRefs } from "relay-runtime";
-export type readerLibraryBook$data = ReadonlyArray<{
+export type LibraryTable_cell$data = {
   readonly coverUrl: string;
   readonly createdAt: string;
   readonly id: string;
-  readonly isbn13: string | null | undefined;
   readonly metadata: {
     readonly etag: string;
     readonly isbn13: string | null | undefined;
-    readonly manifestationId: string;
     readonly pages: number | null | undefined;
     readonly subtitle: string | null | undefined;
     readonly title: string;
-    readonly workId: string;
   };
-  readonly pages: number | null | undefined;
   readonly readingState: {
     readonly etag: string;
-    readonly finishedAt: string | null | undefined;
-    readonly progressPct: number | null | undefined;
     readonly rating: number | null | undefined;
-    readonly startedAt: string | null | undefined;
-    readonly status: string | null | undefined;
+    readonly status: ReadingStatus | null | undefined;
   };
   readonly work:
     | {
@@ -40,16 +40,11 @@ export type readerLibraryBook$data = ReadonlyArray<{
               readonly name: string;
             };
           }>;
-          readonly pageInfo: {
-            readonly endCursor: string | null | undefined;
-            readonly hasNextPage: boolean;
-          };
         };
         readonly id: string;
         readonly selectedSeries:
           | {
               readonly node: {
-                readonly id: string;
                 readonly name: string;
               };
               readonly position: number | null | undefined;
@@ -61,12 +56,12 @@ export type readerLibraryBook$data = ReadonlyArray<{
       }
     | null
     | undefined;
-  readonly " $fragmentType": "readerLibraryBook";
-}>;
-export type readerLibraryBook$key = ReadonlyArray<{
-  readonly " $data"?: readerLibraryBook$data;
-  readonly " $fragmentSpreads": FragmentRefs<"readerLibraryBook">;
-}>;
+  readonly " $fragmentType": "LibraryTable_cell";
+};
+export type LibraryTable_cell$key = {
+  readonly " $data"?: LibraryTable_cell$data;
+  readonly " $fragmentSpreads": FragmentRefs<"LibraryTable_cell">;
+};
 
 const node: ReaderFragment = (function () {
   var v0 = {
@@ -80,38 +75,26 @@ const node: ReaderFragment = (function () {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "isbn13",
+      name: "title",
       storageKey: null,
     },
     v2 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "pages",
-      storageKey: null,
-    },
-    v3 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "title",
-      storageKey: null,
-    },
-    v4 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
       name: "subtitle",
       storageKey: null,
     },
-    v5 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "name",
-      storageKey: null,
-    },
-    v6 = {
+    v3 = [
+      {
+        alias: null,
+        args: null,
+        kind: "ScalarField",
+        name: "name",
+        storageKey: null,
+      },
+    ],
+    v4 = {
       alias: null,
       args: null,
       kind: "ScalarField",
@@ -122,9 +105,9 @@ const node: ReaderFragment = (function () {
     argumentDefinitions: [],
     kind: "Fragment",
     metadata: {
-      plural: true,
+      throwOnFieldError: true,
     },
-    name: "readerLibraryBook",
+    name: "LibraryTable_cell",
     selections: [
       v0 /*:: as any*/,
       {
@@ -134,8 +117,6 @@ const node: ReaderFragment = (function () {
         name: "coverUrl",
         storageKey: null,
       },
-      v1 /*:: as any*/,
-      v2 /*:: as any*/,
       {
         alias: null,
         args: null,
@@ -152,8 +133,8 @@ const node: ReaderFragment = (function () {
         plural: false,
         selections: [
           v0 /*:: as any*/,
-          v3 /*:: as any*/,
-          v4 /*:: as any*/,
+          v1 /*:: as any*/,
+          v2 /*:: as any*/,
           {
             alias: null,
             args: [
@@ -183,32 +164,7 @@ const node: ReaderFragment = (function () {
                     kind: "LinkedField",
                     name: "node",
                     plural: false,
-                    selections: [v5 /*:: as any*/],
-                    storageKey: null,
-                  },
-                ],
-                storageKey: null,
-              },
-              {
-                alias: null,
-                args: null,
-                concreteType: "PageInfo",
-                kind: "LinkedField",
-                name: "pageInfo",
-                plural: false,
-                selections: [
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "hasNextPage",
-                    storageKey: null,
-                  },
-                  {
-                    alias: null,
-                    args: null,
-                    kind: "ScalarField",
-                    name: "endCursor",
+                    selections: v3 /*:: as any*/,
                     storageKey: null,
                   },
                 ],
@@ -232,7 +188,7 @@ const node: ReaderFragment = (function () {
                 kind: "LinkedField",
                 name: "node",
                 plural: false,
-                selections: [v0 /*:: as any*/, v5 /*:: as any*/],
+                selections: v3 /*:: as any*/,
                 storageKey: null,
               },
               {
@@ -256,37 +212,35 @@ const node: ReaderFragment = (function () {
         name: "metadata",
         plural: false,
         selections: [
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "workId",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "manifestationId",
-            storageKey: null,
-          },
-          v6 /*:: as any*/,
-          v3 /*:: as any*/,
           v4 /*:: as any*/,
           v1 /*:: as any*/,
           v2 /*:: as any*/,
+          {
+            alias: null,
+            args: null,
+            kind: "ScalarField",
+            name: "isbn13",
+            storageKey: null,
+          },
+          {
+            alias: null,
+            args: null,
+            kind: "ScalarField",
+            name: "pages",
+            storageKey: null,
+          },
         ],
         storageKey: null,
       },
       {
         alias: null,
         args: null,
-        concreteType: "ReadingState",
+        concreteType: "ReadingRevision",
         kind: "LinkedField",
         name: "readingState",
         plural: false,
         selections: [
-          v6 /*:: as any*/,
+          v4 /*:: as any*/,
           {
             alias: null,
             args: null,
@@ -301,27 +255,6 @@ const node: ReaderFragment = (function () {
             name: "rating",
             storageKey: null,
           },
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "progressPct",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "startedAt",
-            storageKey: null,
-          },
-          {
-            alias: null,
-            args: null,
-            kind: "ScalarField",
-            name: "finishedAt",
-            storageKey: null,
-          },
         ],
         storageKey: null,
       },
@@ -331,6 +264,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "c2dadf3aa9e423342c31172a8bb77298";
+(node as any).hash = "f693017b4b57c67ec388bdfb74e8faf5";
 
 export default node;

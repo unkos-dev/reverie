@@ -10,6 +10,7 @@ import {
 } from "react-relay";
 import { commitLocalUpdate } from "relay-runtime";
 import { MetadataRefusal } from "@/api/graphql";
+import { invalidateLibraryVisits } from "@/lib/relay/library-visit";
 import { readerVersions, readerVersionsQuery } from "@/lib/relay/reader";
 import {
   mutationsAcceptMetadataVersionMutation,
@@ -234,8 +235,10 @@ function FieldGroup({
       result: ConstructorParameters<typeof MetadataRefusal>[0],
       success: string,
     ) => {
-      if (result.__typename === success) onAction({ status: "success", variables });
-      else failed(variables, new MetadataRefusal(result));
+      if (result.__typename === success) {
+        if (variables.action !== "reject") invalidateLibraryVisits(environment, [variables.field]);
+        onAction({ status: "success", variables });
+      } else failed(variables, new MetadataRefusal(result));
     };
     const onError = (error: Error): void => {
       console.error("[VersionsTab] field action failed", error);

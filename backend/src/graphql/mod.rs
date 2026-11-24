@@ -1017,15 +1017,16 @@ mod tests {
         assert!(stored(&after_refusal)["density"].is_null());
         assert_eq!(stored(&after_refusal)["hiddenColumns"], json!([]));
         let missing = id::Manifestation::encode(uuid::Uuid::new_v4());
-        assert_graph_code(
+        assert_graph_result(
             &reader_query(
                 fixture,
                 &fixture.admin,
-                "mutation($id:ID!) { refreshMetadata(id:$id) { manifestationId } }",
+                "mutation($id:ID!) { refreshMetadata(input:{id:$id}) { __typename } }",
                 json!({"id":missing}),
             )
             .await,
-            "not-found",
+            "refreshMetadata",
+            "NotFound",
         );
     }
 
@@ -1047,7 +1048,7 @@ mod tests {
             ),
             (
                 "refreshMetadata",
-                format!("refreshMetadata(id:\"{id}\") {{ manifestationId }}"),
+                format!("refreshMetadata(input:{{id:\"{id}\"}}) {{ __typename }}"),
             ),
             (
                 "updateMetadata",
@@ -1057,7 +1058,7 @@ mod tests {
             ),
             (
                 "updateReadingState",
-                format!("updateReadingState(id:\"{id}\",patch:{{notes:\"Scoped\"}}) {{ etag }}"),
+                format!("updateReadingState(input:{{id:\"{id}\",baseline:{tag},patch:{{notes:\"Scoped\"}}}}) {{ __typename }}"),
             ),
             (
                 "createShelf",
@@ -1155,14 +1156,14 @@ mod tests {
         let shelf = id::Shelf::encode(fixture.shelf_a).as_str().to_owned();
         let own = reader_query(fixture, &fixture.child, READING_READ, json!({"id":id})).await;
         let child_saved=reader_query(fixture,&fixture.child,READING_SAVE,json!({"id":id,"baseline":own["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Child's change"}})).await;
-        assert_graph_ok(&child_saved);
+        assert_graph_result(&child_saved, "updateReadingState", "ReadingStateUpdated");
         let adult = reader_query(fixture, &fixture.admin, READING_READ, json!({"id":id})).await;
         assert_eq!(
             adult["data"]["manifestation"]["readingState"]["notes"],
             "Admin note"
         );
         let hidden = id::Manifestation::encode(fixture.hidden);
-        assert_graph_code(&reader_query(fixture,&fixture.child,READING_SAVE,json!({"id":hidden,"baseline":own["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Hidden"}})).await,"not-found");
+        assert_graph_result(&reader_query(fixture,&fixture.child,READING_SAVE,json!({"id":hidden,"baseline":own["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Hidden"}})).await,"updateReadingState","NotFound");
         let membership = "mutation($shelf:ID!,$id:ID!) { addShelfItem(input:{shelfId:$shelf,manifestationId:$id}) { __typename } }";
         assert_graph_result(
             &reader_query(
@@ -1261,9 +1262,8 @@ mod tests {
     const TITLE_READ: &str =
         "query($id: ID!) { manifestation(id: $id) { metadata { title etag } } }";
     const TITLE_SAVE: &str = "mutation($id: ID!, $baseline: ETag!, $request: UUID, $patch: MetadataPatch!) { updateMetadata(input: {id: $id, baseline: $baseline, requestId: $request, patch: $patch}) { __typename ... on MetadataSaved { requestId operations { operationId fieldName expiresAt status } manifestation { metadata { title etag } } } } }";
-    const READING_READ: &str =
-        "query($id: ID!) { manifestation(id: $id) { readingState { notes rating status etag } } }";
-    const READING_SAVE: &str = "mutation($id: ID!, $baseline: String, $patch: ReadingPatch!) { updateReadingState(id: $id, baseline: $baseline, patch: $patch) { notes rating status etag } }";
+    const READING_READ: &str = "query($id: ID!) { manifestation(id: $id) { readingState { id notes rating status etag } } }";
+    const READING_SAVE: &str = "mutation($id: ID!, $baseline: ETag!, $patch: ReadingPatch!) { updateReadingState(input:{id:$id,baseline:$baseline,patch:$patch}) { __typename ... on ReadingStateUpdated { manifestation { id readingState { id notes rating status etag } } } } }";
     const RESOLVE: &str = "query($id: ID!, $request: UUID, $operation: UUID) { metadataOperation(id: $id, requestId: $request, operationId: $operation) { outcome operations { operationId fieldName expiresAt status } metadata { title etag } } }";
     const UNDO: &str = "mutation($id: ID!, $baseline: ETag!, $operation: UUID!) { undoMetadata(input: {id: $id, baseline: $baseline, operationId: $operation}) { __typename ... on MetadataRestored { operation { operationId fieldName expiresAt status } manifestation { metadata { title etag } } } ... on FieldsLocked { fields } } }";
     fn assert_request_error(value: &serde_json::Value) {
@@ -1440,12 +1440,33 @@ mod tests {
             first["etag"]
         );
         let read = browser_graph(&server, &csrf, READING_READ, vars.clone()).await;
-        for (baseline, code) in [
-            (serde_json::Value::Null, "if-match-required"),
-            (json!("W/\"tag\""), "malformed-header"),
-            (json!("\"old\""), "if-match-mismatch"),
-        ] {
-            assert_graph_code(
+        let original_reading = &read["data"]["manifestation"]["readingState"];
+        assert!(
+            original_reading["id"]
+                .as_str()
+                .unwrap()
+                .starts_with("reading_rev_")
+        );
+        let (_, another_edition) =
+            db::insert_work_and_manifestation(&ing, "same-reading-values").await;
+        let other_book = browser_graph(
+            &server,
+            &csrf,
+            READING_READ,
+            json!({"id":id::Manifestation::encode(another_edition)}),
+        )
+        .await;
+        let (_, other_browser, other_csrf) = editing_browser(&pool, "other-reader").await;
+        let other_reader =
+            browser_graph(&other_browser, &other_csrf, READING_READ, vars.clone()).await;
+        for other in [other_book, other_reader] {
+            assert_graph_ok(&other);
+            let revision = &other["data"]["manifestation"]["readingState"];
+            assert_eq!(revision["etag"], original_reading["etag"]);
+            assert_ne!(revision["id"], original_reading["id"]);
+        }
+        for baseline in [serde_json::Value::Null, json!("W/\"tag\"")] {
+            assert_request_error(
                 &browser_graph(
                     &server,
                     &csrf,
@@ -1453,10 +1474,9 @@ mod tests {
                     json!({"id":id,"baseline":baseline,"patch":{"notes":"Refused"}}),
                 )
                 .await,
-                code,
             );
         }
-        assert_graph_code(
+        assert_request_error(
             &browser_graph(
                 &server,
                 &csrf,
@@ -1464,24 +1484,39 @@ mod tests {
                 json!({"id":id,"patch":{"notes":"Refused"}}),
             )
             .await,
-            "if-match-required",
         );
-        let reading_attempt = json!({"id":id,"baseline":read["data"]["manifestation"]["readingState"]["etag"],"patch":{"notes":"Notes","rating":3,"status":"READING"}});
-        let read_saved = browser_graph(&server, &csrf, READING_SAVE, reading_attempt.clone()).await;
-        assert_graph_ok(&read_saved);
-        assert_graph_code(
-            &browser_graph(&server, &csrf, READING_SAVE, reading_attempt).await,
-            "if-match-mismatch",
+        let attempt = json!({"id":id,"baseline":original_reading["etag"],"patch":{"notes":"Notes","rating":3,"status":"READING"}});
+        let read_saved = browser_graph(&server, &csrf, READING_SAVE, attempt.clone()).await;
+        assert_graph_result(&read_saved, "updateReadingState", "ReadingStateUpdated");
+        let read_saved = &read_saved["data"]["updateReadingState"]["manifestation"]["readingState"];
+        assert_eq!(read_saved["notes"], "Notes");
+        assert_eq!(read_saved["rating"], 3);
+        assert_eq!(read_saved["status"], "READING");
+        assert_ne!(read_saved["id"], original_reading["id"]);
+        let mut stale = attempt;
+        stale["patch"] = json!({"rating":0});
+        assert_graph_result(
+            &browser_graph(&server, &csrf, READING_SAVE, stale).await,
+            "updateReadingState",
+            "StaleBaseline",
         );
         let read_back = browser_graph(&server, &csrf, READING_READ, vars.clone()).await;
+        assert_graph_ok(&read_back);
         assert_eq!(
-            read_saved["data"]["updateReadingState"],
-            read_back["data"]["manifestation"]["readingState"]
+            read_saved,
+            &read_back["data"]["manifestation"]["readingState"]
         );
-        let notes_clear = browser_graph(&server,&csrf,READING_SAVE,json!({"id":id,"baseline":read_saved["data"]["updateReadingState"]["etag"],"patch":{"notes":null}})).await;
-        assert_graph_ok(&notes_clear);
-        assert!(notes_clear["data"]["updateReadingState"]["notes"].is_null());
-        assert_eq!(notes_clear["data"]["updateReadingState"]["rating"], 3);
+        let notes_clear = browser_graph(
+            &server,
+            &csrf,
+            READING_SAVE,
+            json!({"id":id,"baseline":read_saved["etag"],"patch":{"notes":null}}),
+        )
+        .await;
+        assert_graph_result(&notes_clear, "updateReadingState", "ReadingStateUpdated");
+        let cleared = &notes_clear["data"]["updateReadingState"]["manifestation"]["readingState"];
+        assert!(cleared["notes"].is_null());
+        assert_eq!(cleared["rating"], 3);
     }
 
     // Authentication, private-data and corruption boundaries for session-bound, non-consuming exact Undo.
@@ -1703,6 +1738,10 @@ mod tests {
         let version_id = id::MetadataVersion::encode(version);
         let input = if text.contains("updateMetadata(") {
             json!({"id":id,"baseline":baseline,"requestId":request,"patch":patch})
+        } else if text.contains("updateReadingState(") {
+            json!({"id":id,"baseline":baseline,"patch":patch})
+        } else if text.contains("refreshMetadata(") {
+            json!({"id":id})
         } else if text.contains("undoMetadata(") {
             json!({"id":id,"baseline":baseline,"operationId":operation})
         } else if text.contains("acceptMetadataVersion(") || text.contains("rejectMetadataVersion(")
@@ -1771,7 +1810,10 @@ mod tests {
                 document(&envelope, ExecutionPolicy::Production, &documents).unwrap(),
                 documents[id]
             );
-            if documents[id].contains("mutations") {
+            if documents[id].contains("mutations")
+                || documents[id].starts_with("mutation ")
+                || documents[id].contains("metadataOperation(")
+            {
                 trusted_editing_document(&pool, id, &documents[id]).await;
                 continue;
             }
@@ -1855,7 +1897,7 @@ mod tests {
             id::Manifestation::encode(fixture.visible)
         };
         json!({
-            "id": id.as_str(), "q": "Graph",
+            "id": id.as_str(), "q": "Graph", "eligible": true, "sourceKey": "trusted-visit",
             "authorIds": [id::Author::encode(fixture.author).as_str()],
             "seriesIds": [id::Series::encode(fixture.series).as_str()],
             "shelfIds": [id::Shelf::encode(fixture.shelf_a).as_str()],
@@ -2509,6 +2551,33 @@ mod tests {
                 "{batched}"
             );
         }
+        let visible = id::Manifestation::encode(fixture.visible);
+        let author_page = "query($id: ID!, $after: String) { manifestation(id: $id) { metadata { etag authors(first: 1, after: $after) { edges { cursor } pageInfo { hasPreviousPage } } } } }";
+        let minted =
+            reader_query(&fixture, &fixture.admin, author_page, json!({"id":visible})).await;
+        assert_graph_ok(&minted);
+        let metadata = &minted["data"]["manifestation"]["metadata"];
+        let author_cursor = metadata["authors"]["edges"][0]["cursor"].as_str().unwrap();
+        let continuation = reader_query(
+            &fixture,
+            &fixture.admin,
+            author_page,
+            json!({"id":visible,"after":author_cursor}),
+        )
+        .await;
+        assert_graph_ok(&continuation);
+        assert_eq!(
+            continuation["data"]["manifestation"]["metadata"]["authors"]["pageInfo"]["hasPreviousPage"],
+            true
+        );
+        let updated = reader_query(
+            &fixture,
+            &fixture.admin,
+            TITLE_SAVE,
+            json!({"id":visible,"baseline":metadata["etag"],"patch":{"title":"New revision"}}),
+        )
+        .await;
+        assert_graph_result(&updated, "updateMetadata", "MetadataSaved");
         let snapshot_batched = reader_query(
             &fixture,
             &fixture.admin,
@@ -2516,7 +2585,7 @@ mod tests {
             json!({
                 "good": id::Manifestation::encode(fixture.sibling).as_str(),
                 "bad": id::Manifestation::encode(fixture.visible).as_str(),
-                "after": cursor,
+                "after": author_cursor,
             }),
         )
         .await;

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import type { Preferences } from "../../src/api/preferences";
@@ -145,6 +145,7 @@ function graphBook(book: typeof BOOK) {
       pages: book.pages,
     },
     readingState: {
+      id: `reading_rev_${revisionId(book.id, book.reading_etag)}`,
       etag: book.reading_etag,
       status: null,
       rating: null,
@@ -166,6 +167,7 @@ function graphBook(book: typeof BOOK) {
 
 type Fixture = {
   requests: z.infer<typeof variablesSchema>[];
+  libraryRequests: string[];
   books: (typeof BOOK)[];
   bootstrap: "healthy" | "failing";
   invisible: Set<string>;
@@ -178,6 +180,7 @@ async function intercept(
 ): Promise<Fixture> {
   const fixture: Fixture = {
     requests: [],
+    libraryRequests: [],
     books: [...(options.books ?? [BOOK])],
     bootstrap: "healthy",
     invisible: new Set(),
@@ -228,8 +231,17 @@ async function intercept(
         .object({ id: z.string(), variables: z.record(z.string(), z.unknown()) })
         .parse(route.request().postDataJSON());
       const operation = documents[body.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
+      if (
+        operation === "libraryBootstrapQuery" ||
+        operation === "LibraryPageQuery" ||
+        operation === "readerLibraryPaginationQuery"
+      )
+        fixture.libraryRequests.push(operation);
       let data: unknown;
-      if (operation === "readerLibraryQuery" || operation === "readerLibraryPaginationQuery") {
+      if (
+        operation === "readerLibraryPaginationQuery" ||
+        (operation === "LibraryPageQuery" && body.variables.eligible === true)
+      ) {
         const variables = variablesSchema.parse(body.variables);
         fixture.requests.push(variables);
         const filter = variables.filter;
@@ -244,6 +256,9 @@ async function intercept(
         const pageBooks = books.slice(offset, offset + (variables.count ?? 50));
         const end = offset + pageBooks.length;
         data = {
+          ...(operation === "LibraryPageQuery"
+            ? { viewer: viewer(), ...labels(body.variables), shelves: shelves() }
+            : {}),
           books: {
             edges: pageBooks.map((book, index) => ({
               cursor: String(offset + index + 1),
@@ -412,6 +427,7 @@ async function chooseFacets(page: Page): Promise<void> {
   }
   await page.keyboard.press("Escape");
   await drawer.getByRole("button", { name: "Close filters", exact: true }).click();
+  await expect(drawer).toBeHidden();
 }
 const search = (page: Page) => page.getByRole("searchbox", { name: "Search your library" });
 async function ready(page: Page): Promise<void> {
@@ -419,6 +435,23 @@ async function ready(page: Page): Promise<void> {
   await page.evaluate(async () => {
     await document.activeViewTransition?.finished;
   });
+}
+async function clickRetainedTableControl(page: Page, control: Locator): Promise<void> {
+  const hit: { point?: { x: number; y: number } } = {};
+  // Locator clicks can scroll the retained table and change the position being tested.
+  await expect
+    .poll(async () => {
+      hit.point = await control.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        return element.contains(document.elementFromPoint(x, y)) ? { x, y } : undefined;
+      });
+      return hit.point;
+    })
+    .toBeDefined();
+  if (hit.point === undefined) throw new Error("The retained table control must receive pointers.");
+  await page.mouse.click(hit.point.x, hit.point.y);
 }
 async function refine(page: Page) {
   await page.getByRole("button", { name: /^Filters/ }).click();
@@ -571,7 +604,7 @@ test("Refine Escape retains live text and range edits and returns focus", async 
 
 test("unchanged returns preserve each visit's books and known-book position", async ({ page }) => {
   // REV-REQ-0080 R1a, R1b: identical visits retain independent extents and known-book positions.
-  await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+  const fixture = await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
   await page.goto("/library");
   await ready(page);
   const table = page.getByRole("grid", { name: "Library books", exact: true });
@@ -606,6 +639,7 @@ test("unchanged returns preserve each visit's books and known-book position", as
       });
     });
   });
+  expect(fixture.libraryRequests).toEqual(["libraryBootstrapQuery", "LibraryPageQuery"]);
   const firstTop = await first.evaluate((element) => element.getBoundingClientRect().top);
   await expect(page.getByText("50 books loaded", { exact: true }).first()).toBeVisible();
   await first.getByRole("link", { name: "Journey book 009", exact: true }).dispatchEvent("click");
@@ -613,6 +647,7 @@ test("unchanged returns preserve each visit's books and known-book position", as
     new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
   );
   await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
+  const beforeFreshReturn = fixture.libraryRequests.length;
   await page.goBack();
   await ready(page);
   await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
@@ -623,14 +658,17 @@ test("unchanged returns preserve each visit's books and known-book position", as
     )
     .toBeLessThanOrEqual(1);
   await expect(table).toHaveJSProperty("scrollTop", firstScroll);
+  expect(fixture.libraryRequests).toHaveLength(beforeFreshReturn);
 
   await page.goForward();
   await expect(page).toHaveURL(
     new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
   );
   await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
+  const beforeWarmPush = fixture.libraryRequests.length;
   await page.getByRole("link", { name: "Library", exact: true }).first().click();
   await ready(page);
+  expect(fixture.libraryRequests.slice(beforeWarmPush)).toEqual(["LibraryPageQuery"]);
   await page.getByRole("button", { name: "Load more", exact: true }).click();
   await expect(page.getByText("100 books loaded", { exact: true }).first()).toBeVisible();
   await table.evaluate((element) => {
@@ -702,6 +740,8 @@ test("unchanged returns preserve each visit's books and known-book position", as
 test("a moved book returns to its saved position", async ({ page }) => {
   // REV-REQ-0080 R2: a named book keeps its viewport position when its list index changes.
   const fixture = await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+  // React Aria's scroll-end detection needs Date.now() to keep advancing.
+  await page.clock.install();
   await page.goto("/library");
   await ready(page);
   const table = page.getByRole("grid", { name: "Library books", exact: true });
@@ -742,26 +782,20 @@ test("a moved book returns to its saved position", async ({ page }) => {
     new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
   );
   await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
-  fixture.books.unshift(
-    {
-      ...BOOK,
-      id: "00000000-0000-4000-8000-000000000121",
-      work_id: "10000000-0000-4000-8000-000000000121",
-      title: "New arrival one",
-      created_at: "2026-11-17T00:00:00Z",
-    },
-    {
-      ...BOOK,
-      id: "00000000-0000-4000-8000-000000000122",
-      work_id: "10000000-0000-4000-8000-000000000122",
-      title: "New arrival two",
-      created_at: "2026-11-17T00:00:00Z",
-    },
-  );
+  const anchor = fixture.books.splice(8, 1);
+  expect(anchor).toHaveLength(1);
+  fixture.books.splice(60, 0, ...anchor);
+  await page.clock.fastForward(301_000);
   const beforeReturn = fixture.requests.length;
+  const { held, release } = await holdBooksContinuation(page);
   await page.goBack();
+  const request = await held;
   await ready(page);
   await expect.poll(() => fixture.requests.length).toBeGreaterThan(beforeReturn);
+  await expect(page.getByText("Updating results…", { exact: true })).toBeVisible();
+  await expect(book).toBeVisible();
+  release();
+  await request.response();
   await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
   await expect
     .poll(async () =>
@@ -770,27 +804,7 @@ test("a moved book returns to its saved position", async ({ page }) => {
     .toBeLessThanOrEqual(1);
 });
 
-test("a user scroll wins during a held return", async ({ page }) => {
-  // REV-REQ-0080 Y1: native user scrolling supersedes a delayed return completion.
-  await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
-  await page.goto("/library");
-  await ready(page);
-  const table = page.getByRole("grid", { name: "Library books", exact: true });
-  await expect(table).toBeVisible();
-  await table.evaluate((element) => {
-    element.scrollTo({ top: 400, behavior: "instant" });
-  });
-  const original = table.locator(
-    `[data-book-id="${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}"]`,
-  );
-  await expect(original).toBeVisible();
-  await original
-    .getByRole("link", { name: "Journey book 009", exact: true })
-    .dispatchEvent("click");
-  await expect(page).toHaveURL(
-    new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
-  );
-  await expect(page.getByRole("heading", { name: "Journey book 009", exact: true })).toBeVisible();
+async function holdBooksContinuation(page: Page) {
   let release: (() => void) | undefined;
   const paused = new Promise<void>((resolve) => {
     release = resolve;
@@ -798,55 +812,120 @@ test("a user scroll wins during a held return", async ({ page }) => {
   const held = page.waitForRequest((request) => {
     if (!request.url().endsWith("/api/graphql")) return false;
     const body = z.object({ id: z.string() }).parse(request.postDataJSON());
-    return documents[body.id]?.includes("query readerLibraryQuery(");
+    return documents[body.id]?.includes("query readerLibraryPaginationQuery(");
   });
   await page.route("**/api/graphql", async (route) => {
     const body = z.object({ id: z.string() }).parse(route.request().postDataJSON());
-    if (documents[body.id]?.includes("query readerLibraryQuery(")) {
+    if (documents[body.id]?.includes("query readerLibraryPaginationQuery(")) {
       await paused;
     }
     await route.fallback();
   });
-  await page.goBack();
-  const request = await held;
-  await ready(page);
-  await expect(page.getByText("Updating results…", { exact: true })).toBeVisible();
-  const chosen = table.locator(
-    `[data-book-id="${graphId("Manifestation", "00000000-0000-4000-8000-000000000014")}"]`,
-  );
-  await expect(chosen).toBeAttached();
-  const chosenScroll = await chosen.evaluate((element) => {
-    const grid = element.closest('[role="grid"]');
-    const header = grid?.querySelector('[role="columnheader"]');
-    if (grid === null || header == null) throw new Error("The book's table must be rendered.");
-    return new Promise<number>((resolve) => {
-      grid.addEventListener(
-        "scrollend",
-        () => {
-          resolve(grid.scrollTop);
-        },
-        { once: true },
-      );
-      grid.scrollTo({
-        top:
-          grid.scrollTop +
-          element.getBoundingClientRect().top -
-          header.getBoundingClientRect().bottom +
-          8,
-        behavior: "instant",
-      });
+  return {
+    held,
+    release: () => {
+      release?.();
+    },
+  };
+}
+
+for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const) {
+  test(`a newer ${action} wins during a held return`, async ({ page }) => {
+    // REV-REQ-0080 Y1: newer intent supersedes a held return completion.
+    await intercept(page, false, { books: RETURN_BOOKS, view: "table" });
+    await page.clock.install();
+    await page.goto("/library");
+    await ready(page);
+    await page.getByRole("button", { name: "Load more", exact: true }).click();
+    await expect(page.getByText("100 books loaded", { exact: true }).first()).toBeVisible();
+    const table = page.getByRole("grid", { name: "Library books", exact: true });
+    await expect(table).toBeVisible();
+    await table.evaluate((element) => {
+      element.scrollTo({ top: 400, behavior: "instant" });
     });
+    const original = table.locator(
+      `[data-book-id="${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}"]`,
+    );
+    await expect(original).toBeVisible();
+    await original
+      .getByRole("link", { name: "Journey book 009", exact: true })
+      .dispatchEvent("click");
+    await expect(page).toHaveURL(
+      new RegExp(`/b/${graphId("Manifestation", "00000000-0000-4000-8000-000000000009")}$`),
+    );
+    await expect(
+      page.getByRole("heading", { name: "Journey book 009", exact: true }),
+    ).toBeVisible();
+    await page.clock.fastForward(301_000);
+    const { held, release } = await holdBooksContinuation(page);
+    await page.goBack();
+    const request = await held;
+    await ready(page);
+    await expect(page.getByText("Updating results…", { exact: true })).toBeVisible();
+    await expect(page.getByText("100 books", { exact: true }).first()).toBeVisible();
+    let chosenScroll: number | undefined;
+    switch (action) {
+      case "scroll": {
+        const grid = await table.boundingBox();
+        if (grid === null) throw new Error("The retained table must be visible.");
+        await page.mouse.move(grid.x + grid.width / 2, grid.y + grid.height / 2);
+        const previous = await table.evaluate((element) => element.scrollTop);
+        await page.mouse.wheel(0, 264);
+        await expect(table).toHaveJSProperty("scrollTop", previous + 264);
+        chosenScroll = previous + 264;
+        break;
+      }
+      case "filter":
+        await search(page).fill("Journey book 010");
+        await expect(
+          table.getByRole("link", { name: "Journey book 010", exact: true }),
+        ).toBeVisible();
+        break;
+      case "sort":
+        await clickRetainedTableControl(
+          page,
+          table.getByRole("columnheader", { name: /^Title(?:\s|$)/ }),
+        );
+        await expect(page.getByText("Sorted by Title ascending", { exact: true })).toBeAttached();
+        break;
+      case "view":
+        await page.getByRole("radio", { name: "Covers", exact: true }).click();
+        await expect(page.getByRole("grid", { name: "Books", exact: true })).toBeVisible();
+        break;
+      case "navigation":
+        await clickRetainedTableControl(
+          page,
+          table.getByRole("link", { name: "Journey book 013", exact: true }),
+        );
+        await expect(
+          page.getByRole("heading", { name: "Journey book 013", exact: true }),
+        ).toBeVisible();
+        break;
+    }
+    release();
+    await request.response();
+    await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
+    switch (action) {
+      case "scroll":
+        await expect(table).toHaveJSProperty("scrollTop", chosenScroll);
+        break;
+      case "filter":
+        await expect(search(page)).toHaveValue("Journey book 010");
+        await expect(original).not.toBeAttached();
+        break;
+      case "sort":
+        await expect(page.getByText("Sorted by Title ascending", { exact: true })).toBeAttached();
+        await expect(page.getByText("50 books loaded", { exact: true }).first()).toBeVisible();
+        break;
+      case "view":
+        await expect(page.getByRole("radio", { name: "Covers", exact: true })).toBeChecked();
+        await expect(table).not.toBeAttached();
+        break;
+      case "navigation":
+        await expect(
+          page.getByRole("heading", { name: "Journey book 013", exact: true }),
+        ).toBeVisible();
+        break;
+    }
   });
-  const chosenTop = await chosen.evaluate((element) => element.getBoundingClientRect().top);
-  release?.();
-  await request.response();
-  await expect(page.getByText("Updating results…", { exact: true })).toBeHidden();
-  await expect
-    .poll(async () =>
-      Math.abs(
-        (await chosen.evaluate((element) => element.getBoundingClientRect().top)) - chosenTop,
-      ),
-    )
-    .toBeLessThanOrEqual(1);
-  await expect(table).toHaveJSProperty("scrollTop", chosenScroll);
-});
+}

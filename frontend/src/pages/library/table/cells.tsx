@@ -1,8 +1,19 @@
-import type { ReaderBook as BookListItem } from "@/api/graphql";
-import { loadAuthorField } from "@/api/graphql";
-import { useRelayEnvironment } from "react-relay";
+import {
+  graphql,
+  usePaginationFragment,
+  usePreloadedQuery,
+  useQueryLoader,
+  type PreloadedQuery,
+} from "react-relay";
+import { GraphQLExecutionError } from "@/api/graphql";
+import { readerAuthorEditing } from "@/lib/relay/reader";
+import type { cellsAuthorsQuery } from "@/lib/relay/__generated__/cellsAuthorsQuery.graphql";
+import type { readerAuthorEditing$key } from "@/lib/relay/__generated__/readerAuthorEditing.graphql";
+import type { readerAuthorEditingPaginationQuery } from "@/lib/relay/__generated__/readerAuthorEditingPaginationQuery.graphql";
+import type { EditValue } from "./useCellEdit";
 import { CircleAlert, Check, GripVertical, PenLine, Star, X } from "lucide-react";
 import {
+  Suspense,
   useEffect,
   useRef,
   useState,
@@ -43,8 +54,7 @@ export type CellState = {
   pending: string | undefined;
   failed: boolean;
   serverError?: string;
-  retained?: BookListItem;
-  retainSource?: () => () => void;
+  retained?: EditValue;
 };
 
 const STATUS_OPTIONS: readonly { id: ReadingStatus; label: string }[] = [
@@ -91,21 +101,15 @@ type Opening<T> = {
   seed: string | undefined;
   height: number;
   commit: ((value: T) => void) | undefined;
-  release: (() => void) | undefined;
+  initial: T | undefined;
 };
 
 function useCellEditor<T>(
   anchor: RefObject<HTMLElement | null>,
   onCommit?: (value: T) => void,
-  retainSource?: () => () => void,
+  initial?: T,
 ) {
   const [opening, setOpening] = useState<Opening<T> | null>(null);
-  useEffect(
-    () => () => {
-      opening?.release?.();
-    },
-    [opening],
-  );
   return {
     opening,
     open: (seed?: string): void => {
@@ -113,7 +117,7 @@ function useCellEditor<T>(
         seed,
         height: anchor.current?.offsetHeight ?? 0,
         commit: onCommit,
-        release: retainSource?.(),
+        initial,
       });
     },
     close: (): void => {
@@ -388,6 +392,7 @@ type TextCellProps = {
   density: Density;
   field: string;
   value: string | null;
+  editValue?: string | null;
   kind: TextKind;
   required?: boolean;
   wrap?: boolean;
@@ -401,6 +406,7 @@ export function TextCell({
   density,
   field,
   value,
+  editValue = value,
   kind,
   required = false,
   wrap = false,
@@ -410,14 +416,12 @@ export function TextCell({
   onCommit,
 }: Readonly<TextCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const editor = useCellEditor(triggerRef, onCommit, state.retainSource);
-  let initial = value ?? "";
-  if (state.retained !== undefined) {
-    if (field === "ISBN") initial = state.retained.isbn_13 ?? "";
-    else if (field === "pages")
-      initial = state.retained.pages === null ? "" : String(state.retained.pages);
-    else initial = state.retained.subtitle ?? "";
-  }
+  const initial = state.retained === undefined ? editValue : state.retained;
+  const editor = useCellEditor<string | null>(
+    triggerRef,
+    onCommit,
+    initial === null ? "" : String(initial),
+  );
   return (
     <>
       <Trigger
@@ -447,7 +451,7 @@ export function TextCell({
       >
         <TextEditor
           field={field}
-          initial={initial}
+          initial={editor.opening?.initial ?? ""}
           seed={editor.opening?.seed}
           kind={kind}
           required={required}
@@ -460,15 +464,17 @@ export function TextCell({
   );
 }
 
+type TitleBook = { id: string; coverUrl: string; title: string; authors: readonly string[] };
+
 function CoverMark({
   book,
   density,
-}: Readonly<{ book: BookListItem; density: Density }>): ReactElement {
+}: Readonly<{ book: TitleBook; density: Density }>): ReactElement {
   const [failed, setFailed] = useState(false);
-  if (book.cover_url !== "" && !failed) {
+  if (book.coverUrl !== "" && !failed) {
     return (
       <img
-        src={book.cover_url}
+        src={book.coverUrl}
         alt=""
         loading="lazy"
         decoding="async"
@@ -496,7 +502,8 @@ function CoverMark({
 }
 
 type TitleCellProps = {
-  book: BookListItem;
+  book: TitleBook;
+  initial: string;
   density: Density;
   showAuthors: boolean;
   state: CellState;
@@ -505,13 +512,18 @@ type TitleCellProps = {
 
 export function TitleCell({
   book,
+  initial,
   density,
   showAuthors,
   state,
   onCommit,
 }: Readonly<TitleCellProps>): ReactElement {
   const anchorRef = useRef<HTMLDivElement>(null);
-  const editor = useCellEditor(anchorRef, onCommit, state.retainSource);
+  const editor = useCellEditor(
+    anchorRef,
+    onCommit,
+    typeof state.retained === "string" ? state.retained : initial,
+  );
   const authors = book.authors.join(", ");
   return (
     <div
@@ -527,11 +539,11 @@ export function TitleCell({
           <CoverMark book={book} density={density} />
         </Link>
         <TooltipContent placement="top start" offset={12} className="overflow-auto p-1">
-          {book.cover_url === "" ? (
+          {book.coverUrl === "" ? (
             book.title
           ) : (
             <img
-              src={book.cover_url}
+              src={book.coverUrl}
               alt={`Cover of ${book.title}`}
               className="max-h-72 w-44 rounded object-contain"
             />
@@ -581,7 +593,7 @@ export function TitleCell({
       >
         <TextEditor
           field="title"
-          initial={state.retained?.title ?? book.title}
+          initial={editor.opening?.initial ?? book.title}
           seed={editor.opening?.seed}
           kind="text"
           serverError={state.serverError}
@@ -738,89 +750,130 @@ function AuthorsEditor({
   );
 }
 
+const authorsQuery = graphql`
+  query cellsAuthorsQuery($id: ID!) @throwOnFieldError {
+    manifestation(id: $id) {
+      ...readerAuthorEditing
+    }
+  }
+`;
+
 type AuthorsCellProps = {
-  book: BookListItem;
+  id: string;
+  authors: readonly string[];
+  baseline: string;
   density: Density;
   state: CellState;
   onCommit: (authors: string[], baseline: string, previousAuthors: readonly string[]) => void;
 };
 
 function MatchedAuthorsEditor({
-  book,
+  reference,
   seed,
   onCommit,
   onCancel,
-  retained,
 }: Readonly<{
-  book: BookListItem;
+  reference: PreloadedQuery<cellsAuthorsQuery>;
   seed: string | undefined;
   onCommit: AuthorsCellProps["onCommit"];
   onCancel: () => void;
-  retained: BookListItem | undefined;
 }>): ReactElement {
-  const environment = useRelayEnvironment();
-  const [field, setField] = useState<Awaited<ReturnType<typeof loadAuthorField>>>(undefined);
+  const query = usePreloadedQuery<cellsAuthorsQuery>(authorsQuery, reference);
+  const { data, hasNext, isLoadingNext, loadNext, refetch } = usePaginationFragment<
+    readerAuthorEditingPaginationQuery,
+    readerAuthorEditing$key
+  >(readerAuthorEditing, query.manifestation ?? null);
   const [error, setError] = useState<Error | null>(null);
+  const [baseline, setBaseline] = useState<{ etag: string; authors: readonly string[] }>();
+  if (baseline === undefined && data != null && !hasNext && !isLoadingNext && error === null)
+    setBaseline({
+      etag: data.metadata.etag,
+      authors: data.metadata.authors.edges.map((edge) => edge.node.name),
+    });
   useEffect(() => {
-    if (retained !== undefined) return;
-    const controller = new AbortController();
-    void loadAuthorField(environment, book.id, controller.signal)
-      .then((snapshot) => {
-        if (!controller.signal.aborted) setField(snapshot);
-      })
-      .catch((error_: unknown) => {
-        if (!controller.signal.aborted)
-          setError(error_ instanceof Error ? error_ : new Error("Request failed."));
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [environment, book.id, retained]);
+    if (data == null || baseline !== undefined || !hasNext || isLoadingNext || error !== null)
+      return;
+    loadNext(20, {
+      onComplete: (failure) => {
+        if (
+          failure instanceof GraphQLExecutionError &&
+          failure.errors.some((entry) => entry.extensions?.code === "invalid-cursor")
+        ) {
+          refetch({ cursor: null }, { fetchPolicy: "network-only", onComplete: setError });
+        } else if (failure !== null) setError(failure);
+      },
+    });
+  }, [data, baseline, hasNext, isLoadingNext, error, loadNext, refetch]);
   if (error !== null) throw error;
-  if (retained !== undefined)
-    return (
-      <AuthorsEditor
-        authors={retained.authors}
-        seed={seed}
-        onCancel={onCancel}
-        onCommit={(next) => {
-          onCommit(next, retained.metadata_etag, retained.authors);
-        }}
-      />
-    );
-  if (field === undefined) return <Skeleton aria-busy="true" className="m-2 h-10" />;
-  const authors = field.authors.map((author) => author.name);
+  if (data == null) throw new Error("This book is unavailable.");
+  if (baseline === undefined) return <Skeleton aria-busy="true" className="m-2 h-10" />;
   return (
     <AuthorsEditor
-      authors={authors}
+      authors={baseline.authors}
       seed={seed}
       onCancel={onCancel}
       onCommit={(next) => {
-        onCommit(next, field.etag, authors);
+        onCommit(next, baseline.etag, baseline.authors);
       }}
     />
   );
 }
 
 export function AuthorsCell({
-  book,
+  id,
+  authors,
+  baseline,
   density,
   state,
   onCommit,
 }: Readonly<AuthorsCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const [reference, load, dispose] = useQueryLoader<cellsAuthorsQuery>(authorsQuery);
   const editor = useCellEditor<{
     authors: string[];
     baseline: string;
     previousAuthors: readonly string[];
-  }>(
-    triggerRef,
-    (value) => {
-      onCommit(value.authors, value.baseline, value.previousAuthors);
-    },
-    state.retainSource,
-  );
-  const text = book.authors.join(", ");
+  }>(triggerRef, (value) => {
+    onCommit(value.authors, value.baseline, value.previousAuthors);
+  });
+  const text = authors.join(", ");
+  const retained =
+    state.retained !== null && typeof state.retained === "object" ? state.retained : undefined;
+  function close(): void {
+    editor.close();
+    dispose();
+  }
+  function editorContent(): ReactElement | null {
+    const opening = editor.opening;
+    if (opening === null) return null;
+    if (retained !== undefined)
+      return (
+        <AuthorsEditor
+          authors={retained}
+          seed={opening.seed}
+          onCancel={close}
+          onCommit={(next) => {
+            editor.commit({ authors: next, baseline, previousAuthors: retained });
+            dispose();
+          }}
+        />
+      );
+    if (reference != null)
+      return (
+        <Suspense fallback={<Skeleton aria-busy="true" className="m-2 h-10" />}>
+          <MatchedAuthorsEditor
+            reference={reference}
+            seed={opening.seed}
+            onCommit={(next, etag, previousAuthors) => {
+              editor.commit({ authors: next, baseline: etag, previousAuthors });
+              dispose();
+            }}
+            onCancel={close}
+          />
+        </Suspense>
+      );
+    return null;
+  }
   return (
     <>
       <Trigger
@@ -830,7 +883,10 @@ export function AuthorsCell({
         state={state}
         wrap
         triggerRef={triggerRef}
-        onOpen={editor.open}
+        onOpen={(seed) => {
+          if (retained === undefined) load({ id }, { fetchPolicy: "store-or-network" });
+          editor.open(seed);
+        }}
         allowTyping
       >
         {text === "" ? <EmptyValue field="authors" /> : text}
@@ -840,20 +896,10 @@ export function AuthorsCell({
         opening={editor.opening}
         label="Edit authors"
         overlay={false}
-        onClose={editor.close}
+        onClose={close}
         className="w-[23rem] max-w-[calc(100vw-2rem)]"
       >
-        {editor.opening === null ? null : (
-          <MatchedAuthorsEditor
-            book={book}
-            retained={state.retained}
-            seed={editor.opening.seed}
-            onCommit={(authors, baseline, previousAuthors) => {
-              editor.commit({ authors, baseline, previousAuthors });
-            }}
-            onCancel={editor.close}
-          />
-        )}
+        {editorContent()}
       </CellPopover>
     </>
   );
@@ -873,7 +919,7 @@ export function StatusCell({
   onCommit,
 }: Readonly<StatusCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const editor = useCellEditor(triggerRef, onCommit, state.retainSource);
+  const editor = useCellEditor(triggerRef, onCommit, status);
   const label = statusLabel(status);
   return (
     <>
@@ -908,12 +954,12 @@ export function StatusCell({
         <ListBox
           aria-label="Reading status"
           selectionMode="single"
-          selectedKeys={[state.retained?.reading_state?.status ?? status ?? "none"]}
+          selectedKeys={[editor.opening?.initial ?? "none"]}
           autoFocus
           onSelectionChange={(keys) => {
             if (keys === "all") return;
             const key = [...keys].at(0);
-            if (key === undefined || key === (status ?? "none")) return;
+            if (key === undefined || key === (editor.opening?.initial ?? "none")) return;
             editor.commit(isReadingStatus(key) ? key : null);
           }}
           className="flex flex-col gap-px outline-none"
@@ -984,9 +1030,10 @@ export function RatingCell({
   onCommit,
 }: Readonly<RatingCellProps>): ReactElement {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const editor = useCellEditor(triggerRef, onCommit, state.retainSource);
+  const editor = useCellEditor(triggerRef, onCommit, rating);
   const [preview, setPreview] = useState<number | null>(null);
   const value = rating !== null && rating >= 1 ? Math.min(rating, 5) : null;
+  const openedRating = editor.opening?.initial ?? null;
   const shown = preview ?? value ?? 0;
   const valueText = value === null ? "" : `${String(value)} of 5 stars`;
 
@@ -1044,7 +1091,7 @@ export function RatingCell({
           <ToggleButtonGroup
             aria-label="Rating"
             selectionMode="single"
-            selectedKeys={value === null ? [] : [String(value)]}
+            selectedKeys={openedRating === null ? [] : [String(openedRating)]}
             onSelectionChange={(keys) => {
               const key = [...keys].at(0);
               editor.commit(key === undefined ? null : Number(key));
@@ -1055,11 +1102,11 @@ export function RatingCell({
               <ToggleButton
                 key={star}
                 id={String(star)}
-                autoFocus={star === (value ?? 1)}
+                autoFocus={star === (openedRating ?? 1)}
                 aria-label={star === 1 ? "1 star" : `${String(star)} stars`}
                 className={cn(
                   "text-fg-faint flex size-9 items-center justify-center rounded-md outline-none data-focus-visible:outline-2 data-focus-visible:outline-accent-text data-hovered:bg-surface-2",
-                  star <= (value ?? 0) && "text-fg",
+                  star <= (openedRating ?? 0) && "text-fg",
                   "[&:has(~[data-hovered])]:text-fg-muted data-hovered:text-fg-muted",
                 )}
               >
@@ -1067,7 +1114,7 @@ export function RatingCell({
                   aria-hidden="true"
                   className="size-5"
                   strokeWidth={1.5}
-                  fill={star <= (value ?? 0) ? "currentColor" : "none"}
+                  fill={star <= (openedRating ?? 0) ? "currentColor" : "none"}
                 />
               </ToggleButton>
             ))}
@@ -1075,10 +1122,9 @@ export function RatingCell({
           <Button
             variant="ghost"
             size="sm"
-            isDisabled={value === null}
+            isDisabled={openedRating === null}
             onPress={() => {
-              editor.close();
-              set(null);
+              editor.commit(null);
             }}
           >
             Clear

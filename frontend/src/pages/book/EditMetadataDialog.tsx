@@ -33,6 +33,7 @@ import { FieldError } from "@/components/ui/field";
 
 import { ApiError, UpdateBookMetadataFieldsSchema, type UpdateBookMetadataFields } from "@/api";
 import { MetadataRefusal, editingFailureAction } from "@/api/graphql";
+import { invalidateLibraryVisits } from "@/lib/relay/library-visit";
 import {
   mutationsFormQuery,
   mutationsFormSnapshot,
@@ -374,6 +375,7 @@ function EditMetadataFields({
           requestId,
         });
         if (result.__typename === "MetadataSaved") {
+          invalidateLibraryVisits(environment, Object.keys(body));
           finish();
           return { values, error: null };
         }
@@ -383,6 +385,7 @@ function EditMetadataFields({
       }
       const recovery = editingFailureAction(failure);
       if ((recovery === "retry" || recovery === "reload") && (await resolvedSaved(requestId))) {
+        invalidateLibraryVisits(environment, Object.keys(body));
         finish();
         return { values, error: null };
       }
