@@ -60,6 +60,7 @@ const bookFragment = graphql`
     ...BookPage_cover
     ...VersionsTab_book
     versions {
+      __id
       pendingCount
     }
   }
@@ -171,11 +172,14 @@ function BookInformation({
   const [, startTransition] = useTransition();
   const [tab, setTab] = useState<Key>("overview");
   const [versions, loadVersions] = useQueryLoader<VersionsTabQuery>(versionsTabQuery);
-  useSubscribeToInvalidationState(data.work == null ? [data.id] : [data.id, data.work.id], () => {
-    startTransition(() => {
-      reload(data.id);
-    });
-  });
+  useSubscribeToInvalidationState(
+    [data.id, data.work?.id, data.versions.__id].filter((id) => id !== undefined),
+    () => {
+      startTransition(() => {
+        reload(data.id);
+      });
+    },
+  );
   useEffect(() => {
     if (hasAuthors && !loadingAuthors) loadAuthors(20, { onComplete: setPageError });
   }, [hasAuthors, loadingAuthors, loadAuthors]);

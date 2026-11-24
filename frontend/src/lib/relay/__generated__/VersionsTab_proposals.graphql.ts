@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<01949234bef3999f54c85ca971756a1f>>
+ * @generated SignedSource<<91b65514a44e7311f7c1a102175da553>>
  * @lightSyntaxTransform
  */
 
@@ -12,6 +12,7 @@ import { FragmentRefs } from "relay-runtime";
 export type VersionsTab_proposals$data = {
   readonly id: string;
   readonly versions: {
+    readonly __id: string;
     readonly pending: {
       readonly edges: ReadonlyArray<{
         readonly node: {
@@ -184,6 +185,18 @@ const node: ReaderFragment = (function () {
             ],
             storageKey: null,
           },
+          {
+            kind: "ClientExtension",
+            selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "__id",
+                storageKey: null,
+              },
+            ],
+          },
         ],
         storageKey: null,
       },
@@ -194,6 +207,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "a6fd72d7158a56128ec5d3f3f0f06137";
+(node as any).hash = "de638bcb620ced14b906fe4343de9079";
 
 export default node;

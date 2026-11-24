@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<4f6ec9a9a406366ec0b3641711bb178f>>
+ * @generated SignedSource<<e537bee72b2ffc27c729b38f8948caf8>>
  * @lightSyntaxTransform
  */
 
@@ -12,6 +12,7 @@ import { FragmentRefs } from "relay-runtime";
 export type BookPage_book$data = {
   readonly id: string;
   readonly versions: {
+    readonly __id: string;
     readonly pendingCount: number;
   };
   readonly work:
@@ -150,6 +151,18 @@ const node: ReaderFragment = (function () {
             name: "pendingCount",
             storageKey: null,
           },
+          {
+            kind: "ClientExtension",
+            selections: [
+              {
+                alias: null,
+                args: null,
+                kind: "ScalarField",
+                name: "__id",
+                storageKey: null,
+              },
+            ],
+          },
         ],
         storageKey: null,
       },
@@ -159,6 +172,6 @@ const node: ReaderFragment = (function () {
   };
 })();
 
-(node as any).hash = "010c5ec88dc34599021e2bfa4ca7355e";
+(node as any).hash = "569e6e6fe7eb9eff84babc754edda00e";
 
 export default node;

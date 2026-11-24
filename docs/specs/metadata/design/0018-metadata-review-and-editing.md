@@ -278,11 +278,12 @@ originating form. A stale refusal offers Reload, which replaces the draft and it
    form. Accept and Clear publish the same fragments. Reject updates the Book display and pending proposals. Field-owned
    outcomes survive proposal removal. A refusal or failed review invalidates the manifestation, so the Book and Versions
    readers refetch.
-9. Successful form saves, table saves, Accept and Clear pass changed field names to the Library visit owner. For shared
-   metadata changes, the browser invalidates the Work record. Book detail and editor queries depend on that record, so
-   reopening a cached sibling editor fetches its current values and validator. The Library visit owner also refreshes
-   retained connections containing sibling editions. Table saves publish the edition's ISBN values and mismatch flag for
-   Book detail. Reject affects the proposal queue.
+9. Successful form saves, table saves, Accept and Clear pass changed field names to the Library visit owner. Table saves
+   publish the edition's ISBN values and mismatch flag and invalidate its review record. Book detail and Versions read
+   that record, so they refresh the badge and pending proposals after a table edit. For shared metadata changes, the
+   browser invalidates the Work record. Book detail, Versions and editor queries depend on that record. Reopening a
+   sibling edition fetches the current badge, proposals or editing revision as needed. The Library visit owner also
+   refreshes retained connections containing sibling editions. Reject affects the proposal queue.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 

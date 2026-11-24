@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { graphql, useFragment, useMutation, useRelayEnvironment } from "react-relay";
+import type { ReadOnlyRecordProxy } from "relay-runtime";
 
 import type { ReadingStatus } from "@/api/books";
 import { invalidateAfterMetadataEdit, invalidateLibraryVisits } from "@/lib/relay/library-visit";
@@ -236,6 +237,12 @@ export function useCellEdit({
 
     commitMetadata({
       variables: { input: { ...input, patch: metadataPatch(columnKey, value) } },
+      updater: (store, data) => {
+        if (data?.updateMetadata.__typename === "MetadataSaved") {
+          const edition: ReadOnlyRecordProxy | null | undefined = store.get(target.id);
+          edition?.getLinkedRecord("versions")?.invalidateRecord();
+        }
+      },
       onCompleted: (data: useCellEditSaveMutation["response"] | undefined) => {
         if (data === undefined) {
           releaseCell();

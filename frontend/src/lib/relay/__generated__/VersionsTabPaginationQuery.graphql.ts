@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<9d14907a27e68c90e37f3e2efde926b3>>
+ * @generated SignedSource<<6715c559eb1ca17f1e93d628c6954dab>>
  * @relayHash c245d34da0e70a4c3f96170490f1b02b
  * @lightSyntaxTransform
  */
@@ -354,6 +354,18 @@ const node: ConcreteRequest = (function () {
                   kind: "LinkedHandle",
                   name: "pending",
                 },
+                {
+                  kind: "ClientExtension",
+                  selections: [
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "__id",
+                      storageKey: null,
+                    },
+                  ],
+                },
               ],
               storageKey: null,
             },
@@ -373,6 +385,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "a6fd72d7158a56128ec5d3f3f0f06137";
+(node as any).hash = "de638bcb620ced14b906fe4343de9079";
 
 export default node;

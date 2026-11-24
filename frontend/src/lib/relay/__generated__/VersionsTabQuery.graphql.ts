@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<44c42a6245a269940ec5b069c22bda76>>
- * @relayHash 51181df2adbeefed13f50b4f9c1968b3
+ * @generated SignedSource<<fe366d557c8e65155f203a9a457a7c5a>>
+ * @relayHash e4f9d40061254e87689f387f5e27e92c
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 31651cf99ac6662818d9636d5a74ccf47db12fcf3096eaf4806eab1984dfbac4
+// @relayRequestID f94764a59753b7250a07bf83a8ae5a5fa0ccde1bb5159f1ee08594c494874489
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -20,6 +20,12 @@ export type VersionsTabQuery$variables = {
 export type VersionsTabQuery$data = {
   readonly manifestation:
     | {
+        readonly work:
+          | {
+              readonly id: string;
+            }
+          | null
+          | undefined;
         readonly " $fragmentSpreads": FragmentRefs<"VersionsTab_proposals">;
       }
     | null
@@ -53,7 +59,24 @@ const node: ConcreteRequest = (function () {
         variableName: "id",
       },
     ],
-    v4 = [
+    v4 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "id",
+      storageKey: null,
+    },
+    v5 = {
+      alias: null,
+      args: null,
+      concreteType: "Work",
+      kind: "LinkedField",
+      name: "work",
+      plural: false,
+      selections: [v4 /*:: as any*/],
+      storageKey: null,
+    },
+    v6 = [
       {
         kind: "Variable",
         name: "after",
@@ -65,21 +88,14 @@ const node: ConcreteRequest = (function () {
         variableName: "count",
       },
     ],
-    v5 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "id",
-      storageKey: null,
-    },
-    v6 = {
+    v7 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "__typename",
       storageKey: null,
     },
-    v7 = {
+    v8 = {
       alias: null,
       args: null,
       kind: "ScalarField",
@@ -103,6 +119,7 @@ const node: ConcreteRequest = (function () {
           name: "manifestation",
           plural: false,
           selections: [
+            v5 /*:: as any*/,
             {
               args: [
                 {
@@ -140,6 +157,7 @@ const node: ConcreteRequest = (function () {
           name: "manifestation",
           plural: false,
           selections: [
+            v5 /*:: as any*/,
             {
               alias: null,
               args: null,
@@ -157,7 +175,7 @@ const node: ConcreteRequest = (function () {
                 },
                 {
                   alias: null,
-                  args: v4 /*:: as any*/,
+                  args: v6 /*:: as any*/,
                   concreteType: "MetadataVersionConnection",
                   kind: "LinkedField",
                   name: "pending",
@@ -179,7 +197,7 @@ const node: ConcreteRequest = (function () {
                           name: "node",
                           plural: false,
                           selections: [
-                            v5 /*:: as any*/,
+                            v4 /*:: as any*/,
                             {
                               alias: null,
                               args: null,
@@ -216,7 +234,7 @@ const node: ConcreteRequest = (function () {
                               name: "newValue",
                               plural: false,
                               selections: [
-                                v6 /*:: as any*/,
+                                v7 /*:: as any*/,
                                 {
                                   kind: "InlineFragment",
                                   selections: [
@@ -262,7 +280,7 @@ const node: ConcreteRequest = (function () {
                                 {
                                   kind: "InlineFragment",
                                   selections: [
-                                    v7 /*:: as any*/,
+                                    v8 /*:: as any*/,
                                     {
                                       alias: null,
                                       args: null,
@@ -285,7 +303,7 @@ const node: ConcreteRequest = (function () {
                                       name: "contributors",
                                       plural: true,
                                       selections: [
-                                        v7 /*:: as any*/,
+                                        v8 /*:: as any*/,
                                         {
                                           alias: null,
                                           args: null,
@@ -303,7 +321,7 @@ const node: ConcreteRequest = (function () {
                               ],
                               storageKey: null,
                             },
-                            v6 /*:: as any*/,
+                            v7 /*:: as any*/,
                           ],
                           storageKey: null,
                         },
@@ -347,24 +365,36 @@ const node: ConcreteRequest = (function () {
                 },
                 {
                   alias: null,
-                  args: v4 /*:: as any*/,
+                  args: v6 /*:: as any*/,
                   filters: null,
                   handle: "connection",
                   key: "VersionsTab_proposals_pending",
                   kind: "LinkedHandle",
                   name: "pending",
                 },
+                {
+                  kind: "ClientExtension",
+                  selections: [
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "__id",
+                      storageKey: null,
+                    },
+                  ],
+                },
               ],
               storageKey: null,
             },
-            v5 /*:: as any*/,
+            v4 /*:: as any*/,
           ],
           storageKey: null,
         },
       ],
     },
     params: {
-      id: "31651cf99ac6662818d9636d5a74ccf47db12fcf3096eaf4806eab1984dfbac4",
+      id: "f94764a59753b7250a07bf83a8ae5a5fa0ccde1bb5159f1ee08594c494874489",
       metadata: {},
       name: "VersionsTabQuery",
       operationKind: "query",
@@ -373,6 +403,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "94b8fd550ecf086b379a75ee1cc60c12";
+(node as any).hash = "21a9dceac2e07a75613d710864499658";
 
 export default node;

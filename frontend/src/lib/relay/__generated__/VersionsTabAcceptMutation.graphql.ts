@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<13a485078d74a924a1ae6f8e233d72f3>>
+ * @generated SignedSource<<00ae69404540ad4318be083c81fe1bab>>
  * @relayHash 84e0769aea3abbe59bf4f36c2620d96b
  * @lightSyntaxTransform
  */
@@ -661,6 +661,18 @@ const node: ConcreteRequest = (function () {
                           kind: "ScalarField",
                           name: "pendingCount",
                           storageKey: null,
+                        },
+                        {
+                          kind: "ClientExtension",
+                          selections: [
+                            {
+                              alias: null,
+                              args: null,
+                              kind: "ScalarField",
+                              name: "__id",
+                              storageKey: null,
+                            },
+                          ],
                         },
                         {
                           alias: null,

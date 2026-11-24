@@ -64,6 +64,9 @@ const FIELD_LABEL: Record<string, string> = {
 const versionsQuery = graphql`
   query VersionsTabQuery($id: ID!, $count: Int = 20, $cursor: String) @throwOnFieldError {
     manifestation(id: $id) {
+      work {
+        id
+      }
       ...VersionsTab_proposals @arguments(count: $count, cursor: $cursor)
     }
   }
@@ -90,6 +93,7 @@ const proposalsFragment = graphql`
   @argumentDefinitions(count: { type: "Int", defaultValue: 20 }, cursor: { type: "String" })
   @refetchable(queryName: "VersionsTabPaginationQuery", preferFetchable: true) {
     versions {
+      __id
       pendingCount
       pending(first: $count, after: $cursor) @connection(key: "VersionsTab_proposals_pending") {
         edges {
@@ -280,7 +284,10 @@ export function VersionsTab({
       refetch({}, { fetchPolicy: "network-only" });
     });
   };
-  useSubscribeToInvalidationState([book.id], refresh);
+  useSubscribeToInvalidationState(
+    [book.id, query.manifestation?.work?.id, data?.versions.__id].filter((id) => id !== undefined),
+    refresh,
+  );
   const retainedFields = actions.flatMap((action) =>
     action.status === "submitted" || action.status === "error" ? [action.variables.field] : [],
   );
