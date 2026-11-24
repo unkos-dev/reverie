@@ -214,6 +214,11 @@
       "groupName": "vite-plus"
     },
     {
+      "description": "Skip Playwright 1.65.1 because its Chromium build can crash in Vitest Browser Mode.",
+      "matchPackageNames": ["@playwright/test", "playwright", "playwright-core"],
+      "allowedVersions": "!/^1\\.65\\.1$/"
+    },
+    {
       "description": "Group colour-generator dependencies for dashboard approval and manual review. Updates that change the generated palette require `vp run primitives:gen` and review of the palette diff. Disable automerge to override the blanket cargo/npm minor-automerge rule.",
       "matchDepNames": ["@radix-ui/colors", "colorjs.io", "bezier-easing"],
       "groupName": "radix-gen",
