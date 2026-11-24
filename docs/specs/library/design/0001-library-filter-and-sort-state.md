@@ -168,8 +168,8 @@ Each Navigation entry owns distinct connection generations through `dynamicKey_U
 owner allocates a distinct key for a push before the browser assigns the entry ID. The owner fetches the replacement's
 first page while the displayed reader uses `store-only`. The candidate reader mounts once that page is available and
 extends it through `usePaginationFragment` in a separate Suspense boundary. Pagination and adoption use ordinary
-updates, so the shell's document view transition does not capture pointer input for those updates. Relay retains the
-displayed connection and its record data. The editing owner commits saves above the virtualised rows.
+updates. Relay retains the displayed connection and its record data. The editing owner commits saves above the
+virtualised rows.
 
 The synchronous Navigation `navigate` event captures an anchor, the first visible book and its position within the
 viewport, together with the loaded extent and absolute scroll position. Entry state contains only serialisable geometry

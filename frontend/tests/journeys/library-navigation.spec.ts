@@ -439,9 +439,6 @@ async function chooseFacets(page: Page): Promise<void> {
 const search = (page: Page) => page.getByRole("searchbox", { name: "Search your library" });
 async function ready(page: Page): Promise<void> {
   await expect(search(page)).toBeVisible();
-  await page.evaluate(async () => {
-    await document.activeViewTransition?.finished;
-  });
 }
 async function clickRetainedTableControl(page: Page, control: Locator): Promise<void> {
   const hit: { point?: { x: number; y: number } } = {};

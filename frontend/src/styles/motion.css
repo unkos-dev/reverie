@@ -40,13 +40,4 @@
   .dot-pulse {
     animation: none;
   }
-
-  /* View Transitions: instant swap instead of crossfade. No
-     `!important` needed — nothing else sets animation on these
-     pseudos, so this declaration beats the UA default outright. */
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none;
-  }
 }

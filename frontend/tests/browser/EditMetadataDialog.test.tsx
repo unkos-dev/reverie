@@ -2,7 +2,6 @@ import { cleanup, render } from "vitest-browser-react";
 import { page, userEvent } from "vite-plus/test/browser";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { RelayEnvironmentProvider, loadQuery } from "react-relay";
-import { ViewTransition } from "react";
 import { z } from "zod";
 import trustedDocuments from "../../../backend/graphql-documents.json";
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
@@ -103,15 +102,13 @@ async function renderDialog(fields: readonly EditableField[] = FIELDS) {
   const queryRef = loadQuery<FormQuery>(environment, formQuery, { id: GRAPH_ID });
   const result = await render(
     <RelayEnvironmentProvider environment={environment}>
-      <ViewTransition>
-        <EditMetadataDialog
-          queryRef={queryRef}
-          load={vi.fn()}
-          open
-          onOpenChange={onOpenChange}
-          fields={fields}
-        />
-      </ViewTransition>
+      <EditMetadataDialog
+        queryRef={queryRef}
+        load={vi.fn()}
+        open
+        onOpenChange={onOpenChange}
+        fields={fields}
+      />
     </RelayEnvironmentProvider>,
   );
   return { ...result, onOpenChange };
