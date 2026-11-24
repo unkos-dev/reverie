@@ -494,14 +494,8 @@ export class LibraryVisitOwner {
         }
       });
     }
-    if (
-      candidate !== undefined &&
-      this.isCurrent() &&
-      (stale.has(candidate) ||
-        (source !== undefined &&
-          stale.has(source) &&
-          sameRequest(source.request, candidate.request)))
-    ) {
+    if (candidate !== undefined && this.isCurrent()) {
+      // A pre-edit read can publish an older revision even if its sort and filters are unaffected.
       this.replace(candidate.request, candidate.sort, this.state.position);
     } else if (candidate === undefined && source !== undefined && stale.has(source)) {
       this.refresh();

@@ -31,8 +31,7 @@ across revisions, silently deletes entries the reader never saw.
   baseline. Publishing a newer revision's validator cannot pair it with an earlier revision's values. Checked by
   `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.
 - A missing validator or required value prevents an editing baseline until complete data from that revision is
-  available. Library editing reads report missing required data through `@throwOnFieldError`. Checked by
-  `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.
+  available. Checked by `metadata and reading edits keep their baseline` in `frontend/tests/browser/api/fetch.test.tsx`.
 - Data from a response carrying execution errors cannot form or advance an editing baseline. Checked by
   `GraphQL network preserves failures, CSRF recovery and account isolation` in
   `frontend/tests/browser/api/graphql.test.tsx`.

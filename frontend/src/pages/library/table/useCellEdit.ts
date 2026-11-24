@@ -468,15 +468,25 @@ export function useCellEdit({
   async function save(attempt: Attempt, retrying = false): Promise<SaveResult | undefined> {
     const signal = controller.current?.signal;
     const key = pendingKey(attempt.target.id, attempt.columnKey);
-    if (signal === undefined || signal.aborted || active.current.has(key)) return undefined;
+    if (signal === undefined || signal.aborted) return undefined;
+    if (active.current.has(key))
+      return { saved: false, action: "none", message: "A save is already in progress." };
     active.current.add(key);
-    setRecord({
+    const pending: EditRecord = {
       attempt,
       pending: true,
       retrying,
       reloading: false,
       action: retrying ? "retry" : "none",
-    });
+    };
+    setRecords((current) => [
+      ...current.filter(({ attempt: previous }) =>
+        retrying
+          ? previous.id !== attempt.id
+          : pendingKey(previous.target.id, previous.columnKey) !== key,
+      ),
+      pending,
+    ]);
     setSavedCells((current) => new Set([...current].filter((saved) => saved !== key)));
     let failure: Refusal | null | undefined;
     try {
@@ -548,8 +558,6 @@ export function useCellEdit({
       previous?.action === "correct"
         ? { ...report.target, baseline: previous.attempt.target.baseline }
         : report.target;
-    if (previous !== undefined)
-      setRecords((current) => current.filter(({ attempt }) => attempt.id !== previous.attempt.id));
     void save({ ...report, target, id: crypto.randomUUID(), undoContext: owner.context });
   }
 
@@ -576,13 +584,6 @@ export function useCellEdit({
           send: () => {
             const retrying = sent;
             sent = true;
-            if (!retrying)
-              setRecords((current) =>
-                current.filter(
-                  (record) =>
-                    record.attempt.target.id !== row.id || record.attempt.columnKey !== "status",
-                ),
-              );
             return save(attempt, retrying);
           },
         };

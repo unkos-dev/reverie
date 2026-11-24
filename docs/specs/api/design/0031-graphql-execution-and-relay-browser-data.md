@@ -286,7 +286,9 @@ The screen query contains the conditional, aliased `readerLibrary` connection. T
 actions read their fragments. The displayed and candidate readers use `readerLibraryPaginationQuery` through
 `usePaginationFragment`. The author editor loads `cellsAuthorsQuery` and continues through
 `readerAuthorEditingPaginationQuery`. The labels and typeahead use their generated refetch queries. Library edits use
-native `commitMutation` with success payload fragments. The Library operations publish without operation-specific
+native `commitMutation` with success payload fragments. The edit owner tracks each cell's pending and recovery state
+when virtualised rows unmount and keeps Undo pending through the eligibility read between mutations, beyond the lifetime
+tracked by `useMutation`'s single `isInFlight` flag. The Library operations publish without operation-specific
 projections. The Book dialog and Versions continue to use their own fragments and hooks.
 
 The Library route loader confirms the account, retains `libraryBootstrapQuery` for the destination's visit owner and

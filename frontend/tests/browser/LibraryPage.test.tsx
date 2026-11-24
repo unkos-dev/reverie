@@ -850,6 +850,125 @@ test("a table edit keeps the validator its editor opened with", async () => {
   });
 });
 
+// REV-REQ-0019: a new edit uses the acknowledged values and validator after a held pre-save read returns.
+test("a held Library candidate cannot revert an acknowledged edit", async () => {
+  const original = bookFixture();
+  const saved = { ...original, title: "Saved title", metadata_etag: '"cccccccccccccccccccccc"' };
+  let holdCandidate = false;
+  let releaseCandidate: ((value: Response) => void) | undefined;
+  const held = new Promise<Response>((resolve) => {
+    releaseCandidate = resolve;
+  });
+  const fixture = await renderLibrary({
+    items: [original],
+    visit: { view: "table" },
+    handler: (name, variables, owner) => {
+      if (name === "LibraryPageQuery" && holdCandidate) {
+        holdCandidate = false;
+        return held;
+      }
+      if (name === "useCellEditSaveMutation") {
+        const write = metadataVariables.parse(variables);
+        owner.books = [saved];
+        return savedCells(write.requestId, saved, []);
+      }
+    },
+  });
+  await expect.element(page.getByRole("link", { name: original.title, exact: true })).toBeVisible();
+  holdCandidate = true;
+  visitOf(fixture).refresh();
+  await expect.element(page.getByText("Updating results…", { exact: true })).toBeVisible();
+
+  await editTitle(original.title, saved.title);
+  const savedTitle = page.getByRole("link", { name: saved.title, exact: true });
+  await expect.element(savedTitle).toBeVisible();
+  releaseCandidate?.(
+    response({
+      viewer: { id: VIEWER_ID, libraryPreferences: graphPreferences(fixture.preferences) },
+      authorLabels: [],
+      seriesLabels: [],
+      shelfLabels: [],
+      shelves: { edges: [], pageInfo },
+      books: { edges: [{ cursor: original.id, node: graphBook(original) }], pageInfo },
+    }),
+  );
+  await expect
+    .element(page.getByText("Updating results…", { exact: true }))
+    .not.toBeInTheDocument();
+  await expect.element(savedTitle).toBeVisible();
+  await editTitle(saved.title, "Next title");
+  await vi.waitFor(() => {
+    expect(
+      fixture.calls
+        .filter(({ name }) => name === "useCellEditSaveMutation")
+        .map(({ variables }) => variables.baseline),
+    ).toEqual([original.metadata_etag, saved.metadata_etag]);
+  });
+});
+
+// REV-REQ-0081: each batch status target is classified independently.
+test("batch Set status continues past a pending status save", async () => {
+  const first = bookFixture();
+  const second = bookFixture({
+    id: "55555555-5555-4555-8555-555555555555",
+    work_id: "88888888-8888-4888-8888-888888888888",
+    title: "Second book",
+    reading_etag: '"cccccccccccccccccccccc"',
+    created_at: "2025-01-01T00:00:00Z",
+  });
+  const firstId = encodeGraphQLId("Manifestation", first.id);
+  const secondId = encodeGraphQLId("Manifestation", second.id);
+  const pending = new Promise<Response>(() => {});
+  const fixture = await renderLibrary({
+    items: [first, second],
+    visit: { view: "table" },
+    handler: (name, variables) => {
+      if (name !== "useCellEditReadingMutation") return;
+      const { id } = readingVariables.parse(variables);
+      if (id === firstId) return pending;
+      return response({
+        updateReadingState: {
+          __typename: "ReadingStateUpdated",
+          manifestation: graphBook({
+            ...second,
+            reading_etag: '"dddddddddddddddddddddd"',
+            reading_state: {
+              status: "finished",
+              rating: null,
+              progress_pct: null,
+              started_at: null,
+              finished_at: null,
+            },
+          }),
+        },
+      });
+    },
+  });
+  await userEvent.click(
+    page.getByRole("button", { name: "None, edit status", exact: true }).first(),
+  );
+  await userEvent.click(page.getByRole("option", { name: "Reading", exact: true }));
+  const saving = page.getByRole("button", { name: "status saving", exact: true });
+  await expect.element(saving).toBeVisible();
+
+  page.getByRole("checkbox", { name: "Select all loaded books" }).element().focus();
+  await userEvent.keyboard(" ");
+  await userEvent.click(page.getByRole("button", { name: "Set status", exact: true }));
+  await userEvent.click(page.getByRole("menuitem", { name: "Finished", exact: true }));
+  await expect
+    .element(page.getByRole("group", { name: "Batch actions" }).getByRole("status"))
+    .toHaveTextContent("Set status for 1 of 2 books. 1 could not be saved.");
+  await expect.element(saving).toBeVisible();
+  expect(
+    fixture.calls
+      .filter(({ name }) => name === "useCellEditReadingMutation")
+      .map(({ variables }) => readingVariables.parse(variables)),
+  ).toEqual([
+    { id: firstId, baseline: first.reading_etag, patch: { status: "READING" } },
+    { id: secondId, baseline: second.reading_etag, patch: { status: "FINISHED" } },
+  ]);
+});
+
 // REV-REQ-0081, REV-REQ-0019 and the data loss boundary: Retry retains each attempt and classifies each target.
 it("Library Retry sends the retained edit again", async () => {
   const original = bookFixture();
