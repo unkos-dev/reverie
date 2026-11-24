@@ -470,12 +470,12 @@ function EditMetadataFields({
       let result: SaveForm["response"]["updateMetadata"];
       try {
         result = await save({ id: manifestationId, patch, baseline: metadata.etag });
-      } catch (failure) {
-        const recovery = editingFailureAction(failure);
-        const errors = failure instanceof ApiError ? failure.errors : undefined;
+      } catch (error_) {
+        const recovery = editingFailureAction(error_);
+        const errors = error_ instanceof ApiError ? error_.errors : undefined;
         return {
           values,
-          error: Object.keys(errors ?? {}).length > 0 ? null : formatError(failure),
+          error: Object.keys(errors ?? {}).length > 0 ? null : formatError(error_),
           errors,
           recovery,
         };
