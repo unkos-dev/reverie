@@ -67,7 +67,7 @@ const UNREAD_TOKEN: &str = "unread";
 /// excluding canonical accepted pointers (11 scalar `*_version_id` columns and
 /// 4 junction `source_version_id` tables) and `new_value = 'null'::jsonb`
 /// manual-clear audit rows. Mirrors `services::reader::pending_version_rows`.
-const PENDING_PROPOSAL_EXISTS_SQL: &str = "\
+pub const PENDING_PROPOSAL_EXISTS_SQL: &str = "\
 EXISTS ( \
   SELECT 1 FROM metadata_versions mv \
   WHERE mv.manifestation_id = m.id \

@@ -9,11 +9,15 @@
 //! [`crate::routes::sort_spec::SortColumn::sql_expr`]'s fixed `&'static str`
 //! fragments ever reach a `QueryBuilder`.
 //!
-//! A column enters [`crate::routes::sort_spec::SortColumn`] only once its
-//! ordering indexes exist.
-//! Nullable columns need both an ascending and a `DESC NULLS LAST`
-//! composite index, because Postgres's default DESC ordering is NULLS
-//! FIRST and cannot ride a backward scan of an ascending index.
+//! Columns stored directly on `manifestations` or `works` enter
+//! [`crate::routes::sort_spec::SortColumn`] only once their ordering
+//! indexes exist. Nullable single-table columns need both an ascending
+//! and a `DESC NULLS LAST` composite index, because Postgres's default
+//! DESC ordering is NULLS FIRST and cannot ride a backward scan of an
+//! ascending index. Columns sourced from a `LEFT JOIN` (`Series` via
+//! `LEFT JOIN LATERAL`, `Status` and `Rating` via `LEFT JOIN reading_state`
+//! where unread or unrated books have no row) sort over the joined rows
+//! without an ordering index.
 
 /// Maximum number of levels a sort stack may carry.
 pub const MAX_SORT_LEVELS: usize = 3;

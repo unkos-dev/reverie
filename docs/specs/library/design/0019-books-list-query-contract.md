@@ -11,6 +11,7 @@ satisfies:
   - "REV-REQ-0092"
   - "REV-REQ-0093"
   - "REV-REQ-0094"
+  - "REV-REQ-0099"
 governed-by:
   - "REV-ADR-0085"
   - "REV-ADR-0066"
@@ -170,26 +171,31 @@ only for `Series` to `series_one.series_position`), whether it is nullable (`nul
 cursor boundary for it must carry (`value_kind`, one of `SortValueKind::Text`, `Timestamp`, `Int`, `Status` or
 `Series`).
 
-Single-table nullable columns carry both an ascending and a `DESC NULLS LAST` composite B-tree index, because Postgres's
-default `DESC` ordering is `NULLS FIRST` and a backward scan of an ascending index cannot supply `NULLS LAST` on its
-own:
+Single-table nullable columns on `works` and `manifestations` carry both an ascending and a `DESC NULLS LAST` composite
+B-tree index, because Postgres's default `DESC` ordering is `NULLS FIRST` and a backward scan of an ascending index
+cannot supply `NULLS LAST` on its own. Columns on `manifestations` scan the index directly; columns on `works` use an
+`Incremental Sort` over the presorted `works` index to break ties on `m.id`:
 
 - `Author` (`works.first_author_sort_name`): `idx_works_first_author_sort_id` and `idx_works_first_author_sort_desc`.
 - `Subtitle` (`works.subtitle`): `idx_works_subtitle_keyset` and `idx_works_subtitle_keyset_desc`.
 - `Isbn13` (`manifestations.isbn_13`): `idx_manifestations_isbn_13_keyset` and `idx_manifestations_isbn_13_keyset_desc`.
 - `Pages` (`manifestations.pages`): `idx_manifestations_pages_keyset` and `idx_manifestations_pages_keyset_desc`.
-- `Status` (`reading_state.status`, PostgreSQL `reading_status` enum order): `idx_reading_state_user_status_keyset` and
-  `idx_reading_state_user_status_keyset_desc`.
-- `Rating` (`reading_state.rating`): `idx_reading_state_user_rating_keyset` and
-  `idx_reading_state_user_rating_keyset_desc`.
 
 `Title` and `CreatedAt` are declared `NOT NULL` in the schema, so each carries one composite index only
 (`idx_works_sort_title_id` ascending, `idx_manifestations_recent_keyset` descending): a backward scan of either
 satisfies the opposite direction cleanly, because there is no null bucket whose position could disagree between the two
-scan directions. `Series` sorts on the correlated lateral pick-one
-`(series_one.series_name, series_one.series_position)` backed by `idx_series_works_work_id` and
-`idx_series_works_series_position`, ordering both components in the level's direction with `NULLS LAST` so descending is
-the exact symmetric inverse of ascending.
+scan directions.
+
+Columns sourced from a `LEFT JOIN` (`Series`, `Status` and `Rating`) perform a full sort over the joined rows rather
+than scanning an ordering index:
+
+- `Series` joins one series per work through a `LEFT JOIN LATERAL` (`idx_series_works_work_id` and
+  `idx_series_works_series_position` serve that join lookup, not the outer ordering) and orders
+  `(series_one.series_name, series_one.series_position)` in the level's direction with `NULLS LAST` on both parts so
+  descending is the exact symmetric inverse of ascending.
+- `Status` (PostgreSQL `reading_status` enum order) and `Rating` join `reading_state` through `LEFT JOIN`
+  (`idx_reading_state_manifestation_id` serves the join lookup), because unread and unrated books have no
+  `reading_state` row and belong in the `NULLS LAST` tail.
 
 `SortSpec::parse` is the sole entry point from a caller-supplied `?sort=` string: it splits on `,`, caps the result at
 `MAX_SORT_LEVELS` (3), strips a leading `-` to mean descending, resolves each remaining name through

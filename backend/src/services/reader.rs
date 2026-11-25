@@ -2104,185 +2104,89 @@ pub async fn library_summary(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let summary = if user.is_child() {
-        library_summary_child(&mut tx, shelf_ids).await?
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
+        "SELECT \
+            COUNT(*) AS total_count, \
+            COUNT(*) FILTER (WHERE rs.status = 'want_to_read'::reading_status) AS want_to_read, \
+            COUNT(*) FILTER (WHERE rs.status = 'reading'::reading_status) AS reading, \
+            COUNT(*) FILTER (WHERE rs.status = 'on_hold'::reading_status) AS on_hold, \
+            COUNT(*) FILTER (WHERE rs.status = 'finished'::reading_status) AS finished, \
+            COUNT(*) FILTER (WHERE rs.status = 'abandoned'::reading_status) AS abandoned, \
+            COUNT(*) FILTER (WHERE rs.status IS NULL) AS unread, ",
+    );
+    if user.is_child() {
+        qb.push("0::bigint AS to_review, ");
     } else {
-        library_summary_adult(&mut tx, shelf_ids).await?
+        qb.push("COUNT(*) FILTER (WHERE ");
+        qb.push(filters::PENDING_PROPOSAL_EXISTS_SQL);
+        qb.push(") AS to_review, ");
+    }
+    qb.push(
+        "COUNT(*) FILTER ( \
+            WHERE m.enrichment_status = 'skipped'::enrichment_status \
+              AND m.enrichment_error IS NOT NULL \
+        ) AS enrichment_failed, \
+        COUNT(*) FILTER (WHERE m.isbn_13 IS NULL) AS no_isbn, \
+        COUNT(*) FILTER ( \
+            WHERE m.cover_path IS NULL AND m.has_embedded_cover IS NOT TRUE \
+        ) AS no_cover \
+        FROM manifestations m \
+        JOIN works w ON w.id = m.work_id \
+        LEFT JOIN reading_state rs ON rs.manifestation_id = m.id \
+        WHERE TRUE",
+    );
+    if !shelf_ids.is_empty() {
+        qb.push(" AND NOT EXISTS (SELECT 1 FROM unnest(");
+        qb.push_bind(shelf_ids.to_vec());
+        qb.push(
+            "::uuid[]) requested(id) WHERE NOT EXISTS ( \
+                SELECT 1 FROM shelves s \
+                WHERE s.id = requested.id \
+                  AND s.user_id = current_setting('app.current_user_id', true)::uuid \
+            )) \
+            AND EXISTS ( \
+                SELECT 1 FROM shelf_items si \
+                WHERE si.manifestation_id = m.id AND si.shelf_id = ANY(",
+        );
+        qb.push_bind(shelf_ids.to_vec());
+        qb.push("))");
+    }
+
+    let row = qb
+        .build()
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let read_count = |col: &str| -> Result<i32, AppError> {
+        count_i32(
+            row.try_get::<i64, _>(col)
+                .map_err(|e| AppError::Internal(e.into()))?,
+        )
+    };
+
+    let summary = LibrarySummary {
+        total_count: read_count("total_count")?,
+        reading_states: ReadingStateCounts {
+            want_to_read: read_count("want_to_read")?,
+            reading: read_count("reading")?,
+            on_hold: read_count("on_hold")?,
+            finished: read_count("finished")?,
+            abandoned: read_count("abandoned")?,
+            unread: read_count("unread")?,
+        },
+        needs_attention: NeedsAttentionCounts {
+            to_review: read_count("to_review")?,
+            enrichment_failed: read_count("enrichment_failed")?,
+            no_isbn: read_count("no_isbn")?,
+            no_cover: read_count("no_cover")?,
+        },
     };
 
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     Ok(summary)
-}
-
-async fn library_summary_child(
-    tx: &mut sqlx::Transaction<'_, Postgres>,
-    shelf_ids: &[Uuid],
-) -> Result<LibrarySummary, AppError> {
-    let row = sqlx::query!(
-        r#"
-        SELECT
-            COUNT(*) AS "total_count!",
-            COUNT(*) FILTER (WHERE rs.status = 'want_to_read'::reading_status) AS "want_to_read!",
-            COUNT(*) FILTER (WHERE rs.status = 'reading'::reading_status) AS "reading!",
-            COUNT(*) FILTER (WHERE rs.status = 'on_hold'::reading_status) AS "on_hold!",
-            COUNT(*) FILTER (WHERE rs.status = 'finished'::reading_status) AS "finished!",
-            COUNT(*) FILTER (WHERE rs.status = 'abandoned'::reading_status) AS "abandoned!",
-            COUNT(*) FILTER (WHERE rs.status IS NULL) AS "unread!",
-            COUNT(*) FILTER (
-                WHERE m.enrichment_status = 'skipped'::enrichment_status
-                  AND m.enrichment_error IS NOT NULL
-            ) AS "enrichment_failed!",
-            COUNT(*) FILTER (WHERE m.isbn_13 IS NULL) AS "no_isbn!",
-            COUNT(*) FILTER (
-                WHERE m.cover_path IS NULL AND m.has_embedded_cover IS NOT TRUE
-            ) AS "no_cover!"
-        FROM manifestations m
-        JOIN works w ON w.id = m.work_id
-        LEFT JOIN reading_state rs ON rs.manifestation_id = m.id
-        WHERE cardinality($1::uuid[]) = 0
-           OR (
-               NOT EXISTS (
-                   SELECT 1 FROM unnest($1::uuid[]) requested(id)
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM shelves s
-                       WHERE s.id = requested.id
-                         AND s.user_id = current_setting('app.current_user_id', true)::uuid
-                   )
-               )
-               AND EXISTS (
-                   SELECT 1 FROM shelf_items si
-                   WHERE si.manifestation_id = m.id
-                     AND si.shelf_id = ANY($1::uuid[])
-               )
-           )
-        "#,
-        shelf_ids,
-    )
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-
-    Ok(LibrarySummary {
-        total_count: count_i32(row.total_count)?,
-        reading_states: ReadingStateCounts {
-            want_to_read: count_i32(row.want_to_read)?,
-            reading: count_i32(row.reading)?,
-            on_hold: count_i32(row.on_hold)?,
-            finished: count_i32(row.finished)?,
-            abandoned: count_i32(row.abandoned)?,
-            unread: count_i32(row.unread)?,
-        },
-        needs_attention: NeedsAttentionCounts {
-            to_review: 0,
-            enrichment_failed: count_i32(row.enrichment_failed)?,
-            no_isbn: count_i32(row.no_isbn)?,
-            no_cover: count_i32(row.no_cover)?,
-        },
-    })
-}
-
-async fn library_summary_adult(
-    tx: &mut sqlx::Transaction<'_, Postgres>,
-    shelf_ids: &[Uuid],
-) -> Result<LibrarySummary, AppError> {
-    let row = sqlx::query!(
-        r#"
-        SELECT
-            COUNT(*) AS "total_count!",
-            COUNT(*) FILTER (WHERE rs.status = 'want_to_read'::reading_status) AS "want_to_read!",
-            COUNT(*) FILTER (WHERE rs.status = 'reading'::reading_status) AS "reading!",
-            COUNT(*) FILTER (WHERE rs.status = 'on_hold'::reading_status) AS "on_hold!",
-            COUNT(*) FILTER (WHERE rs.status = 'finished'::reading_status) AS "finished!",
-            COUNT(*) FILTER (WHERE rs.status = 'abandoned'::reading_status) AS "abandoned!",
-            COUNT(*) FILTER (WHERE rs.status IS NULL) AS "unread!",
-            COUNT(*) FILTER (
-                WHERE EXISTS (
-                    SELECT 1 FROM metadata_versions mv
-                    WHERE mv.manifestation_id = m.id
-                      AND mv.status = 'pending'::metadata_review_status
-                      AND mv.new_value != 'null'::jsonb
-                      AND mv.id IS DISTINCT FROM w.title_version_id
-                      AND mv.id IS DISTINCT FROM w.subtitle_version_id
-                      AND mv.id IS DISTINCT FROM w.description_version_id
-                      AND mv.id IS DISTINCT FROM w.language_version_id
-                      AND mv.id IS DISTINCT FROM m.publisher_version_id
-                      AND mv.id IS DISTINCT FROM m.pub_date_version_id
-                      AND mv.id IS DISTINCT FROM m.isbn_10_version_id
-                      AND mv.id IS DISTINCT FROM m.isbn_13_version_id
-                      AND mv.id IS DISTINCT FROM m.cover_version_id
-                      AND mv.id IS DISTINCT FROM m.pages_version_id
-                      AND mv.id IS DISTINCT FROM m.content_rating_version_id
-                      AND NOT EXISTS (
-                          SELECT 1 FROM manifestation_genres mg
-                          WHERE mg.manifestation_id = m.id AND mg.source_version_id = mv.id
-                      )
-                      AND NOT EXISTS (
-                          SELECT 1 FROM manifestation_moods mm
-                          WHERE mm.manifestation_id = m.id AND mm.source_version_id = mv.id
-                      )
-                      AND NOT EXISTS (
-                          SELECT 1 FROM manifestation_tags mt
-                          WHERE mt.manifestation_id = m.id AND mt.source_version_id = mv.id
-                      )
-                      AND NOT EXISTS (
-                          SELECT 1 FROM work_authors wa
-                          WHERE wa.work_id = m.work_id AND wa.source_version_id = mv.id
-                      )
-                )
-            ) AS "to_review!",
-            COUNT(*) FILTER (
-                WHERE m.enrichment_status = 'skipped'::enrichment_status
-                  AND m.enrichment_error IS NOT NULL
-            ) AS "enrichment_failed!",
-            COUNT(*) FILTER (WHERE m.isbn_13 IS NULL) AS "no_isbn!",
-            COUNT(*) FILTER (
-                WHERE m.cover_path IS NULL AND m.has_embedded_cover IS NOT TRUE
-            ) AS "no_cover!"
-        FROM manifestations m
-        JOIN works w ON w.id = m.work_id
-        LEFT JOIN reading_state rs ON rs.manifestation_id = m.id
-        WHERE cardinality($1::uuid[]) = 0
-           OR (
-               NOT EXISTS (
-                   SELECT 1 FROM unnest($1::uuid[]) requested(id)
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM shelves s
-                       WHERE s.id = requested.id
-                         AND s.user_id = current_setting('app.current_user_id', true)::uuid
-                   )
-               )
-               AND EXISTS (
-                   SELECT 1 FROM shelf_items si
-                   WHERE si.manifestation_id = m.id
-                     AND si.shelf_id = ANY($1::uuid[])
-               )
-           )
-        "#,
-        shelf_ids,
-    )
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-
-    Ok(LibrarySummary {
-        total_count: count_i32(row.total_count)?,
-        reading_states: ReadingStateCounts {
-            want_to_read: count_i32(row.want_to_read)?,
-            reading: count_i32(row.reading)?,
-            on_hold: count_i32(row.on_hold)?,
-            finished: count_i32(row.finished)?,
-            abandoned: count_i32(row.abandoned)?,
-            unread: count_i32(row.unread)?,
-        },
-        needs_attention: NeedsAttentionCounts {
-            to_review: count_i32(row.to_review)?,
-            enrichment_failed: count_i32(row.enrichment_failed)?,
-            no_isbn: count_i32(row.no_isbn)?,
-            no_cover: count_i32(row.no_cover)?,
-        },
-    })
 }
 
 /// Cross-filtered facet counts and matching result total under `params`.

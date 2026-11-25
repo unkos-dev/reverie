@@ -1,5 +1,5 @@
 -- Allow digits in sort_stack wire names (e.g. isbn_13) and add composite
--- ordering indexes for the five newly sortable Library columns.
+-- ordering indexes for the newly sortable single-table Library columns.
 
 ALTER TABLE public.user_preferences
 DROP CONSTRAINT user_preferences_sort_stack_shape;
@@ -19,15 +19,3 @@ ON public.manifestations USING btree (isbn_13, id);
 
 CREATE INDEX idx_manifestations_isbn_13_keyset_desc
 ON public.manifestations USING btree (isbn_13 DESC NULLS LAST, id DESC);
-
-CREATE INDEX idx_reading_state_user_status_keyset
-ON public.reading_state USING btree (user_id, status, manifestation_id);
-
-CREATE INDEX idx_reading_state_user_status_keyset_desc
-ON public.reading_state USING btree (user_id, status DESC NULLS LAST, manifestation_id DESC);
-
-CREATE INDEX idx_reading_state_user_rating_keyset
-ON public.reading_state USING btree (user_id, rating, manifestation_id);
-
-CREATE INDEX idx_reading_state_user_rating_keyset_desc
-ON public.reading_state USING btree (user_id, rating DESC NULLS LAST, manifestation_id DESC);

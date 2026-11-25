@@ -2813,34 +2813,6 @@ CREATE INDEX idx_reading_state_user_last_read ON public.reading_state USING btre
 
 
 --
--- Name: idx_reading_state_user_rating_keyset; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE INDEX idx_reading_state_user_rating_keyset ON public.reading_state USING btree (user_id, rating, manifestation_id);
-
-
---
--- Name: idx_reading_state_user_rating_keyset_desc; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE INDEX idx_reading_state_user_rating_keyset_desc ON public.reading_state USING btree (user_id, rating DESC NULLS LAST, manifestation_id DESC);
-
-
---
--- Name: idx_reading_state_user_status_keyset; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE INDEX idx_reading_state_user_status_keyset ON public.reading_state USING btree (user_id, status, manifestation_id);
-
-
---
--- Name: idx_reading_state_user_status_keyset_desc; Type: INDEX; Schema: public; Owner: reverie_migrator
---
-
-CREATE INDEX idx_reading_state_user_status_keyset_desc ON public.reading_state USING btree (user_id, status DESC NULLS LAST, manifestation_id DESC);
-
-
---
 -- Name: idx_series_name_trgm; Type: INDEX; Schema: public; Owner: reverie_migrator
 --
 

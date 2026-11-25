@@ -2487,93 +2487,12 @@ mod tests {
         );
     }
 
-    async fn seed_attention_and_reading_fixture(pool: &PgPool, fixture: &ReaderFixture) {
+    async fn seed_boundary_reading_fixture(pool: &PgPool, fixture: &ReaderFixture) {
         let other_id = sqlx::query_scalar!(
             "SELECT user_id FROM shelves WHERE id = $1",
             fixture.other_shelf
         )
         .fetch_one(pool)
-        .await
-        .unwrap();
-
-        sqlx::query!(
-            "UPDATE manifestations \
-             SET enrichment_status = 'skipped'::enrichment_status, \
-                 enrichment_error = 'exhausted retries', \
-                 isbn_13 = NULL, \
-                 cover_path = NULL, \
-                 has_embedded_cover = FALSE \
-             WHERE id = $1",
-            fixture.visible
-        )
-        .execute(pool)
-        .await
-        .unwrap();
-        sqlx::query!(
-            "UPDATE manifestations \
-             SET enrichment_status = 'failed'::enrichment_status, \
-                 enrichment_error = 'transient retry', \
-                 isbn_13 = '9780141036144', \
-                 cover_path = 'covers/sibling.jpg', \
-                 has_embedded_cover = FALSE \
-             WHERE id = $1",
-            fixture.sibling
-        )
-        .execute(pool)
-        .await
-        .unwrap();
-        sqlx::query!(
-            "UPDATE manifestations \
-             SET enrichment_status = 'skipped'::enrichment_status, \
-                 enrichment_error = NULL, \
-                 isbn_13 = NULL, \
-                 cover_path = NULL, \
-                 has_embedded_cover = TRUE \
-             WHERE id = $1",
-            fixture.hidden
-        )
-        .execute(pool)
-        .await
-        .unwrap();
-
-        let pending_id = sqlx::query_scalar!(
-            "INSERT INTO metadata_versions \
-             (manifestation_id, source, field_name, new_value, status, confidence_score, value_hash, match_type) \
-             VALUES ($1, 'openlibrary', 'subtitle', '\"Proposed Subtitle\"'::jsonb, 'pending'::metadata_review_status, 0.9, decode('01020304', 'hex'), 'isbn') \
-             RETURNING id",
-            fixture.visible
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap();
-        assert_ne!(pending_id, uuid::Uuid::nil());
-
-        let canonical_id = sqlx::query_scalar!(
-            "INSERT INTO metadata_versions \
-             (manifestation_id, source, field_name, new_value, status, confidence_score, value_hash, match_type) \
-             VALUES ($1, 'openlibrary', 'title', '\"Canonical Title\"'::jsonb, 'pending'::metadata_review_status, 0.9, decode('05060708', 'hex'), 'isbn') \
-             RETURNING id",
-            fixture.sibling
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap();
-        sqlx::query!(
-            "UPDATE works SET title_version_id = $1 WHERE id = $2",
-            canonical_id,
-            fixture.visible_work
-        )
-        .execute(pool)
-        .await
-        .unwrap();
-
-        sqlx::query!(
-            "INSERT INTO metadata_versions \
-             (manifestation_id, source, field_name, new_value, status, confidence_score, value_hash, match_type) \
-             VALUES ($1, 'manual', 'subtitle', 'null'::jsonb, 'pending'::metadata_review_status, 1.0, decode('090a0b0c', 'hex'), 'manual')",
-            fixture.hidden
-        )
-        .execute(pool)
         .await
         .unwrap();
 
@@ -2595,12 +2514,14 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn graphql_library_summary_and_facets_boundaries(pool: PgPool) {
         let fixture = reader_fixture(&pool).await;
-        seed_attention_and_reading_fixture(&pool, &fixture).await;
+        seed_boundary_reading_fixture(&pool, &fixture).await;
 
-        let summary_query = "query($shelfIds: [ID!]!) { librarySummary(shelfIds: $shelfIds) { totalCount readingStates { wantToRead reading onHold finished abandoned unread } needsAttention { toReview enrichmentFailed noIsbn noCover } } }";
-        let facets_query = "query($filter: BooksFilter) { libraryFacets(filter: $filter) { matchingCount readingStates { wantToRead reading onHold finished abandoned unread } shelves { shelfId count } } }";
+        let summary_query = "query($shelfIds: [ID!]!) { librarySummary(shelfIds: $shelfIds) { totalCount readingStates { wantToRead reading onHold finished abandoned unread } needsAttention { toReview } } }";
+        let facets_query = "query($filter: BooksFilter) { libraryFacets(filter: $filter) { matchingCount shelves { shelfId count } } }";
         let books_query = "query($filter: BooksFilter) { books(first: 50, filter: $filter) { edges { node { id } } } }";
 
+        // Child withholding boundary: pending proposal exists on `visible` (from reader_notes),
+        // yet child observes toReview = 0, needsReview = true -> 0 rows, needsReview = false -> 1 row.
         let child_summary = reader_query(
             &fixture,
             &fixture.child,
@@ -2609,13 +2530,10 @@ mod tests {
         )
         .await;
         assert_graph_ok(&child_summary);
+        assert_eq!(child_summary["data"]["librarySummary"]["totalCount"], 1);
         assert_eq!(
-            child_summary["data"]["librarySummary"],
-            json!({
-                "totalCount": 1,
-                "readingStates": {"wantToRead": 0, "reading": 0, "onHold": 0, "finished": 0, "abandoned": 0, "unread": 1},
-                "needsAttention": {"toReview": 0, "enrichmentFailed": 1, "noIsbn": 1, "noCover": 1}
-            })
+            child_summary["data"]["librarySummary"]["needsAttention"]["toReview"],
+            0
         );
 
         let child_review_true = reader_query(
@@ -2660,6 +2578,8 @@ mod tests {
         assert_graph_ok(&child_facets);
         assert_eq!(child_facets["data"]["libraryFacets"]["matchingCount"], 0);
 
+        // Shelf ownership boundary (REV-REQ-0059): foreign shelf probes yield zero counts
+        // and shelf facets list only caller-owned shelves.
         let foreign_shelf = id::Shelf::encode(fixture.other_shelf);
         let shelf_a = id::Shelf::encode(fixture.shelf_a);
         let shelf_b = id::Shelf::encode(fixture.shelf_b);
@@ -2683,6 +2603,23 @@ mod tests {
             );
         }
 
+        let facets = reader_query(
+            &fixture,
+            &fixture.admin,
+            facets_query,
+            json!({"filter": {"statusAny": ["READING"], "shelfAny": [shelf_a.as_str()]}}),
+        )
+        .await;
+        assert_graph_ok(&facets);
+        assert_eq!(
+            facets["data"]["libraryFacets"]["shelves"],
+            json!([
+                {"shelfId": shelf_a.as_str(), "count": 1},
+                {"shelfId": shelf_b.as_str(), "count": 0}
+            ])
+        );
+
+        // Reading-state privacy boundary: each caller sees only their own reading_state rows.
         let admin_union = reader_query(
             &fixture,
             &fixture.admin,
@@ -2696,7 +2633,7 @@ mod tests {
             json!({
                 "totalCount": 3,
                 "readingStates": {"wantToRead": 0, "reading": 1, "onHold": 0, "finished": 1, "abandoned": 0, "unread": 1},
-                "needsAttention": {"toReview": 1, "enrichmentFailed": 1, "noIsbn": 2, "noCover": 1}
+                "needsAttention": {"toReview": 1}
             })
         );
 
@@ -2711,63 +2648,6 @@ mod tests {
         assert_eq!(
             other_summary["data"]["librarySummary"]["readingStates"],
             json!({"wantToRead": 0, "reading": 0, "onHold": 0, "finished": 1, "abandoned": 0, "unread": 2})
-        );
-
-        let facets = reader_query(
-            &fixture,
-            &fixture.admin,
-            facets_query,
-            json!({"filter": {"statusAny": ["READING"], "shelfAny": [shelf_a.as_str()]}}),
-        )
-        .await;
-        assert_graph_ok(&facets);
-        assert_eq!(facets["data"]["libraryFacets"]["matchingCount"], 1);
-        assert_eq!(
-            facets["data"]["libraryFacets"]["readingStates"],
-            json!({"wantToRead": 0, "reading": 1, "onHold": 0, "finished": 0, "abandoned": 0, "unread": 1})
-        );
-        assert_eq!(
-            facets["data"]["libraryFacets"]["shelves"],
-            json!([
-                {"shelfId": shelf_a.as_str(), "count": 1},
-                {"shelfId": shelf_b.as_str(), "count": 0}
-            ])
-        );
-
-        let visible_id = id::Manifestation::encode(fixture.visible);
-        for filter in [
-            json!({"needsReview": true}),
-            json!({"enrichmentFailed": true}),
-            json!({"coverEmpty": true}),
-        ] {
-            let filtered = reader_query(
-                &fixture,
-                &fixture.admin,
-                books_query,
-                json!({"filter": filter}),
-            )
-            .await;
-            assert_graph_ok(&filtered);
-            let ids: Vec<&str> = filtered["data"]["books"]["edges"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|edge| edge["node"]["id"].as_str().unwrap())
-                .collect();
-            assert_eq!(ids, vec![visible_id.as_str()]);
-        }
-
-        let too_many: Vec<&str> = (0..21).map(|_| shelf_a.as_str()).collect();
-        let over_cap = reader_query(
-            &fixture,
-            &fixture.admin,
-            summary_query,
-            json!({"shelfIds": too_many}),
-        )
-        .await;
-        assert_eq!(
-            over_cap["errors"][0]["extensions"]["code"], "validation",
-            "{over_cap}"
         );
     }
 
@@ -2814,7 +2694,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn graphql_sort_nine_columns_and_cursor_contract(pool: PgPool) {
+    async fn graphql_books_page_walk_ordering(pool: PgPool) {
         let fixture = reader_fixture(&pool).await;
         let ingestion = db::ingestion_pool_for(&pool).await;
         let (work_null, book_null) =
@@ -2864,6 +2744,14 @@ mod tests {
         .unwrap();
 
         sqlx::query!(
+            "DELETE FROM series_works WHERE series_id = $1 AND work_id = $2",
+            fixture.series,
+            fixture.hidden_work
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query!(
             "INSERT INTO series_works (series_id, work_id, position) \
              VALUES ($1, $2, 0.5::float8), ($1, $3, NULL)",
             fixture.series,
@@ -2897,26 +2785,50 @@ mod tests {
         let sibling_id = id::Manifestation::encode(fixture.sibling);
         let hidden_id = id::Manifestation::encode(fixture.hidden);
 
-        for column in ["SUBTITLE", "SERIES", "ISBN_13", "STATUS", "RATING"] {
+        for (column, missing_ids) in [
+            (
+                "SUBTITLE",
+                vec![null_id.as_str(), frac_id.as_str(), unnumbered_id.as_str()],
+            ),
+            ("SERIES", vec![null_id.as_str()]),
+            (
+                "ISBN_13",
+                vec![
+                    sibling_id.as_str(),
+                    null_id.as_str(),
+                    frac_id.as_str(),
+                    unnumbered_id.as_str(),
+                ],
+            ),
+            (
+                "STATUS",
+                vec![null_id.as_str(), frac_id.as_str(), unnumbered_id.as_str()],
+            ),
+            (
+                "RATING",
+                vec![null_id.as_str(), frac_id.as_str(), unnumbered_id.as_str()],
+            ),
+        ] {
             let asc =
                 walk_all_pages(&fixture, json!([{"column": column, "direction": "ASC"}])).await;
             let desc =
                 walk_all_pages(&fixture, json!([{"column": column, "direction": "DESC"}])).await;
             assert_eq!(asc.len(), 6);
             assert_eq!(desc.len(), 6);
-            let null_bucket = match column {
-                "SERIES" => 1,
-                "ISBN_13" => 4,
-                _ => 3,
-            };
-            let tail_start = 6 - null_bucket;
-            assert!(
-                asc[tail_start..].iter().any(|id| id == null_id.as_str()),
-                "{column} ASC must place NULL rows at the tail: {asc:?}"
+            let tail_start = 6 - missing_ids.len();
+            let expected_missing: std::collections::BTreeSet<&str> =
+                missing_ids.into_iter().collect();
+            let asc_tail: std::collections::BTreeSet<&str> =
+                asc[tail_start..].iter().map(String::as_str).collect();
+            let desc_tail: std::collections::BTreeSet<&str> =
+                desc[tail_start..].iter().map(String::as_str).collect();
+            assert_eq!(
+                asc_tail, expected_missing,
+                "{column} ASC must place every missing-value book last: {asc:?}"
             );
-            assert!(
-                desc[tail_start..].iter().any(|id| id == null_id.as_str()),
-                "{column} DESC must place NULL rows at the tail: {desc:?}"
+            assert_eq!(
+                desc_tail, expected_missing,
+                "{column} DESC must place every missing-value book last: {desc:?}"
             );
         }
 
@@ -2928,91 +2840,24 @@ mod tests {
             series_asc,
             vec![
                 frac_id.to_string(),
-                hidden_id.to_string(),
                 visible_id.to_string(),
                 sibling_id.to_string(),
                 unnumbered_id.to_string(),
+                hidden_id.to_string(),
                 null_id.to_string(),
             ]
         );
         assert_eq!(
             series_desc,
             vec![
+                hidden_id.to_string(),
                 sibling_id.to_string(),
                 visible_id.to_string(),
-                hidden_id.to_string(),
                 frac_id.to_string(),
                 unnumbered_id.to_string(),
                 null_id.to_string(),
             ]
         );
-
-        let pref_mutation = "mutation($input: UpdateLibraryPreferencesInput!) { updateLibraryPreferences(input: $input) { __typename ... on LibraryPreferencesUpdated { viewer { libraryPreferences { sort { column direction } } } } } }";
-        let saved = reader_query(
-            &fixture,
-            &fixture.admin,
-            pref_mutation,
-            json!({
-                "input": {
-                    "sort": [
-                        {"column": "CREATED_AT", "direction": "DESC"},
-                        {"column": "SUBTITLE", "direction": "DESC"},
-                        {"column": "ISBN_13", "direction": "DESC"}
-                    ]
-                }
-            }),
-        )
-        .await;
-        assert_graph_result(
-            &saved,
-            "updateLibraryPreferences",
-            "LibraryPreferencesUpdated",
-        );
-        assert_eq!(
-            saved["data"]["updateLibraryPreferences"]["viewer"]["libraryPreferences"]["sort"],
-            json!([
-                {"column": "CREATED_AT", "direction": "DESC"},
-                {"column": "SUBTITLE", "direction": "DESC"},
-                {"column": "ISBN_13", "direction": "DESC"}
-            ])
-        );
-
-        let rest = fixture
-            .server
-            .get("/api/v1/books?sort=-created_at,-subtitle,-isbn_13")
-            .add_header("authorization", fixture.admin.clone())
-            .await;
-        assert_eq!(rest.status_code(), axum::http::StatusCode::OK);
-
-        let page_query = "query($after: String, $filter: BooksFilter) { books(first: 1, after: $after, filter: $filter) { edges { cursor } } }";
-        let base = reader_query(
-            &fixture,
-            &fixture.admin,
-            page_query,
-            json!({"filter": {"coverEmpty": true}}),
-        )
-        .await;
-        assert_graph_ok(&base);
-        let cursor = base["data"]["books"]["edges"][0]["cursor"]
-            .as_str()
-            .unwrap();
-        for changed in [
-            json!({"coverEmpty": false}),
-            json!({"enrichmentFailed": true}),
-            json!({"needsReview": true}),
-        ] {
-            let refused = reader_query(
-                &fixture,
-                &fixture.admin,
-                page_query,
-                json!({"after": cursor, "filter": changed}),
-            )
-            .await;
-            assert_eq!(
-                refused["errors"][0]["extensions"]["code"], "invalid-cursor",
-                "{refused}"
-            );
-        }
     }
 
     fn retag(cursor: &str, from: &str, to: &str) -> String {

@@ -1,7 +1,3 @@
-DROP INDEX public.idx_reading_state_user_rating_keyset_desc;
-DROP INDEX public.idx_reading_state_user_rating_keyset;
-DROP INDEX public.idx_reading_state_user_status_keyset_desc;
-DROP INDEX public.idx_reading_state_user_status_keyset;
 DROP INDEX public.idx_manifestations_isbn_13_keyset_desc;
 DROP INDEX public.idx_manifestations_isbn_13_keyset;
 DROP INDEX public.idx_works_subtitle_keyset_desc;
