@@ -57,7 +57,7 @@ pub struct UpdatePreferencesRequest {
     /// Default sort in the `?sort=` wire grammar. Absent = unchanged; `null`
     /// resets to the default.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    #[schema(value_type = Option<String>, max_length = 26)]
+    #[schema(value_type = Option<String>, max_length = 40)]
     pub(crate) sort_stack: Option<Option<String>>,
     #[serde(skip)]
     pub(crate) column_changes: Vec<ColumnChange>,

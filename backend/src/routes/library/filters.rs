@@ -62,6 +62,34 @@ const MAX_TEXT_FILTER_CHARS: usize = 200;
 /// which no real [`ReadingStatus`] wire name can express.
 const UNREAD_TOKEN: &str = "unread";
 
+/// Predicate matching a manifestation `m` (with joined work `w`) that has at
+/// least one pending staged metadata proposal awaiting accept/reject,
+/// excluding canonical accepted pointers (11 scalar `*_version_id` columns and
+/// 4 junction `source_version_id` tables) and `new_value = 'null'::jsonb`
+/// manual-clear audit rows. Mirrors `services::reader::pending_version_rows`.
+pub const PENDING_PROPOSAL_EXISTS_SQL: &str = "\
+EXISTS ( \
+  SELECT 1 FROM metadata_versions mv \
+  WHERE mv.manifestation_id = m.id \
+    AND mv.status = 'pending'::metadata_review_status \
+    AND mv.new_value != 'null'::jsonb \
+    AND mv.id IS DISTINCT FROM w.title_version_id \
+    AND mv.id IS DISTINCT FROM w.subtitle_version_id \
+    AND mv.id IS DISTINCT FROM w.description_version_id \
+    AND mv.id IS DISTINCT FROM w.language_version_id \
+    AND mv.id IS DISTINCT FROM m.publisher_version_id \
+    AND mv.id IS DISTINCT FROM m.pub_date_version_id \
+    AND mv.id IS DISTINCT FROM m.isbn_10_version_id \
+    AND mv.id IS DISTINCT FROM m.isbn_13_version_id \
+    AND mv.id IS DISTINCT FROM m.cover_version_id \
+    AND mv.id IS DISTINCT FROM m.pages_version_id \
+    AND mv.id IS DISTINCT FROM m.content_rating_version_id \
+    AND NOT EXISTS (SELECT 1 FROM manifestation_genres mg WHERE mg.manifestation_id = m.id AND mg.source_version_id = mv.id) \
+    AND NOT EXISTS (SELECT 1 FROM manifestation_moods mm WHERE mm.manifestation_id = m.id AND mm.source_version_id = mv.id) \
+    AND NOT EXISTS (SELECT 1 FROM manifestation_tags mt WHERE mt.manifestation_id = m.id AND mt.source_version_id = mv.id) \
+    AND NOT EXISTS (SELECT 1 FROM work_authors wa WHERE wa.work_id = m.work_id AND wa.source_version_id = mv.id) \
+)";
+
 /// Backslash-escape `\`, `%`, and `_` so `raw` is matched literally by
 /// `ILIKE` rather than as a wildcard pattern. Postgres's default `LIKE`
 /// escape character is already `\`, so callers need no explicit `ESCAPE`
@@ -240,6 +268,15 @@ pub fn canonical_filter_string(p: &ListParams) -> String {
     if let Some(d) = p.created_at_lt {
         parts.push(format!("created_at_lt={d}"));
     }
+    if let Some(b) = p.needs_review {
+        parts.push(format!("needs_review={b}"));
+    }
+    if let Some(b) = p.enrichment_failed {
+        parts.push(format!("enrichment_failed={b}"));
+    }
+    if let Some(b) = p.cover_empty {
+        parts.push(format!("cover_empty={b}"));
+    }
 
     parts.sort();
     parts.join("&")
@@ -264,7 +301,11 @@ pub fn filter_fingerprint(p: &ListParams) -> String {
 /// after the vocabulary predicates and before the cursor predicate. Empty /
 /// absent conditions push nothing. Ordering among the AND-combined
 /// predicates does not change semantics.
-pub fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
+///
+/// THREAT: when `is_child` is true, `needs_review` short-circuits without
+/// touching `metadata_versions` so a child account cannot infer withheld
+/// proposals through result presence or absence.
+pub fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams, is_child: bool) {
     push_author_predicates(qb, p);
     if let Some(series_id) = p.series {
         qb.push(
@@ -340,7 +381,41 @@ pub fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     push_created_at_predicates(qb, p);
     push_status_predicates(qb, p);
     push_rating_predicates(qb, p);
+    push_attention_predicates(qb, p, is_child);
     push_q_predicate(qb, p);
+}
+
+/// Push the Needs attention predicates (`needs_review`, `enrichment_failed`,
+/// `cover_empty`).
+///
+/// THREAT: child accounts never inspect `metadata_versions`. Under `is_child`,
+/// `needs_review = true` matches no rows and `needs_review = false` is a no-op,
+/// matching the zero pending proposals a child is permitted to observe.
+fn push_attention_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams, is_child: bool) {
+    if let Some(needs_review) = p.needs_review {
+        if is_child {
+            if needs_review {
+                qb.push(" AND FALSE");
+            }
+        } else {
+            qb.push(if needs_review { " AND " } else { " AND NOT " });
+            qb.push(PENDING_PROPOSAL_EXISTS_SQL);
+        }
+    }
+    if let Some(enrichment_failed) = p.enrichment_failed {
+        qb.push(if enrichment_failed {
+            " AND (m.enrichment_status = 'skipped'::enrichment_status AND m.enrichment_error IS NOT NULL)"
+        } else {
+            " AND NOT (m.enrichment_status = 'skipped'::enrichment_status AND m.enrichment_error IS NOT NULL)"
+        });
+    }
+    if let Some(cover_empty) = p.cover_empty {
+        qb.push(if cover_empty {
+            " AND (m.cover_path IS NULL AND m.has_embedded_cover IS NOT TRUE)"
+        } else {
+            " AND (m.cover_path IS NOT NULL OR m.has_embedded_cover IS TRUE)"
+        });
+    }
 }
 
 /// Push the `author` vocabulary triple, role-scoped to `'author'`: all-of via

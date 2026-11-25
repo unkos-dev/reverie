@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO reading_state (user_id, manifestation_id, status, rating) VALUES ($1, $2, 'want_to_read'::reading_status, 2), ($1, $3, 'reading'::reading_status, 5), ($1, $4, 'finished'::reading_status, 5) ON CONFLICT (user_id, manifestation_id) DO UPDATE SET status = EXCLUDED.status, rating = EXCLUDED.rating",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2be286a29eccdc52ac7e4330d0d23b08d2885f1a7d8fbb70f74381b1d72f699b"
+}

@@ -72,7 +72,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 /// use to leave headroom but small enough to bound each predicate's
 /// parameter array. Exceeding the cap returns a 422 `validation`
 /// problem rather than executing a pathologically large query.
-const MAX_TAG_FILTERS: usize = 20;
+pub(crate) const MAX_TAG_FILTERS: usize = 20;
 
 /// `?cursor=` / `?sort=` / filter query parameters for `GET /api/v1/books`.
 ///
@@ -112,19 +112,20 @@ const MAX_TAG_FILTERS: usize = 20;
 /// OR title-trigram filter (no ranking). Building and validation live in
 /// [`filters`]; see [`filters::push_filter_predicates`] and
 /// [`filters::validate`].
-#[derive(Debug, Default, Deserialize, utoipa::IntoParams)]
+#[derive(Debug, Default, Clone, Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 pub(crate) struct ListParams {
     #[serde(default)]
     pub(crate) cursor: Option<String>,
     /// Sort stack, JSON:API grammar: comma-separated whitelisted field
-    /// names (`title`, `author`, `created_at`, `pages`); a leading `-`
-    /// reverses that level to descending; order of appearance sets
-    /// priority (the first field is the primary key). An unwhitelisted
-    /// field, a repeated column, or more than three levels is a 422.
-    /// Omitted, this is `-created_at` (today's "recent" order).
+    /// names (`title`, `subtitle`, `author`, `series`, `isbn_13`, `pages`,
+    /// `status`, `rating`, `created_at`); a leading `-` reverses that level
+    /// to descending; order of appearance sets priority (the first field is
+    /// the primary key). An unwhitelisted field, a repeated column, or more
+    /// than three levels is a 422. Omitted, this is `-created_at` (today's
+    /// "recent" order).
     #[serde(default)]
-    #[param(example = "-created_at,title", max_length = 26)]
+    #[param(example = "-created_at,title", max_length = 40)]
     pub(crate) sort: Option<String>,
     /// All-of author filter: every listed author id must be linked to
     /// the work in the `author` role. A single `?author=<uuid>` is the
@@ -255,6 +256,20 @@ pub(crate) struct ListParams {
     /// lives at `/api/v1/search`).
     #[serde(default)]
     pub(crate) q: Option<String>,
+    /// `true` keeps only rows with pending metadata proposals awaiting review;
+    /// `false` keeps only rows without any. Child accounts never inspect
+    /// proposals (`true` yields no rows; `false` is a no-op).
+    #[serde(default)]
+    pub(crate) needs_review: Option<bool>,
+    /// `true` keeps only rows whose enrichment exhausted retries and gave up
+    /// (`enrichment_status = 'skipped'` with a recorded error); `false`
+    /// excludes them.
+    #[serde(default)]
+    pub(crate) enrichment_failed: Option<bool>,
+    /// `true` keeps only rows with no stored or embedded cover image; `false`
+    /// keeps only rows with a cover image.
+    #[serde(default)]
+    pub(crate) cover_empty: Option<bool>,
 }
 
 /// `GET /api/v1/books` response envelope. Carries the page rows plus

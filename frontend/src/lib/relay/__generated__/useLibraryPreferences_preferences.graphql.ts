@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<9876a385573b68007de9c0dca89af00e>>
+ * @generated SignedSource<<9f508cb2f87ae7a9de2391ff591ae042>>
  * @lightSyntaxTransform
  */
 
@@ -21,7 +21,17 @@ export type LibraryColumn =
   | "%future added value";
 export type LibraryDensity = "COMFORTABLE" | "COMPACT" | "%future added value";
 export type LibraryView = "GRID" | "TABLE" | "%future added value";
-export type SortField = "AUTHOR" | "CREATED_AT" | "PAGES" | "TITLE" | "%future added value";
+export type SortField =
+  | "AUTHOR"
+  | "CREATED_AT"
+  | "ISBN_13"
+  | "PAGES"
+  | "RATING"
+  | "SERIES"
+  | "STATUS"
+  | "SUBTITLE"
+  | "TITLE"
+  | "%future added value";
 import { FragmentRefs } from "relay-runtime";
 export type useLibraryPreferences_preferences$data = {
   readonly $updatableFragmentSpreads: FragmentRefs<"useLibraryPreferences_updatable">;

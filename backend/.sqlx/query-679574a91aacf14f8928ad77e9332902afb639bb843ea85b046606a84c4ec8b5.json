@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE works SET subtitle = 'Zeta Sub' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "679574a91aacf14f8928ad77e9332902afb639bb843ea85b046606a84c4ec8b5"
+}

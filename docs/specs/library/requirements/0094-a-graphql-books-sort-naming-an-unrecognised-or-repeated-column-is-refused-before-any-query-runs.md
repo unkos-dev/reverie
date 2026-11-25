@@ -14,7 +14,7 @@ governed-by:
 WHEN a request to the GraphQL `books` connection carries a `sort` argument that names a column outside the `SortField`
 enum, names the same column in more than one level, or has more than three levels, the server MUST refuse the request
 with an error and no page before it builds or runs a list query for it. The `SortField` enum is the case-sensitive
-values `TITLE`, `AUTHOR`, `CREATED_AT` and `PAGES`.
+values `TITLE`, `SUBTITLE`, `AUTHOR`, `SERIES`, `ISBN_13`, `PAGES`, `STATUS`, `RATING` and `CREATED_AT`.
 
 ## Rationale
 

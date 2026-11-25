@@ -1341,6 +1341,9 @@ pub(super) struct BooksFilter {
     rating_gte: Option<i16>,
     rating_lte: Option<i16>,
     rating_empty: Option<bool>,
+    needs_review: Option<bool>,
+    enrichment_failed: Option<bool>,
+    cover_empty: Option<bool>,
     q: Option<String>,
 }
 impl BooksFilter {
@@ -1416,6 +1419,9 @@ impl BooksFilter {
             rating_gte: self.rating_gte,
             rating_lte: self.rating_lte,
             rating_empty: self.rating_empty,
+            needs_review: self.needs_review,
+            enrichment_failed: self.enrichment_failed,
+            cover_empty: self.cover_empty,
             q: self.q,
             ..ListParams::default()
         })
@@ -1449,23 +1455,43 @@ impl ReadingStatusFilter {
     }
 }
 
-input_output_enum!(SortField { Title => "TITLE", Author => "AUTHOR", CreatedAt => "CREATED_AT", Pages => "PAGES" });
+input_output_enum!(SortField {
+    Title => "TITLE",
+    Subtitle => "SUBTITLE",
+    Author => "AUTHOR",
+    Series => "SERIES",
+    Isbn13 => "ISBN_13",
+    Pages => "PAGES",
+    Status => "STATUS",
+    Rating => "RATING",
+    CreatedAt => "CREATED_AT",
+});
 impl SortField {
     const fn wire(self) -> &'static str {
         match self {
             Self::Title => "title",
+            Self::Subtitle => "subtitle",
             Self::Author => "author",
-            Self::CreatedAt => "created_at",
+            Self::Series => "series",
+            Self::Isbn13 => "isbn_13",
             Self::Pages => "pages",
+            Self::Status => "status",
+            Self::Rating => "rating",
+            Self::CreatedAt => "created_at",
         }
     }
     pub(super) const fn from_column(column: crate::routes::sort_spec::SortColumn) -> Self {
         use crate::routes::sort_spec::SortColumn;
         match column {
             SortColumn::Title => Self::Title,
+            SortColumn::Subtitle => Self::Subtitle,
             SortColumn::Author => Self::Author,
-            SortColumn::CreatedAt => Self::CreatedAt,
+            SortColumn::Series => Self::Series,
+            SortColumn::Isbn13 => Self::Isbn13,
             SortColumn::Pages => Self::Pages,
+            SortColumn::Status => Self::Status,
+            SortColumn::Rating => Self::Rating,
+            SortColumn::CreatedAt => Self::CreatedAt,
         }
     }
 }
@@ -1493,6 +1519,119 @@ pub(super) fn sort_wire(levels: &[SortLevel]) -> String {
         })
         .collect::<Vec<_>>()
         .join(",")
+}
+
+#[derive(SimpleObject)]
+pub(super) struct ReadingStateCounts {
+    want_to_read: i32,
+    reading: i32,
+    on_hold: i32,
+    finished: i32,
+    abandoned: i32,
+    unread: i32,
+}
+
+impl From<reader::ReadingStateCounts> for ReadingStateCounts {
+    fn from(counts: reader::ReadingStateCounts) -> Self {
+        Self {
+            want_to_read: counts.want_to_read,
+            reading: counts.reading,
+            on_hold: counts.on_hold,
+            finished: counts.finished,
+            abandoned: counts.abandoned,
+            unread: counts.unread,
+        }
+    }
+}
+
+#[derive(SimpleObject)]
+pub(super) struct NeedsAttentionCounts {
+    to_review: i32,
+    enrichment_failed: i32,
+    no_isbn: i32,
+    no_cover: i32,
+}
+
+impl From<reader::NeedsAttentionCounts> for NeedsAttentionCounts {
+    fn from(counts: reader::NeedsAttentionCounts) -> Self {
+        Self {
+            to_review: counts.to_review,
+            enrichment_failed: counts.enrichment_failed,
+            no_isbn: counts.no_isbn,
+            no_cover: counts.no_cover,
+        }
+    }
+}
+
+#[derive(SimpleObject)]
+pub(super) struct LibrarySummary {
+    total_count: i32,
+    reading_states: ReadingStateCounts,
+    needs_attention: NeedsAttentionCounts,
+}
+
+#[derive(SimpleObject)]
+pub(super) struct ShelfFacetCount {
+    shelf_id: ID,
+    count: i32,
+}
+
+#[derive(SimpleObject)]
+#[graphql(complex)]
+pub(super) struct LibraryFacets {
+    matching_count: i32,
+    reading_states: ReadingStateCounts,
+    #[graphql(skip)]
+    shelves: Vec<reader::ShelfFacetCount>,
+}
+
+#[ComplexObject]
+impl LibraryFacets {
+    #[graphql(complexity = "super::complexity::shelf_facets(child_complexity)?")]
+    async fn shelves(&self) -> Vec<ShelfFacetCount> {
+        self.shelves
+            .iter()
+            .map(|row| ShelfFacetCount {
+                shelf_id: id::Shelf::encode(row.shelf_id),
+                count: row.count,
+            })
+            .collect()
+    }
+}
+
+pub(super) async fn library_summary(
+    ctx: &Context<'_>,
+    shelf_ids: &[ID],
+) -> async_graphql::Result<LibrarySummary> {
+    let ids = shelf_ids
+        .iter()
+        .map(filter_id::<id::Shelf>)
+        .collect::<async_graphql::Result<Vec<_>>>()?;
+    let summary =
+        reader::library_summary(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &ids)
+            .await
+            .map_err(safe_error)?;
+    Ok(LibrarySummary {
+        total_count: summary.total_count,
+        reading_states: summary.reading_states.into(),
+        needs_attention: summary.needs_attention.into(),
+    })
+}
+
+pub(super) async fn library_facets(
+    ctx: &Context<'_>,
+    filter: Option<BooksFilter>,
+) -> async_graphql::Result<LibraryFacets> {
+    let params = filter.unwrap_or_default().params()?;
+    let facets =
+        reader::library_facets(ctx.data::<CurrentUser>()?, ctx.data::<AppState>()?, &params)
+            .await
+            .map_err(safe_error)?;
+    Ok(LibraryFacets {
+        matching_count: facets.matching_count,
+        reading_states: facets.reading_states.into(),
+        shelves: facets.shelves,
+    })
 }
 
 pub(super) async fn books(

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE works SET subtitle = 'Alpha Sub' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f86990cd7138eb5cb6f500d8bb7b0b13df0370c056ca7511a3b6122d183dcd89"
+}

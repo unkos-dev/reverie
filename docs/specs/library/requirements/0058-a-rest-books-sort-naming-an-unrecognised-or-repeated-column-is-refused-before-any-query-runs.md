@@ -14,7 +14,8 @@ governed-by:
 WHEN a request to `GET /api/v1/books` carries a `?sort=` value that names a column outside the endpoint's sort
 vocabulary, names the same column more than once, or names more than three columns, the server MUST refuse the request
 with `422 Unprocessable Content` before it builds or runs a list query for it. The sort vocabulary is the case-sensitive
-column names `title`, `author`, `created_at` and `pages`, each of which a `-` prefix may mark as descending.
+column names `title`, `subtitle`, `author`, `series`, `isbn_13`, `pages`, `status`, `rating` and `created_at`, each of
+which a `-` prefix may mark as descending.
 
 ## Rationale
 

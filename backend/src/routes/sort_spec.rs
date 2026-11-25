@@ -9,11 +9,15 @@
 //! [`crate::routes::sort_spec::SortColumn::sql_expr`]'s fixed `&'static str`
 //! fragments ever reach a `QueryBuilder`.
 //!
-//! A column enters [`crate::routes::sort_spec::SortColumn`] only once its
-//! ordering indexes exist.
-//! Nullable columns need both an ascending and a `DESC NULLS LAST`
-//! composite index, because Postgres's default DESC ordering is NULLS
-//! FIRST and cannot ride a backward scan of an ascending index.
+//! Columns stored directly on `manifestations` or `works` enter
+//! [`crate::routes::sort_spec::SortColumn`] only once their ordering
+//! indexes exist. Nullable single-table columns need both an ascending
+//! and a `DESC NULLS LAST` composite index, because Postgres's default
+//! DESC ordering is NULLS FIRST and cannot ride a backward scan of an
+//! ascending index. Columns sourced from a `LEFT JOIN` (`Series` via
+//! `LEFT JOIN LATERAL`, `Status` and `Rating` via `LEFT JOIN reading_state`
+//! where unread or unrated books have no row) sort over the joined rows
+//! without an ordering index.
 
 /// Maximum number of levels a sort stack may carry.
 pub const MAX_SORT_LEVELS: usize = 3;
@@ -24,12 +28,22 @@ pub const MAX_SORT_LEVELS: usize = 3;
 pub enum SortColumn {
     /// Work title, alphabetical (`works.sort_title`).
     Title,
+    /// Work subtitle (`works.subtitle`).
+    Subtitle,
     /// First author's sort name (`works.first_author_sort_name`).
     Author,
-    /// Manifestation ingestion timestamp (`manifestations.created_at`).
-    CreatedAt,
+    /// Series sort name, then numeric position (`series_one.series_sort_name`, `series_one.series_position`).
+    Series,
+    /// Manifestation ISBN-13 (`manifestations.isbn_13`).
+    Isbn13,
     /// Manifestation page count (`manifestations.pages`).
     Pages,
+    /// Caller's reading status (`reading_state.status`, PostgreSQL enum order).
+    Status,
+    /// Caller's reading rating (`reading_state.rating`).
+    Rating,
+    /// Manifestation ingestion timestamp (`manifestations.created_at`).
+    CreatedAt,
 }
 
 impl SortColumn {
@@ -38,9 +52,14 @@ impl SortColumn {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::Title => "title",
+            Self::Subtitle => "subtitle",
             Self::Author => "author",
-            Self::CreatedAt => "created_at",
+            Self::Series => "series",
+            Self::Isbn13 => "isbn_13",
             Self::Pages => "pages",
+            Self::Status => "status",
+            Self::Rating => "rating",
+            Self::CreatedAt => "created_at",
         }
     }
 
@@ -51,22 +70,42 @@ impl SortColumn {
     pub fn from_wire(value: &str) -> Option<Self> {
         match value {
             "title" => Some(Self::Title),
+            "subtitle" => Some(Self::Subtitle),
             "author" => Some(Self::Author),
-            "created_at" => Some(Self::CreatedAt),
+            "series" => Some(Self::Series),
+            "isbn_13" => Some(Self::Isbn13),
             "pages" => Some(Self::Pages),
+            "status" => Some(Self::Status),
+            "rating" => Some(Self::Rating),
+            "created_at" => Some(Self::CreatedAt),
             _ => None,
         }
     }
 
-    /// The SQL expression this column orders and filters by. A fixed
+    /// The primary SQL expression this column orders and filters by. A fixed
     /// `&'static str` - never built from client input.
     #[must_use]
     pub const fn sql_expr(self) -> &'static str {
         match self {
             Self::Title => "w.sort_title",
+            Self::Subtitle => "w.subtitle",
             Self::Author => "w.first_author_sort_name",
-            Self::CreatedAt => "m.created_at",
+            Self::Series => "series_one.series_sort_name",
+            Self::Isbn13 => "m.isbn_13",
             Self::Pages => "m.pages",
+            Self::Status => "rs.status",
+            Self::Rating => "rs.rating",
+            Self::CreatedAt => "m.created_at",
+        }
+    }
+
+    /// Secondary SQL expression for composite sort columns (`Series`), ordered
+    /// in the same direction with `NULLS LAST`.
+    #[must_use]
+    pub const fn secondary_sql_expr(self) -> Option<&'static str> {
+        match self {
+            Self::Series => Some("series_one.series_position"),
+            _ => None,
         }
     }
 
@@ -74,7 +113,16 @@ impl SortColumn {
     /// cascade predicate's null-bucket branch and a `NULLS LAST` ORDER BY.
     #[must_use]
     pub const fn nullable(self) -> bool {
-        matches!(self, Self::Author | Self::Pages)
+        matches!(
+            self,
+            Self::Subtitle
+                | Self::Author
+                | Self::Series
+                | Self::Isbn13
+                | Self::Pages
+                | Self::Status
+                | Self::Rating
+        )
     }
 
     /// The row alias this column is selected under in the list query,
@@ -84,9 +132,14 @@ impl SortColumn {
     pub const fn select_alias(self) -> &'static str {
         match self {
             Self::Title => "sort_title",
+            Self::Subtitle => "subtitle",
             Self::Author => "first_author_sort_name",
-            Self::CreatedAt => "created_at",
+            Self::Series => "series_sort_name",
+            Self::Isbn13 => "isbn_13",
             Self::Pages => "pages",
+            Self::Status => "reading_status",
+            Self::Rating => "reading_rating",
+            Self::CreatedAt => "created_at",
         }
     }
 
@@ -97,9 +150,11 @@ impl SortColumn {
     #[must_use]
     pub const fn value_kind(self) -> SortValueKind {
         match self {
-            Self::Title | Self::Author => SortValueKind::Text,
+            Self::Title | Self::Subtitle | Self::Author | Self::Isbn13 => SortValueKind::Text,
             Self::CreatedAt => SortValueKind::Timestamp,
-            Self::Pages => SortValueKind::Int,
+            Self::Pages | Self::Rating => SortValueKind::Int,
+            Self::Status => SortValueKind::Status,
+            Self::Series => SortValueKind::Series,
         }
     }
 }
@@ -108,12 +163,16 @@ impl SortColumn {
 /// boundary value carries the right type for the level it claims to bound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortValueKind {
-    /// Text sort key (`sort_title`, `first_author_sort_name`).
+    /// Text sort key (`sort_title`, `subtitle`, `first_author_sort_name`, `isbn_13`).
     Text,
     /// Timestamp sort key (`created_at`).
     Timestamp,
-    /// Integer sort key (`pages`).
+    /// Integer sort key (`pages`, `rating`).
     Int,
+    /// Reading status enum sort key (`reading_state.status`).
+    Status,
+    /// Composite series sort key (`series_name`, `series_position`).
+    Series,
 }
 
 /// Ascending or descending order for one [`SortLevel`].

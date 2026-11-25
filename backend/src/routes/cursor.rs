@@ -53,6 +53,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::models::reading_status::ReadingStatus;
 use crate::routes::sort_spec::{SortSpec, SortValueKind};
 
 /// The API whose list minted a [`SortCursor`] or [`ShelfCursor`].
@@ -80,6 +81,53 @@ impl CursorApi {
     }
 }
 
+/// Finite numeric series position (`series_works.position`) safe for cursor
+/// equality and JSON serialisation. Rejects `NaN`/infinities and normalises
+/// `-0.0` to `0.0`.
+#[derive(Debug, Clone, Copy)]
+pub struct SeriesPosition(f64);
+
+impl SeriesPosition {
+    /// Construct a finite cursor position, normalising `-0.0` to `0.0`.
+    #[must_use]
+    pub fn new(value: f64) -> Option<Self> {
+        if !value.is_finite() {
+            return None;
+        }
+        Some(Self(if value == 0.0 { 0.0 } else { value }))
+    }
+
+    /// Underlying `f64` value for SQL binding.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+}
+
+impl PartialEq for SeriesPosition {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_bits() == other.0.to_bits()
+    }
+}
+
+impl Eq for SeriesPosition {}
+
+impl Serialize for SeriesPosition {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for SeriesPosition {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        let value = raw
+            .parse::<f64>()
+            .map_err(|_| serde::de::Error::custom("series position must be a valid number"))?;
+        Self::new(value).ok_or_else(|| serde::de::Error::custom("series position must be finite"))
+    }
+}
+
 /// One typed boundary value inside a [`SortCursor`].
 ///
 /// Externally tagged in the JSON payload so a forged cursor cannot smuggle a
@@ -87,7 +135,7 @@ impl CursorApi {
 /// [`SortCursor::parse_for`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CursorValue {
-    /// Text sort key (`sort_title`, `first_author_sort_name`).
+    /// Text sort key (`sort_title`, `subtitle`, `first_author_sort_name`, `isbn_13`).
     /// `None` marks a NULL-bucket boundary row: the ORDER BY uses
     /// `NULLS LAST`, and the cursor has to distinguish "advance
     /// through the non-NULL bucket" from "advance through the NULL
@@ -96,9 +144,18 @@ pub enum CursorValue {
     Text(Option<String>),
     /// Timestamp sort key (`created_at`), RFC 3339 on the wire.
     Ts(Timestamp),
-    /// Integer sort key (`pages`); `None` marks a NULL-bucket
+    /// Integer sort key (`pages`, `rating`); `None` marks a NULL-bucket
     /// boundary row, as with [`Self::Text`].
     Int(Option<i32>),
+    /// Reading status enum sort key (`reading_state.status`).
+    Status(Option<ReadingStatus>),
+    /// Composite series sort key (`series_one.series_sort_name`, `series_one.series_position`).
+    Series {
+        /// Series sort name (`series.sort_name`), or `None` when the work has no series.
+        name: Option<String>,
+        /// Numeric position within the series, or `None` when unnumbered or absent.
+        position: Option<SeriesPosition>,
+    },
 }
 
 impl CursorValue {
@@ -110,12 +167,20 @@ impl CursorValue {
             Self::Text(_) => SortValueKind::Text,
             Self::Ts(_) => SortValueKind::Timestamp,
             Self::Int(_) => SortValueKind::Int,
+            Self::Status(_) => SortValueKind::Status,
+            Self::Series { .. } => SortValueKind::Series,
         }
     }
 
     /// Whether this value sits in a nullable column's NULLS LAST bucket.
     const fn is_null(&self) -> bool {
-        matches!(self, Self::Text(None) | Self::Int(None))
+        matches!(
+            self,
+            Self::Text(None)
+                | Self::Int(None)
+                | Self::Status(None)
+                | Self::Series { name: None, .. }
+        )
     }
 }
 
@@ -301,6 +366,15 @@ fn validate_keys(keys: &[CursorValue], spec: &SortSpec) -> Result<(), CursorErro
             return Err(CursorError::MalformedKey);
         }
         if key.is_null() && !level.column.nullable() {
+            return Err(CursorError::MalformedKey);
+        }
+        if matches!(
+            key,
+            CursorValue::Series {
+                name: None,
+                position: Some(_),
+            }
+        ) {
             return Err(CursorError::MalformedKey);
         }
     }

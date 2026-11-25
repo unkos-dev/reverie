@@ -71,6 +71,16 @@ one record for every distinct ID the caller can see, in the order the IDs were f
 so every field of the returned record resolves. The suggestion roots return `Author`, `Series`, `Genre`, `Mood` and
 `Tag` records in the order the suggestion service ranks them.
 
+The shelf summary root `librarySummary(shelfIds: [ID!]! = [])` aggregates shelf-wide totals (`totalCount`,
+`readingStates`, and `needsAttention`) over all caller-visible manifestations when `shelfIds` is empty, or over the
+distinct union of the requested caller-owned shelves. More than 20 shelf IDs or a malformed shelf ID fails validation; a
+foreign or missing shelf ID yields all-zero counts. Child callers skip `metadata_versions` completely and receive
+`toReview: 0`. The facet root `libraryFacets(filter: BooksFilter)` runs inside one snapshot transaction and returns the
+filtered total (`matchingCount`), cross-filtered `readingStates` (applying all active filters except `statusAny` and
+`statusNone`), and cross-filtered `shelves` (applying all active filters except `shelf` and `shelfAny` across up to 100
+caller-owned shelves in shelf-list order; counts are non-additive across multi-shelf books). Both roots require
+`ReadScope`.
+
 Work holds shared metadata, contributors and the selected series. Manifestation holds file metadata and caller-owned
 reading state. Contributor role and series position belong to edges. `Manifestation.metadata` returns the current
 `MetadataRevision`, which carries matching values, domain IDs, entity-tag and selected relation pages from one database
@@ -198,8 +208,9 @@ non-null `first`. GraphQL ignores `REVERIE_OPDS_PAGE_SIZE`.
 | Root books and shelves, series works and shelf items |             100 |
 
 Search costs its shared 20-result bound, suggestions their shared 10-result default and 1-20 clamp, and labels the
-number of IDs requested, with no cap of their own. A zero-size connection costs one. Checked arithmetic refuses overflow
-and excessive cost.
+number of IDs requested, with no cap of their own. `librarySummary` validates at most 20 shelf IDs and weights its
+aggregate scan by 10; `libraryFacets` weights its aggregate scan by 10, and `LibraryFacets.shelves` weights its 100-item
+shelf-list bound. A zero-size connection costs one. Checked arithmetic refuses overflow and excessive cost.
 
 Both policies refuse an operation whose cost exceeds the complexity limit of 200,000 or whose depth exceeds 12.
 async-graphql excludes `__typename` from these counts. Axum's default 2 MiB JSON-body limit applies to the request body.

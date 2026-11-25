@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<ae5e7f571d8d757e5f1fa8de193719bc>>
+ * @generated SignedSource<<47fdad5206889e410de2f2f2d584d387>>
  * @relayHash 82ea05d6b3ed79952e0bb72f5141a4b3
  * @lightSyntaxTransform
  */
@@ -25,7 +25,17 @@ export type LibraryColumn =
   | "%future added value";
 export type LibraryDensity = "COMFORTABLE" | "COMPACT" | "%future added value";
 export type LibraryView = "GRID" | "TABLE" | "%future added value";
-export type SortField = "AUTHOR" | "CREATED_AT" | "PAGES" | "TITLE" | "%future added value";
+export type SortField =
+  | "AUTHOR"
+  | "CREATED_AT"
+  | "ISBN_13"
+  | "PAGES"
+  | "RATING"
+  | "SERIES"
+  | "STATUS"
+  | "SUBTITLE"
+  | "TITLE"
+  | "%future added value";
 export type UpdateLibraryPreferencesInput = {
   columns?: ReadonlyArray<LibraryColumnVisibility> | null | undefined;
   density?: LibraryDensity | null | undefined;

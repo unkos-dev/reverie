@@ -1011,7 +1011,8 @@
         "REV-REQ-0059",
         "REV-REQ-0092",
         "REV-REQ-0093",
-        "REV-REQ-0094"
+        "REV-REQ-0094",
+        "REV-REQ-0099"
       ],
       "title": "Books list query contract"
     },
@@ -1963,6 +1964,15 @@
       "kind": "req",
       "path": "docs/specs/api/requirements/0096-a-graphql-edit-without-a-well-formed-baseline-is-refused-and-changes-nothing.md",
       "title": "A GraphQL edit without a well-formed baseline is refused and changes nothing"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0037"
+      ],
+      "id": "REV-REQ-0099",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0099-a-graphql-books-page-walk-returns-every-matching-book-once-in-the-chosen-order-with-missing-values-last.md",
+      "title": "A GraphQL books page walk returns every matching book once in the chosen order with missing values last"
     }
   ]
 }
