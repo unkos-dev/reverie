@@ -60,9 +60,13 @@ because an update reaches every workflow that uses the action, including jobs wi
 - Negative: when GitHub release metadata is unavailable, tag-based action lookups can use timestamps the publisher
   controls.
 - Negative: a tool checksum is recorded on first download and trusted from then on.
-- Negative: the release-age hold is enforced by Renovate (including via package-manager sync during lockfile
-  maintenance) rather than by repository-wide package-manager holds, so manual installs bypass the hold and Renovate's
-  package-manager sync remains an experimental feature.
+- Negative: the release-age hold is enforced by Renovate (with package-manager sync on targeted updates and npm lockfile
+  maintenance) rather than by repository-wide package-manager holds, so manual installs bypass the hold, Cargo lockfile
+  maintenance refreshes transitives without a hold while Cargo's full update downgrades fresh locked crates, and
+  Renovate's package-manager sync remains an experimental feature.
+- Negative: `pnpm-workspace.yaml` sets `minimumReleaseAgeStrict: false` and `trustLockfile: true` so manually merged
+  pins younger than two days do not block subsequent Renovate updates; pnpm therefore falls back when a transitive range
+  has no mature version and skips re-verifying already-committed lockfile entries against lockfile policies.
 - Negative: a transitive advisory absent from the relevant advisory database gets no automated fix pull request.
 - Negative: cargo has no install-script control, so that control remains ecosystem-specific rather than spanning both
   stacks.

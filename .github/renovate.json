@@ -19,13 +19,17 @@
   "prConcurrentLimit": 10,
   "minimumReleaseAge": "2 days",
   "minimumReleaseAgePackageManagerSync": true,
+  "npm": {
+    "minimumReleaseAgePackageManager": "2 days"
+  },
   "abandonmentThreshold": "1 year",
   "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {
-    "description": "Refresh lockfiles daily overnight under the 2-day release-age hold synced to Cargo and pnpm through minimumReleaseAgePackageManagerSync. Direct npm dependencies stay pinned so npm refreshes touch only transitives. Green required checks automerge the refresh; a red one stays open for diagnosis.",
+    "description": "Refresh lockfiles daily overnight. Direct npm dependencies stay pinned so npm refreshes touch only transitives under the 2-day npm manager hold. Cargo lockfile maintenance runs without a publish-age override until Cargo stops downgrading fresh locked crates (see debt/2026-11-25-cargo-lockfile-maintenance-release-age.md). Green required checks automerge the refresh; a red one stays open for diagnosis.",
     "enabled": true,
     "schedule": ["before 6am"],
     "addLabels": ["lockfile-maintenance"],
+    "minimumReleaseAge": null,
     "automerge": true
   },
   "vulnerabilityAlerts": {

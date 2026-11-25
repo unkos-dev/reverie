@@ -117,6 +117,9 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Cargo lockfile maintenance runs without a release-age hold](2026-11-25-cargo-lockfile-maintenance-release-age.md):
+  lifts when the pinned Cargo preserves already-locked young versions during full `cargo update` while still rejecting
+  newly selected young versions.
 - [Snyk ignores for ESLint's URI parser](2026-11-18-snyk-uri-js-ignores.md): lifts when the ESLint the schema lint runs
   on no longer resolves `uri-js` 4.4.1 and Snyk reports no `uri-js` issues without the ignores.
 - [GraphQL-ESLint dependency override](2026-11-18-graphql-tools-utils-override.md): lifts when a GraphQL-ESLint release

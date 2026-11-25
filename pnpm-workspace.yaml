@@ -5,7 +5,12 @@ packages:
 # Renovate enforces the release-age hold on automated updates through
 # minimumReleaseAgePackageManagerSync; disable pnpm's repo-level 24-hour
 # hold so deliberate manual upgrades stay unblocked (see REV-ADR-0050).
+# Non-strict fallback and lockfile trust keep manually merged exact pins
+# younger than two days from blocking Renovate's lockfile updates while
+# ranged transitives still wait two days when a mature version matches.
 minimumReleaseAge: 0
+minimumReleaseAgeStrict: false
+trustLockfile: true
 
 # Required by `pnpm deploy`, which the image build uses to materialise the
 # frontend's production closure for the SBOM. Since pnpm v10 deploy runs only
