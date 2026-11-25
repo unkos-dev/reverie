@@ -62,6 +62,14 @@
       "rangeStrategy": "pin"
     },
     {
+      "description": "Keep engines.node as the Node.js compatibility floor. The runtime pin lives in devEngines.runtime.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["node"],
+      "matchDepTypes": ["engines"],
+      "matchUpdateTypes": ["pin"],
+      "enabled": false
+    },
+    {
       "description": "Update Cargo.lock within compatible ranges; replace ranges for incompatible releases.",
       "matchManagers": ["cargo"],
       "rangeStrategy": "update-lockfile"
