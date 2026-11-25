@@ -134,7 +134,7 @@ test:
 library-journeys:
     vp exec playwright test --config playwright.library.config.ts
 
-# Frontend production build (vp build; typecheck rides js::oxlint via tsgo).
+# Frontend production build (vp build; typecheck rides js::oxlint via tsrs).
 [group('js')]
 [working-directory('frontend')]
 build: relay-check

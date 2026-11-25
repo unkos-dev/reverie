@@ -219,10 +219,18 @@ action's `version:` input is omitted, so the npm `vite-plus` bump is the only pl
 once, in `devEngines.runtime` in [`package.json`](../package.json). Every job that installs vp passes setup-vp
 `node-manager: true`, which resolves that declaration rather than a pin of its own, so no job provisions node separately
 beforehand. The image build reads the same declaration through pnpm, and `pnpm-lock.yaml` carries the per-platform
-checksums for the download. On a `vite-plus` bump, re-check the `dependency-review` `allow-ghsas` list in
-[`deps.yml`](workflows/deps.yml) against new advisories for the aliased vite package; a vp bump is the deliberate review
-trigger recorded in
-[`debt/2026-06-30-vite-plus-alias-dependency-review.md`](../debt/2026-06-30-vite-plus-alias-dependency-review.md).
+checksums for the download.
+
+A `vite-plus` bump moves four catalog pins in [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) together: `vite-plus`, the
+`vite` alias (`@voidzero-dev/vite-plus-core`), `vitest` (wired through the `vitest@*` override so the workspace shares
+one Vitest copy with `vp test`), and `@vitest/browser-playwright`. Prefer running `vp migrate` to update the pins
+together, or check the exact bundled versions with `npm view vite-plus@<version> dependencies.vite` and
+`vp toolchain vitest` (and `vp toolchain vite-plus-core` after install). A mismatched core makes the launcher refuse to
+start, and a mismatched Vitest or provider splits the runner across two Vitest copies. The core's encoded version, such
+as `8.3.8001`, sorts above the upstream Vite release it bundles, so `dependency-review` can treat it as patched against
+an advisory fixed in a later Vite. On each bump, check the Vite advisories against the bundled upstream version, as
+[`debt/2026-06-30-vite-plus-alias-dependency-review.md`](../debt/2026-06-30-vite-plus-alias-dependency-review.md)
+records.
 
 ## Testing requirements
 

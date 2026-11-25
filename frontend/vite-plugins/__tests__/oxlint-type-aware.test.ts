@@ -7,16 +7,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
  * Guards that the type-aware lint rule class is actually firing under `vp lint`.
  *
  * The `strictTypeChecked` rules (`no-floating-promises`, the `no-unsafe-*`
- * family) run through tsgolint, which vp drives from the lint config in
- * `vite.config.ts`. If tsgolint is ever absent or drifts against the bundled
- * oxlint, `vp lint` can still exit zero while those rules silently stop firing.
+ * family) run through the type-aware backend Vite+ bundles, which vp drives
+ * from the lint config in `vite.config.ts`. If that backend is ever absent or
+ * drifts against the bundled oxlint, `vp lint` can still exit zero while those
+ * rules silently stop firing.
  * The native rules cannot regress this way: their loss is a diff-visible edit to
  * the lint config, whereas a missing type-aware engine is invisible.
  *
  * A floating promise is the canonical type-aware violation: detecting it
  * requires type information, so a flagged fixture proves the engine ran.
  *
- * The fixtures live under `src` so tsgolint resolves `tsconfig.app.json` and
+ * The fixtures live under `src` so the backend resolves `tsconfig.app.json` and
  * sees the types the rule needs. They are written and removed inside the test;
  * the probe directory must not be git- or lint-ignored.
  */
@@ -60,7 +61,7 @@ describe("type-aware lint enforcement (vp lint)", () => {
     rmSync(PROBE_DIR, { recursive: true, force: true });
   });
 
-  it("flags a floating promise (tsgolint present and active)", () => {
+  it("flags a floating promise (type-aware backend present and active)", () => {
     const file = writeFixture("floating.ts", "export async function p() {}\np();\n");
     const { code, output } = lint(file);
     expect(output).toContain("no-floating-promises");
