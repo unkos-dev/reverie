@@ -146,9 +146,9 @@ pub enum CursorValue {
     Int(Option<i32>),
     /// Reading status enum sort key (`reading_state.status`).
     Status(Option<ReadingStatus>),
-    /// Composite series sort key (`series_one.series_name`, `series_one.series_position`).
+    /// Composite series sort key (`series_one.series_sort_name`, `series_one.series_position`).
     Series {
-        /// Displayed series name, or `None` when the work has no series.
+        /// Series sort name (`series.sort_name`), or `None` when the work has no series.
         name: Option<String>,
         /// Numeric position within the series, or `None` when unnumbered or absent.
         position: Option<SeriesPosition>,

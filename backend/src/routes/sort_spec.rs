@@ -32,7 +32,7 @@ pub enum SortColumn {
     Subtitle,
     /// First author's sort name (`works.first_author_sort_name`).
     Author,
-    /// Displayed series name, then numeric position (`series_one.series_name`, `series_one.series_position`).
+    /// Series sort name, then numeric position (`series_one.series_sort_name`, `series_one.series_position`).
     Series,
     /// Manifestation ISBN-13 (`manifestations.isbn_13`).
     Isbn13,
@@ -90,7 +90,7 @@ impl SortColumn {
             Self::Title => "w.sort_title",
             Self::Subtitle => "w.subtitle",
             Self::Author => "w.first_author_sort_name",
-            Self::Series => "series_one.series_name",
+            Self::Series => "series_one.series_sort_name",
             Self::Isbn13 => "m.isbn_13",
             Self::Pages => "m.pages",
             Self::Status => "rs.status",
@@ -134,7 +134,7 @@ impl SortColumn {
             Self::Title => "sort_title",
             Self::Subtitle => "subtitle",
             Self::Author => "first_author_sort_name",
-            Self::Series => "series_name",
+            Self::Series => "series_sort_name",
             Self::Isbn13 => "isbn_13",
             Self::Pages => "pages",
             Self::Status => "reading_status",

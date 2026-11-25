@@ -369,7 +369,7 @@ fn next_cursor_for_row(
                 CursorValue::Status(status)
             }
             SortColumn::Series => {
-                let name: Option<String> = decode_cursor_column(row, "series_name")?;
+                let name: Option<String> = decode_cursor_column(row, "series_sort_name")?;
                 let raw_pos: Option<f64> = decode_cursor_column(row, "series_position")?;
                 let position = raw_pos
                     .map(|value| {
@@ -1850,6 +1850,7 @@ pub struct ShelfDetailResponse {
 
 const SERIES_ONE_JOIN_SQL: &str = " LEFT JOIN LATERAL ( \
      SELECT s.id AS series_id, s.name AS series_name, \
+            s.sort_name AS series_sort_name, \
             sw.position::float8 AS series_position \
      FROM series_works sw \
      JOIN series s ON s.id = sw.series_id \
@@ -1879,6 +1880,7 @@ async fn fetch_list_rows(
                 w.first_author_sort_name, \
                 series_one.series_id AS series_id, \
                 series_one.series_name AS series_name, \
+                series_one.series_sort_name AS series_sort_name, \
                 series_one.series_position AS series_position, \
                 rs.status::text AS reading_status, \
                 rs.rating AS reading_rating",

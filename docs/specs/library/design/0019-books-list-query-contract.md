@@ -191,8 +191,8 @@ than scanning an ordering index:
 
 - `Series` joins one series per work through a `LEFT JOIN LATERAL` (`idx_series_works_work_id` and
   `idx_series_works_series_position` serve that join lookup, not the outer ordering) and orders
-  `(series_one.series_name, series_one.series_position)` in the level's direction with `NULLS LAST` on both parts so
-  descending is the exact symmetric inverse of ascending.
+  `(series_one.series_sort_name, series_one.series_position)` in the level's direction with `NULLS LAST` on both parts
+  so descending is the exact symmetric inverse of ascending.
 - `Status` (PostgreSQL `reading_status` enum order) and `Rating` join `reading_state` through `LEFT JOIN`
   (`idx_reading_state_manifestation_id` serves the join lookup), because unread and unrated books have no
   `reading_state` row and belong in the `NULLS LAST` tail.
@@ -252,7 +252,7 @@ query). `books_connection` joins the same `series_one` and `reading_state` relat
 query so every sort key valid on the list query is also valid in `NOT (cursor_expression)`.
 
 `push_cursor_predicate` builds the keyset "advance past the boundary" clause for an arbitrary sort stack by expanding
-each level into one cascade term (or two consecutive nullable terms, `series_one.series_name` followed by
+each level into one cascade term (or two consecutive nullable terms, `series_one.series_sort_name` followed by
 `series_one.series_position`, for `Series`) and emitting one `OR`-chain of per-term branches: term `i`'s branch requires
 exact equality on every term before it (`push_boundary_equality`) and a strict advance on term `i` itself
 (`push_boundary_advance`), and a final branch requires equality on every term plus a strict advance on `m.id`, whose
