@@ -52,7 +52,7 @@ lettre = { version = "0.11.24", default-features = false, features = [
   "aws-lc-rs",
   "rustls-platform-verifier",
 ] }
-notify = "8.2.0"
+notify = "9.0.0"
 oauth2-reqwest = "=0.1.0-alpha.3"
 openidconnect = { version = "4.0.1", default-features = false }
 quick-xml = "0.42.0"
