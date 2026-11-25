@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET enrichment_status = 'failed'::enrichment_status, enrichment_error = 'transient retry', isbn_13 = '9780141036144', cover_path = 'covers/sibling.jpg', has_embedded_cover = FALSE WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7fa8a24756eb1f6f824671f8a500ed87d3e8f4327eb40f119dc0b717f11077ee"
+}

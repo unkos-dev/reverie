@@ -20,9 +20,9 @@ use crate::models::{
     reading_status::ReadingStatus, validation_status::ValidationStatus,
 };
 use crate::routes::{
-    cursor::{CursorApi, CursorValue, SortCursor},
+    cursor::{CursorApi, CursorValue, SeriesPosition, SortCursor},
     etag::MetadataRevision,
-    library::{ListParams, filters},
+    library::{ListParams, MAX_TAG_FILTERS, filters},
     sort_spec::{SortColumn, SortDirection, SortSpec},
 };
 use crate::{db, error::AppError, state::AppState};
@@ -110,40 +110,113 @@ fn push_cursor_predicate(
     push_cursor_expression(qb, spec, cursor);
 }
 
+enum CascadeValue<'a> {
+    Text(Option<&'a str>),
+    Ts(Timestamp),
+    Int(Option<i32>),
+    Status(Option<ReadingStatus>),
+    Float(Option<f64>),
+}
+
+impl CascadeValue<'_> {
+    const fn is_null(&self) -> bool {
+        matches!(
+            self,
+            Self::Text(None) | Self::Int(None) | Self::Status(None) | Self::Float(None)
+        )
+    }
+}
+
+struct CascadeTerm<'a> {
+    expr: &'static str,
+    nullable: bool,
+    direction: SortDirection,
+    value: CascadeValue<'a>,
+}
+
+fn expand_cascade_terms<'a>(spec: &SortSpec, cursor: &'a SortCursor) -> Vec<CascadeTerm<'a>> {
+    let mut terms = Vec::with_capacity(spec.levels().len() + 1);
+    for (level, key) in spec.levels().iter().zip(&cursor.keys) {
+        match key {
+            CursorValue::Text(v) => terms.push(CascadeTerm {
+                expr: level.column.sql_expr(),
+                nullable: level.column.nullable(),
+                direction: level.direction,
+                value: CascadeValue::Text(v.as_deref()),
+            }),
+            CursorValue::Ts(ts) => terms.push(CascadeTerm {
+                expr: level.column.sql_expr(),
+                nullable: level.column.nullable(),
+                direction: level.direction,
+                value: CascadeValue::Ts(*ts),
+            }),
+            CursorValue::Int(v) => terms.push(CascadeTerm {
+                expr: level.column.sql_expr(),
+                nullable: level.column.nullable(),
+                direction: level.direction,
+                value: CascadeValue::Int(*v),
+            }),
+            CursorValue::Status(v) => terms.push(CascadeTerm {
+                expr: level.column.sql_expr(),
+                nullable: level.column.nullable(),
+                direction: level.direction,
+                value: CascadeValue::Status(*v),
+            }),
+            CursorValue::Series { name, position } => {
+                terms.push(CascadeTerm {
+                    expr: level.column.sql_expr(),
+                    nullable: true,
+                    direction: level.direction,
+                    value: CascadeValue::Text(name.as_deref()),
+                });
+                if let Some(secondary) = level.column.secondary_sql_expr() {
+                    terms.push(CascadeTerm {
+                        expr: secondary,
+                        nullable: true,
+                        direction: level.direction,
+                        value: CascadeValue::Float(position.map(SeriesPosition::get)),
+                    });
+                }
+            }
+        }
+    }
+    terms
+}
+
 fn push_cursor_expression(qb: &mut QueryBuilder<Postgres>, spec: &SortSpec, cursor: &SortCursor) {
-    let levels = spec.levels();
-    let tiebreak_dir = levels
+    let terms = expand_cascade_terms(spec, cursor);
+    let tiebreak_dir = spec
+        .levels()
         .last()
         .map_or(SortDirection::Desc, |level| level.direction);
 
     qb.push("(");
     let mut wrote_branch = false;
-    for (i, level) in levels.iter().enumerate() {
-        let key = &cursor.keys[i];
-        // A nullable column whose own boundary is NULL has nothing
-        // "after" it within this level: NULLS LAST puts every NULL row
-        // at the tail regardless of direction, so a deeper level or the
-        // id tiebreaker below is what continues the walk.
-        if level.column.nullable() && is_null_boundary(key) {
+    for (i, term) in terms.iter().enumerate() {
+        // A nullable term whose own boundary is NULL has nothing "after" it
+        // within this term: NULLS LAST puts every NULL row at the tail
+        // regardless of direction, so a deeper term or the id tiebreaker
+        // continues the walk.
+        if term.nullable && term.value.is_null() {
             continue;
         }
         qb.push(if wrote_branch { " OR (" } else { "(" });
-        for (prior_level, prior_key) in levels[..i].iter().zip(&cursor.keys[..i]) {
-            push_boundary_equality(qb, prior_level.column, prior_key);
+        for prior in &terms[..i] {
+            push_boundary_equality(qb, prior);
             qb.push(" AND ");
         }
-        push_boundary_advance(qb, level.column, level.direction, key);
+        push_boundary_advance(qb, term);
         qb.push(")");
         wrote_branch = true;
     }
 
-    // Every level ties the boundary exactly; `m.id` (unique per row)
+    // Every term ties the boundary exactly; `m.id` (unique per row)
     // breaks it. Direction follows the last explicit level so a
     // single-level stack reproduces the pre-stack tuple-comparison
     // arms exactly.
     qb.push(if wrote_branch { " OR (" } else { "(" });
-    for (level, key) in levels.iter().zip(&cursor.keys) {
-        push_boundary_equality(qb, level.column, key);
+    for term in &terms {
+        push_boundary_equality(qb, term);
         qb.push(" AND ");
     }
     qb.push("m.id ");
@@ -155,89 +228,70 @@ fn push_cursor_expression(qb: &mut QueryBuilder<Postgres>, spec: &SortSpec, curs
     qb.push(")");
 }
 
-/// Whether a cascade boundary value sits in a nullable column's NULLS
-/// LAST bucket. Only [`CursorValue::Text`] and [`CursorValue::Int`] can
-/// carry `None`; [`SortCursor::parse_for`] already rejected any other
-/// arity or value-type mismatch against the spec.
-const fn is_null_boundary(value: &CursorValue) -> bool {
-    matches!(value, CursorValue::Text(None) | CursorValue::Int(None))
-}
-
-/// Push the correctly-typed `push_bind` for a non-null `CursorValue`. The
-/// single place a `CursorValue` variant is matched down to a concrete
-/// bindable type, shared by [`push_boundary_equality`] and
-/// [`push_boundary_advance`] so neither re-enumerates the four variants.
-/// Both callers guard the null-bucket case themselves (`IS NULL` in
-/// [`push_boundary_equality`]; an early return in [`push_boundary_advance`]),
-/// so the null arm here is a no-op kept only for exhaustiveness.
-fn push_typed_bind(qb: &mut QueryBuilder<Postgres>, value: &CursorValue) {
+/// Push the correctly-typed `push_bind` for a non-null `CascadeValue`.
+fn push_typed_bind(qb: &mut QueryBuilder<Postgres>, value: &CascadeValue<'_>) {
     match value {
-        CursorValue::Text(None) | CursorValue::Int(None) => {}
-        CursorValue::Text(Some(v)) => {
-            qb.push_bind(v.clone());
+        CascadeValue::Text(None)
+        | CascadeValue::Int(None)
+        | CascadeValue::Status(None)
+        | CascadeValue::Float(None) => {}
+        CascadeValue::Text(Some(v)) => {
+            qb.push_bind((*v).to_owned());
         }
-        CursorValue::Int(Some(v)) => {
+        CascadeValue::Int(Some(v)) => {
             qb.push_bind(*v);
         }
-        CursorValue::Ts(ts) => {
+        CascadeValue::Ts(ts) => {
             qb.push_bind(jiff_sqlx::Timestamp::from(*ts));
+        }
+        CascadeValue::Status(Some(status)) => {
+            qb.push_bind(status.as_str());
+            qb.push("::reading_status");
+        }
+        CascadeValue::Float(Some(v)) => {
+            qb.push_bind(*v);
         }
     }
 }
 
-/// Push an equality term against `column`'s boundary `value`: `IS NULL`
+/// Push an equality term against `term`'s boundary value: `IS NULL`
 /// when the boundary itself is NULL, `= $bind` otherwise.
-fn push_boundary_equality(
-    qb: &mut QueryBuilder<Postgres>,
-    column: SortColumn,
-    value: &CursorValue,
-) {
-    qb.push(column.sql_expr());
-    if is_null_boundary(value) {
+fn push_boundary_equality(qb: &mut QueryBuilder<Postgres>, term: &CascadeTerm<'_>) {
+    qb.push(term.expr);
+    if term.value.is_null() {
         qb.push(" IS NULL");
     } else {
         qb.push(" = ");
-        push_typed_bind(qb, value);
+        push_typed_bind(qb, &term.value);
     }
 }
 
-/// Push the "strictly past this level's boundary" clause. A nullable
-/// column with a non-NULL boundary wraps in `(expr OP $bind OR expr IS
+/// Push the "strictly past this term's boundary" clause. A nullable
+/// term with a non-NULL boundary wraps in `(expr OP $bind OR expr IS
 /// NULL)` in BOTH directions: NULLS LAST means the NULL bucket sits
-/// after every non-NULL value regardless of direction, so a bare `<`
-/// (DESC) would silently drop the entire NULL bucket the first time a
-/// non-NULL boundary is used, the same bug class a bare `>` (ASC) would
-/// have without the `OR IS NULL` arm. A NULL boundary returns early here;
-/// the caller already skips this level's branch (see [`is_null_boundary`]),
-/// so this is defense in depth.
-fn push_boundary_advance(
-    qb: &mut QueryBuilder<Postgres>,
-    column: SortColumn,
-    direction: SortDirection,
-    value: &CursorValue,
-) {
-    if is_null_boundary(value) {
+/// after every non-NULL value regardless of direction.
+fn push_boundary_advance(qb: &mut QueryBuilder<Postgres>, term: &CascadeTerm<'_>) {
+    if term.value.is_null() {
         return;
     }
-    let expr = column.sql_expr();
-    let nullable = column.nullable();
-    if nullable {
+    if term.nullable {
         qb.push("(");
     }
-    qb.push(expr);
+    qb.push(term.expr);
     qb.push(" ");
-    qb.push(direction.comparison_op());
+    qb.push(term.direction.comparison_op());
     qb.push(" ");
-    push_typed_bind(qb, value);
-    if nullable {
+    push_typed_bind(qb, &term.value);
+    if term.nullable {
         qb.push(" OR ");
-        qb.push(expr);
+        qb.push(term.expr);
         qb.push(" IS NULL)");
     }
 }
 
 /// Push the `ORDER BY` clause for `spec`: each level's column and
-/// direction, `NULLS LAST` when the column is nullable, and a final
+/// direction, `NULLS LAST` when the column is nullable, any composite
+/// secondary key in the same direction with `NULLS LAST`, and a final
 /// `m.id` tiebreaker in the last level's direction so equal-key rows
 /// still resolve to a total order (required for keyset pagination).
 fn push_order_by(qb: &mut QueryBuilder<Postgres>, spec: &SortSpec) {
@@ -251,6 +305,13 @@ fn push_order_by(qb: &mut QueryBuilder<Postgres>, spec: &SortSpec) {
         qb.push(" ");
         qb.push(level.direction.sql());
         if level.column.nullable() {
+            qb.push(" NULLS LAST");
+        }
+        if let Some(secondary) = level.column.secondary_sql_expr() {
+            qb.push(", ");
+            qb.push(secondary);
+            qb.push(" ");
+            qb.push(level.direction.sql());
             qb.push(" NULLS LAST");
         }
         tiebreak_dir = level.direction;
@@ -273,11 +334,7 @@ fn split_page(rows: &[sqlx::postgres::PgRow], page_size: i64) -> (&[sqlx::postgr
 /// Build the `next_cursor` boundary for `row` under `spec`: one typed
 /// value per level (read from `select_alias()`) plus the `m.id`
 /// tiebreaker, stamped with `filter_fp` so the following page's request
-/// (which carries the same filters) validates the replayed cursor. Uses
-/// `try_get`, not the panicking `Row::get`; this dynamic `QueryBuilder`
-/// path has no compile-time schema check, so a decode failure becomes a
-/// clean 500 instead of a panic (mirrors the `validation_status` decode
-/// above).
+/// (which carries the same filters) validates the replayed cursor.
 fn next_cursor_for_row(
     row: &sqlx::postgres::PgRow,
     spec: &SortSpec,
@@ -288,11 +345,43 @@ fn next_cursor_for_row(
         let alias = level.column.select_alias();
         let value = match level.column {
             SortColumn::Title => CursorValue::Text(Some(decode_cursor_column(row, alias)?)),
-            SortColumn::Author => CursorValue::Text(decode_cursor_column(row, alias)?),
+            SortColumn::Subtitle | SortColumn::Author | SortColumn::Isbn13 => {
+                CursorValue::Text(decode_cursor_column(row, alias)?)
+            }
             SortColumn::CreatedAt => {
                 CursorValue::Ts(decode_cursor_column::<jiff_sqlx::Timestamp>(row, alias)?.to_jiff())
             }
             SortColumn::Pages => CursorValue::Int(decode_cursor_column(row, alias)?),
+            SortColumn::Rating => {
+                CursorValue::Int(decode_cursor_column::<Option<i16>>(row, alias)?.map(i32::from))
+            }
+            SortColumn::Status => {
+                let raw: Option<String> = decode_cursor_column(row, alias)?;
+                let status = raw
+                    .map(|text| {
+                        ReadingStatus::from_wire(&text).ok_or_else(|| {
+                            AppError::Internal(anyhow::anyhow!(
+                                "unknown reading_status in cursor: {text}"
+                            ))
+                        })
+                    })
+                    .transpose()?;
+                CursorValue::Status(status)
+            }
+            SortColumn::Series => {
+                let name: Option<String> = decode_cursor_column(row, "series_name")?;
+                let raw_pos: Option<f64> = decode_cursor_column(row, "series_position")?;
+                let position = raw_pos
+                    .map(|value| {
+                        SeriesPosition::new(value).ok_or_else(|| {
+                            AppError::Internal(anyhow::anyhow!(
+                                "non-finite series_position in cursor: {value}"
+                            ))
+                        })
+                    })
+                    .transpose()?;
+                CursorValue::Series { name, position }
+            }
         };
         keys.push(value);
     }
@@ -904,7 +993,15 @@ pub async fn list_books(
         .inspect_err(|e| tracing::error!(error = %e, "list: acquire_with_rls failed"))
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let rows = fetch_list_rows(&mut tx, params, &spec, cursor.as_ref(), page_size).await?;
+    let rows = fetch_list_rows(
+        &mut tx,
+        params,
+        &spec,
+        cursor.as_ref(),
+        page_size,
+        current_user.is_child(),
+    )
+    .await?;
 
     let (page_rows, has_more) = split_page(&rows, page_size);
 
@@ -1751,12 +1848,24 @@ pub struct ShelfDetailResponse {
     pub next_cursor: Option<String>,
 }
 
+const SERIES_ONE_JOIN_SQL: &str = " LEFT JOIN LATERAL ( \
+     SELECT s.id AS series_id, s.name AS series_name, \
+            sw.position::float8 AS series_position \
+     FROM series_works sw \
+     JOIN series s ON s.id = sw.series_id \
+     WHERE sw.work_id = w.id \
+     ORDER BY sw.position ASC NULLS LAST, s.id ASC \
+     LIMIT 1 \
+ ) series_one ON TRUE \
+ LEFT JOIN reading_state rs ON rs.manifestation_id = m.id";
+
 async fn fetch_list_rows(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     params: &ListParams,
     spec: &SortSpec,
     cursor: Option<&SortCursor>,
     page_size: i64,
+    is_child: bool,
 ) -> Result<Vec<sqlx::postgres::PgRow>, AppError> {
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.work_id, m.created_at, m.isbn_13, m.pages, \
@@ -1770,28 +1879,19 @@ async fn fetch_list_rows(
                 w.first_author_sort_name, \
                 series_one.series_id AS series_id, \
                 series_one.series_name AS series_name, \
-                series_one.series_position AS series_position",
+                series_one.series_position AS series_position, \
+                rs.status::text AS reading_status, \
+                rs.rating AS reading_rating",
     );
     // LEFT JOIN LATERAL pick-one so a work in multiple series does
     // not multiply manifestation rows — duplicates would break LIMIT
     // + cursor math. Deterministic pick: lowest sw.position (NULLS
     // LAST), then series.id, so the same work surfaces the same
     // series across pages.
-    qb.push(
-        " FROM manifestations m \
-         JOIN works w ON w.id = m.work_id \
-         LEFT JOIN LATERAL ( \
-             SELECT s.id AS series_id, s.name AS series_name, \
-                    sw.position::float8 AS series_position \
-             FROM series_works sw \
-             JOIN series s ON s.id = sw.series_id \
-             WHERE sw.work_id = w.id \
-             ORDER BY sw.position ASC NULLS LAST, s.id ASC \
-             LIMIT 1 \
-         ) series_one ON TRUE \
-         WHERE TRUE",
-    );
-    filters::push_filter_predicates(&mut qb, params);
+    qb.push(" FROM manifestations m JOIN works w ON w.id = m.work_id");
+    qb.push(SERIES_ONE_JOIN_SQL);
+    qb.push(" WHERE TRUE");
+    filters::push_filter_predicates(&mut qb, params, is_child);
     push_cursor_predicate(&mut qb, spec, cursor);
     push_order_by(&mut qb, spec);
     qb.push(" LIMIT ");
@@ -1899,7 +1999,8 @@ pub async fn books_connection(
     let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    let rows = fetch_list_rows(&mut tx, params, &spec, cursor.as_ref(), first).await?;
+    let is_child = user.is_child();
+    let rows = fetch_list_rows(&mut tx, params, &spec, cursor.as_ref(), first, is_child).await?;
     let (page, has_next) = split_page(&rows, first);
     let ids: Vec<_> = page.iter().map(|row| row.get("id")).collect();
     let mut records = read_book_records(&mut tx, &ids).await?;
@@ -1915,9 +2016,11 @@ pub async fn books_connection(
     }
     let has_previous = if let Some(cursor) = &cursor {
         let mut qb = QueryBuilder::<Postgres>::new(
-            "SELECT EXISTS(SELECT 1 FROM manifestations m JOIN works w ON w.id = m.work_id WHERE TRUE",
+            "SELECT EXISTS(SELECT 1 FROM manifestations m JOIN works w ON w.id = m.work_id",
         );
-        filters::push_filter_predicates(&mut qb, params);
+        qb.push(SERIES_ONE_JOIN_SQL);
+        qb.push(" WHERE TRUE");
+        filters::push_filter_predicates(&mut qb, params, is_child);
         qb.push(" AND NOT (");
         push_cursor_expression(&mut qb, &spec, cursor);
         qb.push(") LIMIT 1)");
@@ -1936,6 +2039,415 @@ pub async fn books_connection(
         has_next,
         has_previous,
     })
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReadingStateCounts {
+    pub want_to_read: i32,
+    pub reading: i32,
+    pub on_hold: i32,
+    pub finished: i32,
+    pub abandoned: i32,
+    pub unread: i32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NeedsAttentionCounts {
+    pub to_review: i32,
+    pub enrichment_failed: i32,
+    pub no_isbn: i32,
+    pub no_cover: i32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LibrarySummary {
+    pub total_count: i32,
+    pub reading_states: ReadingStateCounts,
+    pub needs_attention: NeedsAttentionCounts,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ShelfFacetCount {
+    pub shelf_id: Uuid,
+    pub count: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct LibraryFacets {
+    pub matching_count: i32,
+    pub reading_states: ReadingStateCounts,
+    pub shelves: Vec<ShelfFacetCount>,
+}
+
+fn count_i32(value: i64) -> Result<i32, AppError> {
+    i32::try_from(value).map_err(|e| AppError::Internal(e.into()))
+}
+
+/// Shelf-wide reading-state totals and Needs attention counts for the open
+/// shelf (all visible books when `shelf_ids` is empty, or the deduplicated
+/// union of the caller-owned shelves).
+///
+/// THREAT: RLS scopes `manifestations` and `reading_state`, explicit shelf
+/// ownership prevents probing foreign shelf IDs, and child accounts never
+/// query `metadata_versions` (`to_review` is always `0`).
+pub async fn library_summary(
+    user: &CurrentUser,
+    state: &AppState,
+    shelf_ids: &[Uuid],
+) -> Result<LibrarySummary, AppError> {
+    if shelf_ids.len() > MAX_TAG_FILTERS {
+        return Err(AppError::Validation(format!(
+            "too many shelf_ids filters: maximum {MAX_TAG_FILTERS}"
+        )));
+    }
+    let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let summary = if user.is_child() {
+        library_summary_child(&mut tx, shelf_ids).await?
+    } else {
+        library_summary_adult(&mut tx, shelf_ids).await?
+    };
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(summary)
+}
+
+async fn library_summary_child(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    shelf_ids: &[Uuid],
+) -> Result<LibrarySummary, AppError> {
+    let row = sqlx::query!(
+        r#"
+        SELECT
+            COUNT(*) AS "total_count!",
+            COUNT(*) FILTER (WHERE rs.status = 'want_to_read'::reading_status) AS "want_to_read!",
+            COUNT(*) FILTER (WHERE rs.status = 'reading'::reading_status) AS "reading!",
+            COUNT(*) FILTER (WHERE rs.status = 'on_hold'::reading_status) AS "on_hold!",
+            COUNT(*) FILTER (WHERE rs.status = 'finished'::reading_status) AS "finished!",
+            COUNT(*) FILTER (WHERE rs.status = 'abandoned'::reading_status) AS "abandoned!",
+            COUNT(*) FILTER (WHERE rs.status IS NULL) AS "unread!",
+            COUNT(*) FILTER (
+                WHERE m.enrichment_status = 'skipped'::enrichment_status
+                  AND m.enrichment_error IS NOT NULL
+            ) AS "enrichment_failed!",
+            COUNT(*) FILTER (WHERE m.isbn_13 IS NULL) AS "no_isbn!",
+            COUNT(*) FILTER (
+                WHERE m.cover_path IS NULL AND m.has_embedded_cover IS NOT TRUE
+            ) AS "no_cover!"
+        FROM manifestations m
+        JOIN works w ON w.id = m.work_id
+        LEFT JOIN reading_state rs ON rs.manifestation_id = m.id
+        WHERE cardinality($1::uuid[]) = 0
+           OR (
+               NOT EXISTS (
+                   SELECT 1 FROM unnest($1::uuid[]) requested(id)
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM shelves s
+                       WHERE s.id = requested.id
+                         AND s.user_id = current_setting('app.current_user_id', true)::uuid
+                   )
+               )
+               AND EXISTS (
+                   SELECT 1 FROM shelf_items si
+                   WHERE si.manifestation_id = m.id
+                     AND si.shelf_id = ANY($1::uuid[])
+               )
+           )
+        "#,
+        shelf_ids,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+
+    Ok(LibrarySummary {
+        total_count: count_i32(row.total_count)?,
+        reading_states: ReadingStateCounts {
+            want_to_read: count_i32(row.want_to_read)?,
+            reading: count_i32(row.reading)?,
+            on_hold: count_i32(row.on_hold)?,
+            finished: count_i32(row.finished)?,
+            abandoned: count_i32(row.abandoned)?,
+            unread: count_i32(row.unread)?,
+        },
+        needs_attention: NeedsAttentionCounts {
+            to_review: 0,
+            enrichment_failed: count_i32(row.enrichment_failed)?,
+            no_isbn: count_i32(row.no_isbn)?,
+            no_cover: count_i32(row.no_cover)?,
+        },
+    })
+}
+
+async fn library_summary_adult(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    shelf_ids: &[Uuid],
+) -> Result<LibrarySummary, AppError> {
+    let row = sqlx::query!(
+        r#"
+        SELECT
+            COUNT(*) AS "total_count!",
+            COUNT(*) FILTER (WHERE rs.status = 'want_to_read'::reading_status) AS "want_to_read!",
+            COUNT(*) FILTER (WHERE rs.status = 'reading'::reading_status) AS "reading!",
+            COUNT(*) FILTER (WHERE rs.status = 'on_hold'::reading_status) AS "on_hold!",
+            COUNT(*) FILTER (WHERE rs.status = 'finished'::reading_status) AS "finished!",
+            COUNT(*) FILTER (WHERE rs.status = 'abandoned'::reading_status) AS "abandoned!",
+            COUNT(*) FILTER (WHERE rs.status IS NULL) AS "unread!",
+            COUNT(*) FILTER (
+                WHERE EXISTS (
+                    SELECT 1 FROM metadata_versions mv
+                    WHERE mv.manifestation_id = m.id
+                      AND mv.status = 'pending'::metadata_review_status
+                      AND mv.new_value != 'null'::jsonb
+                      AND mv.id IS DISTINCT FROM w.title_version_id
+                      AND mv.id IS DISTINCT FROM w.subtitle_version_id
+                      AND mv.id IS DISTINCT FROM w.description_version_id
+                      AND mv.id IS DISTINCT FROM w.language_version_id
+                      AND mv.id IS DISTINCT FROM m.publisher_version_id
+                      AND mv.id IS DISTINCT FROM m.pub_date_version_id
+                      AND mv.id IS DISTINCT FROM m.isbn_10_version_id
+                      AND mv.id IS DISTINCT FROM m.isbn_13_version_id
+                      AND mv.id IS DISTINCT FROM m.cover_version_id
+                      AND mv.id IS DISTINCT FROM m.pages_version_id
+                      AND mv.id IS DISTINCT FROM m.content_rating_version_id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM manifestation_genres mg
+                          WHERE mg.manifestation_id = m.id AND mg.source_version_id = mv.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM manifestation_moods mm
+                          WHERE mm.manifestation_id = m.id AND mm.source_version_id = mv.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM manifestation_tags mt
+                          WHERE mt.manifestation_id = m.id AND mt.source_version_id = mv.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM work_authors wa
+                          WHERE wa.work_id = m.work_id AND wa.source_version_id = mv.id
+                      )
+                )
+            ) AS "to_review!",
+            COUNT(*) FILTER (
+                WHERE m.enrichment_status = 'skipped'::enrichment_status
+                  AND m.enrichment_error IS NOT NULL
+            ) AS "enrichment_failed!",
+            COUNT(*) FILTER (WHERE m.isbn_13 IS NULL) AS "no_isbn!",
+            COUNT(*) FILTER (
+                WHERE m.cover_path IS NULL AND m.has_embedded_cover IS NOT TRUE
+            ) AS "no_cover!"
+        FROM manifestations m
+        JOIN works w ON w.id = m.work_id
+        LEFT JOIN reading_state rs ON rs.manifestation_id = m.id
+        WHERE cardinality($1::uuid[]) = 0
+           OR (
+               NOT EXISTS (
+                   SELECT 1 FROM unnest($1::uuid[]) requested(id)
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM shelves s
+                       WHERE s.id = requested.id
+                         AND s.user_id = current_setting('app.current_user_id', true)::uuid
+                   )
+               )
+               AND EXISTS (
+                   SELECT 1 FROM shelf_items si
+                   WHERE si.manifestation_id = m.id
+                     AND si.shelf_id = ANY($1::uuid[])
+               )
+           )
+        "#,
+        shelf_ids,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+
+    Ok(LibrarySummary {
+        total_count: count_i32(row.total_count)?,
+        reading_states: ReadingStateCounts {
+            want_to_read: count_i32(row.want_to_read)?,
+            reading: count_i32(row.reading)?,
+            on_hold: count_i32(row.on_hold)?,
+            finished: count_i32(row.finished)?,
+            abandoned: count_i32(row.abandoned)?,
+            unread: count_i32(row.unread)?,
+        },
+        needs_attention: NeedsAttentionCounts {
+            to_review: count_i32(row.to_review)?,
+            enrichment_failed: count_i32(row.enrichment_failed)?,
+            no_isbn: count_i32(row.no_isbn)?,
+            no_cover: count_i32(row.no_cover)?,
+        },
+    })
+}
+
+/// Cross-filtered facet counts and matching result total under `params`.
+///
+/// Reading-state facet counts exclude `status_any`/`status_none`; shelf facet
+/// counts exclude `shelf`/`shelf_any` and list up to `PAGE_MAX` caller-owned
+/// shelves in shelf-list order.
+///
+/// THREAT: RLS scopes `manifestations` and `reading_state`, `shelves` is
+/// explicitly scoped by caller `user_id`, and `is_child` suppresses
+/// `metadata_versions` probes in `push_filter_predicates`.
+pub async fn library_facets(
+    user: &CurrentUser,
+    state: &AppState,
+    params: &ListParams,
+) -> Result<LibraryFacets, AppError> {
+    filters::validate(params)?;
+    let is_child = user.is_child();
+
+    let mut tx = db::acquire_with_rls_snapshot(&state.pool, user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let (reading_states, total_without_status) =
+        read_status_facets(&mut tx, params, is_child).await?;
+    let matching_count = if params.status_any.is_empty() && params.status_none.is_empty() {
+        total_without_status
+    } else {
+        let mut match_qb: QueryBuilder<Postgres> = QueryBuilder::new(
+            "SELECT COUNT(*) FROM manifestations m JOIN works w ON w.id = m.work_id WHERE TRUE",
+        );
+        filters::push_filter_predicates(&mut match_qb, params, is_child);
+        let total = match_qb
+            .build_query_scalar::<i64>()
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        count_i32(total)?
+    };
+    let shelves = read_shelf_facets(&mut tx, params, is_child).await?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    Ok(LibraryFacets {
+        matching_count,
+        reading_states,
+        shelves,
+    })
+}
+
+async fn read_status_facets(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    params: &ListParams,
+    is_child: bool,
+) -> Result<(ReadingStateCounts, i32), AppError> {
+    let mut without_status = params.clone();
+    without_status.status_any.clear();
+    without_status.status_none.clear();
+
+    let mut status_qb: QueryBuilder<Postgres> = QueryBuilder::new(
+        "SELECT \
+            COUNT(*) AS total, \
+            COUNT(*) FILTER (WHERE rs.status = 'want_to_read'::reading_status) AS want_to_read, \
+            COUNT(*) FILTER (WHERE rs.status = 'reading'::reading_status) AS reading, \
+            COUNT(*) FILTER (WHERE rs.status = 'on_hold'::reading_status) AS on_hold, \
+            COUNT(*) FILTER (WHERE rs.status = 'finished'::reading_status) AS finished, \
+            COUNT(*) FILTER (WHERE rs.status = 'abandoned'::reading_status) AS abandoned, \
+            COUNT(*) FILTER (WHERE rs.status IS NULL) AS unread \
+         FROM manifestations m \
+         JOIN works w ON w.id = m.work_id \
+         LEFT JOIN reading_state rs ON rs.manifestation_id = m.id \
+         WHERE TRUE",
+    );
+    filters::push_filter_predicates(&mut status_qb, &without_status, is_child);
+    let row = status_qb
+        .build()
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let counts = ReadingStateCounts {
+        want_to_read: count_i32(
+            row.try_get::<i64, _>("want_to_read")
+                .map_err(|e| AppError::Internal(e.into()))?,
+        )?,
+        reading: count_i32(
+            row.try_get::<i64, _>("reading")
+                .map_err(|e| AppError::Internal(e.into()))?,
+        )?,
+        on_hold: count_i32(
+            row.try_get::<i64, _>("on_hold")
+                .map_err(|e| AppError::Internal(e.into()))?,
+        )?,
+        finished: count_i32(
+            row.try_get::<i64, _>("finished")
+                .map_err(|e| AppError::Internal(e.into()))?,
+        )?,
+        abandoned: count_i32(
+            row.try_get::<i64, _>("abandoned")
+                .map_err(|e| AppError::Internal(e.into()))?,
+        )?,
+        unread: count_i32(
+            row.try_get::<i64, _>("unread")
+                .map_err(|e| AppError::Internal(e.into()))?,
+        )?,
+    };
+    let total = count_i32(
+        row.try_get::<i64, _>("total")
+            .map_err(|e| AppError::Internal(e.into()))?,
+    )?;
+    Ok((counts, total))
+}
+
+async fn read_shelf_facets(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    params: &ListParams,
+    is_child: bool,
+) -> Result<Vec<ShelfFacetCount>, AppError> {
+    let mut without_shelf = params.clone();
+    without_shelf.shelf = None;
+    without_shelf.shelf_any.clear();
+
+    let mut shelf_qb: QueryBuilder<Postgres> = QueryBuilder::new(
+        "WITH matching AS ( \
+             SELECT m.id \
+             FROM manifestations m \
+             JOIN works w ON w.id = m.work_id \
+             WHERE TRUE",
+    );
+    filters::push_filter_predicates(&mut shelf_qb, &without_shelf, is_child);
+    shelf_qb.push(
+        ") \
+         SELECT s.id AS shelf_id, COUNT(matching.id) AS count \
+         FROM shelves s \
+         LEFT JOIN shelf_items si ON si.shelf_id = s.id \
+         LEFT JOIN matching ON matching.id = si.manifestation_id \
+         WHERE s.user_id = current_setting('app.current_user_id', true)::uuid \
+         GROUP BY s.id, s.is_system, s.name \
+         ORDER BY s.is_system DESC, s.name ASC, s.id ASC \
+         LIMIT ",
+    );
+    shelf_qb.push_bind(i64::from(PAGE_MAX));
+
+    let shelf_rows = shelf_qb
+        .build()
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let mut shelves = Vec::with_capacity(shelf_rows.len());
+    for row in shelf_rows {
+        let shelf_id: Uuid = row
+            .try_get("shelf_id")
+            .map_err(|e| AppError::Internal(e.into()))?;
+        let count: i64 = row
+            .try_get("count")
+            .map_err(|e| AppError::Internal(e.into()))?;
+        shelves.push(ShelfFacetCount {
+            shelf_id,
+            count: count_i32(count)?,
+        });
+    }
+    Ok(shelves)
 }
 
 #[derive(Clone)]

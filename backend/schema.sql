@@ -1662,7 +1662,7 @@ CREATE TABLE public.user_preferences (
     sort_stack text,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT user_preferences_hidden_columns_bounded CHECK ((array_length(hidden_columns, 1) <= 64)),
-    CONSTRAINT user_preferences_sort_stack_shape CHECK ((sort_stack ~ '^-?[a-z_]+(,-?[a-z_]+){0,2}$'::text)),
+    CONSTRAINT user_preferences_sort_stack_shape CHECK ((sort_stack ~ '^-?[a-z0-9_]+(,-?[a-z0-9_]+){0,2}$'::text)),
     CONSTRAINT user_preferences_updated_at_ts_decode_range CHECK (((updated_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (updated_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
 );
 
@@ -2631,6 +2631,20 @@ CREATE INDEX idx_manifestations_isbn_13 ON public.manifestations USING btree (is
 
 
 --
+-- Name: idx_manifestations_isbn_13_keyset; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_manifestations_isbn_13_keyset ON public.manifestations USING btree (isbn_13, id);
+
+
+--
+-- Name: idx_manifestations_isbn_13_keyset_desc; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_manifestations_isbn_13_keyset_desc ON public.manifestations USING btree (isbn_13 DESC NULLS LAST, id DESC);
+
+
+--
 -- Name: idx_manifestations_isbn_13_version_id; Type: INDEX; Schema: public; Owner: reverie_migrator
 --
 
@@ -2796,6 +2810,34 @@ CREATE INDEX idx_reading_state_manifestation_id ON public.reading_state USING bt
 --
 
 CREATE INDEX idx_reading_state_user_last_read ON public.reading_state USING btree (user_id, last_read_at DESC NULLS LAST);
+
+
+--
+-- Name: idx_reading_state_user_rating_keyset; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_reading_state_user_rating_keyset ON public.reading_state USING btree (user_id, rating, manifestation_id);
+
+
+--
+-- Name: idx_reading_state_user_rating_keyset_desc; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_reading_state_user_rating_keyset_desc ON public.reading_state USING btree (user_id, rating DESC NULLS LAST, manifestation_id DESC);
+
+
+--
+-- Name: idx_reading_state_user_status_keyset; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_reading_state_user_status_keyset ON public.reading_state USING btree (user_id, status, manifestation_id);
+
+
+--
+-- Name: idx_reading_state_user_status_keyset_desc; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_reading_state_user_status_keyset_desc ON public.reading_state USING btree (user_id, status DESC NULLS LAST, manifestation_id DESC);
 
 
 --
@@ -2978,6 +3020,20 @@ CREATE INDEX idx_works_search_vector ON public.works USING gin (search_vector);
 --
 
 CREATE INDEX idx_works_sort_title_id ON public.works USING btree (sort_title, id);
+
+
+--
+-- Name: idx_works_subtitle_keyset; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_works_subtitle_keyset ON public.works USING btree (subtitle, id);
+
+
+--
+-- Name: idx_works_subtitle_keyset_desc; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_works_subtitle_keyset_desc ON public.works USING btree (subtitle DESC NULLS LAST, id DESC);
 
 
 --

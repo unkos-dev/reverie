@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET enrichment_status = 'skipped'::enrichment_status, enrichment_error = 'exhausted retries', isbn_13 = NULL, cover_path = NULL, has_embedded_cover = FALSE WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c8d1b0c3e6519af6871212c0c291c5b1ca8bd25235cb292ce7b833684a554f1"
+}

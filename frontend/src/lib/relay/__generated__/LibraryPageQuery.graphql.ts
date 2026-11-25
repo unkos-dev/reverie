@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<8c7b44eb3900e68d32963a040b29d275>>
+ * @generated SignedSource<<38806d49126399518984e8f85530b918>>
  * @relayHash f7b69e7c4d59a191184f259117d0f6bb
  * @lightSyntaxTransform
  */
@@ -21,13 +21,25 @@ export type ReadingStatusFilter =
   | "UNREAD"
   | "WANT_TO_READ"
   | "%future added value";
-export type SortField = "AUTHOR" | "CREATED_AT" | "PAGES" | "TITLE" | "%future added value";
+export type SortField =
+  | "AUTHOR"
+  | "CREATED_AT"
+  | "ISBN_13"
+  | "PAGES"
+  | "RATING"
+  | "SERIES"
+  | "STATUS"
+  | "SUBTITLE"
+  | "TITLE"
+  | "%future added value";
 export type BooksFilter = {
   author?: ReadonlyArray<string>;
   authorAny?: ReadonlyArray<string>;
   authorNone?: ReadonlyArray<string>;
+  coverEmpty?: boolean | null | undefined;
   createdAtGte?: string | null | undefined;
   createdAtLt?: string | null | undefined;
+  enrichmentFailed?: boolean | null | undefined;
   genre?: ReadonlyArray<string>;
   genreAny?: ReadonlyArray<string>;
   genreNone?: ReadonlyArray<string>;
@@ -37,6 +49,7 @@ export type BooksFilter = {
   mood?: ReadonlyArray<string>;
   moodAny?: ReadonlyArray<string>;
   moodNone?: ReadonlyArray<string>;
+  needsReview?: boolean | null | undefined;
   pagesEmpty?: boolean | null | undefined;
   pagesGte?: number | null | undefined;
   pagesLte?: number | null | undefined;

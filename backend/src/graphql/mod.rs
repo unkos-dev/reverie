@@ -324,6 +324,28 @@ impl Query {
     }
     #[graphql(
         guard = "ReadScope",
+        complexity = "complexity::library_summary(shelf_ids.len(), child_complexity)?"
+    )]
+    async fn library_summary(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(default)] shelf_ids: Vec<async_graphql::ID>,
+    ) -> async_graphql::Result<library::LibrarySummary> {
+        library::library_summary(ctx, &shelf_ids).await
+    }
+    #[graphql(
+        guard = "ReadScope",
+        complexity = "complexity::library_facets(child_complexity)?"
+    )]
+    async fn library_facets(
+        &self,
+        ctx: &Context<'_>,
+        filter: Option<library::BooksFilter>,
+    ) -> async_graphql::Result<library::LibraryFacets> {
+        library::library_facets(ctx, filter).await
+    }
+    #[graphql(
+        guard = "ReadScope",
         complexity = "complexity::page(first, child_complexity)?"
     )]
     async fn books(
@@ -2463,6 +2485,534 @@ mod tests {
             rest.status_code(),
             axum::http::StatusCode::UNPROCESSABLE_ENTITY
         );
+    }
+
+    async fn seed_attention_and_reading_fixture(pool: &PgPool, fixture: &ReaderFixture) {
+        let other_id = sqlx::query_scalar!(
+            "SELECT user_id FROM shelves WHERE id = $1",
+            fixture.other_shelf
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET enrichment_status = 'skipped'::enrichment_status, \
+                 enrichment_error = 'exhausted retries', \
+                 isbn_13 = NULL, \
+                 cover_path = NULL, \
+                 has_embedded_cover = FALSE \
+             WHERE id = $1",
+            fixture.visible
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET enrichment_status = 'failed'::enrichment_status, \
+                 enrichment_error = 'transient retry', \
+                 isbn_13 = '9780141036144', \
+                 cover_path = 'covers/sibling.jpg', \
+                 has_embedded_cover = FALSE \
+             WHERE id = $1",
+            fixture.sibling
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET enrichment_status = 'skipped'::enrichment_status, \
+                 enrichment_error = NULL, \
+                 isbn_13 = NULL, \
+                 cover_path = NULL, \
+                 has_embedded_cover = TRUE \
+             WHERE id = $1",
+            fixture.hidden
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let pending_id = sqlx::query_scalar!(
+            "INSERT INTO metadata_versions \
+             (manifestation_id, source, field_name, new_value, status, confidence_score, value_hash, match_type) \
+             VALUES ($1, 'openlibrary', 'subtitle', '\"Proposed Subtitle\"'::jsonb, 'pending'::metadata_review_status, 0.9, decode('01020304', 'hex'), 'isbn') \
+             RETURNING id",
+            fixture.visible
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_ne!(pending_id, uuid::Uuid::nil());
+
+        let canonical_id = sqlx::query_scalar!(
+            "INSERT INTO metadata_versions \
+             (manifestation_id, source, field_name, new_value, status, confidence_score, value_hash, match_type) \
+             VALUES ($1, 'openlibrary', 'title', '\"Canonical Title\"'::jsonb, 'pending'::metadata_review_status, 0.9, decode('05060708', 'hex'), 'isbn') \
+             RETURNING id",
+            fixture.sibling
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE works SET title_version_id = $1 WHERE id = $2",
+            canonical_id,
+            fixture.visible_work
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query!(
+            "INSERT INTO metadata_versions \
+             (manifestation_id, source, field_name, new_value, status, confidence_score, value_hash, match_type) \
+             VALUES ($1, 'manual', 'subtitle', 'null'::jsonb, 'pending'::metadata_review_status, 1.0, decode('090a0b0c', 'hex'), 'manual')",
+            fixture.hidden
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query!(
+            "INSERT INTO reading_state (user_id, manifestation_id, status, rating) \
+             VALUES ($1, $2, 'reading'::reading_status, 4), \
+                    ($1, $3, 'finished'::reading_status, 5), \
+                    ($4, $2, 'finished'::reading_status, 3)",
+            fixture.admin_id,
+            fixture.sibling,
+            fixture.hidden,
+            other_id
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn graphql_library_summary_and_facets_boundaries(pool: PgPool) {
+        let fixture = reader_fixture(&pool).await;
+        seed_attention_and_reading_fixture(&pool, &fixture).await;
+
+        let summary_query = "query($shelfIds: [ID!]!) { librarySummary(shelfIds: $shelfIds) { totalCount readingStates { wantToRead reading onHold finished abandoned unread } needsAttention { toReview enrichmentFailed noIsbn noCover } } }";
+        let facets_query = "query($filter: BooksFilter) { libraryFacets(filter: $filter) { matchingCount readingStates { wantToRead reading onHold finished abandoned unread } shelves { shelfId count } } }";
+        let books_query = "query($filter: BooksFilter) { books(first: 50, filter: $filter) { edges { node { id } } } }";
+
+        let child_summary = reader_query(
+            &fixture,
+            &fixture.child,
+            summary_query,
+            json!({"shelfIds": []}),
+        )
+        .await;
+        assert_graph_ok(&child_summary);
+        assert_eq!(
+            child_summary["data"]["librarySummary"],
+            json!({
+                "totalCount": 1,
+                "readingStates": {"wantToRead": 0, "reading": 0, "onHold": 0, "finished": 0, "abandoned": 0, "unread": 1},
+                "needsAttention": {"toReview": 0, "enrichmentFailed": 1, "noIsbn": 1, "noCover": 1}
+            })
+        );
+
+        let child_review_true = reader_query(
+            &fixture,
+            &fixture.child,
+            books_query,
+            json!({"filter": {"needsReview": true}}),
+        )
+        .await;
+        assert_graph_ok(&child_review_true);
+        assert_eq!(
+            child_review_true["data"]["books"]["edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+
+        let child_review_false = reader_query(
+            &fixture,
+            &fixture.child,
+            books_query,
+            json!({"filter": {"needsReview": false}}),
+        )
+        .await;
+        assert_graph_ok(&child_review_false);
+        assert_eq!(
+            child_review_false["data"]["books"]["edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let child_facets = reader_query(
+            &fixture,
+            &fixture.child,
+            facets_query,
+            json!({"filter": {"needsReview": true}}),
+        )
+        .await;
+        assert_graph_ok(&child_facets);
+        assert_eq!(child_facets["data"]["libraryFacets"]["matchingCount"], 0);
+
+        let foreign_shelf = id::Shelf::encode(fixture.other_shelf);
+        let shelf_a = id::Shelf::encode(fixture.shelf_a);
+        let shelf_b = id::Shelf::encode(fixture.shelf_b);
+
+        for shelf_ids in [
+            json!([foreign_shelf.as_str()]),
+            json!([shelf_a.as_str(), foreign_shelf.as_str()]),
+        ] {
+            let probe = reader_query(
+                &fixture,
+                &fixture.admin,
+                summary_query,
+                json!({"shelfIds": shelf_ids}),
+            )
+            .await;
+            assert_graph_ok(&probe);
+            assert_eq!(probe["data"]["librarySummary"]["totalCount"], 0);
+            assert_eq!(
+                probe["data"]["librarySummary"]["needsAttention"]["toReview"],
+                0
+            );
+        }
+
+        let admin_union = reader_query(
+            &fixture,
+            &fixture.admin,
+            summary_query,
+            json!({"shelfIds": [shelf_a.as_str(), shelf_b.as_str()]}),
+        )
+        .await;
+        assert_graph_ok(&admin_union);
+        assert_eq!(
+            admin_union["data"]["librarySummary"],
+            json!({
+                "totalCount": 3,
+                "readingStates": {"wantToRead": 0, "reading": 1, "onHold": 0, "finished": 1, "abandoned": 0, "unread": 1},
+                "needsAttention": {"toReview": 1, "enrichmentFailed": 1, "noIsbn": 2, "noCover": 1}
+            })
+        );
+
+        let other_summary = reader_query(
+            &fixture,
+            &fixture.other,
+            summary_query,
+            json!({"shelfIds": []}),
+        )
+        .await;
+        assert_graph_ok(&other_summary);
+        assert_eq!(
+            other_summary["data"]["librarySummary"]["readingStates"],
+            json!({"wantToRead": 0, "reading": 0, "onHold": 0, "finished": 1, "abandoned": 0, "unread": 2})
+        );
+
+        let facets = reader_query(
+            &fixture,
+            &fixture.admin,
+            facets_query,
+            json!({"filter": {"statusAny": ["READING"], "shelfAny": [shelf_a.as_str()]}}),
+        )
+        .await;
+        assert_graph_ok(&facets);
+        assert_eq!(facets["data"]["libraryFacets"]["matchingCount"], 1);
+        assert_eq!(
+            facets["data"]["libraryFacets"]["readingStates"],
+            json!({"wantToRead": 0, "reading": 1, "onHold": 0, "finished": 0, "abandoned": 0, "unread": 1})
+        );
+        assert_eq!(
+            facets["data"]["libraryFacets"]["shelves"],
+            json!([
+                {"shelfId": shelf_a.as_str(), "count": 1},
+                {"shelfId": shelf_b.as_str(), "count": 0}
+            ])
+        );
+
+        let visible_id = id::Manifestation::encode(fixture.visible);
+        for filter in [
+            json!({"needsReview": true}),
+            json!({"enrichmentFailed": true}),
+            json!({"coverEmpty": true}),
+        ] {
+            let filtered = reader_query(
+                &fixture,
+                &fixture.admin,
+                books_query,
+                json!({"filter": filter}),
+            )
+            .await;
+            assert_graph_ok(&filtered);
+            let ids: Vec<&str> = filtered["data"]["books"]["edges"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|edge| edge["node"]["id"].as_str().unwrap())
+                .collect();
+            assert_eq!(ids, vec![visible_id.as_str()]);
+        }
+
+        let too_many: Vec<&str> = (0..21).map(|_| shelf_a.as_str()).collect();
+        let over_cap = reader_query(
+            &fixture,
+            &fixture.admin,
+            summary_query,
+            json!({"shelfIds": too_many}),
+        )
+        .await;
+        assert_eq!(
+            over_cap["errors"][0]["extensions"]["code"], "validation",
+            "{over_cap}"
+        );
+    }
+
+    async fn walk_all_pages(fixture: &ReaderFixture, sort: serde_json::Value) -> Vec<String> {
+        let query = "query($first: Int!, $after: String, $sort: [SortLevel!]) { books(first: $first, after: $after, sort: $sort) { edges { cursor node { id } } pageInfo { hasNextPage hasPreviousPage endCursor } } }";
+        let full = reader_query(
+            fixture,
+            &fixture.admin,
+            query,
+            json!({"first": 50, "sort": sort}),
+        )
+        .await;
+        assert_graph_ok(&full);
+        let full_ids: Vec<String> = full["data"]["books"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|edge| edge["node"]["id"].as_str().unwrap().to_owned())
+            .collect();
+
+        let mut walked = Vec::new();
+        let mut after: Option<String> = None;
+        loop {
+            let page = reader_query(
+                fixture,
+                &fixture.admin,
+                query,
+                json!({"first": 1, "after": after, "sort": sort}),
+            )
+            .await;
+            assert_graph_ok(&page);
+            let info = &page["data"]["books"]["pageInfo"];
+            assert_eq!(info["hasPreviousPage"], !walked.is_empty());
+            let edges = page["data"]["books"]["edges"].as_array().unwrap();
+            assert_eq!(edges.len(), 1);
+            walked.push(edges[0]["node"]["id"].as_str().unwrap().to_owned());
+            if info["hasNextPage"] != true {
+                break;
+            }
+            after = Some(info["endCursor"].as_str().unwrap().to_owned());
+        }
+        assert_eq!(walked, full_ids, "sort {sort} drifted across page walk");
+        walked
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn graphql_sort_nine_columns_and_cursor_contract(pool: PgPool) {
+        let fixture = reader_fixture(&pool).await;
+        let ingestion = db::ingestion_pool_for(&pool).await;
+        let (work_null, book_null) =
+            db::insert_work_and_manifestation(&ingestion, "graph-sort-null").await;
+        let (work_frac, book_frac) =
+            db::insert_work_and_manifestation(&ingestion, "graph-sort-frac").await;
+        let (work_unnumbered, book_unnumbered) =
+            db::insert_work_and_manifestation(&ingestion, "graph-sort-unnumbered").await;
+
+        sqlx::query!(
+            "UPDATE works SET subtitle = 'Alpha Sub' WHERE id = $1",
+            fixture.visible_work
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE works SET subtitle = 'Zeta Sub' WHERE id = $1",
+            fixture.hidden_work
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE works SET subtitle = NULL WHERE id IN ($1, $2, $3)",
+            work_null,
+            work_frac,
+            work_unnumbered
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = '9780000000001' WHERE id = $1",
+            fixture.visible
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = '9780000000009' WHERE id = $1",
+            fixture.hidden
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query!(
+            "INSERT INTO series_works (series_id, work_id, position) \
+             VALUES ($1, $2, 0.5::float8), ($1, $3, NULL)",
+            fixture.series,
+            work_frac,
+            work_unnumbered
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query!(
+            "INSERT INTO reading_state (user_id, manifestation_id, status, rating) \
+             VALUES ($1, $2, 'want_to_read'::reading_status, 2), \
+                    ($1, $3, 'reading'::reading_status, 5), \
+                    ($1, $4, 'finished'::reading_status, 5) \
+             ON CONFLICT (user_id, manifestation_id) \
+             DO UPDATE SET status = EXCLUDED.status, rating = EXCLUDED.rating",
+            fixture.admin_id,
+            fixture.visible,
+            fixture.sibling,
+            fixture.hidden
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let frac_id = id::Manifestation::encode(book_frac);
+        let unnumbered_id = id::Manifestation::encode(book_unnumbered);
+        let null_id = id::Manifestation::encode(book_null);
+        let visible_id = id::Manifestation::encode(fixture.visible);
+        let sibling_id = id::Manifestation::encode(fixture.sibling);
+        let hidden_id = id::Manifestation::encode(fixture.hidden);
+
+        for column in ["SUBTITLE", "SERIES", "ISBN_13", "STATUS", "RATING"] {
+            let asc =
+                walk_all_pages(&fixture, json!([{"column": column, "direction": "ASC"}])).await;
+            let desc =
+                walk_all_pages(&fixture, json!([{"column": column, "direction": "DESC"}])).await;
+            assert_eq!(asc.len(), 6);
+            assert_eq!(desc.len(), 6);
+            let null_bucket = match column {
+                "SERIES" => 1,
+                "ISBN_13" => 4,
+                _ => 3,
+            };
+            let tail_start = 6 - null_bucket;
+            assert!(
+                asc[tail_start..].iter().any(|id| id == null_id.as_str()),
+                "{column} ASC must place NULL rows at the tail: {asc:?}"
+            );
+            assert!(
+                desc[tail_start..].iter().any(|id| id == null_id.as_str()),
+                "{column} DESC must place NULL rows at the tail: {desc:?}"
+            );
+        }
+
+        let series_asc =
+            walk_all_pages(&fixture, json!([{"column": "SERIES", "direction": "ASC"}])).await;
+        let series_desc =
+            walk_all_pages(&fixture, json!([{"column": "SERIES", "direction": "DESC"}])).await;
+        assert_eq!(
+            series_asc,
+            vec![
+                frac_id.to_string(),
+                hidden_id.to_string(),
+                visible_id.to_string(),
+                sibling_id.to_string(),
+                unnumbered_id.to_string(),
+                null_id.to_string(),
+            ]
+        );
+        assert_eq!(
+            series_desc,
+            vec![
+                sibling_id.to_string(),
+                visible_id.to_string(),
+                hidden_id.to_string(),
+                frac_id.to_string(),
+                unnumbered_id.to_string(),
+                null_id.to_string(),
+            ]
+        );
+
+        let pref_mutation = "mutation($input: UpdateLibraryPreferencesInput!) { updateLibraryPreferences(input: $input) { __typename ... on LibraryPreferencesUpdated { viewer { libraryPreferences { sort { column direction } } } } } }";
+        let saved = reader_query(
+            &fixture,
+            &fixture.admin,
+            pref_mutation,
+            json!({
+                "input": {
+                    "sort": [
+                        {"column": "CREATED_AT", "direction": "DESC"},
+                        {"column": "SUBTITLE", "direction": "DESC"},
+                        {"column": "ISBN_13", "direction": "DESC"}
+                    ]
+                }
+            }),
+        )
+        .await;
+        assert_graph_result(
+            &saved,
+            "updateLibraryPreferences",
+            "LibraryPreferencesUpdated",
+        );
+        assert_eq!(
+            saved["data"]["updateLibraryPreferences"]["viewer"]["libraryPreferences"]["sort"],
+            json!([
+                {"column": "CREATED_AT", "direction": "DESC"},
+                {"column": "SUBTITLE", "direction": "DESC"},
+                {"column": "ISBN_13", "direction": "DESC"}
+            ])
+        );
+
+        let rest = fixture
+            .server
+            .get("/api/v1/books?sort=-created_at,-subtitle,-isbn_13")
+            .add_header("authorization", fixture.admin.clone())
+            .await;
+        assert_eq!(rest.status_code(), axum::http::StatusCode::OK);
+
+        let page_query = "query($after: String, $filter: BooksFilter) { books(first: 1, after: $after, filter: $filter) { edges { cursor } } }";
+        let base = reader_query(
+            &fixture,
+            &fixture.admin,
+            page_query,
+            json!({"filter": {"coverEmpty": true}}),
+        )
+        .await;
+        assert_graph_ok(&base);
+        let cursor = base["data"]["books"]["edges"][0]["cursor"]
+            .as_str()
+            .unwrap();
+        for changed in [
+            json!({"coverEmpty": false}),
+            json!({"enrichmentFailed": true}),
+            json!({"needsReview": true}),
+        ] {
+            let refused = reader_query(
+                &fixture,
+                &fixture.admin,
+                page_query,
+                json!({"after": cursor, "filter": changed}),
+            )
+            .await;
+            assert_eq!(
+                refused["errors"][0]["extensions"]["code"], "invalid-cursor",
+                "{refused}"
+            );
+        }
     }
 
     fn retag(cursor: &str, from: &str, to: &str) -> String {

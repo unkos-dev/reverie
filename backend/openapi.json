@@ -616,11 +616,11 @@
           {
             "name": "sort",
             "in": "query",
-            "description": "Sort stack, JSON:API grammar: comma-separated whitelisted field\nnames (`title`, `author`, `created_at`, `pages`); a leading `-`\nreverses that level to descending; order of appearance sets\npriority (the first field is the primary key). An unwhitelisted\nfield, a repeated column, or more than three levels is a 422.\nOmitted, this is `-created_at` (today's \"recent\" order).",
+            "description": "Sort stack, JSON:API grammar: comma-separated whitelisted field\nnames (`title`, `subtitle`, `author`, `series`, `isbn_13`, `pages`,\n`status`, `rating`, `created_at`); a leading `-` reverses that level\nto descending; order of appearance sets priority (the first field is\nthe primary key). An unwhitelisted field, a repeated column, or more\nthan three levels is a 422. Omitted, this is `-created_at` (today's\n\"recent\" order).",
             "required": false,
             "schema": {
               "type": "string",
-              "maxLength": 26
+              "maxLength": 40
             },
             "example": "-created_at,title"
           },
@@ -1018,6 +1018,33 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "needs_review",
+            "in": "query",
+            "description": "`true` keeps only rows with pending metadata proposals awaiting review;\n`false` keeps only rows without any. Child accounts never inspect\nproposals (`true` yields no rows; `false` is a no-op).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "enrichment_failed",
+            "in": "query",
+            "description": "`true` keeps only rows whose enrichment exhausted retries and gave up\n(`enrichment_status = 'skipped'` with a recorded error); `false`\nexcludes them.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "cover_empty",
+            "in": "query",
+            "description": "`true` keeps only rows with no stored or embedded cover image; `false`\nkeeps only rows with a cover image.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -13035,7 +13062,7 @@
               "null"
             ],
             "description": "Default sort in the `?sort=` wire grammar. Absent = unchanged; `null`\nresets to the default.",
-            "maxLength": 26
+            "maxLength": 40
           },
           "view": {
             "oneOf": [

@@ -103,16 +103,31 @@ timestamp endpoints describe an empty half-open interval.
 
 `push_filter_predicates` is the single entry point that appends every active condition onto the query's `WHERE` clause,
 in a fixed order (author triple, series predicates, shelf predicates, then the tag/genre/mood vocabulary triples, then
-text, pages, `created_at`, status, rating, and finally `q`); the order does not change the AND-combined semantics. Each
-condition family has its own pushing function (`push_author_predicates`, `push_vocab_predicates`,
+text, pages, `created_at`, status, rating, attention flags, and finally `q`); the order does not change the AND-combined
+semantics. Each condition family has its own pushing function (`push_author_predicates`, `push_vocab_predicates`,
 `push_text_predicates`, `push_pages_predicates`, `push_created_at_predicates`, `push_status_predicates`,
-`push_rating_predicates`, `push_q_predicate`), and every one binds its user-supplied value with `push_bind`; no
-condition ever writes a column name from client input. `ListParams` carries no `#[serde(deny_unknown_fields)]`, so an
-unrecognised suffix parameter is silently dropped by the `Query` extractor and never reaches this module, rather than
-failing deserialisation. The shelf predicates carry their own ownership checks rather than leaning on a table's
-row-level-security policy: `shelves` has none, so the pushed `EXISTS` joins `shelf_items` to `shelves` and adds
-`AND s.user_id = current_setting('app.current_user_id', true)::uuid` inline, the same predicate shape the Design
-"Shelves" records for that table's own handlers.
+`push_rating_predicates`, `push_attention_predicates`, `push_q_predicate`), and every one binds its user-supplied value
+with `push_bind`; no condition ever writes a column name from client input. `ListParams` carries no
+`#[serde(deny_unknown_fields)]`, so an unrecognised suffix parameter is silently dropped by the `Query` extractor and
+never reaches this module, rather than failing deserialisation. The shelf predicates carry their own ownership checks
+rather than leaning on a table's row-level-security policy: `shelves` has none, so the pushed `EXISTS` joins
+`shelf_items` to `shelves` and adds `AND s.user_id = current_setting('app.current_user_id', true)::uuid` inline, the
+same predicate shape the Design "Shelves" records for that table's own handlers.
+
+The attention predicates filter books by metadata review and completeness state:
+
+- `needs_review` matches manifestations that hold at least one pending row in `metadata_versions` with
+  `new_value != 'null'::jsonb`, excluding every canonical scalar `*_version_id` pointer on `works` and `manifestations`
+  and every canonical junction `source_version_id` pointer on `manifestation_genres`, `manifestation_moods`,
+  `manifestation_tags` and `work_authors`. For child callers (`is_child`), `needs_review = true` short-circuits to
+  `AND FALSE` and `needs_review = false` pushes no predicate, so child requests never query `metadata_versions`.
+- `enrichment_failed` matches manifestations whose enrichment exhausted retries (`enrichment_status = 'skipped'` and
+  `enrichment_error IS NOT NULL`), excluding jobs awaiting retry (`enrichment_status = 'failed'`) and deliberate skips
+  (`enrichment_error IS NULL`).
+- `cover_empty` matches manifestations with no stored or embedded cover
+  (`cover_path IS NULL AND has_embedded_cover IS NOT TRUE`).
+
+All three flags enter `canonical_filter_string` and the cursor filter fingerprint alongside `isbn_13_empty`.
 
 `series_any` matches at least one requested series through `series_works`. `shelf_any` matches membership in at least
 one requested shelf only when every requested shelf belongs to the caller; a foreign or unknown operand makes the whole
@@ -147,20 +162,34 @@ delimiters cannot make two differently-shaped filter sets reduce to the same str
 
 ### Sort whitelist (`sort_spec.rs`)
 
-`SortColumn` is a closed, `#[non_exhaustive]` enum of four variants — `Title`, `Author`, `CreatedAt`, `Pages` — each
-carrying its wire name (`wire_name`/`from_wire`), its fixed SQL expression (`sql_expr`, only ever a `&'static str`),
-whether it is nullable (`nullable`, true only for `Author` and `Pages`), the row alias it is selected under for cursor
-minting (`select_alias`), and the value domain a cursor boundary for it must carry (`value_kind`, one of
-`SortValueKind::Text`/`Timestamp`/`Int`). The module's own doc comment states the entry condition for a fifth variant:
-"a column enters `SortColumn` only once its ordering indexes exist," specifically both an ascending and a
-`DESC NULLS LAST` composite index for a nullable column, because Postgres's default `DESC` ordering is `NULLS FIRST` and
-a backward scan of an ascending index cannot supply `NULLS LAST` on its own. `Author` (`works.first_author_sort_name`)
-and `Pages` (`manifestations.pages`) each carry both index shapes
-(`idx_works_first_author_sort_id`/`idx_works_first_author_sort_desc`,
-`idx_manifestations_pages_keyset`/`idx_manifestations_pages_keyset_desc`). `Title` and `CreatedAt` are declared
-`NOT NULL` in the schema, so each carries one composite index only (`idx_works_sort_title_id` ascending,
-`idx_manifestations_recent_keyset` descending): a backward scan of either satisfies the opposite direction cleanly,
-because there is no null bucket whose position could disagree between the two scan directions.
+`SortColumn` is a closed, `#[non_exhaustive]` enum of nine variants (`Title`, `Subtitle`, `Author`, `Series`, `Isbn13`,
+`Pages`, `Status`, `Rating` and `CreatedAt`), each carrying its wire name (`wire_name`/`from_wire`), its fixed primary
+SQL expression (`sql_expr`, only ever a `&'static str`), an optional secondary SQL expression (`secondary_sql_expr`, set
+only for `Series` to `series_one.series_position`), whether it is nullable (`nullable`, true for every column except
+`Title` and `CreatedAt`), the row alias it is selected under for cursor minting (`select_alias`), and the value domain a
+cursor boundary for it must carry (`value_kind`, one of `SortValueKind::Text`, `Timestamp`, `Int`, `Status` or
+`Series`).
+
+Single-table nullable columns carry both an ascending and a `DESC NULLS LAST` composite B-tree index, because Postgres's
+default `DESC` ordering is `NULLS FIRST` and a backward scan of an ascending index cannot supply `NULLS LAST` on its
+own:
+
+- `Author` (`works.first_author_sort_name`): `idx_works_first_author_sort_id` and `idx_works_first_author_sort_desc`.
+- `Subtitle` (`works.subtitle`): `idx_works_subtitle_keyset` and `idx_works_subtitle_keyset_desc`.
+- `Isbn13` (`manifestations.isbn_13`): `idx_manifestations_isbn_13_keyset` and `idx_manifestations_isbn_13_keyset_desc`.
+- `Pages` (`manifestations.pages`): `idx_manifestations_pages_keyset` and `idx_manifestations_pages_keyset_desc`.
+- `Status` (`reading_state.status`, PostgreSQL `reading_status` enum order): `idx_reading_state_user_status_keyset` and
+  `idx_reading_state_user_status_keyset_desc`.
+- `Rating` (`reading_state.rating`): `idx_reading_state_user_rating_keyset` and
+  `idx_reading_state_user_rating_keyset_desc`.
+
+`Title` and `CreatedAt` are declared `NOT NULL` in the schema, so each carries one composite index only
+(`idx_works_sort_title_id` ascending, `idx_manifestations_recent_keyset` descending): a backward scan of either
+satisfies the opposite direction cleanly, because there is no null bucket whose position could disagree between the two
+scan directions. `Series` sorts on the correlated lateral pick-one
+`(series_one.series_name, series_one.series_position)` backed by `idx_series_works_work_id` and
+`idx_series_works_series_position`, ordering both components in the level's direction with `NULLS LAST` so descending is
+the exact symmetric inverse of ascending.
 
 `SortSpec::parse` is the sole entry point from a caller-supplied `?sort=` string: it splits on `,`, caps the result at
 `MAX_SORT_LEVELS` (3), strips a leading `-` to mean descending, resolves each remaining name through
@@ -183,13 +212,16 @@ keeps a cursor minted by one API from continuing a walk on the other. All three 
 `parse` functions. `ShelfMismatch` is constructed only inside `ShelfItemCursor::parse`, when the cursor's embedded shelf
 ID differs from the requested shelf.
 
-`SortCursor` carries a JSON payload — the canonical spec string, one `CursorValue` per sort level in level order, the
-`manifestations.id` tiebreaker, and the filter fingerprint (serialised as `f`) — rather than the pipe-delimited fields
-`ShelfCursor` and `ShelfItemCursor` use, because a sort stack's boundary values are free text (a title or an author sort
-key) that pipe-splitting cannot safely delimit. `CursorValue` is externally tagged (`Text(Option<String>)`,
-`Ts(jiff::Timestamp)`, `Int(Option<i32>)`) so a forged JSON payload cannot smuggle a value of the wrong SQL type past
-the type check; its `None` arms on `Text`/`Int` mark a boundary sitting in a nullable column's `NULLS LAST` bucket, kept
-distinct from an empty string so a three-valued SQL comparison cannot collapse the two and drop rows.
+`SortCursor` carries a JSON payload: the canonical spec string, one `CursorValue` per sort level in level order, the
+`manifestations.id` tiebreaker, and the filter fingerprint (serialised as `f`). It uses JSON rather than the
+pipe-delimited fields `ShelfCursor` and `ShelfItemCursor` use, because a sort stack's boundary values can hold free text
+that pipe-splitting cannot safely delimit. `CursorValue` is externally tagged (`Text(Option<String>)`,
+`Ts(jiff::Timestamp)`, `Int(Option<i32>)`, `Status(Option<ReadingStatus>)` and
+`Series { name: Option<String>, position: Option<SeriesPosition> }`) so a forged JSON payload cannot smuggle a value of
+the wrong SQL type past the type check. `SeriesPosition` wraps a finite `f64` (normalising `-0.0` to `0.0` and rejecting
+non-finite numbers at decode), and `validate_keys` rejects a `Series` key with a `None` name and a `Some` position. The
+`None` arms on nullable variants mark a boundary sitting in a nullable column's `NULLS LAST` bucket, kept distinct from
+an empty string so a three-valued SQL comparison cannot collapse the two and drop rows.
 
 `validate_keys` is the one key-count, kind and null-handling check shared by both directions: `SortCursor::for_spec`
 (the mint path, `pub(crate)` so only server code can construct a cursor) and `SortCursor::parse_for` (the decode path)
@@ -206,21 +238,25 @@ error maps to `AppError::Validation`, the `422` class of a filter bound), the fi
 `SortCursor::parse_for` against that spec and fingerprint. Only once all of that has succeeded does it call
 `db::acquire_with_rls_snapshot` and build the query in `fetch_list_rows`: a fixed `SELECT` naming every column the
 response needs plus a `LEFT JOIN LATERAL` that picks at most one series per work (lowest position, `NULLS LAST`, then
-series id, so a work in several series always reports the same one across pages), `filters::push_filter_predicates`, the
-general keyset predicate, the `ORDER BY`, and `LIMIT page_size + 1` — one extra row fetched so `split_page` can tell
-whether a further page exists without a second query.
+series id, so a work in several series always reports the same one across pages), a
+`LEFT JOIN reading_state rs ON rs.manifestation_id = m.id` (scoped to the caller by `reading_state_owner` RLS so at most
+one row joins per manifestation), `filters::push_filter_predicates`, the general keyset predicate, the `ORDER BY`, and
+`LIMIT page_size + 1` (one extra row fetched so `split_page` can tell whether a further page exists without a second
+query). `books_connection` joins the same `series_one` and `reading_state` relations in its `has_previous` existence
+query so every sort key valid on the list query is also valid in `NOT (cursor_expression)`.
 
-`push_cursor_predicate` builds the keyset "advance past the boundary" clause for an arbitrary sort stack as one
-`OR`-chain of per-level branches: level `i`'s branch requires exact equality on every level before it
-(`push_boundary_equality`) and a strict advance on level `i` itself (`push_boundary_advance`), and a final branch
-requires equality on every level plus a strict advance on `m.id`, whose direction follows the stack's last level. A
-nullable level whose own cursor boundary is already the `NULL` bucket contributes no branch of its own: `NULLS LAST`
-means every `NULL` row already sits at the tail regardless of direction, so nothing can be "after" a `NULL` boundary
-within that level, and a deeper level or the `id` tiebreaker is what continues the walk. `push_boundary_advance` wraps a
-nullable, non-`NULL` boundary as `(expr OP $bind OR expr IS NULL)` in both directions, because `NULLS LAST` puts the
-entire null bucket after every non-null value under either ordering, and a bare comparison would drop it the first time
-a non-null boundary is used. `push_order_by` mirrors the same null-handling and tiebreaker-direction rules for the
-`ORDER BY` clause itself.
+`push_cursor_predicate` builds the keyset "advance past the boundary" clause for an arbitrary sort stack by expanding
+each level into one cascade term (or two consecutive nullable terms, `series_one.series_name` followed by
+`series_one.series_position`, for `Series`) and emitting one `OR`-chain of per-term branches: term `i`'s branch requires
+exact equality on every term before it (`push_boundary_equality`) and a strict advance on term `i` itself
+(`push_boundary_advance`), and a final branch requires equality on every term plus a strict advance on `m.id`, whose
+direction follows the stack's last level. A nullable term whose own cursor boundary is already the `NULL` bucket
+contributes no branch of its own: `NULLS LAST` means every `NULL` row already sits at the tail regardless of direction,
+so nothing can be "after" a `NULL` boundary within that term, and a deeper term or the `id` tiebreaker is what continues
+the walk. `push_boundary_advance` wraps a nullable, non-`NULL` boundary as `(expr OP $bind OR expr IS NULL)` in both
+directions, because `NULLS LAST` puts the entire null bucket after every non-null value under either ordering, and a
+bare comparison would drop it the first time a non-null boundary is used. `push_order_by` mirrors the same null-handling
+and tiebreaker-direction rules for the `ORDER BY` clause itself.
 
 `next_cursor_for_row` mints the following page's cursor from the last row of a page that had more rows than `page_size`:
 it reads each level's boundary value back off the row via its `select_alias` and `decode_cursor_column` (a `try_get`

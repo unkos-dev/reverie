@@ -83,6 +83,9 @@ input BooksFilter {
   ratingGte: Int
   ratingLte: Int
   ratingEmpty: Boolean
+  needsReview: Boolean
+  enrichmentFailed: Boolean
+  coverEmpty: Boolean
   q: String
 }
 
@@ -306,6 +309,12 @@ enum LibraryDensity {
   COMPACT
 }
 
+type LibraryFacets {
+  matchingCount: Int!
+  readingStates: ReadingStateCounts!
+  shelves: [ShelfFacetCount!]!
+}
+
 type LibraryPreferenceDefaults {
   hiddenColumns: [LibraryColumn!]!
   density: LibraryDensity!
@@ -332,6 +341,12 @@ type LibraryPreferencesUpdated {
 type LibrarySortLevel {
   column: SortField!
   direction: Direction!
+}
+
+type LibrarySummary {
+  totalCount: Int!
+  readingStates: ReadingStateCounts!
+  needsAttention: NeedsAttentionCounts!
 }
 
 enum LibraryView {
@@ -607,6 +622,13 @@ type Mutation {
   unlockMetadataField(input: UnlockMetadataFieldInput!): UnlockMetadataFieldResult!
 }
 
+type NeedsAttentionCounts {
+  toReview: Int!
+  enrichmentFailed: Int!
+  noIsbn: Int!
+  noCover: Int!
+}
+
 interface Node {
   id: ID!
 }
@@ -648,6 +670,8 @@ type Query {
   fetch__Work(id: ID!): Work
   fetch__Shelf(id: ID!): Shelf
   fetch__Manifestation(id: ID!): Manifestation
+  librarySummary(shelfIds: [ID!]! = []): LibrarySummary!
+  libraryFacets(filter: BooksFilter): LibraryFacets!
   books(    first: Int!,    after: String,    filter: BooksFilter,
     """
     Omitted or null sort uses the installation default.
@@ -682,6 +706,15 @@ type ReadingRevision {
   startedAt: DateTime
   finishedAt: DateTime
   lastReadAt: DateTime
+}
+
+type ReadingStateCounts {
+  wantToRead: Int!
+  reading: Int!
+  onHold: Int!
+  finished: Int!
+  abandoned: Int!
+  unread: Int!
 }
 
 type ReadingStateUpdated {
@@ -948,6 +981,11 @@ type ShelfEdge {
   cursor: String!
 }
 
+type ShelfFacetCount {
+  shelfId: ID!
+  count: Int!
+}
+
 type ShelfItemAdded {
   shelf: Shelf!
   edge: ManifestationEdge!
@@ -970,9 +1008,14 @@ scalar SignedInteger @specifiedBy(url: "https://github.com/unkos-dev/reverie/blo
 
 enum SortField {
   TITLE
+  SUBTITLE
   AUTHOR
-  CREATED_AT
+  SERIES
+  ISBN_13
   PAGES
+  STATUS
+  RATING
+  CREATED_AT
 }
 
 input SortLevel {

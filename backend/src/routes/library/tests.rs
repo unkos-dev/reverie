@@ -718,7 +718,7 @@ async fn list_filter_unknown_sort_field_returns_422(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let response = server
-        .get("/api/v1/books?sort=isbn_13")
+        .get("/api/v1/books?sort=nonexistent")
         .add_header(AUTHORIZATION, basic)
         .await;
     let body = test_support::assert_problem(

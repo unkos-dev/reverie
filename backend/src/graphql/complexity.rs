@@ -58,3 +58,23 @@ pub(super) fn pending(first: i32, child: usize) -> ServerResult<usize> {
 pub(super) fn pending_size(first: i32) -> Result<i32, AppError> {
     effective_page(first, reader::PENDING_MAX)
 }
+
+pub(super) fn library_summary(shelf_ids_len: usize, child: usize) -> ServerResult<usize> {
+    if shelf_ids_len > crate::routes::library::MAX_TAG_FILTERS {
+        return Err(super::safe_error(AppError::Validation(format!(
+            "too many shelf_ids filters: maximum {}",
+            crate::routes::library::MAX_TAG_FILTERS
+        )))
+        .into_server_error(async_graphql::Pos::default()));
+    }
+    weighted(10, child)
+}
+
+pub(super) fn library_facets(child: usize) -> ServerResult<usize> {
+    weighted(10, child)
+}
+
+pub(super) fn shelf_facets(child: usize) -> ServerResult<usize> {
+    let size = usize::try_from(reader::PAGE_MAX).map_err(|_| excessive())?;
+    weighted(size, child)
+}
