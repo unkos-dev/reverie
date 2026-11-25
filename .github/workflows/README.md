@@ -154,10 +154,11 @@ not a required merge check.
 caller it runs only when its own workflow, `.github/codeql/`, the shared Rust toolchain action or the caller changes, so
 a breaking analyser or action update fails the required `codeql /` checks before it reaches main; every other change
 skips them. No ruleset rule acts on CodeQL results, so its alerts reach code scanning without blocking a merge. The Rust
-extractor compiles through kache and the existing R2 bucket. Its CodeQL namespace and matching manifest key keep
-prefetch scoped to CodeQL builds, while backend checks use a separate `dev` key. Without an R2 account ID the scan
-compiles without the remote cache; with one, missing credentials fail the job with the missing secret names. The Actions
-cache stores only Cargo registry data, and every scan builds a fresh CodeQL database.
+extractor compiles through kache and the existing R2 bucket. The nightly Rust job can publish cache entries and prefetch
+shards from protected `main`. Its CodeQL namespace and matching manifest key keep prefetch scoped to CodeQL builds,
+while backend checks use a separate `dev` key. Without an R2 account ID the scan compiles without the remote cache; with
+one, missing credentials fail the job with the missing secret names. The Actions cache stores only Cargo registry data,
+and every scan builds a fresh CodeQL database.
 
 The rest are non-PR lanes: the release publish, the scheduled audits and mutation runs, the OSSF scorecard, the
 pull-request labelling on `pull_request_target`, and release automation. None of them has a PR-time surface to compose.
