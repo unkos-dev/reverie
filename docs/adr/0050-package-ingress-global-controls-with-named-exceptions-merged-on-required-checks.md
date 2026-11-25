@@ -60,8 +60,9 @@ because an update reaches every workflow that uses the action, including jobs wi
 - Negative: when GitHub release metadata is unavailable, tag-based action lookups can use timestamps the publisher
   controls.
 - Negative: a tool checksum is recorded on first download and trusted from then on.
-- Negative: the release-age hold runs in Renovate on direct dependency updates rather than in the package managers, so
-  transitive versions resolved during lockfile updates and manual installs are not aged.
+- Negative: the release-age hold is enforced by Renovate (including via package-manager sync during lockfile
+  maintenance) rather than by repository-wide package-manager holds, so manual installs bypass the hold and Renovate's
+  package-manager sync remains an experimental feature.
 - Negative: a transitive advisory absent from the relevant advisory database gets no automated fix pull request.
 - Negative: cargo has no install-script control, so that control remains ecosystem-specific rather than spanning both
   stacks.

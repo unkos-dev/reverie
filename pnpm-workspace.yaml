@@ -2,9 +2,9 @@ packages:
   - frontend
   - website
 
-# Renovate's release-age hold gates automated direct updates; disable pnpm's
-# built-in 24-hour hold so deliberate manual upgrades are not blocked or forced
-# into per-version exclusion lists (see REV-ADR-0050).
+# Renovate enforces the release-age hold on automated updates through
+# minimumReleaseAgePackageManagerSync; disable pnpm's repo-level 24-hour
+# hold so deliberate manual upgrades stay unblocked (see REV-ADR-0050).
 minimumReleaseAge: 0
 
 # Required by `pnpm deploy`, which the image build uses to materialise the

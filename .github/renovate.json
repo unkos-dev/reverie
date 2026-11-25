@@ -4,6 +4,7 @@
     "config:recommended",
     ":semanticCommits",
     ":gitSignOff",
+    "group:vitePlus",
     "helpers:pinGitHubActionDigestsToSemver",
     "mergeConfidence:all-badges",
     "customManagers:dockerfileVersions"
@@ -17,14 +18,14 @@
   "prHourlyLimit": 4,
   "prConcurrentLimit": 10,
   "minimumReleaseAge": "2 days",
+  "minimumReleaseAgePackageManagerSync": true,
   "abandonmentThreshold": "1 year",
   "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {
-    "description": "Label the weekly whole-tree refresh so it is distinguishable from a targeted update. The release-age hold is nulled here: regeneration lets npm and cargo pick transitive versions, so the hold cannot be enforced and would sit pending on nearly every run. Green required checks automerge the refresh; a red one stays open for diagnosis.",
+    "description": "Refresh lockfiles daily overnight under the 2-day release-age hold synced to Cargo and pnpm through minimumReleaseAgePackageManagerSync. Direct npm dependencies stay pinned so npm refreshes touch only transitives. Green required checks automerge the refresh; a red one stays open for diagnosis.",
     "enabled": true,
-    "schedule": ["before 6am on monday"],
+    "schedule": ["before 6am every day"],
     "addLabels": ["lockfile-maintenance"],
-    "minimumReleaseAge": null,
     "automerge": true
   },
   "vulnerabilityAlerts": {
@@ -52,8 +53,13 @@
       "allowedVersions": "<0.157.0"
     },
     {
-      "description": "Update lockfiles within compatible cargo and npm ranges; replace ranges for incompatible releases.",
-      "matchManagers": ["cargo", "npm"],
+      "description": "Pin direct npm dependencies to exact versions so lock file maintenance refreshes only transitive npm packages and direct updates always go through targeted PRs.",
+      "matchManagers": ["npm"],
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "Update Cargo.lock within compatible ranges; replace ranges for incompatible releases.",
+      "matchManagers": ["cargo"],
       "rangeStrategy": "update-lockfile"
     },
     {
@@ -209,9 +215,9 @@
       "enabled": false
     },
     {
-      "description": "Group Vite+ with its core packages, alias, and Vitest browser provider.",
-      "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**", "@vitest/browser-playwright"],
-      "groupName": "vite-plus"
+      "description": "Keep Vite+ and Vitest updates manual (grouped by the group:vitePlus preset) so the core alias, Vitest override, and browser provider are verified against the release before merge.",
+      "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**", "vitest", "@vitest/**"],
+      "automerge": false
     },
     {
       "description": "Skip Playwright 1.65.1 because its Chromium build can crash in Vitest Browser Mode.",
