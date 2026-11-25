@@ -16,7 +16,7 @@
   "labels": ["dependencies"],
   "prHourlyLimit": 4,
   "prConcurrentLimit": 10,
-  "minimumReleaseAge": "3 days",
+  "minimumReleaseAge": "2 days",
   "abandonmentThreshold": "1 year",
   "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {
@@ -28,7 +28,7 @@
     "automerge": true
   },
   "vulnerabilityAlerts": {
-    "description": "minimumReleaseAge restates Renovate's own default for this block; without it the 3-day hold above reads as applying to security fixes.",
+    "description": "minimumReleaseAge restates Renovate's own default for this block; without it the 2-day hold above reads as applying to security fixes.",
     "enabled": true,
     "schedule": ["at any time"],
     "addLabels": ["security:{{{lowercase vulnerabilitySeverity}}}"],
@@ -87,7 +87,7 @@
       "automerge": true
     },
     {
-      "description": "Exempt digest updates from the release-age hold. The hold earns its keep against a newly published version that has not been in the wild long enough to be trusted, which is what REV-ADR-0050 records: new versions wait. A digest update is not a new version. It re-pins a reference to whatever its already-pinned tag names now, and for a base image that is usually a rebuild carrying patched OS packages, so the wait delays the fix. Some tags cannot be aged at all: debian:trixie-slim is a codename with no version behind it, and GHCR publishes no timestamps, so under Renovate's default minimumReleaseAgeBehaviour of timestamp-required both sit pending forever rather than for three days.",
+      "description": "Exempt digest updates from the release-age hold. The hold earns its keep against a newly published version that has not been in the wild long enough to be trusted, which is what REV-ADR-0050 records: new versions wait. A digest update is not a new version. It re-pins a reference to whatever its already-pinned tag names now, and for a base image that is usually a rebuild carrying patched OS packages, so the wait delays the fix. Some tags cannot be aged at all: debian:trixie-slim is a codename with no version behind it, and GHCR publishes no timestamps, so under Renovate's default minimumReleaseAgeBehaviour of timestamp-required both sit pending forever rather than for two days.",
       "matchUpdateTypes": ["digest", "pinDigest"],
       "minimumReleaseAge": null
     },

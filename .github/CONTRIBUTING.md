@@ -301,7 +301,7 @@ Maintainer review remains the only merge gate.
 ## Dependencies
 
 Dependency updates are managed by [Renovate](https://docs.renovatebot.com/), which raises them as releases appear and
-holds most for three days after release. **Don't file separate PRs for dependency bumps** unless you're patching a
+holds most for two days after release. **Don't file separate PRs for dependency bumps** unless you're patching a
 security advisory that Renovate hasn't yet flagged. Security-related dependency updates skip that hold and land whenever
 the advisory is published.
 

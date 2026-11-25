@@ -2,13 +2,10 @@ packages:
   - frontend
   - website
 
-minimumReleaseAgeExclude:
-  - impeccable@4.8.2
-  - "@impeccable/cli-darwin-arm64@0.1.21"
-  - "@impeccable/cli-darwin-x64@0.1.21"
-  - "@impeccable/cli-linux-arm64@0.1.21"
-  - "@impeccable/cli-linux-x64@0.1.21"
-  - "@impeccable/cli-windows-x64@0.1.21"
+# Renovate's release-age hold gates automated dependency bumps; disable pnpm's
+# built-in 24-hour hold so deliberate manual upgrades are not blocked or forced
+# into per-version exclusion lists.
+minimumReleaseAge: 0
 
 # Required by `pnpm deploy`, which the image build uses to materialise the
 # frontend's production closure for the SBOM. Since pnpm v10 deploy runs only
