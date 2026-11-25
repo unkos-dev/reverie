@@ -221,12 +221,14 @@ once, in `devEngines.runtime` in [`package.json`](../package.json). Every job th
 beforehand. The image build reads the same declaration through pnpm, and `pnpm-lock.yaml` carries the per-platform
 checksums for the download.
 
-A `vite-plus` bump moves three catalog pins in [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) together. Read each value
-from the selected release's npm manifest: the `vite` alias must name the exact `@voidzero-dev/vite-plus-core` version in
-its `vite` dependency, and `@vitest/browser-playwright` must match its exact peer. A mismatched core makes the launcher
-refuse to start, and a mismatched provider installs a second Vitest. The core's encoded version, such as `8.3.8001`,
-sorts above the upstream Vite release it bundles, so `dependency-review` can treat it as patched against an advisory
-fixed in a later Vite. On each bump, check the Vite advisories against the bundled upstream version, as
+A `vite-plus` bump moves four catalog pins in [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) together: `vite-plus`, the
+`vite` alias (`@voidzero-dev/vite-plus-core`), `vitest` (wired through the `vitest@*` override so the workspace shares
+one Vitest copy with `vp test`), and `@vitest/browser-playwright`. Prefer running `vp migrate` to update the pins
+together, or check the exact bundled versions with `npm view vite-plus@<version> dependencies.vite` and
+`vp toolchain vitest` (and `vp toolchain vite-plus-core` after install). A mismatched core makes the launcher refuse to
+start, and a mismatched Vitest or provider splits the runner across two Vitest copies. The core's encoded version, such
+as `8.3.8001`, sorts above the upstream Vite release it bundles, so `dependency-review` can treat it as patched against
+an advisory fixed in a later Vite. On each bump, check the Vite advisories against the bundled upstream version, as
 [`debt/2026-06-30-vite-plus-alias-dependency-review.md`](../debt/2026-06-30-vite-plus-alias-dependency-review.md)
 records.
 

@@ -39,14 +39,16 @@ allowBuilds:
 catalog:
   vite: "npm:@voidzero-dev/vite-plus-core@8.3.8001"
   vite-plus: "1.8.0"
+  vitest: "5.1.1"
   "@vitest/browser-playwright": "5.1.1"
 
-# Transitive security floors. Each entry is a deliberate minimum, not a
-# convenience pin, and removing one reopens the advisory it closes.
-#   vite@*  peer alignment; the only thing holding the graph on vp's fork.
+# Transitive security floors and Vite+ peer alignment. Each entry is deliberate.
+#   vite@*     peer alignment; holds the graph on vp's Vite fork.
+#   vitest@*   runner alignment; keeps the workspace on the single Vitest copy vp bundles.
 #   form-data  live floor. httpsnippet resolves 4.0.4 unaided. GHSA-fx2h-pf6j-xcff.
 overrides:
   vite@*: "catalog:"
+  vitest@*: "catalog:"
   form-data: "4.0.6"
   "glob@13": "14.0.3"
   "minimatch@10": "11.0.4"

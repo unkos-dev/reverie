@@ -55,8 +55,8 @@ and test gates.
 - Positive: a single lockfile replaces three, and it pins every platform's native binding.
 - Positive: the isolated layout means a project can only import what it declares: an undeclared transitive dependency
   fails at resolution rather than working by accident until the graph shifts.
-- Negative: each Vite+ release requires exact versions of its core, Vitest and browser provider, so the catalog pins all
-  three and a bump moves them together.
+- Negative: each Vite+ release requires exact versions of its core, Vitest and browser provider, so the catalog pins
+  `vite-plus`, its `vite` core alias, `vitest` and `@vitest/browser-playwright`, and a bump moves all four together.
 - Negative: the type checker follows the Vite+ release rather than the frontend's `typescript` dependency. `tsrs`
   targets TypeScript 7.1 beta while that dependency stays on 7.0.
 - Negative: tooling that walks `node_modules` must account for the virtual store: a scanner pointed at the workspace
