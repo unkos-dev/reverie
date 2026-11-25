@@ -66,12 +66,14 @@ jobs:
       - name: Audit the lockfile
         run: vp pm audit -- --audit-level=high
 
-  # Keep issue-write permission isolated from the scanner jobs and avoid
-  # depending on checkout or a working directory that checkout creates.
+  # Keep issue-write permission isolated from the scanner jobs, avoid depending
+  # on checkout, and restrict issue writes to the first attempt of a scheduled
+  # run so manual branch dispatches and reruns cannot close or rewrite alerts
+  # for main.
   advisory-alerts:
     name: Advisory scan alerts
     needs: [advisories, npm-advisories]
-    if: always()
+    if: always() && github.event_name == 'schedule' && github.run_attempt == 1
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

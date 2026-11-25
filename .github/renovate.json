@@ -24,7 +24,7 @@
   "lockFileMaintenance": {
     "description": "Refresh lockfiles daily overnight under the 2-day release-age hold synced to Cargo and pnpm through minimumReleaseAgePackageManagerSync. Direct npm dependencies stay pinned so npm refreshes touch only transitives. Green required checks automerge the refresh; a red one stays open for diagnosis.",
     "enabled": true,
-    "schedule": ["before 6am every day"],
+    "schedule": ["before 6am"],
     "addLabels": ["lockfile-maintenance"],
     "automerge": true
   },
