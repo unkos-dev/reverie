@@ -44,11 +44,11 @@ default is the only form no version can void by moving underneath it, and requir
 routine human merge did.
 
 The controls are pinned and enforced managers, frozen installs, downloads verified against a committed lockfile, no
-install-time code execution by default, a release-age hold, and audits of every ingested tree. An exception names its
-package and records its reason. Updates merge automatically when required checks pass and the hold has elapsed. Unless a
-named exception applies, a human reviews major versions, rewritten action tags, pre-1.0 libraries linked into the
-product, and updates that need a manual step. Third-party action updates also require review by default because an
-update reaches every workflow that uses the action, including jobs with write permissions or credentials.
+install-time code execution by default, a release-age hold on automated updates, and audits of every ingested tree. An
+exception names its package and records its reason. Updates merge automatically when required checks pass and the hold
+has elapsed. Unless a named exception applies, a human reviews major versions, rewritten action tags, pre-1.0 libraries
+linked into the product, and updates that need a manual step. Third-party action updates also require review by default
+because an update reaches every workflow that uses the action, including jobs with write permissions or credentials.
 
 ### Consequences
 
@@ -60,6 +60,8 @@ update reaches every workflow that uses the action, including jobs with write pe
 - Negative: when GitHub release metadata is unavailable, tag-based action lookups can use timestamps the publisher
   controls.
 - Negative: a tool checksum is recorded on first download and trusted from then on.
+- Negative: the release-age hold runs in Renovate on direct dependency updates rather than in the package managers, so
+  transitive versions resolved during lockfile updates and manual installs are not aged.
 - Negative: a transitive advisory absent from the relevant advisory database gets no automated fix pull request.
 - Negative: cargo has no install-script control, so that control remains ecosystem-specific rather than spanning both
   stacks.
