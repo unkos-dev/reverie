@@ -208,9 +208,9 @@ no older compiler.
 CI also keeps a content-addressed Rust build cache in object storage, installed by `kunobi-ninja/kache-action` at the
 versions pinned in the [backend](workflows/backend.yml) and [CodeQL](workflows/codeql.yml) workflows and updated by
 Renovate. This cache is not required for local builds. It runs alongside `Swatinem/rust-cache`, which carries the cargo
-registry only. Write credentials are reserved for pushes to `main`; pull requests receive object-read credentials and
-run with the remote in read-only mode, so a branch cannot write into the store the default branch restores from. The
-rationale, the alternatives, and the measured numbers behind it are in
+registry only. CI selects write credentials on `main`. Kache allows writes on protected pushes and on the nightly Rust
+CodeQL run. Pull requests receive object-read credentials and run with the remote in read-only mode. The rationale, the
+alternatives, and the measured numbers behind it are in
 [Remote Rust build cache on object storage](../docs/adr/0043-remote-rust-build-cache-on-object-storage.md).
 
 CI installs vp through [`voidzero-dev/setup-vp`](https://github.com/voidzero-dev/setup-vp). No workflow pins the vp
