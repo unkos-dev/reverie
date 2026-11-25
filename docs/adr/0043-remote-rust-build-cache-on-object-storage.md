@@ -87,8 +87,8 @@ would roughly double stored artifacts for a compile phase that was a minority of
   most of what the compile phase still costs.
 - Negative: CI gains a dependency on a third-party action, a young caching tool, and an external storage provider, any
   of which can fail or change. Failures degrade to uncached compilation rather than breaking the build.
-- Negative: credentials now exist that can write to a shared build cache. The read-only split limits the blast radius to
-  pushes on the default branch.
+- Negative: CI uses credentials that can write to a shared build cache. The credential split limits write access to the
+  default branch.
 - Negative: the bucket is same-continent with the runners but not co-located, so restore throughput is a measured
   quantity rather than an assumed one.
 - Negative: fork pull requests cannot read repository secrets and so cannot reach the store. They request the tarball
