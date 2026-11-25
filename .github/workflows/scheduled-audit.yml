@@ -66,6 +66,61 @@ jobs:
       - name: Audit the lockfile
         run: vp pm audit -- --audit-level=high
 
+  # Keep issue-write permission isolated from the scanner jobs, avoid depending
+  # on checkout, and restrict issue writes to the first attempt of a scheduled
+  # run so manual branch dispatches and reruns cannot close or rewrite alerts
+  # for main.
+  advisory-alerts:
+    name: Advisory scan alerts
+    needs: [advisories, npm-advisories]
+    if: always() && github.event_name == 'schedule' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write # open, comment, or close scheduled advisory alert issues
+    steps:
+      - name: Sync advisory alert issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CARGO_RESULT: ${{ needs.advisories.result }}
+          NPM_RESULT: ${{ needs.npm-advisories.result }}
+        run: |
+          set -euo pipefail
+
+          sync_issue() {
+            local result="$1"
+            local title="$2"
+            local body="$3"
+            local n
+
+            if [ "$result" != "failure" ] && [ "$result" != "success" ]; then
+              return 0
+            fi
+
+            n=$(gh issue list -R "$REPO" --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+            if [ "$result" = "failure" ]; then
+              if [ -n "$n" ]; then
+                gh issue comment -R "$REPO" "$n" --body "Recurred: ${RUN_URL}"
+              else
+                gh issue create -R "$REPO" --title "$title" --body "$body"
+              fi
+            elif [ -n "$n" ]; then
+              gh issue close -R "$REPO" "$n" --comment "Resolved: ${RUN_URL}"
+            fi
+          }
+
+          sync_issue \
+            "$CARGO_RESULT" \
+            "Cargo advisory scan failed" \
+            "The daily cargo-deny advisory scan failed (a RustSec advisory matched backend/Cargo.lock, or the scan errored). Review the run log: ${RUN_URL}. Remediation is usually running Renovate lock file maintenance or updating the affected crate in backend/Cargo.lock."
+
+          sync_issue \
+            "$NPM_RESULT" \
+            "npm advisory scan failed" \
+            "The daily npm dependency audit failed (a HIGH/CRITICAL advisory matched pnpm-lock.yaml, or the scan errored). Review the run log: ${RUN_URL}. Remediation is usually running Renovate lock file maintenance or updating the affected package in pnpm-lock.yaml."
+
   # Distro-layer CVEs drift after publish; the publish-time trivy gate only
   # sees what was known at build time, so re-scan daily.
   image-advisories:
