@@ -114,13 +114,16 @@ impl Eq for SeriesPosition {}
 
 impl Serialize for SeriesPosition {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_f64(self.0)
+        serializer.serialize_str(&self.0.to_string())
     }
 }
 
 impl<'de> Deserialize<'de> for SeriesPosition {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = f64::deserialize(deserializer)?;
+        let raw = String::deserialize(deserializer)?;
+        let value = raw
+            .parse::<f64>()
+            .map_err(|_| serde::de::Error::custom("series position must be a valid number"))?;
         Self::new(value).ok_or_else(|| serde::de::Error::custom("series position must be finite"))
     }
 }
