@@ -10,7 +10,6 @@ ADD COLUMN retries_exhausted_at timestamptz CHECK (
     retries_exhausted_at >= '0001-01-01' AND retries_exhausted_at < '10000-01-01'
 );
 
--- noqa: disable=RF03
 CREATE VIEW public.ingestion_input_classes WITH (security_invoker = TRUE) AS
 SELECT
     i.id,
@@ -39,6 +38,5 @@ INNER JOIN LATERAL (
         END AS reason_class
 ) AS c ON TRUE
 WHERE c.reason_class IS NOT NULL;
--- noqa: enable=RF03
 
 GRANT SELECT ON public.ingestion_input_classes TO reverie_app, reverie_ingestion, reverie_readonly;

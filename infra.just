@@ -31,7 +31,14 @@ ryl:
 # Lint every non-ignored tracked SQL file, including parser failures.
 [group('infra')]
 sqlfluff:
-    git ls-files -z '*.sql' | { mapfile -d '' -t files; test "${#files[@]}" -gt 0; uvx --no-build sqlfluff@{{sqlfluff_version}} lint --ignore-local-config --config .sqlfluff "${files[@]}"; }
+    git ls-files -z --cached --ignored --exclude-from=.sqlfluffignore '--format=:(exclude,literal)%(path)' -- '*.sql' | { \
+        mapfile -d '' -t excludes; \
+        git ls-files -z -- '*.sql' "${excludes[@]}" | { \
+            mapfile -d '' -t files; \
+            test "${#files[@]}" -gt 0; \
+            uvx --no-build sqlfluff@{{sqlfluff_version}} lint --ignore-local-config --config .sqlfluff "${files[@]}"; \
+        }; \
+    }
 
 # Lint GitHub Actions workflow files.
 [group('infra')]
