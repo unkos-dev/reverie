@@ -645,7 +645,6 @@ worktree
 worktrees
 writeback
 xs
-ryl
 Zitadel
 zizmor
 Zod
