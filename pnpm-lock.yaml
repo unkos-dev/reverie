@@ -835,8 +835,8 @@ packages:
     peerDependencies:
       graphql: ^16.0.0 || ^17.0.0
 
-  '@graphql-tools/delegate@12.3.5':
-    resolution: {integrity: sha512-RNxecjNp9ZzwHXHIR7G5mTfGuF9JwMU3nWfcDhwnm+I4CULMWd0yyB4N4Osc5nUJgYis+uj4RrKB7wmpguv5CA==}
+  '@graphql-tools/delegate@12.3.6':
+    resolution: {integrity: sha512-g4+GqTmC6ZDEIBKhr7l8txTaXuoAeCVFqSg3HksVXLqgUQNB+lwCQC9aARTQ5An/mM7KwfXEwxg+RaH4AoYnhQ==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
@@ -949,8 +949,8 @@ packages:
     peerDependencies:
       graphql: ^16.0.0 || ^17.0.0
 
-  '@graphql-tools/wrap@11.2.7':
-    resolution: {integrity: sha512-mdLqbSR37N8KgSXe8MlVW7ViMhATLrJF4myuuXyQcb2XDys1sF0D/C7sdDg5UR2A0Bua1ikVhxcbOvZ0V8pCvw==}
+  '@graphql-tools/wrap@11.2.8':
+    resolution: {integrity: sha512-92jv5DfhV5nSm1Zc1j6vZwA83IxhSX6ihQI9bmFQx3cwzxqqoKObpDCGtMgwO4hD1P/kbd9tuFmXmtCsHgMwdA==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
@@ -2997,8 +2997,8 @@ packages:
   boolbase@1.0.0:
     resolution: {integrity: sha512-JZOSA7Mo9sNGB8+UjSgzdLtokWAky1zbztM3WRLCbZ70/3cTANmQmOdR7y2g+J0e2WXywy1yS468tY+IruqEww==}
 
-  brace-expansion@5.0.13:
-    resolution: {integrity: sha512-Vh3dmFbc4wZeox7M9I/0L9GfFd83Su4+yCck/OF9Gi/P/dAHn0RT7X4K9R7gMNMhDck3DvhR6QXsnQdjjgwNvQ==}
+  brace-expansion@5.1.0:
+    resolution: {integrity: sha512-aa11Dv491GKnYqxaul3aRJ0szew7yMJMfZPnqD44NjGrZXoj62l41OEDDpdpC4eE2P88vBFfLuSyRhpG91NUvg==}
     engines: {node: 20 || >=22}
 
   braces@3.0.3:
@@ -3037,8 +3037,8 @@ packages:
     resolution: {integrity: sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==}
     engines: {node: '>=6'}
 
-  caniuse-lite@1.0.30001827:
-    resolution: {integrity: sha512-YWEDr46gSO81M8w6uPbaIy4++IXsirx2asUqvllNiD4BPf75ibxclUjWEqp8ObCenRv+UM2n5Y8xuRPT8V8FrQ==}
+  caniuse-lite@1.0.30001828:
+    resolution: {integrity: sha512-7MWeT+3DlrpuDybTWHl4Zb1Z80Z1fLLnOXuBjDXebzDVcqnEWUlV8JcbASg8B8BhcW8QT2UiR1KAtzYFIZHZYA==}
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
@@ -3268,8 +3268,8 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  devalue@6.0.3:
-    resolution: {integrity: sha512-3woMEITftG1wKeO/4d/QXH1DVKctTSZg3jNGPpjp9hNr5Hos8MCFF5McTML5ZtgKDObm2R591B0spRp2IVernA==}
+  devalue@6.0.4:
+    resolution: {integrity: sha512-8L3d5HaKt6/wnWKRtwmJu7qrLM6YiGb6mxktIFfgjQzQzIAR5vAZdHioZv/252Pp4SN/xu47oxe7RlwoZzWTTA==}
     engines: {node: '>=18'}
 
   devlop@1.1.0:
@@ -3310,8 +3310,8 @@ packages:
   duplexer@0.1.2:
     resolution: {integrity: sha512-jtD6YG370ZCIi/9GTaJKQxWTZD045+4R4hTk/x1UyoqadyJ9x9CgSi1RlVDQF8U2sxLLSnFkCaMihqljHIWgMg==}
 
-  electron-to-chromium@1.5.492:
-    resolution: {integrity: sha512-4uMs7omhajKiud0GqALLTazS/zyvHLTLmDWVTR+e6BnyJo5bSNrph/JoRWEFJJmY75ct9hCiSGsbFF9fLe5gDw==}
+  electron-to-chromium@1.5.493:
+    resolution: {integrity: sha512-/Wto2sKd0EpepzMqwSP2il2TNc+rnBDF6k1poCvhRKpaSSD4sLGRBE+FydqHs2QwcW9cXKLVDqnauzJy1oByYw==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -3739,8 +3739,8 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  i18next@27.2.4:
-    resolution: {integrity: sha512-Twhl6dx3IznvyQEv7rrYH2xBMAmOIjNuj/lPicevTa0d/fxg4Km315MlAI07SOWQcw2pypA4qf39RoMJgJ8WEQ==}
+  i18next@27.2.7:
+    resolution: {integrity: sha512-q3XlM8YSo6Nmomd+MQ4JPGJGvhgHwfCRXNeFrM8l0F4TuIuoJBqhCxQrdGDHNMjObRuw5O0ReuU968ZeMVlfnw==}
     engines: {node: '>=22'}
     peerDependencies:
       typescript: ^5 || ^6 || ^7
@@ -5206,8 +5206,8 @@ packages:
   tiny-inflate@1.0.3:
     resolution: {integrity: sha512-pkY1fj1cKHb2seWDy0B16HeWyczlJA9/WW3u3c4z/NiWDsO3DOU5D7nhTLE9CF0yXv/QZFY7sEJmj24dK+Rrqw==}
 
-  tinybench@6.2.4:
-    resolution: {integrity: sha512-SQ52jEncXxbMCzJuY2A/jGIbbAu6NYsBWW7grz2pNE+EnzQdoGaoBfpk4qC/opE7qiUcGmGgaGIz5EoHdS1O9w==}
+  tinybench@6.2.5:
+    resolution: {integrity: sha512-b/8GRMdnY4cqkfCLyaFpTGIv1qwfi3oT0mWaepwT++6Z/ZrYehNfZZ2JDKVLKGhNoEkS3IIB1ELtCT0XS5DtOA==}
     engines: {node: '>=20.0.0'}
 
   tinyclip@1.0.3:
@@ -5755,7 +5755,7 @@ snapshots:
       hast-util-to-html: 9.0.7
       hast-util-to-string: 3.0.1
       hastscript: 9.0.3
-      i18next: 27.2.4(typescript@7.0.2)
+      i18next: 27.2.7(typescript@7.0.2)
       klona: 2.0.6
       magic-string: 1.4.5
       mdast-util-directive: 3.2.1(supports-color@7.2.0)
@@ -5786,7 +5786,7 @@ snapshots:
       '@astrojs/internal-helpers': 0.13.2
       '@astrojs/runtime': 0.1.2
       common-ancestor-path: 2.0.0
-      devalue: 6.0.3
+      devalue: 6.0.4
       magic-string: 1.4.5
       rolldown: 1.2.19
       smol-toml: 1.9.1
@@ -6328,7 +6328,7 @@ snapshots:
       tslib: 2.9.1
       unixify: 1.0.0
 
-  '@graphql-tools/delegate@12.3.5(graphql@17.1.0)':
+  '@graphql-tools/delegate@12.3.6(graphql@17.1.0)':
     dependencies:
       '@graphql-tools/batch-execute': 10.3.2(graphql@17.1.0)
       '@graphql-tools/executor': 2.1.0(graphql@17.1.0)
@@ -6478,7 +6478,7 @@ snapshots:
       '@graphql-tools/executor-http': 3.6.2(@types/node@26.6.6)(graphql@17.1.0)
       '@graphql-tools/executor-legacy-ws': 2.0.9(graphql@17.1.0)
       '@graphql-tools/utils': 13.2.2(graphql@17.1.0)
-      '@graphql-tools/wrap': 11.2.7(graphql@17.1.0)
+      '@graphql-tools/wrap': 11.2.8(graphql@17.1.0)
       '@types/ws': 8.18.2
       '@whatwg-node/fetch': 0.12.1
       '@whatwg-node/promise-helpers': 2.0.2
@@ -6509,9 +6509,9 @@ snapshots:
       graphql: 17.1.0
       tslib: 2.9.1
 
-  '@graphql-tools/wrap@11.2.7(graphql@17.1.0)':
+  '@graphql-tools/wrap@11.2.8(graphql@17.1.0)':
     dependencies:
-      '@graphql-tools/delegate': 12.3.5(graphql@17.1.0)
+      '@graphql-tools/delegate': 12.3.6(graphql@17.1.0)
       '@graphql-tools/schema': 10.1.5(graphql@17.1.0)
       '@graphql-tools/utils': 12.1.0(graphql@17.1.0)
       '@whatwg-node/promise-helpers': 1.3.2
@@ -8038,7 +8038,7 @@ snapshots:
       axobject-query: 4.1.0
       ci-info: 4.5.0
       cookie: 2.0.2
-      devalue: 6.0.3
+      devalue: 6.0.4
       diff: 9.0.0
       dset: 3.1.4
       es-module-lexer: 3.0.5
@@ -8164,7 +8164,7 @@ snapshots:
 
   boolbase@1.0.0: {}
 
-  brace-expansion@5.0.13:
+  brace-expansion@5.1.0:
     dependencies:
       balanced-match: 4.0.4
 
@@ -8175,8 +8175,8 @@ snapshots:
   browserslist@4.29.6:
     dependencies:
       baseline-browser-mapping: 2.11.39
-      caniuse-lite: 1.0.30001827
-      electron-to-chromium: 1.5.492
+      caniuse-lite: 1.0.30001828
+      electron-to-chromium: 1.5.493
       node-releases: 2.0.65
       update-browserslist-db: 1.4.0(browserslist@4.29.6)
 
@@ -8218,7 +8218,7 @@ snapshots:
 
   callsites@3.1.0: {}
 
-  caniuse-lite@1.0.30001827: {}
+  caniuse-lite@1.0.30001828: {}
 
   ccount@2.0.1: {}
 
@@ -8424,7 +8424,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  devalue@6.0.3: {}
+  devalue@6.0.4: {}
 
   devlop@1.1.0:
     dependencies:
@@ -8464,7 +8464,7 @@ snapshots:
 
   duplexer@0.1.2: {}
 
-  electron-to-chromium@1.5.492: {}
+  electron-to-chromium@1.5.493: {}
 
   emoji-regex@10.6.0: {}
 
@@ -8977,7 +8977,7 @@ snapshots:
       stringify-object: 3.3.0
       yargs: 17.7.3
 
-  i18next@27.2.4(typescript@7.0.2):
+  i18next@27.2.7(typescript@7.0.2):
     optionalDependencies:
       typescript: 7.0.2
 
@@ -9544,12 +9544,12 @@ snapshots:
   minimatch@11.0.4:
     dependencies:
       '@isaacs/nonrecursive-glob-match': 1.1.0
-      brace-expansion: 5.0.13
+      brace-expansion: 5.1.0
 
   minimatch@11.0.9:
     dependencies:
       '@isaacs/nonrecursive-glob-match': 1.1.0
-      brace-expansion: 5.0.13
+      brace-expansion: 5.1.0
 
   minipass-collect@2.0.1:
     dependencies:
@@ -10530,7 +10530,7 @@ snapshots:
 
   tiny-inflate@1.0.3: {}
 
-  tinybench@6.2.4: {}
+  tinybench@6.2.5: {}
 
   tinyclip@1.0.3: {}
 
@@ -10828,7 +10828,7 @@ snapshots:
       obug: 3.0.0
       picomatch: 4.0.7
       std-env: 4.3.0
-      tinybench: 6.2.4
+      tinybench: 6.2.5
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
       vite: '@voidzero-dev/vite-plus-core@8.3.8001(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1)'
