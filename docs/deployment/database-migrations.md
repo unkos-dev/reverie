@@ -19,6 +19,20 @@ For local development, confirm the project, container, mounted database volume a
 must recreate only their confirmed database and run `reverie migrate` before starting the application. The development
 reset recipe does not target deployed databases.
 
+## PostgreSQL major versions
+
+The deployment Compose configuration uses PostgreSQL 19. Application migrations update the schema, not the PostgreSQL
+cluster's storage format. Changing the database image tag alone does not upgrade an existing cluster.
+
+For a fresh deployment, start with an empty database volume. Recreate a disposable database only after confirming its
+exact volume and stopping all consumers. Keep the credential files and library storage.
+
+To preserve database contents across a major version change, use PostgreSQL's
+[major-version upgrade procedure](https://www.postgresql.org/docs/19/upgrading.html). Account for changes to text
+search, trigram parsing and dictionaries when rebuilding indexes and stored search vectors. The
+[accent-folding decision](../adr/0044-match-time-accent-folding-via-unaccent-expression-indexes.md) records the
+dependency on a stable dictionary. A code revert cannot recover deleted database contents.
+
 ## Two identities, one principle
 
 | Identity | Holds the migration credential? | Privileges |
