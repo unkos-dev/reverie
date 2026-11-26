@@ -122,8 +122,6 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
   newly selected young versions.
 - [Snyk ignores for ESLint's URI parser](2026-11-18-snyk-uri-js-ignores.md): lifts when the ESLint the schema lint runs
   on no longer resolves `uri-js` 4.4.1 and Snyk reports no `uri-js` issues without the ignores.
-- [GraphQL-ESLint dependency override](2026-11-18-graphql-tools-utils-override.md): lifts when a GraphQL-ESLint release
-  resolves an unaffected `@graphql-tools/utils` without the override and the schema lint still fails planted violations.
 - [ESLint runs beside oxlint for schema lint](2026-11-18-eslint-for-graphql-schema-lint.md): lifts when the oxlint
   bundled with vite-plus lets JS plugins lint non-JavaScript file formats, so GraphQL-ESLint runs under oxlint.
 - [React Aria transition cancellation](2026-11-09-react-aria-transition-cancellation.md): lifts when a released React

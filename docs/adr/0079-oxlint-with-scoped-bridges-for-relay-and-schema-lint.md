@@ -55,8 +55,6 @@ removed.
 - Positive: no TypeScript reaches ESLint, so oxlint alone judges application code.
 - Negative: a second lint engine and its dependency tree stay installed until oxlint can lint `.graphql` files.
 - Negative: the JS-plugin API is alpha and outside semver, so a Vite+ bump can break the Relay rules.
-- Negative: GraphQL-ESLint requires `graphql` 16, so the root workspace resolves `graphql` 16 beside the frontend's
-  `graphql` 17.
 
 ## Pros and cons of the options
 
