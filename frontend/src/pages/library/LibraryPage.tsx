@@ -140,7 +140,6 @@ const LibraryPageQuery = graphql`
   ) @throwOnFieldError {
     viewer {
       id
-      isChild
       libraryPreferences {
         ...useLibraryPreferences_preferences
       }
@@ -818,6 +817,7 @@ function LibraryContent({
   }
 
   const activeFilterCount = countActiveFilters(filterState);
+  const shelfFilterCount = filterState.shelf.length > 0 ? 1 : 0;
   const countedShelves = (source ?? initial).request.shelfIds;
   const selectedShelves = libraryLookups(filterState).shelfIds;
   const summary =
@@ -863,7 +863,6 @@ function LibraryContent({
             shelves={labels.shelfLabels}
             selected={filterState.shelf}
             summary={summary}
-            isChild={query.viewer.isChild}
             filters={filterState}
             onStatus={(status) => {
               commitAll((current) => {
@@ -904,7 +903,7 @@ function LibraryContent({
             editControls={viewMode === "table" ? <TableEditControls /> : null}
             summary={summary}
             facets={facets}
-            filtered={activeFilterCount > 0}
+            filtered={activeFilterCount > shelfFilterCount}
             query={filterState.q ?? ""}
             onQueryChange={(q) => {
               commitAll((current) => ({ ...current, q }));

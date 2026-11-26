@@ -154,6 +154,16 @@ function assignText(params: ListBooksParams, prefix: TextColumn, filter: TextFil
 
 type FacetParamKey = Exclude<ArrayParamKey, "status_any" | "status_none">;
 
+function assignRange(
+  params: ListBooksParams,
+  prefix: "pages" | "rating",
+  filter: RangeFilter,
+): void {
+  if (filter.gte !== undefined) params[`${prefix}_gte`] = filter.gte;
+  if (filter.lte !== undefined) params[`${prefix}_lte`] = filter.lte;
+  if (filter.empty !== undefined) params[`${prefix}_empty`] = filter.empty;
+}
+
 function assignSet(
   params: ListBooksParams,
   keys: readonly [FacetParamKey, FacetParamKey, FacetParamKey],
@@ -178,12 +188,8 @@ export function filterStateToParams(
   if (state.needsReview) params.needs_review = true;
   if (state.enrichmentFailed) params.enrichment_failed = true;
   if (state.noCover) params.cover_empty = true;
-  if (state.pages.gte !== undefined) params.pages_gte = state.pages.gte;
-  if (state.pages.lte !== undefined) params.pages_lte = state.pages.lte;
-  if (state.pages.empty !== undefined) params.pages_empty = state.pages.empty;
-  if (state.rating.gte !== undefined) params.rating_gte = state.rating.gte;
-  if (state.rating.lte !== undefined) params.rating_lte = state.rating.lte;
-  if (state.rating.empty !== undefined) params.rating_empty = state.rating.empty;
+  assignRange(params, "pages", state.pages);
+  assignRange(params, "rating", state.rating);
   if (state.addedAfter !== undefined)
     params.created_at_gte = parseDate(state.addedAfter).toDate(timeZone).toISOString();
   if (state.addedBefore !== undefined)

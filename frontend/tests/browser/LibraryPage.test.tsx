@@ -288,8 +288,6 @@ async function traverseToCurrentEntry(): Promise<void> {
   await arrived;
 }
 type RenderOptions = {
-  isChild?: boolean;
-  toReview?: number;
   items?: BookFixture[];
   visit?: { filters?: Partial<FilterState>; view?: LibraryVisit["view"] };
   preferences?: Preferences;
@@ -304,8 +302,6 @@ type RenderOptions = {
 };
 async function renderLibrary({
   items = [bookFixture()],
-  isChild = false,
-  toReview = 0,
   visit,
   preferences = preferencesFixture(),
   url = "/library",
@@ -335,7 +331,7 @@ async function renderLibrary({
     };
   }
   function viewer() {
-    return { id: VIEWER_ID, isChild, libraryPreferences: graphPreferences(fixture.preferences) };
+    return { id: VIEWER_ID, libraryPreferences: graphPreferences(fixture.preferences) };
   }
   function counts(matchingCount: number) {
     const readingStates = {
@@ -350,7 +346,7 @@ async function renderLibrary({
       librarySummary: {
         totalCount: fixture.books.length,
         readingStates,
-        needsAttention: { toReview, enrichmentFailed: 0, noIsbn: 1, noCover: 0 },
+        needsAttention: { toReview: 0, enrichmentFailed: 0, noIsbn: 1, noCover: 0 },
       },
       libraryFacets: { matchingCount, readingStates, shelves: [] },
     };
@@ -522,13 +518,6 @@ describe("LibraryPage", () => {
     });
     expect(page.getByTestId("router-search").element().textContent).not.toContain("sort=");
     expect(window.location.search).not.toContain("sort=");
-  });
-
-  test("the shelf header withholds the to review chip for a child viewer", async () => {
-    // Rule 5 disclosure boundary: the header withholds a proposal count even if the payload contains one.
-    await renderLibrary({ isChild: true, toReview: 7 });
-    await expect.element(page.getByRole("button", { name: /no ISBN/ })).toBeVisible();
-    await expect.element(page.getByRole("button", { name: /to review/ })).not.toBeInTheDocument();
   });
 
   test("clearing all filters preserves the visit view and the stored sort", async () => {

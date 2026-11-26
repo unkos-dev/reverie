@@ -107,17 +107,15 @@ function ReadingStateBar({
 
 function NeedsAttentionCounts({
   counts,
-  isChild,
   filters,
   onAttention,
 }: Readonly<{
   counts: AttentionCounts;
-  isChild: boolean;
   filters: FilterState;
   onAttention: FilterControls["onAttention"];
 }>): ReactElement | null {
   const entries = [
-    { token: "needsReview", count: isChild ? 0 : counts.toReview, selected: filters.needsReview },
+    { token: "needsReview", count: counts.toReview, selected: filters.needsReview },
     {
       token: "enrichmentFailed",
       count: counts.enrichmentFailed,
@@ -154,14 +152,12 @@ type Props = FilterControls & {
   shelves: ShelfHeader_shelves$key;
   selected: readonly string[];
   summary: ShelfHeader_summary$key | undefined;
-  isChild: boolean;
 };
 
 export function ShelfHeader({
   shelves,
   selected,
   summary,
-  isChild,
   filters,
   onStatus,
   onAttention,
@@ -192,7 +188,6 @@ export function ShelfHeader({
           />
           <NeedsAttentionCounts
             counts={data.needsAttention}
-            isChild={isChild}
             filters={filters}
             onAttention={onAttention}
           />
