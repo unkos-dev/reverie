@@ -115,12 +115,18 @@ export function LibraryToolbar({
         <QuickSearch value={query} onChange={onQueryChange} />
       </div>
       {filters}
-      {summaryData != null && (!filtered || facetData != null) ? (
-        <span className="text-fg-muted text-xs tabular-nums">
-          {filtered && facetData != null ? `${String(facetData.matchingCount)} of ` : ""}
-          {summaryData.totalCount} books
-        </span>
-      ) : null}
+      <span
+        role="status"
+        aria-atomic="true"
+        className="text-fg-muted text-xs tabular-nums empty:absolute"
+      >
+        {summaryData != null && (!filtered || facetData != null) ? (
+          <>
+            {filtered && facetData != null ? `${String(facetData.matchingCount)} of ` : ""}
+            {summaryData.totalCount} books
+          </>
+        ) : null}
+      </span>
       <span className="flex-1" />
       {editControls}
       <div className="flex flex-wrap items-center gap-2">

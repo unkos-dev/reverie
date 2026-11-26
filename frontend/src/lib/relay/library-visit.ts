@@ -408,7 +408,11 @@ export class LibraryVisitOwner {
       return;
     }
     const current = this.state.candidate ?? this.state.source;
-    if (current !== undefined && sameRequest(current.request, request)) return;
+    if (current !== undefined && sameRequest(current.request, request)) {
+      if (current === this.state.source && this.countsStale && this.countsRequest?.closed !== false)
+        this.refreshCounts(current);
+      return;
+    }
     this.replace(request, sort);
   }
 
