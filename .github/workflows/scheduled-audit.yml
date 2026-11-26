@@ -197,11 +197,11 @@ jobs:
           persist-credentials: false
 
       - name: TruffleHog full-history scan
-        uses: trufflesecurity/trufflehog@d232362a64a09a9e7d58267b8f5acef00ae90e23 # v3.100.0
+        uses: trufflesecurity/trufflehog@4ef51f69ca6347aaa76a5e64a87eac9c0c909f71 # v3.100.1
         with:
           # Pin the image (default is :latest).
           # renovate: datasource=github-releases depName=trufflesecurity/trufflehog extractVersion=^v(?<version>.+)$
-          version: "3.100.0"
+          version: "3.100.1"
           # verified-only: unverifiable test DSNs would red the cron daily as
           # noise; a real live leak still verifies.
           extra_args: --results=verified
