@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<1a1a852683bbfccb6474de8b3233e014>>
- * @relayHash 7c5756ab0dfe53b39c75bd1635964bf2
+ * @generated SignedSource<<c7e0916380c47bd6fbcc2bdce8094b49>>
+ * @relayHash ddd9085f6d19b63f1db56d62aec1ba99
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 2e0c91fd0e04ca99cfc901d989f96bb6d658961eb0df6bd6c2893c5bb248be4d
+// @relayRequestID ca248d7c667682fc9af3e9d9cf03c8209575cd55ad5fde9a2702b01ac61f149f
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -122,27 +122,6 @@ const node: ConcreteRequest = (function () {
       kind: "ScalarField",
       name: "unread",
       storageKey: null,
-    },
-    v7 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "wantToRead",
-      storageKey: null,
-    },
-    v8 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "onHold",
-      storageKey: null,
-    },
-    v9 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "abandoned",
-      storageKey: null,
     };
   return {
     fragment: {
@@ -227,14 +206,7 @@ const node: ConcreteRequest = (function () {
               kind: "LinkedField",
               name: "readingStates",
               plural: false,
-              selections: [
-                v4 /*:: as any*/,
-                v5 /*:: as any*/,
-                v6 /*:: as any*/,
-                v7 /*:: as any*/,
-                v8 /*:: as any*/,
-                v9 /*:: as any*/,
-              ],
+              selections: [v4 /*:: as any*/, v5 /*:: as any*/, v6 /*:: as any*/],
               storageKey: null,
             },
             {
@@ -296,11 +268,29 @@ const node: ConcreteRequest = (function () {
               plural: false,
               selections: [
                 v6 /*:: as any*/,
-                v7 /*:: as any*/,
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "wantToRead",
+                  storageKey: null,
+                },
                 v5 /*:: as any*/,
-                v8 /*:: as any*/,
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "onHold",
+                  storageKey: null,
+                },
                 v4 /*:: as any*/,
-                v9 /*:: as any*/,
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "abandoned",
+                  storageKey: null,
+                },
               ],
               storageKey: null,
             },
@@ -342,7 +332,7 @@ const node: ConcreteRequest = (function () {
       ],
     },
     params: {
-      id: "2e0c91fd0e04ca99cfc901d989f96bb6d658961eb0df6bd6c2893c5bb248be4d",
+      id: "ca248d7c667682fc9af3e9d9cf03c8209575cd55ad5fde9a2702b01ac61f149f",
       metadata: {},
       name: "LibraryPageCountsRefreshQuery",
       operationKind: "query",

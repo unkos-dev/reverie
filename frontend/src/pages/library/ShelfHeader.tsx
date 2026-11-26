@@ -18,9 +18,6 @@ const summaryFragment = graphql`
       finished
       reading
       unread
-      wantToRead
-      onHold
-      abandoned
     }
     needsAttention {
       toReview
@@ -58,22 +55,9 @@ function ReadingStateBar({
   onStatus: FilterControls["onStatus"];
 }>): ReactElement {
   const entries = [
-    { token: "finished", label: "Finished", count: counts.finished, colour: "bg-fg-muted" },
+    { token: "finished", label: "Read", count: counts.finished, colour: "bg-fg-muted" },
     { token: "reading", label: "Reading", count: counts.reading, colour: "bg-accent" },
-    { token: "unread", label: "Unread", count: counts.unread, colour: "bg-surface-3" },
-    {
-      token: "want_to_read",
-      label: "Want to read",
-      count: counts.wantToRead,
-      colour: "bg-accent-text",
-    },
-    { token: "on_hold", label: "On hold", count: counts.onHold, colour: "bg-fg-faint" },
-    {
-      token: "abandoned",
-      label: "Abandoned",
-      count: counts.abandoned,
-      colour: "bg-border-control",
-    },
+    { token: "unread", label: "Unread", count: counts.unread, colour: "bg-border-control" },
   ] as const;
   const isSelected = (token: Status): boolean =>
     status.any.length === 1 && status.any.includes(token) && status.none.length === 0;
@@ -87,6 +71,7 @@ function ReadingStateBar({
               key={token}
               variant="ghost"
               size="xs"
+              excludeFromTabOrder
               aria-label={`${label}, ${String(count)}`}
               aria-pressed={isSelected(token)}
               style={{ flexGrow: count }}
@@ -100,23 +85,21 @@ function ReadingStateBar({
           ))}
       </div>
       <div className="flex flex-wrap gap-x-1">
-        {entries
-          .filter(({ count }, index) => index < 3 || count > 0)
-          .map(({ token, label, count, colour }) => (
-            <Button
-              key={token}
-              variant="ghost"
-              size="xs"
-              aria-pressed={isSelected(token)}
-              className="gap-1.5 px-1.5 tabular-nums aria-pressed:border-accent-text aria-pressed:text-fg"
-              onPress={() => {
-                onStatus(token);
-              }}
-            >
-              <span aria-hidden="true" className={cn("size-1.5 rounded-full", colour)} />
-              <span className="font-semibold text-fg">{count}</span> {label}
-            </Button>
-          ))}
+        {entries.map(({ token, label, count, colour }) => (
+          <Button
+            key={token}
+            variant="ghost"
+            size="xs"
+            aria-pressed={isSelected(token)}
+            className="gap-1.5 px-1.5 tabular-nums aria-pressed:border-accent-text aria-pressed:text-fg"
+            onPress={() => {
+              onStatus(token);
+            }}
+          >
+            <span aria-hidden="true" className={cn("size-1.5 rounded-full", colour)} />
+            <span className="font-semibold text-fg">{count}</span> {label}
+          </Button>
+        ))}
       </div>
     </div>
   );

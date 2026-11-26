@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<1104b3add73fed9005965717cad0988f>>
+ * @generated SignedSource<<07f66b0d857ff6f6d9ddd50164e35720>>
  * @lightSyntaxTransform
  */
 
@@ -17,12 +17,9 @@ export type ShelfHeader_summary$data = {
     readonly toReview: number;
   };
   readonly readingStates: {
-    readonly abandoned: number;
     readonly finished: number;
-    readonly onHold: number;
     readonly reading: number;
     readonly unread: number;
-    readonly wantToRead: number;
   };
   readonly totalCount: number;
   readonly " $fragmentType": "ShelfHeader_summary";
@@ -76,27 +73,6 @@ const node: ReaderFragment = {
           name: "unread",
           storageKey: null,
         },
-        {
-          alias: null,
-          args: null,
-          kind: "ScalarField",
-          name: "wantToRead",
-          storageKey: null,
-        },
-        {
-          alias: null,
-          args: null,
-          kind: "ScalarField",
-          name: "onHold",
-          storageKey: null,
-        },
-        {
-          alias: null,
-          args: null,
-          kind: "ScalarField",
-          name: "abandoned",
-          storageKey: null,
-        },
       ],
       storageKey: null,
     },
@@ -144,6 +120,6 @@ const node: ReaderFragment = {
   abstractKey: null,
 };
 
-(node as any).hash = "53730a5a8ff5a577f8146bcb74f75e38";
+(node as any).hash = "13593bd95fcc29d4ef32e72946c3ce3a";
 
 export default node;

@@ -281,9 +281,10 @@ boundary. Removable filter chips keep a quiet outline, a muted category label, a
 
 ### Library shelf header
 
-The header pairs the open shelf name with its total. The reading-state bar uses semantic foreground, accent, surface,
-and control-border colours. Each non-zero segment and its legend button selects one exact status. The legend keeps
-Finished, Reading, and Unread visible at zero. Pressed controls have an accent-text outline. Counts use tabular figures.
+The header pairs the open shelf name with its total. The reading-state bar shows Read, Reading, and Unread in that
+order, with widths proportional to those three counts. It uses the muted foreground, accent, and control-border colours.
+Each non-zero segment and its matching legend button selects one exact status. The legend includes zero counts and
+provides one tab stop per status. Pressed controls have an accent-text outline. Counts use tabular figures.
 
 Needs attention sits to the right on the same row. Compact outline buttons use muted labels and foreground counts. The
 order is to review, enrichment failed, no ISBN, and no cover. Zero counts and the child account's to review count stay

@@ -66,9 +66,11 @@ fragment on the screen query, names the chips, the rail's Series and Authors sel
 each selected author's, series', and shelf's ID and name. No response writes filter intent.
 
 `ShelfHeader_summary` reads the total, reading states, and Needs attention counts for the distinct union of selected
-shelves, or the whole Library when no shelf is selected. The bar and its legend dispatch an exact status selection, or
-clear the selection when pressed again. Needs attention buttons toggle the corresponding predicates. The ISBN button
-uses the is-empty operator and keeps dormant text. Child accounts omit the to review button.
+shelves, or the whole Library when no shelf is selected. The bar and legend show Read (`finished`), Reading (`reading`),
+and Unread (`unread`). Segment widths use the sum of these three counts. The Status editor offers the full set of
+statuses. A bar segment or legend button dispatches its exact status selection or clears it when pressed again. Needs
+attention buttons toggle the corresponding predicates. The ISBN button uses the is-empty operator and keeps dormant
+text. Child accounts omit the to review button.
 
 `FilterRail_facets` supplies the status and shelf fields to the corresponding editors' fragments. Each facet counts
 matches after excluding its own filter. The shelf list shows a count where the server returns a facet for that shelf.
