@@ -12,7 +12,7 @@ import {
   type PreloadedQuery,
 } from "react-relay";
 import { commitLocalUpdate } from "relay-runtime";
-import { invalidateAfterMetadataEdit } from "@/lib/relay/library-visit";
+import { invalidateAfterMetadataEdit, invalidateLibraryVisits } from "@/lib/relay/library-visit";
 import editMetadataDialogQuery, {
   type EditMetadataDialogQuery,
 } from "@/lib/relay/__generated__/EditMetadataDialogQuery.graphql";
@@ -410,6 +410,7 @@ function FieldGroup({
           break;
         }
         case "MetadataVersionRejected":
+          invalidateLibraryVisits(environment, ["needsReview"]);
           onAction({ status: "success", variables });
           break;
         case "NotFound":

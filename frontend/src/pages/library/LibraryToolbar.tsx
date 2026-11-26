@@ -24,6 +24,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { graphql, useFragment } from "react-relay";
+import type { LibraryToolbar_summary$key } from "@/lib/relay/__generated__/LibraryToolbar_summary.graphql";
+import type { LibraryToolbar_facets$key } from "@/lib/relay/__generated__/LibraryToolbar_facets.graphql";
 import { Slider } from "@/components/ui/slider";
 import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
 
@@ -32,8 +35,9 @@ import { ColumnsPopover } from "./ColumnsPopover";
 type LibraryToolbarProps = {
   filters: ReactNode;
   editControls: ReactNode;
-  loadedCount: number;
-  hasMorePages: boolean;
+  summary: LibraryToolbar_summary$key | undefined;
+  facets: LibraryToolbar_facets$key | undefined;
+  filtered: boolean;
   query: string;
   onQueryChange: (value: string) => void;
   view: LibraryView;
@@ -57,6 +61,18 @@ type LibraryToolbarProps = {
   onResetColumns: () => void;
 };
 
+const summaryFragment = graphql`
+  fragment LibraryToolbar_summary on LibrarySummary @throwOnFieldError {
+    totalCount
+  }
+`;
+
+const facetsFragment = graphql`
+  fragment LibraryToolbar_facets on LibraryFacets @throwOnFieldError {
+    matchingCount
+  }
+`;
+
 const DENSITY_LABELS: Record<Density, string> = {
   comfortable: "Comfortable",
   compact: "Compact",
@@ -65,8 +81,9 @@ const DENSITY_LABELS: Record<Density, string> = {
 export function LibraryToolbar({
   filters,
   editControls,
-  loadedCount,
-  hasMorePages,
+  summary,
+  facets,
+  filtered,
   query,
   onQueryChange,
   view,
@@ -87,6 +104,8 @@ export function LibraryToolbar({
   canResetColumns,
   onResetColumns,
 }: Readonly<LibraryToolbarProps>): ReactElement {
+  const summaryData = useFragment(summaryFragment, summary ?? null);
+  const facetData = useFragment(facetsFragment, facets ?? null);
   const firstSort = sortLevels.at(0);
   const sortDirection = firstSort?.desc === true ? "desc" : "asc";
   const sortValue = firstSort === undefined ? null : `${firstSort.field}:${sortDirection}`;
@@ -96,8 +115,17 @@ export function LibraryToolbar({
         <QuickSearch value={query} onChange={onQueryChange} />
       </div>
       {filters}
-      <span className="text-fg-muted text-xs tabular-nums">
-        {loadedCount} books{hasMorePages ? " loaded" : ""}
+      <span
+        role="status"
+        aria-atomic="true"
+        className="text-fg-muted text-xs tabular-nums empty:absolute"
+      >
+        {summaryData != null && (!filtered || facetData != null) ? (
+          <>
+            {filtered && facetData != null ? `${String(facetData.matchingCount)} of ` : ""}
+            {summaryData.totalCount} books
+          </>
+        ) : null}
       </span>
       <span className="flex-1" />
       {editControls}

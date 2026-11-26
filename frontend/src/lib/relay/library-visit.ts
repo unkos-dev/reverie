@@ -18,6 +18,7 @@ import {
 } from "@/api/books";
 import { LibraryIntent } from "@/lib/hooks/use-library-filters";
 import {
+  MAX_FILTER_VALUES,
   emptyFilterState,
   filterStateToParams,
   isLibraryRequestEligible,
@@ -25,17 +26,25 @@ import {
   type LibraryPosition,
   type LibraryVisit,
 } from "@/routes/library-params";
+import CountsRefreshDocument, {
+  type LibraryPageCountsRefreshQuery,
+} from "./__generated__/LibraryPageCountsRefreshQuery.graphql";
 import LibraryPageDocument, {
   type LibraryPageQuery as LibraryPageQuery,
   type ReadingStatusFilter,
   type SortField as GraphQLSortField,
 } from "./__generated__/LibraryPageQuery.graphql";
 
-const SORT_COLUMNS = {
+export const SORT_COLUMNS = {
   title: "TITLE",
+  subtitle: "SUBTITLE",
   author: "AUTHOR",
-  created_at: "CREATED_AT",
+  series: "SERIES",
+  isbn_13: "ISBN_13",
   pages: "PAGES",
+  status: "STATUS",
+  rating: "RATING",
+  created_at: "CREATED_AT",
 } as const satisfies Record<SortField, GraphQLSortField>;
 
 const STATUS_FILTERS = {
@@ -78,6 +87,9 @@ function libraryVariables(
     isbn13Contains: params.isbn_13_contains,
     isbn13Eq: params.isbn_13_eq,
     isbn13Empty: params.isbn_13_empty,
+    needsReview: params.needs_review,
+    enrichmentFailed: params.enrichment_failed,
+    coverEmpty: params.cover_empty,
     pagesGte: params.pages_gte,
     pagesLte: params.pages_lte,
     pagesEmpty: params.pages_empty,
@@ -101,7 +113,10 @@ function libraryVariables(
   };
 }
 
-type LibraryRequest = Omit<LibraryPageQuery["variables"], "sourceKey">;
+type LibraryRequest = Omit<
+  LibraryPageQuery["variables"],
+  "sourceKey" | "summaryEligible" | "summaryShelfIds"
+>;
 
 export function libraryRequest(filters: FilterState, sort: string): LibraryRequest {
   const params = filterStateToParams(filters);
@@ -134,7 +149,13 @@ export class LibrarySource {
     this.request = request;
     this.key = key;
     this.sort = sort;
-    this.variables = { ...request, sourceKey: key };
+    const summaryEligible = request.shelfIds.length <= MAX_FILTER_VALUES;
+    this.variables = {
+      ...request,
+      sourceKey: key,
+      summaryEligible,
+      summaryShelfIds: summaryEligible ? request.shelfIds : [],
+    };
     this.operation = createOperationDescriptor(LibraryPageDocument, this.variables);
     this.reference = loadQuery<LibraryPageQuery>(environment, LibraryPageDocument, this.variables, {
       fetchPolicy: storeOnly ? "store-only" : "store-or-network",
@@ -234,6 +255,8 @@ export class LibraryVisitOwner {
   private readonly provisionalKey = crypto.randomUUID();
   private activation = "";
   private candidateRequest: Subscription | undefined;
+  private countsRequest: Subscription | undefined;
+  private countsStale = false;
   private restartedCursor = false;
   private disposed = false;
   private captureCurrent: (() => LibraryPosition | undefined) | undefined;
@@ -325,6 +348,7 @@ export class LibraryVisitOwner {
     if (!initial.request.eligible) return;
     if (source !== undefined) {
       if (!fresh) this.replace(initial.request, initial.sort, position);
+      else if (this.countsStale) this.refreshCounts(source);
     } else if (position !== undefined) {
       const candidate = new LibrarySource(
         this.environment,
@@ -358,6 +382,7 @@ export class LibraryVisitOwner {
 
   leave(): void {
     this.cancelCandidate();
+    this.cancelCountsRefresh();
     this.captureCurrent = undefined;
     this.activation = "";
   }
@@ -383,7 +408,11 @@ export class LibraryVisitOwner {
       return;
     }
     const current = this.state.candidate ?? this.state.source;
-    if (current !== undefined && sameRequest(current.request, request)) return;
+    if (current !== undefined && sameRequest(current.request, request)) {
+      if (current === this.state.source && this.countsStale && this.countsRequest?.closed !== false)
+        this.refreshCounts(current);
+      return;
+    }
     this.replace(request, sort);
   }
 
@@ -393,6 +422,7 @@ export class LibraryVisitOwner {
     position?: LibraryPosition,
   ): void {
     this.cancelCandidate();
+    this.cancelCountsRefresh();
     this.restartedCursor = false;
     const candidate = this.newSource(request, sort, true);
     this.publish({
@@ -426,6 +456,7 @@ export class LibraryVisitOwner {
       candidate.sort,
       true,
     );
+    this.countsStale = false;
     this.publish({ source, candidate: undefined, candidateReady: false, error: null });
     previous?.dispose();
   }
@@ -458,6 +489,29 @@ export class LibraryVisitOwner {
     }
     this.cancelCandidate();
     this.publish({ error });
+    if (this.countsStale && this.state.source !== undefined) this.refreshCounts(this.state.source);
+  }
+
+  private cancelCountsRefresh(): void {
+    this.countsRequest?.unsubscribe();
+    this.countsRequest = undefined;
+  }
+
+  private refreshCounts(source: LibrarySource): void {
+    this.cancelCountsRefresh();
+    const { shelfIds, filter } = source.request;
+    this.countsRequest = fetchQuery<LibraryPageCountsRefreshQuery>(
+      this.environment,
+      CountsRefreshDocument,
+      { shelfIds, filter },
+    ).subscribe({
+      next: () => {
+        this.countsStale = false;
+      },
+      error: (error: Error) => {
+        console.error("[LibraryVisitOwner] count refresh failed", error);
+      },
+    });
   }
 
   refresh(): void {
@@ -473,6 +527,23 @@ export class LibraryVisitOwner {
   ): void {
     const source = this.state.source;
     const candidate = this.state.candidate;
+    const affectsCounts =
+      shelfId !== undefined ||
+      fields.some((field) =>
+        [
+          "status",
+          "isbn_13",
+          "isbn13",
+          "needsReview",
+          "enrichmentFailed",
+          "cover",
+          "shelfFacets",
+        ].includes(field),
+      );
+    if (affectsCounts) {
+      this.cancelCountsRefresh();
+      this.countsStale = true;
+    }
     const stale = new Set<LibrarySource>();
     for (const generation of [source, candidate]) {
       if (generation === undefined) continue;
@@ -508,14 +579,16 @@ export class LibraryVisitOwner {
     if (candidate !== undefined && this.isCurrent()) {
       // A pre-edit read can publish an older revision even if its sort and filters are unaffected.
       this.replace(candidate.request, candidate.sort, this.state.position);
-    } else if (candidate === undefined && source !== undefined && stale.has(source)) {
-      this.refresh();
+    } else if (candidate === undefined && source !== undefined && this.isCurrent()) {
+      if (stale.has(source)) this.refresh();
+      else if (affectsCounts) this.refreshCounts(source);
     }
   }
 
   dispose(): void {
     this.disposed = true;
     this.cancelCandidate();
+    this.cancelCountsRefresh();
     this.state.source?.dispose();
     for (const preparation of this.preparations) preparation.drop();
     this.preparations.clear();
@@ -534,7 +607,9 @@ function dependsOn(source: LibrarySource, fields: readonly string[], shelfId?: s
   if (shelfId !== undefined)
     return filter?.shelf === shelfId || (filter?.shelfAny?.includes(shelfId) ?? false);
   return fields.some((field) => {
-    const sortField = field === "contributors.author" || field === "authors" ? "author" : field;
+    let sortField = field;
+    if (field === "contributors.author" || field === "authors") sortField = "author";
+    else if (field === "isbn13") sortField = "isbn_13";
     if (source.sort.some((level) => level.field === sortField)) return true;
     if (filter == null) return false;
     switch (sortField) {
@@ -552,7 +627,6 @@ function dependsOn(source: LibrarySource, fields: readonly string[], shelfId?: s
       case "author":
         return filter.author != null || filter.authorAny != null || filter.authorNone != null;
       case "isbn_13":
-      case "isbn13":
         return (
           filter.isbn13Contains !== undefined ||
           filter.isbn13Eq !== undefined ||
@@ -564,6 +638,14 @@ function dependsOn(source: LibrarySource, fields: readonly string[], shelfId?: s
           filter.pagesLte !== undefined ||
           filter.pagesEmpty !== undefined
         );
+      case "series":
+        return filter.series != null || filter.seriesAny != null;
+      case "needsReview":
+        return filter.needsReview != null;
+      case "enrichmentFailed":
+        return filter.enrichmentFailed != null;
+      case "cover":
+        return filter.coverEmpty != null;
       case "status":
         return filter.statusAny != null || filter.statusNone != null;
       case "rating":
@@ -687,7 +769,7 @@ export function invalidateAfterMetadataEdit(
       store.get(siblingEditions.workId)?.invalidateRecord();
     });
   }
-  invalidateLibraryVisits(environment, fields, { siblingEditions });
+  invalidateLibraryVisits(environment, [...fields, "needsReview"], { siblingEditions });
 }
 
 export function invalidateLibraryVisits(

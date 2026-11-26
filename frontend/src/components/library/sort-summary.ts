@@ -11,6 +11,11 @@ import type { SortField, SortLevelParam } from "@/api";
 /** Sort-field labels, matching the table view's column header names. */
 export const SORT_FIELD_LABELS: Record<SortField, string> = {
   title: "Title",
+  subtitle: "Subtitle",
+  series: "Series",
+  isbn_13: "ISBN",
+  status: "Status",
+  rating: "Rating",
   author: "Authors",
   created_at: "Added",
   pages: "Pages",

@@ -131,6 +131,8 @@ const LibraryPageQuery = graphql`
     $seriesIds: [ID!]!
     $shelfIds: [ID!]!
     $eligible: Boolean!
+    $summaryEligible: Boolean!
+    $summaryShelfIds: [ID!]!
     $sourceKey: String!
     $filter: BooksFilter
     $sort: [SortLevel!]
@@ -144,12 +146,33 @@ const LibraryPageQuery = graphql`
     }
     ...LibraryPage_labels
       @arguments(authorIds: $authorIds, seriesIds: $seriesIds, shelfIds: $shelfIds)
+    librarySummary(shelfIds: $summaryShelfIds) @include(if: $summaryEligible) {
+      ...ShelfHeader_summary
+      ...LibraryToolbar_summary
+    }
+    libraryFacets(filter: $filter) @include(if: $eligible) {
+      ...FilterRail_facets
+      ...LibraryToolbar_facets
+    }
     ...ShelvesListPage_shelves
     ...TypeaheadMultiSelect_suggestions
     ...LibraryPage_rows
       @alias(as: "rows")
       @include(if: $eligible)
       @arguments(count: $count, sourceKey: $sourceKey, filter: $filter, sort: $sort)
+  }
+`;
+
+void graphql`
+  query LibraryPageCountsRefreshQuery($shelfIds: [ID!]!, $filter: BooksFilter) @throwOnFieldError {
+    librarySummary(shelfIds: $shelfIds) {
+      ...ShelfHeader_summary
+      ...LibraryToolbar_summary
+    }
+    libraryFacets(filter: $filter) {
+      ...FilterRail_facets
+      ...LibraryToolbar_facets
+    }
   }
 `;
 
@@ -267,6 +290,7 @@ function useLibraryBooks(
     throw state.error;
   return {
     ...state,
+    displayedQuery: query,
     blockedMessage,
     items: data?.books.edges.map((edge) => edge.node) ?? [],
     updating: !blocked && state.candidate !== undefined,
@@ -611,6 +635,7 @@ function LibraryContent({
     source,
     candidate,
     candidateReady,
+    displayedQuery,
     items,
     position,
     restoreGeneration,
@@ -669,9 +694,10 @@ function LibraryContent({
         mutation: refreshMetadataMutation,
         variables: { input: { id } },
         onCompleted: ({ refreshMetadata }) => {
-          if (refreshMetadata.__typename === "MetadataRefreshQueued")
+          if (refreshMetadata.__typename === "MetadataRefreshQueued") {
+            invalidateLibraryVisits(environment, ["enrichmentFailed"]);
             resolve({ saved: true, action: "none" });
-          else
+          } else
             resolve({
               saved: false,
               action: "none",
@@ -791,6 +817,16 @@ function LibraryContent({
   }
 
   const activeFilterCount = countActiveFilters(filterState);
+  const shelfFilterCount = filterState.shelf.length > 0 ? 1 : 0;
+  const countedShelves = (source ?? initial).request.shelfIds;
+  const selectedShelves = libraryLookups(filterState).shelfIds;
+  const summary =
+    countedShelves.length === selectedShelves.length &&
+    countedShelves.every((id) => selectedShelves.includes(id))
+      ? displayedQuery.librarySummary
+      : undefined;
+  const facets =
+    blockedMessage === undefined && !updating ? displayedQuery.libraryFacets : undefined;
 
   if (!loading && !hasRenderedControls) setHasRenderedControls(true);
   const candidateContent =
@@ -823,7 +859,34 @@ function LibraryContent({
       {candidateContent}
       <div className="lg:h-[calc(100dvh-86px)]">
         <div className="flex h-full min-h-0 flex-col px-3 pb-3 sm:px-5">
-          <ShelfHeader shelves={labels.shelfLabels} selected={filterState.shelf} />
+          <ShelfHeader
+            shelves={labels.shelfLabels}
+            selected={filterState.shelf}
+            summary={summary}
+            filters={filterState}
+            onStatus={(status) => {
+              commitAll((current) => {
+                const selected =
+                  current.status.any.length === 1 &&
+                  current.status.any.includes(status) &&
+                  current.status.none.length === 0;
+                return { ...current, status: { any: selected ? [] : [status], none: [] } };
+              });
+            }}
+            onAttention={(attention) => {
+              commitAll((current) => {
+                if (attention === "noIsbn")
+                  return {
+                    ...current,
+                    isbn13: {
+                      ...current.isbn13,
+                      op: current.isbn13.op === "empty" ? undefined : "empty",
+                    },
+                  };
+                return { ...current, [attention]: current[attention] ? undefined : true };
+              });
+            }}
+          />
           {/* Sort announcements stay outside the filter editor so hidden controls do not silence them. */}
           <p className="sr-only" aria-live="polite">
             {sortStackSummary(sortLevels)}
@@ -838,8 +901,9 @@ function LibraryContent({
               />
             }
             editControls={viewMode === "table" ? <TableEditControls /> : null}
-            loadedCount={items.length}
-            hasMorePages={canLoadMore}
+            summary={summary}
+            facets={facets}
+            filtered={activeFilterCount > shelfFilterCount}
             query={filterState.q ?? ""}
             onQueryChange={(q) => {
               commitAll((current) => ({ ...current, q }));
@@ -948,6 +1012,7 @@ function LibraryContent({
                 <FilterRail
                   owner={owner}
                   suggestions={query}
+                  facets={facets}
                   labels={labelFor}
                   shelves={railShelves}
                   showContradiction={showContradiction}
@@ -1002,6 +1067,7 @@ function LibraryContent({
           <FilterRail
             owner={owner}
             suggestions={query}
+            facets={facets}
             labels={labelFor}
             shelves={railShelves}
             showContradiction={showContradiction}

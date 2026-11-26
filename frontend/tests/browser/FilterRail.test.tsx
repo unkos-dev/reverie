@@ -60,6 +60,7 @@ function mockFetchByUrl(): void {
             },
           },
           viewer: {
+            isChild: false,
             id: "user-77777777-7777-4777-8777-777777777777",
             libraryPreferences: {
               hiddenColumns: null,
@@ -120,6 +121,7 @@ function SortOwner({
           setView: () => {},
         }}
         suggestions={query}
+        facets={query.libraryFacets}
         labels={{ authorLabel: () => "", seriesName: () => "" }}
         shelves={{
           items: SHELVES.map((shelf) => ({
@@ -151,6 +153,8 @@ async function renderRail(
     seriesIds: [],
     shelfIds: [],
     eligible: false,
+    summaryEligible: false,
+    summaryShelfIds: [],
     sourceKey: "filters",
   });
   const router = createMemoryRouter(

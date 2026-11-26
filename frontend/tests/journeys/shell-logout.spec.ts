@@ -37,11 +37,20 @@ async function intercept(page: Page): Promise<{
       const body = z.object({ id: z.string() }).parse(route.request().postDataJSON());
       const operation = documents[body.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
       const page = { edges: [], pageInfo: { endCursor: null, hasNextPage: false } };
+      const readingStates = {
+        unread: 0,
+        wantToRead: 0,
+        reading: 0,
+        onHold: 0,
+        finished: 0,
+        abandoned: 0,
+      };
       if (operation === "libraryBootstrapQuery" || operation === "LibraryPageQuery") {
         await route.fulfill({
           json: {
             data: {
               viewer: {
+                isChild: false,
                 id: "user_01h455vb4pex5vsknk084sn02q",
                 libraryPreferences: {
                   hiddenColumns: null,
@@ -59,7 +68,18 @@ async function intercept(page: Page): Promise<{
               authorLabels: [],
               seriesLabels: [],
               shelfLabels: [],
-              ...(operation === "LibraryPageQuery" ? { shelves: page, books: page } : {}),
+              ...(operation === "LibraryPageQuery"
+                ? {
+                    shelves: page,
+                    books: page,
+                    librarySummary: {
+                      totalCount: 0,
+                      readingStates,
+                      needsAttention: { toReview: 0, enrichmentFailed: 0, noIsbn: 0, noCover: 0 },
+                    },
+                    libraryFacets: { matchingCount: 0, readingStates, shelves: [] },
+                  }
+                : {}),
             },
           },
         });

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<d9825c8a2c49eff9ac684acdd5a30c17>>
- * @relayHash 3952bdc5db9dc00f17d9858c4bc6d25f
+ * @generated SignedSource<<6fc08f06bf046914635aa655daf0a2de>>
+ * @relayHash 7d54e9f41b235861cb9bfe276fdd9faf
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID 18a4881ae5bf1df4033db8a923c4c4f26dc7aa1ada2435a4a0c93b183acb9be9
+// @relayRequestID 26096e86dda3e02fdfbaa724910f092d59465ac3c1300a39a23a0f0b8f562831
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -43,21 +43,22 @@ const node: ConcreteRequest = (function () {
         name: "shelfIds",
       },
     ],
-    v1 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "id",
-      storageKey: null,
-    },
-    v2 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "name",
-      storageKey: null,
-    },
-    v3 = [v1 /*:: as any*/, v2 /*:: as any*/];
+    v1 = [
+      {
+        alias: null,
+        args: null,
+        kind: "ScalarField",
+        name: "id",
+        storageKey: null,
+      },
+      {
+        alias: null,
+        args: null,
+        kind: "ScalarField",
+        name: "name",
+        storageKey: null,
+      },
+    ];
   return {
     fragment: {
       argumentDefinitions: v0 /*:: as any*/,
@@ -109,7 +110,7 @@ const node: ConcreteRequest = (function () {
           kind: "LinkedField",
           name: "authorLabels",
           plural: true,
-          selections: v3 /*:: as any*/,
+          selections: v1 /*:: as any*/,
           storageKey: null,
         },
         {
@@ -125,7 +126,7 @@ const node: ConcreteRequest = (function () {
           kind: "LinkedField",
           name: "seriesLabels",
           plural: true,
-          selections: v3 /*:: as any*/,
+          selections: v1 /*:: as any*/,
           storageKey: null,
         },
         {
@@ -141,23 +142,13 @@ const node: ConcreteRequest = (function () {
           kind: "LinkedField",
           name: "shelfLabels",
           plural: true,
-          selections: [
-            v1 /*:: as any*/,
-            v2 /*:: as any*/,
-            {
-              alias: null,
-              args: null,
-              kind: "ScalarField",
-              name: "itemCount",
-              storageKey: null,
-            },
-          ],
+          selections: v1 /*:: as any*/,
           storageKey: null,
         },
       ],
     },
     params: {
-      id: "18a4881ae5bf1df4033db8a923c4c4f26dc7aa1ada2435a4a0c93b183acb9be9",
+      id: "26096e86dda3e02fdfbaa724910f092d59465ac3c1300a39a23a0f0b8f562831",
       metadata: {},
       name: "LibraryPageLabelsRefetchQuery",
       operationKind: "query",

@@ -1712,11 +1712,14 @@ mod tests {
         } else {
             id::Manifestation::encode(fixture.visible)
         };
+        let shelf_id = id::Shelf::encode(fixture.shelf_a);
         json!({
             "id": id.as_str(), "q": "Graph", "eligible": true, "sourceKey": "trusted-visit",
             "authorIds": [id::Author::encode(fixture.author).as_str()],
             "seriesIds": [id::Series::encode(fixture.series).as_str()],
-            "shelfIds": [id::Shelf::encode(fixture.shelf_a).as_str()],
+            "shelfIds": [shelf_id.as_str()],
+            "summaryEligible": true,
+            "summaryShelfIds": [shelf_id.as_str()],
             "authors": true, "series": true, "genres": true, "moods": true, "tags": true
         })
     }

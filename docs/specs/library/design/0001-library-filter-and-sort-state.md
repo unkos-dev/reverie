@@ -63,14 +63,26 @@ Series uses the multiple ComboBox and TagGroup composition with GraphQL ID ident
 free search text on commit and dismissal; only selected identified items publish predicates. Controlled query text
 remains after selection and does not depend on narrowed Library results. One label read, the `LibraryPage_labels`
 fragment on the screen query, names the chips, the rail's Series and Authors selections and the shelf header. It selects
-each selected author's and series' ID and name, and each selected shelf's ID, name and item count. No response writes
-filter intent.
+each selected author's, series', and shelf's ID and name. No response writes filter intent.
+
+`ShelfHeader_summary` reads the total, reading states, and Needs attention counts for the distinct union of selected
+shelves, or the whole Library when no shelf is selected. The bar and legend show Read (`finished`), Reading (`reading`),
+and Unread (`unread`). Segment widths use the sum of these three counts. The Status editor offers the full set of
+statuses. A bar segment or legend button dispatches its exact status selection or clears it when pressed again. Needs
+attention buttons toggle the corresponding predicates. The ISBN button uses the is-empty operator and keeps dormant
+text. Child accounts omit the to review button.
+
+`FilterRail_facets` supplies the status and shelf fields to the corresponding editors' fragments. Each facet counts
+matches after excluding its own filter. The shelf list shows a count where the server returns a facet for that shelf.
+`LibraryToolbar` reads the open shelf total and the number of matches in its own fragments. During a replacement it
+waits for the current facet result before showing a filtered count.
 
 `useLibraryPreferences` reads the preferences fragment on `Viewer.libraryPreferences` and resolves each group as the
 reader's override, else the installation default. It resolves the sort override separately from the effective stack. The
-page supplies its one sort intent handler to the filter panel, Covers sort control and table headers. `useLibraryBooks`
-owns one displayed Relay source and a candidate replacement through the account-scoped `LibraryVisitOwner`. Native
-fragments render the displayed connection and read complete metadata and reading revisions for edits.
+page supplies its one sort intent handler to the filter panel, Covers sort control and the headers of all nine data
+columns. `useLibraryBooks` owns one displayed Relay source and a candidate replacement through the account-scoped
+`LibraryVisitOwner`. Native fragments render the displayed connection and read complete metadata and reading revisions
+for edits.
 
 ## Interfaces and dependencies
 
@@ -116,10 +128,10 @@ same raw request value for eligibility and source identity. Complete inverted bo
 visit owner writes its entry state: dispatched edits, captured positions and the route load's reset when a restored
 selection is no longer visible. Query completion and suggestion responses never write filter intent.
 
-Callers include quick search, every rail section, section clear, chip removal, global and empty-state clear, view
-gestures and the table-chunk fallback. View gestures also write the account preference; chunk failure changes only the
-visit override. Filter clear preserves both view and sort. No filter value enters a preference write. The installation
-default hides Subtitle; an override that hides nothing shows every column.
+Callers include the shelf header's status and attention buttons, quick search, every rail section, section clear, chip
+removal, global and empty-state clear, view gestures and the table-chunk fallback. View gestures also write the account
+preference; chunk failure changes only the visit override. Filter clear preserves both view and sort. No filter value
+enters a preference write. The installation default hides Subtitle; an override that hides nothing shows every column.
 
 ## Runtime behaviour
 
@@ -175,19 +187,22 @@ virtualised rows.
 
 The synchronous Navigation `navigate` event captures an anchor, the first visible book and its position within the
 viewport, together with the loaded extent and absolute scroll position. Entry state contains only serialisable geometry
-and visit intent. Relay retains references in memory. A fresh return reuses the retained connection without a request.
-Relay marks a query stale after five minutes. A committed edit invalidates each retained connection whose sort or filter
-depends on the changed field. A work-level Library save also invalidates connections containing another edition of that
-work. A stale cell refusal invalidates connections containing the book or a sibling edition for metadata edits. Active
-connections rebuild and inactive connections rebuild on return. A stale return renders the retained source while the
-candidate loads both the saved extent and anchor, or reaches the connection end. If a later rebuild page fails with the
-`invalid-cursor` execution error code, the owner restarts the rebuild once from page one. Intermediate pages preserve
-the displayed books and position until the complete replacement is ready, including on repeated returns. The search for
-an absent anchor exhausts the connection before applying the fallback. The owner adopts its ready reference once. A
-moved anchor restores at its saved viewport position as far as the scroll range allows. An absent anchor uses the saved
-absolute offset, or zero when that offset exceeds the new range. Account, entry, source and generation checks reject
-obsolete completion. New intent and user scroll cancel delayed restoration. Entry disposal and account loss release
-retained references.
+and visit intent. Relay retains references in memory. A fresh return reuses the retained connection. If an edit has
+marked its counts stale, the visit owner refreshes them with `LibraryPageCountsRefreshQuery`. The query uses the
+displayed source's shelf IDs and filter. A count-only inline edit uses the same query. Relay updates the header,
+toolbar, and facet fragments in place and the displayed connection keeps its scroll position and focus. A newer edit or
+departure cancels the pending count request. Relay marks a query stale after five minutes. A committed edit invalidates
+each retained connection whose sort or filter depends on the changed field. A work-level Library save also invalidates
+connections containing another edition of that work. A stale cell refusal invalidates connections containing the book or
+a sibling edition for metadata edits. Active connections rebuild and inactive connections rebuild on return. A stale
+return renders the retained source while the candidate loads both the saved extent and anchor, or reaches the connection
+end. If a later rebuild page fails with the `invalid-cursor` execution error code, the owner restarts the rebuild once
+from page one. Intermediate pages preserve the displayed books and position until the complete replacement is ready,
+including on repeated returns. The search for an absent anchor exhausts the connection before applying the fallback. The
+owner adopts its ready reference once. A moved anchor restores at its saved viewport position as far as the scroll range
+allows. An absent anchor uses the saved absolute offset, or zero when that offset exceeds the new range. Account, entry,
+source and generation checks reject obsolete completion. New intent and user scroll cancel delayed restoration. Entry
+disposal and account loss release retained references.
 
 Selection clears at filter, sort or view intent and displayed-source replacement. Pagination retains selection. A cell
 editor captures the opened value and its validator. A failed save shows one dismissible notice above the table.
@@ -219,6 +234,9 @@ A scalar shelf or series value in the owned payload decodes to a singleton array
 array. This decoding adds no recovery write. A malformed member rejects the owned payload atomically. The wire
 projection uses `shelf_any` and `series_any`; the scalar `shelf` and `series` API parameters serve other callers. The
 bootstrap lookups and the label read send each selected ID once; displayed rows retain their owning source.
+
+If count refresh fails, the retained source and its last counts stay visible. The visit owner keeps the counts marked
+stale for a later return.
 
 A failed bootstrap reaches the route error page before the loader writes anything, so the saved visit keeps every
 restored selection, and a later load with the server healthy restores them. A failed screen query also reaches the route

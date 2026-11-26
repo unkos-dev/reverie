@@ -182,7 +182,9 @@ export function useCellEdit({
       releaseCell();
       if (failure === undefined) {
         const field = columnKey === "authors" ? "contributors.author" : columnKey;
-        invalidateAfterMetadataEdit(environment, [field], target.id, target.workId);
+        if (columnKey === "status" || columnKey === "rating")
+          invalidateLibraryVisits(environment, [columnKey]);
+        else invalidateAfterMetadataEdit(environment, [field], target.id, target.workId);
         setSavedCells((current) => new Set(current).add(key));
       } else {
         if (failure.stale === true) {

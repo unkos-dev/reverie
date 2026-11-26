@@ -14,7 +14,7 @@ import { RouterProvider, createMemoryRouter, useLocation } from "react-router";
 import { StrictMode, useSyncExternalStore, type ReactElement } from "react";
 import { RelayEnvironmentProvider } from "react-relay";
 import { z } from "zod";
-import { parseSortParam, serializeSortParam, type Preferences } from "@/api";
+import { parseSortParam, serializeSortParam, SORT_FIELDS, type Preferences } from "@/api";
 import { relayEnvironment, setRelayAccount } from "@/lib/relay/environment";
 import { queryClient as appQueryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
@@ -254,9 +254,7 @@ function applyPreferences(preferences: Preferences, variables: unknown): Prefere
               ? null
               : serializeSortParam(
                   input.sort.map((level) => ({
-                    field: z
-                      .enum(["title", "author", "created_at", "pages"])
-                      .parse(level.column.toLowerCase()),
+                    field: z.enum(SORT_FIELDS).parse(level.column.toLowerCase()),
                     desc: level.direction === "DESC",
                   })),
                 ),
@@ -335,6 +333,24 @@ async function renderLibrary({
   function viewer() {
     return { id: VIEWER_ID, libraryPreferences: graphPreferences(fixture.preferences) };
   }
+  function counts(matchingCount: number) {
+    const readingStates = {
+      unread: fixture.books.length,
+      wantToRead: 0,
+      reading: 0,
+      onHold: 0,
+      finished: 0,
+      abandoned: 0,
+    };
+    return {
+      librarySummary: {
+        totalCount: fixture.books.length,
+        readingStates,
+        needsAttention: { toReview: 0, enrichmentFailed: 0, noIsbn: 1, noCover: 0 },
+      },
+      libraryFacets: { matchingCount, readingStates, shelves: [] },
+    };
+  }
   vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
     const request = wireRequest.parse(JSON.parse(z.string().parse(init?.body)));
     const name = documents[request.id]?.match(/(?:query|mutation) (\w+)/)?.[1];
@@ -363,6 +379,7 @@ async function renderLibrary({
       return Promise.resolve(
         response({
           viewer: viewer(),
+          ...counts(rows.length),
           ...labels(request.variables),
           shelves: { edges: [], pageInfo },
           ...(request.variables.eligible === true
@@ -376,6 +393,8 @@ async function renderLibrary({
         }),
       );
     }
+    if (name === "LibraryPageCountsRefreshQuery")
+      return Promise.resolve(response(counts(fixture.books.length)));
     if (name === "libraryBootstrapQuery") {
       const found = labels(variables);
       return Promise.resolve(
@@ -488,11 +507,14 @@ describe("LibraryPage", () => {
     });
     await expect.element(findLibraryTable()).toBeInTheDocument();
     const user = userEvent;
-    await user.click(page.getByRole("columnheader", { name: /^Title(?:\s|$)/ }));
+    await user.click(page.getByRole("columnheader", { name: /^Status(?:\s|$)/ }));
     await vi.waitFor(() => {
       expect(preferenceWrites(fixture)).toEqual([
-        { sort: [{ column: "TITLE", direction: "ASC" }] },
+        { sort: [{ column: "STATUS", direction: "ASC" }] },
       ]);
+      expect(fixture.preferences.sort_stack).toBe("status");
+      const request = fixture.calls.filter((call) => call.name === "LibraryPageQuery").at(-1);
+      expect(request?.variables.sort).toEqual([{ column: "STATUS", direction: "ASC" }]);
     });
     expect(page.getByTestId("router-search").element().textContent).not.toContain("sort=");
     expect(window.location.search).not.toContain("sort=");

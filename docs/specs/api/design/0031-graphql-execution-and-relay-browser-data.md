@@ -294,12 +294,15 @@ Browser queries and fragments use `@throwOnFieldError`. The directive sends miss
 boundary. Envelope validation keeps execution-error data out of the store. Relay can combine fields of one immutable
 revision ID. An incomplete read cannot form a baseline, and only pages of that revision can complete a whole-list edit.
 
-The screen query contains the conditional, aliased `LibraryPage_rows` connection. Table cells, Covers cards and batch
-actions read their fragments. The displayed and candidate readers use `LibraryPageRowsPaginationQuery` through
-`usePaginationFragment`. The author editor loads `cellsAuthorsQuery` and continues through
-`cellsAuthorEditingPaginationQuery`. The labels and typeahead use their generated refetch queries. Library edits use
-native `useMutation` above the virtualised rows. Save payloads spread their consuming fragments. The Book dialog and
-Versions continue to use their own fragments and hooks.
+`LibraryPageQuery` contains the conditional, aliased `LibraryPage_rows` connection and the open shelf's summary and
+facets. The books and facet fields are selected for eligible filters, and the summary is selected when the shelf IDs are
+within the summary limit. The trusted `LibraryPageCountsRefreshQuery` reads the same summary and facets under the
+displayed source's shelf IDs and filter. It writes the counts into the shared Relay store without selecting books. Table
+cells, Covers cards and batch actions read their fragments. The displayed and candidate readers use
+`LibraryPageRowsPaginationQuery` through `usePaginationFragment`. The author editor loads `cellsAuthorsQuery` and
+continues through `cellsAuthorEditingPaginationQuery`. The labels and typeahead use their generated refetch queries.
+Library edits use native `useMutation` above the virtualised rows. Save payloads spread their consuming fragments. The
+Book dialog and Versions continue to use their own fragments and hooks.
 
 The Library route loader confirms the account, retains `libraryBootstrapQuery` for the destination's visit owner and
 fetches it with `fetchQuery` under `store-or-network`, resolving on completion with the last payload. It then starts
