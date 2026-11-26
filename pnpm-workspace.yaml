@@ -57,7 +57,6 @@ overrides:
   form-data: "4.0.6"
   "glob@13": "14.0.3"
   "minimatch@10": "11.0.4"
-  "@graphql-tools/utils@10": "12.1.0"
 
 patchedDependencies:
   react-aria@3.53.1: frontend/patches/react-aria@3.53.1.patch
