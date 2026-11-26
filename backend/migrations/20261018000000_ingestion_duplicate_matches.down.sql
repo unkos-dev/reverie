@@ -1,4 +1,3 @@
--- noqa: disable=RF03
 CREATE OR REPLACE VIEW public.ingestion_input_classes WITH (security_invoker = TRUE) AS
 SELECT
     i.id,
@@ -27,6 +26,5 @@ INNER JOIN LATERAL (
         END AS reason_class
 ) AS c ON TRUE
 WHERE c.reason_class IS NOT NULL;
--- noqa: enable=RF03
 
 ALTER TABLE public.ingestion_inputs DROP COLUMN matched_manifestation_id;
