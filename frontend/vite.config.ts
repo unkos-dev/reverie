@@ -1,6 +1,7 @@
 import path from "node:path";
 import { defineConfig, lazyPlugins } from "vite-plus";
 import { playwright } from "vite-plus/test/browser-playwright";
+import optimizeLocales from "@react-aria/optimize-locales-plugin";
 import babel from "@rolldown/plugin-babel";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -25,6 +26,7 @@ export default defineConfig({
   // fmt + lint are defined in the root vite.config.ts; this file is frontend
   // build/server/test config only.
   plugins: lazyPlugins(() => [
+    optimizeLocales.vite({ locales: ["en"] }),
     react({ compiler: true }),
     babel({
       plugins: [
