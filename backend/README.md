@@ -136,9 +136,9 @@ The [pre-v0.1 SQL lint transition](../docs/deployment/database-migrations.md#pre
 applied migration checksums and requires database recreation. The confirmed-volume procedure below applies to disposable
 local development data.
 
-The Postgres 18 upgrade changed the volume mount from `pgdata:/var/lib/postgresql/data` to `pgdata:/var/lib/postgresql`.
-Confirm the development cluster's project, container and mounted volume, and coordinate all consumers before deleting
-the existing development data:
+Development and verification use PostgreSQL 19. Changing the image tag does not upgrade a retained cluster from an
+earlier major version. For disposable development data, confirm the project's container and mounted volume, and
+coordinate all consumers before recreating the database:
 
 ```bash
 just db-reset <confirmed-volume>

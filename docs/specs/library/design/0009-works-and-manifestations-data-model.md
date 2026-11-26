@@ -280,9 +280,9 @@ changes runtime behaviour or governs application logic. Every identifier in the 
 enum value alike) is `snake_case`.
 
 Every entity table in this model (`works`, `authors`, `manifestations`, `series`, `genres`, `moods`, `tags`) has a
-surrogate `id` column defaulting to `uuidv7()`, a PostgreSQL 18 core function (the dev and CI image is `postgres:18`,
-per `docker/compose.dev.yml`), so those ids sort approximately by creation time; this is a repository-wide convention
-for entity tables, not particular to this model. The dump installs only three extensions: `pg_trgm`, `pgcrypto` and
+surrogate `id` column defaulting to `uuidv7()`, a PostgreSQL core function (the dev and CI image is `postgres:19`, per
+`docker/compose.dev.yml`), so those ids sort approximately by creation time; this is a repository-wide convention for
+entity tables, not particular to this model. The dump installs only three extensions: `pg_trgm`, `pgcrypto` and
 `unaccent`. The junction tables (`work_authors`, `series_works`, `omnibus_contents`, and the three vocabulary junctions)
 carry no `id` column at all and use a composite natural key instead, the same split the schema applies elsewhere
 (`shelf_items`, `reading_state`, `field_locks`, and the external-identifier and external-rating tables follow the
