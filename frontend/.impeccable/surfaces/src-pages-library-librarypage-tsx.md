@@ -58,8 +58,12 @@ At 1920 by 1080, the default width gives nine columns with the filter panel clos
 width, and the collection fits fewer columns when the filter panel opens. The panel sits beside the collection from 1600
 px; below that width, Filters opens a modal. Cover images keep a 2:3 aspect ratio.
 
+## Shelf header and filters
+
+The open shelf header has a total, an interactive reading-state bar and legend, and quiet Needs attention filters.
+Status and Shelf show cross-filtered counts. The toolbar gives the matching result count when filters are active. All
+nine table data columns have sort menus.
+
 ## Unresolved
 
-- Which server-dependent parts ship first: reading-state totals, needs-attention counts, filter counts, sorting on every
-  column.
 - Reduced-effects setting is a follow-up.

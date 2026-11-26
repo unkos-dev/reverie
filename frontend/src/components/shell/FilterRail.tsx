@@ -1,4 +1,7 @@
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, X } from "lucide-react";
+import { graphql, useFragment } from "react-relay";
+import type { FilterRail_facets$key } from "@/lib/relay/__generated__/FilterRail_facets.graphql";
+import type { FilterRail_shelfCounts$key } from "@/lib/relay/__generated__/FilterRail_shelfCounts.graphql";
 import { useId, type ReactElement, type ReactNode } from "react";
 
 import { MAX_SORT_LEVELS, SORT_FIELDS, type SortLevelParam } from "@/api";
@@ -35,6 +38,24 @@ import {
   type VocabFamily,
 } from "../library/editors";
 
+const facetsFragment = graphql`
+  fragment FilterRail_facets on LibraryFacets @throwOnFieldError {
+    readingStates {
+      ...editors_statusCounts
+    }
+    shelves {
+      ...FilterRail_shelfCounts
+    }
+  }
+`;
+
+const shelfCountsFragment = graphql`
+  fragment FilterRail_shelfCounts on ShelfFacetCount @relay(plural: true) @throwOnFieldError {
+    shelfId
+    count
+  }
+`;
+
 export type RailShelves = {
   items: readonly { readonly id: string; readonly name: string }[];
   loading: boolean;
@@ -44,6 +65,7 @@ export type RailShelves = {
 type FilterRailProps = {
   owner: LibraryFilters;
   suggestions: TypeaheadMultiSelect_suggestions$key;
+  facets: FilterRail_facets$key | undefined;
   labels: { authorLabel: (id: string) => string; seriesName: (id: string) => string };
   shelves: RailShelves;
   onClose?: () => void;
@@ -61,6 +83,7 @@ type FilterRailProps = {
 export function FilterRail({
   owner,
   suggestions,
+  facets,
   labels,
   shelves,
   onClose,
@@ -70,6 +93,7 @@ export function FilterRail({
   onSortChange,
 }: Readonly<FilterRailProps>): ReactElement {
   const { filters, commitAll } = owner;
+  const counts = useFragment(facetsFragment, facets ?? null);
 
   const setCount = (set: { all: string[]; any: string[]; none: string[] }): number =>
     set.all.length + set.any.length + set.none.length;
@@ -136,6 +160,7 @@ export function FilterRail({
           }}
         >
           <StatusEditor
+            counts={counts?.readingStates}
             value={filters.status.any}
             onChange={(any) => {
               commitAll((current) => ({ ...current, status: { ...current.status, any } }));
@@ -219,6 +244,7 @@ export function FilterRail({
           }}
         />
         <ShelfSection
+          counts={counts?.shelves}
           shelves={shelves}
           activeShelf={filters.shelf}
           onPick={(shelf) => {
@@ -505,6 +531,7 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
 }
 
 type ShelfSectionProps = {
+  counts: FilterRail_shelfCounts$key | undefined;
   shelves: RailShelves;
   activeShelf: readonly string[];
   onPick: (shelf: string[]) => void;
@@ -513,13 +540,16 @@ type ShelfSectionProps = {
 };
 
 function ShelfSection({
+  counts,
   shelves,
   activeShelf,
   onPick,
   onClear,
 }: Readonly<ShelfSectionProps>): ReactElement {
   const descriptionId = useId();
-  const options = shelves.items.map((shelf) => ({ id: shelf.id, name: shelf.name }));
+  const facets = useFragment(shelfCountsFragment, counts ?? null);
+  const countsById = new Map(facets?.map(({ shelfId, count }) => [shelfId, count]));
+  const options = shelves.items.map(({ id, name }) => ({ id, name, count: countsById.get(id) }));
   let emptyText = "No shelves yet.";
   if (shelves.loading) emptyText = "Loading shelves…";
   else if (shelves.failed) emptyText = "Couldn't load shelves.";
@@ -553,6 +583,7 @@ function ShelfSection({
                   className={`size-3.5 shrink-0 ${isSelected ? "opacity-100" : "opacity-0"}`}
                 />
                 <span className="truncate">{option.name}</span>
+                <span className="ml-auto text-xs text-fg-muted tabular-nums">{option.count}</span>
               </>
             )}
           </ListBoxItem>

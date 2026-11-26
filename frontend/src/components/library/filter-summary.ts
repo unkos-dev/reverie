@@ -21,6 +21,14 @@ const STATUS_LABELS: Record<string, string> = {
   abandoned: "Abandoned",
 };
 
+export const ATTENTION_FILTER_LABELS = {
+  needsReview: "to review",
+  enrichmentFailed: "enrichment failed",
+  noCover: "no cover",
+} as const;
+
+export type AttentionFilter = keyof typeof ATTENTION_FILTER_LABELS;
+
 /** One readout segment; `key` is stable for list rendering. `remove`
  *  returns the filter state with this segment's condition dropped, so a
  *  chip can offer one-click removal without re-deriving the grammar. */
@@ -231,6 +239,14 @@ export function buildFilterSummary(
   pushText(segments, "Title", "title", filters.title, "title");
   pushText(segments, "Subtitle", "subtitle", filters.subtitle, "subtitle");
   pushText(segments, "ISBN-13", "isbn", filters.isbn13, "isbn13");
+  for (const key of ["needsReview", "enrichmentFailed", "noCover"] as const) {
+    if (filters[key])
+      segments.push({
+        key,
+        text: ATTENTION_FILTER_LABELS[key],
+        remove: (current) => ({ ...current, [key]: undefined }),
+      });
+  }
   pushRange(segments, "Pages", "pages", filters.pages, "pages");
   pushRange(segments, "Rating", "rating", filters.rating, "rating");
   if (filters.addedAfter !== undefined)

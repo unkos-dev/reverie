@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<38806d49126399518984e8f85530b918>>
- * @relayHash f7b69e7c4d59a191184f259117d0f6bb
+ * @generated SignedSource<<1275264bb1055868841eccfe3c4b9c83>>
+ * @relayHash 8daa638aae4e53afa0411ba542a0088d
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID ac3fd6d862ee29968cf84f6cbf920b50b87caf6899cc12b15d493f4d7f9886d1
+// @relayRequestID bea3b416e97afb4eb40fc1fe6560f85e4ddfb4f630584df3390285936ee0f652
 
 import { ConcreteRequest } from "relay-runtime";
 import { FragmentRefs } from "relay-runtime";
@@ -85,8 +85,16 @@ export type LibraryPageQuery$variables = {
   shelfIds: ReadonlyArray<string>;
   sort?: ReadonlyArray<SortLevel> | null | undefined;
   sourceKey: string;
+  summaryEligible: boolean;
+  summaryShelfIds: ReadonlyArray<string>;
 };
 export type LibraryPageQuery$data = {
+  readonly libraryFacets?: {
+    readonly " $fragmentSpreads": FragmentRefs<"FilterRail_facets" | "LibraryToolbar_facets">;
+  };
+  readonly librarySummary?: {
+    readonly " $fragmentSpreads": FragmentRefs<"LibraryToolbar_summary" | "ShelfHeader_summary">;
+  };
   readonly rows?:
     | {
         readonly " $fragmentSpreads": FragmentRefs<"LibraryPage_rows">;
@@ -95,6 +103,7 @@ export type LibraryPageQuery$data = {
     | undefined;
   readonly viewer: {
     readonly id: string;
+    readonly isChild: boolean;
     readonly libraryPreferences: {
       readonly " $fragmentSpreads": FragmentRefs<"useLibraryPreferences_preferences">;
     };
@@ -150,51 +159,76 @@ const node: ConcreteRequest = (function () {
       name: "sourceKey",
     },
     v8 = {
+      defaultValue: null,
+      kind: "LocalArgument",
+      name: "summaryEligible",
+    },
+    v9 = {
+      defaultValue: null,
+      kind: "LocalArgument",
+      name: "summaryShelfIds",
+    },
+    v10 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "id",
       storageKey: null,
     },
-    v9 = {
+    v11 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "isChild",
+      storageKey: null,
+    },
+    v12 = [
+      {
+        kind: "Variable",
+        name: "shelfIds",
+        variableName: "summaryShelfIds",
+      },
+    ],
+    v13 = {
       kind: "Variable",
       name: "filter",
       variableName: "filter",
     },
-    v10 = {
+    v14 = [v13 /*:: as any*/],
+    v15 = {
       kind: "Variable",
       name: "sort",
       variableName: "sort",
     },
-    v11 = {
+    v16 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "__typename",
       storageKey: null,
     },
-    v12 = {
+    v17 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "hiddenColumns",
       storageKey: null,
     },
-    v13 = {
+    v18 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "density",
       storageKey: null,
     },
-    v14 = {
+    v19 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "view",
       storageKey: null,
     },
-    v15 = {
+    v20 = {
       alias: null,
       args: null,
       concreteType: "LibrarySortLevel",
@@ -219,36 +253,95 @@ const node: ConcreteRequest = (function () {
       ],
       storageKey: null,
     },
-    v16 = {
+    v21 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "name",
       storageKey: null,
     },
-    v17 = [v8 /*:: as any*/, v16 /*:: as any*/],
-    v18 = {
+    v22 = [v10 /*:: as any*/, v21 /*:: as any*/],
+    v23 = {
       alias: null,
       args: null,
       kind: "ScalarField",
-      name: "itemCount",
+      name: "finished",
       storageKey: null,
     },
-    v19 = [
+    v24 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "reading",
+      storageKey: null,
+    },
+    v25 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "unread",
+      storageKey: null,
+    },
+    v26 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "wantToRead",
+      storageKey: null,
+    },
+    v27 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "onHold",
+      storageKey: null,
+    },
+    v28 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "abandoned",
+      storageKey: null,
+    },
+    v29 = [
+      v13 /*:: as any*/,
       {
-        kind: "Literal",
+        kind: "Variable",
         name: "first",
-        value: 50,
+        variableName: "count",
       },
+      v15 /*:: as any*/,
     ],
-    v20 = {
+    v30 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "title",
+      storageKey: null,
+    },
+    v31 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "etag",
+      storageKey: null,
+    },
+    v32 = {
+      alias: null,
+      args: null,
+      kind: "ScalarField",
+      name: "subtitle",
+      storageKey: null,
+    },
+    v33 = [v21 /*:: as any*/, v10 /*:: as any*/],
+    v34 = {
       alias: null,
       args: null,
       kind: "ScalarField",
       name: "cursor",
       storageKey: null,
     },
-    v21 = {
+    v35 = {
       alias: null,
       args: null,
       concreteType: "PageInfo",
@@ -273,37 +366,13 @@ const node: ConcreteRequest = (function () {
       ],
       storageKey: null,
     },
-    v22 = [
-      v9 /*:: as any*/,
+    v36 = [
       {
-        kind: "Variable",
+        kind: "Literal",
         name: "first",
-        variableName: "count",
+        value: 50,
       },
-      v10 /*:: as any*/,
-    ],
-    v23 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "title",
-      storageKey: null,
-    },
-    v24 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "etag",
-      storageKey: null,
-    },
-    v25 = {
-      alias: null,
-      args: null,
-      kind: "ScalarField",
-      name: "subtitle",
-      storageKey: null,
-    },
-    v26 = [v16 /*:: as any*/, v8 /*:: as any*/];
+    ];
   return {
     fragment: {
       argumentDefinitions: [
@@ -315,6 +384,8 @@ const node: ConcreteRequest = (function () {
         v5 /*:: as any*/,
         v6 /*:: as any*/,
         v7 /*:: as any*/,
+        v8 /*:: as any*/,
+        v9 /*:: as any*/,
       ],
       kind: "Fragment",
       metadata: {
@@ -330,7 +401,8 @@ const node: ConcreteRequest = (function () {
           name: "viewer",
           plural: false,
           selections: [
-            v8 /*:: as any*/,
+            v10 /*:: as any*/,
+            v11 /*:: as any*/,
             {
               alias: null,
               args: null,
@@ -372,20 +444,59 @@ const node: ConcreteRequest = (function () {
           name: "LibraryPage_labels",
         },
         {
-          args: null,
-          kind: "FragmentSpread",
-          name: "ShelvesListPage_shelves",
-        },
-        {
-          args: null,
-          kind: "FragmentSpread",
-          name: "TypeaheadMultiSelect_suggestions",
+          condition: "summaryEligible",
+          kind: "Condition",
+          passingValue: true,
+          selections: [
+            {
+              alias: null,
+              args: v12 /*:: as any*/,
+              concreteType: "LibrarySummary",
+              kind: "LinkedField",
+              name: "librarySummary",
+              plural: false,
+              selections: [
+                {
+                  args: null,
+                  kind: "FragmentSpread",
+                  name: "ShelfHeader_summary",
+                },
+                {
+                  args: null,
+                  kind: "FragmentSpread",
+                  name: "LibraryToolbar_summary",
+                },
+              ],
+              storageKey: null,
+            },
+          ],
         },
         {
           condition: "eligible",
           kind: "Condition",
           passingValue: true,
           selections: [
+            {
+              alias: null,
+              args: v14 /*:: as any*/,
+              concreteType: "LibraryFacets",
+              kind: "LinkedField",
+              name: "libraryFacets",
+              plural: false,
+              selections: [
+                {
+                  args: null,
+                  kind: "FragmentSpread",
+                  name: "FilterRail_facets",
+                },
+                {
+                  args: null,
+                  kind: "FragmentSpread",
+                  name: "LibraryToolbar_facets",
+                },
+              ],
+              storageKey: null,
+            },
             {
               fragment: {
                 kind: "InlineFragment",
@@ -397,8 +508,8 @@ const node: ConcreteRequest = (function () {
                         name: "count",
                         variableName: "count",
                       },
-                      v9 /*:: as any*/,
-                      v10 /*:: as any*/,
+                      v13 /*:: as any*/,
+                      v15 /*:: as any*/,
                       {
                         kind: "Variable",
                         name: "sourceKey",
@@ -417,6 +528,16 @@ const node: ConcreteRequest = (function () {
             },
           ],
         },
+        {
+          args: null,
+          kind: "FragmentSpread",
+          name: "ShelvesListPage_shelves",
+        },
+        {
+          args: null,
+          kind: "FragmentSpread",
+          name: "TypeaheadMultiSelect_suggestions",
+        },
       ],
       type: "Query",
       abstractKey: null,
@@ -428,6 +549,8 @@ const node: ConcreteRequest = (function () {
         v4 /*:: as any*/,
         v5 /*:: as any*/,
         v2 /*:: as any*/,
+        v8 /*:: as any*/,
+        v9 /*:: as any*/,
         v7 /*:: as any*/,
         v3 /*:: as any*/,
         v6 /*:: as any*/,
@@ -444,7 +567,8 @@ const node: ConcreteRequest = (function () {
           name: "viewer",
           plural: false,
           selections: [
-            v8 /*:: as any*/,
+            v10 /*:: as any*/,
+            v11 /*:: as any*/,
             {
               alias: null,
               args: null,
@@ -453,11 +577,11 @@ const node: ConcreteRequest = (function () {
               name: "libraryPreferences",
               plural: false,
               selections: [
-                v11 /*:: as any*/,
-                v12 /*:: as any*/,
-                v13 /*:: as any*/,
-                v14 /*:: as any*/,
-                v15 /*:: as any*/,
+                v16 /*:: as any*/,
+                v17 /*:: as any*/,
+                v18 /*:: as any*/,
+                v19 /*:: as any*/,
+                v20 /*:: as any*/,
                 {
                   alias: null,
                   args: null,
@@ -466,10 +590,10 @@ const node: ConcreteRequest = (function () {
                   name: "defaults",
                   plural: false,
                   selections: [
-                    v12 /*:: as any*/,
-                    v13 /*:: as any*/,
-                    v14 /*:: as any*/,
-                    v15 /*:: as any*/,
+                    v17 /*:: as any*/,
+                    v18 /*:: as any*/,
+                    v19 /*:: as any*/,
+                    v20 /*:: as any*/,
                   ],
                   storageKey: null,
                 },
@@ -492,7 +616,7 @@ const node: ConcreteRequest = (function () {
           kind: "LinkedField",
           name: "authorLabels",
           plural: true,
-          selections: v17 /*:: as any*/,
+          selections: v22 /*:: as any*/,
           storageKey: null,
         },
         {
@@ -508,7 +632,7 @@ const node: ConcreteRequest = (function () {
           kind: "LinkedField",
           name: "seriesLabels",
           plural: true,
-          selections: v17 /*:: as any*/,
+          selections: v22 /*:: as any*/,
           storageKey: null,
         },
         {
@@ -524,63 +648,89 @@ const node: ConcreteRequest = (function () {
           kind: "LinkedField",
           name: "shelfLabels",
           plural: true,
-          selections: [v8 /*:: as any*/, v16 /*:: as any*/, v18 /*:: as any*/],
+          selections: v22 /*:: as any*/,
           storageKey: null,
         },
         {
-          alias: null,
-          args: v19 /*:: as any*/,
-          concreteType: "ShelfConnection",
-          kind: "LinkedField",
-          name: "shelves",
-          plural: false,
+          condition: "summaryEligible",
+          kind: "Condition",
+          passingValue: true,
           selections: [
             {
               alias: null,
-              args: null,
-              concreteType: "ShelfEdge",
+              args: v12 /*:: as any*/,
+              concreteType: "LibrarySummary",
               kind: "LinkedField",
-              name: "edges",
-              plural: true,
+              name: "librarySummary",
+              plural: false,
               selections: [
                 {
                   alias: null,
                   args: null,
-                  concreteType: "Shelf",
+                  kind: "ScalarField",
+                  name: "totalCount",
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "ReadingStateCounts",
                   kind: "LinkedField",
-                  name: "node",
+                  name: "readingStates",
                   plural: false,
                   selections: [
-                    v8 /*:: as any*/,
-                    v16 /*:: as any*/,
+                    v23 /*:: as any*/,
+                    v24 /*:: as any*/,
+                    v25 /*:: as any*/,
+                    v26 /*:: as any*/,
+                    v27 /*:: as any*/,
+                    v28 /*:: as any*/,
+                  ],
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "NeedsAttentionCounts",
+                  kind: "LinkedField",
+                  name: "needsAttention",
+                  plural: false,
+                  selections: [
                     {
                       alias: null,
                       args: null,
                       kind: "ScalarField",
-                      name: "isSystem",
+                      name: "toReview",
                       storageKey: null,
                     },
-                    v18 /*:: as any*/,
-                    v11 /*:: as any*/,
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "enrichmentFailed",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "noIsbn",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "noCover",
+                      storageKey: null,
+                    },
                   ],
                   storageKey: null,
                 },
-                v20 /*:: as any*/,
               ],
               storageKey: null,
             },
-            v21 /*:: as any*/,
           ],
-          storageKey: "shelves(first:50)",
-        },
-        {
-          alias: null,
-          args: v19 /*:: as any*/,
-          filters: null,
-          handle: "connection",
-          key: "ShelvesListPage_shelves",
-          kind: "LinkedHandle",
-          name: "shelves",
         },
         {
           condition: "eligible",
@@ -589,7 +739,67 @@ const node: ConcreteRequest = (function () {
           selections: [
             {
               alias: null,
-              args: v22 /*:: as any*/,
+              args: v14 /*:: as any*/,
+              concreteType: "LibraryFacets",
+              kind: "LinkedField",
+              name: "libraryFacets",
+              plural: false,
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "ReadingStateCounts",
+                  kind: "LinkedField",
+                  name: "readingStates",
+                  plural: false,
+                  selections: [
+                    v25 /*:: as any*/,
+                    v26 /*:: as any*/,
+                    v24 /*:: as any*/,
+                    v27 /*:: as any*/,
+                    v23 /*:: as any*/,
+                    v28 /*:: as any*/,
+                  ],
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "ShelfFacetCount",
+                  kind: "LinkedField",
+                  name: "shelves",
+                  plural: true,
+                  selections: [
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "shelfId",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "count",
+                      storageKey: null,
+                    },
+                  ],
+                  storageKey: null,
+                },
+                {
+                  alias: null,
+                  args: null,
+                  kind: "ScalarField",
+                  name: "matchingCount",
+                  storageKey: null,
+                },
+              ],
+              storageKey: null,
+            },
+            {
+              alias: null,
+              args: v29 /*:: as any*/,
               concreteType: "ManifestationConnection",
               kind: "LinkedField",
               name: "books",
@@ -611,7 +821,7 @@ const node: ConcreteRequest = (function () {
                       name: "node",
                       plural: false,
                       selections: [
-                        v8 /*:: as any*/,
+                        v10 /*:: as any*/,
                         {
                           alias: null,
                           args: null,
@@ -620,8 +830,8 @@ const node: ConcreteRequest = (function () {
                           name: "metadata",
                           plural: false,
                           selections: [
-                            v23 /*:: as any*/,
-                            v8 /*:: as any*/,
+                            v30 /*:: as any*/,
+                            v10 /*:: as any*/,
                             {
                               alias: null,
                               args: null,
@@ -629,8 +839,8 @@ const node: ConcreteRequest = (function () {
                               name: "isbn13",
                               storageKey: null,
                             },
-                            v24 /*:: as any*/,
-                            v25 /*:: as any*/,
+                            v31 /*:: as any*/,
+                            v32 /*:: as any*/,
                             {
                               alias: null,
                               args: null,
@@ -656,8 +866,8 @@ const node: ConcreteRequest = (function () {
                               name: "rating",
                               storageKey: null,
                             },
-                            v8 /*:: as any*/,
-                            v24 /*:: as any*/,
+                            v10 /*:: as any*/,
+                            v31 /*:: as any*/,
                             {
                               alias: null,
                               args: null,
@@ -697,9 +907,9 @@ const node: ConcreteRequest = (function () {
                           name: "work",
                           plural: false,
                           selections: [
-                            v8 /*:: as any*/,
-                            v23 /*:: as any*/,
-                            v25 /*:: as any*/,
+                            v10 /*:: as any*/,
+                            v30 /*:: as any*/,
+                            v32 /*:: as any*/,
                             {
                               alias: null,
                               args: [
@@ -729,7 +939,7 @@ const node: ConcreteRequest = (function () {
                                       kind: "LinkedField",
                                       name: "node",
                                       plural: false,
-                                      selections: v26 /*:: as any*/,
+                                      selections: v33 /*:: as any*/,
                                       storageKey: null,
                                     },
                                   ],
@@ -753,7 +963,7 @@ const node: ConcreteRequest = (function () {
                                   kind: "LinkedField",
                                   name: "node",
                                   plural: false,
-                                  selections: v26 /*:: as any*/,
+                                  selections: v33 /*:: as any*/,
                                   storageKey: null,
                                 },
                                 {
@@ -769,21 +979,21 @@ const node: ConcreteRequest = (function () {
                           ],
                           storageKey: null,
                         },
-                        v11 /*:: as any*/,
+                        v16 /*:: as any*/,
                       ],
                       storageKey: null,
                     },
-                    v20 /*:: as any*/,
+                    v34 /*:: as any*/,
                   ],
                   storageKey: null,
                 },
-                v21 /*:: as any*/,
+                v35 /*:: as any*/,
               ],
               storageKey: null,
             },
             {
               alias: null,
-              args: v22 /*:: as any*/,
+              args: v29 /*:: as any*/,
               filters: ["filter", "sort"],
               handle: "connection",
               key: "LibraryPage_rows_books",
@@ -797,10 +1007,71 @@ const node: ConcreteRequest = (function () {
             },
           ],
         },
+        {
+          alias: null,
+          args: v36 /*:: as any*/,
+          concreteType: "ShelfConnection",
+          kind: "LinkedField",
+          name: "shelves",
+          plural: false,
+          selections: [
+            {
+              alias: null,
+              args: null,
+              concreteType: "ShelfEdge",
+              kind: "LinkedField",
+              name: "edges",
+              plural: true,
+              selections: [
+                {
+                  alias: null,
+                  args: null,
+                  concreteType: "Shelf",
+                  kind: "LinkedField",
+                  name: "node",
+                  plural: false,
+                  selections: [
+                    v10 /*:: as any*/,
+                    v21 /*:: as any*/,
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "isSystem",
+                      storageKey: null,
+                    },
+                    {
+                      alias: null,
+                      args: null,
+                      kind: "ScalarField",
+                      name: "itemCount",
+                      storageKey: null,
+                    },
+                    v16 /*:: as any*/,
+                  ],
+                  storageKey: null,
+                },
+                v34 /*:: as any*/,
+              ],
+              storageKey: null,
+            },
+            v35 /*:: as any*/,
+          ],
+          storageKey: "shelves(first:50)",
+        },
+        {
+          alias: null,
+          args: v36 /*:: as any*/,
+          filters: null,
+          handle: "connection",
+          key: "ShelvesListPage_shelves",
+          kind: "LinkedHandle",
+          name: "shelves",
+        },
       ],
     },
     params: {
-      id: "ac3fd6d862ee29968cf84f6cbf920b50b87caf6899cc12b15d493f4d7f9886d1",
+      id: "bea3b416e97afb4eb40fc1fe6560f85e4ddfb4f630584df3390285936ee0f652",
       metadata: {},
       name: "LibraryPageQuery",
       operationKind: "query",
@@ -809,6 +1080,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "5898fc7596bb57cab0c58be6da2a1a7b";
+(node as any).hash = "8c2662d4d319daaf18f3006c520a18fe";
 
 export default node;

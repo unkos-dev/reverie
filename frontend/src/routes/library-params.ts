@@ -62,6 +62,9 @@ export const LibraryVisitSchema = z.strictObject({
     title: textFilterSchema(TEXT_COLUMN_OPS.title),
     subtitle: textFilterSchema(TEXT_COLUMN_OPS.subtitle),
     isbn13: textFilterSchema(TEXT_COLUMN_OPS.isbn_13),
+    needsReview: z.literal(true).optional(),
+    enrichmentFailed: z.literal(true).optional(),
+    noCover: z.literal(true).optional(),
     pages: rangeFilterSchema(0, 2147483647),
     rating: rangeFilterSchema(1, 5),
     addedAfter: z.iso.date().optional(),
@@ -172,6 +175,9 @@ export function filterStateToParams(
   assignText(params, "title", state.title);
   assignText(params, "subtitle", state.subtitle);
   assignText(params, "isbn_13", state.isbn13);
+  if (state.needsReview) params.needs_review = true;
+  if (state.enrichmentFailed) params.enrichment_failed = true;
+  if (state.noCover) params.cover_empty = true;
   if (state.pages.gte !== undefined) params.pages_gte = state.pages.gte;
   if (state.pages.lte !== undefined) params.pages_lte = state.pages.lte;
   if (state.pages.empty !== undefined) params.pages_empty = state.pages.empty;

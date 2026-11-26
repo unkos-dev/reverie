@@ -30,6 +30,7 @@ import {
   type LibraryView,
   type SortLevelParam,
 } from "@/api";
+import { SORT_COLUMNS } from "@/lib/relay/library-visit";
 import { HIDEABLE_COLUMNS } from "./table-columns";
 
 const preferencesMutation = graphql`
@@ -94,13 +95,6 @@ const COLUMNS = new Map<string, Column>([
   ["rating", "RATING"],
   ["added", "ADDED"],
 ]);
-
-const SORT_COLUMNS = {
-  title: "TITLE",
-  author: "AUTHOR",
-  created_at: "CREATED_AT",
-  pages: "PAGES",
-} as const satisfies Record<SortLevelParam["field"], SortColumn>;
 
 function columnKeys(columns: readonly Column[]): string[] {
   return HIDEABLE_COLUMNS.flatMap(({ key }) => {

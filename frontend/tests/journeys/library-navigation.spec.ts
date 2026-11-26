@@ -198,6 +198,7 @@ async function intercept(
   };
   const viewer = () => ({
     id: graphId("User", "33333333-3333-4333-8333-333333333333"),
+    isChild: false,
     libraryPreferences,
   });
   const names = new Map([
@@ -221,6 +222,24 @@ async function intercept(
     })),
     pageInfo: { endCursor: null, hasNextPage: false },
   });
+  const counts = (matchingCount: number) => {
+    const readingStates = {
+      unread: fixture.books.length,
+      wantToRead: 0,
+      reading: 0,
+      onHold: 0,
+      finished: 0,
+      abandoned: 0,
+    };
+    return {
+      librarySummary: {
+        totalCount: fixture.books.length,
+        readingStates,
+        needsAttention: { toReview: 0, enrichmentFailed: 0, noIsbn: 0, noCover: 0 },
+      },
+      libraryFacets: { matchingCount, readingStates, shelves: [] },
+    };
+  };
   await page.route(/^https?:\/\/[^/]+\/(?:api|auth)\//, async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -255,7 +274,12 @@ async function intercept(
         const end = offset + pageBooks.length;
         data = {
           ...(operation === "LibraryPageQuery"
-            ? { viewer: viewer(), ...labels(body.variables), shelves: shelves() }
+            ? {
+                viewer: viewer(),
+                ...labels(body.variables),
+                shelves: shelves(),
+                ...counts(books.length),
+              }
             : {}),
           books: {
             edges: pageBooks.map((book, index) => ({
@@ -301,7 +325,7 @@ async function intercept(
           shelfLabels: found.shelfLabels.map(({ id }) => ({ id })),
         };
       } else if (operation === "LibraryPageQuery") {
-        data = { viewer: viewer(), ...labels(body.variables), shelves: shelves() };
+        data = { viewer: viewer(), ...labels(body.variables), shelves: shelves(), ...counts(0) };
       } else if (operation === "LibraryPageLabelsRefetchQuery") {
         data = labels(body.variables);
       } else if (operation === "TypeaheadMultiSelectRefetchQuery") {
@@ -866,7 +890,7 @@ for (const action of ["scroll", "filter", "sort", "view", "navigation"] as const
     const request = await held;
     await ready(page);
     await expect(page.getByText("Updating results…", { exact: true })).toBeVisible();
-    await expect(page.getByText("100 books", { exact: true }).first()).toBeVisible();
+    await expect(table).toHaveAttribute("aria-rowcount", "101");
     let chosenScroll: number | undefined;
     switch (action) {
       case "scroll": {

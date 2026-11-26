@@ -11,9 +11,11 @@ import {
   usePaginationFragment,
   usePreloadedQuery,
   useQueryLoader,
+  useRelayEnvironment,
   type PreloadedQuery,
 } from "react-relay";
 import { ConnectionHandler, ROOT_ID } from "relay-runtime";
+import { invalidateLibraryVisits } from "@/lib/relay/library-visit";
 import type { ShelvesListPageQuery } from "@/lib/relay/__generated__/ShelvesListPageQuery.graphql";
 import type {
   ShelvesListPage_shelves$data,
@@ -169,6 +171,7 @@ function ShelvesContent({
       refetch({}, { fetchPolicy: "network-only", onComplete: setError });
     });
   }
+  const environment = useRelayEnvironment();
   const [commitCreate, createPending] =
     useMutation<ShelvesListPageCreateMutation>(createShelfMutation);
   const [commitRename, renamePending] =
@@ -186,6 +189,7 @@ function ShelvesContent({
         variables: { input: { name }, connections: [SHELVES_CONNECTION] },
         onCompleted: ({ createShelf }) => {
           if (createShelf.__typename === "ShelfCreated") {
+            invalidateLibraryVisits(environment, ["shelfFacets"]);
             setCreateOpen(false);
             resolve(null);
           } else if (createShelf.__typename === "ShelfNameInvalid") {
@@ -209,6 +213,7 @@ function ShelvesContent({
         variables: { input: { id: target.id, name } },
         onCompleted: ({ renameShelf }) => {
           if (renameShelf.__typename === "ShelfRenamed") {
+            invalidateLibraryVisits(environment, ["shelfFacets"]);
             setRenameId(null);
             resolve(null);
           } else if (
@@ -237,8 +242,10 @@ function ShelvesContent({
           store.get(response.deleteShelf.deletedShelfId)?.invalidateRecord();
       },
       onCompleted: ({ deleteShelf }) => {
-        if (deleteShelf.__typename === "ShelfDeleted") setDeletion(undefined);
-        else
+        if (deleteShelf.__typename === "ShelfDeleted") {
+          invalidateLibraryVisits(environment, [], { shelfId: deleteShelf.deletedShelfId });
+          setDeletion(undefined);
+        } else
           setDeletion({
             id,
             name,

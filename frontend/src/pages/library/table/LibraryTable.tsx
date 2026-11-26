@@ -93,13 +93,13 @@ type TableColumn = {
 
 const DATA_COLUMNS: readonly TableColumn[] = [
   { id: "title", name: "Title", field: "title", defaultWidth: "64fr", minWidth: 240 },
-  { id: "subtitle", name: "Subtitle", defaultWidth: "22fr", minWidth: 112 },
+  { id: "subtitle", name: "Subtitle", field: "subtitle", defaultWidth: "22fr", minWidth: 112 },
   { id: "authors", name: "Authors", field: "author", defaultWidth: "25fr", minWidth: 120 },
-  { id: "series", name: "Series", defaultWidth: "22fr", minWidth: 112 },
-  { id: "isbn_13", name: "ISBN", defaultWidth: "20fr", minWidth: 96 },
+  { id: "series", name: "Series", field: "series", defaultWidth: "22fr", minWidth: 112 },
+  { id: "isbn_13", name: "ISBN", field: "isbn_13", defaultWidth: "20fr", minWidth: 96 },
   { id: "pages", name: "Pages", field: "pages", defaultWidth: "13fr", minWidth: 104, align: "end" },
-  { id: "status", name: "Status", defaultWidth: "18fr", minWidth: 112 },
-  { id: "rating", name: "Rating", defaultWidth: "16fr", minWidth: 112 },
+  { id: "status", name: "Status", field: "status", defaultWidth: "18fr", minWidth: 112 },
+  { id: "rating", name: "Rating", field: "rating", defaultWidth: "16fr", minWidth: 112 },
   { id: "added", name: "Added", field: "created_at", defaultWidth: "18fr", minWidth: 112 },
 ];
 
@@ -108,13 +108,23 @@ const OPEN_COLUMN: TableColumn = { id: "open", name: "Open", defaultWidth: 80 };
 
 const COLUMN_BY_FIELD: Readonly<Record<SortField, ColumnId>> = {
   title: "title",
+  subtitle: "subtitle",
   author: "authors",
+  series: "series",
+  isbn_13: "isbn_13",
+  status: "status",
+  rating: "rating",
   created_at: "added",
   pages: "pages",
 };
 
 const SORT_WORDS: Readonly<Record<SortField, { asc: string; desc: string }>> = {
   title: { asc: "A to Z", desc: "Z to A" },
+  subtitle: { asc: "A to Z", desc: "Z to A" },
+  series: { asc: "A to Z", desc: "Z to A" },
+  isbn_13: { asc: "lowest first", desc: "highest first" },
+  status: { asc: "ascending", desc: "descending" },
+  rating: { asc: "lowest first", desc: "highest first" },
   author: { asc: "A to Z", desc: "Z to A" },
   pages: { asc: "shortest first", desc: "longest first" },
   created_at: { asc: "oldest first", desc: "newest first" },

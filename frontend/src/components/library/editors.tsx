@@ -1,3 +1,4 @@
+import { graphql, useFragment } from "react-relay";
 import { type ReactElement, useId, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { CalendarDays, ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
@@ -23,6 +24,7 @@ import {
 } from "react-aria-components";
 
 import type { SuggestKind } from "@/api";
+import type { editors_statusCounts$key } from "@/lib/relay/__generated__/editors_statusCounts.graphql";
 import { Checkbox, CheckboxGroup } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -336,6 +338,17 @@ export function DateRangeEditor({
   );
 }
 
+const statusCountsFragment = graphql`
+  fragment editors_statusCounts on ReadingStateCounts @throwOnFieldError {
+    unread
+    wantToRead
+    reading
+    onHold
+    finished
+    abandoned
+  }
+`;
+
 const STATUS_OPTIONS = [
   { token: "unread", label: "Unread" },
   { token: "want_to_read", label: "Want to read" },
@@ -346,11 +359,25 @@ const STATUS_OPTIONS = [
 ] as const;
 
 type StatusEditorProps = {
+  counts: editors_statusCounts$key | undefined;
   value: StatusFilter["any"];
   onChange: (next: StatusFilter["any"]) => void;
 };
 
-export function StatusEditor({ value, onChange }: Readonly<StatusEditorProps>): ReactElement {
+export function StatusEditor({
+  counts,
+  value,
+  onChange,
+}: Readonly<StatusEditorProps>): ReactElement {
+  const facets = useFragment(statusCountsFragment, counts ?? null);
+  const statusCounts = {
+    unread: facets?.unread,
+    want_to_read: facets?.wantToRead,
+    reading: facets?.reading,
+    on_hold: facets?.onHold,
+    finished: facets?.finished,
+    abandoned: facets?.abandoned,
+  };
   return (
     <CheckboxGroup
       aria-label="Reading status"
@@ -365,8 +392,11 @@ export function StatusEditor({ value, onChange }: Readonly<StatusEditorProps>): 
       className="flex flex-col gap-2"
     >
       {STATUS_OPTIONS.map((option) => (
-        <Checkbox key={option.token} value={option.token}>
+        <Checkbox key={option.token} value={option.token} className="w-full">
           {option.label}
+          <span className="ml-auto text-xs text-fg-muted tabular-nums">
+            {statusCounts[option.token]}
+          </span>
         </Checkbox>
       ))}
     </CheckboxGroup>

@@ -9,7 +9,17 @@ export { ReadingStatusSchema };
 export const ResourceEtagSchema = z.string().regex(/^"[A-Za-z0-9_-]{22}"$/);
 
 /** The sortable wire fields, in the order sort pickers offer them. */
-export const SORT_FIELDS = ["title", "author", "created_at", "pages"] as const;
+export const SORT_FIELDS = [
+  "title",
+  "subtitle",
+  "author",
+  "series",
+  "isbn_13",
+  "pages",
+  "status",
+  "rating",
+  "created_at",
+] as const;
 
 /** Sortable column names accepted by `GET /api/v1/books?sort=…`. */
 export type SortField = (typeof SORT_FIELDS)[number];
@@ -57,9 +67,8 @@ export function serializeSortParam(levels: readonly SortLevelParam[]): string {
  * Query parameters for `GET /api/v1/books`. Every field is optional; the
  * flat suffix grammar mirrors the backend `ListParams` one-to-one (the
  * operator is a suffix on the key, e.g. `pages_gte`, `title_contains`). Array
- * fields serialize as a repeated key (`?author=a&author=b`). Grouped, tolerant
- * URL codecs live in {@link ../routes/library-params}; this is the flat wire
- * shape the client sends.
+ * fields serialize as a repeated key (`?author=a&author=b`). The Library visit
+ * model projects its grouped filters into this flat wire shape.
  */
 export type ListBooksParams = {
   cursor?: string;
@@ -96,6 +105,9 @@ export type ListBooksParams = {
   isbn_13_contains?: string;
   isbn_13_eq?: string;
   isbn_13_empty?: boolean;
+  needs_review?: boolean;
+  enrichment_failed?: boolean;
+  cover_empty?: boolean;
   // Numeric column filters.
   pages_gte?: number;
   pages_lte?: number;
