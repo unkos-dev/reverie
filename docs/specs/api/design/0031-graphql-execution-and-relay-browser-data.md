@@ -102,7 +102,7 @@ backend checks for frontend operations and frontend checks for GraphQL schema ch
 
 oxlint loads `eslint-plugin-relay` 2.1.0 through its JS-plugin bridge and enforces `graphql-syntax`, `unused-fields`,
 `no-future-added-value`, `generated-typescript-types`, `hook-required-argument` and `function-required-argument` on
-frontend sources. `just js::schema-lint` runs GraphQL-ESLint 4.4.2 under ESLint over `backend/schema.graphql` only. It
+frontend sources. `just js::schema-lint` runs GraphQL-ESLint 5.0.0 under ESLint over `backend/schema.graphql` only. It
 checks Relay connection, edge and `PageInfo` shapes, forward pagination arguments, mutation argument naming and the
 plugin's recommended naming. The `@fetchable` contract reserves the `fetch__*` roots and `field_name` argument. The
 Relay compiler sets `requireCustomScalarTypes`, so a custom scalar without a `customScalarTypes` mapping fails
