@@ -4,6 +4,7 @@ profile-version: 1
 id: "REV-DESIGN-0031"
 title: "GraphQL execution and Relay browser data"
 satisfies:
+  - "REV-REQ-0100"
   - "REV-REQ-0019"
   - "REV-REQ-0021"
   - "REV-REQ-0023"
@@ -237,8 +238,8 @@ outcomes:
 
 | Mutation | Success member and its fields | Outcome members |
 | -------- | ----------------------------- | --------------- |
-| `createShelf` | `ShelfCreated`: `shelf`, list `edge` | `ShelfNameInvalid` |
-| `renameShelf` | `ShelfRenamed`: `shelf` | `ShelfNameInvalid`, `SystemShelfImmutable`, `NotFound` |
+| `createShelf` | `ShelfCreated`: `shelf`, list `edge` | `ShelfNameInvalid`, `ShelfNameTaken` |
+| `renameShelf` | `ShelfRenamed`: `shelf` | `ShelfNameInvalid`, `ShelfNameTaken`, `SystemShelfImmutable`, `NotFound` |
 | `deleteShelf` | `ShelfDeleted`: `deletedShelfId` | `SystemShelfImmutable`, `NotFound` |
 | `addShelfItem` | `ShelfItemAdded`: `shelf`, item `edge` | `NotFound` |
 | `removeShelfItem` | `ShelfItemRemoved`: `shelf`, `deletedManifestationId` | `NotFound` |
@@ -253,13 +254,16 @@ outcomes:
 | `updateLibraryPreferences` | `LibraryPreferencesUpdated`: `viewer` | `LibraryPreferencesInvalid` |
 
 Outcome types are shared across mutations and each carries a caller-safe `message`. `ShelfNameInvalid` refuses an empty
-shelf name, `LibraryPreferencesInvalid` refuses an invalid preference write, and `SystemShelfImmutable` refuses renaming
-or deleting a system shelf. `MetadataInvalid` carries `fieldErrors`, a list of `field` and `message` pairs keyed by the
-service field name, which is empty for a refusal that names no field. `FieldsLocked` carries `fields`, the canonical
-keys of the refused locked fields. A malformed, foreign, missing or caller-invisible target is a `NotFound` member. A
-service refusal that a mutation's union does not declare becomes an internal execution error. Forbidden and internal
-failures are execution errors, as are an input that fails scalar coercion and a committed metadata write whose
-manifestation cannot be read back. How each surface recovers from an execution error is described in
+shelf name. `ShelfNameTaken` refuses a duplicate account-owned folded name with "You already have a shelf with this
+name." Both existing shelf name forms retain the input and show this message locally without reading the shelf list
+again or replaying the write. `LibraryPreferencesInvalid` refuses an invalid preference write, and
+`SystemShelfImmutable` refuses renaming or deleting a system shelf. `MetadataInvalid` carries `fieldErrors`, a list of
+`field` and `message` pairs keyed by the service field name, which is empty for a refusal that names no field.
+`FieldsLocked` carries `fields`, the canonical keys of the refused locked fields. A malformed, foreign, missing or
+caller-invisible target is a `NotFound` member. A service refusal that a mutation's union does not declare becomes an
+internal execution error. Forbidden and internal failures are execution errors, as are an input that fails scalar
+coercion and a committed metadata write whose manifestation cannot be read back. How each surface recovers from an
+execution error is described in
 [Conditional requests and optimistic concurrency](0007-conditional-requests-and-optimistic-concurrency.md#failure-and-recovery)
 for saves, and in [Metadata review and editing](../../metadata/design/0018-metadata-review-and-editing.md) for review
 actions. Metadata success members return the `manifestation`. Its `metadata` field answers with the revision the write

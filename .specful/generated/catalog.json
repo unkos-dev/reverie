@@ -774,6 +774,7 @@
       "kind": "design",
       "path": "docs/specs/api/design/0006-api-error-contract-and-openapi.md",
       "satisfies": [
+        "REV-REQ-0100",
         "REV-REQ-0014",
         "REV-REQ-0015",
         "REV-REQ-0016",
@@ -1026,6 +1027,7 @@
       "kind": "design",
       "path": "docs/specs/library/design/0020-shelves.md",
       "satisfies": [
+        "REV-REQ-0100",
         "REV-REQ-0057",
         "REV-REQ-0059",
         "REV-REQ-0093"
@@ -1184,6 +1186,7 @@
       "kind": "design",
       "path": "docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md",
       "satisfies": [
+        "REV-REQ-0100",
         "REV-REQ-0019",
         "REV-REQ-0021",
         "REV-REQ-0023",
@@ -1973,6 +1976,12 @@
       "kind": "req",
       "path": "docs/specs/library/requirements/0099-a-graphql-books-page-walk-returns-every-matching-book-once-in-the-chosen-order-with-missing-values-last.md",
       "title": "A GraphQL books page walk returns every matching book once in the chosen order with missing values last"
+    },
+    {
+      "id": "REV-REQ-0100",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0100-shelf-name-conflicts-are-refused-within-each-account.md",
+      "title": "Shelf name conflicts are refused within each account"
     }
   ]
 }

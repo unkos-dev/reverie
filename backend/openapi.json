@@ -4752,6 +4752,16 @@
               }
             }
           },
+          "409": {
+            "description": "Shelf name already taken in this account",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "413": {
             "description": "The request body is too large",
             "content": {
@@ -5008,7 +5018,7 @@
           "shelves"
         ],
         "summary": "Rename a shelf",
-        "description": "Renames a shelf owned by the caller. Available to adult accounts only. System shelves cannot be renamed and return 409.",
+        "description": "Renames a shelf owned by the caller. Available to adult accounts only. System shelves and names already taken in this account return 409.",
         "operationId": "rename_shelf",
         "parameters": [
           {
@@ -5085,7 +5095,7 @@
             }
           },
           "409": {
-            "description": "System shelves cannot be renamed",
+            "description": "System shelf or shelf name already taken in this account",
             "content": {
               "application/problem+json": {
                 "schema": {

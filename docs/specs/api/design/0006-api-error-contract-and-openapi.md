@@ -4,6 +4,7 @@ profile-version: 1
 id: "REV-DESIGN-0006"
 title: "API error contract and OpenAPI"
 satisfies:
+  - "REV-REQ-0100"
   - "REV-REQ-0014"
   - "REV-REQ-0015"
   - "REV-REQ-0016"
@@ -140,6 +141,10 @@ Library and Book editing flows through `editingFailureAction`, and the 401 recov
   those two other concerns fired.
 
 ## Interfaces and dependencies
+
+`AppError::ShelfNameTaken` returns HTTP 409, registered type `shelf-name-taken`, title `Conflict`, and the fixed detail
+"You already have a shelf with this name." Shelf create documents this refusal. Rename documents it alongside the
+system-shelf immutability refusal. GraphQL carries the same fixed message in its `ShelfNameTaken` union member.
 
 Problem Details carries optional `errors`, an object mapping field names to string messages. `AppError::FieldValidation`
 uses the validation type and 422 status, alongside the `type`, `title` and `detail` fields. The shared DTO omits

@@ -139,6 +139,9 @@ pub enum AppError {
     /// HTTP 409 Conflict.
     #[error("system shelf cannot be modified")]
     SystemShelfImmutable,
+    /// Another shelf in the account holds the folded name. HTTP 409 Conflict.
+    #[error("You already have a shelf with this name.")]
+    ShelfNameTaken,
     /// A query-string parameter failed to deserialize at the extractor
     /// boundary (e.g. a malformed UUID in `?author=` / `?series=` /
     /// `?shelf=`). RFC 9457 `type`
@@ -342,6 +345,12 @@ impl IntoResponse for AppError {
                 problems::SYSTEM_SHELF_IMMUTABLE,
                 "Conflict",
                 "System shelves cannot be renamed or deleted.".to_owned(),
+            ),
+            Self::ShelfNameTaken => (
+                StatusCode::CONFLICT,
+                problems::SHELF_NAME_TAKEN,
+                "Conflict",
+                self.to_string(),
             ),
             Self::FieldLocked(_) => (
                 StatusCode::CONFLICT,

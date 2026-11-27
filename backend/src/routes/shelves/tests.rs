@@ -15,6 +15,140 @@ fn auth(header: &str) -> (HeaderName, HeaderValue) {
     )
 }
 
+// REV-REQ-0100 criteria 1-4; REV-REQ-0014 registered problem types.
+#[sqlx::test(migrations = "./migrations")]
+async fn shelf_names_are_unique_per_account(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (owner, basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "unique-owner").await;
+    let (_, other_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "unique-other").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let create = |name: &str, credentials: &str| {
+        server
+            .post("/api/v1/shelves")
+            .add_header(auth(credentials).0, auth(credentials).1)
+            .json(&json!({"name": name}))
+    };
+    let rename = |id: Uuid, name: &str| {
+        server
+            .patch(&format!("/api/v1/shelves/{id}"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"name": name}))
+    };
+    let refusal = |response: &axum_test::TestResponse| {
+        let body = test_support::assert_problem(response, "shelf-name-taken", StatusCode::CONFLICT);
+        assert_eq!(body["title"], "Conflict");
+        assert_eq!(body["detail"], "You already have a shelf with this name.");
+    };
+    let first = create(" Café ", &basic).await;
+    assert_eq!(first.status_code(), StatusCode::CREATED);
+    let first_body: serde_json::Value = first.json();
+    assert_eq!(first_body["name"], "Café");
+    let first_id = Uuid::parse_str(first_body["id"].as_str().unwrap()).unwrap();
+    let second = test_support::db::create_shelf(&app_pool, owner, "Other").await;
+    let (_, book) =
+        test_support::db::insert_work_and_manifestation(&ingestion_pool, "unique-book").await;
+    test_support::db::add_to_shelf(&app_pool, second, book).await;
+    let read_second = || {
+        server
+            .get(&format!("/api/v1/shelves/{second}"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+    };
+    let before: serde_json::Value = read_second().await.json();
+    for name in ["CAFE", " Café "] {
+        refusal(&create(name, &basic).await);
+        refusal(&rename(second, name).await);
+    }
+    let after: serde_json::Value = read_second().await.json();
+    assert_eq!(after, before);
+    let count = sqlx::query_scalar!(
+        "SELECT COUNT(*) AS \"count!\" FROM shelves WHERE user_id = $1 AND lower(public.immutable_unaccent(name)) = lower(public.immutable_unaccent($2))",
+        owner, "cafe",
+    ).fetch_one(&pool).await.unwrap();
+    assert_eq!(count, 1);
+    let retained = server
+        .get(&format!("/api/v1/shelves/{first_id}"))
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .await;
+    let retained: serde_json::Value = retained.json();
+    for field in ["id", "name", "is_system", "created_at", "updated_at"] {
+        assert_eq!(retained[field], first_body[field]);
+    }
+    assert_eq!(retained["items"], json!([]));
+    assert_eq!(rename(first_id, "cafe").await.status_code(), StatusCode::OK);
+    assert_eq!(
+        create("CAFE", &other_basic).await.status_code(),
+        StatusCode::CREATED
+    );
+
+    for (name, system_first) in [("System first", true), ("User first", false)] {
+        let held = sqlx::query_scalar!(
+            "INSERT INTO shelves (user_id, name, is_system) VALUES ($1, $2, $3) RETURNING id",
+            owner,
+            name,
+            system_first,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let duplicate = sqlx::query!(
+            "INSERT INTO shelves (user_id, name, is_system) VALUES ($1, $2, $3)",
+            owner,
+            name.to_uppercase(),
+            !system_first,
+        )
+        .execute(&pool)
+        .await
+        .unwrap_err();
+        let db = duplicate.as_database_error().unwrap();
+        assert!(db.is_unique_violation());
+        assert_eq!(db.constraint(), Some("idx_shelves_user_name_folded"));
+        if system_first {
+            refusal(&create(name, &basic).await);
+            refusal(&rename(second, name).await);
+        } else {
+            assert_eq!(rename(held, name).await.status_code(), StatusCode::OK);
+        }
+    }
+
+    for (name, left_rename, right_rename) in [
+        ("Race create", false, false),
+        ("Race rename", true, true),
+        ("Race mixed", false, true),
+    ] {
+        let left_id =
+            test_support::db::create_shelf(&app_pool, owner, &format!("{name} left")).await;
+        let right_id =
+            test_support::db::create_shelf(&app_pool, owner, &format!("{name} right")).await;
+        let left = if left_rename {
+            rename(left_id, name)
+        } else {
+            create(name, &basic)
+        };
+        let upper = name.to_uppercase();
+        let right = if right_rename {
+            rename(right_id, &upper)
+        } else {
+            create(&upper, &basic)
+        };
+        let (left, right) = tokio::join!(async { left.await }, async { right.await });
+        let (winner, loser) = if left.status_code().is_success() {
+            (&left, &right)
+        } else {
+            (&right, &left)
+        };
+        assert!(winner.status_code().is_success());
+        refusal(loser);
+        let count = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM shelves WHERE user_id = $1 AND lower(public.immutable_unaccent(name)) = lower(public.immutable_unaccent($2))",
+            owner, name,
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(count, 1);
+    }
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn list_shelves_returns_only_callers_shelves(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;

@@ -603,6 +603,11 @@ pub(super) struct ShelfNameInvalid {
     message: String,
 }
 
+#[derive(SimpleObject)]
+pub(super) struct ShelfNameTaken {
+    message: String,
+}
+
 #[derive(InputObject)]
 pub(super) struct CreateShelfInput {
     name: String,
@@ -653,13 +658,15 @@ pub(super) struct ShelfItemRemoved {
 
 #[derive(Union)]
 pub(super) enum CreateShelfResult {
-    ShelfCreated(ShelfCreated),
-    ShelfNameInvalid(ShelfNameInvalid),
+    Created(ShelfCreated),
+    NameInvalid(ShelfNameInvalid),
+    NameTaken(ShelfNameTaken),
 }
 #[derive(Union)]
 pub(super) enum RenameShelfResult {
     ShelfRenamed(ShelfRenamed),
     ShelfNameInvalid(ShelfNameInvalid),
+    ShelfNameTaken(ShelfNameTaken),
     SystemShelfImmutable(SystemShelfImmutable),
     NotFound(NotFound),
 }
@@ -860,12 +867,16 @@ impl Mutation {
                 }
                 .encode(crate::routes::cursor::CursorApi::Graphql);
                 let created = library::Shelf::from_model(row)?;
-                Ok(CreateShelfResult::ShelfCreated(ShelfCreated {
+                Ok(CreateShelfResult::Created(ShelfCreated {
                     edge: Edge::new(cursor, created.clone()),
                     shelf: created,
                 }))
             }
             Err(AppError::Validation(message)) => Ok(ShelfNameInvalid { message }.into()),
+            Err(error @ AppError::ShelfNameTaken) => Ok(ShelfNameTaken {
+                message: error.to_string(),
+            }
+            .into()),
             Err(error) => Err(safe_error(error)),
         }
     }
@@ -883,6 +894,10 @@ impl Mutation {
                 shelf: library::Shelf::from_model(row)?,
             })),
             Err(AppError::Validation(message)) => Ok(ShelfNameInvalid { message }.into()),
+            Err(error @ AppError::ShelfNameTaken) => Ok(ShelfNameTaken {
+                message: error.to_string(),
+            }
+            .into()),
             Err(AppError::NotFound) => Ok(NotFound::new().into()),
             Err(AppError::SystemShelfImmutable) => Ok(SystemShelfImmutable::new().into()),
             Err(error) => Err(safe_error(error)),

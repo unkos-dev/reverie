@@ -2876,6 +2876,13 @@ CREATE INDEX idx_shelves_user_keyset ON public.shelves USING btree (user_id, is_
 
 
 --
+-- Name: idx_shelves_user_name_folded; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE UNIQUE INDEX idx_shelves_user_name_folded ON public.shelves USING btree (user_id, lower(public.immutable_unaccent(name)));
+
+
+--
 -- Name: idx_tags_name_lower; Type: INDEX; Schema: public; Owner: reverie_migrator
 --
 

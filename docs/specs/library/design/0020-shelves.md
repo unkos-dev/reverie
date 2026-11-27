@@ -4,6 +4,7 @@ profile-version: 1
 id: "REV-DESIGN-0020"
 title: "Shelves"
 satisfies:
+  - "REV-REQ-0100"
   - "REV-REQ-0057"
   - "REV-REQ-0059"
   - "REV-REQ-0093"
@@ -105,6 +106,7 @@ selection to shelf" action — all described below only as consumers, since none
 
 | State item | Where it lives | Writer(s) |
 | ---------- | -------------- | --------- |
+| `shelves.name` and row existence | `shelves` table | Shared service create, rename and delete; account-deletion cascade |
 | `shelves.updated_at` | `shelves` row | The `shelves_set_updated_at` trigger, fired by any `UPDATE` |
 | `shelves.is_system` | `shelves` row | The column default (`false`); no handler ever sets it |
 | `shelf_items` row existence | `shelf_items` table | `add_shelf_item` (insert), `remove_shelf_item` (delete), `delete_shelf` through the `shelves` cascade, and a manifestation delete through the `manifestations` cascade |
@@ -197,7 +199,17 @@ the time of that request. The browser shelf detail page pages its items through 
 `ShelfDetailPage_items` pagination fragment. The shelf list selects each shelf's ID, name, system flag and item count,
 and no timestamps.
 
+Stored shelf names preserve case and accents after Rust `str::trim` removes surrounding whitespace. The unique
+expression index `idx_shelves_user_name_folded` covers `user_id` and `lower(public.immutable_unaccent(name))` across
+user and system shelves. PostgreSQL enforces this identity under concurrent writes. Different accounts can reuse the
+same folded name, and a shelf can retain its own folded identity. Existing duplicates cause index creation to fail
+visibly without a backfill.
+
 ## Runtime behaviour
+
+Creating a shelf checks write scope and adult status, trims and validates the name, then inserts the row. Both create
+and rename classify only a unique violation naming `idx_shelves_user_name_folded` as `AppError::ShelfNameTaken`. Other
+database errors remain internal.
 
 **Renaming a shelf**, `PATCH /api/v1/shelves/{id}`:
 
@@ -246,6 +258,12 @@ and no timestamps.
 - **Foreign or missing shelf.** Every handler that targets an existing shelf by id resolves a missing row and a row
   owned by a different `user_id` to the same `AppError::NotFound` (404). No handler in this module returns `403` for an
   ownership mismatch.
+- **Duplicate name.** Create and rename return HTTP 409 Problem Details with type `shelf-name-taken`, title `Conflict`
+  and detail "You already have a shelf with this name." GraphQL returns `ShelfNameTaken` with the same message and no
+  execution error. A refused rename rolls back without changing the shelf or its items. Both existing name dialogs show
+  the message through their inline `FieldError`, retain the attempted name and stay open. Save finishes pending. This
+  known refusal neither refetches the shelf list nor replays the write. Success still closes the dialog and publishes
+  the returned Relay records and edge.
 - **System-shelf mutation.** `rename_shelf` and `delete_shelf` return `AppError::SystemShelfImmutable` (409) once
   ownership has already been confirmed; a caller learns "this shelf is mine but immutable" only after the ownership
   check, never before it. GraphQL reports the same order of checks as `NotFound` and `SystemShelfImmutable` results.

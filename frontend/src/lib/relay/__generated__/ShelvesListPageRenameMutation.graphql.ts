@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<540fa5c4d0654667e98a0330fadd647e>>
- * @relayHash 0734d464ec20cd6bad82f5de2726bae9
+ * @generated SignedSource<<d0aaeff0784aa052b851d392f3e37f09>>
+ * @relayHash 15e1ecc21f74c135e38638f073d7b2ac
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID e5144447fbc069ea27e2e731396bed2b229cd9c52587bba7c74b04308d83c0c0
+// @relayRequestID 9c911f5fdf93a8e16011885789dfdbf36c1645072542702c451ab9ed85bc5f63
 
 import { ConcreteRequest } from "relay-runtime";
 export type RenameShelfInput = {
@@ -26,6 +26,10 @@ export type ShelvesListPageRenameMutation$data = {
       }
     | {
         readonly __typename: "ShelfNameInvalid";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "ShelfNameTaken";
         readonly message: string;
       }
     | {
@@ -138,6 +142,12 @@ const node: ConcreteRequest = (function () {
           {
             kind: "InlineFragment",
             selections: v1 /*:: as any*/,
+            type: "ShelfNameTaken",
+            abstractKey: null,
+          },
+          {
+            kind: "InlineFragment",
+            selections: v1 /*:: as any*/,
             type: "SystemShelfImmutable",
             abstractKey: null,
           },
@@ -169,7 +179,7 @@ const node: ConcreteRequest = (function () {
       selections: v2 /*:: as any*/,
     },
     params: {
-      id: "e5144447fbc069ea27e2e731396bed2b229cd9c52587bba7c74b04308d83c0c0",
+      id: "9c911f5fdf93a8e16011885789dfdbf36c1645072542702c451ab9ed85bc5f63",
       metadata: {},
       name: "ShelvesListPageRenameMutation",
       operationKind: "mutation",
@@ -178,6 +188,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "ab9b722d0077cefbc6daf3a76d2fe6e1";
+(node as any).hash = "2e0db742de152bab8556fdace5fe3b79";
 
 export default node;

@@ -62,6 +62,9 @@ pub const IF_MATCH_MISMATCH: &str = "if-match-mismatch";
 /// renamed or deleted. HTTP 409 Conflict.
 pub const SYSTEM_SHELF_IMMUTABLE: &str = "system-shelf-immutable";
 
+/// Another shelf in the account holds the folded name. HTTP 409 Conflict.
+pub const SHELF_NAME_TAKEN: &str = "shelf-name-taken";
+
 /// A requested canonical metadata field is locked on the target edition. HTTP 409.
 pub const FIELD_LOCKED: &str = "field-locked";
 
