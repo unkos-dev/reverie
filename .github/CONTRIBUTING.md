@@ -118,7 +118,7 @@ standard). Compatibility shims may import those files, but they do not define se
 ### Pre-commit prerequisites
 
 Git hooks are managed by lefthook and installed through the `prepare` script, so a fresh clone wires them on
-`pnpm install`. Four of those hooks invoke vite-plus directly, so install it before your first commit.
+`pnpm install`. Several hook jobs invoke vite-plus directly, so install it before your first commit.
 
 Install the repository-pinned development and verification tools with [mise](https://mise.jdx.dev/):
 
@@ -172,10 +172,10 @@ a convenience rather than a correctness constraint, because `packageManager` in 
 authoritative and a pnpm whose version disagrees downloads and re-executes the declared one. Node is not pinned in
 `mise.toml`: `devEngines.runtime` in [`package.json`](../package.json) is the single place its version is written, and
 vp, pnpm and the image build all read it from there. vite-plus is two things at once: the global binary installed above,
-which every `just js::` recipe and four git hooks invoke, and a `vite-plus` devDependency that supplies the toolchain
-the binary runs and that CI's `setup-vp` reads the version from. If a declared project dependency is missing, restore it
-through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check
-and report the missing command; do not bypass the check or install system packages implicitly.
+used by JavaScript recipes and Git hooks, and a `vite-plus` devDependency that supplies the toolchain the binary runs
+and that CI's `setup-vp` reads the version from. If a declared project dependency is missing, restore it through the
+documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check and report
+the missing command; do not bypass the check or install system packages implicitly.
 
 Workflow and infrastructure files are additionally scanned in CI by zizmor, Checkov, Trivy, cargo-audit, cargo-deny, and
 dependency-review, and CodeQL analyses main nightly. These are intentionally CI-only scanners. Local installation is not

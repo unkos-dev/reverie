@@ -36,7 +36,7 @@ done
 # 1b. vp resolves on PATH. Separate from the loop above because it is a
 # standalone binary rather than a mise pin, so `mise install` cannot supply it
 # and the loop's fix text would send a contributor somewhere that never helps.
-# Every js recipe and four lefthook jobs invoke it directly, so a machine
+# JavaScript recipes and lefthook jobs invoke it, so a machine
 # without it fails at commit time.
 if command -v vp >/dev/null 2>&1; then
   pass "binary 'vp' resolves on PATH"
