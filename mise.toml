@@ -76,6 +76,6 @@ version = "v0.6.0"
 filter_bins = "specful"
 
 [tools."github:opengrep/opengrep"]
-version = "v2.0.0"
+version = "v2.1.0"
 asset_pattern = "opengrep_linux_x86"
 rename_exe = "opengrep"
