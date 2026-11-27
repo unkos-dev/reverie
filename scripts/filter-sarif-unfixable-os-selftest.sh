@@ -75,8 +75,9 @@ check "unclassifiable finding is ingested (fails closed)" "1" "$(kept SNYK-DEBIA
 check "no-fix text for another release does not withhold a fixable finding" "1" \
   "$(kept SNYK-DEBIAN14-ZLIB-7)"
 
-check "rule metadata untouched" "7" \
-  "$(jq '.runs[0].tool.driver.rules | length' "${tmp}/out.sarif")"
+check "rule metadata untouched" \
+  "$(jq -cS '[.runs[].tool.driver.rules]' "${tmp}/in.sarif")" \
+  "$(jq -cS '[.runs[].tool.driver.rules]' "${tmp}/out.sarif")"
 
 if grep -q 'Scanned 8, ingested 4, withheld 4' <<<"$summary" \
   && grep -q 'curl. | 2' <<<"$summary"; then

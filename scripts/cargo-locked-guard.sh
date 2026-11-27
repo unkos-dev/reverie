@@ -24,7 +24,7 @@
 #
 # Failure discipline: a guard that did no work must not read as clean. An
 # unreadable input aborts (exit 2), and grep exit statuses above 1 abort
-# rather than being swallowed; only "no matches at all" (exit 1) is clean.
+# rather than being swallowed. A scan with no cargo invocations aborts too.
 #
 # Usage: cargo-locked-guard.sh [file...]   defaults to the derived set
 set -euo pipefail
@@ -72,6 +72,7 @@ if [ "$rc" -gt 1 ]; then
 fi
 
 fail=0
+invocations=0
 while IFS= read -r match; do
   [ -n "$match" ] || continue
   text="${match#*:*:}"
@@ -113,6 +114,7 @@ while IFS= read -r match; do
       fi
     done
     [ -n "$sub" ] || continue
+    invocations=$((invocations + 1))
     [[ "$seg" == *'--locked'* ]] && continue
     if is_exempt_sub "$sub" "$nxt"; then
       continue
@@ -122,6 +124,11 @@ while IFS= read -r match; do
     break # one report per line is enough
   done <<< "$segs"
 done <<< "$matches"
+
+if [ "$invocations" -eq 0 ]; then
+  echo 'cargo-locked-guard: no cargo invocations matched; refusing to report a clean tree' >&2
+  exit 2
+fi
 
 if [ "$fail" -ne 0 ]; then
   echo 'cargo-locked-guard: add --locked, or extend the non-resolving exemption in this script if the subcommand genuinely resolves nothing' >&2

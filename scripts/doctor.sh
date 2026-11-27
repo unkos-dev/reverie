@@ -262,12 +262,6 @@ done
 # alternative rather than reading like an ordinary low-disk warning. Reuses
 # scripts/require-disk-backed.sh's own `stat -f -c %T` detection (its
 # --fstype mode) rather than a second copy of that invocation.
-#
-# DOCTOR_STUB_DISK_AVAIL_BYTES and DOCTOR_STUB_DISK_FSTYPE exist only for
-# doctor-selftest.sh: free disk space and filesystem type are host facts a
-# fixture cannot control, so the selftest overrides both to reach every
-# branch deterministically instead of depending on where CI or a developer's
-# machine happens to run it.
 five_gib=$((5 * 1024 * 1024 * 1024))
 if [ -n "${DOCTOR_STUB_DISK_AVAIL_BYTES:-}" ]; then
   avail_bytes="${DOCTOR_STUB_DISK_AVAIL_BYTES}"

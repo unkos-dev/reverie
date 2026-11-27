@@ -15,8 +15,6 @@
 # start and stop serialize on a lock file so two concurrent starts cannot
 # both pass the free-port probe and race Vite onto different ports.
 #
-# The DEV_SERVER_* overrides exist for the selftest, which drives the same
-# code paths against a fake server on a scratch port.
 set -euo pipefail
 
 port="${DEV_SERVER_PORT:-5173}"

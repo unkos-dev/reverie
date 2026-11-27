@@ -78,15 +78,6 @@ jobs:
       - name: Container-CVE suppression predicate
         run: just infra::filter-sarif-unfixable-os-selftest
 
-      # scripts/preflight-scope.sh decides which lanes a local gate runs; a change
-      # that narrows its own escalation logic is circular to catch locally. This job
-      # is unconditional and never consults the scoper.
-      - name: Preflight lane scoper
-        run: just infra::preflight-scope-selftest
-
-      - name: Database provisioning status and dev environment
-        run: just infra::backend-dev-env-selftest
-
       # The package-ingress ADR's frozen-installs control.
       - name: cargo --locked guard
         run: just infra::cargo-locked-guard

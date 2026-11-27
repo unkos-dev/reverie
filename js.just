@@ -160,9 +160,8 @@ dev:
     vp dev
 
 # The background lifecycle lives in scripts/dev-server.sh so the ownership
-# checks are shared across start/stop/status, shellcheck covers the logic,
-# and infra::dev-server-selftest can exercise the same code paths against a
-# fake server. The script owns frontend/ as its working directory.
+# checks are shared across start/stop/status. The script owns frontend/ as its
+# working directory.
 #
 # Start the Vite dev server in the background; logs to frontend/.dev-server.log.
 [group('js')]
