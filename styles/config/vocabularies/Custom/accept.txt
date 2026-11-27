@@ -312,6 +312,7 @@ markdownlint
 matcher
 math
 maxcountryman
+md
 MDN
 memoisation
 memoise
@@ -644,6 +645,7 @@ workstream
 worktree
 worktrees
 writeback
+xl
 xs
 Zitadel
 zizmor
