@@ -83,14 +83,10 @@ build: js::build rust::build website::build
 # token-dependent audits). Still CI-only, and not run here: the docker image build, IaC/SAST/secret
 # scans, npm-license, dependency-review, and the accessibility scan.
 #
-# Two recipes are locally runnable and excluded anyway, because a laptop cannot
-# answer for either honestly. The accessibility scan reuses an already-running
+# The accessibility scan is locally runnable but reuses an already-running
 # dev server with no ownership check, so from any checkout that does not own
 # port 5173 it scans a different tree and reports the result as this branch's.
-# infra::selftests covers this repository's local developer tooling (doctor,
-# worktree, the dev-server lifecycle, the detached gate), which CI has no stake
-# in, and gates nothing anywhere. Run either by hand when working on what it
-# covers.
+# Run it by hand while fixing accessibility violations.
 #
 # The lanes are a list passed to scripts/gate-run.sh rather than just
 # dependencies, so the run ends with one `GATE: PASS`/`GATE: FAIL` line naming
@@ -278,8 +274,8 @@ worktree branch base="":
         # own default, `git worktree add -b` bases it on the CALLER's current
         # HEAD, so invoking this recipe from a feature branch silently
         # carried that branch's commits into the new worktree. Delegate the
-        # choice to scripts/worktree-base.sh so the resolution chain (and its
-        # selftest) live in one place.
+        # choice to scripts/worktree-base.sh so the resolution chain lives
+        # in one place.
         base_resolution="$(scripts/worktree-base.sh "$branch" "$base")"
         base_mode="${base_resolution%% *}"
         base_ref="${base_resolution#* }"

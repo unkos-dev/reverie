@@ -13,10 +13,8 @@
 # to rather than how it is spelled, which a regex can only approximate.
 # It lives in backend/clippy.toml as `disallowed-types`.
 #
-# Exit-code handling is load-bearing in guards 1-2: grep exit 1 means
-# "clean", exit >1 is a real error that must not read as clean, and an
-# empty/missing allowlist fails here (set -e) instead of failing open
-# downstream.
+# Both guards reject zero query or route targets, including approved forms.
+# Grep errors and empty or missing allowlists also fail.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -25,16 +23,25 @@ fail=0
 
 # Runs one grep-allowlist guard: `pattern` over `path`, filtered against the
 # non-comment lines of `allowlist`, reporting any surviving match as a
-# violation. Args: label, pattern, path, allowlist, advice-lines...
+# violation. Args: label, pattern, target-pattern, path, allowlist, advice-lines...
 run_grep_guard() {
-    local label="$1" pattern="$2" path="$3" allowlist="$4"
-    shift 4
+    local label="$1" pattern="$2" target_pattern="$3" path="$4" allowlist="$5"
+    shift 5
     local advice=("$@")
 
     local allow
     allow=$(grep -vE '^\s*(#|$)' "$allowlist")
 
     local rc=0
+    grep -rE "$target_pattern" "$path" >/dev/null || rc=$?
+    if [ "$rc" -gt 1 ]; then
+        exit "$rc"
+    fi
+    if [ "$rc" -eq 1 ]; then
+        echo "${label}: no target matches; refusing to report a clean tree" >&2
+        exit 2
+    fi
+
     local matches=''
     matches=$(grep -rnE "$pattern" "$path") || rc=$?
     if [ "$rc" -gt 1 ]; then
@@ -67,6 +74,7 @@ run_grep_guard() {
 run_grep_guard \
     "Disallowed runtime sqlx::query invocations" \
     'sqlx::(query[a-z_]*|raw_sql)\(' \
+    'sqlx::(query[a-z_]*|raw_sql)!?\(' \
     backend/src/ \
     backend/guards/sqlx-runtime-allowlist.txt \
     "Use compile-time macros (query!, query_as!, query_scalar!)" \
@@ -78,6 +86,7 @@ run_grep_guard \
 run_grep_guard \
     "Raw .route( registrations" \
     '\.route\(' \
+    '\.routes?\(' \
     backend/src/ \
     backend/guards/axum-route-allowlist.txt \
     "Register endpoints via OpenApiRouter + routes!(...) with #[utoipa::path]," \

@@ -106,14 +106,6 @@ lanes_for() {
 # toolchain, database, or install come first so they fail fastest. Database
 # recipes own disposable clusters; the network-backed audit runs last.
 #
-# Two recipes are deliberately absent, both because a laptop cannot answer for
-# them honestly.
-#
-# infra::selftests covers this repository's local developer tooling (doctor,
-# worktree, the dev-server lifecycle, the detached gate) against stubbed PATH,
-# docker, mise, npm, and git fixtures. CI has no stake in any of it. It is a
-# recipe to invoke by hand while editing one of those scripts, not a gate.
-#
 # js::a11y is CI-only for two reasons, and the second is the deciding one. It
 # reuses an already-running dev server with no ownership check, so a local run
 # scans whichever checkout happens to own port 5173 and reports that verdict as

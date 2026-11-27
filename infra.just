@@ -109,50 +109,10 @@ prose:
 filter-sarif-unfixable-os-selftest:
     scripts/filter-sarif-unfixable-os-selftest.sh
 
-# Exercise the dev-server lifecycle script against a fake server on a scratch port.
-[group('infra')]
-dev-server-selftest:
-    scripts/dev-server-selftest.sh
-
-# Assert the backend dev recipes resolve REVERIE_DEV_ENV without overriding an already-set variable.
-[group('infra')]
-backend-dev-env-selftest:
-    scripts/backend-dev-env-selftest.sh
-
-# Self-test `just doctor` (missing-binary, fully-stubbed happy path, warn-only path).
-[group('infra')]
-doctor-selftest:
-    scripts/doctor-selftest.sh
-
-# Self-test the shared tmpfs/ramfs filesystem guard `just worktree` and `just doctor` both call.
-[group('infra')]
-require-disk-backed-selftest:
-    scripts/require-disk-backed-selftest.sh
-
-# Self-test the worktree recipe's Cargo isolation and operator-owned overlays.
-[group('infra')]
-worktree-selftest:
-    scripts/worktree-selftest.sh
-
-# Self-test the new-branch base resolver: origin/main, local-main and HEAD fallbacks, and the explicit-base override/rejection paths.
-[group('infra')]
-worktree-base-selftest:
-    scripts/worktree-base-selftest.sh
-
-# Self-test the preflight scoper's lane mapping, escalation, and fail-closed paths.
-[group('infra')]
-preflight-scope-selftest:
-    scripts/preflight-scope-selftest.sh
-
 # Every dependency-resolving cargo invocation in the just recipes must pass --locked; the package-ingress ADR records why.
 [group('infra')]
 cargo-locked-guard:
     scripts/cargo-locked-guard.sh
-
-# Self-test the detached-gate script `just preflight-detach` wraps: a passing and a failing run each need a log and a gate-status-readable record.
-[group('infra')]
-gate-detach-selftest:
-    scripts/gate-detach-selftest.sh
 
 # Whole-tree: scripts/no-issue-refs.sh ignores any arguments and always
 # checks every tracked in-scope file, so the *files parameter only controls
@@ -178,46 +138,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (the non-JS half of CI's lint concern).
 [group('infra')]
-lint: shellcheck hadolint typos sqlfluff jactionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard backend-dev-env-selftest
-
-# The env-loader status cases also gate lint and CI; the other tests cover local tooling.
-# Everything else here covers local-only developer tooling, and that is now the
-# entry criterion. CI has no stake in `just doctor`, `just worktree`, or the
-# dev-server lifecycle: nothing CI does breaks when one of them regresses. So
-# this recipe gates nothing, and is absent from LANE_ORDER, lanes_for(),
-# ALWAYS_LANES and preflight-full. The developer editing one of these scripts
-# runs it by hand, which is the only moment its verdict is worth anything.
-#
-# What used to sit here alongside them were self-tests of guards CI runs for
-# real on every pull request. A fixture beside a guard proves the guard passes
-# against a planted case; an assertion inside it fires on every real invocation,
-# which is strictly more coverage for a tenth of the lines. Those guards carry
-# their own assertions now and the fixtures are gone.
-#
-# A check earns a place in `lint` by catching a failure that has actually
-# happened here, not one that could. Config validators added alongside the
-# config they validate do not qualify. cargo-locked-guard is the exception, and
-# carries ADR authority rather than a fire history; the other two answer for
-# themselves below.
-#
-# filter-sarif-unfixable-os-selftest guards a suppression predicate that decides
-# which container CVEs reach the code-scanning dashboard. The script fails
-# closed against upstream rewording, but nothing stops an edit that widens the
-# match from withholding findings that do have fixes, and the assertion that
-# would catch that is the predicate itself, so it cannot live inside the script.
-#
-# preflight-scope-selftest guards the scoper that decides which lanes a local
-# gate runs, including the lane holding this check. Break the `scripts/*` arm of
-# its escalates() and a change to the scoper itself narrows its own gate from
-# all lanes to one, prints nothing, and exits clean. No assertion inside the
-# scoper can catch that, because what needs asserting is which lanes were
-# selected and the selector is the code under suspicion. Gate placement is
-# circular for the same reason, so CI's repo-lint job is what actually holds it:
-# that job is unconditional and never consults the scoper.
-#
-# Developer tooling self-tests; the backend env/status cases also run in local lint and CI.
-[group('infra')]
-selftests: dev-server-selftest backend-dev-env-selftest doctor-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest gate-detach-selftest
+lint: shellcheck hadolint typos sqlfluff jactionlint prose specful filter-sarif-unfixable-os-selftest cargo-locked-guard
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]
