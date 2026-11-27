@@ -83,11 +83,18 @@ async fn shelf_names_are_unique_per_account(pool: PgPool) {
         StatusCode::CREATED
     );
 
-    for (name, system_first) in [("System first", true), ("User first", false)] {
+    let whitespace: String = (char::MIN..=char::MAX)
+        .filter(|character| character.is_whitespace())
+        .collect();
+    for (stored, name, system_first) in [
+        ("Systém first", "System first", true),
+        ("Usér first", "User first", false),
+    ] {
+        let padded = format!("{whitespace}{stored}{whitespace}");
         let held = sqlx::query_scalar!(
             "INSERT INTO shelves (user_id, name, is_system) VALUES ($1, $2, $3) RETURNING id",
             owner,
-            name,
+            padded,
             system_first,
         )
         .fetch_one(&pool)

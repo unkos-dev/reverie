@@ -1021,6 +1021,7 @@
       "governed-by": [
         "REV-ADR-0056",
         "REV-ADR-0011",
+        "REV-ADR-0044",
         "REV-ADR-0082"
       ],
       "id": "REV-DESIGN-0020",

@@ -11,6 +11,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0056"
   - "REV-ADR-0011"
+  - "REV-ADR-0044"
   - "REV-ADR-0082"
 ---
 
@@ -200,10 +201,13 @@ the time of that request. The browser shelf detail page pages its items through 
 and no timestamps.
 
 Stored shelf names preserve case and accents after Rust `str::trim` removes surrounding whitespace. The unique
-expression index `idx_shelves_user_name_folded` covers `user_id` and `lower(public.immutable_unaccent(name))` across
-user and system shelves. PostgreSQL enforces this identity under concurrent writes. Different accounts can reuse the
-same folded name, and a shelf can retain its own folded identity. Existing duplicates cause index creation to fail
-visibly without a backfill.
+expression index `idx_shelves_user_name_folded` covers `user_id` and
+`lower(public.immutable_unaccent(public.immutable_trim_unicode_whitespace(name)))` across user and system shelves,
+matching Rust's Unicode `White_Space` trimming for rows inserted directly by SQL. PostgreSQL enforces this identity
+under concurrent writes. Different accounts can reuse the same folded name, and a shelf can retain its own folded
+identity. Existing duplicates cause index creation to fail visibly without a backfill. Because the index depends on
+`public.immutable_unaccent`, a PostgreSQL extension or `unaccent` rules-file update can leave the index stale or cause
+`REINDEX` to fail if two existing shelf names fold to the same key.
 
 ## Runtime behaviour
 

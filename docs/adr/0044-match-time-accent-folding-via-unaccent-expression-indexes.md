@@ -59,7 +59,10 @@ Two subtleties are part of the decision, not incidental:
   index-backed.
 - Positive: `isbn_13` stays unfolded: digits and `X` have nothing to fold, so it keeps the plain escaped `ILIKE` path.
 - Negative: index and stored search-vector correctness depend on dictionary stability with no failure signal. Preserving
-  search correctness across dictionary changes adds regeneration and coordination to the upgrade process.
+  search correctness across dictionary changes adds regeneration and coordination to the upgrade process. Unique
+  expression indexes that use `immutable_unaccent` for write-side identity (such as per-account shelf names) share this
+  dependency: a dictionary update can silently invalidate the unique index or cause `REINDEX` to fail if two previously
+  distinct stored names fold to the same key.
 - Negative: schema rollback is deliberately partial: the wrappers, configuration, and extension survive the down
   migration so a deployed binary that names them keeps returning accent-insensitive results instead of erroring, but its
   folded trigram expressions run unindexed until the application image is rolled back too; full removal requires rolling
@@ -67,9 +70,7 @@ Two subtleties are part of the decision, not incidental:
 
 ## More information
 
-Persistent database upgrades are a reason to revisit the dictionary-stability assumption. The maintenance mechanism
-needs separate evaluation; this record does not select a detection or regeneration process or assign maintenance to end
-users.
-
-Revisit if match-time folding extends to write-side identity, where dictionary changes would also affect identity
-comparisons.
+Persistent database upgrades are a reason to revisit the dictionary-stability assumption. Write-side shelf-name identity
+uses `public.immutable_unaccent` under this same trade-off, so upgrade planning must account for rebuilding the unique
+index and potential folding collisions alongside search-index regeneration. The maintenance mechanism needs separate
+evaluation; this record does not select a detection or regeneration process or assign maintenance to end users.
