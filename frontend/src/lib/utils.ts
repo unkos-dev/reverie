@@ -1,17 +1,8 @@
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { twMerge, type ClassNameValue } from "tailwind-merge";
 
 /**
- * Compose Tailwind class strings with conflict resolution. `clsx` flattens
- * the arguments (objects, arrays, falsy values, conditional strings);
- * `twMerge` then collapses conflicting utilities so a later class wins over
- * an earlier one (`cn("p-2", "p-4")` → `"p-4"` rather than
- * `"p-2 p-4"`). Required for variant-prop patterns where a caller passes a
- * class that overrides a default supplied by the component author.
- *
- * @param inputs - Any value [clsx](https://github.com/lukeed/clsx) accepts.
- * @returns Space-separated class string ready to drop into `className`.
+ * Compose Tailwind class strings so later conflicting utilities override earlier ones.
  */
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+export function cn(...inputs: ClassNameValue[]): string {
+  return twMerge(...inputs);
 }
