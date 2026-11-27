@@ -4,7 +4,7 @@
 //! archive and is usable: either it decodes as a raster (`JPEG`/`PNG`/`WebP`
 //! via the `image` crate) or it rasterizes to a visible image as `SVG`
 //! (Standard Ebooks ship `cover.svg`), reusing serve time's
-//! [`crate::services::covers::svg::rasterize_svg`] with the same sibling
+//! `crate::services::covers::svg::rasterize_svg` with the same sibling
 //! resolution so this layer's verdict matches what the serve endpoint will do
 //! with the same bytes. An undecodable, unparsable, or missing cover produces
 //! a `Degraded` issue rather than an `Irrecoverable` one: the book is still
@@ -23,7 +23,7 @@ use super::{
 /// Resolves the cover href relative to the `OPF` directory, reads the entry from
 /// `handle`, and accepts it if it decodes as a raster (`JPEG`/`PNG`/`WebP`) or
 /// rasterizes to a visible image as `SVG` via
-/// [`crate::services::covers::svg::rasterize_svg`], resolving `<image>`
+/// `crate::services::covers::svg::rasterize_svg`, resolving `<image>`
 /// siblings from `handle` the same way serving does. A missing, undecodable,
 /// or unparsable cover appends a `Degraded` issue; no cover declared, or an
 /// SVG that parses but renders nothing visible, is not an error.
