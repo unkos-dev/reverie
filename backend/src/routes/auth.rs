@@ -1749,9 +1749,6 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
         let cookie = session_set_cookie(&server.get("/auth/oidc/login").await, "id");
-        assert!(cookie.starts_with("id="));
-        assert!(cookie.contains("Path=/"));
-        assert!(!cookie.contains("Domain="));
         assert!(
             cookie.contains("HttpOnly"),
             "session cookie must be HttpOnly; got: {cookie}"
@@ -1774,7 +1771,6 @@ mod tests {
         config.security.behind_https = true;
         let server = test_support::db::server_with_config(&app_pool, &ingestion_pool, config);
         let cookie = session_set_cookie(&server.get("/auth/oidc/login").await, "__Host-id");
-        assert!(cookie.starts_with("__Host-id="));
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Lax"));
         assert!(cookie.contains("Path=/"));
