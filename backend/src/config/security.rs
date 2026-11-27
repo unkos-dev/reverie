@@ -28,10 +28,10 @@ use validator::{Validate, ValidationError};
 #[serde(default)]
 #[validate(schema(function = "validate_security_config"))]
 pub struct SecurityConfig {
-    /// Whether the deployment is fronted by a TLS-terminating reverse
-    /// proxy (`REVERIE_BEHIND_HTTPS`, default `false`). Gates HSTS
-    /// emission: never emitted on plaintext HTTP because the browser
-    /// would refuse the next TLS-less request to this host.
+    /// Whether the deployment uses HTTPS through a TLS-terminating reverse
+    /// proxy (`REVERIE_BEHIND_HTTPS`, default `false`). Enables HSTS and
+    /// issues the session cookie as Secure `__Host-id`. When false, direct
+    /// LAN HTTP uses `id` without Secure and emits no HSTS.
     pub behind_https: bool,
     /// Whether the HSTS header carries `; includeSubDomains`
     /// (`REVERIE_HSTS_INCLUDE_SUBDOMAINS`, default `false`). Requires

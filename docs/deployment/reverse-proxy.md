@@ -21,7 +21,11 @@ When this topology is in place, set:
 REVERIE_BEHIND_HTTPS=true
 ```
 
-to emit `Strict-Transport-Security`. See
+This setting emits HSTS (`Strict-Transport-Security`) and issues the session cookie as Secure `__Host-id`, with Path `/`
+and no Domain. Enable it even when the proxy supplies HSTS itself, because it also controls cookie security. Deploying
+the cookie rename signs existing HTTPS users out once.
+
+See
 [Content Security Policy and security headers](../security/content-security-policy.md)
 for the full header set.
 
@@ -97,7 +101,8 @@ docker run -p 3000:3000 ghcr.io/unkos-dev/reverie:main
 release ships.)
 
 Leave `REVERIE_BEHIND_HTTPS=false`. Browsers connecting to `http://host:3000` will see uniform headers (XCTO,
-Referrer-Policy, Permissions-Policy, X-Frame-Options) and route-appropriate CSP, but no HSTS.
+Referrer-Policy, Permissions-Policy, X-Frame-Options) and route-appropriate CSP, but no HSTS. The session cookie remains
+`id` without Secure because browsers reject `__Host-` cookies from insecure origins.
 
 Do not expose a direct-HTTP deployment to the internet.
 

@@ -127,7 +127,8 @@ transport; selecting plaintext accepts that residual risk.
 Configuration" — mandates `Secure` on session cookies.
 
 **Reverie's position:** `Secure` follows `REVERIE_BEHIND_HTTPS`: set when it is
-`true`, omitted when it is `false` (the default). See
+`true`, omitted when it is `false` (the default). The HTTPS cookie is
+`__Host-id`; direct LAN HTTP retains `id` without Secure. See
 `backend/src/lib.rs::build_router_with_session_store` (session setup).
 
 **Rationale:** A browser never sends a `Secure` cookie over plain HTTP, so an

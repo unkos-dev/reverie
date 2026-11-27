@@ -16,8 +16,12 @@
 //! makes the stored value stale, which [`crate::auth::middleware::CurrentUser`]
 //! rejects on the next request.
 
-use tower_sessions::Session;
+use anyhow::Context as _;
+use axum::http::{HeaderValue, header};
+use axum::response::Response;
+use tower_sessions::{Session, cookie::Cookie};
 
+use crate::error::AppError;
 use crate::models::user::User;
 
 /// Session-store key holding the authenticated user's UUID.
@@ -50,13 +54,37 @@ pub async fn login(session: &Session, user: &User) -> Result<(), tower_sessions:
 }
 
 /// Log out: clear session data and delete the row server-side via
-/// [`Session::flush`]. The browser's stale cookie then points at nothing.
+/// [`Session::flush`]. The response removes the browser's session cookie.
 ///
 /// # Errors
 ///
 /// Returns [`tower_sessions::session::Error`] if the store delete fails.
 pub async fn logout(session: &Session) -> Result<(), tower_sessions::session::Error> {
     session.flush().await
+}
+
+pub(crate) async fn secure_host_cookie_removal(
+    mut response: Response,
+) -> Result<Response, AppError> {
+    for (name, value) in response.headers_mut().iter_mut() {
+        if name != header::SET_COOKIE || !value.as_bytes().starts_with(b"__Host-id=") {
+            continue;
+        }
+        let raw = value
+            .to_str()
+            .context("invalid host session cookie header")?;
+        let cookie = Cookie::parse(raw).context("invalid host session cookie")?;
+        if cookie.name() == "__Host-id"
+            && cookie.value().is_empty()
+            && matches!(cookie.max_age(), Some(age) if age.is_zero())
+            && cookie.secure() != Some(true)
+        {
+            // THREAT: browsers reject host-prefixed removal cookies without Secure.
+            *value = HeaderValue::from_str(&format!("{raw}; Secure"))
+                .context("invalid secure host session removal header")?;
+        }
+    }
+    Ok(response)
 }
 
 /// Rehydrated identity state, preserving the disabled-account refusal for protected routes.
