@@ -44,8 +44,8 @@ allowBuilds:
 catalog:
   vite: "npm:@voidzero-dev/vite-plus-core@8.3.8001"
   vite-plus: "1.8.0"
-  vitest: "5.1.1"
-  "@vitest/browser-playwright": "5.1.1"
+  vitest: "5.1.2"
+  "@vitest/browser-playwright": "5.1.2"
 
 # Transitive security floors and Vite+ peer alignment. Each entry is deliberate.
 #   vite@*     peer alignment; holds the graph on vp's Vite fork.
