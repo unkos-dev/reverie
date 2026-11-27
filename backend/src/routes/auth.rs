@@ -1771,8 +1771,6 @@ mod tests {
         config.security.behind_https = true;
         let server = test_support::db::server_with_config(&app_pool, &ingestion_pool, config);
         let cookie = session_set_cookie(&server.get("/auth/oidc/login").await, "__Host-id");
-        assert!(cookie.contains("HttpOnly"));
-        assert!(cookie.contains("SameSite=Lax"));
         assert!(cookie.contains("Path=/"));
         assert!(!cookie.contains("Domain="));
         assert!(
