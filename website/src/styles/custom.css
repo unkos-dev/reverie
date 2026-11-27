@@ -12,19 +12,19 @@
  */
 
 /* Brand faces, self-hosted (copies of frontend/public/fonts/fontshare).
- * Paths are absolute under the deployed base ("/reverie" in astro.config.mjs).
+ * Vite applies the deployed base from astro.config.mjs.
  * Author appears on the splash only; Satoshi also carries the header wordmark
  * site-wide, so it loads on every page by design. */
 @font-face {
   font-family: "Author Variable";
-  src: url("/reverie/fonts/Author-Variable.woff2") format("woff2");
+  src: url("/fonts/Author-Variable.woff2") format("woff2");
   font-weight: 200 700;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "Satoshi Variable";
-  src: url("/reverie/fonts/Satoshi-Variable.woff2") format("woff2");
+  src: url("/fonts/Satoshi-Variable.woff2") format("woff2");
   font-weight: 300 900;
   font-style: normal;
   font-display: swap;

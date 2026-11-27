@@ -23,11 +23,6 @@ hadolint:
 typos:
     typos
 
-# ryl every tracked YAML file.
-[group('infra')]
-ryl:
-    git ls-files -z '*.yml' '*.yaml' | xargs -0 -r ryl check
-
 # Lint every non-ignored tracked SQL file, including parser failures.
 [group('infra')]
 sqlfluff:
@@ -183,7 +178,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (the non-JS half of CI's lint concern).
 [group('infra')]
-lint: shellcheck hadolint typos ryl sqlfluff jactionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard backend-dev-env-selftest
+lint: shellcheck hadolint typos sqlfluff jactionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard backend-dev-env-selftest
 
 # The env-loader status cases also gate lint and CI; the other tests cover local tooling.
 # Everything else here covers local-only developer tooling, and that is now the

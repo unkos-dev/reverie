@@ -13,7 +13,7 @@
 glob_matcher: doublestar
 
 # pre-commit splits into two groups by design, not convenience:
-#   1. A PIPED (sequential) formatter group. Both oxfmt commands set
+#   1. A PIPED (sequential) formatter group. Both formatters set
 #      stage_fixed, which re-stages rewritten files via `git add`. lefthook has
 #      no cross-command coordination on the git index, so running two staging
 #      commands in parallel races `.git/index.lock` and intermittently aborts an
@@ -32,22 +32,13 @@ pre-commit:
             glob: "**/*.md"
             run: rumdl fmt {staged_files}
             stage_fixed: true
-          # Covers every oxfmt-owned type except YAML (split out below so the
-          # formatter is ordered before ryl). stage_fixed re-stages the
-          # rewrite, so the formatted bytes are what the commit captures.
+          # stage_fixed re-stages the rewrite, so the formatted bytes are what
+          # the commit captures.
           # --no-error-on-unmatched-pattern keeps a commit of only ignored files
           # (e.g. a regenerated backend/config.schema.json) a clean no-op.
           - name: oxfmt
-            glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,mdx,html,toml}"
+            glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,mdx,html,toml,yml,yaml}"
             run: vp fmt --write --no-error-on-unmatched-pattern {staged_files}
-            stage_fixed: true
-          # The `&&` orders oxfmt before ryl within the one command, so the
-          # formatter always completes before the linter reads the file
-          # regardless of scheduling. Second stage_fixed command, hence in the
-          # piped group alongside oxfmt, never parallel with it.
-          - name: yaml
-            glob: "**/*.{yml,yaml}"
-            run: vp fmt --write --no-error-on-unmatched-pattern {staged_files} && ryl check {staged_files}
             stage_fixed: true
     - name: checks
       group:

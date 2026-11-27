@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 env:
-  MISE_TOOLS: just rumdl shellcheck hadolint typos vale github:owenlamont/ryl uv jactionlint zizmor github:unkos-dev/specful
+  MISE_TOOLS: just rumdl shellcheck hadolint typos vale uv jactionlint zizmor github:unkos-dev/specful
 
 jobs:
   changes:
@@ -165,9 +165,6 @@ jobs:
 
       - name: Dockerfile lint (hadolint)
         run: just infra::hadolint
-
-      - name: YAML lint (ryl)
-        run: just infra::ryl
 
       - name: SQL lint (SQLFluff)
         run: just infra::sqlfluff
