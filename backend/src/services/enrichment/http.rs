@@ -299,7 +299,7 @@ impl Resolve for SsrfResolver {
 /// * 10-second timeout.
 /// * Maximum 5 redirect hops, each validated by [`validate_hop`].
 /// * Compiled with rustls TLS — no OpenSSL dependency.
-/// * Uses the [`ssrf_resolver`] so resolved IPs in denied ranges are
+/// * Uses the `ssrf_resolver` so resolved IPs in denied ranges are
 ///   rejected before reqwest dials them.
 ///
 /// `user_agent` is forwarded on every request.  Upstream providers

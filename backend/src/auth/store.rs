@@ -64,7 +64,7 @@ fn expiry_to_timestamptz(expiry: OffsetDateTime) -> session_store::Result<jiff_s
         })
 }
 
-/// Postgres-backed [`SessionStore`](tower_sessions::session_store::SessionStore)
+/// Postgres-backed [`SessionStore`]
 /// over `tower_sessions.session`.
 ///
 /// Serializes the whole [`Record`] (id + data map + expiry) into the `data

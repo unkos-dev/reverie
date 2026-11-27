@@ -284,7 +284,7 @@ async fn resolve_device_token(
 /// Returns `Ok(Some(user))` when Basic credentials validate, `Ok(None)` when
 /// no `Authorization: Basic ...` is present, and `Err(InvalidCredential)`
 /// when a Basic header is present but does not resolve — see
-/// [`resolve_device_token`] for the failure modes.
+/// `resolve_device_token` for the failure modes.
 ///
 /// # Errors
 ///

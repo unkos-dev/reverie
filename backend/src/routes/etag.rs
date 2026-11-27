@@ -208,7 +208,7 @@ pub(crate) fn parse_strong_entity_tag(raw: &[u8]) -> Result<StrongEntityTag, App
 ///
 /// Returns `AppError::MalformedHeader` for any of the `Err` cases listed
 /// above: more than one `If-Match` instance, or (via
-/// [`parse_strong_entity_tag`]) a header value that fails the RFC 9110
+/// `parse_strong_entity_tag`) a header value that fails the RFC 9110
 /// `entity-tag` grammar, carries a weak prefix, or encodes an entity-tag
 /// list or the `*` wildcard.
 pub fn parse_if_match(headers: &HeaderMap) -> Result<Option<StrongEntityTag>, AppError> {

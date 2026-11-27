@@ -1,5 +1,5 @@
 //! `Scope` is a credential's capability, one of the authorization axes
-//! kept distinct from [`Role`](crate::models::role::Role) (identity) and
+//! kept distinct from [`Role`] (identity) and
 //! ownership (resource).
 //!
 //! The three scopes form a linear hierarchy: `read` < `write` < `admin`.

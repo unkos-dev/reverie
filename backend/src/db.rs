@@ -343,7 +343,7 @@ fn generate_lock_id(database_name: &str) -> i64 {
 /// single-connection pool. The pool is dropped before this function
 /// returns.
 ///
-/// Waits up to [`MIGRATION_CONNECT_TIMEOUT`] for the connection, which is
+/// Waits up to `MIGRATION_CONNECT_TIMEOUT` for the connection, which is
 /// also the startup-race tolerance for the deployment modes that have no
 /// readiness gate.
 ///

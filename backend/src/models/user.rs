@@ -537,7 +537,7 @@ fn is_email_collision(e: &sqlx::Error) -> bool {
 /// returning identity keeps its stored email: the claim is read only when
 /// the account is created, so an `IdP` email change can neither collide nor
 /// overwrite. The claim's *string* is not format-checked upstream, so it is
-/// guarded with [`is_addr_spec`], and an invalid value degrades to `NULL`
+/// guarded with `is_addr_spec`, and an invalid value degrades to `NULL`
 /// rather than failing authentication. The rejected value is logged by shape
 /// only (length), never verbatim.
 ///
