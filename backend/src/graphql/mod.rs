@@ -869,15 +869,27 @@ mod tests {
         assert!(!roots.is_empty());
         assert_eq!(roots, covered);
         for (name, body) in &mutations {
-            let query = format!("mutation {{ {body} }}");
-            let refused = reader_query(&fixture, &credentials[0], &query, json!({})).await;
+            let query = if *name == "createShelf" {
+                format!("mutation($shelfName:String!) {{ {body} }}")
+            } else {
+                format!("mutation {{ {body} }}")
+            };
+            let refused = reader_query(
+                &fixture,
+                &credentials[0],
+                &query,
+                json!({"shelfName":"Refused shelf"}),
+            )
+            .await;
             assert_graph_code(&refused, "forbidden");
-            for auth in [&credentials[1], &fixture.admin] {
-                let admitted = reader_query(&fixture, auth, &query, json!({})).await;
+            for (index, auth) in [&credentials[1], &fixture.admin].into_iter().enumerate() {
+                let shelf_name = format!("Scoped shelf {index}");
+                let admitted =
+                    reader_query(&fixture, auth, &query, json!({"shelfName":shelf_name})).await;
                 assert_admitted(name, &admitted);
                 if *name == "createShelf" {
                     assert_graph_ok(&admitted);
-                    assert_eq!(admitted["data"][name]["shelf"]["name"], "Scoped shelf");
+                    assert_eq!(admitted["data"][name]["shelf"]["name"], shelf_name);
                 }
             }
             if matches!(
@@ -894,7 +906,13 @@ mod tests {
                     | "unlockMetadataField"
             ) {
                 assert_graph_code(
-                    &reader_query(&fixture, &fixture.child, &query, json!({})).await,
+                    &reader_query(
+                        &fixture,
+                        &fixture.child,
+                        &query,
+                        json!({"shelfName":"Child shelf"}),
+                    )
+                    .await,
                     "forbidden",
                 );
             }
@@ -1054,7 +1072,7 @@ mod tests {
             ),
             (
                 "createShelf",
-                "createShelf(input:{name:\"Scoped shelf\"}) { ... on ShelfCreated { shelf { id name } } }".to_owned(),
+                "createShelf(input:{name:$shelfName}) { ... on ShelfCreated { shelf { id name } } }".to_owned(),
             ),
             (
                 "renameShelf",
@@ -1231,6 +1249,40 @@ mod tests {
     fn assert_graph_result(value: &serde_json::Value, field: &str, typename: &str) {
         assert_graph_ok(value);
         assert_eq!(value["data"][field]["__typename"], typename, "{value}");
+    }
+
+    // REV-REQ-0100 criterion 5.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn shelf_name_conflicts_are_typed(pool: PgPool) {
+        let (owner, server, csrf) = editing_browser(&pool, "shelf-name-conflicts").await;
+        db::create_shelf(&pool, owner, "Café").await;
+        let other = db::create_shelf(&pool, owner, "Other").await;
+        let other = id::Shelf::encode(other).as_str().to_owned();
+        let read = "query { shelves(first:10) { edges { node { id name itemCount } } } }";
+        let before = browser_graph(&server, &csrf, read, json!({})).await;
+        assert_graph_ok(&before);
+        for (field, query, variables) in [
+            (
+                "createShelf",
+                "mutation($name:String!) { createShelf(input:{name:$name}) { __typename ... on ShelfNameTaken { message } } }",
+                json!({"name":"CAFE"}),
+            ),
+            (
+                "renameShelf",
+                "mutation($id:ID!,$name:String!) { renameShelf(input:{id:$id,name:$name}) { __typename ... on ShelfNameTaken { message } } }",
+                json!({"id":other,"name":"CAFE"}),
+            ),
+        ] {
+            let result = browser_graph(&server, &csrf, query, variables).await;
+            assert_graph_result(&result, field, "ShelfNameTaken");
+            assert_eq!(
+                result["data"][field]["message"],
+                "You already have a shelf with this name."
+            );
+        }
+        let after = browser_graph(&server, &csrf, read, json!({})).await;
+        assert_graph_ok(&after);
+        assert_eq!(after["data"], before["data"]);
     }
     const TITLE_READ: &str =
         "query($id: ID!) { manifestation(id: $id) { metadata { title etag } } }";
@@ -1579,6 +1631,7 @@ mod tests {
                         "NotFound"
                             | "SystemShelfImmutable"
                             | "ShelfNameInvalid"
+                            | "ShelfNameTaken"
                             | "StaleBaseline"
                             | "MetadataInvalid"
                             | "LibraryPreferencesInvalid"

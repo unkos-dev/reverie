@@ -7,6 +7,18 @@ use crate::models::shelf::Shelf;
 use crate::{error::AppError, state::AppState};
 use uuid::Uuid;
 
+fn shelf_write_error(error: sqlx::Error) -> AppError {
+    if matches!(
+        &error,
+        sqlx::Error::Database(db)
+            if db.is_unique_violation() && db.constraint() == Some("idx_shelves_user_name_folded")
+    ) {
+        AppError::ShelfNameTaken
+    } else {
+        AppError::Internal(error.into())
+    }
+}
+
 pub async fn create_shelf(
     current_user: &CurrentUser,
     state: &AppState,
@@ -34,7 +46,7 @@ pub async fn create_shelf(
     )
     .fetch_one(&state.pool)
     .await
-    .map_err(|e| AppError::Internal(e.into()))?;
+    .map_err(shelf_write_error)?;
 
     let shelf = Shelf {
         id: row.id,
@@ -95,7 +107,7 @@ pub async fn rename_shelf(
     )
     .fetch_one(&mut *tx)
     .await
-    .map_err(|e| AppError::Internal(e.into()))?;
+    .map_err(shelf_write_error)?;
     let item_count: i64 = sqlx::query_scalar!(
         r#"SELECT COUNT(*) AS "n!" FROM shelf_items WHERE shelf_id = $1"#,
         id,

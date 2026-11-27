@@ -23,6 +23,7 @@
 - [REV-REQ-0093](requirements/0093-a-graphql-connection-honours-a-cursor-only-under-the-connection-parent-sort-and-filters-that-minted-it.md): A GraphQL connection honours a cursor only under the connection, parent, sort and filters that minted it
 - [REV-REQ-0094](requirements/0094-a-graphql-books-sort-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md): A GraphQL books sort naming an unrecognised or repeated column is refused before any query runs
 - [REV-REQ-0099](requirements/0099-a-graphql-books-page-walk-returns-every-matching-book-once-in-the-chosen-order-with-missing-values-last.md): A GraphQL books page walk returns every matching book once in the chosen order with missing values last
+- [REV-REQ-0100](requirements/0100-shelf-name-conflicts-are-refused-within-each-account.md): Shelf name conflicts are refused within each account
 
 ## Designs
 

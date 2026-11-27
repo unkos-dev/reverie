@@ -91,6 +91,9 @@ const createShelfMutation = graphql`
       ... on ShelfNameInvalid {
         message
       }
+      ... on ShelfNameTaken {
+        message
+      }
     }
   }
 `;
@@ -107,6 +110,9 @@ const renameShelfMutation = graphql`
         }
       }
       ... on ShelfNameInvalid {
+        message
+      }
+      ... on ShelfNameTaken {
         message
       }
       ... on SystemShelfImmutable {
@@ -192,7 +198,10 @@ function ShelvesContent({
             invalidateLibraryVisits(environment, ["shelfFacets"]);
             setCreateOpen(false);
             resolve(null);
-          } else if (createShelf.__typename === "ShelfNameInvalid") {
+          } else if (
+            createShelf.__typename === "ShelfNameInvalid" ||
+            createShelf.__typename === "ShelfNameTaken"
+          ) {
             resolve(createShelf.message);
           } else {
             reject(new Error("Unexpected shelf result."));
@@ -218,6 +227,7 @@ function ShelvesContent({
             resolve(null);
           } else if (
             renameShelf.__typename === "ShelfNameInvalid" ||
+            renameShelf.__typename === "ShelfNameTaken" ||
             renameShelf.__typename === "SystemShelfImmutable" ||
             renameShelf.__typename === "NotFound"
           ) {

@@ -1,6 +1,6 @@
 /**
- * @generated SignedSource<<f923252e29300b6418187e0bdb2e9eb5>>
- * @relayHash 5f16c239cd6d3d17cb2e9efd1256e114
+ * @generated SignedSource<<0bfef9f775d1ca74878d34c5eb98e0a6>>
+ * @relayHash aaa4596b817d8368a09c07eac99b9536
  * @lightSyntaxTransform
  */
 
@@ -8,7 +8,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-// @relayRequestID b1196b1a3d250eb907b40680ea6dda49ef96341d3a86ba75eefcf7c629c0ba12
+// @relayRequestID 976e93eb04ff57e75134b07bd5d451422cfa3770b34b2ee845fb895ae3f8e3ee
 
 import { ConcreteRequest } from "relay-runtime";
 export type CreateShelfInput = {
@@ -36,6 +36,10 @@ export type ShelvesListPageCreateMutation$data = {
       }
     | {
         readonly __typename: "ShelfNameInvalid";
+        readonly message: string;
+      }
+    | {
+        readonly __typename: "ShelfNameTaken";
         readonly message: string;
       }
     | {
@@ -145,18 +149,25 @@ const node: ConcreteRequest = (function () {
       ],
       storageKey: null,
     },
-    v5 = {
+    v5 = [
+      {
+        alias: null,
+        args: null,
+        kind: "ScalarField",
+        name: "message",
+        storageKey: null,
+      },
+    ],
+    v6 = {
       kind: "InlineFragment",
-      selections: [
-        {
-          alias: null,
-          args: null,
-          kind: "ScalarField",
-          name: "message",
-          storageKey: null,
-        },
-      ],
+      selections: v5 /*:: as any*/,
       type: "ShelfNameInvalid",
+      abstractKey: null,
+    },
+    v7 = {
+      kind: "InlineFragment",
+      selections: v5 /*:: as any*/,
+      type: "ShelfNameTaken",
       abstractKey: null,
     };
   return {
@@ -181,7 +192,8 @@ const node: ConcreteRequest = (function () {
               type: "ShelfCreated",
               abstractKey: null,
             },
-            v5 /*:: as any*/,
+            v6 /*:: as any*/,
+            v7 /*:: as any*/,
           ],
           storageKey: null,
         },
@@ -228,14 +240,15 @@ const node: ConcreteRequest = (function () {
               type: "ShelfCreated",
               abstractKey: null,
             },
-            v5 /*:: as any*/,
+            v6 /*:: as any*/,
+            v7 /*:: as any*/,
           ],
           storageKey: null,
         },
       ],
     },
     params: {
-      id: "b1196b1a3d250eb907b40680ea6dda49ef96341d3a86ba75eefcf7c629c0ba12",
+      id: "976e93eb04ff57e75134b07bd5d451422cfa3770b34b2ee845fb895ae3f8e3ee",
       metadata: {},
       name: "ShelvesListPageCreateMutation",
       operationKind: "mutation",
@@ -244,6 +257,6 @@ const node: ConcreteRequest = (function () {
   };
 })();
 
-(node as any).hash = "cde305ac31656f37f28f847a6227df81";
+(node as any).hash = "6dfd0a92eabc285f3f492ed8c63f1f6b";
 
 export default node;

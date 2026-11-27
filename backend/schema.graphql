@@ -124,7 +124,7 @@ input CreateShelfInput {
   name: String!
 }
 
-union CreateShelfResult = ShelfCreated | ShelfNameInvalid
+union CreateShelfResult = ShelfCreated | ShelfNameInvalid | ShelfNameTaken
 
 scalar DateTime @specifiedBy(url: "https://github.com/unkos-dev/reverie/blob/main/docs/specs/api/design/0031-graphql-execution-and-relay-browser-data.md#custom-scalars")
 
@@ -763,7 +763,7 @@ input RenameShelfInput {
   name: String!
 }
 
-union RenameShelfResult = ShelfRenamed | ShelfNameInvalid | SystemShelfImmutable | NotFound
+union RenameShelfResult = ShelfRenamed | ShelfNameInvalid | ShelfNameTaken | SystemShelfImmutable | NotFound
 
 input RevertMetadataFieldInput {
   id: ID!
@@ -997,6 +997,10 @@ type ShelfItemRemoved {
 }
 
 type ShelfNameInvalid {
+  message: String!
+}
+
+type ShelfNameTaken {
   message: String!
 }
 

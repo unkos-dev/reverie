@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"count!\" FROM shelves WHERE user_id = $1 AND lower(public.immutable_unaccent(name)) = lower(public.immutable_unaccent($2))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ae2df7f564cb10b7a0b50767173aaf53e2dc14ba390b6f5b1df3cb382a14527c"
+}

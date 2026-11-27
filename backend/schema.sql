@@ -401,6 +401,22 @@ $$;
 ALTER FUNCTION public.assign_metadata_observation_key() OWNER TO reverie_migrator;
 
 --
+-- Name: immutable_trim_unicode_whitespace(text); Type: FUNCTION; Schema: public; Owner: reverie_migrator
+--
+
+CREATE FUNCTION public.immutable_trim_unicode_whitespace(text) RETURNS text
+    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+    AS $_$
+    SELECT btrim(
+        $1,
+        U&'\0009\000A\000B\000C\000D\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000'
+    )
+$_$;
+
+
+ALTER FUNCTION public.immutable_trim_unicode_whitespace(text) OWNER TO reverie_migrator;
+
+--
 -- Name: immutable_unaccent(text); Type: FUNCTION; Schema: public; Owner: reverie_migrator
 --
 
@@ -2873,6 +2889,13 @@ CREATE INDEX idx_shelves_user_id ON public.shelves USING btree (user_id);
 --
 
 CREATE INDEX idx_shelves_user_keyset ON public.shelves USING btree (user_id, is_system DESC, name, id);
+
+
+--
+-- Name: idx_shelves_user_name_folded; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE UNIQUE INDEX idx_shelves_user_name_folded ON public.shelves USING btree (user_id, lower(public.immutable_unaccent(public.immutable_trim_unicode_whitespace(name))));
 
 
 --

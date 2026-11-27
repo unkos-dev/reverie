@@ -144,6 +144,7 @@ struct CreateShelfRequest {
 /// - [`AppError::Forbidden`] when the caller is a child account.
 /// - [`AppError::Validation`] when the body is missing or `name` is
 ///   empty / whitespace-only.
+/// - [`AppError::ShelfNameTaken`] when another shelf in the account holds the folded name.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     post,
@@ -155,6 +156,7 @@ struct CreateShelfRequest {
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 201, description = "Shelf created", body = Shelf),
+        (status = 409, description = "Shelf name already taken in this account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Empty name", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -185,6 +187,7 @@ struct RenameShelfRequest {
 ///   to another user (existence-not-leaked).
 /// - [`AppError::SystemShelfImmutable`] (409) when the target shelf
 ///   has `is_system = TRUE`.
+/// - [`AppError::ShelfNameTaken`] when another shelf in the account holds the folded name.
 /// - [`AppError::Validation`] when `name` is missing or
 ///   whitespace-only.
 /// - [`AppError::Internal`] on database errors.
@@ -192,7 +195,7 @@ struct RenameShelfRequest {
     patch,
     path = "/api/v1/shelves/{id}",
     summary = "Rename a shelf",
-    description = "Renames a shelf owned by the caller. Available to adult accounts only. System shelves cannot be renamed and return 409.",
+    description = "Renames a shelf owned by the caller. Available to adult accounts only. System shelves and names already taken in this account return 409.",
     tag = "shelves",
     params(("id" = Uuid, Path, max_length = 45, description = "Shelf id")),
     request_body = RenameShelfRequest,
@@ -202,7 +205,7 @@ struct RenameShelfRequest {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 409, description = "System shelves cannot be renamed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "System shelf or shelf name already taken in this account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Empty name", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
