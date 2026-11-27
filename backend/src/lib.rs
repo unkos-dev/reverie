@@ -102,6 +102,11 @@ where
     // relies on the cryptographic randomness of tower-sessions session IDs
     // (CSPRNG `i128` via the `rand` crate) regardless of this flag.
     let session_layer = SessionManagerLayer::new(session_store)
+        .with_name(if state.config.security.behind_https {
+            "__Host-id"
+        } else {
+            "id"
+        })
         .with_http_only(true)
         .with_secure(state.config.security.behind_https)
         .with_same_site(tower_sessions::cookie::SameSite::Lax)
@@ -176,6 +181,9 @@ where
             error::instance::problem_instance_layer,
         ))
         .layer(session_layer)
+        .layer(axum::middleware::map_response(
+            auth::session::secure_host_cookie_removal,
+        ))
         .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(
             |request: &axum::http::Request<axum::body::Body>| {
                 // THREAT: callback queries contain authorization secrets and private provider descriptions.

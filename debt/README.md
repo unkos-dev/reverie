@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Host session cookie removal](2026-11-27-host-session-cookie-removal.md): lifts when Reverie adopts a tower-sessions
+  release containing upstream pull request 268.
 - [Cargo lockfile maintenance runs without a release-age hold](2026-11-25-cargo-lockfile-maintenance-release-age.md):
   lifts when the pinned Cargo preserves already-locked young versions during full `cargo update` while still rejecting
   newly selected young versions.

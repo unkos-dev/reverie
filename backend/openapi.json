@@ -13560,8 +13560,8 @@
       "session_cookie": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "id",
-        "description": "Session cookie issued by the server's session layer. Set with the Secure attribute when `behind_https` is enabled; MUST be served over HTTPS in production to prevent session hijacking."
+        "name": "__Host-id",
+        "description": "Session cookie issued with Secure when `REVERIE_BEHIND_HTTPS=true`; direct LAN HTTP uses `id` without Secure when `REVERIE_BEHIND_HTTPS=false`. MUST be served over HTTPS in production to prevent session hijacking."
       }
     }
   },

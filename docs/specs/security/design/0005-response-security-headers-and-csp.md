@@ -32,11 +32,13 @@ and `Reporting-Endpoints`.
 
 It does not own CSRF enforcement: `backend/src/security/csrf.rs` implements the synchronizer-token check as a
 neighbouring layer, the Design "CSRF protection", and this Design depends only on its position in the layer order. It
-does not own session cookie attributes: the `SessionManagerLayer` built in `backend/src/lib.rs` sets `Secure`,
-`SameSite` and expiry independently. It does not own the Problem Details body of the `404` and `405` responses the
-fallback returns; `AppError::NotFound` and `AppError::MethodNotAllowed` (`backend/src/error/mod.rs`) and
-`problem_instance_layer` (`backend/src/error/instance.rs`) belong to the API error contract. It does not own the relaxed
-dev-only policy in `frontend/vite.config.ts`, which applies only under `vp dev`.
+does not own session cookie attributes: the `SessionManagerLayer` built in `backend/src/lib.rs` selects `__Host-id` with
+Secure on HTTPS or `id` without Secure on HTTP, and sets SameSite and expiry independently. The Sessions subject also
+owns `auth::session::secure_host_cookie_removal`, which adds Secure to final HTTPS removal headers outside that layer.
+It does not own the Problem Details body of the `404` and `405` responses the fallback returns; `AppError::NotFound` and
+`AppError::MethodNotAllowed` (`backend/src/error/mod.rs`) and `problem_instance_layer` (`backend/src/error/instance.rs`)
+belong to the API error contract. It does not own the relaxed dev-only policy in `frontend/vite.config.ts`, which
+applies only under `vp dev`.
 
 Depends on: the frontend build's output directory and its hash sidecar, produced by `vite build`; the routed handlers
 and the OPDS router mounted under `/api`, `/auth` and `/opds`; `crate::state::AppState` for the `SecurityConfig` every
@@ -240,13 +242,13 @@ parser percent-encodes a quote, which would defeat a check applied afterwards.
 
 `Permissions-Policy` denies every capability it lists (`camera`, `microphone`, `geolocation`, `payment`, `usb`, `midi`,
 `magnetometer`, `accelerometer`, `gyroscope`) with no runtime setting to relax it. `behind_https` gates
-`Strict-Transport-Security` here; it also sets the session cookie's `Secure` attribute in the `SessionManagerLayer`,
+`Strict-Transport-Security` here; it also selects Secure `__Host-id` rather than HTTP `id` in the `SessionManagerLayer`,
 which this Design does not own.
 
-A self-hoster who puts Reverie behind a TLS-terminating reverse proxy sets `REVERIE_BEHIND_HTTPS=true` to get HSTS, and
-must not let the proxy add its own `Content-Security-Policy` or `X-Frame-Options`. An operator who sets
-`REVERIE_CSP_REPORT_ENDPOINT` points Reverie at a receiver that must accept unauthenticated browser `POST` requests;
-Reverie does not host one.
+A self-hoster who puts Reverie behind a TLS-terminating reverse proxy sets `REVERIE_BEHIND_HTTPS=true` for HSTS and
+Secure `__Host-id`, even when the proxy supplies HSTS. The proxy does not add its own `Content-Security-Policy` or
+`X-Frame-Options`. An operator who sets `REVERIE_CSP_REPORT_ENDPOINT` points Reverie at a receiver that must accept
+unauthenticated browser `POST` requests; Reverie does not host one.
 
 ## More information
 

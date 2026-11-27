@@ -65,7 +65,7 @@ everything it renders), which reads the shared `/auth/me` query for the signed-i
 | Session row (`id`, `data`, `expiry_date`) | `tower_sessions.session` | `PostgresStore`, via `SessionManagerLayer` |
 | `user_id` / `session_version` claims | Same row, in `data` | `auth::session::login`; write-only here |
 | `csrf_token` claim | Same row, in `data` | The Design "CSRF protection" (read back only, in `me`) |
-| Session cookie (`id`) | Browser cookie jar | `SessionManagerLayer`, built once |
+| Session cookie (`__Host-id` on HTTPS, `id` on HTTP) | Browser cookie jar | `SessionManagerLayer`; final removal correction |
 | `sign_in_started` marker | Session `data` | OIDC start |
 | Cohort and `won_at` | `sign_in_cohorts` | `models::sign_in`; session deletion cascade |
 | Pending OIDC attempt | `oidc_sign_in_attempts` | `models::sign_in`; cohort deletion cascade |
@@ -76,6 +76,11 @@ everything it renders), which reads the shared `/auth/me` query for the signed-i
 points. It flushes a disabled, deleted or stale identity, logging a failed flush at warning level. It returns
 `SignedIn(User)`, `Disabled` or `NotSignedIn`. `CurrentUser` refuses `Disabled` without credential fallthrough, while
 the sign-in handlers treat it as signed out. The Design "Request authentication" owns the validity rule.
+
+The session layer and its cookie manager own cookie creation, renewal and removal. The response middleware
+`auth::session::secure_host_cookie_removal` runs outside that layer and only adds Secure to an emitted `__Host-id`
+removal with an empty value and zero Max-Age. It preserves the other attributes and separate Set-Cookie headers,
+including preference cookies. No client-side or delayed writer sets the session cookie.
 
 Call sites that dispatch to those owners:
 
@@ -117,9 +122,11 @@ all use the same session-store deletion owner.
   type implements `ExpiredDeletion::delete_expired` (`DELETE ... WHERE expiry_date < now()`), which
   `backend/src/services/session_sweep.rs` drives on a timer.
 - `backend/src/lib.rs::build_router_with_session_store` constructs the one `SessionManagerLayer` the whole composite
-  router shares: `with_http_only(true)`, `with_secure(state.config.security.behind_https)`,
-  `with_same_site(SameSite::Lax)`, `with_expiry(Expiry::OnInactivity(24h))`, and `with_always_save(true)`. It is added
-  to the router after the `security_headers` layer, so it wraps outside that layer (see Failure and recovery).
+  router shares: `with_name` selects `__Host-id` when `behind_https` is true and `id` otherwise, followed by
+  `with_http_only(true)`, `with_secure(state.config.security.behind_https)`, `with_same_site(SameSite::Lax)`,
+  `with_expiry(Expiry::OnInactivity(24h))`, and `with_always_save(true)`. It is added to the router after the
+  `security_headers` layer, so it wraps outside that layer (see Failure and recovery). The final removal correction
+  wraps outside the session layer and its cookie manager.
 - `backend/src/auth/session.rs` is the write side of a session's identity claims: `login(session, user)` calls
   `Session::cycle_id` before inserting `SESSION_KEY_USER_ID` and `SESSION_KEY_SESSION_VERSION`; `logout(session)` calls
   `Session::flush`. Both constants (`SESSION_KEY_USER_ID`, `SESSION_KEY_SESSION_VERSION`) are `pub(crate)` and shared
@@ -156,8 +163,8 @@ all use the same session-store deletion owner.
   `invokeUnauthenticatedHandler`, and the shared `queryClient` singleton; `frontend/src/lib/active-user.ts` exports
   `activeUserEpoch`, `rememberActiveUser`, and `forgetActiveUser`.
 - The operator-facing cookie table in `docs/security/content-security-policy.md` documents the session cookie's wire
-  name (`id`), path (`/`), and observed `Max-Age` (24 hours, renewed on each request) as the canonical reference for
-  self-hosters; this Design does not restate it as a second source.
+  names (`__Host-id` on HTTPS, `id` on HTTP), path (`/`), and observed `Max-Age` (24 hours, renewed on each request) as
+  the canonical reference for self-hosters; this Design does not restate it as a second source.
 
 The profile's `has_local_password` predicate uses a credential-existence query without reading the password hash,
 independently of external identities. The shell shows "Change password" for local and dual-capability accounts and hides
@@ -187,12 +194,11 @@ Query continues to own existing HTTP workflows.
   every request that carries a session, `expiry_date` recomputes from the most recent request rather than staying fixed
   from login: a session that keeps being used never idles out, and one left alone expires 24 hours after its last
   request.
-- **The cookie.** Wire name `id` (the session library's own default; Reverie sets no name), path `/` (also the library's
-  default), no `Domain` attribute and no `__Host-` prefix. `HttpOnly` always; `SameSite=Lax`; `Secure` only when
-  `state.config.security.behind_https` is `true` (an operator-set flag, never detected automatically), the browser
-  judges `Secure` against its own leg to the edge, so a deployment behind a TLS-terminating proxy still qualifies even
-  though the proxy-to-backend hop is plain HTTP. The cookie is unsigned: nothing about its contents is validated by a
-  signature, because the value is only a cryptographically random session id and the claims it names live server-side.
+- **The cookie.** Wire name `__Host-id` with `Secure` when `state.config.security.behind_https` is true; `id` without
+  Secure otherwise. Both modes use Path `/`, no Domain, HttpOnly and SameSite Lax. The flag is operator-set, never
+  detected automatically. The browser judges Secure against its own connection to the edge, so a TLS-terminating proxy
+  qualifies even when its backend hop is plain HTTP. The cookie is unsigned: its value is a cryptographically random
+  session id, and the claims it names live server-side.
 - **The session id.** 128 bits, drawn from the `rand` crate's default CSPRNG (`rand::rng().random()` inside
   `tower_sessions::session::Id::default`), giving a session-fixation attacker no practical way to guess a live id.
 - **Identity claims.** `SESSION_KEY_USER_ID` (a `Uuid`) and `SESSION_KEY_SESSION_VERSION` (an `i32`, a snapshot of
@@ -221,7 +227,8 @@ Query continues to own existing HTTP workflows.
    `PostgresStore::create` runs its atomic `ON CONFLICT (id) DO NOTHING RETURNING id` insert; on the cryptographically
    improbable case of a collision with a live row, `create` draws a new `Id` and retries the same insert rather than
    falling back to an overwrite, so a concurrent creator can never clobber a session that already exists under that id.
-5. The response carries a `Set-Cookie` for `id` with the attributes fixed in `build_router_with_session_store`.
+5. The response carries a `Set-Cookie` for `__Host-id` on HTTPS or `id` on HTTP, with the attributes fixed in
+   `build_router_with_session_store`.
 
 Arbitration covers only requests that load the session before a winner rotates it; a request carrying an already retired
 id loads without a session and is treated as a request without a cookie, still needs its own valid credentials to sign
@@ -267,6 +274,12 @@ Each cleanup failure logs and retries on a later tick; source-map reclamation pr
 
 ## Failure and recovery
 
+The session library removes the configured cookie when an incoming cookie names an empty or stale session. This shared
+response path covers logout, invalidated identities and sign-in failure cleanup. For `__Host-id`, the final response
+correction adds Secure without changing Path `/`, expiry or the absence of Domain. It creates no cookie from request
+state and leaves live session cookies and HTTP `id` removal unchanged. Header parsing or conversion failures return an
+internal error through `AppError` without logging cookie values.
+
 - **A session id collision at creation.** Handled inline in the runtime walkthrough above: `create` regenerates and
   retries rather than surfacing an error to the caller. A real collision is cryptographically improbable (128-bit ids),
   so the loop is a correctness guarantee, not a path expected to iterate in practice.
@@ -307,12 +320,21 @@ Each cleanup failure logs and retries on a later tick; source-map reclamation pr
 
 ## Security and operations
 
+The HTTPS name follows
+[RFC 6265bis section 4.1.3](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis#section-4.1.3). The
+`__Host-` prefix binds the cookie to a secure origin with Secure, Path `/` and no Domain. The
+[OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html),
+Cookie Name Prefixes and Session ID Name Fingerprinting, supports host-bound cookies with generic session names.
+[ASVS 5.0 requirements 3.3.1 and 3.3.3](https://github.com/OWASP/ASVS/blob/master/5.0/en/0x12-V3-Web-Frontend-Security.md)
+cover Secure and prefixed names. Direct LAN HTTP retains `id` because a browser rejects a host-prefixed cookie from an
+insecure origin. That mode does not meet ASVS 3.3.1.
+
 The cookie policy trades two invariants a stricter default would hold, and both are recorded CodeGuard deviations:
 `Secure` follows `behind_https` rather than always being set, because a browser never sends a `Secure` cookie over plain
 HTTP and an always-set flag would make an HTTP-only deployment unable to hold a session at all; and `SameSite=Lax`
 rather than `Strict`, because the OIDC authorization-code redirect back from an identity provider is a cross-site
-navigation that `Strict` semantics would block. Session security in both cases rests on the cryptographic randomness of
-the session id itself, not on the cookie's transport attributes.
+navigation that `Strict` semantics would block. Session IDs in both modes come from a cryptographically secure random
+generator. HTTPS also protects their transport and enforces the host prefix.
 
 The 24-hour idle window (`Expiry::OnInactivity`, renewed by `with_always_save` on every request) is also a recorded
 deviation from a shorter-timeout default; it applies identically to every account this subject issues a session for,

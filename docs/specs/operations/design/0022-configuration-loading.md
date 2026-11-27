@@ -53,14 +53,14 @@ environment, or a sourced dev env file); `backend/src/models/manifestation_forma
 Depended on by: `crate::run`, which builds the primary, ingestion and writeback pools, the OIDC client and the router
 from the loaded `Config`, and every subsystem reachable from `AppState::config` (`backend/src/state.rs`) or a config
 sub-struct threaded into a service constructor; `backend/src/lib.rs`'s `build_router_with_session_store`, which reads
-`config.security.behind_https` to decide the session cookie's `Secure` attribute (`backend/src/routes/auth.rs` only
-tests this behaviour); `backend/src/security/headers.rs`, which reads the same field for HSTS emission; `run_bootstrap`,
-`run_unlock_account` (`backend/src/lib.rs`), CLI subcommands that call `Config::from_env` directly rather than through
-`crate::run`; `run_reset_password`, which uses `Config::host_recovery_from_env` for only the database credential and
-required public origin; `run_send_test_email`, which uses `MailTransportConfig::from_env` for only transport, sender and
-support settings; the `reverie print-config-schema` CLI subcommand and the two drift tests
-(`backend/tests/gen_config_ref.rs`, `backend/tests/gen_config_schema.rs`) that gate the generated artifacts this subject
-renders.
+`config.security.behind_https` to select Secure `__Host-id` or the direct-LAN HTTP `id` without Secure
+(`backend/src/routes/auth.rs` tests this behaviour); `backend/src/security/headers.rs`, which reads the same field for
+HSTS emission; `run_bootstrap`, `run_unlock_account` (`backend/src/lib.rs`), CLI subcommands that call
+`Config::from_env` directly rather than through `crate::run`; `run_reset_password`, which uses
+`Config::host_recovery_from_env` for only the database credential and required public origin; `run_send_test_email`,
+which uses `MailTransportConfig::from_env` for only transport, sender and support settings; the
+`reverie print-config-schema` CLI subcommand and the two drift tests (`backend/tests/gen_config_ref.rs`,
+`backend/tests/gen_config_schema.rs`) that gate the generated artifacts this subject renders.
 
 ## Structure
 

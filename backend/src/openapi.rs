@@ -55,9 +55,9 @@ const API_VERSION: &str = "0.1.0";
 /// lives in `auth/` middleware. The spec is a contract signal, not a gate.
 ///
 /// Schemes:
-/// - `session_cookie`: `apiKey` in cookie `id`, the session cookie set by the
-///   `SessionManagerLayer` (tracks tower-sessions' default name, which the layer
-///   does not override via `.with_name`). Covers the JSON data API.
+/// - `session_cookie`: `apiKey` in cookie `__Host-id` for HTTPS, or `id` for
+///   direct LAN HTTP, selected by `SessionManagerLayer` from `behind_https`.
+///   Covers the JSON data API.
 /// - `opds_basic`: HTTP Basic, for the OPDS feeds' Basic-auth path.
 /// - `device_token_bearer`: HTTP Bearer, the unified
 ///   `{prefix}{token_id}.{secret}` personal-token credential
@@ -84,10 +84,10 @@ impl Modify for SecurityAddon {
         components.add_security_scheme(
             "session_cookie",
             SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::with_description(
-                "id",
-                "Session cookie issued by the server's session layer. Set with the Secure \
-                 attribute when `behind_https` is enabled; MUST be served over HTTPS in \
-                 production to prevent session hijacking.",
+                "__Host-id",
+                "Session cookie issued with Secure when `REVERIE_BEHIND_HTTPS=true`; \
+                 direct LAN HTTP uses `id` without Secure when `REVERIE_BEHIND_HTTPS=false`. \
+                 MUST be served over HTTPS in production to prevent session hijacking.",
             ))),
         );
         components.add_security_scheme(

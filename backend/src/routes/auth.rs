@@ -1732,14 +1732,14 @@ mod tests {
         assert!(!response.headers().contains_key("www-authenticate"));
     }
 
-    fn session_set_cookie(response: &axum_test::TestResponse) -> String {
+    fn session_set_cookie(response: &axum_test::TestResponse, name: &str) -> String {
         response
             .headers()
             .get_all("set-cookie")
             .iter()
             .filter_map(|v| v.to_str().ok())
-            .find(|c| c.starts_with("id="))
-            .expect("session `id` cookie emitted by /auth/oidc/login")
+            .find(|c| c.starts_with(&format!("{name}=")))
+            .expect("expected session cookie emitted by /auth/oidc/login")
             .to_owned()
     }
 
@@ -1748,7 +1748,10 @@ mod tests {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-        let cookie = session_set_cookie(&server.get("/auth/oidc/login").await);
+        let cookie = session_set_cookie(&server.get("/auth/oidc/login").await, "id");
+        assert!(cookie.starts_with("id="));
+        assert!(cookie.contains("Path=/"));
+        assert!(!cookie.contains("Domain="));
         assert!(
             cookie.contains("HttpOnly"),
             "session cookie must be HttpOnly; got: {cookie}"
@@ -1770,7 +1773,12 @@ mod tests {
         let mut config = test_support::test_config();
         config.security.behind_https = true;
         let server = test_support::db::server_with_config(&app_pool, &ingestion_pool, config);
-        let cookie = session_set_cookie(&server.get("/auth/oidc/login").await);
+        let cookie = session_set_cookie(&server.get("/auth/oidc/login").await, "__Host-id");
+        assert!(cookie.starts_with("__Host-id="));
+        assert!(cookie.contains("HttpOnly"));
+        assert!(cookie.contains("SameSite=Lax"));
+        assert!(cookie.contains("Path=/"));
+        assert!(!cookie.contains("Domain="));
         assert!(
             cookie.contains("Secure"),
             "session cookie must be Secure when behind_https=true; got: {cookie}"

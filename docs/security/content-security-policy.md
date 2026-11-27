@@ -111,11 +111,11 @@ documented in `frontend/public/fonts/fontshare/README.md`.
 
 ## Cookies
 
-Reverie sets two cookies on authenticated browsers:
+Reverie sets the following cookies on authenticated browsers:
 
 | Name | HttpOnly | Max-Age | Path | SameSite | Purpose | Lifecycle |
 | ---- | -------- | ------- | ---- | -------- | ------- | --------- |
-| `id` | **Yes** | 24 hours, renewed on each request | `/` | `Lax` | tower-sessions session cookie (auth state) | Cleared on logout; short-lived |
+| `__Host-id` on HTTPS, `id` on HTTP | **Yes** | 24 hours, renewed on each request | `/` | `Lax` | tower-sessions session cookie (auth state) | Cleared on logout; short-lived |
 | `reverie_theme` | **No** | 365 days | `/` | `Lax` | Dark/Light/System preference for FOUC | Survives logout as browser state |
 | `reverie_palette` | **No** | 365 days | `/` | `Lax` | Periwinkle/Monochrome palette for FOUC | Survives logout as browser state |
 
@@ -132,8 +132,10 @@ still works because Chrome (≥v89) and Firefox treat `http://localhost` as a se
 it. An operator running Reverie behind a public DNS name on plain HTTP will see the browser silently reject the cookie,
 which is the documented signal to put the deployment behind TLS, whether terminated at a proxy or directly.
 
-The session cookie (`id`) sets `Secure` when `REVERIE_BEHIND_HTTPS=true`: a TLS-fronted deployment gets it, an HTTP-only
-one does not.
+With `REVERIE_BEHIND_HTTPS=true`, the session cookie is `__Host-id` with Secure, Path `/` and no Domain. Direct LAN HTTP
+uses `id` without Secure when the setting is false. HTTPS removal also carries Secure, Path `/` and no Domain so the
+browser accepts it. The session layer owns removal; the final response correction adds Secure to its `__Host-id` removal
+header.
 
 ## `style-src 'unsafe-inline'`: why it's still there
 

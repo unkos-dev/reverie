@@ -436,7 +436,7 @@
       "type": "object",
       "properties": {
         "behind_https": {
-          "description": "Whether the deployment is fronted by a TLS-terminating reverse\nproxy (`REVERIE_BEHIND_HTTPS`, default `false`). Gates HSTS\nemission: never emitted on plaintext HTTP because the browser\nwould refuse the next TLS-less request to this host.",
+          "description": "Whether the deployment uses HTTPS through a TLS-terminating reverse\nproxy (`REVERIE_BEHIND_HTTPS`, default `false`). Enables HSTS and\nissues the session cookie as Secure `__Host-id`. When false, direct\nLAN HTTP uses `id` without Secure and emits no HSTS.",
           "type": "boolean",
           "default": false
         },
