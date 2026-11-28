@@ -8,6 +8,7 @@ satisfies:
   - "REV-REQ-0035"
   - "REV-REQ-0037"
   - "REV-REQ-0038"
+  - "REV-REQ-0101"
 governed-by:
   - "REV-ADR-0015"
 ---
@@ -15,7 +16,7 @@ governed-by:
 # Sessions
 
 This Design covers the first-party session mechanism that carries a browser's authenticated identity across requests:
-the Postgres-backed store, the cookie policy and idle-expiry window the session layer is constructed with, the id
+the Postgres-backed store, the cookie policy, the 24-hour idle-expiry window and 30-day absolute lifetime, the id
 rotation and identity claims written at sign-in, the hourly expiry sweep, the `GET /auth/me` profile endpoint, and the
 client's single funnel for reacting to a lapsed session.
 
@@ -64,6 +65,7 @@ everything it renders), which reads the shared `/auth/me` query for the signed-i
 | ---------- | -------------- | ------------ |
 | Session row (`id`, `data`, `expiry_date`) | `tower_sessions.session` | `PostgresStore`, via `SessionManagerLayer` |
 | `user_id` / `session_version` claims | Same row, in `data` | `auth::session::login`; write-only here |
+| `signed_in_at` claim | Same row, in `data` | `auth::session::login`; sole writer |
 | `csrf_token` claim | Same row, in `data` | The Design "CSRF protection" (read back only, in `me`) |
 | Session cookie (`__Host-id` on HTTPS, `id` on HTTP) | Browser cookie jar | `SessionManagerLayer`; final removal correction |
 | `sign_in_started` marker | Session `data` | OIDC start |
@@ -72,8 +74,9 @@ everything it renders), which reads the shared `/auth/me` query for the signed-i
 | 401-funnel handler + guard | `client.ts` module state | `setUnauthenticatedHandler` / `invokeUnauthenticatedHandler` |
 | Confirmed account + identity epoch | `active-user.ts` module state | `rememberActiveUser` / `forgetActiveUser` |
 
-`auth::session::signed_in_user` reads `user_id` and `session_version` for `CurrentUser` and the three sign-in entry
-points. It flushes a disabled, deleted or stale identity, logging a failed flush at warning level. It returns
+`auth::session::signed_in_user` reads `user_id`, `signed_in_at` and `session_version` for `CurrentUser` and the three
+sign-in entry points. Before the user lookup it refuses a missing sign-in time or an age of 30 days or more. It flushes
+that session, or a disabled, deleted or stale identity, logging a failed flush at warning level. It returns
 `SignedIn(User)`, `Disabled` or `NotSignedIn`. `CurrentUser` refuses `Disabled` without credential fallthrough, while
 the sign-in handlers treat it as signed out. The Design "Request authentication" owns the validity rule.
 
@@ -128,10 +131,10 @@ all use the same session-store deletion owner.
   `security_headers` layer, so it wraps outside that layer (see Failure and recovery). The final removal correction
   wraps outside the session layer and its cookie manager.
 - `backend/src/auth/session.rs` is the write side of a session's identity claims: `login(session, user)` calls
-  `Session::cycle_id` before inserting `SESSION_KEY_USER_ID` and `SESSION_KEY_SESSION_VERSION`; `logout(session)` calls
-  `Session::flush`. Both constants (`SESSION_KEY_USER_ID`, `SESSION_KEY_SESSION_VERSION`) are `pub(crate)` and shared
-  with `backend/src/auth/middleware.rs`'s read of the same keys, a module boundary this Design's boundary section above
-  hands to the Design "Request authentication".
+  `Session::cycle_id` before inserting `SESSION_KEY_USER_ID`, `SESSION_KEY_SESSION_VERSION` and
+  `SESSION_KEY_SIGNED_IN_AT`; `logout(session)` calls `Session::flush`. All three key constants are `pub(crate)` and
+  shared by `login` and `signed_in_user`, which resolves identity for `backend/src/auth/middleware.rs`. The Design
+  "Request authentication" owns that validity rule.
 - `backend/src/routes/auth.rs::me` and `::logout` are this subject's two HTTP entry points once a session already
   exists: `me` requires a `CurrentUser` (so an unauthenticated or invalid session never reaches it) and echoes the
   session's `csrf_token` claim alongside the caller's profile; `logout` requires only a `Session` extractor, so it is
@@ -188,12 +191,12 @@ Query continues to own existing HTTP workflows.
   `SELECT, INSERT, DELETE, UPDATE` on the table; `reverie_readonly` holds a column-scoped `SELECT (expiry_date)` only,
   because the `id` column is the credential the session cookie carries. The table is row-level-security-exempt, and both
   the exemption and these grants belong to the Design "Row-level security and database context", not this one.
-- **Session lifetime.** `Expiry::OnInactivity(24h)` is the only expiry policy configured; no absolute session lifetime
-  exists anywhere in `Config`, and the policy is the same for every account regardless of role, admin included, there is
-  one `SessionManagerLayer`, built once, wrapping the whole composite router. Because `with_always_save(true)` saves
-  every request that carries a session, `expiry_date` recomputes from the most recent request rather than staying fixed
-  from login: a session that keeps being used never idles out, and one left alone expires 24 hours after its last
-  request.
+- **Session lifetime.** `Expiry::OnInactivity(24h)` is the session layer's expiry mode. The separate 30-day absolute
+  lifetime measures age from the recorded sign-in time. Neither limit is configurable, and both apply to every account,
+  administrators included. One `SessionManagerLayer` wraps the composite router. `with_always_save(true)` recomputes
+  `expiry_date` from the most recent request. This renewal never moves `signed_in_at`: inactivity expires a session 24
+  hours after its last request, and the absolute lifetime refuses it on the first authentication request at least 30
+  days after sign-in, however recently it was used.
 - **The cookie.** Wire name `__Host-id` with `Secure` when `state.config.security.behind_https` is true; `id` without
   Secure otherwise. Both modes use Path `/`, no Domain, HttpOnly and SameSite Lax. The flag is operator-set, never
   detected automatically. The browser judges Secure against its own connection to the edge, so a TLS-terminating proxy
@@ -201,9 +204,10 @@ Query continues to own existing HTTP workflows.
   session id, and the claims it names live server-side.
 - **The session id.** 128 bits, drawn from the `rand` crate's default CSPRNG (`rand::rng().random()` inside
   `tower_sessions::session::Id::default`), giving a session-fixation attacker no practical way to guess a live id.
-- **Identity claims.** `SESSION_KEY_USER_ID` (a `Uuid`) and `SESSION_KEY_SESSION_VERSION` (an `i32`, a snapshot of
-  `users.session_version` at login) are the two keys this subject writes; a session with neither key is anonymous (no
-  cookie yet, or a cookie whose claims were never established, e.g. mid-OIDC-flow before `/auth/callback` completes).
+- **Identity claims.** `SESSION_KEY_USER_ID` (a `Uuid`), `SESSION_KEY_SESSION_VERSION` (an `i32` snapshot of
+  `users.session_version` at login) and `SESSION_KEY_SIGNED_IN_AT` (a `jiff::Timestamp`) are the three keys `login`
+  writes. A session without a user id is anonymous, including an OIDC flow before `/auth/callback` completes. An
+  identity without a recorded sign-in time is refused and flushed.
 - **Confirmed-account module state.** `confirmedAccount` and `identityEpoch` in `frontend/src/lib/active-user.ts` live
   in memory for the JS realm's lifetime, driving Relay environment selection and rejecting delayed `/auth/me`
   confirmations after account loss.
@@ -220,7 +224,8 @@ Query continues to own existing HTTP workflows.
 2. `login` calls `session.cycle_id()`. If the request arrived with an existing (pre-auth) session id, this replaces it
    before any identity claim is attached. Deleting the old row cascades `sign_in_cohorts` and its attempt, so a slower
    contender's conditional winner update matches nothing. A pre-authentication id never becomes authenticated.
-3. `login` inserts `SESSION_KEY_USER_ID` and `SESSION_KEY_SESSION_VERSION` into the session's in-memory claims map.
+3. `login` inserts `SESSION_KEY_USER_ID`, `SESSION_KEY_SESSION_VERSION` and `SESSION_KEY_SIGNED_IN_AT` into the
+   session's in-memory claims map. The sign-in time is `jiff::Timestamp::now()` and never changes on a later request.
 4. The OIDC callback inserts its CSRF token and explicitly saves before returning success. The local handler relies on
    response-time persistence. `SessionManagerLayer`'s `with_always_save(true)` also triggers a store write for a
    populated session. Because the id was just cycled, this is a fresh id from the store's point of view:
@@ -283,11 +288,12 @@ internal error through `AppError` without logging cookie values.
 - **A session id collision at creation.** Handled inline in the runtime walkthrough above: `create` regenerates and
   retries rather than surfacing an error to the caller. A real collision is cryptographically improbable (128-bit ids),
   so the loop is a correctness guarantee, not a path expected to iterate in practice.
-- **A stale or invalid identity claim.** `signed_in_user` flushes disabled, deleted and stale-version sessions.
-  `CurrentUser` rejects a disabled account with 401; a deleted or stale identity permits Basic/Bearer fallthrough.
-  Sign-in handlers treat both cases as anonymous. In OIDC start, if an incoming id disappears during that read,
-  `cycle_id()` rotates the cached record before the marker is inserted and saved. `flush()` retains that cached record
-  id, so rotation prevents its deleted id from being recreated. Rotation errors propagate as internal errors.
+- **A stale or invalid identity claim.** `signed_in_user` flushes sessions past their 30-day absolute lifetime,
+  identities without a recorded sign-in time, and disabled, deleted or stale-version identities. `CurrentUser` rejects a
+  disabled account with 401; the other refusals permit Basic or Bearer fallthrough. Sign-in handlers treat these
+  refusals as anonymous. In OIDC start, if an incoming id disappears during that read, `cycle_id()` rotates the cached
+  record before the marker is inserted and saved. `flush()` retains that cached record id, so rotation prevents its
+  deleted id from being recreated. Rotation errors propagate as internal errors.
 - **An error after winning.** A callback failure through identity attachment, CSRF insertion or explicit persistence
   attempts session flush before redirecting to the fixed login outcome. Local sign-in flushes a failure before
   `session::login` succeeds. A successful flush removes the cookie and cascades the cohort. A failed flush logs a
@@ -340,7 +346,17 @@ The 24-hour idle window (`Expiry::OnInactivity`, renewed by `with_always_save` o
 deviation from a shorter-timeout default; it applies identically to every account this subject issues a session for,
 with no separate, shorter, or otherwise stricter session policy for an admin-role account. Logging out, or a
 force-logout via `session_version`, invalidates a session immediately rather than waiting for it to idle out; short of
-either of those, a session with regular activity does not expire.
+either of those, a session in regular use is still refused and destroyed at its first authentication request 30 days or
+more after sign-in.
+
+[NIST SP 800-63B-4](https://pages.nist.gov/800-63-4/sp800-63b.html) sections 2.1.3 and 5.2 set a definite overall AAL1
+timeout, recommend no more than 30 days, and require termination when either timeout expires. AAL1 permits an inactivity
+timeout without requiring one.
+[OWASP ASVS 5.0 requirements 7.1.1 and 7.3.2](https://github.com/OWASP/ASVS/blob/master/5.0/en/0x16-V7-Session-Management.md)
+cover documented lifetimes, justification of NIST deviations, and an absolute maximum. The
+[OWASP Session Management Cheat Sheet, Absolute Timeout](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#absolute-timeout)
+calls for a maximum regardless of activity. The deviation register documents the 24-hour idle window and 30-day cap for
+this personal-library application.
 
 Operationally, this subject introduces no configuration surface of its own beyond `behind_https` (owned by the
 configuration-loading subject). The sweep cadence is fixed at one hour and is not a setting: a single-instance

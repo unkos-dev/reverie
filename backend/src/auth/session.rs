@@ -10,11 +10,11 @@
 //! [`Session::cycle_id`](tower_sessions::Session::cycle_id) before persisting
 //! identity, so a pre-auth attacker who
 //! plants a known session id cannot have it become authenticated post-login.
-//! Identity is stored as two server-side keys (`user_id`, `session_version`);
+//! Identity is stored as three server-side keys (`user_id`, `session_version`, `signed_in_at`);
 //! the cookie carries only the random id, so the values are trusted on read.
 //! Force-logout rides on `session_version`: bumping `users.session_version`
 //! makes the stored value stale, which [`crate::auth::middleware::CurrentUser`]
-//! rejects on the next request.
+//! rejects on the next request. The sign-in time fixes a 30-day absolute lifetime that activity never renews.
 
 use anyhow::Context as _;
 use axum::http::{HeaderValue, header};
@@ -36,19 +36,27 @@ pub(crate) const SESSION_KEY_USER_ID: &str = "user_id";
 /// Shared write/read constant; see [`SESSION_KEY_USER_ID`] for the rationale.
 pub(crate) const SESSION_KEY_SESSION_VERSION: &str = "session_version";
 
+/// Session-store key holding the sign-in timestamp captured at login.
+pub(crate) const SESSION_KEY_SIGNED_IN_AT: &str = "signed_in_at";
+
+const SESSION_ABSOLUTE_LIFETIME: jiff::SignedDuration = jiff::SignedDuration::from_hours(30 * 24);
+
 /// Log `user` into `session`: rotate the id (fixation defence), then persist
-/// the identity claims read back per-request by
+/// the user id, session version and sign-in time read back per-request by
 /// [`crate::auth::middleware::CurrentUser`].
 ///
 /// # Errors
 ///
-/// Returns [`tower_sessions::session::Error`] if id rotation or either insert
+/// Returns [`tower_sessions::session::Error`] if id rotation or any insert
 /// fails (store I/O or serialization).
 pub async fn login(session: &Session, user: &User) -> Result<(), tower_sessions::session::Error> {
     session.cycle_id().await?;
     session.insert(SESSION_KEY_USER_ID, user.id).await?;
     session
         .insert(SESSION_KEY_SESSION_VERSION, user.session_version)
+        .await?;
+    session
+        .insert(SESSION_KEY_SIGNED_IN_AT, jiff::Timestamp::now())
         .await?;
     Ok(())
 }
@@ -93,7 +101,7 @@ pub enum SessionUser {
     SignedIn(User),
     /// Disabled identity whose session has been flushed.
     Disabled,
-    /// No identity, or a deleted or stale identity whose session has been flushed.
+    /// No identity, or a deleted, stale or lifetime-expired identity whose session has been flushed.
     NotSignedIn,
 }
 
@@ -114,6 +122,19 @@ pub async fn signed_in_user(
     else {
         return Ok(SessionUser::NotSignedIn);
     };
+    let signed_in_at = session
+        .get::<jiff::Timestamp>(SESSION_KEY_SIGNED_IN_AT)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    // THREAT: session activity cannot extend the absolute lifetime or supply a missing sign-in time.
+    if signed_in_at.is_none_or(|signed_in_at| {
+        jiff::Timestamp::now().duration_since(signed_in_at) >= SESSION_ABSOLUTE_LIFETIME
+    }) {
+        if let Err(e) = session.flush().await {
+            tracing::warn!(error = %e, "session flush failed (absolute lifetime)");
+        }
+        return Ok(SessionUser::NotSignedIn);
+    }
     let user = user::find_by_id(pool, user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;

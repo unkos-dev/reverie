@@ -758,6 +758,10 @@ mod tests {
         session.insert("user_id", user_id).await.unwrap();
         session.insert("session_version", 0_i32).await.unwrap();
         session
+            .insert("signed_in_at", jiff::Timestamp::now())
+            .await
+            .unwrap();
+        session
             .insert("csrf_token", "graphql-test-csrf")
             .await
             .unwrap();
