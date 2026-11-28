@@ -22,6 +22,7 @@
 - [REV-REQ-0069](requirements/0069-a-returning-oidc-identity-keeps-its-stored-email.md): A returning OIDC identity keeps its stored email
 - [REV-REQ-0070](requirements/0070-an-unsuccessful-oidc-sign-in-resolves-to-a-fixed-local-outcome.md): An unsuccessful OIDC sign-in resolves to a fixed local outcome
 - [REV-REQ-0074](requirements/0074-every-path-that-sets-a-password-refuses-one-the-password-policy-rejects.md): Every path that sets a password refuses one the password policy rejects
+- [REV-REQ-0101](requirements/0101-a-session-never-authenticates-a-request-30-days-after-its-sign-in.md): A session never authenticates a request 30 days after its sign-in
 
 ## Designs
 

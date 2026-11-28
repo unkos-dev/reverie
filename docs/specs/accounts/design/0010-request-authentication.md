@@ -9,6 +9,7 @@ satisfies:
   - "REV-REQ-0031"
   - "REV-REQ-0032"
   - "REV-REQ-0033"
+  - "REV-REQ-0101"
 governed-by:
   - "REV-ADR-0056"
 ---
@@ -30,17 +31,17 @@ single indexed lookup Basic and Bearer both call; and the five assertion methods
 (`backend/src/auth/basic_only.rs`), a thin wrapper that calls this subject's own `verify_basic` and substitutes an RFC
 7617 challenge for the generic one, because that wrapper has no logic of its own beyond the challenge substitution.
 
-It does not own: session persistence, the cookie policy, or the `SESSION_KEY_USER_ID` / `SESSION_KEY_SESSION_VERSION`
-values this subject reads back, the Design "Sessions", which this subject depends on for the `tower_sessions::Session`
-extractor and the two session keys. It does not own local-password verification, breach-checking, or per-account
-throttling, the Design "Local password sign-in", whose successful outcome is what reaches the session-cookie leg's write
-side (`auth::session::login`, in "Sessions") for a `POST /auth/local/login` caller. It does not own interactive OIDC
-login and account provisioning, the Design "OIDC sign-in". It does not own the scope hierarchy, the role-to-scope
-ceiling, the deny-by-default matrix, or the RLS-vs-handler-predicate ownership map, the Design "Authorization axes".
-This subject only carries the `scopes` field the assertion methods read and populates it on each of the three resolution
-legs. It does not own device-token minting, the per-user cap, or revocation (`backend/src/models/device_token.rs`,
-`backend/src/routes/tokens.rs`), the device-token subject, or CSRF synchronizer-token validation
-(`backend/src/security/csrf.rs`), the Design "CSRF protection".
+It does not own: session persistence, the cookie policy, or the `SESSION_KEY_USER_ID`, `SESSION_KEY_SESSION_VERSION` and
+`SESSION_KEY_SIGNED_IN_AT` values this subject reads back, the Design "Sessions", which this subject depends on for the
+`tower_sessions::Session` extractor and the three session keys. It does not own local-password verification,
+breach-checking, or per-account throttling, the Design "Local password sign-in", whose successful outcome is what
+reaches the session-cookie leg's write side (`auth::session::login`, in "Sessions") for a `POST /auth/local/login`
+caller. It does not own interactive OIDC login and account provisioning, the Design "OIDC sign-in". It does not own the
+scope hierarchy, the role-to-scope ceiling, the deny-by-default matrix, or the RLS-vs-handler-predicate ownership map,
+the Design "Authorization axes". This subject only carries the `scopes` field the assertion methods read and populates
+it on each of the three resolution legs. It does not own device-token minting, the per-user cap, or revocation
+(`backend/src/models/device_token.rs`, `backend/src/routes/tokens.rs`), the device-token subject, or CSRF
+synchronizer-token validation (`backend/src/security/csrf.rs`), the Design "CSRF protection".
 
 Depends on: the `users` row's `role`, `is_child`, `session_version`, and `disabled_at` columns
 (`crate::models::user::find_by_id`); the `device_tokens` row's `scopes`, `token_hash`, and expiry/revocation state
@@ -64,16 +65,17 @@ resolution path across every `/api/v1` operation to prove the scope gate behind 
   handler cannot match on `role` or scan `scopes` directly and bypass the single enforcement point; the "Authorization
   axes" Design covers what those methods enforce, this Design covers how the fields they read are populated.
 - `impl FromRequestParts<AppState> for CurrentUser` is the one entry point every extraction goes through. It tries the
-  session-cookie leg first: reads `Session::from_request_parts`, and if a `user_id` claim is present, loads the user
-  row, checks `disabled_at`, then compares the session's stored `session_version` claim against the live row's. A
-  disabled account returns `AppError::Unauthorized` immediately, flushing the session first and never falling through to
-  Basic or Bearer on this request. A version mismatch or a deleted user instead flushes the session and falls through,
-  the function has no `return` on that branch, so the same request gets a chance to authenticate via Basic or Bearer if
-  either header is also present; each of those legs independently re-checks `disabled_at`, so this fallthrough does not
-  bypass the gate, it only gives a stale session's request a second credential to try. When no session claims an
-  identity at all, the leg is skipped with no database read. Only after the session leg neither returns nor is
-  applicable does the function try `verify_basic`, then `verify_bearer`, returning on the first `Some`; if neither
-  resolves anything, it returns `AppError::Unauthorized`.
+  session-cookie leg first: reads `Session::from_request_parts`, and if a `user_id` claim is present, checks the
+  `signed_in_at` claim before loading the user row. A missing timestamp or an age of 30 days or more flushes the session
+  and falls through to Basic or Bearer. A younger session loads the user row, checks `disabled_at`, then compares the
+  session's stored `session_version` claim against the live row's. A disabled account returns `AppError::Unauthorized`
+  immediately, flushing the session first and never falling through to Basic or Bearer on this request. A version
+  mismatch or a deleted user instead flushes the session and falls through, the function has no `return` on that branch,
+  so the same request gets a chance to authenticate via Basic or Bearer if either header is also present; each of those
+  legs independently re-checks `disabled_at`, so this fallthrough does not bypass the gate, it only gives a stale
+  session's request a second credential to try. When no session claims an identity at all, the leg is skipped with no
+  database read. Only after the session leg neither returns nor is applicable does the function try `verify_basic`, then
+  `verify_bearer`, returning on the first `Some`; if neither resolves anything, it returns `AppError::Unauthorized`.
 - `resolve_device_token(state, prefixed_id, secret)` is the function `verify_basic` and `verify_bearer` both call,
   resolving the `{prefix}{token_id}` / `{prefix}{token_id}.{secret}` credential format shared by both transports. It
   does one indexed `device_token::find_by_id` lookup by the token's own row id, not a scan over the claimed user's other
@@ -115,10 +117,10 @@ resolution path across every `/api/v1` operation to prove the scope gate behind 
   extractor itself, so a caller that needs one transport without the cookie-first precedence (`BasicOnly`) can reach it
   directly rather than re-implementing header parsing.
 - `AppState::pool` serves the user and device-token lookups.
-- `tower_sessions::Session` (via `Session::from_request_parts`) and the `SESSION_KEY_USER_ID` /
-  `SESSION_KEY_SESSION_VERSION` constants are the read side of a contract the Design "Sessions" owns the write side of
-  (`auth::session::login`); this subject never writes either key, only reads them back and calls `session.flush()` to
-  tear a rejected session down.
+- `tower_sessions::Session` (via `Session::from_request_parts`) and the `SESSION_KEY_USER_ID`,
+  `SESSION_KEY_SESSION_VERSION` and `SESSION_KEY_SIGNED_IN_AT` constants are the read side of a contract the Design
+  "Sessions" owns the write side of (`auth::session::login`); this subject never writes these keys, only reads them back
+  and calls `session.flush()` to tear a rejected session down.
 - `crate::error::AppError` (`backend/src/error/mod.rs`) is the shared error type every leg returns through, but not the
   sole production source of `AppError::Unauthorized`: `routes/auth.rs`'s `/auth/callback` handler returns it for the
   refusals the Design "OIDC sign-in" lists, and both `routes/auth.rs`'s `me` handler and `routes/users/mod.rs`'s
@@ -134,8 +136,9 @@ resolution path across every `/api/v1` operation to prove the scope gate behind 
 every extraction, from a database read taken at that moment, and is dropped with the request. The two mutations this
 subject's resolution path can trigger are both delegated to a neighbouring subject's storage, not owned here:
 
-- `session.flush()`, called when the session leg finds a disabled account or a stale `session_version`, deletes the
-  session row, the write authority for `tower_sessions.session` belongs to the Design "Sessions".
+- `session.flush()`, called when the session leg finds a disabled account, a stale `session_version`, a deleted user, a
+  missing sign-in time or a session aged 30 days or more, deletes the session row, the write authority for
+  `tower_sessions.session` belongs to the Design "Sessions".
 - The `tokio::spawn`ed `device_token::update_last_used` call inside `resolve_device_token`, the write authority for
   `device_tokens.last_used_at` belongs to the neighbouring device-token model.
 
@@ -170,10 +173,22 @@ with read scope; field denial remains distinct from an unauthenticated HTTP requ
 **A session-authenticated request with no `Authorization` header**, the common browser case:
 
 1. `Session::from_request_parts` returns a session carrying `SESSION_KEY_USER_ID`.
-2. `user::find_by_id` loads the row. `disabled_at` is `None`, so the disabled check does not fire.
-3. The stored `SESSION_KEY_SESSION_VERSION` claim equals `user.session_version`, so the function returns a `CurrentUser`
+2. `signed_in_user` reads `SESSION_KEY_SIGNED_IN_AT` as a `jiff::Timestamp` and checks that its age is less than 30
+   days, before any user lookup. This read never changes the timestamp.
+3. `user::find_by_id` loads the row. `disabled_at` is `None`, so the disabled check does not fire.
+4. The stored `SESSION_KEY_SESSION_VERSION` claim equals `user.session_version`, so the function returns a `CurrentUser`
    with the user id, live role and child status, the role-derived scopes and `via_session: true`, without ever
    evaluating `verify_basic` or `verify_bearer`.
+
+**A session past its absolute lifetime**, with no `Authorization` header:
+
+1. The browser presents a session cookie whose recorded sign-in time is 30 days or more in the past, however recently it
+   was used.
+2. `signed_in_user` reads the timestamp before `user::find_by_id`. An age of at least `SESSION_ABSOLUTE_LIFETIME`, or a
+   missing timestamp, calls `session.flush()` and returns `NotSignedIn`.
+3. The flush deletes the server-side row. `CurrentUser` falls through to Basic and Bearer, both return `Ok(None)`, and
+   the extractor returns `AppError::Unauthorized`. The response has the same status, problem type and `WWW-Authenticate`
+   header as a request without a session. The user signs in again.
 
 **Force-logout after a role change**, continuing from an already-authenticated session:
 
@@ -227,11 +242,10 @@ has just disabled:
 - **A database error on any lookup.** Every `sqlx::Error` from a user or device-token lookup is wrapped into
   `AppError::Internal`, which logs the cause at `tracing::error!` and returns a fixed, non-leaking `500` detail; no
   lookup failure here is treated as "no credential."
-- **A session-store flush failure.** Both flush sites (disabled account, stale/deleted-user session) log a
-  `tracing::warn!` on failure and proceed regardless, the disabled branch still returns `Unauthorized`, and the
-  stale-version branch still falls through to Basic/Bearer, because the flush is a best-effort cleanup of a session row
-  that has already failed to authenticate on this request either way; a session that fails to flush is caught again on
-  its next presentation by the same `disabled_at` or `session_version` comparison.
+- **A session-store flush failure.** All three flush sites, for absolute lifetime or missing timestamp, disabled
+  account, and stale or deleted-user session, log a `tracing::warn!` on failure and proceed. The disabled branch still
+  returns `Unauthorized`; the other branches still fall through to Basic or Bearer. The session has already failed to
+  authenticate this request, and its next presentation encounters the same failed validity check.
 
 ## Security and operations
 
@@ -262,6 +276,9 @@ convention: a handler cannot compile code that matches on `self.role` directly, 
 model this subject feeds cannot be bypassed by a handler reaching around the assertion methods.
 
 ## More information
+
+- [NIST SP 800-63B-4](https://pages.nist.gov/800-63-4/sp800-63b.html), sections 2.1.3 and 5.2: the AAL1 overall timeout
+  and termination when either timeout expires.
 
 - [Reverie security guidance](../../../security/claude-security-guidance.md), "OIDC & sessions": records the same
   `require_admin()` / `require_not_child()` single-enforcement-point rule as a reviewer-facing checklist entry.

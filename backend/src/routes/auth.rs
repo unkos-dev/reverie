@@ -3424,6 +3424,70 @@ mod tests {
         );
     }
 
+    #[sqlx::test(migrations = "./migrations")]
+    async fn session_past_absolute_lifetime_is_refused_and_destroyed(pool: sqlx::PgPool) {
+        use crate::auth::session::SESSION_KEY_SIGNED_IN_AT;
+        use tower_sessions::SessionStore;
+
+        let fixture = CallbackFixture::start(&pool).await;
+        let (_, session_id) = sign_in_fixture_locally(&fixture).await;
+        let record = fixture.store.load(&session_id).await.unwrap().unwrap();
+        let signed_in_at: jiff::Timestamp =
+            serde_json::from_value(record.data[SESSION_KEY_SIGNED_IN_AT].clone()).unwrap();
+        let age = jiff::Timestamp::now().duration_since(signed_in_at);
+        assert!(age >= jiff::SignedDuration::ZERO);
+        assert!(age < jiff::SignedDuration::from_mins(1));
+
+        let live = fixture.server.get("/auth/me").await;
+        assert_eq!(live.status_code(), StatusCode::OK);
+        let mut record = fixture.store.load(&session_id).await.unwrap().unwrap();
+        assert_eq!(
+            serde_json::from_value::<jiff::Timestamp>(
+                record.data[SESSION_KEY_SIGNED_IN_AT].clone()
+            )
+            .unwrap(),
+            signed_in_at
+        );
+        record.data.insert(
+            SESSION_KEY_SIGNED_IN_AT.to_owned(),
+            serde_json::to_value(
+                jiff::Timestamp::now() - jiff::SignedDuration::from_mins(30 * 24 * 60 + 1),
+            )
+            .unwrap(),
+        );
+        fixture.store.save(&record).await.unwrap();
+        let refused = fixture.server.get("/auth/me").await;
+        assert_eq!(refused.status_code(), StatusCode::UNAUTHORIZED);
+        let anonymous = fixture.server.get("/auth/me").clear_cookies().await;
+        assert_eq!(refused.status_code(), anonymous.status_code());
+        assert_eq!(
+            refused.json::<serde_json::Value>()["type"],
+            anonymous.json::<serde_json::Value>()["type"]
+        );
+        assert_eq!(
+            refused.headers().get("www-authenticate"),
+            anonymous.headers().get("www-authenticate")
+        );
+        assert!(fixture.store.load(&session_id).await.unwrap().is_none());
+
+        let response = fixture
+            .server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({
+                "email": "local@example.com",
+                "password": "a perfectly good password"
+            }))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        let session_id = response.cookie("id").value().parse().unwrap();
+        let mut record = fixture.store.load(&session_id).await.unwrap().unwrap();
+        record.data.remove(SESSION_KEY_SIGNED_IN_AT);
+        fixture.store.save(&record).await.unwrap();
+        let refused = fixture.server.get("/auth/me").await;
+        assert_eq!(refused.status_code(), StatusCode::UNAUTHORIZED);
+        assert!(fixture.store.load(&session_id).await.unwrap().is_none());
+    }
+
     // A session whose user row has been deleted must 401 on the next request
     // AND flush the orphaned session row — otherwise the row re-loads (one
     // `find_by_id` per request) until 24h idle expiry reaps it.

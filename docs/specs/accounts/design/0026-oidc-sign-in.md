@@ -85,12 +85,15 @@ redirect URI registered at the provider is `/auth/callback` on the public origin
 redirect URI whose path is not exactly `/auth/callback`, including a trailing slash, before provider discovery.
 
 The authorization request asks for the `email` and `profile` scopes on top of the library's default `openid`, with a
-random state, a random nonce and a SHA-256 PKCE challenge. The callback consumes the ID-token claims `iss`, `sub`,
-`name` and `email`. It does not read `email_verified`, does not call the UserInfo endpoint, and accepts no
-caller-supplied return target: success always redirects to `/`.
+random state, a random nonce and a SHA-256 PKCE challenge. It sends neither `max_age` nor `prompt`. The callback
+consumes the ID-token claims `iss`, `sub`, `name` and `email`. It does not read `email_verified`, does not call the
+UserInfo endpoint, and accepts no caller-supplied return target: success always redirects to `/`.
 
 `upsert_from_oidc(pool, issuer, subject, display_name, email)` returns the account or an `OidcProvisionError`, either
 `EmailCollision` or `Db`.
+
+The client parses the outcome with Zod and never rewrites it or starts provider navigation on mount. The
+[frontend visual system](../../../../frontend/DESIGN.md) describes shared layout, typography and controls.
 
 ## Data and state
 
@@ -246,6 +249,14 @@ fixed static cause at warning level without formatting the underlying error; mal
 event. The request trace records the callback path without its query, and neither callback parsing nor token-error
 handling formats provider descriptions or response bodies into logs.
 
+After the 30-day cap ends a Reverie session, an OIDC sign-in may reuse the provider's own live session without asking
+for credentials. Reverie accepts the resulting assertion and establishes a new session. It requests no forced provider
+re-authentication. [NIST SP 800-63C-4 section 4.7](https://pages.nist.gov/800-63-4/sp800-63c.html) keeps RP and IdP
+sessions independent and permits an existing IdP session to produce an assertion. The optional `max_age` and `prompt`
+parameters in
+[OpenID Connect Core 1.0 section 3.1.2.1](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest) let an RP
+request fresh authentication; this authorization request omits both.
+
 A self-hoster registers `/auth/callback` on the public origin at the provider and sets `OIDC_REDIRECT_URI` to match. The
 session cookie's `SameSite=Lax` policy is what lets the cross-site redirect back from the provider carry the session.
 The flow has no linking step, so a refused collision stays refused until the other account no longer holds the email.
@@ -256,6 +267,3 @@ middleware subsequent-save residual can still produce an empty 500.
 
 - [Reference configuration](../../../../website/src/content/docs/reference/configuration.mdx): the generated `OIDC_*`
   field reference.
-
-The client parses the outcome with Zod and never rewrites it or starts provider navigation on mount. The
-[frontend visual system](../../../../frontend/DESIGN.md) describes shared layout, typography and controls.

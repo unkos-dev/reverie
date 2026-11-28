@@ -854,7 +854,8 @@
         "REV-REQ-0030",
         "REV-REQ-0031",
         "REV-REQ-0032",
-        "REV-REQ-0033"
+        "REV-REQ-0033",
+        "REV-REQ-0101"
       ],
       "title": "Request authentication"
     },
@@ -869,7 +870,8 @@
         "REV-REQ-0034",
         "REV-REQ-0035",
         "REV-REQ-0037",
-        "REV-REQ-0038"
+        "REV-REQ-0038",
+        "REV-REQ-0101"
       ],
       "title": "Sessions"
     },
@@ -1983,6 +1985,12 @@
       "kind": "req",
       "path": "docs/specs/library/requirements/0100-shelf-name-conflicts-are-refused-within-each-account.md",
       "title": "Shelf name conflicts are refused within each account"
+    },
+    {
+      "id": "REV-REQ-0101",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0101-a-session-never-authenticates-a-request-30-days-after-its-sign-in.md",
+      "title": "A session never authenticates a request 30 days after its sign-in"
     }
   ]
 }

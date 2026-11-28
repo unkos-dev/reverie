@@ -157,7 +157,7 @@ reverie is a cross-site POST under Strict semantics and would be blocked.
 **Compensating controls:** PKCE + state parameter validation on the OIDC
 flow; session regeneration on authentication.
 
-### 3. 24-hour idle session expiry
+### 3. 24-hour idle and 30-day absolute session expiry
 
 **Override:** `codeguard-0-session-management-and-cookies.md` → "Expiration and
 Logout" — prefers non-persistent cookies, an idle timeout of 2 to 30 minutes and
@@ -165,13 +165,20 @@ an absolute timeout of 4 to 8 hours.
 
 **Reverie's position:** `Expiry::OnInactivity(24h)` via `tower-sessions`. The
 session is saved on every request, so each request renews the 24-hour window,
-and no absolute session lifetime is set. The same policy applies to every
-session, administrators' included.
+and an absolute lifetime of 30 days from sign-in applies. On the first request
+that uses it for authentication at or past that age, the session is refused and
+deleted however recently it was used. The same policy applies to every session,
+administrators' included.
 
 **Rationale:** Reverie is a personal-library application with long-running
 read sessions. A 24-hour idle window reflects the usage pattern; shorter
 timeouts would force repeated re-authentication during a natural reading
-session.
+session. [NIST SP 800-63B-4 section 2.1.3](https://pages.nist.gov/800-63-4/sp800-63b.html)
+recommends an AAL1 overall timeout of no more than 30 days and does not require
+an inactivity timeout. These AAL1 limits justify the combination, as
+[OWASP ASVS 5.0 requirement 7.1.1](https://github.com/OWASP/ASVS/blob/master/5.0/en/0x16-V7-Session-Management.md)
+asks for documented justification of departures from NIST re-authentication
+requirements.
 
 **Compensating controls:** Sessions regenerate on authentication; logout
 invalidates the server-side session immediately.
