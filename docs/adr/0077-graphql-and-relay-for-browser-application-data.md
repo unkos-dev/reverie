@@ -25,6 +25,7 @@ authoritative recovery. Which transport and client data library should own brows
 - Related work and manifestation records need consistent identities across browser workflows.
 - Editing values and their matching preconditions stay together through errors and live updates.
 - Generated contracts reduce manual duplication between the Rust service and TypeScript consumers.
+- Authorisation and privacy boundaries hold across the transport change.
 - Browser interactions use plain HTTP only where a standard or protocol requires it.
 - Accessible interaction and the enabled React Compiler remain selected independently of transport.
 
@@ -41,9 +42,10 @@ manifestation records consistent identities across every browser workflow, and a
 replaces manual duplication between the service and its TypeScript consumers.
 
 Browser application data moves to a code-first GraphQL schema and compiled Relay operations across the whole browser
-application, including account and authentication screens. A browser interaction stays on plain HTTP only where a
-standard or protocol requires it. The OIDC authorisation code flow is "a redirection-based flow" (RFC 6749 §4.1). File
-downloads and cover images reach the browser by URL as bytes, and GraphQL over HTTP defines JSON responses.
+application. Screens shown before sign-in, such as sign-in and setup, use the same GraphQL schema. A browser interaction
+stays on plain HTTP only where a standard or protocol requires it. The OIDC authorisation code flow is "a
+redirection-based flow" (RFC 6749 §4.1). File downloads and cover images reach the browser by URL as bytes, and GraphQL
+over HTTP defines JSON responses.
 
 ### Consequences
 
