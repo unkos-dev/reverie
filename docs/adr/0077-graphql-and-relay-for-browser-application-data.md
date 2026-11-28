@@ -25,7 +25,8 @@ authoritative recovery. Which transport and client data library should own brows
 - Related work and manifestation records need consistent identities across browser workflows.
 - Editing values and their matching preconditions stay together through errors and live updates.
 - Generated contracts reduce manual duplication between the Rust service and TypeScript consumers.
-- Authentication, privacy and retained HTTP consumers keep their existing contracts.
+- Authorisation and privacy boundaries hold across the transport change.
+- Browser interactions use plain HTTP only where a standard or protocol requires it.
 - Accessible interaction and the enabled React Compiler remain selected independently of transport.
 
 ## Considered options
@@ -41,15 +42,16 @@ manifestation records consistent identities across every browser workflow, and a
 replaces manual duplication between the service and its TypeScript consumers.
 
 Browser application data moves to a code-first GraphQL schema and compiled Relay operations across the whole browser
-application. Authentication protocols, redirects, OPDS, binary delivery and retained `/api/v1` endpoints keep their HTTP
-contracts.
+application. Screens shown before sign-in, such as sign-in and setup, use the same GraphQL schema. A browser interaction
+stays on plain HTTP only where a standard or protocol requires it. The OIDC authorisation code flow is "a
+redirection-based flow" (RFC 6749 §4.1). File downloads and cover images reach the browser by URL as bytes, and GraphQL
+over HTTP defines JSON responses.
 
 ### Consequences
 
 - Positive: Relay provides one normalised owner for related records and generated browser operations.
-- Positive: migrating a browser workflow to GraphQL removes no `/api/v1` REST operation; the versioned `/api/v1` API
-  remains the contract for device-token and other non-browser clients under REV-ADR-0011, REV-ADR-0016 and REV-ADR-0056,
-  and retiring any of it requires a separate compatibility decision.
+- Negative: device-token scripts and other non-browser clients keep reaching Reverie through `/api/v1` until a separate
+  decision gives them GraphQL access, because trusted documents cannot serve third-party callers.
 - Negative: schema and operation generation add build integration and matching release artefacts.
 - Negative: each workflow requires explicit connection and aggregate updates when moved to Relay.
 - Negative: moving workflows incrementally requires running TanStack Query alongside Relay until every browser workflow
@@ -80,5 +82,6 @@ contracts.
 Reconsider the GraphQL server library if clients need to submit arbitrary documents, or if Juniper resolves both
 input-default coercion and indexed error paths.
 
-Reconsider device-token access to GraphQL when a third-party client requires it, because third-party callers cannot rely
-on build-generated trusted documents.
+Device-token access to GraphQL needs its own decision. The graphql.org security guidance says trusted documents "can't
+be used for public APIs", because third-party operations are not known in advance, and names depth, breadth, batch and
+rate limits as the defences for a public schema.

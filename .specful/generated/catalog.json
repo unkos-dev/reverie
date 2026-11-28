@@ -78,7 +78,7 @@
       "kind": "adr",
       "path": "docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md",
       "status": "accepted",
-      "title": "JSON API conventions for the browser-facing REST surface"
+      "title": "JSON API conventions for the REST surface"
     },
     {
       "id": "REV-ADR-0012",
