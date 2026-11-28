@@ -2,7 +2,7 @@
 type: ADR
 profile-version: 1
 id: "REV-ADR-0011"
-title: "JSON API conventions for the browser-facing REST surface"
+title: "JSON API conventions for the REST surface"
 status: "accepted"
 recorded-on: "2026-09-05"
 decided-on: "2026-05-22"
@@ -10,7 +10,7 @@ decision-makers:
   - "John Unkovich"
 ---
 
-# JSON API conventions for the browser-facing REST surface
+# JSON API conventions for the REST surface
 
 ## Context and problem statement
 
@@ -144,6 +144,9 @@ These are the selected API contracts; handler and middleware wiring is outside t
   `error/problems.rs` swaps the prefix, because the URIs are stable in their slugs.
 
 ## More information
+
+These conventions govern REST endpoints while they exist. Browser application data uses GraphQL under
+[REV-ADR-0077](./0077-graphql-and-relay-for-browser-application-data.md).
 
 IETF specs cited: RFC 9457 (Problem Details, formerly RFC 7807), RFC 8288 (Web Linking / Link header), RFC 7396 (JSON
 Merge Patch), RFC 9110 §12 (content negotiation), RFC 9110 §13.1 (`If-Match`), RFC 3339 (date format), RFC 8259 (JSON).

@@ -110,7 +110,7 @@ as an ordinary name/value pair; `URLSearchParams` does not interpret the operato
   the companion sort decision on the same list; filtering and sorting share the cursor and the closed-column-set stance.
 - [No unbounded queries: keyset pagination as the default list contract](./0019-keyset-pagination-as-the-default-list-contract.md):
   the keyset list contract this filtering rides on.
-- [JSON API conventions for Reverie's browser-facing REST surface](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md):
+- [JSON API conventions for the REST surface](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md):
   the opaque-cursor mechanism and query-shape conventions this reuses.
 - [Match-time accent folding via unaccent expression indexes](./0044-match-time-accent-folding-via-unaccent-expression-indexes.md):
   the later decision on accent folding across search, suggest, and the text filters' contains conditions.

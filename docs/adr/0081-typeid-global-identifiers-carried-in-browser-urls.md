@@ -30,7 +30,7 @@ conversion?
 - A wrong-type ID is refused at decode, as the existing type-tagged IDs are.
 - A specified encoding with maintained implementations, not a Reverie-specific format.
 - Parsing stays cheap and bounded for client-supplied input.
-- Retained HTTP, OPDS and token-facing contracts keep their UUID values.
+- HTTP contracts keep their UUID values, including OPDS feeds and file and cover URLs, which stay on HTTP.
 
 ## Considered options
 
@@ -52,7 +52,7 @@ unaltered.
 - Positive: the type prefix identifies the resource kind in URLs and logs, and wrong-type IDs fail parsing.
 - Positive: UUIDv7 table primary keys preserve creation-time sort order inside the TypeID suffix without schema changes.
 - Negative: switching browser URLs to TypeID invalidates bookmarked UUID and base64 routes.
-- Negative: retained HTTP endpoints, downloads, covers and OPDS keep UUID values, so links crossing the HTTP-to-GraphQL
+- Negative: `/api/v1` endpoints, downloads, covers and OPDS keep UUID values, so links crossing the HTTP-to-GraphQL
   boundary still translate between UUID values and TypeIDs.
 - Neutral: the suffix decodes directly to the underlying UUID, so TypeIDs are opaque by convention rather than secret.
 
@@ -78,5 +78,5 @@ unaltered.
 ## More information
 
 - [TypeID specification](https://github.com/jetify-com/typeid/tree/main/spec).
-- Reconsider if a third-party client needs GraphQL IDs that match the retained HTTP UUID values, or if the TypeID
-  specification changes its format incompatibly.
+- Reconsider if a non-browser client moving to GraphQL needs IDs that match the UUID values HTTP endpoints carry, or if
+  the TypeID specification changes its format incompatibly.

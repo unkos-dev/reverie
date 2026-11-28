@@ -118,7 +118,7 @@ conversion rather than a second first-party datetime convention.
 ## More information
 
 The wire format itself is governed by
-[JSON API conventions for the browser-facing REST surface](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md);
+[JSON API conventions for the REST surface](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md);
 this decision covers only which crate carries the values behind it.
 
 Reopen this decision if either of the following becomes true:

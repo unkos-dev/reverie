@@ -139,7 +139,7 @@ data layer is
 the token set the theming bridge targets is
 [Radix-generated three-tier dual-theme color tokens](./0026-radix-generated-three-tier-dual-theme-color-tokens.md); the
 endpoint shape is
-[JSON API conventions for the browser-facing REST surface](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md)
+[JSON API conventions for the REST surface](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md)
 and
 [API versioning by URL path with OpenAPI as the contract](./0016-api-versioning-by-url-path-with-openapi-as-the-contract.md).
 
