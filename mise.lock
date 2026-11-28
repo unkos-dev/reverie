@@ -228,15 +228,15 @@ url_api = "https://api.github.com/repos/daveshanley/vacuum/releases/assets/79204
 provenance = "cosign"
 
 [[tools.vale]]
-version = "3.28.1"
+version = "3.29.0"
 backend = "aqua:vale-cli/vale"
-specifiers = ["3.28.1"]
+specifiers = ["3.29.0"]
 
 [tools.vale."platforms.linux-x64"]
-checksum = "sha256:068954ad869ebec24b8dec6ebcd1cbb1fd5f5a83e966a35baedfae8b2cdc093a"
+checksum = "sha256:00356ae1bacd1160aa415664f3ed0d34ce9ef5319c61d31123a97366ea1a2f64"
 checksum_source = "mise-versions"
-url = "https://github.com/vale-cli/vale/releases/download/v3.28.1/vale_3.28.1_Linux_64-bit.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/768120835"
+url = "https://github.com/vale-cli/vale/releases/download/v3.29.0/vale_3.29.0_Linux_64-bit.tar.gz"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/796243509"
 
 [[tools.zizmor]]
 version = "1.33.1"
