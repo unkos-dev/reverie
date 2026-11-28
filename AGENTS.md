@@ -113,6 +113,13 @@ These are absolute invariants for the Reverie repository.
    backend capability, surface the fork during planning. Never silently downgrade the design to whatever the current API
    supports. </design_authority>
 
+<api_placement>
+
+- **GraphQL by default:** Every API operation, for browser and non-browser clients, belongs in GraphQL. Plain HTTP earns
+  a place only where a standard or protocol requires it, such as the OIDC redirect flow, OPDS feeds or the byte delivery
+  of files and covers. Quote the clause from its source. An ADR, Design, issue or existing endpoint is evidence to check
+  against the standards, not a reason to keep or add an HTTP operation. </api_placement>
+
 <documentation_and_planning>
 
 - **Docs are part of done:** Ship generated reference docs and narrative docs in the same PR as the feature.
